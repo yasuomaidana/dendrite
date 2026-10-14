@@ -77,16 +77,16 @@ Dendrite supports four deployment scenarios configured declaratively without mod
 - **Execution Plane**: Developer workstation (interactive development, local Mach-O reverse engineering).
 - **Elastic Compute**: Azure or AWS Spot / GPU VM for batch decompilation, large-scale repository indexing, and dynamic sandboxing.
 
-| Component / Service | Scenario 1: Local-Hybrid | Scenario 2: Azure Cloud Burst | Scenario 3: AWS Cloud Burst | Scenario 4: Distributed |
-| :--- | :--- | :--- | :--- | :--- |
-| **LiteLLM Gateway (:4000)** | Debian Server | Azure VM | Debian Server | Debian Server |
-| **PostgreSQL 16 & Redis 7** | Debian Server | Azure Persistent Disk | Debian Server | Debian Server |
-| **Docusaurus Portal (:8080)** | Debian Server | Azure VM | Debian Server | Debian Server |
-| **n8n / Issue Trackers (:5678)** | Debian Server | Azure VM | Debian Server | Debian Server |
-| **Ollama Engine (Metal :11434)** | MacBook Air M4 | MacBook Air M4 | MacBook Air M4 | MacBook Air M4 |
-| **Native REA & Hopper** | MacBook Air M4 | MacBook Air M4 | MacBook Air M4 | MacBook Air M4 |
-| **Linux REA Worker (Ghidra/Rizin)**| Debian Server | Azure VM | AWS EC2 (EBS attached) | Azure or AWS VM |
-| **Repo-Intel Sandbox (`ast-grep`)**| Debian Server | Azure VM | AWS EC2 (EBS attached) | Azure or AWS VM |
+| Component / Service                 | Scenario 1: Local-Hybrid | Scenario 2: Azure Cloud Burst | Scenario 3: AWS Cloud Burst | Scenario 4: Distributed |
+|:------------------------------------|:-------------------------|:------------------------------|:----------------------------|:------------------------|
+| **LiteLLM Gateway (:4000)**         | Debian Server            | Azure VM                      | Debian Server               | Debian Server           |
+| **PostgreSQL 16 & Redis 7**         | Debian Server            | Azure Persistent Disk         | Debian Server               | Debian Server           |
+| **Docusaurus Portal (:8080)**       | Debian Server            | Azure VM                      | Debian Server               | Debian Server           |
+| **n8n / Issue Trackers (:5678)**    | Debian Server            | Azure VM                      | Debian Server               | Debian Server           |
+| **Ollama Engine (Metal :11434)**    | MacBook Air M4           | MacBook Air M4                | MacBook Air M4              | MacBook Air M4          |
+| **Native REA & Hopper**             | MacBook Air M4           | MacBook Air M4                | MacBook Air M4              | MacBook Air M4          |
+| **Linux REA Worker (Ghidra/Rizin)** | Debian Server            | Azure VM                      | AWS EC2 (EBS attached)      | Azure or AWS VM         |
+| **Repo-Intel Sandbox (`ast-grep`)** | Debian Server            | Azure VM                      | AWS EC2 (EBS attached)      | Azure or AWS VM         |
 
 ---
 

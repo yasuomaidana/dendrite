@@ -1,6 +1,6 @@
 # Dendrite CLI Specification & Command Reference
 
-The `dendrite` CLI is the unified control plane binary for managing multi-node deployment scenarios, token governance, multi-project workspaces, issue tracker providers (Jira, Plane, Linear), AI-assisted code optimization, polyglot translation, documentation generation/reflection, and ephemeral sandboxed analysis.
+The `dendrite` CLI is the unified control plane binary for managing multi-node deployment scenarios, token governance, multi-project workspaces, issue tracker providers (Jira, Plane, Linear), autonomous coding agent harnesses (Aider, OpenHands, OpenCode), AI-assisted code optimization, polyglot translation, documentation generation/reflection, and ephemeral sandboxed analysis.
 
 ---
 
@@ -14,11 +14,11 @@ Implemented in idiomatic Go (with GoLand native ergonomics) or Rust, the CLI adh
 2. **RAII & Resource Cleanup Semantics**:
    - Ephemeral commands use deferred teardown traps (`defer c.Cleanup()` or `Drop`) to guarantee container removal, network detachment, and tmpfs unmounting even during runtime panics or `SIGINT` (Ctrl+C).
 3. **Strategy Pattern for Pluggable Providers**:
-   - Issue tracker implementations (Jira, Plane, Linear, GitHub Issues) adhere to a decoupled interface (`IssueTracker`), allowing frictionless provider switching via CLI flags or config.
+   - Issue tracker implementations (Jira, Plane, Linear, GitHub Issues) and coding agent runners (Aider, OpenHands, OpenCode) adhere to decoupled interfaces (`IssueTracker`, `AgentRunner`), allowing frictionless provider switching via CLI flags or config.
 4. **Intermediate Semantic Representation (ISR)**:
    - Polyglot translation and capability import decouple source syntax from target synthesis via typed Tree-sitter AST nodes.
 5. **Domain Newtypes & Type Safety**:
-   - Wrapping primitive IDs into dedicated types (`type ProjectID string`, `type VirtualKey string`, `type MeshNode string`, `type IssueID string`).
+   - Wrapping primitive IDs into dedicated types (`type ProjectID string`, `type VirtualKey string`, `type MeshNode string`, `type IssueID string`, `type AgentType string`).
 6. **Complexity Guardrails**:
    - Every CLI subcommand method is bounded: Cyclomatic Complexity $\le 10$, Cognitive Complexity $\le 15$, LOC per function $\le 60$.
 
@@ -38,6 +38,11 @@ dendrite [global flags] <subcommand> [args...]
 ├── down                             # Gracefully halt active stacks
 ├── status                           # System health, spend dashboard & thermal monitor
 ├── ui [flags]                       # Launch Dendrite Web UI & Configuration Dashboard
+│
+├── agent                            # Autonomous Coding Agent Orchestration
+│   ├── run <aider|openhands|opencode> # Launch coding agent with LiteLLM gateway & token governance
+│   ├── config <agent> [flags]       # Configure agent model tiers, budget limits, sandbox mode
+│   └── session                      # Inspect active/past agent sessions, spend & commits
 │
 ├── project                          # Multi-Project Workspace Management
 │   ├── add <name> <path-or-git>     # Register a project into Dendrite registry
@@ -135,6 +140,24 @@ dendrite down
 Spins up the embedded web dashboard and opens the default browser:
 ```bash
 dendrite ui
+```
+
+---
+
+### `dendrite agent` (Autonomous Coding Agent Orchestration)
+Launches, bounds, and manages autonomous coding agents (Aider, OpenHands, OpenCode) with LiteLLM gateway integration:
+```bash
+# 1. Run interactive Aider session bound to LiteLLM gateway and active ticket
+dendrite agent run aider --ticket DEN-006 --model copilot-sonnet
+
+# 2. Run OpenHands in an ephemeral sandbox to solve an issue autonomously
+dendrite agent run openhands --ticket PROJ-104 --sandbox --spend-limit 5.00
+
+# 3. Run OpenCode in headless batch mode with thermal and curfew guardrails
+dendrite agent run opencode --task "Implement Tree-sitter parser" --ephemeral
+
+# 4. View agent execution history, token spend, and generated git commits
+dendrite agent session list
 ```
 
 ---
