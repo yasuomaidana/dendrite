@@ -19,12 +19,12 @@ import (
 	"Dendrite/pkg/server"
 	"Dendrite/pkg/telemetry"
 	"Dendrite/pkg/telemetry/exporter"
-	"encoding/json"
 	"Dendrite/pkg/topology"
 	"Dendrite/pkg/topology/advisor"
 	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/plane"
 	"Dendrite/pkg/workspace"
+	"encoding/json"
 )
 
 const version = "0.1.0-alpha"
@@ -52,9 +52,19 @@ func main() {
 		}
 		handleEnvCommand(ctx, os.Args[2], os.Args[3:])
 
+	case "triage":
+		handleTriageCommand(ctx, os.Args[2:])
+
+	case "test":
+		if len(os.Args) < 3 {
+			printTestUsage()
+			return
+		}
+		handleTestCommand(ctx, os.Args[2], os.Args[3:])
+
 	case "agent":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: dendrite agent <run|session> [tool] [flags...]")
+			fmt.Println("Usage: dendrite agent <search|route|run|session> [tool] [flags...]")
 			return
 		}
 		handleAgentCommand(ctx, os.Args[2], os.Args[3:])
@@ -68,7 +78,7 @@ func main() {
 
 	case "doc":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: dendrite doc <reflect> [flags...]")
+			fmt.Println("Usage: dendrite doc <docusaurus|reflect|plane> [args...]")
 			return
 		}
 		handleDocCommand(ctx, os.Args[2], os.Args[3:])
@@ -135,6 +145,13 @@ func main() {
 		}
 		handleBenchCommand(ctx, os.Args[2], os.Args[3:])
 
+	case "rea":
+		if len(os.Args) < 3 {
+			printREAUsage()
+			return
+		}
+		handleREACommand(ctx, os.Args[2], os.Args[3:])
+
 	default:
 		printUsage()
 	}
@@ -157,8 +174,13 @@ func printUsage() {
 	fmt.Println("  project switch <name>      Switch active workspace context (< 50ms)")
 	fmt.Println("  project list               List all registered workspaces")
 	fmt.Println("  project remove <n> [--purge]Unregister workspace and optionally purge data")
+	fmt.Println("  test auto --file <path>    Synthesize table-driven tests with Testcontainers & self-healing")
+	fmt.Println("  test ui [--base-url <url>] Run Web UI browser journeys & WebSocket burst load tests")
+	fmt.Println("  agent search <query>       Search and rank agents with hybrid vector & BM25 search")
+	fmt.Println("  agent route --task <desc>  Auto-route task to optimal agent with LiteLLM virtual key")
 	fmt.Println("  agent run <tool> [flags]   Launch an autonomous coding agent (aider, openhands, opencode, agy)")
 	fmt.Println("  agent session [list]       View agent execution history and commits")
+	fmt.Println("  doc docusaurus [flags]     Docusaurus Docs-as-Code and project sharing")
 	fmt.Println("  doc reflect [flags]        Reflect documentation taxonomy (--reference, --source, --target)")
 	fmt.Println("  plane replicate [--file DEV_STATUS.md] Replicate DEV_STATUS.md from Plane service (Plane owns status)")
 	fmt.Println("  plane push-status                      Move local DEV_STATUS content to Plane service")
@@ -188,6 +210,8 @@ func printUsage() {
 	fmt.Println("  bench gateway [flags]      Stress-test LiteLLM gateway with fallback cascade fault injection")
 	fmt.Println("  bench matrix [flags]       Multi-engine comparative benchmark matrix")
 	fmt.Println("  bench stress [flags]       Concurrency stress test against sliding window budget limiter")
+	fmt.Println("  rea showcase [target]      Open-source REA cleanroom analysis & parity verification")
+	fmt.Println("  rea list                   List registered open-source showcase targets and metadata")
 	fmt.Println("  version                    Print Dendrite CLI version")
 }
 
@@ -268,6 +292,8 @@ func handleEnvCommand(ctx context.Context, action string, args []string) {
 	replicator := env.NewReplicator(nil, *host)
 
 	switch action {
+	case "docusaurus", "site":
+		handleDocusaurusCommand(ctx, args)
 	case "doctor":
 		fmt.Println("[+] Host Environment Discovery:")
 	case "plan":
@@ -435,6 +461,8 @@ func handleProjectCommand(ctx context.Context, action string, args []string) {
 	}
 
 	switch action {
+	case "docusaurus", "site":
+		handleDocusaurusCommand(ctx, args)
 	case "add":
 		if len(args) < 2 {
 			fmt.Println("[-] Usage: dendrite project add <name> <path>")
@@ -508,6 +536,8 @@ func handleProjectCommand(ctx context.Context, action string, args []string) {
 
 func handleDocCommand(ctx context.Context, action string, args []string) {
 	switch action {
+	case "docusaurus", "site":
+		handleDocusaurusCommand(ctx, args)
 	case "plane":
 		if len(args) == 0 {
 			fmt.Println("Usage: dendrite doc plane <push|pull|sync> [--dir docs]")
@@ -576,6 +606,8 @@ func handleJetBrainsCommand(ctx context.Context, action string, args []string) {
 	bridge := jetbrains.NewBridge(client)
 
 	switch action {
+	case "docusaurus", "site":
+		handleDocusaurusCommand(ctx, args)
 	case "probe":
 		fmt.Println("[+] Probing JetBrains IDE MCP Server...")
 		srvInfo := client.GetServerInfo()
@@ -725,6 +757,8 @@ func handleJetBrainsCommand(ctx context.Context, action string, args []string) {
 
 func handleAgentCommand(ctx context.Context, action string, args []string) {
 	switch action {
+	case "docusaurus", "site":
+		handleDocusaurusCommand(ctx, args)
 	case "run":
 		if len(args) == 0 {
 			fmt.Println("[-] Please specify an agent tool: aider, openhands, opencode, or agy")
@@ -816,6 +850,12 @@ func handleAgentCommand(ctx context.Context, action string, args []string) {
 			}
 		}
 
+	case "search":
+		handleAgentSearchCommand(ctx, args)
+
+	case "route":
+		handleAgentRouteCommand(ctx, args)
+
 	case "session":
 		fmt.Println("[+] Agent Sessions Ledger:")
 		fmt.Println("    - Active: None")
@@ -894,18 +934,24 @@ func handleDevCommand(ctx context.Context, sub string, args []string) {
 		} else if args[0] == "set" && len(args) >= 3 {
 			id := args[1]
 			st := tracker.Status(strings.ToUpper(args[2]))
-			if err := devtool.UpdateTicketInMarkdown(ctx, filePath, id, st); err != nil {
-				pClient, pErr := plane.NewClientFromEnv()
-				if pErr == nil {
-					if err := pClient.UpdateStatus(ctx, tracker.TicketID(id), st); err == nil {
-						fmt.Printf("[✓] Successfully updated ticket %s to %s in Plane service\n", id, st)
-						return
-					}
+			mdErr := devtool.UpdateTicketInMarkdown(ctx, filePath, id, st)
+			pClient, pErr := plane.NewClientFromEnv()
+			planeSynced := false
+			if pErr == nil && pClient != nil {
+				if err := pClient.UpdateStatus(ctx, tracker.TicketID(id), st); err == nil {
+					planeSynced = true
 				}
-				fmt.Printf("[-] Failed to update ticket: %v\n", err)
+			}
+
+			if mdErr != nil && !planeSynced {
+				fmt.Printf("[-] Failed to update ticket: %v\n", mdErr)
 				return
 			}
-			fmt.Printf("[✓] Successfully updated ticket %s to %s in %s\n", id, st, filePath)
+			msg := fmt.Sprintf("[✓] Successfully updated ticket %s to %s in %s", id, st, filePath)
+			if planeSynced {
+				msg += " and reflected in Plane service"
+			}
+			fmt.Println(msg)
 		} else if len(args) > 0 && (args[0] == "sync-plane" || args[0] == "push-plane") {
 			handlePlaneCommand(ctx, "push-status", args[1:])
 		} else if len(args) > 0 && (args[0] == "replicate-plane" || args[0] == "pull-plane") {
@@ -973,6 +1019,8 @@ func handleDevCommand(ctx context.Context, sub string, args []string) {
 
 func handleTopologyCommand(ctx context.Context, action string, args []string) {
 	switch action {
+	case "docusaurus", "site":
+		handleDocusaurusCommand(ctx, args)
 	case "advisor", "advise":
 		runTopologyAdvisor(ctx, args)
 	case "inspect", "show":
