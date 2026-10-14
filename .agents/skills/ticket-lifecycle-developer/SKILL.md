@@ -26,7 +26,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - **Transport**: Stdio JSON-RPC 2.0 (`./bin/dendrite mcp serve`)
 - **Direct CLI Tool Invocation**: `./bin/dendrite mcp call <tool_name> [args_json]`
 - **List Available MCP Tools**: `./bin/dendrite mcp tools`
-- **11 Registered Operational MCP Tools**:
+- **14 Registered Operational MCP Tools**:
   1. `dendrite_ticket_list`: List all project tickets, statuses, complexity scores, and milestones from `DEV_STATUS.md`.
      - *Example*: `./bin/dendrite mcp call dendrite_ticket_list "{}"`
   2. `dendrite_ticket_update`: Mutate the status of a project ticket in `DEV_STATUS.md` (e.g. `DONE`, `IN_PROGRESS`, `TODO`).
@@ -49,13 +49,23 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
       - *Example*: `./bin/dendrite mcp call dendrite_telemetry "{}"`
   11. `dendrite_plane_issues`: Query issues from self-hosted Plane v2 project management container.
       - *Example*: `./bin/dendrite mcp call dendrite_plane_issues '{"workspace":"dendrite-ws","project":"DEN"}'`
+  12. `dendrite_plane_replicate`: Replicate `DEV_STATUS.md` directly from Plane service state (Plane owns project status).
+      - *Example*: `./bin/dendrite mcp call dendrite_plane_replicate '{"dry_run":false}'`
+  13. `dendrite_plane_push_status`: Move local `DEV_STATUS.md` content (tickets, milestones, rich specs) to Plane service.
+      - *Example*: `./bin/dendrite mcp call dendrite_plane_push_status '{"file":"DEV_STATUS.md"}'`
+  14. `dendrite_plane_doc_sync`: Synchronize documentation between Plane pages and local repository (`to-plane`, `from-plane`, `bidirectional`).
+      - *Example*: `./bin/dendrite mcp call dendrite_plane_doc_sync '{"direction":"to-plane","dir":"docs"}'`
 
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
 - `dendrite mcp <serve|tools|call>`: Native Model Context Protocol stdio server and testing harness.
 - `dendrite agent run <aider|openhands|opencode|agy> [flags]`: Launch autonomous agent sessions bound to LiteLLM virtual keys and ephemeral containers.
 - `dendrite inference <list|probe|switch|render>`: Inspect and manage multi-provider inference backends (Ollama Metal, OxiLLaMa, TGI, TEI, vLLM, llama.cpp).
 - `dendrite dev inference <list|probe|switch|render>`: Development inference gateway control and route rendering.
-- `dendrite dev ticket <list|set>`: Inspect or mutate ticket status in `DEV_STATUS.md`.
+- `dendrite plane replicate [--file DEV_STATUS.md]`: Replicate `DEV_STATUS.md` from Plane service (Plane owns project status).
+- `dendrite plane push-status`: Move local `DEV_STATUS.md` content (tickets, milestones, specs) to Plane service.
+- `dendrite plane doc <push|pull|sync> [--dir docs]`: Bidirectional documentation synchronization between Plane and local repository.
+- `dendrite plane <issues|modules|pages>`: Query live Plane issues, milestones/modules, and documentation pages.
+- `dendrite dev ticket <list|set|push-plane|replicate-plane>`: Inspect or mutate ticket status in `DEV_STATUS.md` and sync with Plane.
 - `dendrite dev gateway [scenario]`: Render dynamic LiteLLM configuration YAML.
 - `dendrite topology advisor [--nodes ...]`: Run remote SSH/local hardware discovery and dynamic microservice placement routing.
 - `dendrite telemetry [metrics|status]`: Emit Prometheus exposition metrics or real-time Apple Silicon SoC thermals.
