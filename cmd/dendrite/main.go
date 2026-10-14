@@ -18,6 +18,7 @@ import (
 	"Dendrite/pkg/ollama"
 	"Dendrite/pkg/server"
 	"Dendrite/pkg/telemetry"
+	"Dendrite/pkg/telemetry/exporter"
 	"Dendrite/pkg/topology"
 	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/workspace"
@@ -101,7 +102,7 @@ func printUsage() {
 	fmt.Println("\nAvailable Commands:")
 	fmt.Println("  doctor                     Run environment pre-flight diagnostics")
 	fmt.Println("  ui [--port 3456] [--daemon]Launch Dendrite embedded web UI and dashboard (< 800ms)")
-	fmt.Println("  telemetry [snapshot]       Sample real-time SoC thermal & spend telemetry")
+	fmt.Println("  telemetry [snapshot|metrics]Sample real-time SoC thermal & spend telemetry or raw Prometheus metrics")
 	fmt.Println("  env doctor                 Inspect target computer OS, package manager and installed tools")
 	fmt.Println("  env plan [flags]           Generate environment replication plan (--mode container|host|hybrid)")
 	fmt.Println("  env replicate [flags]      Replicate development environment (Docker containers or host tools)")
@@ -161,6 +162,7 @@ func handleUICommand(ctx context.Context, args []string) {
 	fmt.Printf("[✓] Dendrite Web UI listening at http://127.0.0.1:%d (Started in %v)\n", port, duration)
 	fmt.Printf("    - WebSocket Telemetry: ws://127.0.0.1:%d/api/v1/telemetry/ws\n", port)
 	fmt.Printf("    - REST API Snapshot:   http://127.0.0.1:%d/api/v1/telemetry/snapshot\n", port)
+	fmt.Printf("    - Prometheus Metrics:  http://127.0.0.1:%d/metrics\n", port)
 
 	if daemonMode {
 		fmt.Println("[+] Running in daemon mode. Press Ctrl+C to terminate.")
@@ -172,6 +174,14 @@ func handleTelemetryCommand(ctx context.Context, args []string) {
 	daemon := telemetry.NewDaemon(telemetry.DaemonConfig{
 		Interval: 1 * time.Second,
 	}, nil, nil, nil, nil)
+
+	if len(args) > 0 && (args[0] == "metrics" || args[0] == "export" || args[0] == "prometheus") {
+		exp := exporter.NewPrometheusExporter(daemon)
+		if err := exp.WriteMetrics(ctx, os.Stdout); err != nil {
+			fmt.Printf("[-] Failed to write Prometheus metrics: %v\n", err)
+		}
+		return
+	}
 
 	rep := daemon.CollectOnce(ctx)
 	fmt.Printf("[+] Instantaneous Telemetry Snapshot:\n")

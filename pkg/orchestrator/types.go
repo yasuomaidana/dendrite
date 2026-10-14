@@ -3,6 +3,8 @@ package orchestrator
 import (
 	"errors"
 	"fmt"
+
+	"Dendrite/pkg/topology/network"
 )
 
 // Errors returned by orchestrator operations.
@@ -15,13 +17,14 @@ var (
 
 // CloudInitConfig defines parameters for bootstrapping a Linux compute node.
 type CloudInitConfig struct {
-	Hostname           string   `yaml:"hostname" json:"hostname"`
-	TailscaleAuthKey   string   `yaml:"tailscale_auth_key" json:"tailscale_auth_key"`
-	DockerUsers        []string `yaml:"docker_users,omitempty" json:"docker_users,omitempty"`
-	Packages           []string `yaml:"packages,omitempty" json:"packages,omitempty"`
-	SSHAuthorizedKeys  []string `yaml:"ssh_authorized_keys,omitempty" json:"ssh_authorized_keys,omitempty"`
-	ExtraRunCmd        []string `yaml:"extra_run_cmd,omitempty" json:"extra_run_cmd,omitempty"`
-	EnableTailscaleSSH bool     `yaml:"enable_tailscale_ssh" json:"enable_tailscale_ssh"`
+	Hostname           string                  `yaml:"hostname" json:"hostname"`
+	TailscaleAuthKey   string                  `yaml:"tailscale_auth_key" json:"tailscale_auth_key"`
+	NetworkProvider    network.NetworkProvider `yaml:"-" json:"-"`
+	DockerUsers        []string                `yaml:"docker_users,omitempty" json:"docker_users,omitempty"`
+	Packages           []string                `yaml:"packages,omitempty" json:"packages,omitempty"`
+	SSHAuthorizedKeys  []string                `yaml:"ssh_authorized_keys,omitempty" json:"ssh_authorized_keys,omitempty"`
+	ExtraRunCmd        []string                `yaml:"extra_run_cmd,omitempty" json:"extra_run_cmd,omitempty"`
+	EnableTailscaleSSH bool                    `yaml:"enable_tailscale_ssh" json:"enable_tailscale_ssh"`
 }
 
 // ComposeCommand encapsulates all flags and arguments for executing Docker Compose.

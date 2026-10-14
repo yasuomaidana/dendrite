@@ -7,7 +7,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// DefaultBootstrapPackages returns essential dependencies for Docker + Tailscale nodes.
+// DefaultBootstrapPackages returns essential dependencies for Docker + overlay network nodes.
 func DefaultBootstrapPackages() []string {
 	return []string{
 		"curl",
@@ -29,6 +29,20 @@ func GenerateCloudInit(cfg CloudInitConfig) (string, error) {
 	packages := cfg.Packages
 	if len(packages) == 0 {
 		packages = DefaultBootstrapPackages()
+	}
+
+	// Merge packages from pluggable NetworkProvider if specified
+	if cfg.NetworkProvider != nil {
+		pkgSet := make(map[string]bool)
+		for _, p := range packages {
+			pkgSet[p] = true
+		}
+		for _, p := range cfg.NetworkProvider.BootstrapPackages() {
+			if !pkgSet[p] {
+				packages = append(packages, p)
+				pkgSet[p] = true
+			}
+		}
 	}
 
 	users := make([]map[string]interface{}, 0)
@@ -54,19 +68,24 @@ func GenerateCloudInit(cfg CloudInitConfig) (string, error) {
 		"systemctl enable --now docker",
 	}
 
-	// Install Tailscale repository & package
-	runCmd = append(runCmd,
-		"curl -fsSL https://tailscale.com/install.sh | sh",
-		"systemctl enable --now tailscaled",
-	)
+	// Determine network bootstrapping commands
+	if cfg.NetworkProvider != nil {
+		providerCmds := cfg.NetworkProvider.BootstrapCommands(cfg.Hostname)
+		runCmd = append(runCmd, providerCmds...)
+	} else {
+		// Default backward-compatible Tailscale bootstrap
+		runCmd = append(runCmd,
+			"curl -fsSL https://tailscale.com/install.sh | sh",
+			"systemctl enable --now tailscaled",
+		)
 
-	// Tailscale join command
-	if cfg.TailscaleAuthKey != "" {
-		tailscaleCmd := fmt.Sprintf("tailscale up --authkey=%s --hostname=%s", cfg.TailscaleAuthKey, cfg.Hostname)
-		if cfg.EnableTailscaleSSH {
-			tailscaleCmd += " --ssh"
+		if cfg.TailscaleAuthKey != "" {
+			tailscaleCmd := fmt.Sprintf("tailscale up --authkey=%s --hostname=%s", cfg.TailscaleAuthKey, cfg.Hostname)
+			if cfg.EnableTailscaleSSH {
+				tailscaleCmd += " --ssh"
+			}
+			runCmd = append(runCmd, tailscaleCmd)
 		}
-		runCmd = append(runCmd, tailscaleCmd)
 	}
 
 	// Append any user-provided extra commands

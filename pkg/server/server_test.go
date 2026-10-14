@@ -153,6 +153,16 @@ func TestServer_LifecycleAndEndpoints(t *testing.T) {
 	if snap.ActiveWorkspace != "proj-alpha" || snap.ActiveScenario != "azure-burst" {
 		t.Errorf("unexpected snapshot data: %+v", snap)
 	}
+
+	// 10. GET /metrics
+	respMetrics, err := client.Get(baseURL + "/metrics")
+	if err != nil || respMetrics.StatusCode != http.StatusOK {
+		t.Fatalf("GET /metrics failed: %v, status: %v", err, respMetrics.StatusCode)
+	}
+	metricsBody, _ := io.ReadAll(respMetrics.Body)
+	if !strings.Contains(string(metricsBody), "dendrite_soc_temperature_celsius") {
+		t.Errorf("expected prometheus metrics, got:\n%s", string(metricsBody))
+	}
 }
 
 func TestServer_AuthAndErrors(t *testing.T) {
@@ -251,6 +261,20 @@ func TestServer_HandlerBranches(t *testing.T) {
 	srvNoReg.handleTopology(recTopBad, httptest.NewRequest(http.MethodPost, "/api/v1/topology", strings.NewReader(`{"scenario": "unknown-scenario"}`)))
 	if recTopBad.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 on bad scenario, got: %d", recTopBad.Code)
+	}
+
+	// Metrics endpoint test
+	if srvNoReg.Exporter() == nil {
+		t.Errorf("expected default exporter to be non-nil")
+	}
+	srvNoReg.SetExporter(nil)
+	if srvNoReg.Exporter() != nil {
+		t.Errorf("expected nil exporter after SetExporter(nil)")
+	}
+	recMetricsErr := httptest.NewRecorder()
+	srvNoReg.handleMetrics(recMetricsErr, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if recMetricsErr.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 when exporter is nil, got: %d", recMetricsErr.Code)
 	}
 }
 

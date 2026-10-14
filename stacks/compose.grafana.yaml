@@ -21,7 +21,10 @@ services:
     ports:
       - "9090:9090"
     volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - dendrite-mesh
 
@@ -38,6 +41,8 @@ services:
       - "3000:3000"
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     networks:
       - dendrite-mesh
     healthcheck:

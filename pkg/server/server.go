@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"Dendrite/pkg/telemetry/exporter"
 	"Dendrite/pkg/topology"
 	"Dendrite/pkg/workspace"
 )
@@ -19,6 +20,7 @@ type Server struct {
 	cfg       ServerConfig
 	registry  *workspace.Registry
 	hub       *TelemetryHub
+	exporter  *exporter.PrometheusExporter
 	server    *http.Server
 	listener  net.Listener
 	activeTop *topology.TopologyConfig
@@ -50,6 +52,7 @@ func NewServer(cfg ServerConfig, reg *workspace.Registry, hub *TelemetryHub) *Se
 		cfg:       cfg,
 		registry:  reg,
 		hub:       hub,
+		exporter:  exporter.NewPrometheusExporter(nil),
 		activeTop: defaultTop,
 		startTime: time.Now(),
 	}
@@ -63,6 +66,8 @@ func NewServer(cfg ServerConfig, reg *workspace.Registry, hub *TelemetryHub) *Se
 	mux.HandleFunc("/api/v1/telemetry/snapshot", s.handleTelemetrySnapshot)
 	mux.HandleFunc("/api/v1/telemetry/ws", s.hub.HandleWebSocket)
 	mux.HandleFunc("/api/v1/telemetry/events", s.hub.HandleSSE)
+	mux.HandleFunc("/metrics", s.handleMetrics)
+	mux.HandleFunc("/api/v1/telemetry/metrics", s.handleMetrics)
 
 	s.server = &http.Server{
 		Handler:     s.authMiddleware(mux),
@@ -131,6 +136,31 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // GetHub returns the attached TelemetryHub for metric injection.
 func (s *Server) GetHub() *TelemetryHub {
 	return s.hub
+}
+
+// Exporter returns the attached Prometheus exporter.
+func (s *Server) Exporter() *exporter.PrometheusExporter {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.exporter
+}
+
+// SetExporter binds a custom or daemon-backed Prometheus exporter to the server.
+func (s *Server) SetExporter(exp *exporter.PrometheusExporter) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.exporter = exp
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	exp := s.exporter
+	s.mu.RUnlock()
+	if exp != nil {
+		exp.ServeHTTP(w, r)
+		return
+	}
+	http.Error(w, "metrics exporter unavailable", http.StatusServiceUnavailable)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

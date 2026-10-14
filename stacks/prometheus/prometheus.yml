@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: "dendrite-control-plane"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["host.docker.internal:3456"]
+        labels:
+          environment: "local-dev"
+          service: "dendrite"

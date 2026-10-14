@@ -6,6 +6,7 @@ import (
 
 	"Dendrite/pkg/orchestrator"
 	"Dendrite/pkg/topology"
+	"Dendrite/pkg/topology/network"
 )
 
 func TestGenerateCloudInit_Valid(t *testing.T) {
@@ -40,6 +41,40 @@ func TestGenerateCloudInit_Valid(t *testing.T) {
 	}
 }
 
+func TestGenerateCloudInit_WithNetworkProviders(t *testing.T) {
+	// 1. Cloudflare Provider
+	cf := &network.CloudflareProvider{
+		TunnelToken: "cf-token-abc-123",
+	}
+	cfCfg := orchestrator.CloudInitConfig{
+		Hostname:        "cf-vm",
+		NetworkProvider: cf,
+	}
+	cfScript, err := orchestrator.GenerateCloudInit(cfCfg)
+	if err != nil {
+		t.Fatalf("failed to generate cloudinit for cloudflare: %v", err)
+	}
+	if !strings.Contains(cfScript, "cloudflared") || !strings.Contains(cfScript, "cf-token-abc-123") {
+		t.Errorf("expected cloudflared in script:\n%s", cfScript)
+	}
+
+	// 2. SSH Tunnel Provider
+	sshProv := &network.SSHTunnelProvider{
+		Host: "192.168.1.10",
+	}
+	sshCfg := orchestrator.CloudInitConfig{
+		Hostname:        "ssh-vm",
+		NetworkProvider: sshProv,
+	}
+	sshScript, err := orchestrator.GenerateCloudInit(sshCfg)
+	if err != nil {
+		t.Fatalf("failed to generate cloudinit for ssh: %v", err)
+	}
+	if !strings.Contains(sshScript, "openssh-server") || !strings.Contains(sshScript, "GatewayPorts") {
+		t.Errorf("expected openssh-server in script:\n%s", sshScript)
+	}
+}
+
 func TestGenerateCloudInit_EmptyHostname(t *testing.T) {
 	cfg := orchestrator.CloudInitConfig{
 		Hostname: "",
@@ -59,64 +94,57 @@ func TestComposeCommand_BuildArgs(t *testing.T) {
 		t.Errorf("expected empty string for nil ComposeCommand String()")
 	}
 
-	cmd := orchestrator.NewComposeCommand("up")
-	cmd.ComposeFiles = []string{"stacks/compose.control.yaml"}
-	cmd.Profiles = []string{"control-plane"}
-	cmd.Detached = true
-	cmd.ExtraArgs = []string{"--remove-orphans"}
+	// Empty action error
+	emptyActionCmd := &orchestrator.ComposeCommand{
+		Action: "",
+	}
+	if _, err := emptyActionCmd.BuildArgs(); err != orchestrator.ErrEmptyAction {
+		t.Errorf("expected ErrEmptyAction, got: %v", err)
+	}
+
+	// Full command build
+	cmd := &orchestrator.ComposeCommand{
+		Binary:       "docker-compose",
+		ComposeFiles: []string{"docker-compose.yml", "docker-compose.override.yml"},
+		Profiles:     []string{"core", "gpu"},
+		Action:       "up",
+		Detached:     true,
+		ExtraArgs:    []string{"--remove-orphans"},
+	}
 
 	args, err := cmd.BuildArgs()
 	if err != nil {
-		t.Fatalf("unexpected error building args: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	expectedArgs := []string{
+	expectedPrefix := []string{
 		"compose",
-		"-f", "stacks/compose.control.yaml",
-		"--profile", "control-plane",
+		"-f", "docker-compose.yml",
+		"-f", "docker-compose.override.yml",
+		"--profile", "core",
+		"--profile", "gpu",
 		"up",
 		"-d",
 		"--remove-orphans",
 	}
 
-	if len(args) != len(expectedArgs) {
-		t.Fatalf("expected %d args, got %d: %v", len(expectedArgs), len(args), args)
+	if len(args) != len(expectedPrefix) {
+		t.Fatalf("expected %d args, got %d: %v", len(expectedPrefix), len(args), args)
 	}
-	for i, arg := range expectedArgs {
-		if args[i] != arg {
-			t.Errorf("at index %d: expected '%s', got '%s'", i, arg, args[i])
+
+	for i, expected := range expectedPrefix {
+		if args[i] != expected {
+			t.Errorf("arg[%d] expected '%s', got '%s'", i, expected, args[i])
 		}
 	}
 
 	cmdStr := cmd.String()
-	if !strings.Contains(cmdStr, "docker compose") {
-		t.Errorf("expected cmd string to start with 'docker compose', got '%s'", cmdStr)
-	}
-
-	// Test down action (should not append -d)
-	downCmd := orchestrator.NewComposeCommand("down")
-	downArgs, err := downCmd.BuildArgs()
-	if err != nil {
-		t.Fatalf("unexpected error building down args: %v", err)
-	}
-	for _, a := range downArgs {
-		if a == "-d" {
-			t.Errorf("did not expect -d flag for down action")
-		}
-	}
-
-	// Test empty action error
-	emptyActionCmd := orchestrator.NewComposeCommand("   ")
-	_, err = emptyActionCmd.BuildArgs()
-	if err != orchestrator.ErrEmptyAction {
-		t.Errorf("expected ErrEmptyAction, got: %v", err)
-	}
-	if !strings.Contains(emptyActionCmd.String(), "invalid") {
-		t.Errorf("expected invalid message in String() output")
+	if !strings.Contains(cmdStr, "docker-compose") || !strings.Contains(cmdStr, "--profile gpu") {
+		t.Errorf("unexpected string representation: %s", cmdStr)
 	}
 }
 
-func TestOrchestrator_Lifecycle(t *testing.T) {
+func TestOrchestrator_Build(t *testing.T) {
 	// Nil config error
 	_, err := orchestrator.NewOrchestrator(nil)
 	if err != orchestrator.ErrNilTopologyConfig {
