@@ -15,17 +15,17 @@ services:
     container_name: dendrite-plane-db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: plane_dev
-      POSTGRES_USER: plane_user
-      POSTGRES_PASSWORD: plane_password
+      POSTGRES_DB: ${PLANE_DB_NAME:-plane_dev}
+      POSTGRES_USER: ${PLANE_DB_USER:-plane_user}
+      POSTGRES_PASSWORD: ${PLANE_DB_PASSWORD:-plane_password}
     ports:
-      - "5434:5432"
+      - "${PLANE_DB_PORT:-5434}:5432"
     volumes:
       - plane-postgres-data:/var/lib/postgresql/data
     networks:
       - dendrite-mesh
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U plane_user -d plane_dev"]
+      test: ["CMD-SHELL", "pg_isready -U ${PLANE_DB_USER:-plane_user} -d ${PLANE_DB_NAME:-plane_dev}"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -35,7 +35,7 @@ services:
     container_name: dendrite-plane-redis
     restart: unless-stopped
     ports:
-      - "6380:6379"
+      - "${PLANE_REDIS_PORT:-6380}:6379"
     volumes:
       - plane-redis-data:/data
     networks:
@@ -50,25 +50,69 @@ services:
     image: makeplane/plane-backend:v0.20-dev
     container_name: dendrite-plane-api
     restart: unless-stopped
+    command: sh /app/entrypoint.sh
     depends_on:
       plane-postgres:
         condition: service_healthy
       plane-redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: "postgresql://plane_user:plane_password@plane-postgres:5432/plane_dev"
+      DATABASE_URL: "postgresql://${PLANE_DB_USER:-plane_user}:${PLANE_DB_PASSWORD:-plane_password}@plane-postgres:5432/${PLANE_DB_NAME:-plane_dev}"
       REDIS_URL: "redis://plane-redis:6379/0"
-      PORT: 8090
-      WEB_URL: "http://localhost:8090"
-      SECRET_KEY: "dendrite_plane_secret_key_mock_local"
+      PORT: ${PLANE_API_PORT:-8090}
+      WEB_URL: "http://localhost:${PLANE_UI_PORT:-8091}"
+      SECRET_KEY: "${PLANE_SECRET_KEY:-dendrite_plane_secret_key_mock_local}"
     ports:
-      - "8090:8090"
+      - "${PLANE_API_PORT:-8090}:${PLANE_API_PORT:-8090}"
     volumes:
       - plane-uploads:/app/uploads
+      - ./entrypoint-plane.sh:/app/entrypoint.sh:ro
     networks:
       - dendrite-mesh
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8090/api/health/"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:${PLANE_API_PORT:-8090}/api/instances/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  plane-ui:
+    image: makeplane/plane-frontend:v0.20-dev
+    container_name: dendrite-plane-ui
+    restart: unless-stopped
+    command: node web/server.js web
+    depends_on:
+      - plane-api
+    environment:
+      PORT: 3000
+      HOSTNAME: "0.0.0.0"
+      NEXT_PUBLIC_API_BASE_URL: "http://localhost:${PLANE_UI_PORT:-8091}"
+      NEXT_PUBLIC_WEB_BASE_URL: "http://localhost:${PLANE_UI_PORT:-8091}"
+      WEB_URL: "http://localhost:${PLANE_UI_PORT:-8091}"
+    expose:
+      - "3000"
+    networks:
+      - dendrite-mesh
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  plane-proxy:
+    image: nginx:alpine
+    container_name: dendrite-plane-proxy
+    restart: unless-stopped
+    depends_on:
+      - plane-api
+      - plane-ui
+    ports:
+      - "${PLANE_UI_PORT:-8091}:80"
+    volumes:
+      - ./plane_proxy.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - dendrite-mesh
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/"]
       interval: 10s
       timeout: 5s
       retries: 3

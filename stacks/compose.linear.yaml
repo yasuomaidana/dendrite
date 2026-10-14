@@ -13,17 +13,17 @@ services:
     container_name: dendrite-linear-db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: linear_dev
-      POSTGRES_USER: linear_user
-      POSTGRES_PASSWORD: linear_password
+      POSTGRES_DB: ${LINEAR_DB_NAME:-linear_dev}
+      POSTGRES_USER: ${LINEAR_DB_USER:-linear_user}
+      POSTGRES_PASSWORD: ${LINEAR_DB_PASSWORD:-linear_password}
     ports:
-      - "5433:5432"
+      - "${LINEAR_DB_PORT:-5433}:5432"
     volumes:
       - linear-postgres-data:/var/lib/postgresql/data
     networks:
       - dendrite-mesh
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U linear_user -d linear_dev"]
+      test: ["CMD-SHELL", "pg_isready -U ${LINEAR_DB_USER:-linear_user} -d ${LINEAR_DB_NAME:-linear_dev}"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -36,17 +36,17 @@ services:
       linear-postgres:
         condition: service_healthy
     environment:
-      PORT: 8085
-      DATABASE_URL: "postgres://linear_user:linear_password@linear-postgres:5432/linear_dev?sslmode=disable"
-      LINEAR_API_KEY: "lin_local_mock_key_dendrite"
-      LINEAR_EMULATOR_MODE: "true"
+      PORT: ${LINEAR_PORT:-8085}
+      DATABASE_URL: "postgres://${LINEAR_DB_USER:-linear_user}:${LINEAR_DB_PASSWORD:-linear_password}@linear-postgres:5432/${LINEAR_DB_NAME:-linear_dev}?sslmode=disable"
+      LINEAR_API_KEY: "${LINEAR_API_KEY:-lin_local_mock_key_dendrite}"
+      LINEAR_EMULATOR_MODE: "${LINEAR_EMULATOR_MODE:-true}"
       LOG_LEVEL: "info"
     ports:
-      - "8085:8085"
+      - "${LINEAR_PORT:-8085}:${LINEAR_PORT:-8085}"
     networks:
       - dendrite-mesh
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8085/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:${LINEAR_PORT:-8085}/health"]
       interval: 10s
       timeout: 5s
       retries: 3

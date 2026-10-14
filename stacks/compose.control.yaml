@@ -14,17 +14,17 @@ services:
     container_name: dendrite-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: dendrite
-      POSTGRES_USER: dendrite
-      POSTGRES_PASSWORD: dendrite_password
+      POSTGRES_DB: ${POSTGRES_DB:-dendrite}
+      POSTGRES_USER: ${POSTGRES_USER:-dendrite}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dendrite_password}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - dendrite-postgres-data:/var/lib/postgresql/data
     networks:
       - dendrite-mesh
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dendrite -d dendrite"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dendrite} -d ${POSTGRES_DB:-dendrite}"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -35,7 +35,7 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly yes
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - dendrite-redis-data:/data
     networks:
@@ -50,11 +50,18 @@ services:
     image: ghcr.io/berriai/litellm:main-latest
     container_name: dendrite-litellm
     restart: unless-stopped
+    command: ["--config", "/etc/litellm/config.yaml", "--port", "${LITELLM_PORT:-4000}"]
     ports:
-      - "4000:4000"
+      - "${LITELLM_PORT:-4000}:4000"
     environment:
-      DATABASE_URL: "postgresql://dendrite:dendrite_password@postgres:5432/dendrite"
-      STORE_MODEL_IN_DB: "True"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-dendrite}:${POSTGRES_PASSWORD:-dendrite_password}@postgres:5432/${POSTGRES_DB:-dendrite}"
+      STORE_MODEL_IN_DB: "${STORE_MODEL_IN_DB:-True}"
+      LITELLM_MASTER_KEY: "${LITELLM_MASTER_KEY:-sk-dendrite-master-key}"
+      LITELLM_DANGEROUSLY_PERMIT_WEAK_OR_UNSET_MASTER_KEY: "true"
+    volumes:
+      - ./litellm_config.yaml:/etc/litellm/config.yaml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - dendrite-mesh
     depends_on:

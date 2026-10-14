@@ -15,17 +15,17 @@ services:
     container_name: dendrite-penpot-db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: penpot_dev
-      POSTGRES_USER: penpot_user
-      POSTGRES_PASSWORD: penpot_password
+      POSTGRES_DB: ${PENPOT_DB_NAME:-penpot_dev}
+      POSTGRES_USER: ${PENPOT_DB_USER:-penpot_user}
+      POSTGRES_PASSWORD: ${PENPOT_DB_PASSWORD:-penpot_password}
     ports:
-      - "5435:5432"
+      - "${PENPOT_DB_PORT:-5435}:5432"
     volumes:
       - penpot-postgres-data:/var/lib/postgresql/data
     networks:
       - dendrite-mesh
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U penpot_user -d penpot_dev"]
+      test: ["CMD-SHELL", "pg_isready -U ${PENPOT_DB_USER:-penpot_user} -d ${PENPOT_DB_NAME:-penpot_dev}"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -35,7 +35,7 @@ services:
     container_name: dendrite-penpot-redis
     restart: unless-stopped
     ports:
-      - "6381:6379"
+      - "${PENPOT_REDIS_PORT:-6381}:6379"
     volumes:
       - penpot-redis-data:/data
     networks:
@@ -56,12 +56,12 @@ services:
       penpot-redis:
         condition: service_healthy
     environment:
-      PENPOT_DATABASE_URI: "postgresql://penpot_user:penpot_password@penpot-postgres:5432/penpot_dev"
+      PENPOT_DATABASE_URI: "postgresql://${PENPOT_DB_USER:-penpot_user}:${PENPOT_DB_PASSWORD:-penpot_password}@penpot-postgres:5432/${PENPOT_DB_NAME:-penpot_dev}"
       PENPOT_REDIS_URI: "redis://penpot-redis:6379/0"
-      PENPOT_SECRET_KEY: "dendrite_penpot_secret_key_mock_local"
-      PENPOT_PUBLIC_URI: "http://localhost:9001"
+      PENPOT_SECRET_KEY: "${PENPOT_SECRET_KEY:-dendrite_penpot_secret_key_mock_local}"
+      PENPOT_PUBLIC_URI: "http://localhost:${PENPOT_BACKEND_PORT:-9001}"
     ports:
-      - "9001:6001"
+      - "${PENPOT_BACKEND_PORT:-9001}:6001"
     volumes:
       - penpot-assets:/opt/data/assets
     networks:
@@ -76,7 +76,7 @@ services:
     environment:
       PENPOT_BACKEND_URI: "http://penpot-backend:6001"
     ports:
-      - "9000:80"
+      - "${PENPOT_FRONTEND_PORT:-9000}:80"
     networks:
       - dendrite-mesh
     healthcheck:
