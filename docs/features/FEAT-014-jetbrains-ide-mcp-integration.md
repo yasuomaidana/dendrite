@@ -81,7 +81,13 @@ flowchart TD
      - `ExecuteRunConfiguration(ctx, configName)`: executes IDE run/test configurations.
      - `LintFiles(ctx, files)`: invokes IDE linting on specified files.
 
-5. **CLI Subcommand Ergonomics (`cmd/dendrite`, `main.go`)**:
+5. **IDE Toolset Configuration Routine (`pkg/jetbrains/setup.go`)**:
+   - `SetupJetBrainsToolset(opts)`: Configures project-level (`.ai/mcp/mcp.json`) and global (`~/.ai/mcp/mcp.json`) MCP server definitions.
+   - Generates 6 standard JetBrains Run Configurations (`.idea/runConfigurations/`) for MCP server, Aider, Antigravity, Web UI, and diagnostics.
+   - Generates JetBrains External Tools (`.idea/tools/External_Tools.xml`) for right-click context menu integration.
+
+6. **CLI Subcommand Ergonomics (`cmd/dendrite`, `main.go`)**:
+   - `dendrite jetbrains setup [--project-only|--global-only]`: automates full JetBrains MCP toolset configuration.
    - `dendrite jetbrains probe`: checks IDE connectivity and lists discovered tools.
    - `dendrite jetbrains open <file> [--line N]`: opens target file in JetBrains editor.
    - `dendrite jetbrains problems <file>`: queries IDE diagnostics for a file.
