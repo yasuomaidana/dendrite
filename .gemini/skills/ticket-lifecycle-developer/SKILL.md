@@ -26,7 +26,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - **Transport**: Stdio JSON-RPC 2.0 (`./bin/dendrite mcp serve`)
 - **Direct CLI Tool Invocation**: `./bin/dendrite mcp call <tool_name> [args_json]`
 - **List Available MCP Tools**: `./bin/dendrite mcp tools`
-- **14 Registered Operational MCP Tools**:
+- **19 Registered Operational MCP Tools**:
   1. `dendrite_ticket_list`: List all project tickets, statuses, complexity scores, and milestones from `DEV_STATUS.md`.
      - *Example*: `./bin/dendrite mcp call dendrite_ticket_list "{}"`
   2. `dendrite_ticket_update`: Mutate the status of a project ticket in `DEV_STATUS.md` (e.g. `DONE`, `IN_PROGRESS`, `TODO`).
@@ -55,9 +55,20 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
       - *Example*: `./bin/dendrite mcp call dendrite_plane_push_status '{"file":"DEV_STATUS.md"}'`
   14. `dendrite_plane_doc_sync`: Synchronize documentation between Plane pages and local repository (`to-plane`, `from-plane`, `bidirectional`).
       - *Example*: `./bin/dendrite mcp call dendrite_plane_doc_sync '{"direction":"to-plane","dir":"docs"}'`
+  15. `dendrite_jetbrains_setup`: Configure JetBrains IDE toolset with Dendrite MCP servers (`.ai/mcp/mcp.json`), agent run configurations, and external tools.
+      - *Example*: `./bin/dendrite mcp call dendrite_jetbrains_setup '{"project_dir":"."}'`
+  16. `dendrite_dist_sources`: List or filter registered codebase sources (own repos P1, curated OSS P2, registries P3) and libraries with priority order.
+      - *Example*: `./bin/dendrite mcp call dendrite_dist_sources '{"query":"cte"}'`
+  17. `dendrite_dist_decompose`: Forcibly decompose target project or REA evidence into reusable modules and map ecosystem libraries.
+      - *Example*: `./bin/dendrite mcp call dendrite_dist_decompose '{"project_name":"CarlaEngine"}'`
+  18. `dendrite_dist_interop`: Coordinate cross-project dependencies across owned repositories (e.g. Docula -> Oxipix), generate unblocking fallbacks and reconcile.
+      - *Example*: `./bin/dendrite mcp call dendrite_dist_interop '{"action":"coordinate","requester_project":"Docula","dependency_project":"Oxipix","feature_requested":"blend_modes_simd"}'`
+  19. `dendrite_dist_spawn`: Spawn parallel sub-projects or generative satellite projects with git, scaffolding, and Plane integration.
+      - *Example*: `./bin/dendrite mcp call dendrite_dist_spawn '{"project_name":"carla-sensor-rs","identifier":"CSEN","target_dir":"./projects/carla-sensor-rs","is_satellite":true}'`
 
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
 - `dendrite mcp <serve|tools|call>`: Native Model Context Protocol stdio server and testing harness.
+- `dendrite jetbrains <probe|open|problems|symbols|build|run|setup>`: Probe JetBrains MCP server, trigger IDE builds/runs, and configure IDE toolsets.
 - `dendrite agent run <aider|openhands|opencode|agy> [flags]`: Launch autonomous agent sessions bound to LiteLLM virtual keys and ephemeral containers.
 - `dendrite inference <list|probe|switch|render>`: Inspect and manage multi-provider inference backends (Ollama Metal, OxiLLaMa, TGI, TEI, vLLM, llama.cpp).
 - `dendrite dev inference <list|probe|switch|render>`: Development inference gateway control and route rendering.
@@ -70,6 +81,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - `dendrite topology advisor [--nodes ...]`: Run remote SSH/local hardware discovery and dynamic microservice placement routing.
 - `dendrite telemetry [metrics|status]`: Emit Prometheus exposition metrics or real-time Apple Silicon SoC thermals.
 - `dendrite env <doctor|plan|install|replicate|status>`: Target computer diagnostic and container replication engine.
+- `dendrite dist <sources|resolve|decompose|interop|spawn>`: Manage distributed codebase sources, modular REA, cross-project interop, and parallel project/Plane spawner.
 
 ### 3. Unified Stacks Environment (`stacks/.env`)
 Dendrite maintains an enterprise-grade multi-service container orchestration stack parameterized via `stacks/.env` (and mirrored in `.env`):
