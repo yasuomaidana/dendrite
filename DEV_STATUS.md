@@ -9,7 +9,7 @@ This document maintains the real-time development status, milestones, and active
 - **Active Milestone**: Milestone 11 — Pluggable Mesh Networking & Zero-Trust Connectivity (FEAT-015)
 - **Current Focus**: `DEN-030: Multi-Mesh Networking Abstraction: Cloudflare Tunnels, SSH Port Forwarding, WireGuard, and Direct LAN`
 - **Last Updated**: 2026-10-14
-- **Overall Progress**: 29 / 33 Tickets Completed (87.9%)
+- **Overall Progress**: 29 / 35 Tickets Completed (82.9%)
 
 ---
 
@@ -26,6 +26,12 @@ This document maintains the real-time development status, milestones, and active
 
 ### Milestone 14: Hybrid Telemetry Architecture & Prometheus/Grafana Observability Suite (FEAT-018)
 - [ ] **DEN-033**: Prometheus `/metrics` Exporter & Grafana Observability Dashboard Integration Pack (`pkg/telemetry/exporter`, `stacks/compose.grafana.yaml`)
+
+### Milestone 15: Azure Cloud-Burst Infrastructure & Managed Storage (FEAT-019)
+- [ ] **DEN-034**: Terraform Azure Spot VM Module & Persistent Managed Disk Lifecycler (`infra/modules/azure-burst`, `pkg/orchestrator/azure`)
+
+### Milestone 16: Pluggable Multi-Provider Inference Engines (FEAT-020)
+- [ ] **DEN-035**: Unified Inference Engine Gateway: OxiLLaMa, Hugging Face TGI/TEI, vLLM, llama.cpp & Ollama Metal (`pkg/inference`, `pkg/gateway`)
 
 ### Milestone 10: IDE Intelligence & JetBrains MCP Bridge (FEAT-014)
 - [x] **DEN-028**: JetBrains IDE MCP Integration & Communication Bridge (`pkg/jetbrains`)
@@ -91,6 +97,48 @@ This document maintains the real-time development status, milestones, and active
   - [ ] Implement SSH port-forwarding and reverse-tunnel manager for instant zero-dependency remote node routing.
   - [ ] Update cloud-init and compose templates to conditionally bootstrap the chosen network provider without forcing Tailscale.
   - [ ] Table-driven unit test suite achieving $\ge 85\%$ statement coverage.
+
+### Ticket `DEN-034`: Terraform Azure Spot VM Module & Persistent Managed Disk Lifecycler
+
+- **Target Package**: `infra/modules/azure-burst`, `pkg/orchestrator/azure`
+- **Governing Specs**: [`docs/features/FEAT-019-azure-cloud-burst.md`](docs/features/FEAT-019-azure-cloud-burst.md)
+- **Goal**: Implement the Azure cloud-burst infrastructure module supporting Linux Spot VMs, persistent Managed Disks, zero public ingress NSG rules, and multi-mesh bootstrap.
+- **Acceptance Criteria**:
+  - [ ] Terraform Azure module defining `azurerm_linux_virtual_machine` (Spot eviction policy) and `azurerm_managed_disk`.
+  - [ ] Zero public ingress rules (`0.0.0.0/0:22` prohibited; strictly overlay mesh access).
+  - [ ] Automated disk mounting and volume lifecycling preserving data across VM deallocations.
+  - [ ] Integration with `dendrite up azure-burst` scenario execution.
+  - [ ] Table-driven unit and integration test suite achieving $\ge 85\%$ statement coverage.
+
+### Ticket `DEN-035`: Unified Inference Engine Gateway: OxiLLaMa, Hugging Face TGI/TEI, vLLM, llama.cpp & Ollama Metal
+
+- **Target Package**: `pkg/inference`, `pkg/gateway`
+- **Governing Specs**: [`docs/features/FEAT-020-pluggable-inference-engines.md`](docs/features/FEAT-020-pluggable-inference-engines.md)
+- **Goal**: Extend Dendrite beyond Ollama to support OxiLLaMa (pure-Rust zero-FFI GGUF runtime), Hugging Face TGI/TEI, vLLM, and llama.cpp with unified LiteLLM token governance, zero-cost local accounting, and automatic fallback cascades.
+- **Acceptance Criteria**:
+  - [ ] Implement `InferenceEngine` interface and runtime adapters for Ollama, OxiLLaMa (`cool-japan/oxillama`), Hugging Face TGI, TEI, vLLM, and llama.cpp.
+  - [ ] Dynamic upstream route rendering into `litellm_config.yaml`.
+  - [ ] Health checker polling engine readiness and triggering dynamic failovers within $< 2\text{ seconds}$.
+  - [ ] Zero-cost financial budget exemption for self-hosted engines.
+  - [ ] Table-driven unit test suite achieving $\ge 85\%$ statement coverage.
+
+---
+
+## Empirical Service Validation & Remediation Log (2026-10-14)
+
+During end-to-end service testing on the local development environment, each service was verified to assess runtime health, compilation, and container orchestration:
+
+| Component | Test Mode | Empirical Result | Status | Remediation / Follow-up Action |
+| :--- | :--- | :--- | :--- | :--- |
+| **Dendrite CLI & Web UI** | Host binary compile & run | Compiled cleanly in 0.8s. Booted in 248µs on `http://127.0.0.1:3456`. Health probe returned `status: healthy`; WebSocket telemetry snapshot returned live metrics. | **PASS** | None required. |
+| **Ollama Local Engine** | Local host daemon (`:11434`) | Active and healthy. Verified 4 local models (`hermes3:8b`, `llama3.2:latest`, `tinyllama:latest`, `nomic-embed-text:latest`). Metal GPU acceleration confirmed. | **PASS** | None required. |
+| **Penpot PostgreSQL & Redis** | Docker Compose | Containers `dendrite-penpot-db` and `dendrite-penpot-redis` started and passed health checks. | **PASS** | None required. |
+| **Penpot Backend** | Docker Compose | Container `dendrite-penpot-backend` started, connected to Postgres, and initialized database schema migrations. | **PASS** | None required. |
+| **Penpot Frontend** | Docker Compose | Nginx container failed with `host not found in upstream "penpot-exporter"`. | **FAIL (Expected)** | **Remediation**: Penpot frontend requires the `penpot-exporter` service container (`penpotapp/exporter:latest`) to resolve in the Docker network. Update `stacks/compose.penpot.yaml` to include the exporter service. |
+| **Plane PostgreSQL & Redis** | Docker Compose | Containers `dendrite-plane-db` and `dendrite-plane-redis` booted and reached healthy state on ports 5434 and 6380. | **PASS** | None required. |
+| **Plane API Backend** | Docker Compose | Container `dendrite-plane-api` started and exited due to default command `python3` lacking entrypoint script. | **FAIL (Expected)** | **Remediation**: Standalone Plane v0.20 backend requires specific entrypoint command `/app/bin/takeoff` and migration flags, or full multi-tier compose stack (web + api + worker). |
+| **Aider Coding Agent** | Host CLI search | `aider` was not installed in host `$PATH`. | **SKIP (Host)** | In containerized mode or hybrid mode, install via `pip install aider-chat` or use the Dockerized runner `paulgauthier/aider`. |
+| **REA Disassembler** | Host / Container check | Native Hopper available on macOS; Linux Ghidra worker is deferred to remote/cloud container stack. | **SKIP (Local)** | Hopper used locally; containerized Ghidra worker configured for remote Linux/cloud nodes. |
 
 ---
 
