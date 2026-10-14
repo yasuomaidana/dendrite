@@ -22,8 +22,8 @@ flowchart TD
     
     NewDev -->|2. GitHub Release Bootstrap| Install["curl -sSL https://raw.githubusercontent.com/dendrite-dev/dendrite/main/scripts/install.sh | bash"]
     Install --> ImportCmd["dendrite share import project.dendrite.bundle"]
-    ImportCmd --> TailscaleJoin["Join Team Tailnet<br/>(tailscale up --auth-key=...)"]
-    TailscaleJoin --> Ready["dendrite up local-hybrid<br/>Ready for Production"]
+    ImportCmd --> ReplicateCmd["dendrite env replicate --mode container"]
+    ReplicateCmd --> Ready["dendrite env status<br/>Ready for Production"]
 ```
 
 ---
@@ -74,6 +74,7 @@ go build -o /usr/local/bin/dendrite ./cmd/dendrite
 Run the diagnostics engine to verify local system compatibility:
 ```bash
 dendrite doctor
+dendrite env doctor
 ```
 
 ### Step 2: Mesh Network Authentication
@@ -97,7 +98,21 @@ DB_PASSWORD="super_secure_postgres_pass"
 N8N_PASSWORD="secure_n8n_pass"
 ```
 
-### Step 4: Import Project Bundle from GitHub
+### Step 4: Replicate Development Environment
+Replicate all required services either in **Docker containers** or **directly on the host**:
+
+```bash
+# Option A: Full Containerized Stack (includes local Linear container + LiteLLM + Postgres)
+dendrite env replicate --mode container
+
+# Option B: Direct Host Tool Installation (e.g., Linear CLI, Ollama on host)
+dendrite env replicate --mode host
+
+# Verify status of all components
+dendrite env status
+```
+
+### Step 5: Import Project Bundle from GitHub
 Download and import the encrypted project workspace definition shared in the team's GitHub repository:
 ```bash
 # Clone bundle or fetch from GitHub Release / LFS
@@ -108,7 +123,7 @@ This initializes:
 - Registers dedicated LiteLLM Virtual Key for budget tracking.
 - Pre-indexes Tree-sitter symbol definitions.
 
-### Step 5: Launch Environment
+### Step 6: Launch Environment
 ```bash
 dendrite up local-hybrid
 ```

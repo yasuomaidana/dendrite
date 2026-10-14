@@ -1,0 +1,62 @@
+version: "3.8"
+
+networks:
+  dendrite-mesh:
+    driver: bridge
+
+volumes:
+  dendrite-postgres-data:
+  dendrite-redis-data:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dendrite-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dendrite
+      POSTGRES_USER: dendrite
+      POSTGRES_PASSWORD: dendrite_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - dendrite-postgres-data:/var/lib/postgresql/data
+    networks:
+      - dendrite-mesh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dendrite -d dendrite"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: dendrite-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - dendrite-redis-data:/data
+    networks:
+      - dendrite-mesh
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: dendrite-litellm
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: "postgresql://dendrite:dendrite_password@postgres:5432/dendrite"
+      STORE_MODEL_IN_DB: "True"
+    networks:
+      - dendrite-mesh
+    depends_on:
+      postgres:
+        condition: service_healthy

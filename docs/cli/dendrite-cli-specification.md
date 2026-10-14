@@ -32,6 +32,12 @@ dendrite [global flags] <subcommand> [args...]
 
 ```
 ├── doctor                           # Pre-flight environment diagnostics
+├── env                              # Development Environment Installation & Replication
+│   ├── doctor                       # Inspect host OS, package manager & installed tools
+│   ├── plan [flags]                 # Plan replication (--mode container|host|hybrid)
+│   ├── replicate [flags]            # Replicate dev environment (containers or host)
+│   ├── install <tool> [flags]       # Install tool on host or start container (e.g. Linear)
+│   └── status                       # Real-time health & status of replicated components
 ├── init                             # Guided bootstrap and scenario setup
 ├── up [scenario]                    # Apply topology & launch active profile stacks
 │                                    # (local-hybrid | azure-burst | aws-burst | distributed)
@@ -67,6 +73,14 @@ dendrite [global flags] <subcommand> [args...]
 │   ├── gen [flags]                  # Synthesize FEAT-*, ADR-*, and API specs from AST
 │   └── reflect [flags]              # Mirror reference project docs hierarchy into target
 │
+├── jetbrains                        # JetBrains IDE MCP Integration & Bridge
+│   ├── probe [url]                  # Discover IDE MCP capabilities & tools
+│   ├── open <file> [--line <n>]     # Open file in active JetBrains editor
+│   ├── problems <file>              # Query IDE inspection errors and warnings
+│   ├── symbols <query>              # Search symbols in JetBrains PSI tree
+│   ├── build                        # Trigger IDE background build
+│   └── run <config>                 # Execute an IDE run configuration
+│
 ├── analyze                          # Code & Binary Intelligence
 │   └── repo <git-url | path>        # Deep AST, complexity, and call-graph analysis
 │       ├── --ephemeral              # Run analysis inside throwaway hardened container
@@ -94,6 +108,34 @@ dendrite [global flags] <subcommand> [args...]
 ---
 
 ## 3. Subcommand Specifications & Ergonomics
+
+### `dendrite env <action>`
+Inspects, replicates, and provisions the development environment either in Docker containers or directly on the host computer:
+
+```bash
+# 1. Audit target machine capabilities (OS, arch, package manager, installed tools)
+dendrite env doctor
+
+# 2. Plan containerized replication with Linear issue tracker
+dendrite env plan --mode container --with-linear
+
+# 3. Plan direct host installation
+dendrite env plan --mode host
+
+# 4. Replicate environment in Docker containers
+dendrite env replicate --mode container
+
+# 5. Install a specific tool on the host (e.g. Linear CLI)
+dendrite env install linear --mode host
+
+# 6. Install Linear in a container
+dendrite env install linear --mode container
+
+# 7. Check real-time health and status of all components
+dendrite env status
+```
+
+---
 
 ### `dendrite doctor`
 Inspects all local and remote dependencies across the active scenario:
@@ -139,133 +181,5 @@ dendrite down
 ### `dendrite ui` (Web Dashboard & Configurator)
 Spins up the embedded web dashboard and opens the default browser:
 ```bash
-dendrite ui
-```
-
----
-
-### `dendrite agent` (Autonomous Coding Agent Orchestration)
-Launches, bounds, and manages autonomous coding agents (Aider, OpenHands, OpenCode, Google AGY) with LiteLLM gateway integration:
-```bash
-# 1. Run interactive Aider session bound to LiteLLM gateway and active ticket
-dendrite agent run aider --ticket DEN-006 --model copilot-sonnet
-
-# 2. Run OpenHands in an ephemeral sandbox to solve an issue autonomously
-dendrite agent run openhands --ticket PROJ-104 --sandbox --spend-limit 5.00
-
-# 3. Run OpenCode in headless batch mode with thermal and curfew guardrails
-dendrite agent run opencode --task "Implement Tree-sitter parser" --ephemeral
-
-# 4. Run Google AGY (Antigravity) bound to LiteLLM gateway and ticket
-dendrite agent run agy --ticket DEN-028 --task "Implement AST compaction" --model gemini-2.5-pro
-
-# 5. View agent execution history, token spend, and generated git commits
-dendrite agent session list
-```
-
----
-
-### `dendrite tracker` (Pluggable Issue Tracker Management)
-Allows seamless switching and configuration of project management backends:
-```bash
-# Switch to Jira and verify connection
-dendrite tracker switch jira
-dendrite tracker test
-```
-
----
-
-### `dendrite ai optimize-tokens`
-Applies AST semantic compaction and enables context caching to minimize token burn:
-```bash
-dendrite ai optimize-tokens --target-reduction 60%
-```
-**Output Metrics:**
-- Pre-compaction vs post-compaction token volume.
-- LiteLLM context cache warming status.
-- Projected monetary savings per 100 queries.
-
----
-
-### `dendrite ai import` (Cleanroom Capability Import)
-Dissects an external library or repository and synthesizes an idiomatic native implementation:
-```bash
-dendrite ai import \
-  --source https://github.com/hyperium/http.git \
-  --symbol HeaderMap \
-  --target-lang go \
-  --out pkg/http/headermap.go
-```
-Generates matching unit and property tests verifying behavioral parity.
-
----
-
-### `dendrite translate` (Polyglot Language Translation)
-Translates source files between programming languages with behavioral verification:
-```bash
-dendrite translate \
-  --from python \
-  --to rust \
-  --source src/tokenizer.py \
-  --out crates/tokenizer/src/lib.rs
-```
-Automatically generates dual property-based tests asserting identical input/output parity.
-
----
-
-### `dendrite doc gen` & `dendrite doc reflect`
-Manages Docs-as-Code generation and cross-project documentation mirroring:
-```bash
-# Generate FEAT-* and ADR-* docs from code and tests
-dendrite doc gen --type feat
-
-# Reflect documentation structure from a mature reference project into target
-dendrite doc reflect \
-  --reference ../reference-core-platform \
-  --target .
-```
-
----
-
-### `dendrite status`
-Outputs real-time terminal dashboard: active scenario, token spend (24h/7d), SoC die temperature, active tracker, and active workspace.
-
----
-
-### `dendrite project` (Multi-Project Workspaces)
-```bash
-# Register, list, and switch project contexts
-dendrite project add my-service git@github.com:org/my-service.git
-dendrite project switch my-service
-```
-
----
-
-### `dendrite analyze repo` & The Ephemeral Flag (`--ephemeral`)
-```bash
-# Analyze a repository in an ephemeral throwaway container
-dendrite analyze repo https://github.com/tokio-rs/tokio.git --ephemeral --format json
-```
-
----
-
-### `dendrite sandbox run --ephemeral`
-```bash
-# Ephemeral command execution with guaranteed RAII drop
-dendrite sandbox run --ephemeral --image alpine:latest -- uname -a
-```
-
----
-
-### `dendrite bridge rea`
-```bash
-dendrite bridge rea --backend hopper
-```
-
----
-
-### `dendrite share export` & `dendrite share import`
-```bash
-dendrite share export --project my-service --recipient-key age1... --out my-service.bundle
-dendrite share import my-service.bundle
+dendrite ui --port 3000 --open-browser
 ```

@@ -1,0 +1,185 @@
+package gateway
+
+import (
+	"fmt"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+
+	"Dendrite/pkg/topology"
+)
+
+// DefaultLiteLLMConfig creates a production-grade LiteLLM configuration with the 4-tier model hierarchy.
+func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
+	if strings.TrimSpace(ollamaBaseURL) == "" {
+		ollamaBaseURL = "http://127.0.0.1:11434"
+	}
+
+	modelList := []ModelListEntry{
+		{
+			ModelName: "gemini-2.5-pro",
+			LitellmParams: ModelParams{
+				Model:     "gemini/gemini-2.5-pro",
+				APIKey:    "os.environ/GEMINI_API_KEY",
+				MaxTokens: 8192,
+			},
+			ModelInfo: &ModelInfo{
+				ID:                 "gemini-2.5-pro",
+				Mode:               "chat",
+				InputCostPerToken:  0.00000125,
+				OutputCostPerToken: 0.000005,
+				MaxInputTokens:     1048576,
+				MaxOutputTokens:    8192,
+				BaseModel:          "gemini/gemini-2.5-pro",
+			},
+		},
+		{
+			ModelName: "copilot-sonnet",
+			LitellmParams: ModelParams{
+				Model:      "github_copilot/claude-sonnet-4.5",
+				APIKey:     "os.environ/COPILOT_API_KEY",
+				DropParams: true,
+				ExtraHeaders: map[string]string{
+					"Editor-Version":         "vscode/1.95.0",
+					"Copilot-Integration-Id": "vscode-chat",
+				},
+				MaxTokens: 8192,
+			},
+			ModelInfo: &ModelInfo{
+				ID:                 "copilot-sonnet",
+				Mode:               "chat",
+				InputCostPerToken:  0.000003,
+				OutputCostPerToken: 0.000015,
+				MaxInputTokens:     200000,
+				MaxOutputTokens:    8192,
+				BaseModel:          "claude-sonnet-4.5",
+			},
+		},
+		{
+			ModelName: "gemini-2.5-flash",
+			LitellmParams: ModelParams{
+				Model:     "gemini/gemini-2.5-flash",
+				APIKey:    "os.environ/GEMINI_API_KEY",
+				MaxTokens: 8192,
+			},
+			ModelInfo: &ModelInfo{
+				ID:                 "gemini-2.5-flash",
+				Mode:               "chat",
+				InputCostPerToken:  0.000000075,
+				OutputCostPerToken: 0.0000003,
+				MaxInputTokens:     1048576,
+				MaxOutputTokens:    8192,
+				BaseModel:          "gemini/gemini-2.5-flash",
+			},
+		},
+		{
+			ModelName: "local-qwen-coder",
+			LitellmParams: ModelParams{
+				Model:             "ollama/qwen2.5-coder:14b",
+				APIBase:           ollamaBaseURL,
+				CustomLLMProvider: "ollama",
+				MaxTokens:         4096,
+			},
+			ModelInfo: &ModelInfo{
+				ID:                 "local-qwen-coder",
+				Mode:               "chat",
+				InputCostPerToken:  0.0,
+				OutputCostPerToken: 0.0,
+				MaxInputTokens:     32768,
+				MaxOutputTokens:    4096,
+				BaseModel:          "qwen2.5-coder:14b",
+				SkipBudgetChecks:   true,
+			},
+		},
+	}
+
+	routerSettings := &RouterSettings{
+		RoutingStrategy: "usage-based-routing",
+		Timeout:         120,
+		Fallbacks: []map[string][]string{
+			{
+				"gemini-2.5-pro":   {"copilot-sonnet", "gemini-2.5-flash", "local-qwen-coder"},
+				"copilot-sonnet":   {"gemini-2.5-flash", "local-qwen-coder"},
+				"gemini-2.5-flash": {"local-qwen-coder"},
+			},
+		},
+		ContextWindowFallbacks: []map[string]string{
+			{"local-qwen-coder": "gemini-2.5-pro"},
+			{"gemini-2.5-flash": "gemini-2.5-pro"},
+		},
+	}
+
+	generalSettings := &GeneralSettings{
+		MasterKey:   "os.environ/LITELLM_MASTER_KEY",
+		DatabaseURL: "os.environ/DATABASE_URL",
+		RedisURL:    "os.environ/REDIS_URL",
+	}
+
+	litellmSettings := &LitellmSettings{
+		DropParams:     true,
+		BudgetDuration: "7d",
+	}
+
+	return &LiteLLMConfig{
+		ModelList:       modelList,
+		RouterSettings:  routerSettings,
+		GeneralSettings: generalSettings,
+		LitellmSettings: litellmSettings,
+	}
+}
+
+// Validate verifies the completeness and sanity of the LiteLLM configuration.
+func (c *LiteLLMConfig) Validate() error {
+	if c == nil {
+		return &GatewayValidationError{Field: "config", Message: "gateway config cannot be nil"}
+	}
+	if len(c.ModelList) == 0 {
+		return &GatewayValidationError{Field: "model_list", Message: "model list cannot be empty", Err: ErrEmptyModelList}
+	}
+
+	for i, entry := range c.ModelList {
+		if strings.TrimSpace(entry.ModelName) == "" {
+			return &GatewayValidationError{
+				Field:   fmt.Sprintf("model_list[%d].model_name", i),
+				Message: "model name cannot be empty",
+				Err:     ErrInvalidModelName,
+			}
+		}
+		if strings.TrimSpace(entry.LitellmParams.Model) == "" {
+			return &GatewayValidationError{
+				Field:   fmt.Sprintf("model_list[%d].litellm_params.model", i),
+				Message: "upstream provider model cannot be empty",
+				Err:     ErrMissingProvider,
+			}
+		}
+	}
+
+	return nil
+}
+
+// RenderYAML serializes the LiteLLMConfig to valid YAML bytes.
+func RenderYAML(cfg *LiteLLMConfig) ([]byte, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return yaml.Marshal(cfg)
+}
+
+// RenderForTopology derives the Ollama base URL from an active TopologyConfig and generates the YAML.
+func RenderForTopology(top *topology.TopologyConfig) ([]byte, error) {
+	if top == nil {
+		return nil, &GatewayValidationError{Field: "topology", Message: "topology configuration cannot be nil"}
+	}
+	if err := top.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid topology: %w", err)
+	}
+
+	execIP := top.TailscaleEndpoints.ExecutionPlane
+	if strings.TrimSpace(execIP) == "" {
+		execIP = "127.0.0.1"
+	}
+	ollamaURL := fmt.Sprintf("http://%s:11434", execIP)
+
+	cfg := DefaultLiteLLMConfig(ollamaURL)
+	return RenderYAML(cfg)
+}

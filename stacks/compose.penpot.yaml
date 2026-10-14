@@ -1,0 +1,86 @@
+version: "3.8"
+
+networks:
+  dendrite-mesh:
+    driver: bridge
+
+volumes:
+  penpot-postgres-data:
+  penpot-redis-data:
+  penpot-assets:
+
+services:
+  penpot-postgres:
+    image: postgres:16-alpine
+    container_name: dendrite-penpot-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: penpot_dev
+      POSTGRES_USER: penpot_user
+      POSTGRES_PASSWORD: penpot_password
+    ports:
+      - "5435:5432"
+    volumes:
+      - penpot-postgres-data:/var/lib/postgresql/data
+    networks:
+      - dendrite-mesh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U penpot_user -d penpot_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  penpot-redis:
+    image: redis:7-alpine
+    container_name: dendrite-penpot-redis
+    restart: unless-stopped
+    ports:
+      - "6381:6379"
+    volumes:
+      - penpot-redis-data:/data
+    networks:
+      - dendrite-mesh
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  penpot-backend:
+    image: penpotapp/backend:latest
+    container_name: dendrite-penpot-backend
+    restart: unless-stopped
+    depends_on:
+      penpot-postgres:
+        condition: service_healthy
+      penpot-redis:
+        condition: service_healthy
+    environment:
+      PENPOT_DATABASE_URI: "postgresql://penpot_user:penpot_password@penpot-postgres:5432/penpot_dev"
+      PENPOT_REDIS_URI: "redis://penpot-redis:6379/0"
+      PENPOT_SECRET_KEY: "dendrite_penpot_secret_key_mock_local"
+      PENPOT_PUBLIC_URI: "http://localhost:9001"
+    ports:
+      - "9001:6001"
+    volumes:
+      - penpot-assets:/opt/data/assets
+    networks:
+      - dendrite-mesh
+
+  penpot-frontend:
+    image: penpotapp/frontend:latest
+    container_name: dendrite-penpot-frontend
+    restart: unless-stopped
+    depends_on:
+      - penpot-backend
+    environment:
+      PENPOT_BACKEND_URI: "http://penpot-backend:6001"
+    ports:
+      - "9000:80"
+    networks:
+      - dendrite-mesh
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

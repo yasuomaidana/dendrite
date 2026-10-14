@@ -1,0 +1,74 @@
+version: "3.8"
+
+networks:
+  dendrite-mesh:
+    driver: bridge
+
+volumes:
+  plane-postgres-data:
+  plane-redis-data:
+  plane-uploads:
+
+services:
+  plane-postgres:
+    image: postgres:16-alpine
+    container_name: dendrite-plane-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: plane_dev
+      POSTGRES_USER: plane_user
+      POSTGRES_PASSWORD: plane_password
+    ports:
+      - "5434:5432"
+    volumes:
+      - plane-postgres-data:/var/lib/postgresql/data
+    networks:
+      - dendrite-mesh
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plane_user -d plane_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  plane-redis:
+    image: redis:7-alpine
+    container_name: dendrite-plane-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - plane-redis-data:/data
+    networks:
+      - dendrite-mesh
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  plane-api:
+    image: makeplane/plane-backend:v0.20-dev
+    container_name: dendrite-plane-api
+    restart: unless-stopped
+    depends_on:
+      plane-postgres:
+        condition: service_healthy
+      plane-redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://plane_user:plane_password@plane-postgres:5432/plane_dev"
+      REDIS_URL: "redis://plane-redis:6379/0"
+      PORT: 8090
+      WEB_URL: "http://localhost:8090"
+      SECRET_KEY: "dendrite_plane_secret_key_mock_local"
+    ports:
+      - "8090:8090"
+    volumes:
+      - plane-uploads:/app/uploads
+    networks:
+      - dendrite-mesh
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8090/api/health/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

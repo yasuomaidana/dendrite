@@ -31,7 +31,7 @@ flowchart TD
     Index([docs/README.md]) --> Arch[1. Architecture Core]
     Index --> Features[2. Feature Specs FEAT-*]
     Index --> CLI[3. Dendrite CLI Spec]
-    Index --> Sharing[4. Sharing & Onboarding Guide]
+    Index --> Sharing[4. Sharing & Replication Guides]
     Index --> Quality[5. Scrum & Complexity Scorecard]
 
     subgraph "1. Architecture Core"
@@ -48,7 +48,7 @@ flowchart TD
         F5[FEAT-005: Multi-Project Workspaces]
         F6[FEAT-006: Ephemeral Sandboxed Execution]
         F7[FEAT-007: AWS Cloud Burst Provider]
-        F8[FEAT-008: Pluggable Issue Trackers Jira/Plane]
+        F8[FEAT-008: Pluggable Issue Trackers Jira/Plane/Linear]
         F9[FEAT-009: Dendrite Web UI & Dashboard]
         F10[FEAT-010: AI Token Optimization & Import]
         F11[FEAT-011: Polyglot Code Translation]
@@ -60,8 +60,9 @@ flowchart TD
         C1[CLI Architecture, Commands, & Web UI]
     end
 
-    subgraph "4. Sharing & Guides"
-        S1[Team Distribution, Sharing & Bootstrap]
+    subgraph "4. Sharing & Replication Guides"
+        S1[Team Distribution & Bootstrap Guide]
+        S2[Development Environment Replication Guide: Container & Host]
     end
 
     subgraph "5. Quality & Governance"
@@ -88,6 +89,7 @@ flowchart TD
 
     CLI --> C1
     Sharing --> S1
+    Sharing --> S2
     Quality --> Q1
 ```
 
@@ -105,7 +107,7 @@ flowchart TD
    - [FEAT-005: Multi-Project Workspace Management](./features/FEAT-005-multi-project-workspaces.md)
    - [FEAT-006: Ephemeral Sandboxed Execution](./features/FEAT-006-ephemeral-sandboxing.md)
    - [FEAT-007: AWS Cloud Burst Provider](./features/FEAT-007-aws-cloud-burst.md)
-   - [FEAT-008: Pluggable Issue Trackers & Jira Provider](./features/FEAT-008-pluggable-issue-trackers.md)
+   - [FEAT-008: Pluggable Issue Trackers & Jira/Plane/Linear Providers](./features/FEAT-008-pluggable-issue-trackers.md)
    - [FEAT-009: Dendrite Web UI & Configuration Dashboard](./features/FEAT-009-dendrite-web-ui.md)
    - [FEAT-010: AI Token Optimization & Capability Import](./features/FEAT-010-ai-assisted-token-optimization.md)
    - [FEAT-011: Polyglot Code Translation & Verification](./features/FEAT-011-polyglot-translation-synthesis.md)
@@ -113,7 +115,8 @@ flowchart TD
    - [FEAT-013: Autonomous Coding Agent Harness (Aider, OpenHands, OpenCode, Google AGY)](./features/FEAT-013-agentic-coding-tools.md)
 3. **CLI & Dashboard System Design**:
    - [Dendrite CLI Specification & Command Reference](./cli/dendrite-cli-specification.md)
-4. **Environment Sharing & Setup**:
+4. **Environment Sharing & Replication**:
+   - [Development Environment Installation & Replication Guide (Container vs Host)](./guides/environment-replication.md)
    - [Environment Sharing, Onboarding & Bootstrap Guide](./guides/sharing-and-onboarding.md)
 5. **Quality, Compliance & Complexity**:
    - [Scrum Master DoD, Testcontainers & Complexity Scorecard](./quality/scrum-and-complexity-scorecard.md)
@@ -128,36 +131,105 @@ The control plane tool `dendrite` manages the entire lifecycle of the multi-node
 # 1. Run environment diagnostics and pre-flight checks
 dendrite doctor
 
-# 2. Launch the embedded Web UI for visual configuration & monitoring
+# 2. Inspect target computer OS, package manager and installed tools
+dendrite env doctor
+
+# 3. Plan replication for Docker containers (including containerized Linear)
+dendrite env plan --mode container --with-linear
+
+# 4. Replicate and bootstrap development environment
+dendrite env replicate --mode container
+
+# 5. Launch the embedded Web UI for visual configuration & monitoring
 dendrite ui
 
-# 3. Switch issue tracking provider to Atlassian Jira
-dendrite tracker switch jira
+# 6. Switch issue tracking provider to Linear or Jira
+dendrite tracker switch linear
 
-# 4. Spin up environment for the active project
+# 7. Spin up environment for the active project
 dendrite up local-hybrid
 
-# 5. Launch an interactive Aider coding session bound to LiteLLM gateway and active ticket
+# 8. Launch an interactive Aider coding session bound to LiteLLM gateway and active ticket
 dendrite agent run aider --ticket DEN-006 --model copilot-sonnet
 
-# 6. Run OpenHands in an ephemeral sandbox to solve an issue autonomously
+# 9. Run OpenHands in an ephemeral sandbox to solve an issue autonomously
 dendrite agent run openhands --ticket PROJ-104 --sandbox --spend-limit 5.00
 
-# 7. Run Google AGY (Antigravity) bound to LiteLLM gateway and ticket
+# 10. Run Google AGY (Antigravity) bound to LiteLLM gateway and ticket
 dendrite agent run agy --ticket DEN-028 --task "Implement AST compaction harness" --model gemini-2.5-pro
 
-# 8. Optimize project prompt tokens and context caching
+# 11. Optimize project prompt tokens and context caching
 dendrite ai optimize-tokens
 
-# 9. Translate a legacy module with automated dual property tests
+# 12. Translate a legacy module with automated dual property tests
 dendrite translate --from python --to rust --source src/math.py --out crates/math/src/lib.rs
 
-# 10. Mirror documentation structure from an enterprise reference project
+# 13. Mirror documentation structure from an enterprise reference project
 dendrite doc reflect --reference ../reference-core-platform --target .
 
-# 11. Analyze an external third-party repository safely in an ephemeral sandbox
+# 14. Analyze an external third-party repository safely in an ephemeral sandbox
 dendrite analyze repo https://github.com/ast-grep/ast-grep.git --ephemeral
 
-# 12. Check real-time spend, thermal sensors, and node status
+# 15. Check real-time spend, thermal sensors, and node status
 dendrite status
 ```
+
+---
+
+## 4. Development Environment Installation & Replication (Host & Containerized)
+
+Dendrite provides built-in tools (`dendrite env`) and pre-configured Docker Compose manifests (`stacks/`) enabling developers to replicate the complete development stack either in **Docker containers** or **directly on the target computer host**.
+
+### 4.1 Replication Modes Comparison
+
+| Feature | Docker Container Mode (`--mode container`) | Host Direct Install Mode (`--mode host`) | Hybrid Mode (`--mode hybrid`) |
+| :--- | :--- | :--- | :--- |
+| **Isolation** | 100% sandboxed container processes & tmpfs | Native host execution | Containerized state, native developer CLI |
+| **Dependencies** | Docker Engine 26+ & Docker Compose v2 | Homebrew, APT, npm, Go toolchain | Docker + Homebrew/APT |
+| **Linear Replication** | Containerized Linear GraphQL server & PostgreSQL DB (`localhost:8085`) | Native Linear CLI installed via npm/brew | Containerized Linear backend + host CLI |
+| **Hardware Metal** | CPU emulation or container GPU bindings | Direct Apple Silicon Metal / CUDA acceleration | Native Ollama Metal + containerized DBs |
+| **Teardown** | Instant clean teardown (`docker compose down`) | Manual package uninstallation | Clean container drop + preserved CLI tools |
+
+### 4.2 Replicating in Docker Containers (e.g. Containerized Linear)
+
+To replicate the development environment inside Docker containers without modifying host system libraries:
+
+```bash
+# 1. Preview planned actions
+dendrite env plan --mode container --with-linear
+
+# 2. Execute replication (generates stacks/ and starts containers)
+dendrite env replicate --mode container
+
+# 3. Check health and connectivity
+dendrite env status
+```
+
+#### Dedicated Linear Container Stack (`stacks/compose.linear.yaml`)
+To launch just the local Linear issue tracking environment with its dedicated PostgreSQL database:
+```bash
+docker compose -f stacks/compose.linear.yaml up -d
+```
+- **GraphQL Endpoint**: `http://localhost:8085/graphql`
+- **Health Probe**: `http://localhost:8085/health`
+- **Postgres Database**: `localhost:5433` (DB: `linear_dev`, User: `linear_user`, Pass: `linear_password`)
+
+### 4.3 Direct Installation on the Target Computer
+
+For maximum local performance or systems without Docker virtualization:
+
+```bash
+# 1. Audit host system package manager and dependencies
+dendrite env doctor
+
+# 2. Install Linear CLI directly on the target machine (via npm or Homebrew)
+dendrite env install linear --mode host
+
+# 3. Install Ollama inference engine on the host
+dendrite env install ollama --mode host
+
+# 4. Verify host toolchain
+dendrite env status
+```
+
+For complete architectural details, see the [Development Environment Installation & Replication Guide](./guides/environment-replication.md).
