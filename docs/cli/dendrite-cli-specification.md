@@ -1,3 +1,11 @@
+---
+id: dendrite-cli-specification
+title: "Dendrite CLI Specification & Command Reference"
+sidebar_label: "CLI Specification"
+sidebar_position: 1
+tags: [cli, commands, specification, reference]
+---
+
 # Dendrite CLI Specification & Command Reference
 
 The `dendrite` CLI is the unified control plane binary for managing multi-node deployment scenarios, token governance, multi-project workspaces, issue tracker providers (Jira, Plane, Linear), autonomous coding agent harnesses (Aider, OpenHands, OpenCode, Google AGY), AI-assisted code optimization, polyglot translation, documentation generation/reflection, and ephemeral sandboxed analysis.

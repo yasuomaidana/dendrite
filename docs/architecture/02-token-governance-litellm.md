@@ -1,3 +1,11 @@
+---
+id: 02-token-governance-litellm
+title: "Token Budget Governance & LiteLLM Gateway Architecture"
+sidebar_label: "02: Token Governance"
+sidebar_position: 2
+tags: [architecture, litellm, tokens, governance]
+---
+
 # Token Budget Governance & LiteLLM Gateway Architecture
 
 ## 1. Overview & Operational Mandate

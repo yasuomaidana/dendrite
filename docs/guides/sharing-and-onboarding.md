@@ -1,3 +1,11 @@
+---
+id: sharing-and-onboarding
+title: "Environment Sharing, Onboarding & Bootstrap Guide"
+sidebar_label: "Sharing & Onboarding"
+sidebar_position: 4
+tags: [onboarding, bootstrap, sharing, teams]
+---
+
 # Environment Sharing, Onboarding & Bootstrap Guide
 
 This guide details the methodology for distributing, installing, and sharing the **Dendrite** development environment and multi-project configurations across engineering teams and machines via **GitHub** and encrypted artifacts.

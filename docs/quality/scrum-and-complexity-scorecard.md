@@ -1,3 +1,11 @@
+---
+id: scrum-and-complexity-scorecard
+title: "Scrum Master Alignment & Pattern Complexity Scorecard"
+sidebar_label: "Scrum & Complexity Scorecard"
+sidebar_position: 1
+tags: [quality, scrum, complexity, scorecards]
+---
+
 # Scrum Master Alignment & Pattern Complexity Scorecard
 
 ## 1. Persona & Governance Mandate

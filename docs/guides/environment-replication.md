@@ -1,3 +1,11 @@
+---
+id: environment-replication
+title: "Development Environment Installation & Replication Guide"
+sidebar_label: "Environment Replication"
+sidebar_position: 2
+tags: [replication, docker, environment, host]
+---
+
 # Development Environment Installation & Replication Guide
 
 This guide details the methodologies, tools, and automation provided by **Dendrite** to replicate, install, and bootstrap the complete development environment on any target computer—either natively on the host OS or completely containerized via Docker.

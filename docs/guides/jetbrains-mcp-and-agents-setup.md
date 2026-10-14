@@ -1,3 +1,11 @@
+---
+id: jetbrains-mcp-and-agents-setup
+title: "JetBrains IDE MCP & Autonomous Agent Integration Guide"
+sidebar_label: "JetBrains MCP & Agents Setup"
+sidebar_position: 3
+tags: [jetbrains, mcp, agents, goland]
+---
+
 # JetBrains IDE MCP & Autonomous Agent Integration Guide
 
 ## 1. Overview & Architecture

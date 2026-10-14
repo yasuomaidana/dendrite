@@ -1,3 +1,11 @@
+---
+id: 03-context-intelligence-re
+title: "Context Intelligence & REA Reverse Engineering Architecture"
+sidebar_label: "03: Context Intelligence & REA"
+sidebar_position: 3
+tags: [architecture, rea, context-intelligence, ast]
+---
+
 # Context Intelligence & REA Reverse Engineering Architecture
 
 ## 1. Context Engineering vs. Monolithic Context Dumps

@@ -1,3 +1,11 @@
+---
+id: using-dendrite-tools-with-jetbrains
+title: "Using Dendrite Tools with JetBrains IDEs"
+sidebar_label: "Using Tools with JetBrains"
+sidebar_position: 5
+tags: [jetbrains, ide, tooling, shortcuts]
+---
+
 # Using Dendrite Tools with JetBrains IDEs (GoLand, IntelliJ IDEA, PyCharm, RustRover)
 
 ## 1. Overview & Architecture

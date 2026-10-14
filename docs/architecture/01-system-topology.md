@@ -1,3 +1,11 @@
+---
+id: 01-system-topology
+title: "System Topology & Multi-Node Placement Architecture"
+sidebar_label: "01: System Topology"
+sidebar_position: 1
+tags: [architecture, topology, multi-node, tailscale]
+---
+
 # System Topology & Multi-Node Placement Architecture
 
 ## 1. Architectural Philosophy: Decoupled Compute Tiers

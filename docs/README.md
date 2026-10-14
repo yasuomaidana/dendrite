@@ -1,3 +1,11 @@
+---
+id: index
+title: "Dendrite Architecture & Development Environment Specification"
+sidebar_label: "Overview"
+sidebar_position: 1
+tags: [overview, architecture, index]
+---
+
 # Dendrite Architecture & Development Environment Specification
 
 Welcome to the **Dendrite** engineering and technical architecture specification. Dendrite is a unified, topology-agnostic control plane and developer platform designed for **Autonomous Multi-Model AI Development, Token Governance, Reverse Engineering (REA), Static Code Intelligence, Distributed Codebase Ecosystems, and AI-Assisted Engineering**.
@@ -37,8 +45,8 @@ flowchart TD
     Index --> Features[2. Feature Specs FEAT-*]
     Index --> Guides[3. Developer & IDE Guides]
     Index --> CLI[4. Dendrite CLI Spec]
-    Index --> Sharing[5. Sharing & Replication]
-    Index --> Quality[6. Scrum & Quality Gates]
+    Index --> Quality[5. Quality & Governance]
+    Index --> Roadmap[6. Project Status & Roadmap]
 
     subgraph "1. Architecture Core"
         Arch1[01: System Topology & Multi-Node Placement]
@@ -70,6 +78,7 @@ flowchart TD
     end
 
     subgraph "3. Developer & IDE Guides"
+        G0[Documentation Management & Publishing Guide]
         G1[JetBrains IDE MCP & Autonomous Agent Integration Guide]
         G2[Using Dendrite Tools with JetBrains IDEs Guide]
         G3[Environment Replication Guide: Container vs Host]
@@ -84,11 +93,16 @@ flowchart TD
         Q1[Scrum Master Alignment & Complexity Scorecard]
     end
 
+    subgraph "6. Project Status & Roadmap"
+        R1[Development Status, Milestones & Ticket Pipeline DEV_STATUS]
+    end
+
     Arch --> Arch1 & Arch2 & Arch3
     Features --> F1 & F2 & F3 & F4 & F5 & F6 & F7 & F8 & F9 & F10 & F11 & F12 & F13 & F14 & F19 & F20 & F21 & F22 & F23 & F26
-    Guides --> G1 & G2 & G3 & G4
+    Guides --> G0 & G1 & G2 & G3 & G4
     CLI --> C1
     Quality --> Q1
+    Roadmap --> R1
 ```
 
 ### Table of Contents
@@ -112,13 +126,18 @@ flowchart TD
    - [FEAT-012: Documentation Generation & Reflection](./features/FEAT-012-docs-generation-reflection.md)
    - [FEAT-013: Autonomous Coding Agent Harness (Aider, OpenHands, OpenCode, Google AGY)](./features/FEAT-013-agentic-coding-tools.md)
    - [FEAT-014: JetBrains IDE MCP Integration](./features/FEAT-014-jetbrains-ide-mcp-integration.md)
+   - [FEAT-017: Remote SSH Hardware Discovery & Automated Service Placement Router](./features/FEAT-017-remote-ssh-discovery.md)
    - [FEAT-019: Azure Cloud Burst Provider](./features/FEAT-019-azure-cloud-burst.md)
    - [FEAT-020: Pluggable Inference Engine Architecture & Multi-Provider Gateway](./features/FEAT-020-pluggable-inference-engines.md)
    - [FEAT-021: Performance Testing, Inference Benchmarking & Gateway Load Harness (k6)](./features/FEAT-021-performance-testing-k6-benchmark.md)
    - [FEAT-022: Agent Search, Capability Discovery & Semantic Routing Engine](./features/FEAT-022-agent-search-and-capability-discovery.md)
    - [FEAT-023: Developer Test Automation, Self-Healing Harness & UI Integration Suite](./features/FEAT-023-developer-test-automation-ui-harness.md)
+   - [FEAT-024: Open-Source Reverse Engineering Showcases & Cleanroom Parity Verification Suite](./features/FEAT-024-open-source-showcases.md)
    - [FEAT-026: Distributed Codebase Ecosystem, Modular REA & Cross-Project Interoperability Coordinator](./features/FEAT-026-distributed-codebase-ecosystem.md)
+   - [FEAT-027: Docusaurus Documentation Engine & Cross-Project Sharing Portal](./features/FEAT-027-docusaurus-project-sharing.md)
+   - [FEAT-028: Local Agent Triage Gateway, Token-Efficient Prompt Router & Multi-MCP Orchestrator](./features/FEAT-028-local-agent-triage-gateway-token-efficiency.md)
 3. **Developer & IDE Guides**:
+   - [Documentation Management, Versioning & Publishing Guide](./guides/documentation-guide.md)
    - [JetBrains IDE MCP & Autonomous Agent Integration Guide](./guides/jetbrains-mcp-and-agents-setup.md)
    - [Using Dendrite Tools with JetBrains IDEs Guide](./guides/using-dendrite-tools-with-jetbrains.md)
    - [Development Environment Installation & Replication Guide (Container vs Host)](./guides/environment-replication.md)
@@ -127,6 +146,8 @@ flowchart TD
    - [Dendrite CLI Specification & Command Reference](./cli/dendrite-cli-specification.md)
 5. **Quality, Compliance & Complexity**:
    - [Scrum Master DoD, Testcontainers & Complexity Scorecard](./quality/scrum-and-complexity-scorecard.md)
+6. **Project Status, Milestones & Ticket Lifecycle**:
+   - [Dendrite Project Development Status & Roadmap (DEV_STATUS)](./roadmap/development-status-roadmap.md)
 
 ---
 
