@@ -39,6 +39,8 @@ An architectural deliverable, feature pull request, or CLI subcommand is conside
 | **FEAT-010** | AI Token Optimization & Import | Compaction & Import Synthesizer | `tests/unit/test_token_opt.go` | Testcontainers Redis Cache Test |
 | **FEAT-011** | Polyglot Translation Engine | Tree-sitter ISR Code Synthesizer | `tests/integration/test_polyglot.go` | Dual Property Test Verification |
 | **FEAT-012** | Docs Generation & Reflection | Spec Extractor & Reflection Mirror| `tests/integration/test_doc_reflect.go` | Docusaurus Build Container Test |
+| **FEAT-013** | Autonomous Coding Agent Harness | Aider, OpenHands, OpenCode Harness | `pkg/agent/runner_test.go` | Testcontainers SQLite/Postgres Session Store |
+| **FEAT-014** | JetBrains IDE MCP Integration | IDE MCP Bridge & Client | `pkg/jetbrains/jetbrains_test.go` | JetBrains MCP JSON-RPC Test |
 
 ---
 
@@ -61,16 +63,8 @@ impl Sandbox<Running> {
 }
 ```
 
-### 2. Strategy Pattern (Pluggable Issue Trackers)
-Decouples vendor-specific REST/GraphQL engines (Jira, Plane, Linear) behind an abstract domain interface:
-```go
-type IssueTracker interface {
-    GetIssue(ctx context.Context, id IssueID) (*UnifiedIssue, error)
-    UpdateStatus(ctx context.Context, id IssueID, state IssueState) error
-    AddComment(ctx context.Context, id IssueID, comment string) error
-    ValidateCredentials(ctx context.Context) error
-}
-```
+### 2. Strategy Pattern (Pluggable Issue Trackers & Coding Agents)
+Decouples vendor-specific REST/GraphQL engines (Jira, Plane, Linear) and agent runtimes (Aider, OpenHands, OpenCode) behind abstract domain interfaces (`IssueTracker`, `AgentRunner`).
 
 ### 3. Intermediate Semantic Representation (ISR)
 Decouples source language AST parsing from target language synthesis during polyglot code translation.
@@ -101,6 +95,7 @@ type ProjectID string
 type VirtualKey string
 type MeshNodeAddress string
 type IssueID string
+type AgentType string
 ```
 
 ---
@@ -115,6 +110,6 @@ type IssueID string
   - File / Module: $\le 500$ lines (hard limit: 800; trigger module split).
 
 ### Anti-Patterns Flagged
-- **God Structs & Monolithic Handlers**: Splitting large CLI state objects into isolated domain controllers (`TopologyController`, `WorkspaceController`, `TrackerController`, `UIController`, `AIEngineController`).
+- **God Structs & Monolithic Handlers**: Splitting large CLI state objects into isolated domain controllers (`TopologyController`, `WorkspaceController`, `TrackerController`, `UIController`, `AIEngineController`, `AgentController`).
 - **Excessive Cloning / Memory Allocation**: Favoring string slices (`&str`, `string_view`) and zero-copy streaming.
 - **Leaked Ephemeral State**: Orphaned containers or dangling bind mounts in `/tmp` post-execution.

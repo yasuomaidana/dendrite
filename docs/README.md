@@ -10,7 +10,7 @@ Dendrite decouples persistent system state and API governance from elastic, hard
 
 - **Hardware & Battery Preservation**: Offloads persistent databases (PostgreSQL 16, Redis 7), documentation engines (Docusaurus), orchestrators (n8n), and heavy Linux decompilers from local developer laptops (such as Apple Silicon MacBook Airs) to persistent low-power nodes (Debian server) or elastic cloud VMs (Azure or AWS burst).
 - **Token Budget Governance & Optimization**: Operates LiteLLM Proxy Gateway with sliding spend windows, context caching (Gemini/Claude prefix cache), semantic AST compaction ($\ge 50\%$ prompt token savings), and zero-cost local Ollama inference (`qwen2.5-coder:14b`).
-- **Autonomous Coding Agent Harness**: Integrates, configures, and orchestrates premier coding tools (**Aider**, **OpenHands**, and **OpenCode**) with LiteLLM virtual key injection, automated git commit provenance, AST repository context injection, and ephemeral container sandboxing.
+- **Autonomous Coding Agent Harness**: Integrates, configures, and orchestrates premier coding tools (**Aider**, **OpenHands**, **OpenCode**, and **Google AGY / Antigravity**) with LiteLLM virtual key injection, automated git commit provenance, AST repository context injection, and ephemeral container sandboxing.
 - **AI-Assisted Development & Import**: Analyzes external repositories, extracts algorithmic boundaries, and cleanroom synthesizes idiomatic implementations with automated test vectors into target workspaces.
 - **Polyglot Code Translation**: Converts source modules between languages (e.g. Python $\to$ Rust/Go, TypeScript $\to$ Go) with automated dual property-based testing asserting semantic parity.
 - **Docs-as-Code Generation & Reflection**: Automates `FEAT-*` and `ADR-*` synthesis and mirrors the structural taxonomy, tone, and conventions of a mature reference project into target codebases (**Documentation Reflection**).
@@ -53,7 +53,7 @@ flowchart TD
         F10[FEAT-010: AI Token Optimization & Import]
         F11[FEAT-011: Polyglot Code Translation]
         F12[FEAT-012: Docs Generation & Reflection]
-        F13[FEAT-013: Agent Harness Aider/OpenHands/OpenCode]
+        F13[FEAT-013: Agent Harness Aider/OpenHands/OpenCode/AGY]
     end
 
     subgraph "3. Dendrite CLI & Web UI"
@@ -110,7 +110,7 @@ flowchart TD
    - [FEAT-010: AI Token Optimization & Capability Import](./features/FEAT-010-ai-assisted-token-optimization.md)
    - [FEAT-011: Polyglot Code Translation & Verification](./features/FEAT-011-polyglot-translation-synthesis.md)
    - [FEAT-012: Documentation Generation & Reflection](./features/FEAT-012-docs-generation-reflection.md)
-   - [FEAT-013: Autonomous Coding Agent Harness (Aider, OpenHands, OpenCode)](./features/FEAT-013-agentic-coding-tools.md)
+   - [FEAT-013: Autonomous Coding Agent Harness (Aider, OpenHands, OpenCode, Google AGY)](./features/FEAT-013-agentic-coding-tools.md)
 3. **CLI & Dashboard System Design**:
    - [Dendrite CLI Specification & Command Reference](./cli/dendrite-cli-specification.md)
 4. **Environment Sharing & Setup**:
@@ -143,18 +143,21 @@ dendrite agent run aider --ticket DEN-006 --model copilot-sonnet
 # 6. Run OpenHands in an ephemeral sandbox to solve an issue autonomously
 dendrite agent run openhands --ticket PROJ-104 --sandbox --spend-limit 5.00
 
-# 7. Optimize project prompt tokens and context caching
+# 7. Run Google AGY (Antigravity) bound to LiteLLM gateway and ticket
+dendrite agent run agy --ticket DEN-028 --task "Implement AST compaction harness" --model gemini-2.5-pro
+
+# 8. Optimize project prompt tokens and context caching
 dendrite ai optimize-tokens
 
-# 8. Translate a legacy module with automated dual property tests
+# 9. Translate a legacy module with automated dual property tests
 dendrite translate --from python --to rust --source src/math.py --out crates/math/src/lib.rs
 
-# 9. Mirror documentation structure from an enterprise reference project
+# 10. Mirror documentation structure from an enterprise reference project
 dendrite doc reflect --reference ../reference-core-platform --target .
 
-# 10. Analyze an external third-party repository safely in an ephemeral sandbox
+# 11. Analyze an external third-party repository safely in an ephemeral sandbox
 dendrite analyze repo https://github.com/ast-grep/ast-grep.git --ephemeral
 
-# 11. Check real-time spend, thermal sensors, and node status
+# 12. Check real-time spend, thermal sensors, and node status
 dendrite status
 ```

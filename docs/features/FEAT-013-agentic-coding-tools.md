@@ -1,18 +1,18 @@
 ---
 id: FEAT-013
-title: Autonomous Coding Agent Harness & Tool Orchestration (Aider, OpenHands, OpenCode)
+title: Autonomous Coding Agent Harness & Tool Orchestration (Aider, OpenHands, OpenCode, Google AGY)
 status: approved
 plane_epic: PROJ-E-13
 dependencies: [FEAT-001, FEAT-002, FEAT-005, FEAT-006]
 repository: dendrite
-tags: [ai-agents, aider, openhands, opencode, orchestration, governance, sandboxing]
+tags: [ai-agents, aider, openhands, opencode, agy, antigravity, orchestration, governance, sandboxing]
 ---
 
-# FEAT-013: Autonomous Coding Agent Harness & Tool Orchestration (Aider, OpenHands, OpenCode)
+# FEAT-013: Autonomous Coding Agent Harness & Tool Orchestration (Aider, OpenHands, OpenCode, Google AGY)
 
 ## 1. User Story & Business Objective
 
-As a software engineer and platform architect, I need Dendrite to natively support and orchestrate premier autonomous coding agents—specifically **Aider**, **OpenHands** (formerly OpenDevin), and **OpenCode**—by automatically bootstrapping their configurations, routing their API traffic through the LiteLLM Token Governance Gateway, enforcing sliding window budget caps and thermal curfews, injecting AST-compacted repository context, and executing them within ephemeral, cap-dropped container sandboxes with automated issue tracker status synchronization.
+As a software engineer and platform architect, I need Dendrite to natively support and orchestrate premier autonomous coding agents—specifically **Aider**, **OpenHands** (formerly OpenDevin), **OpenCode**, and **Google AGY (Antigravity)**—by automatically bootstrapping their configurations, routing their API traffic through the LiteLLM Token Governance Gateway, enforcing sliding window budget caps and thermal curfews, injecting AST-compacted repository context, and executing them within ephemeral, cap-dropped container sandboxes with automated issue tracker status synchronization.
 
 ---
 
@@ -23,22 +23,25 @@ As a software engineer and platform architect, I need Dendrite to natively suppo
      - **Aider (`aider`)**: Terminal-centric CLI pair programming agent with tight Git repository integration and commit generation.
      - **OpenHands (`openhands`)**: Containerized autonomous software engineer capable of running arbitrary bash commands, editing code, and browsing documentation.
      - **OpenCode (`opencode`)**: Headless, lightweight automated code generation, refactoring, and batch pull-request agent.
+     - **Google AGY (`agy`, `antigravity`)**: Google DeepMind autonomous agent CLI supporting multi-directory workspaces (`--add-dir`), non-interactive task prompts (`-p`), and automated permission approval (`--dangerously-skip-permissions`).
 2. **Automated Gateway Binding & Virtual Key Injection**:
    - Automatically generates ephemeral or workspace-scoped LiteLLM Virtual Keys for the agent session with strict budget ceilings (e.g. $5.00/session or $20.00/week).
-   - Injects standard OpenAI/Anthropic environment variables into the agent runtime:
+   - Injects standard OpenAI/Anthropic/Gemini environment variables into the agent runtime:
      - `OPENAI_API_BASE=http://<control-plane-host>:4000/v1`
      - `OPENAI_API_KEY=<dendrite-virtual-key>`
-     - Model tier overrides (e.g., directing primary edits to `copilot-sonnet` and automated test generation to `local-qwen-coder`).
+     - `GOOGLE_GEMINI_BASE_URL=http://<control-plane-host>:4000/v1`
+     - `GEMINI_API_KEY=<dendrite-virtual-key>`
+     - Model tier overrides (e.g., directing primary edits to `copilot-sonnet` or `gemini-2.5-pro` and automated test generation to `local-qwen-coder`).
 3. **AST Context Injection & Semantic Prompt Compaction**:
    - Prior to agent startup, extracts AST symbol graphs via `pkg/ast` and `pkg/devtool`, generating a compacted repository context envelope.
    - For Aider: Formats context as a repository map (`--map-tokens 2048` or custom repo prompt).
-   - For OpenHands / OpenCode: Pre-loads the workspace context envelope into the initial prompt instructions.
+   - For OpenHands / OpenCode / AGY: Pre-loads the workspace context envelope into the initial prompt instructions.
 4. **Sandboxed & Ephemeral Execution Modes**:
-   - **Host Mode**: Runs directly in the developer's local terminal workspace (primarily for interactive Aider sessions).
-   - **Ephemeral Sandbox Mode**: Spawns agent inside a cap-dropped, read-only root Docker container (`pkg/sandbox`) with an isolated scratch volume and automatic RAII teardown upon process exit.
+   - **Host Mode**: Runs directly in the developer's local terminal workspace (primarily for interactive Aider or AGY sessions).
+   - **Ephemeral Sandbox Mode**: Spawns agent inside a cap-dropped, read-only root Docker container (`pkg/sandbox`) with an isolated scratch volume and automatic RAII teardown upon process exit (`google/antigravity:latest`).
 5. **Issue Tracker & Git Provenance Linking**:
-   - Links agent sessions to active tickets (e.g., `DEN-006` or Jira/Plane issue keys).
-   - Formats git commit messages automatically: `[<TICKET-ID>] <Action Summary> (Agent: <aider|openhands|opencode>)`.
+   - Links agent sessions to active tickets (e.g., `DEN-006`, `DEN-028` or Jira/Plane issue keys).
+   - Formats git commit messages automatically: `[<TICKET-ID>] <Action Summary> (Agent: <aider|openhands|opencode|agy>)`.
    - Posts session summaries and token spend metrics back to the active issue tracker.
 
 ```mermaid
@@ -61,9 +64,10 @@ flowchart TD
         HostExec & SandboxExec --> Aider["Aider<br/>(Git Pair Programmer)"]
         HostExec & SandboxExec --> OpenHands["OpenHands<br/>(Full Autonomous Agent)"]
         HostExec & SandboxExec --> OpenCode["OpenCode<br/>(Headless Batch Refactoring)"]
+        HostExec & SandboxExec --> AGY["Google AGY<br/>(Antigravity CLI Agent)"]
     end
 
-    Aider & OpenHands & OpenCode -->|Governed API Calls| Gateway[LiteLLM Gateway :4000]
+    Aider & OpenHands & OpenCode & AGY -->|Governed API Calls| Gateway[LiteLLM Gateway :4000]
     Gateway --> Fallback[Cascading Fallback & Spend Guardrails]
 ```
 
@@ -81,7 +85,10 @@ dendrite agent run openhands --ticket PROJ-104 --sandbox --spend-limit 5.00
 # 3. Run OpenCode in headless batch mode for automated refactoring
 dendrite agent run opencode --task "Refactor pkg/ast to reduce cognitive complexity" --ephemeral
 
-# 4. Display active and past agent sessions, spend metrics, and generated commits
+# 4. Run Google AGY (Antigravity) bound to LiteLLM gateway and ticket
+dendrite agent run agy --ticket DEN-028 --task "Implement AST compaction harness" --model gemini-2.5-pro
+
+# 5. Display active and past agent sessions, spend metrics, and generated commits
 dendrite agent session list
 ```
 
@@ -89,7 +96,7 @@ dendrite agent session list
 
 ## 4. Acceptance Criteria & Verification Matrix
 
-- [x] **AC-1**: `dendrite agent run <aider|openhands|opencode>` successfully configures the runtime environment with LiteLLM proxy base URL, virtual API keys, and model mappings without hardcoded secrets.
+- [x] **AC-1**: `dendrite agent run <aider|openhands|opencode|agy>` successfully configures the runtime environment with LiteLLM proxy base URL, virtual API keys, and model mappings without hardcoded secrets.
 - [x] **AC-2**: When budget limits or thermal curfews are reached, the agent harness cleanly terminates the process, commits progress, and posts spend logs to the active issue tracker.
 - [x] **AC-3**: Sandboxed execution (`--sandbox` / `--ephemeral`) boots the agent in an isolated container with zero unauthorized host filesystem mutations.
 - [x] **AC-4**: Commits produced during agent sessions include structured ticket metadata and agent provenance tags.
@@ -98,6 +105,6 @@ dendrite agent session list
 
 ## 5. Definition of Done (DoD) & Persistence Verification
 
-- **Automated Tests**: Unit tests assert environment variable generation, argument rendering, and config validation across all three agent types with $\ge 85\%$ statement coverage.
+- **Automated Tests**: Unit tests assert environment variable generation, argument rendering, and config validation across all supported agent types with $\ge 85\%$ statement coverage.
 - **Persistent Layer Verification**: Session history and spend records persisted in SQLite/PostgreSQL verified via real container instances using [Testcontainers](https://rust.testcontainers.org).
 - **Complexity Guardrails**: Orchestrator functions adhere to Cyclomatic Complexity $\le 10$, Cognitive Complexity $\le 12$, and function length $\le 60$ LOC.
