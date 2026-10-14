@@ -1,0 +1,29 @@
+#cloud-config
+hostname: ${hostname}
+manage_etc_hosts: true
+package_update: true
+
+packages:
+  - curl
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - iptables
+  - docker.io
+  - docker-compose-v2
+
+users:
+  - name: deployer
+    gecos: Dendrite Automated Deployer
+    groups: sudo, docker
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ${deployer_ssh_public_key}
+
+runcmd:
+  - systemctl enable --now docker
+  - curl -fsSL https://tailscale.com/install.sh | sh
+  - systemctl enable --now tailscaled
+  - tailscale up --authkey=${tailscale_auth_key} --hostname=${hostname} --ssh
