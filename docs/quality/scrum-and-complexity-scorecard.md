@@ -20,6 +20,7 @@ An architectural deliverable, feature pull request, or CLI subcommand is conside
   - Rust: `cargo clippy --all-targets --all-features -- -D warnings` passes with zero warnings.
 - [ ] **Zero Hidden Panics**: No unchecked `unwrap()`, naked indexing (`slice[i]`), or production panics. All errors are propagated via typed domain error enums (`thiserror`) or wrapped errors.
 - [ ] **Clean Drop / RAII Semantics**: All ephemeral sandboxes, temporary files, and network sockets implement automatic cleanup upon exit or interruption.
+- [ ] **Performance & SLA Guardrails**: Latency thresholds ($p99 < 350\text{ms}$, gateway cascade failover $< 2\text{s}$, thermal warning at $85^\circ\text{C}$) are enforced via automated k6 benchmark pipelines.
 
 ---
 
@@ -41,50 +42,65 @@ An architectural deliverable, feature pull request, or CLI subcommand is conside
 | **FEAT-012** | Docs Generation & Reflection | Spec Extractor & Reflection Mirror| `tests/integration/test_doc_reflect.go` | Docusaurus Build Container Test |
 | **FEAT-013** | Autonomous Coding Agent Harness | Aider, OpenHands, OpenCode Harness | `pkg/agent/runner_test.go` | Testcontainers SQLite/Postgres Session Store |
 | **FEAT-014** | JetBrains IDE MCP Integration | IDE MCP Bridge & Client | `pkg/jetbrains/jetbrains_test.go` | JetBrains MCP JSON-RPC Test |
+| **FEAT-019** | Azure Cloud Burst Provider | Terraform Azure Resource Module | `tests/integration/test_azure_burst.go` | Terraform Inspec / Mock SSH Test |
+| **FEAT-020** | Pluggable Inference Engines | Multi-Engine Gateway Adapters | `pkg/inference/inference_test.go` | Testcontainers Mock OpenAI/Ollama HTTP |
+| **FEAT-021** | Performance Testing & Load Harness | k6 Benchmarking Engine (`pkg/perf`)| `tests/perf/gateway_benchmark_test.go`| Testcontainers k6 Runner + PostgreSQL 16 |
+| **FEAT-022** | Agent Search & Capability Discovery | Hybrid Vector & AST Indexer | `pkg/agentsearch/search_test.go` | Testcontainers TEI / SQLite Manifest Store |
+| **FEAT-023** | Test Automation & UI Test Harness | Self-Healing TestGen & UI Driver | `pkg/testgen/testgen_test.go` | Testcontainers Headless Browser & PostgreSQL |
 
 ---
 
 ## 4. Software Design Patterns & Idiomatic Standards
 
 ### 1. Typestate Pattern (Lifecycle Safety)
-Workspaces, remote connections, and sandboxes must enforce state transitions via types rather than runtime boolean flags:
+Workspaces, remote connections, sandboxes, and benchmark sessions must enforce state transitions via types rather than runtime boolean flags:
 ```rust
-// Idiomatic Typestate representation
-struct Sandbox<Uninitialized>;
-struct Sandbox<Running> { container_id: ContainerId, tmpfs_path: PathBuf }
-struct Sandbox<Terminated>;
+// Idiomatic Typestate representation for Benchmark Execution
+struct BenchmarkSession<Uninitialized>;
+struct BenchmarkSession<Provisioned> { runner: K6Runner, scenario: ScenarioPlan }
+struct BenchmarkSession<Running> { cancel_fn: Box<dyn FnOnce()>, start_time: Instant }
+struct BenchmarkSession<Completed> { summary: BenchmarkSummary, metrics: MetricStream }
 
-impl Sandbox<Uninitialized> {
-    pub fn boot(self) -> Result<Sandbox<Running>, SandboxError> { /* ... */ }
+impl BenchmarkSession<Uninitialized> {
+    pub fn provision(self, plan: ScenarioPlan) -> Result<BenchmarkSession<Provisioned>, PerfError> { /* ... */ }
 }
 
-impl Sandbox<Running> {
-    pub fn execute(&self, cmd: &Command) -> Result<Output, ExecError> { /* ... */ }
+impl BenchmarkSession<Provisioned> {
+    pub fn execute(self) -> Result<BenchmarkSession<Running>, PerfError> { /* ... */ }
 }
 ```
 
-### 2. Strategy Pattern (Pluggable Issue Trackers & Coding Agents)
-Decouples vendor-specific REST/GraphQL engines (Jira, Plane, Linear) and agent runtimes (Aider, OpenHands, OpenCode) behind abstract domain interfaces (`IssueTracker`, `AgentRunner`).
-
-### 3. Intermediate Semantic Representation (ISR)
-Decouples source language AST parsing from target language synthesis during polyglot code translation.
-
-### 4. RAII & Drop Semantics (Ephemeral Sandboxing)
-Temporary resources, throwaway containers, and scratch mounts must be reclaimed deterministically using `Drop` (Rust) or `defer` (Go):
+### 2. Strategy Pattern (Pluggable Issue Trackers, Engines & Test Drivers)
+Decouples vendor-specific REST/GraphQL engines (Jira, Plane, Linear), agent runtimes (Aider, OpenHands, OpenCode, AGY), inference engines (Ollama, OxiLLaMa, vLLM, TGI), and UI automation drivers (k6-browser, Playwright):
 ```go
-// Idiomatic Go RAII cleanup pattern
-func RunEphemeralSandbox(ctx context.Context, cfg SandboxConfig) (Result, error) {
-    box, err := daemon.CreateContainer(ctx, cfg)
+type UIDriver interface {
+    Launch(ctx context.Context, targetURL string) error
+    Navigate(ctx context.Context, route string) error
+    AssertElementVisible(ctx context.Context, selector string) error
+    CaptureWebMetrics(ctx context.Context) (WebMetrics, error)
+    Close() error
+}
+```
+
+### 3. Intermediate Semantic Representation (ISR) & AST-Driven Scaffolding
+Decouples source language AST parsing from target test generation during automated test synthesis ([FEAT-023](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/features/FEAT-023-developer-test-automation-ui-harness.md)).
+
+### 4. RAII & Drop Semantics (Ephemeral Sandboxing & Test Runtimes)
+Temporary resources, throwaway containers, browser contexts, and scratch mounts must be reclaimed deterministically using `Drop` (Rust) or `defer` (Go):
+```go
+// Idiomatic Go RAII cleanup pattern for k6 runner and browser context
+func RunUIBenchmark(ctx context.Context, cfg UIConfig) (Result, error) {
+    driver, err := browser.NewDriver(ctx, cfg)
     if err != nil {
         return Result{}, err
     }
-    // Guarantees immediate destruction even on panic or SIGINT
+    // Guarantees immediate cleanup even on panic, error, or SIGINT
     defer func() {
-        _ = daemon.ForceRemoveContainer(context.Background(), box.ID)
-        _ = os.RemoveAll(box.ScratchDir)
+        _ = driver.Close()
+        _ = os.RemoveAll(cfg.ScratchDir)
     }()
 
-    return box.Execute(ctx)
+    return driver.ExecuteJourney(ctx)
 }
 ```
 
@@ -96,6 +112,10 @@ type VirtualKey string
 type MeshNodeAddress string
 type IssueID string
 type AgentType string
+type VirtualUsers uint32
+type TTFT time.Duration
+type TokensPerSecond float64
+type BenchmarkRunID string
 ```
 
 ---
@@ -105,11 +125,11 @@ type AgentType string
 ### Quantitative Thresholds
 - **Cyclomatic Complexity (CC)**: $\le 10$ per function (hard limit: 15).
 - **Cognitive Complexity**: $\le 15$ per function (hard limit: 20).
-- **Lines of Code (LOC)**:
-  - Function: $\le 60$ lines (hard limit: 80).
+- **Lines of Code (LOC)**:\
+  - Function: $\le 60$ lines (hard limit: 80).\
   - File / Module: $\le 500$ lines (hard limit: 800; trigger module split).
 
 ### Anti-Patterns Flagged
-- **God Structs & Monolithic Handlers**: Splitting large CLI state objects into isolated domain controllers (`TopologyController`, `WorkspaceController`, `TrackerController`, `UIController`, `AIEngineController`, `AgentController`).
+- **God Structs & Monolithic Handlers**: Splitting large CLI state objects into isolated domain controllers (`TopologyController`, `WorkspaceController`, `TrackerController`, `UIController`, `AIEngineController`, `AgentController`, `PerfBenchmarkController`, `TestGenController`).
 - **Excessive Cloning / Memory Allocation**: Favoring string slices (`&str`, `string_view`) and zero-copy streaming.
-- **Leaked Ephemeral State**: Orphaned containers or dangling bind mounts in `/tmp` post-execution.
+- **Leaked Ephemeral State**: Orphaned containers, hanging browser headless processes, or dangling bind mounts in `/tmp` post-execution.

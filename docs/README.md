@@ -19,6 +19,9 @@ Dendrite decouples persistent system state and API governance from elastic, hard
 - **Sandboxed Repository Intelligence**: Safely inspects third-party codebases using AST parsers (ast-grep, Tree-sitter), Graphify Leiden community detection, and ephemeral, read-only container sandboxes.
 - **Multi-Project Workspace Support**: Manages multiple isolated projects with segregated AST indexes, spend logs, and environment configurations via the `dendrite` CLI and Web UI.
 - **Zero-Trust Mesh & Team Sharing**: Replicates and shares environments across machines and teams via Tailscale overlay IPs, SOPS/age encrypted bundles, and reproducible IaC blueprints distributed through GitHub Releases.
+- **Inference Benchmarking & Performance Testing (k6)**: Evaluates local and remote inference engine latency (TTFT, TPS) and stress-tests gateway fallback cascades under synthetic multi-agent load.
+- **Agent Search & Discovery**: Hybrid vector/lexical matching to discover, recommend, and route engineering tasks to the optimal agent harness and inference model.
+- **Developer Test Automation & UI Integration**: AST-driven self-healing test generation and k6-browser end-to-end Web UI integration testing.
 
 ---
 
@@ -54,6 +57,12 @@ flowchart TD
         F11[FEAT-011: Polyglot Code Translation]
         F12[FEAT-012: Docs Generation & Reflection]
         F13[FEAT-013: Agent Harness Aider/OpenHands/OpenCode/AGY]
+        F14[FEAT-014: JetBrains IDE MCP Integration]
+        F19[FEAT-019: Azure Cloud Burst Provider]
+        F20[FEAT-020: Pluggable Inference Engines]
+        F21[FEAT-021: Performance Testing & k6 Benchmarking]
+        F22[FEAT-022: Agent Search & Capability Discovery]
+        F23[FEAT-023: Test Automation & UI Test Harness]
     end
 
     subgraph "3. Dendrite CLI & Web UI"
@@ -86,6 +95,12 @@ flowchart TD
     Features --> F11
     Features --> F12
     Features --> F13
+    Features --> F14
+    Features --> F19
+    Features --> F20
+    Features --> F21
+    Features --> F22
+    Features --> F23
 
     CLI --> C1
     Sharing --> S1
@@ -113,6 +128,12 @@ flowchart TD
    - [FEAT-011: Polyglot Code Translation & Verification](./features/FEAT-011-polyglot-translation-synthesis.md)
    - [FEAT-012: Documentation Generation & Reflection](./features/FEAT-012-docs-generation-reflection.md)
    - [FEAT-013: Autonomous Coding Agent Harness (Aider, OpenHands, OpenCode, Google AGY)](./features/FEAT-013-agentic-coding-tools.md)
+   - [FEAT-014: JetBrains IDE MCP Integration](./features/FEAT-014-jetbrains-ide-mcp-integration.md)
+   - [FEAT-019: Azure Cloud Burst Provider](./features/FEAT-019-azure-cloud-burst.md)
+   - [FEAT-020: Pluggable Inference Engine Architecture & Multi-Provider Gateway](./features/FEAT-020-pluggable-inference-engines.md)
+   - [FEAT-021: Performance Testing, Inference Benchmarking & Gateway Load Harness (k6)](./features/FEAT-021-performance-testing-k6-benchmark.md)
+   - [FEAT-022: Agent Search, Capability Discovery & Semantic Routing Engine](./features/FEAT-022-agent-search-and-capability-discovery.md)
+   - [FEAT-023: Developer Test Automation, Self-Healing Harness & UI Integration Suite](./features/FEAT-023-developer-test-automation-ui-harness.md)
 3. **CLI & Dashboard System Design**:
    - [Dendrite CLI Specification & Command Reference](./cli/dendrite-cli-specification.md)
 4. **Environment Sharing & Replication**:
@@ -158,78 +179,15 @@ dendrite agent run openhands --ticket PROJ-104 --sandbox --spend-limit 5.00
 # 10. Run Google AGY (Antigravity) bound to LiteLLM gateway and ticket
 dendrite agent run agy --ticket DEN-028 --task "Implement AST compaction harness" --model gemini-2.5-pro
 
-# 11. Optimize project prompt tokens and context caching
-dendrite ai optimize-tokens
+# 11. Run k6 performance benchmarks against local OxiLLaMa or LiteLLM gateway
+dendrite bench inference --engine oxillama --vus 25 --duration 30s
 
-# 12. Translate a legacy module with automated dual property tests
-dendrite translate --from python --to rust --source src/math.py --out crates/math/src/lib.rs
+# 12. Search for the optimal agent and prompt configuration for a complex task
+dendrite agent search "benchmark LiteLLM gateway failover cascade"
 
-# 13. Mirror documentation structure from an enterprise reference project
-dendrite doc reflect --reference ../reference-core-platform --target .
+# 13. Automatically synthesize and self-heal unit tests with Testcontainers
+dendrite test auto --file pkg/gateway/limiter.go --with-testcontainers
 
-# 14. Analyze an external third-party repository safely in an ephemeral sandbox
-dendrite analyze repo https://github.com/ast-grep/ast-grep.git --ephemeral
-
-# 15. Check real-time spend, thermal sensors, and node status
-dendrite status
+# 14. Run headless k6-browser UI integration tests against Dendrite Web UI
+dendrite test ui --headless --base-url http://127.0.0.1:3456
 ```
-
----
-
-## 4. Development Environment Installation & Replication (Host & Containerized)
-
-Dendrite provides built-in tools (`dendrite env`) and pre-configured Docker Compose manifests (`stacks/`) enabling developers to replicate the complete development stack either in **Docker containers** or **directly on the target computer host**.
-
-### 4.1 Replication Modes Comparison
-
-| Feature | Docker Container Mode (`--mode container`) | Host Direct Install Mode (`--mode host`) | Hybrid Mode (`--mode hybrid`) |
-| :--- | :--- | :--- | :--- |
-| **Isolation** | 100% sandboxed container processes & tmpfs | Native host execution | Containerized state, native developer CLI |
-| **Dependencies** | Docker Engine 26+ & Docker Compose v2 | Homebrew, APT, npm, Go toolchain | Docker + Homebrew/APT |
-| **Linear Replication** | Containerized Linear GraphQL server & PostgreSQL DB (`localhost:8085`) | Native Linear CLI installed via npm/brew | Containerized Linear backend + host CLI |
-| **Hardware Metal** | CPU emulation or container GPU bindings | Direct Apple Silicon Metal / CUDA acceleration | Native Ollama Metal + containerized DBs |
-| **Teardown** | Instant clean teardown (`docker compose down`) | Manual package uninstallation | Clean container drop + preserved CLI tools |
-
-### 4.2 Replicating in Docker Containers (e.g. Containerized Linear)
-
-To replicate the development environment inside Docker containers without modifying host system libraries:
-
-```bash
-# 1. Preview planned actions
-dendrite env plan --mode container --with-linear
-
-# 2. Execute replication (generates stacks/ and starts containers)
-dendrite env replicate --mode container
-
-# 3. Check health and connectivity
-dendrite env status
-```
-
-#### Dedicated Linear Container Stack (`stacks/compose.linear.yaml`)
-To launch just the local Linear issue tracking environment with its dedicated PostgreSQL database:
-```bash
-docker compose -f stacks/compose.linear.yaml up -d
-```
-- **GraphQL Endpoint**: `http://localhost:8085/graphql`
-- **Health Probe**: `http://localhost:8085/health`
-- **Postgres Database**: `localhost:5433` (DB: `linear_dev`, User: `linear_user`, Pass: `linear_password`)
-
-### 4.3 Direct Installation on the Target Computer
-
-For maximum local performance or systems without Docker virtualization:
-
-```bash
-# 1. Audit host system package manager and dependencies
-dendrite env doctor
-
-# 2. Install Linear CLI directly on the target machine (via npm or Homebrew)
-dendrite env install linear --mode host
-
-# 3. Install Ollama inference engine on the host
-dendrite env install ollama --mode host
-
-# 4. Verify host toolchain
-dendrite env status
-```
-
-For complete architectural details, see the [Development Environment Installation & Replication Guide](./guides/environment-replication.md).
