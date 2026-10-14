@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  docs-share:
+    build:
+      context: ..
+      dockerfile: website/Dockerfile
+    container_name: dendrite-docs-portal
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3

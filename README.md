@@ -203,4 +203,4 @@ go test -cover ./pkg/...
 
 ## 6. Roadmap & Milestone Progress
 
-Active milestone progress and completed tickets are tracked in real-time in **[DEV_STATUS.md](DEV_STATUS.md)**.
+Active milestone progress and tickets are tracked authoritatively in **Plane v2** (`http://localhost:8090`). **[DEV_STATUS.md](DEV_STATUS.md)** is maintained purely as a human-readable repository mirror replicated from Plane (`dendrite plane replicate`). Autonomous agents must never check or rely on `DEV_STATUS.md` when Plane is available.
