@@ -5,7 +5,7 @@
 Dendrite provides bidirectional integration with the **JetBrains IDE Ecosystem** (GoLand, IntelliJ IDEA, PyCharm, RustRover, WebStorm, CLion) through two complementary communication channels:
 
 1. **JetBrains Native MCP Client (IDE $\to$ Dendrite)**:
-   JetBrains IDEs (2024.3+, 2025+, 2026+) support the **Model Context Protocol (MCP 2024-11-05)**. By configuring Dendrite's native MCP server (`bin/dendrite mcp serve`), JetBrains AI Assistant, Junie, and embedded agents gain direct access to Dendrite's 15 operational MCP tools (ticket tracking, multi-engine inference probing, topology advisor, agent runners, environment replication, and telemetry).
+   JetBrains IDEs (2024.3+, 2025+, 2026+) support the **Model Context Protocol (MCP 2024-11-05)**. By configuring Dendrite's native MCP server (`bin/dendrite mcp serve`), JetBrains AI Assistant, Junie, and embedded agents gain direct access to Dendrite's 19 operational MCP tools (ticket tracking, multi-engine inference probing, topology advisor, agent runners, environment replication, distributed codebase ecosystem coordination, and telemetry).
 
 2. **Dendrite JetBrains Bridge (Dendrite $\to$ IDE)**:
    Through `pkg/jetbrains` and `dendrite jetbrains <probe|open|problems|symbols|build|run|setup>`, Dendrite's autonomous agents can reach back into the running JetBrains IDE over the IDE's built-in MCP server / port `63342` to navigate active editor tabs, trigger background compilations, query PSI symbols, and extract live compiler diagnostics.
@@ -22,7 +22,7 @@ flowchart LR
 
     subgraph "Dendrite Control Plane"
         DendriteCLI[Dendrite CLI / Binary<br/>./bin/dendrite]
-        MCPServer[Dendrite MCP Server<br/>15 Operational Tools]
+        MCPServer[Dendrite MCP Server<br/>19 Operational Tools]
         JBBridge[JetBrains Bridge<br/>pkg/jetbrains]
         AgentRunner[Agent Harness<br/>Aider / AGY / OpenHands]
     end
@@ -125,7 +125,7 @@ Once saved, JetBrains's `McpProjectServerConfigurationService` reloads the file 
      - `DENDRITE_WORKSPACE`: `/Users/yasuomaidana/GoLandProjects/Dendrite`
      - `DENDRITE_ENV`: `development`
 5. Click **Apply** and **OK**.
-6. The IDE status bar MCP widget will display `dendrite (15 tools connected)`.
+6. The IDE status bar MCP widget will display `dendrite (19 tools connected)`.
 
 ---
 
@@ -139,13 +139,26 @@ To verify that the MCP server and agent harnesses are fully functional, run the 
 ```
 *Expected Output*:
 ```
-[+] Registered Dendrite MCP Tools (15):
+[+] Registered Dendrite MCP Tools (19):
     - dendrite_ticket_list     : List all project tickets, their statuses, complexity scores...
     - dendrite_ticket_update   : Update the status of a project ticket in DEV_STATUS.md...
-    - dendrite_jetbrains_setup : Configure JetBrains IDE toolset with Dendrite MCP servers...
-    - dendrite_agent_run       : Launch an autonomous coding agent loop (aider, openhands, opencode, agy)...
+    - dendrite_env_status      : Query real-time health and status of replicated environment components...
+    - dendrite_inference_list  : List registered multi-provider inference engines...
+    - dendrite_inference_probe : Probe multi-provider inference engines (< 2s) for health, reachability...
+    - dendrite_ollama_probe    : Probe local Ollama inference engine for latency and models...
+    - dendrite_agent_run       : Launch an autonomous coding agent loop with LiteLLM token governance...
+    - dendrite_topology_advisor: Evaluate hardware capabilities and calculate placement...
+    - dendrite_gateway_render  : Render dynamic LiteLLM YAML routing configuration...
     - dendrite_telemetry       : Sample real-time SoC thermal metrics and 24h/7d token spend totals...
-    ...
+    - dendrite_plane_issues    : Query issues from self-hosted Plane v2 project management container...
+    - dendrite_plane_replicate : Replicate DEV_STATUS.md directly from Plane service state...
+    - dendrite_plane_push_status: Move local DEV_STATUS.md content to Plane service...
+    - dendrite_plane_doc_sync  : Synchronize documentation between Plane pages and local repository...
+    - dendrite_jetbrains_setup : Configure JetBrains IDE toolset with Dendrite MCP servers...
+    - dendrite_dist_sources    : List or filter registered codebase sources (own-repo, curated-oss, registry)...
+    - dendrite_dist_decompose  : Forcibly decompose target project or REA evidence into reusable modules...
+    - dendrite_dist_interop    : Coordinate cross-project dependencies across owned repositories...
+    - dendrite_dist_spawn      : Spawn parallel sub-projects or generative satellite projects with git...
 ```
 
 ### 2. Verify Live MCP Execution
@@ -157,7 +170,7 @@ To verify that the MCP server and agent harnesses are fully functional, run the 
 ./bin/dendrite mcp call dendrite_telemetry '{}'
 
 # Launch agent loop via MCP
-./bin/dendrite mcp call dendrite_agent_run '{"agent_type":"aider","task":"Verify MCP bridge","ticket_id":"DEN-040"}'
+./bin/dendrite mcp call dendrite_agent_run '{"agent_type":"aider","task":"Verify MCP bridge","ticket_id":"DEN-036"}'
 ```
 
 ### 3. Verify IDE Connectivity from Dendrite
@@ -183,7 +196,7 @@ To verify that the MCP server and agent harnesses are fully functional, run the 
 
 | Name | Interface Type | Role / Capability | Primary Execution Path |
 |:---|:---|:---|:---|
-| **Dendrite Native MCP** | Stdio JSON-RPC 2.0 | Control Plane Server (15 tools) | `./bin/dendrite mcp serve` |
+| **Dendrite Native MCP** | Stdio JSON-RPC 2.0 | Control Plane Server (19 tools) | `./bin/dendrite mcp serve` |
 | **JetBrains IDE Bridge** | MCP / HTTP (63342) | Bidirectional IDE inspection & control | `./bin/dendrite jetbrains probe` |
 | **Aider Agent** | Autonomous CLI loop | Interactive terminal pair programmer | `./bin/dendrite agent run aider` |
 | **Antigravity (AGY)** | Autonomous CLI loop | High-cognition strategic agent | `./bin/dendrite agent run agy` |
