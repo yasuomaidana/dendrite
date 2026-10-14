@@ -5,32 +5,39 @@
 Dendrite provides bidirectional integration with the **JetBrains IDE Ecosystem** (GoLand, IntelliJ IDEA, PyCharm, RustRover, WebStorm, CLion) through two complementary communication channels:
 
 1. **JetBrains Native MCP Client (IDE $\to$ Dendrite)**:
-   JetBrains IDEs (2024.3+, 2025+, 2026+) support the **Model Context Protocol (MCP 2024-11-05)**. By configuring Dendrite's native MCP server (`bin/dendrite mcp serve`), JetBrains AI Assistant, Junie, and embedded agents gain direct access to Dendrite's 19 operational MCP tools (ticket tracking, multi-engine inference probing, topology advisor, agent runners, environment replication, distributed codebase ecosystem coordination, and telemetry).
+   JetBrains IDEs (2024.3+, 2025+, 2026+) natively support the **Model Context Protocol (MCP 2024-11-05)**. By configuring Dendrite's native MCP server (`bin/dendrite mcp serve`), JetBrains AI Assistant, Junie, and embedded agents gain direct access to Dendrite's **20 operational MCP tools** (ticket tracking, multi-engine inference probing, topology advisor, agent runners, distributed codebase registry, modular decomposition, cross-project interop, satellite project spawning, environment replication, and telemetry).
 
 2. **Dendrite JetBrains Bridge (Dendrite $\to$ IDE)**:
    Through `pkg/jetbrains` and `dendrite jetbrains <probe|open|problems|symbols|build|run|setup>`, Dendrite's autonomous agents can reach back into the running JetBrains IDE over the IDE's built-in MCP server / port `63342` to navigate active editor tabs, trigger background compilations, query PSI symbols, and extract live compiler diagnostics.
 
 ```mermaid
 flowchart LR
-    subgraph "JetBrains IDE (GoLand, IntelliJ, etc.)"
-        IDE_Core[IDE Core & Editor]
-        AIAssistant[JetBrains AI / Junie]
-        IDE_MCP_Srv[JetBrains Built-in MCP Server<br/>Port 63342 / Stdio]
-        ConfigProject[Project MCP: .ai/mcp/mcp.json]
+    subgraph "JetBrains IDE (GoLand, IntelliJ, RustRover)"
+        IDE_Core["IDE Core & Editor Engine"]
+        AIAssistant["JetBrains AI Assistant / Junie"]
+        IDE_MCP_Srv["JetBrains Built-in MCP Server<br/>Port 63342 / Stdio"]
+        ConfigProject["Project MCP: .ai/mcp/mcp.json"]
         ConfigGlobal["Global MCP: ~/.ai/mcp/mcp.json"]
+        RunConfigs["Run Configurations (.idea/runConfigurations)"]
+        ExtTools["External Tools (Context Menu)"]
     end
 
     subgraph "Dendrite Control Plane"
-        DendriteCLI[Dendrite CLI / Binary<br/>./bin/dendrite]
-        MCPServer[Dendrite MCP Server<br/>19 Operational Tools]
-        JBBridge[JetBrains Bridge<br/>pkg/jetbrains]
-        AgentRunner[Agent Harness<br/>Aider / AGY / OpenHands]
+        DendriteCLI["Dendrite CLI / Binary<br/>./bin/dendrite"]
+        MCPServer["Dendrite MCP Server<br/>20 Operational Tools"]
+        DistEngine["Distributed Codebase Engine<br/>pkg/distcodebase"]
+        PlaneAdapter["Plane v2 Adapter<br/>pkg/tracker/plane"]
+        JBBridge["JetBrains Bridge<br/>pkg/jetbrains"]
+        AgentRunner["Agent Harness<br/>Aider / AGY / OpenHands"]
     end
 
     ConfigProject & ConfigGlobal -->|Configures| AIAssistant
     AIAssistant -->|"tools/call (JSON-RPC stdio)"| MCPServer
-    MCPServer -->|Executes Tools| DendriteCLI
+    MCPServer --> DistEngine
+    MCPServer --> PlaneAdapter
+    MCPServer --> AgentRunner
 
+    RunConfigs & ExtTools -->|Executes Actions| DendriteCLI
     AgentRunner -->|Uses| JBBridge
     JBBridge -->|Port 63342 / MCP| IDE_MCP_Srv
     IDE_MCP_Srv -->|Controls| IDE_Core
@@ -101,7 +108,9 @@ Add the following configuration:
       ],
       "env": {
         "DENDRITE_WORKSPACE": "/Users/yasuomaidana/GoLandProjects/Dendrite",
-        "DENDRITE_ENV": "development"
+        "DENDRITE_ENV": "development",
+        "PLANE_API_KEY": "plane_sec_dendrite_token_12345",
+        "PLANE_URL": "http://localhost:8090"
       }
     }
   }
@@ -124,84 +133,184 @@ Once saved, JetBrains's `McpProjectServerConfigurationService` reloads the file 
    - **Environment Variables**:
      - `DENDRITE_WORKSPACE`: `/Users/yasuomaidana/GoLandProjects/Dendrite`
      - `DENDRITE_ENV`: `development`
+     - `PLANE_API_KEY`: `plane_sec_dendrite_token_12345`
+     - `PLANE_URL`: `http://localhost:8090`
 5. Click **Apply** and **OK**.
-6. The IDE status bar MCP widget will display `dendrite (19 tools connected)`.
+6. The IDE status bar MCP widget will display `dendrite (20 tools connected)`.
 
 ---
 
-## 4. Verification & Operational Health Check
+## 4. Comprehensive Catalog of Dendrite's 19 Native MCP Tools
 
-To verify that the MCP server and agent harnesses are fully functional, run the verification commands below:
+| Tool Identifier | Description & Capability | Primary Input Parameters |
+|:---|:---|:---|
+| `dendrite_ticket_list` | Query active tickets from Plane v2 with status, priority, and milestone. | `{}` |
+| `dendrite_ticket_update` | Mutate ticket state (e.g. Backlog $\to$ Todo $\to$ In Progress $\to$ Done). | `ticket_id`, `status` |
+| `dendrite_plane_issues` | Comprehensive Plane v2 issue search with filter criteria. | `project_id`, `state` |
+| `dendrite_plane_push_status`| Bulk push and reconcile status ledgers to Plane v2. | `file_path`, `dry_run` |
+| `dendrite_plane_doc_sync` | Synchronize markdown docs into Plane project documentation pages. | `docs_dir`, `project_id`|
+| `dendrite_plane_replicate` | Replicate Plane v2 project structure, states, and modules to target. | `target_project_name` |
+| `dendrite_dist_sources` | **Priority-tiered multi-source registry** ($P_1$: Own, $P_2$: Curated OSS, $P_3$: Registries). | `query`, `min_priority` |
+| `dendrite_dist_decompose` | **Scenario 1**: Force modular decomposition and search ecosystem reuse. | `target`, `user_requested_custom` |
+| `dendrite_dist_interop` | **Scenario 3**: Local LLM cross-project interop coordinator (fallback & TODO). | `source_project`, `target_project`, `action` |
+| `dendrite_dist_spawn` | **Scenario 2 & 4**: Parallel repository spawner & Plane v2 project creator. | `project_name`, `language`, `create_plane_project` |
+| `dendrite_agent_run` | Dispatch autonomous coding loop (Aider, OpenHands, OpenCode, AGY). | `agent_type`, `ticket_id`, `task` |
+| `dendrite_telemetry` | Real-time Apple Silicon SoC thermals and LiteLLM spend window totals. | `{}` |
+| `dendrite_jetbrains_setup`| Auto-configure JetBrains MCP server, Run Configurations, and Tools. | `project_only`, `global_only` |
+| `dendrite_ollama_probe` | Probe local Ollama Metal GPU instance, check models and local latency. | `{}` |
+| `dendrite_inference_list` | List all operational engines (Ollama, OxiLLaMa, vLLM, TGI, LiteLLM). | `{}` |
+| `dendrite_inference_probe`| Health-check and sample TTFT/TPS latency on target engine. | `engine_type` |
+| `dendrite_topology_advisor`| Recommend hardware placement topologies for target scenario. | `scenario` |
+| `dendrite_gateway_render` | Dynamically render LiteLLM gateway routing configurations. | `template_path` |
+| `dendrite_env_status` | Pre-flight diagnostics for Docker, Go, Git, Plane, and environment. | `{}` |
 
-### 1. Verify MCP Tools Discovery
+---
+
+## 5. Technical Workflows: Distributed Codebase Scenarios 1 to 4 in JetBrains
+
+JetBrains AI Assistant or Junie can execute complex distributed codebase tasks through conversational prompts:
+
+### Scenario 1: Modular REA Decomposition & Ecosystem Reuse
+Monolithic legacy targets are automatically divided into reusable sub-modules. The tool checks registered priority sources before authoring custom code:
+- **Prompt in JetBrains AI Chat**:
+  > *"Decompose the monolithic target 'game-renderer' into modular sub-packages and find existing libraries using `dendrite_dist_decompose`."*
+- **MCP Call Triggered**:
+  ```json
+  {
+    "tool": "dendrite_dist_decompose",
+    "arguments": {
+      "target": "game-renderer",
+      "user_requested_custom": false
+    }
+  }
+  ```
+- **Result**: Core rendering is mapped to Priority 2 `wgpu`, data queries to Priority 2 `diesel-cte-ext`, and edge storage to `turso`. Custom development is only scheduled for unique game state logic.
+
+---
+
+### Scenario 2: Parallel Multi-Project & Repository Spawning
+Scaffold independent repositories concurrently with language manifests and git initialization:
+- **Prompt in JetBrains AI Chat**:
+  > *"Spawn a new Rust project named 'sensor-stream-rs' with full Git initialization using `dendrite_dist_spawn`."*
+- **MCP Call Triggered**:
+  ```json
+  {
+    "tool": "dendrite_dist_spawn",
+    "arguments": {
+      "project_name": "sensor-stream-rs",
+      "language": "rust",
+      "create_plane_project": false
+    }
+  }
+  ```
+
+---
+
+### Scenario 3: Cross-Project Interoperability Coordinator (Docula $\to$ Oxipix)
+When working on `Docula` which depends on user-owned `Oxipix` and `semdag`:
+1. Request a capability in `Oxipix` (e.g., `simd-blend-modes`).
+2. Generate an interim fallback in `Docula` tagged with `// TODO(interop:Oxipix): Replace with Oxipix::simd_blend once implemented`.
+3. Unblock `Docula` development immediately.
+4. Once `Oxipix` is updated, apply reconciliation patch.
+- **Prompt in JetBrains AI Chat**:
+  > *"Coordinate the SIMD blend feature between Docula and Oxipix using `dendrite_dist_interop`."*
+- **MCP Call Triggered**:
+  ```json
+  {
+    "tool": "dendrite_dist_interop",
+    "arguments": {
+      "source_project": "Docula",
+      "target_project": "Oxipix",
+      "feature": "simd-blend-modes",
+      "action": "request"
+    }
+  }
+  ```
+
+---
+
+### Scenario 4: Generative Satellite Projects (Carla-to-Rust) & Plane Lifecycle
+When executing full language translations (e.g. Carla simulator to 100% Rust), spin off missing libraries into separate Plane projects:
+- **Prompt in JetBrains AI Chat**:
+  > *"Create a generative satellite project for Carla sensor suite in Rust with a dedicated Plane project using `dendrite_dist_spawn`."*
+- **MCP Call Triggered**:
+  ```json
+  {
+    "tool": "dendrite_dist_spawn",
+    "arguments": {
+      "project_name": "carla-sensor-rs",
+      "language": "rust",
+      "create_plane_project": true
+    }
+  }
+  ```
+- **Result**: Provisions `carla-sensor-rs` locally with Git and creates project `carla-sensor-rs` on Plane v2 (`http://localhost:8090`).
+
+---
+
+## 6. How to Use Tools via JetBrains External Tools Menu
+
+You can invoke Dendrite operations directly on the file you are actively editing:
+
+1. Right-click anywhere in the editor code area or in the Project view.
+2. Select **External Tools** $\to$ **Dendrite**:
+   - **`Dendrite: Run Aider on Active File`**: Launches an autonomous pair-programming loop targeted at the active file.
+   - **`Dendrite: Run Antigravity on Active File`**: Invokes the high-cognition strategic agent to inspect the current file.
+   - **`Dendrite: Probe MCP Diagnostics`**: Validates stdio MCP communication and lists tool status.
+   - **`Dendrite: List Registered MCP Tools`**: Displays all 19 MCP tools with schema descriptions in the IDE Run window.
+   - **`Dendrite: Telemetry Snapshot`**: Displays real-time Apple Silicon thermals and LiteLLM token usage in the IDE console.
+
+---
+
+## 7. How to Use Tools via JetBrains Run Configurations
+
+In the top-right toolbar of GoLand or IntelliJ, click the Run Configuration dropdown:
+
+| Configuration Name | Action Performed | Shortcut |
+|:---|:---|:---:|
+| `Dendrite_Web_UI` | Starts the embedded HTTP dashboard and WebSocket telemetry server on `http://localhost:3456`. | `Shift + F10` |
+| `Dendrite_Doctor` | Runs environment diagnostics checking Docker, Ollama, Plane, LiteLLM, and Go compiler. | `Shift + F10` |
+| `Dendrite_MCP_Server` | Launches the Model Context Protocol stdio server for external MCP debuggers. | `Shift + F10` |
+| `Dendrite_Agent_Aider` | Launches the Aider autonomous coding loop bound to virtual LiteLLM keys. | `Shift + F10` |
+| `Dendrite_Agent_Antigravity` | Launches the Antigravity high-cognition cloud agent session. | `Shift + F10` |
+| `Dendrite_JetBrains_Probe` | Probes the running JetBrains IDE's MCP port `63342` and verifies IDE control tools. | `Shift + F10` |
+
+---
+
+## 8. Controlling JetBrains from Autonomous Agents (Reverse Channel)
+
+Dendrite's autonomous coding agents (Aider, OpenHands, AGY) can leverage the running IDE's internal capabilities through `pkg/jetbrains`:
+
 ```bash
-./bin/dendrite mcp tools
-```
-*Expected Output*:
-```
-[+] Registered Dendrite MCP Tools (19):
-    - dendrite_ticket_list     : List all project tickets, their statuses, complexity scores...
-    - dendrite_ticket_update   : Update the status of a project ticket in DEV_STATUS.md...
-    - dendrite_env_status      : Query real-time health and status of replicated environment components...
-    - dendrite_inference_list  : List registered multi-provider inference engines...
-    - dendrite_inference_probe : Probe multi-provider inference engines (< 2s) for health, reachability...
-    - dendrite_ollama_probe    : Probe local Ollama inference engine for latency and models...
-    - dendrite_agent_run       : Launch an autonomous coding agent loop with LiteLLM token governance...
-    - dendrite_topology_advisor: Evaluate hardware capabilities and calculate placement...
-    - dendrite_gateway_render  : Render dynamic LiteLLM YAML routing configuration...
-    - dendrite_telemetry       : Sample real-time SoC thermal metrics and 24h/7d token spend totals...
-    - dendrite_plane_issues    : Query issues from self-hosted Plane v2 project management container...
-    - dendrite_plane_replicate : Replicate DEV_STATUS.md directly from Plane service state...
-    - dendrite_plane_push_status: Move local DEV_STATUS.md content to Plane service...
-    - dendrite_plane_doc_sync  : Synchronize documentation between Plane pages and local repository...
-    - dendrite_jetbrains_setup : Configure JetBrains IDE toolset with Dendrite MCP servers...
-    - dendrite_dist_sources    : List or filter registered codebase sources (own-repo, curated-oss, registry)...
-    - dendrite_dist_decompose  : Forcibly decompose target project or REA evidence into reusable modules...
-    - dendrite_dist_interop    : Coordinate cross-project dependencies across owned repositories...
-    - dendrite_dist_spawn      : Spawn parallel sub-projects or generative satellite projects with git...
-```
-
-### 2. Verify Live MCP Execution
-```bash
-# Query tickets through MCP
-./bin/dendrite mcp call dendrite_ticket_list '{}'
-
-# Query real-time thermals & spend
-./bin/dendrite mcp call dendrite_telemetry '{}'
-
-# Launch agent loop via MCP
-./bin/dendrite mcp call dendrite_agent_run '{"agent_type":"aider","task":"Verify MCP bridge","ticket_id":"DEN-036"}'
-```
-
-### 3. Verify IDE Connectivity from Dendrite
-```bash
+# Verify IDE connectivity from terminal
 ./bin/dendrite jetbrains probe
-```
-*Expected Output*:
-```
-[+] Probing JetBrains IDE MCP Server...
-  [✓] Connected: JetBrains GoLand MCP Server (v2024.3)
-  [✓] Discovered Tools (6):
-      - open_file_in_editor      : Opens the specified file in the active JetBrains editor window.
-      - get_file_problems        : Retrieves inspection problems and syntax errors for a file.
-      - search_symbol            : Searches for symbols matching query across project index.
-      - build_project            : Compiles and builds the currently open project in JetBrains.
-      - execute_run_configuration: Runs a specified run/test configuration inside the IDE.
-      - lint_files               : Lints specified file paths using JetBrains inspections.
+
+# Navigate the IDE editor to a specific file and line
+./bin/dendrite jetbrains open pkg/distcodebase/registry.go 45
+
+# Extract live IDE inspection problems and compiler errors
+./bin/dendrite jetbrains problems pkg/distcodebase/registry.go
+
+# Search project PSI symbol index for structs, interfaces, and methods
+./bin/dendrite jetbrains symbols ResolveCapability
+
+# Trigger background compilation inside the IDE
+./bin/dendrite jetbrains build
 ```
 
 ---
 
-## 5. Summary of Registered MCP Tools & Agents
+## 9. Verification & Operational Health Check
 
-| Name | Interface Type | Role / Capability | Primary Execution Path |
-|:---|:---|:---|:---|
-| **Dendrite Native MCP** | Stdio JSON-RPC 2.0 | Control Plane Server (19 tools) | `./bin/dendrite mcp serve` |
-| **JetBrains IDE Bridge** | MCP / HTTP (63342) | Bidirectional IDE inspection & control | `./bin/dendrite jetbrains probe` |
-| **Aider Agent** | Autonomous CLI loop | Interactive terminal pair programmer | `./bin/dendrite agent run aider` |
-| **Antigravity (AGY)** | Autonomous CLI loop | High-cognition strategic agent | `./bin/dendrite agent run agy` |
-| **OpenHands** | Autonomous Sandbox | Software engineering container loop | `./bin/dendrite agent run openhands` |
-| **OpenCode** | Headless Batch | Fast non-interactive refactoring | `./bin/dendrite agent run opencode` |
-| **Ticket Lifecycle Dev** | Meta-Skill Agent | 8-phase spec & TDD lifecycle | `.gemini/skills/ticket-lifecycle-developer/` |
-| **AI Practices Auditor** | Meta-Skill Agent | Token economy & schema guardrails | `.gemini/skills/ai-practices-auditor/` |
-| **Complexity Auditor** | Meta-Skill Agent | AST & cognitive complexity analysis | `.gemini/skills/pattern-complexity-auditor/` |
+To verify that your JetBrains IDE and Dendrite MCP server are operating in perfect synchrony:
+
+```bash
+# 1. Check all 19 MCP tools
+./bin/dendrite mcp tools
+
+# 2. Test tool execution directly via CLI
+./bin/dendrite mcp call dendrite_dist_sources '{"query":"wgpu"}'
+
+# 3. Check Plane connectivity
+./bin/dendrite plane status
+```

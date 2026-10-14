@@ -19,8 +19,11 @@ import (
 	"Dendrite/pkg/server"
 	"Dendrite/pkg/telemetry"
 	"Dendrite/pkg/telemetry/exporter"
+	"encoding/json"
 	"Dendrite/pkg/topology"
+	"Dendrite/pkg/topology/advisor"
 	"Dendrite/pkg/tracker"
+	"Dendrite/pkg/tracker/plane"
 	"Dendrite/pkg/workspace"
 )
 
@@ -83,12 +86,54 @@ func main() {
 		}
 		handleDevCommand(ctx, os.Args[2], os.Args[3:])
 
+	case "topology":
+		if len(os.Args) < 3 {
+			runTopologyAdvisor(ctx, nil)
+			return
+		}
+		handleTopologyCommand(ctx, os.Args[2], os.Args[3:])
+
 	case "jetbrains":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: dendrite jetbrains <probe|open|problems|symbols|build|run> [args...]")
+			fmt.Println("Usage: dendrite jetbrains <probe|open|problems|symbols|build|run|setup> [args...]")
 			return
 		}
 		handleJetBrainsCommand(ctx, os.Args[2], os.Args[3:])
+
+	case "inference":
+		if len(os.Args) < 3 {
+			handleInferenceCommand(ctx, []string{"list"})
+			return
+		}
+		handleInferenceCommand(ctx, os.Args[2:])
+
+	case "plane":
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: dendrite plane <status|replicate|push-status|doc|issues|modules|pages> [args...]")
+			return
+		}
+		handlePlaneCommand(ctx, os.Args[2], os.Args[3:])
+
+	case "mcp":
+		if len(os.Args) < 3 {
+			handleMCPCommand(ctx, "serve", nil)
+			return
+		}
+		handleMCPCommand(ctx, os.Args[2], os.Args[3:])
+
+	case "dist", "distcodebase", "distributed":
+		if len(os.Args) < 3 {
+			handleDistCommand(ctx, "help", nil)
+			return
+		}
+		handleDistCommand(ctx, os.Args[2], os.Args[3:])
+
+	case "bench", "benchmark":
+		if len(os.Args) < 3 {
+			printBenchUsage()
+			return
+		}
+		handleBenchCommand(ctx, os.Args[2], os.Args[3:])
 
 	default:
 		printUsage()
@@ -115,18 +160,34 @@ func printUsage() {
 	fmt.Println("  agent run <tool> [flags]   Launch an autonomous coding agent (aider, openhands, opencode, agy)")
 	fmt.Println("  agent session [list]       View agent execution history and commits")
 	fmt.Println("  doc reflect [flags]        Reflect documentation taxonomy (--reference, --source, --target)")
+	fmt.Println("  plane replicate [--file DEV_STATUS.md] Replicate DEV_STATUS.md from Plane service (Plane owns status)")
+	fmt.Println("  plane push-status                      Move local DEV_STATUS content to Plane service")
+	fmt.Println("  plane doc <push|pull|sync> [--dir docs] Synchronize documentation between Plane and local repository")
+	fmt.Println("  plane <issues|modules|pages>           Inspect Plane issues, milestones, and documentation pages")
 	fmt.Println("  jetbrains probe [url]      Probe JetBrains IDE MCP server and list available tools")
 	fmt.Println("  jetbrains open <f> [--line]Open target file in active JetBrains editor")
 	fmt.Println("  jetbrains problems <file>  Query inspections and diagnostics for file")
 	fmt.Println("  jetbrains symbols <query>  Search symbols in JetBrains PSI index")
 	fmt.Println("  jetbrains build            Trigger IDE background build")
 	fmt.Println("  jetbrains run <config>     Execute an IDE run configuration")
+	fmt.Println("  jetbrains setup            Configure JetBrains IDE toolset (MCP server, agents, run configs, external tools)")
 	fmt.Println("  dev ollama probe [url]     Probe Ollama health, latency, and models")
 	fmt.Println("  dev ticket list [file]     List tickets from DEV_STATUS.md")
 	fmt.Println("  dev ticket set <id> <st>   Update a ticket status (e.g. DONE, IN_PROGRESS)")
+	fmt.Println("  topology advisor [--nodes ..] Run hardware discovery & dynamic service placement router")
+	fmt.Println("  topology [scenario]         Inspect and validate topology scenario placements")
 	fmt.Println("  dev topology [scenario]    Inspect and validate topology scenario placements")
 	fmt.Println("  dev gateway [scenario]     Render dynamic LiteLLM configuration YAML")
 	fmt.Println("  dev audit-prompt <text>    Analyze prompt length and estimated token volume")
+	fmt.Println("  inference [list|probe|switch|render] Unified multi-provider inference engine gateway")
+	fmt.Println("  dev inference <list|probe|switch|render> Multi-provider inference gateway control")
+	fmt.Println("  mcp serve                  Launch Dendrite Model Context Protocol (MCP) server over stdio")
+	fmt.Println("  mcp tools                  List registered Dendrite MCP tools")
+	fmt.Println("  mcp call <tool> [json]     Invoke an MCP tool directly")
+	fmt.Println("  bench inference [flags]    Benchmark TTFT and TPS generation velocity across engines")
+	fmt.Println("  bench gateway [flags]      Stress-test LiteLLM gateway with fallback cascade fault injection")
+	fmt.Println("  bench matrix [flags]       Multi-engine comparative benchmark matrix")
+	fmt.Println("  bench stress [flags]       Concurrency stress test against sliding window budget limiter")
 	fmt.Println("  version                    Print Dendrite CLI version")
 }
 
@@ -209,30 +270,40 @@ func handleEnvCommand(ctx context.Context, action string, args []string) {
 	switch action {
 	case "doctor":
 		fmt.Println("[+] Host Environment Discovery:")
-		fmt.Printf("    - Operating System:  %s (%s)\n", host.OS, host.Arch)
-		fmt.Printf("    - Package Manager:   %s\n", host.PackageManager)
-		fmt.Printf("    - Docker Engine:     %v\n", host.HasDocker)
-		fmt.Printf("    - Docker Compose:    %v\n", host.HasDockerComp)
-		fmt.Printf("    - Ollama Engine:     %v\n", host.HasOllama)
-		fmt.Printf("    - Go Toolchain:      %v\n", host.HasGo)
-		fmt.Printf("    - Node / NPM:        Node: %v, NPM: %v\n", host.HasNode, host.HasNpm)
-		fmt.Printf("    - Tailscale Mesh:    %v\n", host.HasTailscale)
-		fmt.Printf("    - Linear Host CLI:   %v\n", host.HasLinearCLI)
-
 	case "plan":
 		mode := env.ModeContainer
 		withLinear := false
+		withPlane := false
+		var withPlaneUI *bool
+		withPenpot := false
+		withGrafana := false
 		for i := 0; i < len(args); i++ {
 			if (args[i] == "--mode" || args[i] == "-m") && i+1 < len(args) {
 				mode = env.InstallMode(args[i+1])
 				i++
 			} else if args[i] == "--with-linear" {
 				withLinear = true
+			} else if args[i] == "--with-plane" {
+				withPlane = true
+			} else if args[i] == "--with-plane-ui" {
+				v := true
+				withPlaneUI = &v
+			} else if args[i] == "--no-plane-ui" || args[i] == "--without-plane-ui" {
+				v := false
+				withPlaneUI = &v
+			} else if args[i] == "--with-penpot" {
+				withPenpot = true
+			} else if args[i] == "--with-grafana" {
+				withGrafana = true
 			}
 		}
 		req := env.ReplicationRequest{
-			Mode:       mode,
-			WithLinear: withLinear,
+			Mode:        mode,
+			WithLinear:  withLinear,
+			WithPlane:   withPlane,
+			WithPlaneUI: withPlaneUI,
+			WithPenpot:  withPenpot,
+			WithGrafana: withGrafana,
 		}
 		plan, err := planner.PlanReplication(req)
 		if err != nil {
@@ -252,6 +323,8 @@ func handleEnvCommand(ctx context.Context, action string, args []string) {
 	case "replicate":
 		mode := env.ModeContainer
 		withLinear := true
+		withPlane := false
+		var withPlaneUI *bool
 		dryRun := false
 		for i := 0; i < len(args); i++ {
 			if (args[i] == "--mode" || args[i] == "-m") && i+1 < len(args) {
@@ -259,21 +332,33 @@ func handleEnvCommand(ctx context.Context, action string, args []string) {
 				i++
 			} else if args[i] == "--no-linear" {
 				withLinear = false
+			} else if args[i] == "--with-plane" {
+				withPlane = true
+			} else if args[i] == "--no-plane" {
+				withPlane = false
+			} else if args[i] == "--with-plane-ui" {
+				v := true
+				withPlaneUI = &v
+			} else if args[i] == "--no-plane-ui" || args[i] == "--without-plane-ui" {
+				v := false
+				withPlaneUI = &v
 			} else if args[i] == "--dry-run" {
 				dryRun = true
 			}
 		}
 		req := env.ReplicationRequest{
-			Mode:       mode,
-			WithLinear: withLinear,
-			DryRun:     dryRun,
+			Mode:        mode,
+			WithLinear:  withLinear,
+			WithPlane:   withPlane,
+			WithPlaneUI: withPlaneUI,
+			DryRun:      dryRun,
 		}
 		plan, err := planner.PlanReplication(req)
 		if err != nil {
 			fmt.Printf("[-] Failed to plan replication: %v\n", err)
 			return
 		}
-		fmt.Printf("[+] Executing Environment Replication (Mode: %s, DryRun: %v)...\\n", mode, dryRun)
+		fmt.Printf("[+] Executing Environment Replication (Mode: %s, DryRun: %v)...\n", mode, dryRun)
 		res, err := replicator.ExecutePlan(ctx, plan, dryRun)
 		if err != nil {
 			fmt.Printf("[-] Replication encountered error: %v\n", err)
@@ -296,7 +381,7 @@ func handleEnvCommand(ctx context.Context, action string, args []string) {
 
 	case "install":
 		if len(args) == 0 {
-			fmt.Println("[-] Usage: dendrite env install <linear|ollama|litellm|postgres|docker> [--mode container|host]")
+			fmt.Println("[-] Usage: dendrite env install <linear|plane|penpot|ollama|litellm|postgres|docker> [--mode container|host]")
 			return
 		}
 		target := env.ReplicationTarget(args[0])
@@ -311,9 +396,11 @@ func handleEnvCommand(ctx context.Context, action string, args []string) {
 			Mode:       mode,
 			Targets:    []env.ReplicationTarget{target},
 			WithLinear: target == env.TargetLinear,
+			WithPlane:  target == env.TargetPlane,
 		}
 		plan, err := planner.PlanReplication(req)
 		if err != nil {
+
 			fmt.Printf("[-] Failed to plan target installation: %v\n", err)
 			return
 		}
@@ -421,6 +508,13 @@ func handleProjectCommand(ctx context.Context, action string, args []string) {
 
 func handleDocCommand(ctx context.Context, action string, args []string) {
 	switch action {
+	case "plane":
+		if len(args) == 0 {
+			fmt.Println("Usage: dendrite doc plane <push|pull|sync> [--dir docs]")
+			return
+		}
+		handlePlaneCommand(ctx, "doc", args)
+
 	case "reflect":
 		refDir := "docs"
 		srcDir := "."
@@ -577,6 +671,53 @@ func handleJetBrainsCommand(ctx context.Context, action string, args []string) {
 		}
 		fmt.Printf("[✓] %s\n", out)
 
+	case "setup", "setup-mcp", "configure":
+		fmt.Println("[+] Configuring JetBrains IDE Toolset for Dendrite MCP & Autonomous Agents...")
+		opts := jetbrains.SetupOptions{
+			ConfigureProjectMCP:    true,
+			ConfigureGlobalMCP:     true,
+			ConfigureRunConfigs:    true,
+			ConfigureExternalTools: true,
+		}
+		for _, arg := range args {
+			if arg == "--project-only" {
+				opts.ConfigureGlobalMCP = false
+			} else if arg == "--global-only" {
+				opts.ConfigureProjectMCP = false
+				opts.ConfigureRunConfigs = false
+				opts.ConfigureExternalTools = false
+			}
+		}
+		res, err := jetbrains.SetupJetBrainsToolset(opts)
+		if err != nil {
+			fmt.Printf("[-] Setup failed: %v\n", err)
+			return
+		}
+		fmt.Printf("[✓] JetBrains Toolset configured successfully!\n")
+		if len(res.FilesCreated) > 0 {
+			fmt.Println("[+] Created Configurations:")
+			for _, f := range res.FilesCreated {
+				fmt.Printf("    - %s\n", f)
+			}
+		}
+		if len(res.FilesUpdated) > 0 {
+			fmt.Println("[+] Updated Configurations:")
+			for _, f := range res.FilesUpdated {
+				fmt.Printf("    - %s\n", f)
+			}
+		}
+		if len(res.ToolsAdded) > 0 {
+			fmt.Println("[+] Registered External Tools:")
+			for _, t := range res.ToolsAdded {
+				fmt.Printf("    - %s\n", t)
+			}
+		}
+		fmt.Println("[+] JetBrains MCP Integration Active:")
+		fmt.Println("    - Project MCP: .ai/mcp/mcp.json")
+		fmt.Println("    - Global MCP:  ~/.ai/mcp/mcp.json")
+		fmt.Println("    - Run Configs: .idea/runConfigurations/ (MCP Server, Aider, Antigravity, Web UI)")
+		fmt.Println("    - Toolset:     .idea/tools/External_Tools.xml")
+
 	default:
 		fmt.Printf("[-] Unknown jetbrains action: %s\n", action)
 	}
@@ -731,6 +872,17 @@ func handleDevCommand(ctx context.Context, sub string, args []string) {
 		if len(args) == 0 || args[0] == "list" {
 			tr := tracker.NewMemoryTracker(filePath)
 			if err := tr.LoadFromMarkdown(filePath); err != nil {
+				pClient, pErr := plane.NewClientFromEnv()
+				if pErr == nil {
+					issues, iErr := pClient.ListPlaneIssues(ctx)
+					if iErr == nil && len(issues) > 0 {
+						fmt.Printf("[+] Registered Tickets from Plane (%d):\n", len(issues))
+						for _, iss := range issues {
+							fmt.Printf("    [%s] %s\n", iss.State, iss.Name)
+						}
+						return
+					}
+				}
 				fmt.Printf("[-] Failed to load tickets from %s: %v\n", filePath, err)
 				return
 			}
@@ -743,42 +895,33 @@ func handleDevCommand(ctx context.Context, sub string, args []string) {
 			id := args[1]
 			st := tracker.Status(strings.ToUpper(args[2]))
 			if err := devtool.UpdateTicketInMarkdown(ctx, filePath, id, st); err != nil {
+				pClient, pErr := plane.NewClientFromEnv()
+				if pErr == nil {
+					if err := pClient.UpdateStatus(ctx, tracker.TicketID(id), st); err == nil {
+						fmt.Printf("[✓] Successfully updated ticket %s to %s in Plane service\n", id, st)
+						return
+					}
+				}
 				fmt.Printf("[-] Failed to update ticket: %v\n", err)
 				return
 			}
 			fmt.Printf("[✓] Successfully updated ticket %s to %s in %s\n", id, st, filePath)
+		} else if len(args) > 0 && (args[0] == "sync-plane" || args[0] == "push-plane") {
+			handlePlaneCommand(ctx, "push-status", args[1:])
+		} else if len(args) > 0 && (args[0] == "replicate-plane" || args[0] == "pull-plane") {
+			handlePlaneCommand(ctx, "replicate", args[1:])
 		}
 
 	case "topology":
+		if len(args) > 0 && (args[0] == "advisor" || args[0] == "advise") {
+			runTopologyAdvisor(ctx, args[1:])
+			return
+		}
 		scenarioStr := "local-hybrid"
 		if len(args) > 0 {
 			scenarioStr = args[0]
 		}
-		sc, err := topology.ParseScenario(scenarioStr)
-		if err != nil {
-			fmt.Printf("[-] Invalid scenario: %v\n", err)
-			return
-		}
-		cfg, err := topology.NewTopologyConfig(sc, topology.TailscaleEndpoints{
-			ControlPlane:   "100.84.12.10",
-			ExecutionPlane: "100.84.12.25",
-		})
-		if err != nil {
-			fmt.Printf("[-] Failed to construct topology: %v\n", err)
-			return
-		}
-		fmt.Printf("[+] Active Scenario: %s\n", cfg.Scenario)
-		fmt.Println("[+] Stack Placements:")
-		for comp, node := range cfg.StackPlacement {
-			fmt.Printf("    - %-15s -> %s\n", comp, node)
-		}
-		fmt.Println("[+] Node Compose Profiles:")
-		for _, node := range topology.AllComputeNodes() {
-			profiles := cfg.ActiveComposeProfiles(node)
-			if len(profiles) > 0 {
-				fmt.Printf("    - %-10s: %s\n", node, strings.Join(profiles, ", "))
-			}
-		}
+		runTopologyInspect(ctx, scenarioStr)
 
 	case "gateway":
 		scenarioStr := "local-hybrid"
@@ -805,6 +948,13 @@ func handleDevCommand(ctx context.Context, sub string, args []string) {
 		}
 		fmt.Printf("[+] Rendered LiteLLM Config for scenario '%s':\n\n%s\n", sc, string(yamlData))
 
+	case "inference":
+		if len(args) == 0 {
+			handleInferenceCommand(ctx, []string{"list"})
+			return
+		}
+		handleInferenceCommand(ctx, args)
+
 	case "audit-prompt":
 		if len(args) == 0 {
 			fmt.Println("[-] Please provide a prompt string to audit")
@@ -819,4 +969,137 @@ func handleDevCommand(ctx context.Context, sub string, args []string) {
 	default:
 		fmt.Printf("Unknown dev subcommand: %s\n", sub)
 	}
+}
+
+func handleTopologyCommand(ctx context.Context, action string, args []string) {
+	switch action {
+	case "advisor", "advise":
+		runTopologyAdvisor(ctx, args)
+	case "inspect", "show":
+		scenarioStr := "local-hybrid"
+		if len(args) > 0 {
+			scenarioStr = args[0]
+		}
+		runTopologyInspect(ctx, scenarioStr)
+	default:
+		if _, err := topology.ParseScenario(action); err == nil {
+			runTopologyInspect(ctx, action)
+			return
+		}
+		fmt.Printf("[-] Unknown topology action: %s\n", action)
+		fmt.Println("Usage: dendrite topology <advisor|inspect> [args...]")
+	}
+}
+
+func runTopologyInspect(_ context.Context, scenarioStr string) {
+	sc, err := topology.ParseScenario(scenarioStr)
+	if err != nil {
+		fmt.Printf("[-] Invalid scenario: %v\n", err)
+		return
+	}
+	cfg, err := topology.NewTopologyConfig(sc, topology.TailscaleEndpoints{
+		ControlPlane:   "100.84.12.10",
+		ExecutionPlane: "100.84.12.25",
+	})
+	if err != nil {
+		fmt.Printf("[-] Failed to construct topology: %v\n", err)
+		return
+	}
+	fmt.Printf("[+] Active Scenario: %s\n", cfg.Scenario)
+	fmt.Println("[+] Stack Placements:")
+	for comp, node := range cfg.StackPlacement {
+		fmt.Printf("    - %-15s -> %s\n", comp, node)
+	}
+	fmt.Println("[+] Node Compose Profiles:")
+	for _, node := range topology.AllComputeNodes() {
+		profiles := cfg.ActiveComposeProfiles(node)
+		if len(profiles) > 0 {
+			fmt.Printf("    - %-10s: %s\n", node, strings.Join(profiles, ", "))
+		}
+	}
+}
+
+func runTopologyAdvisor(ctx context.Context, args []string) {
+	nodeArgs := "local=localhost"
+	outputJSON := false
+
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--nodes" && i+1 < len(args) {
+			nodeArgs = args[i+1]
+			i++
+		} else if args[i] == "--json" {
+			outputJSON = true
+		}
+	}
+
+	targets := parseNodeTargets(nodeArgs)
+	fmt.Printf("[+] Probing %d compute node(s) for hardware metrics...\n", len(targets))
+	probe := advisor.NewHardwareProbe(nil)
+	hardwareList, err := probe.ProbeAll(ctx, targets)
+	if err != nil {
+		fmt.Printf("[-] Failed to probe nodes: %v\n", err)
+		return
+	}
+
+	fmt.Printf("[✓] Discovered %d compute node(s):\n", len(hardwareList))
+	for _, hw := range hardwareList {
+		gpuInfo := "None"
+		if hw.HasGPU {
+			gpuInfo = fmt.Sprintf("%s (%d MB VRAM)", hw.GPUType, hw.VRAMMB)
+		}
+		fmt.Printf("    - %-12s: %s/%s, %d CPU cores, %d MB RAM (%d MB free), %d GB disk, GPU: %s\n",
+			hw.NodeID, hw.OS, hw.Arch, hw.CPUCores, hw.TotalRAMMB, hw.FreeRAMMB, hw.DiskFreeGB, gpuInfo)
+	}
+
+	adv := advisor.NewPlacementAdvisor()
+	plan, err := adv.Advise(hardwareList, advisor.DefaultDendriteServices())
+	if err != nil {
+		fmt.Printf("[-] Placement advisor failed: %v\n", err)
+		return
+	}
+
+	if outputJSON {
+		data, err := json.MarshalIndent(plan, "", "  ")
+		if err != nil {
+			fmt.Printf("[-] Failed to serialize JSON: %v\n", err)
+			return
+		}
+		fmt.Println(string(data))
+	} else {
+		fmt.Print(plan.FormatTable())
+	}
+}
+
+func parseNodeTargets(nodeArgs string) []advisor.NodeTarget {
+	var targets []advisor.NodeTarget
+	tokens := strings.Split(nodeArgs, ",")
+	for _, tok := range tokens {
+		tok = strings.TrimSpace(tok)
+		if tok == "" {
+			continue
+		}
+		var id, host string
+		if strings.Contains(tok, "=") {
+			parts := strings.SplitN(tok, "=", 2)
+			id = strings.TrimSpace(parts[0])
+			host = strings.TrimSpace(parts[1])
+		} else {
+			id = tok
+			host = tok
+		}
+		isLocal := (host == "localhost" || host == "127.0.0.1" || host == "local")
+		targets = append(targets, advisor.NodeTarget{
+			ID:      id,
+			Host:    host,
+			IsLocal: isLocal,
+		})
+	}
+	if len(targets) == 0 {
+		targets = append(targets, advisor.NodeTarget{
+			ID:      "local",
+			Host:    "localhost",
+			IsLocal: true,
+		})
+	}
+	return targets
 }

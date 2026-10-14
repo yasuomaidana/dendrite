@@ -26,7 +26,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - **Transport**: Stdio JSON-RPC 2.0 (`./bin/dendrite mcp serve`)
 - **Direct CLI Tool Invocation**: `./bin/dendrite mcp call <tool_name> [args_json]`
 - **List Available MCP Tools**: `./bin/dendrite mcp tools`
-- **19 Registered Operational MCP Tools**:
+- **20 Registered Operational MCP Tools**:
   1. `dendrite_ticket_list`: List all project tickets, statuses, complexity scores, and milestones from `DEV_STATUS.md`.
      - *Example*: `./bin/dendrite mcp call dendrite_ticket_list "{}"`
   2. `dendrite_ticket_update`: Mutate the status of a project ticket in `DEV_STATUS.md` (e.g. `DONE`, `IN_PROGRESS`, `TODO`).
@@ -65,6 +65,8 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
       - *Example*: `./bin/dendrite mcp call dendrite_dist_interop '{"action":"coordinate","requester_project":"Docula","dependency_project":"Oxipix","feature_requested":"blend_modes_simd"}'`
   19. `dendrite_dist_spawn`: Spawn parallel sub-projects or generative satellite projects with git, scaffolding, and Plane integration.
       - *Example*: `./bin/dendrite mcp call dendrite_dist_spawn '{"project_name":"carla-sensor-rs","identifier":"CSEN","target_dir":"./projects/carla-sensor-rs","is_satellite":true}'`
+  20. `dendrite_bench_run`: Execute an automated k6 or synthetic performance benchmark measuring TTFT, TPS, gateway cascade failover latency, or sliding window budget concurrency.
+      - *Example*: `./bin/dendrite mcp call dendrite_bench_run '{"mode":"inference","engine_id":"oxillama","virtual_users":5}'`
 
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
 - `dendrite mcp <serve|tools|call>`: Native Model Context Protocol stdio server and testing harness.
@@ -82,6 +84,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - `dendrite telemetry [metrics|status]`: Emit Prometheus exposition metrics or real-time Apple Silicon SoC thermals.
 - `dendrite env <doctor|plan|install|replicate|status>`: Target computer diagnostic and container replication engine.
 - `dendrite dist <sources|resolve|decompose|interop|spawn>`: Manage distributed codebase sources, modular REA, cross-project interop, and parallel project/Plane spawner.
+- `dendrite bench <inference|gateway|matrix|stress>`: Benchmark inference TTFT/TPS velocity, stress-test LiteLLM gateway failover cascades, run multi-engine matrix, or stress budget limiter.
 
 ### 3. Unified Stacks Environment (`stacks/.env`)
 Dendrite maintains an enterprise-grade multi-service container orchestration stack parameterized via `stacks/.env` (and mirrored in `.env`):
