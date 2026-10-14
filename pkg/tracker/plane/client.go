@@ -293,7 +293,20 @@ func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tr
 		return ErrStateNotFound
 	}
 
-	patchEndpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/%s/", c.workspaceSlug, c.projectID, id)
+	issueUUID := string(id)
+	if len(issueUUID) != 36 || strings.Count(issueUUID, "-") != 4 {
+		issues, err := c.ListPlaneIssues(ctx)
+		if err == nil {
+			for _, iss := range issues {
+				if strings.Contains(iss.Name, "["+string(id)+"]") || strings.Contains(iss.Name, string(id)) {
+					issueUUID = iss.ID
+					break
+				}
+			}
+		}
+	}
+
+	patchEndpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/%s/", c.workspaceSlug, c.projectID, issueUUID)
 	patchBody := map[string]string{
 		"state": targetStateID,
 	}

@@ -124,7 +124,7 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 		Name:        "dendrite_ticket_update",
 		Description: "Update the status of a project ticket in DEV_STATUS.md (e.g. DONE, IN_PROGRESS, TODO)",
 		InputSchema: map[string]interface{}{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"ticket_id", "status"},
 			"properties": map[string]interface{}{
 				"ticket_id": map[string]interface{}{
@@ -617,11 +617,11 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 		}
 
 		res := map[string]interface{}{
-			"status":            "success",
-			"ownership":         "Plane Service",
-			"file":              targetFile,
-			"dry_run":           dryRun,
-			"report":            report,
+			"status":    "success",
+			"ownership": "Plane Service",
+			"file":      targetFile,
+			"dry_run":   dryRun,
+			"report":    report,
 		}
 		data, err := json.MarshalIndent(res, "", "  ")
 		if err != nil {
@@ -773,5 +773,19 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 
 	// 20: Performance Testing, Benchmarking & Gateway Load Tools
 	s.registerPerfTools(deps)
-}
 
+	// 21: Open-Source REA Showcases & Cleanroom Parity Verification Tools
+	s.registerREATools(deps)
+
+	// 22: Docusaurus Documentation & Project Sharing Tools
+	s.registerDocusaurusTools(deps)
+
+	// 23: Local Agent Triage, Token Efficiency & Prompt Router
+	s.registerTriageTools(deps)
+
+	// 24: Hybrid Agent Search, TEI Embeddings & Semantic Routing Engine
+	s.registerAgentSearchTools(deps)
+
+	// 25: Automated Test Synthesizer, Self-Healing Loop & Web UI Test Harness
+	s.registerTestGenTools(deps)
+}

@@ -44,6 +44,45 @@ func (s *SyntheticRunner) Execute(ctx context.Context, cfg BenchmarkConfig) (*Be
 		vus = 1
 	}
 
+	var switchEvents []SwitchEvent
+	var preFlightSwitched bool
+	originalEngineID := cfg.EngineID
+	var preFlightLatency time.Duration
+	var cascadeReason string
+
+	// Pre-flight health probe & automatic zero-latency cascade
+	if cfg.PreFlightCascade || cfg.FailoverEndpoint != "" {
+		probeStart := time.Now()
+		probeCtx, probeCancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+		isHealthy, probeErr := s.probeEndpointHealth(probeCtx, cfg.TargetEndpoint)
+		probeCancel()
+		preFlightLatency = time.Since(probeStart)
+
+		if !isHealthy || probeErr != nil {
+			fallbackEndpoint := cfg.FailoverEndpoint
+			fallbackID := cfg.CascadeFallbackID
+			if fallbackID == "" {
+				fallbackID = "ollama-metal"
+			}
+			if fallbackEndpoint == "" {
+				fallbackEndpoint = "http://127.0.0.1:11434"
+			}
+
+			cascadeReason = fmt.Sprintf("Primary engine '%s' unreachable (%v); cascaded to '%s' with zero prompt loss", originalEngineID, probeErr, fallbackID)
+			switchEvents = append(switchEvents, SwitchEvent{
+				FromEngine: originalEngineID,
+				ToEngine:   fallbackID,
+				Reason:     cascadeReason,
+				Latency:    preFlightLatency,
+				Timestamp:  time.Now(),
+			})
+
+			preFlightSwitched = true
+			cfg.TargetEndpoint = fallbackEndpoint
+			cfg.EngineID = fallbackID
+		}
+	}
+
 	resultsChan := make(chan SingleStreamResult, vus*50)
 	var wg sync.WaitGroup
 
@@ -60,16 +99,42 @@ func (s *SyntheticRunner) Execute(ctx context.Context, cfg BenchmarkConfig) (*Be
 		}(vuID)
 	}
 
+	var streamResults []SingleStreamResult
+	var collectorWg sync.WaitGroup
+	collectorWg.Add(1)
+	go func() {
+		defer collectorWg.Done()
+		for res := range resultsChan {
+			streamResults = append(streamResults, res)
+		}
+	}()
+
 	wg.Wait()
 	close(resultsChan)
+	collectorWg.Wait()
 
-	var streamResults []SingleStreamResult
-	for res := range resultsChan {
-		streamResults = append(streamResults, res)
-	}
-
-	summary := aggregateResults(cfg, startTime, streamResults, thermalMon)
+	summary := aggregateResults(cfg, startTime, streamResults, thermalMon, preFlightSwitched, originalEngineID, preFlightLatency, cascadeReason, switchEvents)
 	return summary, nil
+}
+
+func (s *SyntheticRunner) probeEndpointHealth(ctx context.Context, endpoint string) (bool, error) {
+	if endpoint == "" {
+		return false, fmt.Errorf("empty endpoint")
+	}
+	u := endpoint
+	if strings.Contains(u, "/v1/chat/completions") {
+		u = strings.TrimSuffix(u, "/v1/chat/completions")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return false, err
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	resp.Body.Close()
+	return resp.StatusCode >= 200 && resp.StatusCode < 500, nil
 }
 
 func (s *SyntheticRunner) runVirtualUser(ctx context.Context, vuID int, cfg BenchmarkConfig, out chan<- SingleStreamResult) {
@@ -86,7 +151,11 @@ func (s *SyntheticRunner) runVirtualUser(ctx context.Context, vuID int, cfg Benc
 		default:
 			reqCount++
 			res := s.executeSingleRequest(ctx, fmt.Sprintf("vu-%d-req-%d", vuID, reqCount), endpoint, cfg)
-			out <- res
+			select {
+			case out <- res:
+			case <-ctx.Done():
+				return
+			}
 			time.Sleep(50 * time.Millisecond) // Inter-request pacing
 		}
 	}
@@ -210,7 +279,17 @@ func (s *SyntheticRunner) readSSEStream(resp *http.Response, reqStart time.Time,
 	}
 }
 
-func aggregateResults(cfg BenchmarkConfig, start time.Time, results []SingleStreamResult, thermalMon *ThermalMonitor) *BenchmarkSummary {
+func aggregateResults(
+	cfg BenchmarkConfig,
+	start time.Time,
+	results []SingleStreamResult,
+	thermalMon *ThermalMonitor,
+	preFlightSwitched bool,
+	originalEngineID string,
+	preFlightLatency time.Duration,
+	cascadeReason string,
+	switchEvents []SwitchEvent,
+) *BenchmarkSummary {
 	var ttfts []time.Duration
 	var totalTPS float64
 	var peakTPS TokensPerSecond
@@ -251,13 +330,21 @@ func aggregateResults(cfg BenchmarkConfig, start time.Time, results []SingleStre
 	thermalMetrics := thermalMon.Evaluate(avgTPS, avgTPS)
 
 	var failoverMetrics *FailoverMetrics
-	if cfg.FaultInjection != FaultNone || cfg.FailoverEndpoint != "" || injectedFaults > 0 {
+	if cfg.FaultInjection != FaultNone || cfg.FailoverEndpoint != "" || injectedFaults > 0 || preFlightSwitched {
 		failoverMetrics = &FailoverMetrics{
 			InjectedFaults:    injectedFaults,
-			FailoverTriggered: injectedFaults > 0,
+			FailoverTriggered: injectedFaults > 0 || preFlightSwitched,
 			FailoverLatency:   350 * time.Millisecond,
 			LostRequests:      failCount,
 			SuccessAfterFail:  successAfterFail,
+			PreFlightSwitched: preFlightSwitched,
+			PrimaryEngineID:   originalEngineID,
+			CascadedEngineID:  cfg.EngineID,
+			CascadeReason:     cascadeReason,
+			SwitchEvents:      switchEvents,
+		}
+		if preFlightSwitched {
+			failoverMetrics.FailoverLatency = preFlightLatency
 		}
 	}
 

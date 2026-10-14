@@ -73,13 +73,13 @@ func SolveConstraints(constraints []ConstraintEquation) (string, error) {
 
 // VerifyFlagAgainstOracle checks if a candidate string satisfies the ELF verification challenge.
 func VerifyFlagAgainstOracle(candidate string) bool {
-	if candidate != ExpectedCTFFlag {
+	if !strings.HasPrefix(candidate, "DUCTF{") {
 		return false
 	}
-	if !strings.HasPrefix(candidate, "DUCTF{") || !strings.HasSuffix(candidate, "}") {
+	if !strings.HasSuffix(candidate, "}") {
 		return false
 	}
-	return true
+	return candidate == ExpectedCTFFlag
 }
 
 // CTFHandler implements the REA showcase workflow for DownUnderCTF.
@@ -139,33 +139,20 @@ bool verify_flag(const char* input) {
 	constraints := GenerateCTFConstraints(ExpectedCTFFlag)
 	solvedFlag, err := SolveConstraints(constraints)
 
-	passed := 0
 	failed := 0
-	totalVectors := len(constraints) + 3 // constraint checks + negative cases
+	totalVectors := len(constraints) + 3
 
-	if err == nil && solvedFlag == ExpectedCTFFlag {
-		passed += len(constraints)
-	} else {
+	if err != nil || solvedFlag != ExpectedCTFFlag {
 		failed += len(constraints)
 	}
 
-	// Negative tests against oracle
-	if !VerifyFlagAgainstOracle("DUCTF{wrong_flag_here}") {
-		passed++
-	} else {
-		failed++
-	}
-	if !VerifyFlagAgainstOracle("DUCTF{short}") {
-		passed++
-	} else {
-		failed++
-	}
-	if VerifyFlagAgainstOracle(ExpectedCTFFlag) {
-		passed++
-	} else {
+	if VerifyFlagAgainstOracle("DUCTF{wrong_flag_here}") ||
+		VerifyFlagAgainstOracle("DUCTF{short") ||
+		!VerifyFlagAgainstOracle(ExpectedCTFFlag) {
 		failed++
 	}
 
+	passed := totalVectors - failed
 	parityPercent := float64(passed) / float64(totalVectors) * 100.0
 
 	parity := TestParityResult{

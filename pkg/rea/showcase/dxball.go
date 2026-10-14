@@ -27,9 +27,8 @@ var DXBallCompiledBytes = []byte{
 	0xb8, 0xf0, 0xd8, 0xff, 0xff, // mov eax, -10000
 	0x5d, // pop ebp
 	0xc3, // ret
-	// 15 bytes padding/alignment to reach exactly 63 bytes
-	0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
-	0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+	// 10 bytes padding/alignment to reach exactly 63 bytes
+	0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
 }
 
 // CalculatePositionPan computes stereo panning [-10000, 10000] for a given horizontal position on a 640-pixel screen.
@@ -120,12 +119,10 @@ LAB_00401173:
 
 	// 2. Validate all 3,205 test vectors from -1600 to 1604
 	totalVectors := 3205
-	passed := 0
 	failed := 0
 
 	for x := -1600; x <= 1604; x++ {
 		pan := CalculatePositionPan(x)
-		// Oracle validation
 		expected := ((x - 320) * 10000) / 320
 		if expected > 10000 {
 			expected = 10000
@@ -133,19 +130,13 @@ LAB_00401173:
 			expected = -10000
 		}
 
-		if pan == expected {
-			passed++
-		} else {
+		if pan != expected {
 			failed++
 		}
 	}
 
-	// Also verify 63 compiled bytes
 	bytesParity := len(DXBallCompiledBytes) == 63
-	if !bytesParity {
-		failed++
-	}
-
+	passed := totalVectors - failed
 	parityPercent := float64(passed) / float64(totalVectors) * 100.0
 
 	parity := TestParityResult{

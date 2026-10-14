@@ -90,9 +90,25 @@ func FormatMarkdownScorecard(s *BenchmarkSummary) string {
 		sb.WriteString("|:---|:---|\n")
 		sb.WriteString(fmt.Sprintf("| **Injected Faults** | `%d` |\n", s.FailoverMetrics.InjectedFaults))
 		sb.WriteString(fmt.Sprintf("| **Failover Triggered** | `%v` |\n", s.FailoverMetrics.FailoverTriggered))
+		if s.FailoverMetrics.PreFlightSwitched {
+			sb.WriteString("| **Pre-Flight Cascade** | `Switched (Zero Prompt Loss)` |\n")
+			sb.WriteString(fmt.Sprintf("| **Primary Engine (Offline)** | `%s` |\n", s.FailoverMetrics.PrimaryEngineID))
+			sb.WriteString(fmt.Sprintf("| **Cascaded Fallback Engine** | `%s` |\n", s.FailoverMetrics.CascadedEngineID))
+			if s.FailoverMetrics.CascadeReason != "" {
+				sb.WriteString(fmt.Sprintf("| **Cascade Reason** | `%s` |\n", s.FailoverMetrics.CascadeReason))
+			}
+		}
 		sb.WriteString(fmt.Sprintf("| **Failover Switch Latency** | `%s` |\n", s.FailoverMetrics.FailoverLatency.Round(time.Millisecond)))
 		sb.WriteString(fmt.Sprintf("| **Lost Requests** | `%d` |\n", s.FailoverMetrics.LostRequests))
 		sb.WriteString(fmt.Sprintf("| **Successful Fallback Invocations** | `%d` |\n", s.FailoverMetrics.SuccessAfterFail))
+
+		if len(s.FailoverMetrics.SwitchEvents) > 0 {
+			sb.WriteString("\n### Failover Switch Events\n\n")
+			for i, ev := range s.FailoverMetrics.SwitchEvents {
+				sb.WriteString(fmt.Sprintf("%d. `%s` -> `%s` (Latency: `%v`): %s\n",
+					i+1, ev.FromEngine, ev.ToEngine, ev.Latency.Round(time.Millisecond), ev.Reason))
+			}
+		}
 	}
 
 	return sb.String()

@@ -2,6 +2,7 @@ package showcase
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -172,6 +173,12 @@ func TestCTFHandler_Full(t *testing.T) {
 	if VerifyFlagAgainstOracle("invalid_prefix}") {
 		t.Error("expected false for missing prefix")
 	}
+	if VerifyFlagAgainstOracle("DUCTF{wrong_body}") {
+		t.Error("expected false for wrong body")
+	}
+	if !VerifyFlagAgainstOracle(ExpectedCTFFlag) {
+		t.Error("expected true for exact expected flag")
+	}
 
 	res, err := h.Execute(context.Background())
 	if err != nil {
@@ -250,7 +257,36 @@ func TestMattermostHandler_Full(t *testing.T) {
 	}
 }
 
+type mockErrHandler struct{}
+
+func (m *mockErrHandler) Metadata() ShowcaseMetadata {
+	return ShowcaseMetadata{ID: "mock-err", Name: "Mock Error"}
+}
+
+func (m *mockErrHandler) Execute(ctx context.Context) (*ShowcaseResult, error) {
+	return nil, fmt.Errorf("injected mock execution error")
+}
+
+type mockFailValidationHandler struct{}
+
+func (m *mockFailValidationHandler) Metadata() ShowcaseMetadata {
+	return ShowcaseMetadata{ID: "mock-fail", Name: "Mock Fail Validation"}
+}
+
+func (m *mockFailValidationHandler) Execute(ctx context.Context) (*ShowcaseResult, error) {
+	return &ShowcaseResult{
+		Target:           "mock-fail",
+		PassedValidation: false,
+		Parity: TestParityResult{
+			TotalVectors:  0,
+			PassedVectors: 0,
+		},
+	}, nil
+}
+
 func TestRunner_Operations(t *testing.T) {
+	defer ResetHandlers()
+
 	// 1. List targets
 	targets := ListTargets()
 	if len(targets) != 5 {
@@ -343,5 +379,25 @@ func TestRunner_Operations(t *testing.T) {
 	failedMd := RenderMarkdownScorecard(failedRep)
 	if !strings.Contains(failedMd, "❌ FAIL") {
 		t.Errorf("expected ❌ FAIL in markdown, got: %s", failedMd)
+	}
+
+	// 8. Custom handler returning error
+	RegisterHandler("mock-err", &mockErrHandler{})
+	errRep, err := RunShowcase(context.Background(), "mock-err")
+	if err != nil {
+		t.Fatalf("unexpected error running mock-err: %v", err)
+	}
+	if errRep.FailedTargets != 1 || errRep.OverallStatus != "FAILED" {
+		t.Errorf("expected failed status for mock-err, got %+v", errRep)
+	}
+
+	// 9. Custom handler returning PassedValidation: false and 0 vectors
+	RegisterHandler("mock-fail", &mockFailValidationHandler{})
+	failRep, err := RunShowcase(context.Background(), "mock-fail")
+	if err != nil {
+		t.Fatalf("unexpected error running mock-fail: %v", err)
+	}
+	if failRep.FailedTargets != 1 || failRep.OverallStatus != "FAILED" {
+		t.Errorf("expected failed status for mock-fail, got %+v", failRep)
 	}
 }

@@ -86,7 +86,7 @@ func GenerateTOTP(secret []byte, unixTime int64, cfg TOTPConfig) (string, error)
 	return fmt.Sprintf(format, otp), nil
 }
 
-// AegisRFCTestVectors contains the reference test vectors from RFC 6238 Appendix B.
+// AegisRFCTestVectors contains the official reference test vectors from RFC 6238 Appendix B.
 type rfcVector struct {
 	Time   int64
 	Algo   HashAlgorithm
@@ -101,6 +101,13 @@ func getAegisTestVectors() []rfcVector {
 	secretSHA512 := "1234567890123456789012345678901234567890123456789012345678901234"
 
 	return []rfcVector{
+		// SHA1 (8-digit) - Official RFC 6238 Appendix B
+		{59, AlgorithmSHA1, 8, secretSHA1, "94287082"},
+		{1111111109, AlgorithmSHA1, 8, secretSHA1, "07081804"},
+		{1111111111, AlgorithmSHA1, 8, secretSHA1, "14050471"},
+		{1234567890, AlgorithmSHA1, 8, secretSHA1, "89005924"},
+		{2000000000, AlgorithmSHA1, 8, secretSHA1, "69279037"},
+		{20000000000, AlgorithmSHA1, 8, secretSHA1, "65353130"},
 		// SHA1 (6-digit)
 		{59, AlgorithmSHA1, 6, secretSHA1, "287082"},
 		{1111111109, AlgorithmSHA1, 6, secretSHA1, "081804"},
@@ -108,41 +115,34 @@ func getAegisTestVectors() []rfcVector {
 		{1234567890, AlgorithmSHA1, 6, secretSHA1, "005924"},
 		{2000000000, AlgorithmSHA1, 6, secretSHA1, "279037"},
 		{20000000000, AlgorithmSHA1, 6, secretSHA1, "353130"},
-		// SHA1 (8-digit)
-		{59, AlgorithmSHA1, 8, secretSHA1, "94287082"},
-		{1111111109, AlgorithmSHA1, 8, secretSHA1, "07081804"},
-		{1111111111, AlgorithmSHA1, 8, secretSHA1, "14050471"},
-		{1234567890, AlgorithmSHA1, 8, secretSHA1, "89005924"},
-		{2000000000, AlgorithmSHA1, 8, secretSHA1, "69279037"},
-		{20000000000, AlgorithmSHA1, 8, secretSHA1, "65353130"},
+		// SHA256 (8-digit) - Official RFC 6238 Appendix B
+		{59, AlgorithmSHA256, 8, secretSHA256, "46119246"},
+		{1111111109, AlgorithmSHA256, 8, secretSHA256, "68084774"},
+		{1111111111, AlgorithmSHA256, 8, secretSHA256, "67062674"},
+		{1234567890, AlgorithmSHA256, 8, secretSHA256, "91819424"},
+		{2000000000, AlgorithmSHA256, 8, secretSHA256, "90698825"},
+		{20000000000, AlgorithmSHA256, 8, secretSHA256, "77737706"},
 		// SHA256 (6-digit)
-		{59, AlgorithmSHA256, 6, secretSHA256, "461121"},
-		{1111111109, AlgorithmSHA256, 6, secretSHA256, "680847"},
-		{1111111111, AlgorithmSHA256, 6, secretSHA256, "670626"},
-		{1234567890, AlgorithmSHA256, 6, secretSHA256, "918194"},
-		{2000000000, AlgorithmSHA256, 6, secretSHA256, "072248"},
-		{20000000000, AlgorithmSHA256, 6, secretSHA256, "408821"},
-		// SHA256 (8-digit)
-		{59, AlgorithmSHA256, 8, secretSHA256, "32247374"},
-		{1111111109, AlgorithmSHA256, 8, secretSHA256, "99680847"},
-		{1111111111, AlgorithmSHA256, 8, secretSHA256, "85670626"},
-		{1234567890, AlgorithmSHA256, 8, secretSHA256, "67918194"},
-		{2000000000, AlgorithmSHA256, 8, secretSHA256, "44072248"},
-		{20000000000, AlgorithmSHA256, 8, secretSHA256, "48408821"},
+		{59, AlgorithmSHA256, 6, secretSHA256, "119246"},
+		{1111111109, AlgorithmSHA256, 6, secretSHA256, "084774"},
+		{1111111111, AlgorithmSHA256, 6, secretSHA256, "062674"},
+		{1234567890, AlgorithmSHA256, 6, secretSHA256, "819424"},
+		{2000000000, AlgorithmSHA256, 6, secretSHA256, "698825"},
+		{20000000000, AlgorithmSHA256, 6, secretSHA256, "737706"},
+		// SHA512 (8-digit) - Official RFC 6238 Appendix B
+		{59, AlgorithmSHA512, 8, secretSHA512, "90693936"},
+		{1111111109, AlgorithmSHA512, 8, secretSHA512, "25091201"},
+		{1111111111, AlgorithmSHA512, 8, secretSHA512, "99943326"},
+		{1234567890, AlgorithmSHA512, 8, secretSHA512, "93441116"},
+		{2000000000, AlgorithmSHA512, 8, secretSHA512, "38618901"},
+		{20000000000, AlgorithmSHA512, 8, secretSHA512, "47863826"},
 		// SHA512 (6-digit)
-		{59, AlgorithmSHA512, 6, secretSHA512, "906935"},
-		{1111111109, AlgorithmSHA512, 6, secretSHA512, "400765"},
-		{1111111111, AlgorithmSHA512, 6, secretSHA512, "443422"},
-		{1234567890, AlgorithmSHA512, 6, secretSHA512, "784643"},
-		{2000000000, AlgorithmSHA512, 6, secretSHA512, "492721"},
-		{20000000000, AlgorithmSHA512, 6, secretSHA512, "816237"},
-		// SHA512 (8-digit)
-		{59, AlgorithmSHA512, 8, secretSHA512, "74906935"},
-		{1111111109, AlgorithmSHA512, 8, secretSHA512, "38400765"},
-		{1111111111, AlgorithmSHA512, 8, secretSHA512, "78443422"},
-		{1234567890, AlgorithmSHA512, 8, secretSHA512, "48784643"},
-		{2000000000, AlgorithmSHA512, 8, secretSHA512, "64492721"},
-		{20000000000, AlgorithmSHA512, 8, secretSHA512, "88816237"},
+		{59, AlgorithmSHA512, 6, secretSHA512, "693936"},
+		{1111111109, AlgorithmSHA512, 6, secretSHA512, "091201"},
+		{1111111111, AlgorithmSHA512, 6, secretSHA512, "943326"},
+		{1234567890, AlgorithmSHA512, 6, secretSHA512, "441116"},
+		{2000000000, AlgorithmSHA512, 6, secretSHA512, "618901"},
+		{20000000000, AlgorithmSHA512, 6, secretSHA512, "863826"},
 	}
 }
 
@@ -211,7 +211,6 @@ public class TOTP {
 
 	// 2. Run Test Vectors against Cleanroom Generator
 	vectors := getAegisTestVectors()
-	passed := 0
 	failed := 0
 	for _, v := range vectors {
 		cfg := TOTPConfig{
@@ -221,17 +220,12 @@ public class TOTP {
 			T0:        0,
 		}
 		got, err := GenerateTOTP([]byte(v.Secret), v.Time, cfg)
-		if err == nil && got == v.Want {
-			passed++
-		} else {
+		if err != nil || got != v.Want {
 			failed++
 		}
 	}
-
-	parityPercent := 0.0
-	if len(vectors) > 0 {
-		parityPercent = float64(passed) / float64(len(vectors)) * 100.0
-	}
+	passed := len(vectors) - failed
+	parityPercent := float64(passed) / float64(len(vectors)) * 100.0
 
 	parity := TestParityResult{
 		TotalVectors:  len(vectors),

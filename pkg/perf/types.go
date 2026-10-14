@@ -52,6 +52,8 @@ type BenchmarkConfig struct {
 	FaultInjection    FaultInjectionType `json:"fault_injection,omitempty"`
 	FailoverEndpoint  string             `json:"failover_endpoint,omitempty"`
 	ThermalMonitoring bool               `json:"thermal_monitoring"`
+	PreFlightCascade  bool               `json:"pre_flight_cascade"`
+	CascadeFallbackID string             `json:"cascade_fallback_id,omitempty"`
 }
 
 // LatencyPercentiles aggregates TTFT or full response percentiles.
@@ -73,6 +75,15 @@ type ThermalMetrics struct {
 	ThrottleWarning  string  `json:"throttle_warning,omitempty"`
 }
 
+// SwitchEvent records a discrete failover cascade switch transition.
+type SwitchEvent struct {
+	FromEngine string        `json:"from_engine"`
+	ToEngine   string        `json:"to_engine"`
+	Reason     string        `json:"reason"`
+	Latency    time.Duration `json:"latency"`
+	Timestamp  time.Time     `json:"timestamp"`
+}
+
 // FailoverMetrics captures cascade failover resilience metrics.
 type FailoverMetrics struct {
 	InjectedFaults    int           `json:"injected_faults"`
@@ -80,6 +91,11 @@ type FailoverMetrics struct {
 	FailoverLatency   time.Duration `json:"failover_latency"`
 	LostRequests      int           `json:"lost_requests"`
 	SuccessAfterFail  int           `json:"success_after_failover"`
+	PreFlightSwitched bool          `json:"pre_flight_switched,omitempty"`
+	PrimaryEngineID   string        `json:"primary_engine_id,omitempty"`
+	CascadedEngineID  string        `json:"cascaded_engine_id,omitempty"`
+	CascadeReason     string        `json:"cascade_reason,omitempty"`
+	SwitchEvents      []SwitchEvent `json:"switch_events,omitempty"`
 }
 
 // SingleStreamResult captures metrics from an individual request stream.

@@ -4,18 +4,45 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
+var (
+	handlerMu      sync.RWMutex
+	customHandlers = make(map[string]Handler)
+)
+
+// RegisterHandler registers or overrides a handler for a target.
+func RegisterHandler(target string, h Handler) {
+	handlerMu.Lock()
+	defer handlerMu.Unlock()
+	customHandlers[strings.ToLower(strings.TrimSpace(target))] = h
+}
+
+// ResetHandlers clears any registered custom handlers.
+func ResetHandlers() {
+	handlerMu.Lock()
+	defer handlerMu.Unlock()
+	customHandlers = make(map[string]Handler)
+}
+
 // TargetHandlers returns a registry of all available showcase handlers.
 func TargetHandlers() map[string]Handler {
-	return map[string]Handler{
+	handlerMu.RLock()
+	defer handlerMu.RUnlock()
+
+	m := map[string]Handler{
 		TargetAegis:      &AegisHandler{},
 		TargetDXBall:     &DXBallHandler{},
 		TargetCTF:        &CTFHandler{},
 		TargetTH04:       &TH04Handler{},
 		TargetMattermost: &MattermostHandler{},
 	}
+	for k, v := range customHandlers {
+		m[k] = v
+	}
+	return m
 }
 
 // GetHandler returns the handler for the specified showcase target.

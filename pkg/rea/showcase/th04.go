@@ -129,14 +129,11 @@ void bullet_velocity(unsigned char angle, int speed, int* vx, int* vy) {
 		{0, 100, 100, 0, 256, 224, 181, -181},
 	}
 
-	passed := 0
 	failed := 0
 
 	for _, tc := range testVectors {
 		ang, vx, vy := FixedPointAim(tc.sx, tc.sy, tc.tx, tc.ty, tc.speed)
-		if ang == tc.wantAngle && vx == tc.wantVx && vy == tc.wantVy {
-			passed++
-		} else {
+		if ang != tc.wantAngle || vx != tc.wantVx || vy != tc.wantVy {
 			failed++
 		}
 	}
@@ -146,15 +143,13 @@ void bullet_velocity(unsigned char angle, int speed, int* vx, int* vy) {
 		c := int(bamCosTable[i])
 		s := int(bamSinTable[i])
 		hypotSq := c*c + s*s
-		// 256^2 = 65536. Due to rounding, allow small delta <= 512
-		if hypotSq >= 65000 && hypotSq <= 66000 {
-			passed++
-		} else {
+		if hypotSq < 65000 || hypotSq > 66000 {
 			failed++
 		}
 	}
 
 	totalVectors := len(testVectors) + BAMSteps
+	passed := totalVectors - failed
 	parityPercent := float64(passed) / float64(totalVectors) * 100.0
 
 	parity := TestParityResult{

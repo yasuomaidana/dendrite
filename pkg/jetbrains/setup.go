@@ -129,6 +129,7 @@ func SetupJetBrainsToolset(opts SetupOptions) (*SetupResult, error) {
 			res.FilesCreated = append(res.FilesCreated, toolsPath)
 		}
 		res.ToolsAdded = append(res.ToolsAdded,
+			"Dendrite: Run Local Agent Triage on Active File",
 			"Dendrite: Run Aider on Active File",
 			"Dendrite: Run Antigravity on Active File",
 			"Dendrite: Probe MCP Diagnostics",
@@ -163,8 +164,9 @@ func configureMCPFile(targetPath, binaryPath, projectDir string, res *SetupResul
 		Command: binaryPath,
 		Args:    []string{"mcp", "serve"},
 		Env: map[string]string{
-			"DENDRITE_WORKSPACE": projectDir,
-			"DENDRITE_ENV":       "development",
+			"DENDRITE_WORKSPACE":  projectDir,
+			"DENDRITE_ENV":        "development",
+			"DENDRITE_OLLAMA_URL": "http://127.0.0.1:11434",
 		},
 	}
 
@@ -192,6 +194,18 @@ func fileExists(p string) bool {
 
 func getRunConfigurationTemplates() map[string]string {
 	return map[string]string{
+		"Dendrite_Local_Agent_Triage.xml": `<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Dendrite: Local Agent Triage" type="GoApplicationRunConfiguration" factoryName="Go Application">
+    <module name="Dendrite" />
+    <working_directory value="$PROJECT_DIR$" />
+    <parameters value="triage --prompt &quot;Evaluate task complexity, select skills, and optimize token spend&quot;" />
+    <kind value="PACKAGE" />
+    <package value="Dendrite/cmd/dendrite" />
+    <directory value="$PROJECT_DIR$" />
+    <filePath value="$PROJECT_DIR$/cmd/dendrite/main.go" />
+    <method v="2" />
+  </configuration>
+</component>`,
 		"Dendrite_MCP_Server.xml": `<component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Dendrite: MCP Server" type="GoApplicationRunConfiguration" factoryName="Go Application">
     <module name="Dendrite" />
@@ -208,7 +222,7 @@ func getRunConfigurationTemplates() map[string]string {
   <configuration default="false" name="Dendrite: Agent Runner (Aider)" type="GoApplicationRunConfiguration" factoryName="Go Application">
     <module name="Dendrite" />
     <working_directory value="$PROJECT_DIR$" />
-    <parameters value="agent run aider --ticket DEN-036 --task &quot;Autonomous implementation loop&quot;" />
+    <parameters value="agent run aider --ticket DEN-050 --task &quot;Autonomous implementation loop&quot;" />
     <kind value="PACKAGE" />
     <package value="Dendrite/cmd/dendrite" />
     <directory value="$PROJECT_DIR$" />
@@ -269,6 +283,13 @@ func getRunConfigurationTemplates() map[string]string {
 
 func getExternalToolsXML() string {
 	return `<toolSet name="External Tools">
+  <tool name="Dendrite: Run Local Agent Triage on Active File" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="true" showConsoleOnStdOut="true" showConsoleOnStdErr="true" synchronizeAfterRun="false">
+    <exec>
+      <option name="COMMAND" value="$ProjectFileDir$/bin/dendrite" />
+      <option name="PARAMETERS" value="triage --file $FilePath$ --prompt &quot;Optimize context and triage task&quot;" />
+      <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
+    </exec>
+  </tool>
   <tool name="Dendrite: Run Aider on Active File" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="true" showConsoleOnStdOut="true" showConsoleOnStdErr="true" synchronizeAfterRun="true">
     <exec>
       <option name="COMMAND" value="$ProjectFileDir$/bin/dendrite" />

@@ -112,14 +112,11 @@ Node: Set ("VALID_CHANNELS") entries count: 5`
 	)
 
 	// 2. Validate allowlist and sanitization test vectors
-	passed := 0
 	failed := 0
 
 	// Allowlist checks (valid)
 	for ch := range PermittedIPCChannels {
-		if IsChannelPermitted(ch) {
-			passed++
-		} else {
+		if !IsChannelPermitted(ch) {
 			failed++
 		}
 	}
@@ -127,9 +124,7 @@ Node: Set ("VALID_CHANNELS") entries count: 5`
 	// Blocklist checks (rejected dangerous channels)
 	dangerous := []string{"remote-eval", "shell-open-external", "fs-read-file", "process-exit", "notion-api-key-dump"}
 	for _, ch := range dangerous {
-		if !IsChannelPermitted(ch) {
-			passed++
-		} else {
+		if IsChannelPermitted(ch) {
 			failed++
 		}
 	}
@@ -137,16 +132,15 @@ Node: Set ("VALID_CHANNELS") entries count: 5`
 	// XSS sanitization checks
 	dirtyHTML := `<b>Hello</b><script>alert('pwned')</script><a href="javascript:alert(1)" onclick="stealCookies()">Link</a>`
 	clean := SanitizeAndSerializeClipboard("Hello Link", dirtyHTML)
-	if !strings.Contains(clean.HTML, "<script>") &&
-		!strings.Contains(clean.HTML, "onclick=") &&
-		!strings.Contains(clean.HTML, "javascript:") &&
-		strings.Contains(clean.HTML, "<b>Hello</b>") {
-		passed += 3
-	} else {
-		failed += 3
+	if strings.Contains(clean.HTML, "<script>") ||
+		strings.Contains(clean.HTML, "onclick=") ||
+		strings.Contains(clean.HTML, "javascript:") ||
+		!strings.Contains(clean.HTML, "<b>Hello</b>") {
+		failed++
 	}
 
-	totalVectors := len(PermittedIPCChannels) + len(dangerous) + 3
+	totalVectors := len(PermittedIPCChannels) + len(dangerous) + 1
+	passed := totalVectors - failed
 	parityPercent := float64(passed) / float64(totalVectors) * 100.0
 
 	parity := TestParityResult{

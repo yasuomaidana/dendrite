@@ -38,6 +38,8 @@ func NewEngineFromConfig(cfg EngineConfig, client *http.Client) (InferenceEngine
 		return NewOllamaEngine(cfg, client), nil
 	case EngineOxiLLaMa:
 		return NewOxiLLaMaEngine(cfg, client), nil
+	case EngineCandle:
+		return NewCandleEngine(cfg, client), nil
 	case EngineHuggingFaceTGI:
 		return NewHuggingFaceTGIEngine(cfg, client), nil
 	case EngineHuggingFaceTEI:
@@ -249,6 +251,14 @@ func DefaultManager() *Manager {
 		SelfHosted: true,
 	}, nil))
 
+	// 7. Candle (Hugging Face Minimalist Rust ML Framework)
+	_ = mgr.RegisterEngine(NewCandleEngine(EngineConfig{
+		ID:       "candle-rust",
+		Type:     EngineCandle,
+		Endpoint: "http://127.0.0.1:8083",
+		Models:   []string{"candle-quant-llama", "candle-mistral"},
+	}, nil))
+
 	// 6. llama.cpp (Lightweight C++ GGUF server)
 	_ = mgr.RegisterEngine(NewLlamaCppEngine(EngineConfig{
 		ID:       "llamacpp-local",
@@ -260,6 +270,7 @@ func DefaultManager() *Manager {
 	_ = mgr.SetCascadeOrder([]string{
 		"ollama-metal",
 		"oxillama-rust",
+		"candle-rust",
 		"vllm-cluster",
 		"hf-tgi-remote",
 		"llamacpp-local",
