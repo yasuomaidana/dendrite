@@ -1,6 +1,6 @@
 # Dendrite Architecture & Development Environment Specification
 
-Welcome to the **Dendrite** engineering and technical architecture specification. Dendrite is a unified, topology-agnostic control plane and developer platform designed for **Autonomous Multi-Model AI Development, Token Governance, Reverse Engineering (REA), Static Code Intelligence, and AI-Assisted Engineering**.
+Welcome to the **Dendrite** engineering and technical architecture specification. Dendrite is a unified, topology-agnostic control plane and developer platform designed for **Autonomous Multi-Model AI Development, Token Governance, Reverse Engineering (REA), Static Code Intelligence, Distributed Codebase Ecosystems, and AI-Assisted Engineering**.
 
 ---
 
@@ -10,6 +10,7 @@ Dendrite decouples persistent system state and API governance from elastic, hard
 
 - **Hardware & Battery Preservation**: Offloads persistent databases (PostgreSQL 16, Redis 7), documentation engines (Docusaurus), orchestrators (n8n), and heavy Linux decompilers from local developer laptops (such as Apple Silicon MacBook Airs) to persistent low-power nodes (Debian server) or elastic cloud VMs (Azure or AWS burst).
 - **Token Budget Governance & Optimization**: Operates LiteLLM Proxy Gateway with sliding spend windows, context caching (Gemini/Claude prefix cache), semantic AST compaction ($\ge 50\%$ prompt token savings), and zero-cost local Ollama inference (`qwen2.5-coder:14b`).
+- **Distributed Codebase Ecosystem**: Implements a priority-tiered capability resolver ($P_1$: User/organization repositories, $P_2$: Curated high-performance OSS engines [`wgpu`, `turso`, `diesel`, `diesel-cte-ext`], $P_3$: Public package registries [`crates.io`, `npm`, `Maven`, `PyPI`]). Forcibly decomposes monolithic targets into reusable modules, coordinates multi-project interoperability via local LLMs, and spins off satellite side-projects into dedicated Plane v2 projects.
 - **Autonomous Coding Agent Harness**: Integrates, configures, and orchestrates premier coding tools (**Aider**, **OpenHands**, **OpenCode**, and **Google AGY / Antigravity**) with LiteLLM virtual key injection, automated git commit provenance, AST repository context injection, and ephemeral container sandboxing.
 - **AI-Assisted Development & Import**: Analyzes external repositories, extracts algorithmic boundaries, and cleanroom synthesizes idiomatic implementations with automated test vectors into target workspaces.
 - **Polyglot Code Translation**: Converts source modules between languages (e.g. Python $\to$ Rust/Go, TypeScript $\to$ Go) with automated dual property-based testing asserting semantic parity.
@@ -22,6 +23,7 @@ Dendrite decouples persistent system state and API governance from elastic, hard
 - **Inference Benchmarking & Performance Testing (k6)**: Evaluates local and remote inference engine latency (TTFT, TPS) and stress-tests gateway fallback cascades under synthetic multi-agent load.
 - **Agent Search & Discovery**: Hybrid vector/lexical matching to discover, recommend, and route engineering tasks to the optimal agent harness and inference model.
 - **Developer Test Automation & UI Integration**: AST-driven self-healing test generation and k6-browser end-to-end Web UI integration testing.
+- **JetBrains IDE Native MCP Integration**: 19 operational MCP tools accessible directly from GoLand, IntelliJ IDEA, PyCharm, and RustRover with bidirectional IDE control and automated configuration routines.
 
 ---
 
@@ -33,9 +35,10 @@ This documentation is organized into feature-oriented, modular specifications ad
 flowchart TD
     Index([docs/README.md]) --> Arch[1. Architecture Core]
     Index --> Features[2. Feature Specs FEAT-*]
-    Index --> CLI[3. Dendrite CLI Spec]
-    Index --> Sharing[4. Sharing & Replication Guides]
-    Index --> Quality[5. Scrum & Complexity Scorecard]
+    Index --> Guides[3. Developer & IDE Guides]
+    Index --> CLI[4. Dendrite CLI Spec]
+    Index --> Sharing[5. Sharing & Replication]
+    Index --> Quality[6. Scrum & Quality Gates]
 
     subgraph "1. Architecture Core"
         Arch1[01: System Topology & Multi-Node Placement]
@@ -63,48 +66,28 @@ flowchart TD
         F21[FEAT-021: Performance Testing & k6 Benchmarking]
         F22[FEAT-022: Agent Search & Capability Discovery]
         F23[FEAT-023: Test Automation & UI Test Harness]
+        F26[FEAT-026: Distributed Codebase Ecosystem & Interoperability]
     end
 
-    subgraph "3. Dendrite CLI & Web UI"
+    subgraph "3. Developer & IDE Guides"
+        G1[JetBrains IDE MCP & Autonomous Agent Integration Guide]
+        G2[Using Dendrite Tools with JetBrains IDEs Guide]
+        G3[Environment Replication Guide: Container vs Host]
+        G4[Environment Sharing & Onboarding Guide]
+    end
+
+    subgraph "4. Dendrite CLI"
         C1[CLI Architecture, Commands, & Web UI]
     end
 
-    subgraph "4. Sharing & Replication Guides"
-        S1[Team Distribution & Bootstrap Guide]
-        S2[Development Environment Replication Guide: Container & Host]
-    end
-
     subgraph "5. Quality & Governance"
-        Q1[Scrum DoD, Testcontainers & Complexity Guardrails]
+        Q1[Scrum Master Alignment & Complexity Scorecard]
     end
 
-    Arch --> Arch1
-    Arch --> Arch2
-    Arch --> Arch3
-
-    Features --> F1
-    Features --> F2
-    Features --> F3
-    Features --> F4
-    Features --> F5
-    Features --> F6
-    Features --> F7
-    Features --> F8
-    Features --> F9
-    Features --> F10
-    Features --> F11
-    Features --> F12
-    Features --> F13
-    Features --> F14
-    Features --> F19
-    Features --> F20
-    Features --> F21
-    Features --> F22
-    Features --> F23
-
+    Arch --> Arch1 & Arch2 & Arch3
+    Features --> F1 & F2 & F3 & F4 & F5 & F6 & F7 & F8 & F9 & F10 & F11 & F12 & F13 & F14 & F19 & F20 & F21 & F22 & F23 & F26
+    Guides --> G1 & G2 & G3 & G4
     CLI --> C1
-    Sharing --> S1
-    Sharing --> S2
     Quality --> Q1
 ```
 
@@ -134,11 +117,14 @@ flowchart TD
    - [FEAT-021: Performance Testing, Inference Benchmarking & Gateway Load Harness (k6)](./features/FEAT-021-performance-testing-k6-benchmark.md)
    - [FEAT-022: Agent Search, Capability Discovery & Semantic Routing Engine](./features/FEAT-022-agent-search-and-capability-discovery.md)
    - [FEAT-023: Developer Test Automation, Self-Healing Harness & UI Integration Suite](./features/FEAT-023-developer-test-automation-ui-harness.md)
-3. **CLI & Dashboard System Design**:
-   - [Dendrite CLI Specification & Command Reference](./cli/dendrite-cli-specification.md)
-4. **Environment Sharing & Replication**:
+   - [FEAT-026: Distributed Codebase Ecosystem, Modular REA & Cross-Project Interoperability Coordinator](./features/FEAT-026-distributed-codebase-ecosystem.md)
+3. **Developer & IDE Guides**:
+   - [JetBrains IDE MCP & Autonomous Agent Integration Guide](./guides/jetbrains-mcp-and-agents-setup.md)
+   - [Using Dendrite Tools with JetBrains IDEs Guide](./guides/using-dendrite-tools-with-jetbrains.md)
    - [Development Environment Installation & Replication Guide (Container vs Host)](./guides/environment-replication.md)
    - [Environment Sharing, Onboarding & Bootstrap Guide](./guides/sharing-and-onboarding.md)
+4. **CLI & Dashboard System Design**:
+   - [Dendrite CLI Specification & Command Reference](./cli/dendrite-cli-specification.md)
 5. **Quality, Compliance & Complexity**:
    - [Scrum Master DoD, Testcontainers & Complexity Scorecard](./quality/scrum-and-complexity-scorecard.md)
 
@@ -152,42 +138,30 @@ The control plane tool `dendrite` manages the entire lifecycle of the multi-node
 # 1. Run environment diagnostics and pre-flight checks
 dendrite doctor
 
-# 2. Inspect target computer OS, package manager and installed tools
-dendrite env doctor
+# 2. Configure JetBrains IDE with Dendrite MCP server (19 tools), Run Configs, and External Tools
+dendrite jetbrains setup
 
-# 3. Plan replication for Docker containers (including containerized Linear)
-dendrite env plan --mode container --with-linear
+# 3. Query distributed codebase sources by priority tier (P1: Own, P2: Curated OSS, P3: Registries)
+dendrite dist sources --query "wgpu"
 
-# 4. Replicate and bootstrap development environment
-dendrite env replicate --mode container
+# 4. Decompose monolithic target into modular packages and probe ecosystem reuse (Scenario 1)
+dendrite dist decompose --target game-renderer
 
-# 5. Launch the embedded Web UI for visual configuration & monitoring
-dendrite ui
+# 5. Dispatch cross-project feature request with interim fallback TODOs (Scenario 3)
+dendrite dist interop --source Docula --target Oxipix --feature simd-blend-modes
 
-# 6. Switch issue tracking provider to Linear or Jira
-dendrite tracker switch linear
+# 6. Spawn a new Rust satellite project and create Plane v2 project (Scenarios 2 & 4)
+dendrite dist spawn --name carla-sensor-rs --lang rust --plane
 
-# 7. Spin up environment for the active project
-dendrite up local-hybrid
+# 7. Query active Plane v2 tickets
+dendrite plane issues
 
 # 8. Launch an interactive Aider coding session bound to LiteLLM gateway and active ticket
-dendrite agent run aider --ticket DEN-006 --model copilot-sonnet
+dendrite agent run aider --ticket DEN-036 --model copilot-sonnet
 
-# 9. Run OpenHands in an ephemeral sandbox to solve an issue autonomously
-dendrite agent run openhands --ticket PROJ-104 --sandbox --spend-limit 5.00
+# 9. Run Google AGY (Antigravity) bound to LiteLLM gateway and ticket
+dendrite agent run agy --ticket DEN-042 --task "Decompose monolithic renderer" --model gemini-2.5-pro
 
-# 10. Run Google AGY (Antigravity) bound to LiteLLM gateway and ticket
-dendrite agent run agy --ticket DEN-028 --task "Implement AST compaction harness" --model gemini-2.5-pro
-
-# 11. Run k6 performance benchmarks against local OxiLLaMa or LiteLLM gateway
+# 10. Run k6 performance benchmarks against local OxiLLaMa or LiteLLM gateway
 dendrite bench inference --engine oxillama --vus 25 --duration 30s
-
-# 12. Search for the optimal agent and prompt configuration for a complex task
-dendrite agent search "benchmark LiteLLM gateway failover cascade"
-
-# 13. Automatically synthesize and self-heal unit tests with Testcontainers
-dendrite test auto --file pkg/gateway/limiter.go --with-testcontainers
-
-# 14. Run headless k6-browser UI integration tests against Dendrite Web UI
-dendrite test ui --headless --base-url http://127.0.0.1:3456
 ```
