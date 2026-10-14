@@ -2,6 +2,8 @@
 
 # Pluggable Issue Tracker Architecture & Jira Provider Integration
 
+# Pluggable Issue Tracker Architecture & Jira Provider Integration
+
 # FEAT-008: Pluggable Issue Tracker Architecture & Jira Provider Integration
 
 ## 1. User Story & Business Objective

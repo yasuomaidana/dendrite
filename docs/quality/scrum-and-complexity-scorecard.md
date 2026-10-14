@@ -48,6 +48,7 @@ An architectural deliverable, feature pull request, or CLI subcommand is conside
 | **FEAT-022** | Agent Search & Capability Discovery | Hybrid Vector & AST Indexer | `pkg/agentsearch/search_test.go` | Testcontainers TEI / SQLite Manifest Store |
 | **FEAT-023** | Test Automation & UI Test Harness | Self-Healing TestGen & UI Driver | `pkg/testgen/testgen_test.go` | Testcontainers Headless Browser & PostgreSQL |
 | **FEAT-026** | Distributed Codebase Ecosystem & Interoperability | Priority Resolver & Coordinator | `pkg/distcodebase/distcodebase_test.go` | Multi-Source Priority & Plane v2 Integration Test |
+| **FEAT-026-UI** | Distributed Codebase UI & Priority Control Panel | Embedded Web UI & WebSocket Engine | `tests/ui/test_dist_handlers.go` | Headless k6-browser & Plane Testcontainers |
 
 ---
 

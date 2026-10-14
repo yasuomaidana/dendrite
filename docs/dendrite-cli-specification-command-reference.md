@@ -4,6 +4,8 @@
 
 # Dendrite CLI Specification & Command Reference
 
+# Dendrite CLI Specification & Command Reference
+
 The `dendrite` CLI is the unified control plane binary for managing multi-node deployment scenarios, token governance, multi-project workspaces, issue tracker providers (Jira, Plane, Linear), autonomous coding agent harnesses (Aider, OpenHands, OpenCode, Google AGY), AI-assisted code optimization, polyglot translation, documentation generation/reflection, and ephemeral sandboxed analysis.
 
 ---
@@ -45,56 +47,54 @@ Implemented in idiomatic Go (with GoLand native ergonomics) or Rust, the CLI adh
 ```
 dendrite [global flags]  [args...]
 ```
-
-```
 ├── doctor                           # Pre-flight environment diagnostics
-├── env                              # Development Environment Installation & Replication
+├── env                              # Development Environment Installation &amp; Replication
 
-│   ├── doctor                       # Inspect host OS, package manager & installed tools
+│   ├── doctor                       # Inspect host OS, package manager &amp; installed tools
 
 │   ├── plan [flags]                 # Plan replication (--mode container|host|hybrid)
 
 │   ├── replicate [flags]            # Replicate dev environment (containers or host)
 
-│   ├── install <tool> [flags]       # Install tool on host or start container (e.g. Linear)
+│   ├── install &lt;tool&gt; [flags]       # Install tool on host or start container (e.g. Linear)
 
-│   └── status                       # Real-time health & status of replicated components
+│   └── status                       # Real-time health &amp; status of replicated components
 
 ├── init                             # Guided bootstrap and scenario setup
 
-├── up [scenario]                    # Apply topology & launch active profile stacks
+├── up [scenario]                    # Apply topology &amp; launch active profile stacks
 
 │                                    # (local-hybrid | azure-burst | aws-burst | distributed)
 
 ├── down                             # Gracefully halt active stacks
 
-├── status                           # System health, spend dashboard & thermal monitor
+├── status                           # System health, spend dashboard &amp; thermal monitor
 
-├── ui [flags]                       # Launch Dendrite Web UI & Configuration Dashboard
+├── ui [flags]                       # Launch Dendrite Web UI &amp; Configuration Dashboard
 
 │
 
 ├── agent                            # Autonomous Coding Agent Orchestration
 
-│   ├── run <aider|openhands|opencode|agy> # Launch coding agent with LiteLLM gateway & token governance
+│   ├── run &lt;aider|openhands|opencode|agy&gt; # Launch coding agent with LiteLLM gateway &amp; token governance
 
-│   ├── config <agent> [flags]       # Configure agent model tiers, budget limits, sandbox mode
+│   ├── config &lt;agent&gt; [flags]       # Configure agent model tiers, budget limits, sandbox mode
 
-│   └── session                      # Inspect active/past agent sessions, spend & commits
+│   └── session                      # Inspect active/past agent sessions, spend &amp; commits
 
 │
 
 ├── project                          # Multi-Project Workspace Management
 
-│   ├── add <name> <path-or-git>     # Register a project into Dendrite registry
+│   ├── add &lt;name&gt; &lt;path-or-git&gt;     # Register a project into Dendrite registry
 
 │   ├── list                         # List registered projects and active marker
 
-│   ├── switch <name>                # Switch active project context & MCP database
+│   ├── switch &lt;name&gt;                # Switch active project context &amp; MCP database
 
-│   ├── status                       # Display active project statistics & spend
+│   ├── status                       # Display active project statistics &amp; spend
 
-│   └── remove <name>                # Unregister project and prune local cache
+│   └── remove &lt;name&gt;                # Unregister project and prune local cache
 
 │
 
@@ -102,19 +102,19 @@ dendrite [global flags]  [args...]
 
 │   ├── list                         # List available and active issue tracker providers
 
-│   ├── switch <jira|plane|linear>   # Switch active issue tracker for current workspace
+│   ├── switch &lt;jira|plane|linear&gt;   # Switch active issue tracker for current workspace
 
-│   ├── config <provider> [flags]    # Configure API URLs, tokens, and project keys
+│   ├── config &lt;provider&gt; [flags]    # Configure API URLs, tokens, and project keys
 
 │   └── test                         # Verify API connectivity and issue permissions
 
 │
 
-├── ai                               # AI-Assisted Development & Optimization
+├── ai                               # AI-Assisted Development &amp; Optimization
 
-│   ├── optimize-tokens [flags]      # Semantic prompt compaction & prefix cache setup
+│   ├── optimize-tokens [flags]      # Semantic prompt compaction &amp; prefix cache setup
 
-│   └── import [flags]               # Dissect external repo & cleanroom import functionality
+│   └── import [flags]               # Dissect external repo &amp; cleanroom import functionality
 
 │
 
@@ -122,7 +122,7 @@ dendrite [global flags]  [args...]
 
 │
 
-├── doc                              # Docs-as-Code Generation & Reflection
+├── doc                              # Docs-as-Code Generation &amp; Reflection
 
 │   ├── gen [flags]                  # Synthesize FEAT-*, ADR-*, and API specs from AST
 
@@ -130,43 +130,43 @@ dendrite [global flags]  [args...]
 
 │
 
-├── jetbrains                        # JetBrains IDE MCP Integration & Bridge
+├── jetbrains                        # JetBrains IDE MCP Integration &amp; Bridge
 
-│   ├── probe [url]                  # Discover IDE MCP capabilities & tools
+│   ├── probe [url]                  # Discover IDE MCP capabilities &amp; tools
 
-│   ├── open <file> [--line <n>]     # Open file in active JetBrains editor
+│   ├── open &lt;file&gt; [--line &lt;n&gt;]     # Open file in active JetBrains editor
 
-│   ├── problems <file>              # Query IDE inspection errors and warnings
+│   ├── problems &lt;file&gt;              # Query IDE inspection errors and warnings
 
-│   ├── symbols <query>              # Search symbols in JetBrains PSI tree
+│   ├── symbols &lt;query&gt;              # Search symbols in JetBrains PSI tree
 
 │   ├── build                        # Trigger IDE background build
 
-│   └── run <config>                 # Execute an IDE run configuration
+│   └── run &lt;config&gt;                 # Execute an IDE run configuration
 
 │
 
-├── analyze                          # Code & Binary Intelligence
+├── analyze                          # Code &amp; Binary Intelligence
 
-│   └── repo <git-url | path>        # Deep AST, complexity, and call-graph analysis
+│   └── repo &lt;git-url | path&gt;        # Deep AST, complexity, and call-graph analysis
 
 │       ├── --ephemeral              # Run analysis inside throwaway hardened container
 
-│       ├── --depth <n>              # Community detection cluster depth
+│       ├── --depth &lt;n&gt;              # Community detection cluster depth
 
-│       └── --format <text|json>     # Structured output format
+│       └── --format &lt;text|json&gt;     # Structured output format
 
 │
 
 ├── sandbox                          # Ephemeral Sandboxed Execution
 
-│   └── run [flags] <image> [cmd]    # Spawns isolated, cap-dropped container with RAII drop
+│   └── run [flags] &lt;image&gt; [cmd]    # Spawns isolated, cap-dropped container with RAII drop
 
 │       ├── --ephemeral              # Strictly enforces zero persistent footprint
 
-│       ├── --net <none|host|mesh>   # Network isolation mode (default: none)
+│       ├── --net &lt;none|host|mesh&gt;   # Network isolation mode (default: none)
 
-│       └── --timeout <duration>     # Execution deadline
+│       └── --timeout &lt;duration&gt;     # Execution deadline
 
 │
 
@@ -176,23 +176,23 @@ dendrite [global flags]  [args...]
 
 │
 
-├── supervisor                       # Run token & thermal governance batch daemon
+├── supervisor                       # Run token &amp; thermal governance batch daemon
 
-│   ├── --mode <batch|hard|curfew>   # Select operational mode
+│   ├── --mode &lt;batch|hard|curfew&gt;   # Select operational mode
 
-│   └── --spend-cap <usd>           # Override financial ceiling
+│   └── --spend-cap &lt;usd&gt;           # Override financial ceiling
 
 │
 
-└── share                            # Configuration Distribution & Team Onboarding
+└── share                            # Configuration Distribution &amp; Team Onboarding
 
 ├── export                       # Bundle configuration with encrypted secrets
 
-└── import <bundle-file>         # Import and reconcile environment bundle
+└── import &lt;bundle-file&gt;         # Import and reconcile environment bundle
 
 ---
 
-## 3. Subcommand Specifications & Ergonomics
+## 3. Subcommand Specifications &amp; Ergonomics
 
 ### `dendrite env `
 
@@ -248,15 +248,17 @@ dendrite doctor
 ### `dendrite init`
 
 Sets up workstation configuration and creates default directory structures:
-dendrite init --scenario local-hybrid --control-plane debian-server.ts.net
-```
+
+dendrite init --scenario local-hybrid --control-plane debian-server.ts.net</code></pre>
 
 ---
 
 ### `dendrite up [scenario]` & `dendrite down`
 
 Deploys or reconciles the environment based on Terraform placement maps and Docker Compose profiles:
+
 # Launch Scenario 1 (Debian Control Plane + Local macOS)
+
 dendrite up local-hybrid
 
 # Burst compute to Azure VM

@@ -45,6 +45,8 @@ As a software engineer and full-stack developer working on Dendrite, I need an a
 
 4. Triggering an agent run and validating streaming output cards in the Web UI.
 
+5. Managing the Distributed Codebase Ecosystem & Interoperability control panel (FEAT-026: source priority reordering, interactive capability probing, modular REA decomposition DAG rendering, fallback lifecycle diff inspection, and Plane v2 satellite project creation).
+
 4. **Developer CLI Workflow**:
    # Automatically scaffold and verify tests for a specific package or file
 dendrite test auto --file pkg/gateway/limiter.go --with-testcontainers

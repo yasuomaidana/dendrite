@@ -2,6 +2,8 @@
 
 # Performance Testing, Inference Benchmarking & Gateway Load Harness (k6)
 
+# Performance Testing, Inference Benchmarking & Gateway Load Harness (k6)
+
 # FEAT-021: Performance Testing, Inference Benchmarking & Gateway Load Harness (k6)
 
 ## 1. User Story & Business Objective

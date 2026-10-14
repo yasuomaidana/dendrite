@@ -4,6 +4,8 @@
 
 # Dendrite Project Development Status & Roadmap
 
+# Dendrite Project Development Status & Roadmap
+
 This document maintains the real-time development status, milestones, and active ticket execution pipeline for **Dendrite**.
 
 ---

@@ -2,6 +2,8 @@
 
 # Multi-Project Workspace Isolation & State Management
 
+# Multi-Project Workspace Isolation & State Management
+
 # FEAT-005: Multi-Project Workspace Isolation & State Management
 
 ## 1. User Story & Business Objective

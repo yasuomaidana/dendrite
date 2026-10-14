@@ -4,6 +4,8 @@
 
 # Token Budget Governance & LiteLLM Gateway Architecture
 
+# Token Budget Governance & LiteLLM Gateway Architecture
+
 ## 1. Overview & Operational Mandate
 
 Autonomous agentic loops (such as Aider, OpenHands, or custom LLM worker loops) pose significant financial and operational risks if left ungoverned:

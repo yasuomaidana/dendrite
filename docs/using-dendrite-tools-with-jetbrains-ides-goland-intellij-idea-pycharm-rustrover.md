@@ -4,6 +4,8 @@
 
 # Using Dendrite Tools with JetBrains IDEs (GoLand, IntelliJ IDEA, PyCharm, RustRover)
 
+# Using Dendrite Tools with JetBrains IDEs (GoLand, IntelliJ IDEA, PyCharm, RustRover)
+
 ## 1. Overview & Architecture
 
 Dendrite provides seamless, bidirectional integration with the **JetBrains IDE Ecosystem** (GoLand, IntelliJ IDEA, PyCharm, RustRover, WebStorm, CLion). The integration operates across two complementary planes:
@@ -15,7 +17,9 @@ JetBrains AI Assistant, Junie, and local assistant plugins consume Dendrite's na
 2. **Dendrite Agent Reverse Bridge (Dendrite $\to$ IDE)**:
 
 Autonomous agents running in Dendrite reach back into the active JetBrains IDE over port `63342` and the JetBrains MCP server to inspect open files, query compiler problems and inspection warnings, trigger builds, and search PSI symbols.
+
 flowchart LR
+
 subgraph JetBrains_IDE [&#34;JetBrains IDE (GoLand, IntelliJ IDEA)&#34;]
 
 Editor[&#34;Active Editor Window &amp; PSI Index&#34;]

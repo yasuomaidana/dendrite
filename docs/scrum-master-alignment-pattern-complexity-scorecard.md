@@ -4,6 +4,8 @@
 
 # Scrum Master Alignment & Pattern Complexity Scorecard
 
+# Scrum Master Alignment & Pattern Complexity Scorecard
+
 ## 1. Persona & Governance Mandate
 
 This document establishes the quality gates and engineering standards enforced by the **Agile Scrum Master & Goal Alignment Specialist** (`/scrum-master-alignment`) and the **Rust/Go Design Patterns & Code Complexity Auditor** (`/pattern-complexity-auditor`).

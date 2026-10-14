@@ -2,6 +2,8 @@
 
 # Pluggable Inference Engine Architecture & Multi-Provider Gateway
 
+# Pluggable Inference Engine Architecture & Multi-Provider Gateway
+
 # FEAT-020: Pluggable Inference Engine Architecture & Multi-Provider Gateway
 
 ## 1. User Story & Business Objective

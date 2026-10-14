@@ -4,6 +4,8 @@
 
 # System Topology & Multi-Node Placement Architecture
 
+# System Topology & Multi-Node Placement Architecture
+
 ## 1. Architectural Philosophy: Decoupled Compute Tiers
 
 Consolidating background services, relational databases, AST graph indexing, and autonomous model inference onto a single developer workstation degrades performance, depletes battery life, and triggers thermal throttling on passively cooled hardware (such as Apple Silicon MacBook Air).

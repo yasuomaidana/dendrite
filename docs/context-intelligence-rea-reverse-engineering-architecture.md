@@ -4,6 +4,8 @@
 
 # Context Intelligence & REA Reverse Engineering Architecture
 
+# Context Intelligence & REA Reverse Engineering Architecture
+
 ## 1. Context Engineering vs. Monolithic Context Dumps
 
 Indiscriminately injecting entire codebases or disassembled assembly dumps into an LLM context window causes:

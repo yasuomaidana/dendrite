@@ -4,6 +4,8 @@
 
 # Dendrite Architecture & Development Environment Specification
 
+# Dendrite Architecture & Development Environment Specification
+
 Welcome to the **Dendrite** engineering and technical architecture specification. Dendrite is a unified, topology-agnostic control plane and developer platform designed for **Autonomous Multi-Model AI Development, Token Governance, Reverse Engineering (REA), Static Code Intelligence, Distributed Codebase Ecosystems, and AI-Assisted Engineering**.
 
 ---

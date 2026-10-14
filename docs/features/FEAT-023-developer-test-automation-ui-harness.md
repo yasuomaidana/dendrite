@@ -39,6 +39,7 @@ As a software engineer and full-stack developer working on Dendrite, I need an a
        2. Switching topology scenario (e.g. from `local-hybrid` to `azure-burst`) and verifying dynamic pre-flight indicator state.
        3. Updating token spend caps and verifying atomic writeback to `~/.dendrite/config.yaml`.
        4. Triggering an agent run and validating streaming output cards in the Web UI.
+       5. Managing the Distributed Codebase Ecosystem & Interoperability control panel (FEAT-026: source priority reordering, interactive capability probing, modular REA decomposition DAG rendering, fallback lifecycle diff inspection, and Plane v2 satellite project creation).
 4. **Developer CLI Workflow**:
    ```bash
    # Automatically scaffold and verify tests for a specific package or file

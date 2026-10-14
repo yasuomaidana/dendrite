@@ -105,3 +105,117 @@ flowchart TD
 - [x] **Native MCP Tools**: `dendrite_dist_sources`, `dendrite_dist_decompose`, `dendrite_dist_interop`, `dendrite_dist_spawn`.
 - [x] **CLI Subcommands**: `dendrite dist <sources|resolve|decompose|interop|spawn>`.
 - [x] **Test Coverage**: Automated test suites achieve $\ge 85\%$ statement coverage (Current: $89.2\%$).
+
+---
+
+## 5. UI Architecture Specification: Priority-Tiered Source Resolution Control Panel
+
+The Distributed Codebase Control Panel is integrated into the single-binary embedded web application (FEAT-009) hosted at `http://127.0.0.1:3456/distcodebase`. It provides an interactive control plane for human developers and autonomous agents.
+
+```mermaid
+flowchart TD
+    Browser["Developer Browser (:3456/distcodebase)"] <--> Engine["Embedded Web Engine (embed.FS)"]
+    
+    subgraph "Dendrite Control Plane Backend (Go)"
+        Engine <--> DistAPI["Distributed Codebase REST & WebSocket Controller"]
+        DistAPI <--> Registry["Source & Library Registry (pkg/distcodebase)"]
+        DistAPI <--> Decomposer["Forced Modular Decomposer"]
+        DistAPI <--> Interop["Cross-Project Interop Coordinator"]
+        DistAPI <--> Spawner["Parallel & Satellite Project Spawner"]
+    end
+
+    subgraph "External & Ecosystem Integrations"
+        Registry <--> ConfigDisk["~/.dendrite/config.yaml"]
+        Interop <--> Ollama["Local Ollama (qwen2.5-coder:14b)"]
+        Spawner <--> Plane["Plane v2 REST API (:8090)"]
+    end
+```
+
+### 5.1 Interactive UI Component Panels
+
+1. **Priority-Tiered Source & Registry Manager (Panel 1)**:
+   - **Visual Kanban & Priority Columns**:
+     - Column 1: **Priority 1 (Own Repositories)** (e.g. `yasuomaidana-repositories`, `Docula`, `semdag`, `Oxipix`).
+     - Column 2: **Priority 2 (Curated High-Performance OSS)** (e.g. `wgpu`, `turso`, `diesel`, `diesel-cte-ext`).
+     - Column 3: **Priority 3 (Public Registries)** (e.g. `crates.io`, `npm`, `maven-central`, `pypi`, `go-proxy`).
+   - **Drag-and-Drop Reordering**: Allows re-ranking priority tiers visually with real-time atomic updates to local configuration.
+   - **Add Source / Add Library Modal**: Form inputs for Git server URL, API token/SSH key, package name, language ecosystem, and capability tags.
+
+2. **Interactive Capability Resolution Probe & Live Matcher (Panel 2)**:
+   - Search bar supporting instant capability matching (e.g. typing `cte`, `gpu-rendering`, `pixels`, `database`, `orm`).
+   - Visual result card highlighting the winning resolved library, priority badge ($P_1, P_2, P_3$), capability match score, and GitHub repository links.
+
+3. **Modular REA Decomposition & Reuse Graph Visualizer (Panel 3)**:
+   - Interactive SVG/Canvas Directed Acyclic Graph (DAG) visualizing decomposed modules of a target project (e.g. `CarlaEngine` decomposed into 6 modules).
+   - Nodes color-coded by resolution type:
+     - 🟢 **Green**: `REUSE -> Library` (mapped to existing registered library).
+     - 🟠 **Orange**: `CUSTOM DEV -> Rationale` (gated custom implementation with architectural justification).
+     - 🔵 **Blue**: `SATELLITE SPAWN` (satellite side-project for Plane tracking).
+   - Toggles: `ForcedModular` (default ON), `UserRequestedCustom` override, and architectural constraint rationale editor.
+
+4. **Local LLM Cross-Project Interoperability Coordinator (Panel 4)**:
+   - Visual dependency graph between user-owned projects (e.g. `Docula` depending on `semdag` and `Oxipix`).
+   - Real-time lifecycle badges: `[DISPATCHED]`, `[UNBLOCKED WITH FALLBACK]`, `[RECONCILED]`.
+   - Side-by-side code diff viewer showing the generated interim fallback `// TODO(interop:Oxipix)` and the final reconciled import patch.
+   - Local LLM prompt generator widget targeting local Ollama (`qwen2.5-coder:14b`).
+
+5. **Parallel & Satellite Project Spawner Wizard (Panel 5)**:
+   - Project generator form: name, directory path, language scaffold (`rust`, `go`, `typescript`), Git initialization checkbox.
+   - **Plane v2 Integration**: Checkbox to automatically provision a dedicated project in Plane (`POST /api/v1/workspaces/{slug}/projects/`) with sprint board, milestones, and initial tickets.
+
+### 5.2 REST & WebSocket API Specifications
+
+| Method | Endpoint | Description |
+|:---|:---|:---|
+| `GET` | `/api/v1/dist/sources` | List all registered sources and libraries grouped by priority tier |
+| `POST` | `/api/v1/dist/sources` | Register a new Git server or repository source |
+| `PUT` | `/api/v1/dist/sources/priority` | Atomically update source priority rankings |
+| `POST` | `/api/v1/dist/libraries` | Add a new library with capability tags |
+| `POST` | `/api/v1/dist/resolve` | Priority-resolve capability query ($P_1 > P_2 > P_3$) |
+| `POST` | `/api/v1/dist/decompose` | Forcibly decompose target project / REA evidence into reusable modules |
+| `GET` | `/api/v1/dist/interop` | List active cross-project coordinations and fallback statuses |
+| `POST` | `/api/v1/dist/interop/coordinate` | Dispatch cross-project feature request and generate interim fallback |
+| `POST` | `/api/v1/dist/interop/reconcile` | Reconcile completed dependency and generate patch |
+| `POST` | `/api/v1/dist/spawn` | Scaffold parallel/satellite project and provision Plane project |
+| `WS` | `/ws/distcodebase` | Live WebSocket streaming for decomposition events and interop state changes |
+
+---
+
+## 6. Testing Development Plan & Verification Suite
+
+The testing development plan for the Priority-Tiered Source Resolution UI is integrated into Dendrite's automated test harness ([FEAT-023](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/features/FEAT-023-developer-test-automation-ui-harness.md)) and enforced through the quality scorecard ([docs/quality/scrum-and-complexity-scorecard.md](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/quality/scrum-and-complexity-scorecard.md)).
+
+### 6.1 Testing Levels & Matrix
+
+| Testing Level | Scope / Target | Verifying Test Suite | Success Threshold |
+|:---|:---|:---|:---|
+| **Level 1: Backend REST Handlers** | `pkg/ui/distcodebase`, HTTP routing | `tests/ui/test_dist_handlers.go` | Statement coverage $\ge 85\%$, zero race conditions (`sync.RWMutex`) |
+| **Level 2: Headless E2E Journeys** | Web UI DOM, interactive panels | `tests/ui/dist_ui_e2e_test.js` (k6-browser / Playwright) | 100% journey pass rate, render latency $< 150	ext{ms}$ |
+| **Level 3: Real-Time WebSocket Load** | `/ws/distcodebase` event streaming | `tests/perf/dist_ws_benchmark.js` (k6) | 50 concurrent sessions, 100 msgs/sec, zero memory leaks, $\ge 30	ext{ FPS}$ |
+| **Level 4: Persistent Layer & Plane** | Disk config & Plane v2 REST API | `tests/integration/test_dist_plane_integration.go` | Real Plane Testcontainers verification (DoD compliant) |
+
+### 6.2 End-to-End (E2E) Headless User Journeys (k6-browser)
+
+1. **Journey 1: Source Priority Reordering & Resolution Verification**:
+   - The headless browser loads `http://127.0.0.1:3456/distcodebase`.
+   - Simulates dragging a source from Priority 2 to Priority 1.
+   - Asserts that DOM updates immediately, writes to backend via `PUT /api/v1/dist/sources/priority`, and subsequent resolve queries prioritize the newly elevated source.
+2. **Journey 2: Interactive Capability Probe & Instant Match**:
+   - Types query `"cte"` into the Capability Probe input.
+   - Asserts that `diesel-cte-ext` renders with Priority 2 badge, capability list, and GitHub link in $< 100	ext{ms}$.
+3. **Journey 3: Modular Decomposition & Graph Visualization**:
+   - Submits project decomposition for `"CarlaEngine"` with `ForcedModular: true`.
+   - Asserts SVG DAG renders 6 modules with exact color coding: 5 green `REUSE` nodes (`wgpu`, `turso`, `diesel-cte-ext`, `Oxipix`, `semdag`) and 1 orange `CUSTOM DEV` node (`api-gateway`).
+4. **Journey 4: Cross-Project Interoperability Lifecycle**:
+   - Triggers coordination for `Docula` requesting `blend_modes_simd` from `Oxipix`.
+   - Asserts that the fallback code card appears in the UI displaying `// TODO(interop:Oxipix)`.
+   - Simulates feature completion in `Oxipix` and clicks `Reconcile`; asserts diff card changes to `use oxipix::blend_modes_simd;`.
+5. **Journey 5: Satellite Project & Plane v2 Provisioning**:
+   - Fills out the Spawner wizard for `carla-sensor-rs` targeting `./projects/carla-sensor-rs` with Plane integration checked.
+   - Asserts that project scaffolding succeeds, Git is initialized, and Plane v2 returns HTTP 201 with project identifier `CSEN`.
+
+### 6.3 Definition of Done (DoD) & Quality Scorecard Alignment
+- **Traceability**: All 5 user journeys and 10 REST endpoints mapped to automated test suites.
+- **Coverage**: Statement coverage $\ge 85\%$ across backend handlers and frontend component logic.
+- **No In-Memory Persistent Mocking**: Plane API and file writebacks verified against real filesystem and Testcontainers.
+- **Complexity Guardrails**: Cyclomatic Complexity $\le 8$, Cognitive Complexity $\le 10$, function length $\le 65$ LOC.

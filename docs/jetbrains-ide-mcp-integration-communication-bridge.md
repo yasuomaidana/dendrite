@@ -2,6 +2,8 @@
 
 # JetBrains IDE MCP Integration & Communication Bridge
 
+# JetBrains IDE MCP Integration & Communication Bridge
+
 # FEAT-014: JetBrains IDE MCP Integration & Communication Bridge
 
 ## 1. User Story & Business Objective

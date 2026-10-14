@@ -2,6 +2,8 @@
 
 # Open-Source Reverse Engineering Showcases & Cleanroom Parity Verification Suite
 
+# Open-Source Reverse Engineering Showcases & Cleanroom Parity Verification Suite
+
 # FEAT-024: Open-Source Reverse Engineering Showcases & Cleanroom Parity Verification Suite
 
 ## 1. User Story & Business Objective

@@ -2,6 +2,8 @@
 
 # Remote SSH Hardware Discovery & Automated Service Placement Router
 
+# Remote SSH Hardware Discovery & Automated Service Placement Router
+
 # FEAT-017: Remote SSH Hardware Discovery & Automated Service Placement Router
 
 ## 1. User Story & Business Objective

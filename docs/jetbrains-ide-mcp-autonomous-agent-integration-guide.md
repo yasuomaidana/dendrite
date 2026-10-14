@@ -4,6 +4,8 @@
 
 # JetBrains IDE MCP & Autonomous Agent Integration Guide
 
+# JetBrains IDE MCP & Autonomous Agent Integration Guide
+
 ## 1. Overview & Architecture
 
 Dendrite provides bidirectional integration with the **JetBrains IDE Ecosystem** (GoLand, IntelliJ IDEA, PyCharm, RustRover, WebStorm, CLion) through two complementary communication channels:
@@ -15,7 +17,9 @@ JetBrains IDEs (2024.3+, 2025+, 2026+) natively support the **Model Context Prot
 2. **Dendrite JetBrains Bridge (Dendrite $\to$ IDE)**:
 
 Through `pkg/jetbrains` and `dendrite jetbrains <probe|open|problems|symbols|build|run|setup>`, Dendrite's autonomous agents can reach back into the running JetBrains IDE over the IDE's built-in MCP server / port `63342` to navigate active editor tabs, trigger background compilations, query PSI symbols, and extract live compiler diagnostics.
+
 flowchart LR
+
 subgraph &#34;JetBrains IDE (GoLand, IntelliJ, RustRover)&#34;
 
 IDE_Core[&#34;IDE Core &amp; Editor Engine&#34;]

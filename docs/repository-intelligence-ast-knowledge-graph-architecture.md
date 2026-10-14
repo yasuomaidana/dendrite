@@ -2,6 +2,8 @@
 
 # Repository Intelligence & AST Knowledge Graph Architecture
 
+# Repository Intelligence & AST Knowledge Graph Architecture
+
 # FEAT-004: Repository Intelligence & AST Knowledge Graph Architecture
 
 ## 1. User Story & Business Objective
