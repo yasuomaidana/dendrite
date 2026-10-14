@@ -47,6 +47,7 @@ An architectural deliverable, feature pull request, or CLI subcommand is conside
 | **FEAT-021** | Performance Testing & Load Harness | k6 Benchmarking Engine (`pkg/perf`)| `tests/perf/gateway_benchmark_test.go`| Testcontainers k6 Runner + PostgreSQL 16 |
 | **FEAT-022** | Agent Search & Capability Discovery | Hybrid Vector & AST Indexer | `pkg/agentsearch/search_test.go` | Testcontainers TEI / SQLite Manifest Store |
 | **FEAT-023** | Test Automation & UI Test Harness | Self-Healing TestGen & UI Driver | `pkg/testgen/testgen_test.go` | Testcontainers Headless Browser & PostgreSQL |
+| **FEAT-026** | Distributed Codebase Ecosystem & Interoperability | Priority Resolver & Coordinator | `pkg/distcodebase/distcodebase_test.go` | Multi-Source Priority & Plane v2 Integration Test |
 
 ---
 
