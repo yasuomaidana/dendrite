@@ -1,0 +1,55 @@
+#cloud-config
+preserve_hostname: false
+hostname: ${hostname}
+
+users:
+  - name: deployer
+    gecos: Dendrite Automated Deployer
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    groups: [docker, sudo]
+    ssh_authorized_keys:
+      - ${deployer_ssh_public_key}
+
+packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - jq
+  - xfsprogs
+
+write_files:
+  - path: /etc/sysctl.d/99-tailscale.conf
+    permissions: "0644"
+    content: |
+      net.ipv4.ip_forward = 1
+      net.ipv6.conf.all.forwarding = 1
+
+runcmd:
+  # 1. Mount Persistent Managed Disk at LUN 0
+  - mkdir -p /var/lib/dendrite/storage
+  - |
+    DEVICE="/dev/disk/azure/scsi1/lun0"
+    if [ ! -b "$DEVICE" ]; then
+      DEVICE="/dev/sdb"
+    fi
+    if [ -b "$DEVICE" ]; then
+      if ! blkid "$DEVICE"; then
+        mkfs.ext4 -F -L dendrite-data "$DEVICE"
+      fi
+      mount "$DEVICE" /var/lib/dendrite/storage || true
+      UUID=$(blkid -s UUID -o value "$DEVICE" || true)
+      if [ -n "$UUID" ] && ! grep -q "$UUID" /etc/fstab; then
+        echo "UUID=$UUID /var/lib/dendrite/storage ext4 defaults,nofail 0 2" >> /etc/fstab
+      fi
+    fi
+  # 2. Install Docker 26+ and Docker Compose v2
+  - curl -fsSL https://get.docker.com | sh
+  - systemctl enable --now docker
+  - usermod -aG docker deployer
+  # 3. Join Tailscale Secure Mesh
+  - curl -fsSL https://tailscale.com/install.sh | sh
+  - systemctl enable --now tailscaled
+  - tailscale up --authkey=${tailscale_auth_key} --hostname=${hostname} --ssh --accept-routes

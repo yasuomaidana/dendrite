@@ -147,7 +147,7 @@ func (p *Planner) planContainerMode(req ReplicationRequest, targets []Replicatio
 			ID:          "start-plane-stack",
 			Type:        ActionStartContainer,
 			Target:      TargetPlane,
-			Description: "Start containerized Plane v2 backend, PostgreSQL and Redis services",
+			Description: "Start containerized Plane v2 backend, frontend UI, PostgreSQL and Redis services",
 			Command:     fmt.Sprintf("docker compose -f %s up -d", planeCompose),
 			Rollback:    fmt.Sprintf("docker compose -f %s down", planeCompose),
 			Mandatory:   true,
@@ -157,9 +157,19 @@ func (p *Planner) planContainerMode(req ReplicationRequest, targets []Replicatio
 			Type:        ActionVerifyHealth,
 			Target:      TargetPlane,
 			Description: "Assert HTTP 200 OK on self-hosted Plane health probe",
-			Command:     "curl -sSf http://localhost:8090/api/health/",
+			Command:     "curl -sSf http://localhost:8090/api/instances/ || curl -sSf http://localhost:8090/api/health/",
 			Mandatory:   true,
 		})
+		if req.WithPlaneUI == nil || *req.WithPlaneUI {
+			plan.Actions = append(plan.Actions, PlanAction{
+				ID:          "verify-plane-ui-health",
+				Type:        ActionVerifyHealth,
+				Target:      TargetPlane,
+				Description: "Assert HTTP 200 OK on self-hosted Plane web UI interface",
+				Command:     "curl -sSf http://localhost:8091/",
+				Mandatory:   true,
+			})
+		}
 		plan.EstimatedSecs += 30
 	}
 
@@ -214,6 +224,14 @@ func (p *Planner) planContainerMode(req ReplicationRequest, targets []Replicatio
 			Description: "Launch Prometheus and Grafana telemetry containers",
 			Command:     fmt.Sprintf("docker compose -f %s up -d", grafanaCompose),
 			Rollback:    fmt.Sprintf("docker compose -f %s down", grafanaCompose),
+			Mandatory:   true,
+		})
+		plan.Actions = append(plan.Actions, PlanAction{
+			ID:          "verify-grafana-health",
+			Type:        ActionVerifyHealth,
+			Target:      TargetGrafana,
+			Description: "Assert HTTP 200 OK on Grafana dashboard service",
+			Command:     "curl -sSf http://localhost:3000/api/health",
 			Mandatory:   true,
 		})
 		plan.EstimatedSecs += 20

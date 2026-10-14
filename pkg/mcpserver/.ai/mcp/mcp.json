@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "dendrite": {
+      "command": "/Users/yasuomaidana/GoLandProjects/Dendrite/pkg/mcpserver/bin/dendrite",
+      "args": [
+        "mcp",
+        "serve"
+      ],
+      "env": {
+        "DENDRITE_ENV": "development",
+        "DENDRITE_WORKSPACE": "/Users/yasuomaidana/GoLandProjects/Dendrite/pkg/mcpserver"
+      }
+    }
+  }
+}

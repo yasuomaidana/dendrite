@@ -320,14 +320,80 @@ func TestLinear_GenerateLinearComposeDefaults(t *testing.T) {
 func TestPlane_GeneratePlaneComposeDefaults(t *testing.T) {
 	cfg := PlaneConfig{}
 	yamlStr := GeneratePlaneCompose(cfg)
-	if !strings.Contains(yamlStr, "8090:8090") {
+	if !strings.Contains(yamlStr, "PLANE_API_PORT:-8090") {
 		t.Errorf("expected default port 8090")
+	}
+	if !strings.Contains(yamlStr, "plane-ui:") {
+		t.Errorf("expected plane-ui service to be enabled by default")
+	}
+	if !strings.Contains(yamlStr, "plane-proxy:") {
+		t.Errorf("expected plane-proxy service to be enabled by default")
+	}
+	if !strings.Contains(yamlStr, "PLANE_UI_PORT:-8091") {
+		t.Errorf("expected default UI port 8091")
 	}
 
 	info := HostInfo{PackageManager: PkgApt}
 	cmd := GenerateHostPlaneInstallCommand(info)
 	if !strings.Contains(cmd, "install.sh") {
 		t.Errorf("expected install.sh fallback")
+	}
+}
+
+func TestPlane_GeneratePlaneCompose_OptionalUI(t *testing.T) {
+	cfg := PlaneConfig{}
+	cfg.SetWithUI(false)
+	yamlStr := GeneratePlaneCompose(cfg)
+	if !strings.Contains(yamlStr, "PLANE_API_PORT:-8090") {
+		t.Errorf("expected default port 8090")
+	}
+	if strings.Contains(yamlStr, "plane-ui:") {
+		t.Errorf("expected plane-ui service to be excluded when disabled")
+	}
+	if strings.Contains(yamlStr, "plane-proxy:") {
+		t.Errorf("expected plane-proxy service to be excluded when disabled")
+	}
+	if strings.Contains(yamlStr, "plane_proxy.conf") {
+		t.Errorf("expected plane_proxy.conf volume to be excluded when disabled")
+	}
+}
+
+func TestPlanner_PlaneUI_OptionalToggle(t *testing.T) {
+	host := HostInfo{OS: "darwin", Arch: "arm64", HasDocker: true}
+	planner := NewPlanner(host)
+
+	// Default on: WithPlane: true, WithPlaneUI: nil
+	planOn, err := planner.PlanReplication(ReplicationRequest{
+		Mode:      ModeContainer,
+		WithPlane: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var hasUIAction bool
+	for _, a := range planOn.Actions {
+		if a.ID == "verify-plane-ui-health" {
+			hasUIAction = true
+		}
+	}
+	if !hasUIAction {
+		t.Errorf("expected verify-plane-ui-health action when Plane UI is default on")
+	}
+
+	// Explicitly off
+	disabled := false
+	planOff, err := planner.PlanReplication(ReplicationRequest{
+		Mode:        ModeContainer,
+		WithPlane:   true,
+		WithPlaneUI: &disabled,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, a := range planOff.Actions {
+		if a.ID == "verify-plane-ui-health" {
+			t.Errorf("expected verify-plane-ui-health action to be omitted when Plane UI is disabled")
+		}
 	}
 }
 
@@ -357,10 +423,14 @@ func TestHealthChecks(t *testing.T) {
 	if !CheckPenpotHealth(ctx, ts.URL, 500*time.Millisecond) {
 		t.Errorf("expected penpot health to be true")
 	}
+	if !CheckPlaneUIHealth(ctx, ts.URL, 500*time.Millisecond) {
+		t.Errorf("expected plane UI health to be true")
+	}
 
 	// Test negative cases
 	_ = CheckLinearHealth(ctx, "http://invalid-endpoint-1234:9999", 50*time.Millisecond)
 	_ = CheckPlaneHealth(ctx, "http://invalid-endpoint-1234:9999", 50*time.Millisecond)
+	_ = CheckPlaneUIHealth(ctx, "http://invalid-endpoint-1234:9999", 50*time.Millisecond)
 	_ = CheckPenpotHealth(ctx, "http://invalid-endpoint-1234:9999", 50*time.Millisecond)
 }
 

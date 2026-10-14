@@ -37,11 +37,11 @@ func NewClient(cfg Config, httpClient *http.Client) (*Client, error) {
 	if strings.TrimSpace(cfg.ProjectID) == "" {
 		return nil, ErrEmptyProjectID
 	}
-	if strings.TrimSpace(cfg.APITokenEnv) == "" {
-		return nil, ErrMissingAPIToken
-	}
 
-	token := strings.TrimSpace(os.Getenv(cfg.APITokenEnv))
+	token := cfg.DirectToken
+	if token == "" && cfg.APITokenEnv != "" {
+		token = strings.TrimSpace(os.Getenv(cfg.APITokenEnv))
+	}
 	if token == "" {
 		return nil, ErrMissingAPIToken
 	}
@@ -57,6 +57,56 @@ func NewClient(cfg Config, httpClient *http.Client) (*Client, error) {
 		apiKey:        token,
 		httpClient:    httpClient,
 	}, nil
+}
+
+// NewClientFromEnv constructs a Plane client using system environment variables or sensible local defaults.
+func NewClientFromEnv() (*Client, error) {
+	baseURL := os.Getenv("PLANE_BASE_URL")
+	if baseURL == "" {
+		port := os.Getenv("PLANE_API_PORT")
+		if port == "" {
+			port = "8090"
+		}
+		baseURL = fmt.Sprintf("http://localhost:%s", port)
+	}
+
+	workspaceSlug := os.Getenv("PLANE_WORKSPACE_SLUG")
+	if workspaceSlug == "" {
+		workspaceSlug = "dendrite-ws"
+	}
+
+	projectID := os.Getenv("PLANE_PROJECT_ID")
+	if projectID == "" {
+		projectID = "e6380603-1428-4a66-995e-e06039915d52"
+	}
+
+	apiKey := os.Getenv("PLANE_API_KEY")
+	if apiKey == "" {
+		apiKey = "plane_sec_dendrite_token_12345"
+	}
+
+	return &Client{
+		baseURL:       strings.TrimRight(baseURL, "/"),
+		workspaceSlug: workspaceSlug,
+		projectID:     projectID,
+		apiKey:        apiKey,
+		httpClient:    &http.Client{Timeout: 15 * time.Second},
+	}, nil
+}
+
+// BaseURL returns the configured base URL.
+func (c *Client) BaseURL() string {
+	return c.baseURL
+}
+
+// WorkspaceSlug returns the active workspace slug.
+func (c *Client) WorkspaceSlug() string {
+	return c.workspaceSlug
+}
+
+// ProjectID returns the active project ID.
+func (c *Client) ProjectID() string {
+	return c.projectID
 }
 
 func (c *Client) newRequest(ctx context.Context, method, endpoint string, body interface{}) (*http.Request, error) {
@@ -149,38 +199,96 @@ func (c *Client) GetIssue(ctx context.Context, id tracker.TicketID) (*tracker.Un
 	}, nil
 }
 
-// UpdateStatus moves a Plane issue to the corresponding state.
-func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tracker.Status) error {
-	statesEndpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/states/", c.workspaceSlug, c.projectID)
-	req, err := c.newRequest(ctx, http.MethodGet, statesEndpoint, nil)
+// ListPlaneIssues queries all issues for the project.
+func (c *Client) ListPlaneIssues(ctx context.Context) ([]PlaneIssue, error) {
+	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/", c.workspaceSlug, c.projectID)
+	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return ErrUnauthorized
+		return nil, ErrUnauthorized
 	}
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("failed to fetch states: status %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to list plane issues: status %d", resp.StatusCode)
 	}
 
-	var statesList []struct {
-		ID    string `json:"id"`
-		Name  string `json:"name"`
-		Group string `json:"group"`
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&statesList); err != nil {
+	var paginated struct {
+		Results []PlaneIssue `json:"results"`
+	}
+	if err := json.Unmarshal(bodyBytes, &paginated); err == nil && len(paginated.Results) > 0 {
+		return paginated.Results, nil
+	}
+
+	var directList []PlaneIssue
+	if err := json.Unmarshal(bodyBytes, &directList); err == nil {
+		return directList, nil
+	}
+
+	return paginated.Results, nil
+}
+
+// ListStates queries all states configured for the project.
+func (c *Client) ListStates(ctx context.Context) ([]PlaneState, error) {
+	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/states/", c.workspaceSlug, c.projectID)
+	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, ErrUnauthorized
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("failed to list plane states: status %d", resp.StatusCode)
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var paginated struct {
+		Results []PlaneState `json:"results"`
+	}
+	if err := json.Unmarshal(bodyBytes, &paginated); err == nil && len(paginated.Results) > 0 {
+		return paginated.Results, nil
+	}
+
+	var directList []PlaneState
+	if err := json.Unmarshal(bodyBytes, &directList); err == nil {
+		return directList, nil
+	}
+
+	return paginated.Results, nil
+}
+
+// UpdateStatus moves a Plane issue to the corresponding state.
+func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tracker.Status) error {
+	states, err := c.ListStates(ctx)
+	if err != nil {
 		return err
 	}
 
-	targetStateID := findMatchingPlaneState(statesList, state)
+	targetStateID := findMatchingPlaneStateFromList(states, state)
 	if targetStateID == "" {
 		return ErrStateNotFound
 	}
@@ -201,6 +309,9 @@ func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tr
 	}
 	defer patchResp.Body.Close()
 
+	if patchResp.StatusCode == http.StatusUnauthorized || patchResp.StatusCode == http.StatusForbidden {
+		return ErrUnauthorized
+	}
 	if patchResp.StatusCode == http.StatusNotFound {
 		return ErrIssueNotFound
 	}
@@ -208,6 +319,372 @@ func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tr
 		return fmt.Errorf("failed to update state: status %d", patchResp.StatusCode)
 	}
 
+	return nil
+}
+
+// CreatePlaneIssue creates a new issue in Plane with rich metadata.
+func (c *Client) CreatePlaneIssue(ctx context.Context, name, descHTML, stateID string, estimate *int) (*PlaneIssue, error) {
+	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/", c.workspaceSlug, c.projectID)
+	body := map[string]interface{}{
+		"name":             name,
+		"description_html": descHTML,
+	}
+	if stateID != "" {
+		body["state"] = stateID
+	}
+	if estimate != nil {
+		body["estimate_point"] = *estimate
+	}
+
+	req, err := c.newRequest(ctx, http.MethodPost, endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, ErrUnauthorized
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("failed to create issue: status %d", resp.StatusCode)
+	}
+
+	var created PlaneIssue
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return nil, err
+	}
+	return &created, nil
+}
+
+// UpdatePlaneIssue patches an existing issue in Plane.
+func (c *Client) UpdatePlaneIssue(ctx context.Context, id, name, descHTML, stateID string, estimate *int) (*PlaneIssue, error) {
+	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/%s/", c.workspaceSlug, c.projectID, id)
+	body := make(map[string]interface{})
+	if name != "" {
+		body["name"] = name
+	}
+	if descHTML != "" {
+		body["description_html"] = descHTML
+	}
+	if stateID != "" {
+		body["state"] = stateID
+	}
+	if estimate != nil {
+		body["estimate_point"] = *estimate
+	}
+
+	req, err := c.newRequest(ctx, http.MethodPatch, endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, ErrUnauthorized
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrIssueNotFound
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("failed to patch issue: status %d", resp.StatusCode)
+	}
+
+	var updated PlaneIssue
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		return nil, err
+	}
+	return &updated, nil
+}
+
+// ListModules queries all modules (milestones) for the project.
+func (c *Client) ListModules(ctx context.Context) ([]PlaneModule, error) {
+	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/modules/", c.workspaceSlug, c.projectID)
+	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, ErrUnauthorized
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("failed to list modules: status %d", resp.StatusCode)
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var paginated struct {
+		Results []PlaneModule `json:"results"`
+	}
+	if err := json.Unmarshal(bodyBytes, &paginated); err == nil && len(paginated.Results) > 0 {
+		return paginated.Results, nil
+	}
+
+	var directList []PlaneModule
+	if err := json.Unmarshal(bodyBytes, &directList); err == nil {
+		return directList, nil
+	}
+
+	return paginated.Results, nil
+}
+
+// CreateModule registers a new module (milestone) in Plane.
+func (c *Client) CreateModule(ctx context.Context, name, status, desc string) (*PlaneModule, error) {
+	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/modules/", c.workspaceSlug, c.projectID)
+	if status == "" {
+		status = "in-progress"
+	}
+	body := map[string]interface{}{
+		"name":        name,
+		"status":      status,
+		"description": desc,
+	}
+
+	req, err := c.newRequest(ctx, http.MethodPost, endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, ErrUnauthorized
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("failed to create module: status %d", resp.StatusCode)
+	}
+
+	var created PlaneModule
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return nil, err
+	}
+	return &created, nil
+}
+
+// AddIssuesToModule binds a list of issue IDs to a given module.
+func (c *Client) AddIssuesToModule(ctx context.Context, moduleID string, issueIDs []string) error {
+	if len(issueIDs) == 0 {
+		return nil
+	}
+	endpoint := fmt.Sprintf("/api/workspaces/%s/projects/%s/modules/%s/issues/", c.workspaceSlug, c.projectID, moduleID)
+	body := map[string]interface{}{
+		"issues": issueIDs,
+	}
+
+	req, err := c.newRequest(ctx, http.MethodPost, endpoint, body)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return ErrUnauthorized
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrModuleNotFound
+	}
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("failed to add issues to module: status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// ListPages queries all documents/pages for the project.
+func (c *Client) ListPages(ctx context.Context) ([]PlanePage, error) {
+	endpoint := fmt.Sprintf("/api/workspaces/%s/projects/%s/pages/", c.workspaceSlug, c.projectID)
+	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, ErrUnauthorized
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("failed to list pages: status %d", resp.StatusCode)
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var directList []PlanePage
+	if err := json.Unmarshal(bodyBytes, &directList); err == nil {
+		return directList, nil
+	}
+
+	var paginated struct {
+		Results []PlanePage `json:"results"`
+	}
+	if err := json.Unmarshal(bodyBytes, &paginated); err == nil {
+		return paginated.Results, nil
+	}
+
+	return nil, nil
+}
+
+// GetPage retrieves details of a specific page.
+func (c *Client) GetPage(ctx context.Context, pageID string) (*PlanePage, error) {
+	endpoint := fmt.Sprintf("/api/workspaces/%s/projects/%s/pages/%s/", c.workspaceSlug, c.projectID, pageID)
+	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, ErrUnauthorized
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrPageNotFound
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("failed to get page: status %d", resp.StatusCode)
+	}
+
+	var page PlanePage
+	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+		return nil, err
+	}
+	return &page, nil
+}
+
+// CreatePage publishes a new page document in Plane.
+func (c *Client) CreatePage(ctx context.Context, name, htmlContent string) (*PlanePage, error) {
+	endpoint := fmt.Sprintf("/api/workspaces/%s/projects/%s/pages/", c.workspaceSlug, c.projectID)
+	body := map[string]interface{}{
+		"name":             name,
+		"description_html": htmlContent,
+	}
+
+	req, err := c.newRequest(ctx, http.MethodPost, endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, ErrUnauthorized
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("failed to create page: status %d", resp.StatusCode)
+	}
+
+	var page PlanePage
+	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+		return nil, err
+	}
+	return &page, nil
+}
+
+// UpdatePage updates an existing page document in Plane.
+func (c *Client) UpdatePage(ctx context.Context, pageID, name, htmlContent string) (*PlanePage, error) {
+	endpoint := fmt.Sprintf("/api/workspaces/%s/projects/%s/pages/%s/", c.workspaceSlug, c.projectID, pageID)
+	body := make(map[string]interface{})
+	if name != "" {
+		body["name"] = name
+	}
+	if htmlContent != "" {
+		body["description_html"] = htmlContent
+	}
+
+	req, err := c.newRequest(ctx, http.MethodPatch, endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, ErrUnauthorized
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrPageNotFound
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("failed to update page: status %d", resp.StatusCode)
+	}
+
+	var page PlanePage
+	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+		return nil, err
+	}
+	return &page, nil
+}
+
+// ArchivePage archives a page in Plane (prerequisite before deletion).
+func (c *Client) ArchivePage(ctx context.Context, pageID string) error {
+	endpoint := fmt.Sprintf("/api/workspaces/%s/projects/%s/pages/%s/archive/", c.workspaceSlug, c.projectID, pageID)
+	req, err := c.newRequest(ctx, http.MethodPost, endpoint, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return ErrUnauthorized
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrPageNotFound
+	}
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("failed to archive page: status %d", resp.StatusCode)
+	}
 	return nil
 }
 
@@ -320,11 +797,7 @@ func mapPlaneState(group, name string) tracker.Status {
 	}
 }
 
-func findMatchingPlaneState(states []struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Group string `json:"group"`
-}, targetState tracker.Status) string {
+func findMatchingPlaneStateFromList(states []PlaneState, targetState tracker.Status) string {
 	for _, s := range states {
 		mapped := mapPlaneState(s.Group, s.Name)
 		if mapped == targetState {

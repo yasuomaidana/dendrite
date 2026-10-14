@@ -136,14 +136,29 @@ func CalculateRateBoundedCeiling(weeklyLimitUSD, currentConsumedUSD float64) flo
 	return currentConsumedUSD + (0.30 * weeklyLimitUSD)
 }
 
+// IsZeroCostSelfHostedModel checks if model is exempt from financial token budgeting.
+func IsZeroCostSelfHostedModel(model string) bool {
+	m := strings.ToLower(model)
+	return m == "local-qwen-coder" ||
+		m == "oxillama-rust" ||
+		m == "vllm-cluster" ||
+		m == "hf-tgi-remote" ||
+		m == "llamacpp-local" ||
+		strings.HasPrefix(m, "ollama/") ||
+		strings.HasPrefix(m, "oxillama/") ||
+		strings.HasPrefix(m, "vllm/") ||
+		strings.HasPrefix(m, "llamacpp/") ||
+		strings.HasPrefix(m, "huggingface-tei/")
+}
+
 // CheckBudget determines whether a model invocation is allowed, or returns a fallback candidate.
 // Returns: (allowed bool, selectedModel string, err error)
 func (b *BudgetLimiter) CheckBudget(keyAlias, requestedModel string) (bool, string, error) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	// Zero-cost local Ollama model is ALWAYS exempt from budget limits
-	if requestedModel == "local-qwen-coder" || strings.HasPrefix(requestedModel, "ollama/") {
+	// Zero-cost local Ollama & self-hosted engines are ALWAYS exempt from budget limits
+	if IsZeroCostSelfHostedModel(requestedModel) {
 		return true, requestedModel, nil
 	}
 
@@ -226,7 +241,7 @@ func (f *FailoverEngine) ExecuteWithFailover(ctx context.Context, keyAlias, requ
 	}
 
 	// Check if call failed due to provider 429 quota exhaustion
-	if isQuotaExhaustedError(callErr) && targetModel != "local-qwen-coder" {
+	if isQuotaExhaustedError(callErr) && !IsZeroCostSelfHostedModel(targetModel) {
 		// Seamlessly failover to local unmetered Ollama
 		fallbackModel := "local-qwen-coder"
 		fallbackResp, fbTokens, fbCost, fbErr := caller(ctx, fallbackModel)

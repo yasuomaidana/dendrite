@@ -127,6 +127,10 @@ func (r *Replicator) handleRenderAction(action PlanAction) (string, error) {
 		if err := os.WriteFile(outPath, []byte(yamlContent), 0644); err != nil {
 			return "", err
 		}
+		proxyConfPath := filepath.Join(filepath.Dir(outPath), "plane_proxy.conf")
+		if _, err := os.Stat(proxyConfPath); os.IsNotExist(err) {
+			_ = os.WriteFile(proxyConfPath, []byte(PlaneProxyNginxConfig), 0644)
+		}
 		return outPath, nil
 
 	case TargetPenpot:
@@ -190,13 +194,20 @@ func (r *Replicator) AuditComponents(ctx context.Context) []ComponentStatus {
 
 	// Plane
 	planeReachable := CheckPlaneHealth(ctx, "http://localhost:8090", 1*time.Second)
+	planeUIReachable := CheckPlaneUIHealth(ctx, "http://localhost:8091", 1*time.Second)
+	planeDetails := "Plane v2 Project Management (Self-Hosted / Containerized)"
+	planeEndpoint := "http://localhost:8090"
+	if planeUIReachable {
+		planeDetails = "Plane v2 Project Management & Web UI (Self-Hosted / Containerized)"
+		planeEndpoint = "http://localhost:8090 (UI: http://localhost:8091)"
+	}
 	statuses = append(statuses, ComponentStatus{
 		Target:    TargetPlane,
 		Mode:      ModeContainer,
-		Installed: planeReachable,
-		Reachable: planeReachable,
-		Endpoint:  "http://localhost:8090",
-		Details:   "Plane v2 Project Management (Self-Hosted / Containerized)",
+		Installed: planeReachable || planeUIReachable,
+		Reachable: planeReachable || planeUIReachable,
+		Endpoint:  planeEndpoint,
+		Details:   planeDetails,
 	})
 
 	// Penpot
@@ -278,7 +289,6 @@ services:
     image: redis:7-alpine
     container_name: dendrite-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes
     ports:
       - "6379:6379"
     volumes:
@@ -305,5 +315,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 `
 }

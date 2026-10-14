@@ -6,6 +6,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"Dendrite/pkg/inference"
 	"Dendrite/pkg/topology"
 )
 
@@ -126,6 +127,147 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 		GeneralSettings: generalSettings,
 		LitellmSettings: litellmSettings,
 	}
+}
+
+// MultiEngineLiteLLMConfig dynamically constructs a LiteLLM configuration from registered InferenceEngines.
+func MultiEngineLiteLLMConfig(engines []inference.InferenceEngine) *LiteLLMConfig {
+	cfg := DefaultLiteLLMConfig("http://127.0.0.1:11434")
+
+	var engineFallbackNames []string
+
+	for _, eng := range engines {
+		ecfg := eng.Config()
+		endpoint := strings.TrimRight(ecfg.Endpoint, "/")
+
+		var modelName, upstreamModel, apiBase, apiKey, provider string
+		skipBudget := eng.IsSelfHosted()
+		cost := 0.0
+
+		switch eng.Type() {
+		case inference.EngineOllama:
+			modelName = "local-coder"
+			upstreamModel = "ollama/qwen2.5-coder:14b"
+			apiBase = endpoint
+			provider = "ollama"
+			skipBudget = true
+
+		case inference.EngineOxiLLaMa:
+			modelName = "oxillama-rust"
+			mID := "qwen2.5-coder-7b"
+			if len(ecfg.Models) > 0 {
+				mID = ecfg.Models[0]
+			}
+			upstreamModel = "openai/" + mID
+			apiBase = endpoint + "/v1"
+			apiKey = "EMPTY"
+			skipBudget = true
+
+		case inference.EngineHuggingFaceTGI:
+			modelName = "hf-deepseek"
+			mID := "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"
+			if len(ecfg.Models) > 0 {
+				mID = ecfg.Models[0]
+			}
+			upstreamModel = "openai/" + mID
+			apiBase = endpoint + "/v1"
+			apiKey = "EMPTY"
+			if ecfg.APIKey != "" {
+				apiKey = ecfg.APIKey
+			}
+
+		case inference.EngineHuggingFaceTEI:
+			modelName = "hf-tei-embeddings"
+			mID := "BAAI/bge-large-en-v1.5"
+			if len(ecfg.Models) > 0 {
+				mID = ecfg.Models[0]
+			}
+			upstreamModel = "huggingface-tei/" + mID
+			apiBase = endpoint
+			skipBudget = true
+
+		case inference.EngineVLLM:
+			modelName = "vllm-cluster"
+			mID := "Qwen/Qwen2.5-Coder-32B-Instruct"
+			if len(ecfg.Models) > 0 {
+				mID = ecfg.Models[0]
+			}
+			upstreamModel = "openai/" + mID
+			apiBase = endpoint + "/v1"
+			apiKey = "EMPTY"
+
+		case inference.EngineLlamaCpp:
+			modelName = "llamacpp-local"
+			mID := "mistral-7b-instruct-q4"
+			if len(ecfg.Models) > 0 {
+				mID = ecfg.Models[0]
+			}
+			upstreamModel = "openai/" + mID
+			apiBase = endpoint + "/v1"
+			apiKey = "EMPTY"
+			skipBudget = true
+
+		case inference.EngineHuggingFaceEndpoint:
+			modelName = "hf-hosted-llama"
+			mID := "meta-llama/Meta-Llama-3-8B-Instruct"
+			if len(ecfg.Models) > 0 {
+				mID = ecfg.Models[0]
+			}
+			upstreamModel = "huggingface/" + mID
+			apiBase = endpoint
+			apiKey = "os.environ/HF_TOKEN"
+			skipBudget = false
+			cost = 0.000001
+		}
+
+		if modelName != "" {
+			entry := ModelListEntry{
+				ModelName: modelName,
+				LitellmParams: ModelParams{
+					Model:             upstreamModel,
+					APIBase:           apiBase,
+					APIKey:            apiKey,
+					CustomLLMProvider: provider,
+					MaxTokens:         4096,
+				},
+				ModelInfo: &ModelInfo{
+					ID:                 modelName,
+					Mode:               "chat",
+					InputCostPerToken:  cost,
+					OutputCostPerToken: cost,
+					MaxInputTokens:     32768,
+					MaxOutputTokens:    4096,
+					BaseModel:          upstreamModel,
+					SkipBudgetChecks:   skipBudget,
+				},
+			}
+			cfg.ModelList = append(cfg.ModelList, entry)
+			if skipBudget {
+				engineFallbackNames = append(engineFallbackNames, modelName)
+			}
+		}
+	}
+
+	// Dynamic cascade integration
+	if len(engineFallbackNames) > 0 {
+		cascadeList := append([]string{"copilot-sonnet", "gemini-2.5-flash"}, engineFallbackNames...)
+		cfg.RouterSettings.Fallbacks = []map[string][]string{
+			{
+				"gemini-2.5-pro": cascadeList,
+				"copilot-sonnet": engineFallbackNames,
+			},
+		}
+	}
+
+	return cfg
+}
+
+// RenderForInferenceManager renders LiteLLM YAML for an inference Manager instance.
+func RenderForInferenceManager(mgr *inference.Manager) ([]byte, error) {
+	if mgr == nil {
+		mgr = inference.DefaultManager()
+	}
+	cfg := MultiEngineLiteLLMConfig(mgr.ListEngines())
+	return RenderYAML(cfg)
 }
 
 // Validate verifies the completeness and sanity of the LiteLLM configuration.

@@ -128,6 +128,7 @@ type ReplicationRequest struct {
 	Targets     []ReplicationTarget `json:"targets"`
 	WithLinear  bool                `json:"with_linear"`
 	WithPlane   bool                `json:"with_plane"`
+	WithPlaneUI *bool               `json:"with_plane_ui,omitempty"`
 	WithPenpot  bool                `json:"with_penpot"`
 	WithGrafana bool                `json:"with_grafana"`
 	DryRun      bool                `json:"dry_run"`
