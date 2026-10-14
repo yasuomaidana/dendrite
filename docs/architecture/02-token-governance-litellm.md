@@ -110,7 +110,7 @@ The supervisory control engine (`supervisor.py` or `dendrite supervisor`) enforc
 Executes batch queues using frontier commercial models (`gemini-2.5-pro`, `copilot-sonnet`). When LiteLLM signals budget cap reach or returns an upstream HTTP 429 quota exhaustion code, the runner transitions subsequent tasks to `local-qwen-coder` without aborting the queue.
 
 ### Mode 2: Hard Financial Capping Mode
-Before dispatching any task, the supervisor polls LiteLLM's `/key/info` endpoint. If $\text{Cumulative Spend} \ge \text{MAX\_SPEND\_LIMIT\_USD}$, the runner immediately halts execution, stages modified files, updates the issue tracker (Plane v2), and exits cleanly.
+Before dispatching any task, the supervisor polls LiteLLM's `/key/info` endpoint. If $\text{Cumulative Spend} \ge \text{MAX\_SPEND\_LIMIT\_USD}$, the runner immediately halts execution, stages modified files, updates the issue tracker (Plane v2 at API :8090 / Web UI :8091), and exits cleanly.
 
 ### Mode 3: Rate-Bounded Throttling Mode
 Prevents autonomous batch tasks from consuming interactive developer team allowances by calculating a consumption ceiling:
@@ -118,5 +118,5 @@ $$R_{\text{target}} = R_{\text{consumed}} + \left(0.30 \times R_{\text{weekly\_l
 When cumulative consumption reaches $R_{\text{target}}$, the runner throttles dispatch or forces fallback to unmetered local models.
 
 ### Mode 4: Time-Bounded Curfew & Thermal Protection Mode
-- **Curfew Gate**: All unattended overnight batch loops terminate at `07:00 AM`. Remaining tickets are left in queue, working git branches are committed and pushed, and a status report is posted to Plane.
+- **Curfew Gate**: All unattended overnight batch loops terminate at `07:00 AM`. Remaining tickets are left in queue, working git branches are committed and pushed, and a status report is posted to Plane (Web UI :8091).
 - **MacBook Air M4 Thermal Protection**: Monitors Apple Silicon SoC die temperature (via macOS `powermetrics` / `osx-cpu-temp`). If temperature exceeds $85^\circ\text{C}$ during extended local Metal inference, the runner introduces mandatory cool-down sleep intervals (60s) between tasks to eliminate thermal throttling and preserve battery health.
