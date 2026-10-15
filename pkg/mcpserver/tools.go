@@ -794,4 +794,7 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 
 	// 29-31: Universal Intent Slicing & Query Engine Tools
 	s.registerQueryTools(deps)
+
+	// 38-40: Persistent Segmented Store & Chunk Checkpointing Tools
+	s.registerStoreTools(deps)
 }

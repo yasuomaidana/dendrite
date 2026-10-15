@@ -118,6 +118,15 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   35. `dendrite_ref_add`: Registers a new Tier 1 source reference repository for library reuse.
       - *Example*: `./bin/dendrite mcp call dendrite_ref_add '{"id":"ref-custom","repository":"https://github.com/org/repo"}'`
 
+  36. `dendrite_store_status`: Query real-time storage status, segments count, and checkpoint states of the persistent segmented analysis store.
+      - *Example*: `./bin/dendrite mcp call dendrite_store_status '{"project":"my-proj"}'`
+
+  37. `dendrite_store_commit_chunk`: Atomically commit a chunk of analyzed segments and compressed blobs to the persistent store.
+      - *Example*: `./bin/dendrite mcp call dendrite_store_commit_chunk '{"project":"my-proj","chunk_id":"c-1","identifier":"main.go","data":"..."}'`
+
+  38. `dendrite_store_query_partial`: Query committed segments for a project, including projects currently in ANALYZING_PARTIAL state.
+      - *Example*: `./bin/dendrite mcp call dendrite_store_query_partial '{"project":"my-proj"}'`
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
 - `dendrite agent <search|route>`: Search and rank agents with hybrid vector/BM25 search or auto-route tasks to optimal agents with LiteLLM virtual keys.
 - `dendrite test <auto|ui>`: Synthesize table-driven tests with Testcontainers & self-healing convergence, or run Web UI browser journeys & WebSocket telemetry load tests.
@@ -144,6 +153,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - `dendrite query fuse --sources <src1,src2> --name <member> [--target-dir <dir>]`: Multi-artifact architecture fusion and in-process channel synthesizer.
 - `dendrite query reuse --capability <cap> [--lang rust|go|ts|py] [--ticket <id>]`: Evaluates 3-tier library reuse hierarchy and emits ADR.
 - `dendrite ref <list|add|remove> [flags]`: Manages registered Tier 1 source references for library reuse.
+- `dendrite store <status|chunks|query|commit|purge> [flags]`: Content-addressed persistent segmented store and crash-proof chunk checkpointer.
 
 ### 3. Unified Stacks Environment (`stacks/.env`)\nDendrite maintains an enterprise-grade multi-service container orchestration stack parameterized via `stacks/.env` (and mirrored in `.env`):\n- **Core Control Plane**: PostgreSQL 16 (`5432:5432`) & Redis 7 (`6379:6379`)\n- **Token Governance Gateway**: LiteLLM Proxy (`4000:4000`) with master key authentication, budget ceilings, and route cascades (`stacks/litellm_config.yaml`).\n- **Self-Hosted Project Management**: Plane v2 Backend (`8090`), Web UI (`8091`), PostgreSQL 16 (`5434`), Redis 7 (`6380`), and Nginx Proxy.\n- **Local Issue Tracker Mock**: Linear Mock Server (`8085`) and dedicated PostgreSQL 16 (`5433`).\n- **Design & Prototyping Platform**: Penpot Frontend (`9000`), Backend (`9001`), PostgreSQL 16 (`5435`), and Redis 7 (`6381`).\n- **Observability Suite**: Prometheus 2.50 (`9090`) and Grafana 10.3 (`3000`) with automated dashboards and data sources.\n- **Pluggable Inference Upstreams**: Local Ollama (`11434`), OxiLLaMa (`8080`), Hugging Face TGI (`8080`), TEI (`8082`), vLLM (`8000`), and llama.cpp (`8081`).\n\n### 4. Continuous Skill Enhancement Mandate\n> [!IMPORTANT]\n> **As soon as you finish a tool or feature, add it to the skills!**\n> Whenever a new CLI subcommand, MCP tool, or runtime adapter is implemented, immediately update `SKILL.md` across `.gemini/skills/` and `.agents/skills/` so subsequent agents and turns can leverage it immediately.\n\n---\n\n
 ### 5. Documentation Cleanliness & Taxonomy Mandate

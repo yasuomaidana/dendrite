@@ -173,6 +173,13 @@ func main() {
 		}
 		handleRefCommand(ctx, os.Args[2], os.Args[3:])
 
+	case "store":
+		if len(os.Args) < 3 {
+			printStoreUsage()
+			return
+		}
+		handleStoreCommand(ctx, os.Args[2], os.Args[3:])
+
 	default:
 		printUsage()
 	}
@@ -235,6 +242,7 @@ func printUsage() {
 	fmt.Println("  rea list                   List registered open-source showcase targets and metadata")
 	fmt.Println("  pool <add|rm|list|resolve> Multi-directory dependency inference & topological DAG solver")
 	fmt.Println("  ref <list|add|remove>      Manage Tier 1 source references for library reuse")
+	fmt.Println("  store <status|chunks|query> Persistent segmented store & chunk checkpointer")
 	fmt.Println("  query [slice] [flags]      Universal intent-driven CFG/AST reachability slicing & debloater")
 	fmt.Println("  version                    Print Dendrite CLI version")
 }

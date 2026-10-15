@@ -118,6 +118,15 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   35. `dendrite_ref_add`: Registers a new Tier 1 source reference repository for library reuse.
       - *Example*: `./bin/dendrite mcp call dendrite_ref_add '{"id":"ref-custom","repository":"https://github.com/org/repo"}'`
 
+  36. `dendrite_store_status`: Query real-time storage status, segments count, and checkpoint states of the persistent segmented analysis store.
+      - *Example*: `./bin/dendrite mcp call dendrite_store_status '{"project":"my-proj"}'`
+
+  37. `dendrite_store_commit_chunk`: Atomically commit a chunk of analyzed segments and compressed blobs to the persistent store.
+      - *Example*: `./bin/dendrite mcp call dendrite_store_commit_chunk '{"project":"my-proj","chunk_id":"c-1","identifier":"main.go","data":"..."}'`
+
+  38. `dendrite_store_query_partial`: Query committed segments for a project, including projects currently in ANALYZING_PARTIAL state.
+      - *Example*: `./bin/dendrite mcp call dendrite_store_query_partial '{"project":"my-proj"}'`
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
 - `dendrite agent <search|route>`: Search and rank agents with hybrid vector/BM25 search or auto-route tasks to optimal agents with LiteLLM virtual keys.
 - `dendrite test <auto|ui>`: Synthesize table-driven tests with Testcontainers & self-healing convergence, or run Web UI browser journeys & WebSocket telemetry load tests.
@@ -146,6 +155,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - `dendrite query fuse --sources <src1,src2> --name <member> [--target-dir <dir>]`: Multi-artifact architecture fusion and in-process channel synthesizer.
 - `dendrite query reuse --capability <cap> [--lang rust|go|ts|py] [--ticket <id>]`: Evaluates 3-tier library reuse hierarchy and emits ADR.
 - `dendrite ref <list|add|remove> [flags]`: Manages registered Tier 1 source references for library reuse.
+- `dendrite store <status|chunks|query|commit|purge> [flags]`: Content-addressed persistent segmented store and crash-proof chunk checkpointer.
 
 ### 3. Unified Stacks Environment (`stacks/.env`)
 Dendrite maintains an enterprise-grade multi-service container orchestration stack parameterized via `stacks/.env` (and mirrored in `.env`):

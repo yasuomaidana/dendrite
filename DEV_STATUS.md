@@ -8,9 +8,9 @@ This document maintains the real-time development status, milestones, and active
 ## Current Status Overview
 
 - **Active Milestone**: Milestone 17 — Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)
-- **Current Focus**: `DEN-059: BLAKE3 Content-Addressed Persistent Segmented Store & Chunk Checkpointer (`pkg/store/segmented`, `cmd/dendrite`)`
+- **Current Focus**: `DEN-060: Store Inspection, Chunk Status Telemetry & Explicit User Purge Lifecycler (`pkg/store/status`, `pkg/ui/store`)`
 - **Last Updated**: 2026-10-14
-- **Overall Progress**: 61 / 99 Tickets Completed (61.6%)
+- **Overall Progress**: 62 / 99 Tickets Completed (62.6%)
 
 ---
 
