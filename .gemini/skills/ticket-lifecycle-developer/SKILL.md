@@ -84,6 +84,13 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   23. `dendrite_test_auto`: Analyzes AST symbol boundaries, detects persistence dependencies (PostgreSQL, Redis, SQLite), scaffolds Testcontainers environments, and executes a self-healing test convergence loop (<= 3 iterations) achieving >= 85% coverage.
       - *Example*: `./bin/dendrite mcp call dendrite_test_auto '{"file":"pkg/agentsearch/embedding.go"}'`
 
+  24. `dendrite_pool_resolve`: Computes deterministic topological DAG across multi-directory pool projects and detects circular dependency hazards.
+      - *Example*: `./bin/dendrite mcp call dendrite_pool_resolve '{"directories":["."]}'`
+  25. `dendrite_pool_list`: Lists all registered project members in the multi-project pool.
+      - *Example*: `./bin/dendrite mcp call dendrite_pool_list "{}"`
+  26. `dendrite_pool_add`: Registers project directories into `.dendrite/pool.json`.
+      - *Example*: `./bin/dendrite mcp call dendrite_pool_add '{"directories":["/path/to/project"]}'`
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
 - `dendrite agent <search|route>`: Search and rank agents with hybrid vector/BM25 search or auto-route tasks to optimal agents with LiteLLM virtual keys.
 - `dendrite test <auto|ui>`: Synthesize table-driven tests with Testcontainers & self-healing convergence, or run Web UI browser journeys & WebSocket telemetry load tests.
@@ -105,6 +112,8 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - `dendrite dist <sources|resolve|decompose|interop|spawn>`: Manage distributed codebase sources, modular REA, cross-project interop, and parallel project/Plane spawner.
 - `dendrite bench <inference|gateway|matrix|stress>`: Benchmark inference TTFT/TPS velocity, stress-test LiteLLM gateway failover cascades, run multi-engine matrix, or stress budget limiter.
 - `dendrite rea <showcase|list> [target] [--format text|json|markdown]`: Open-source REA cleanroom analysis, evidence extraction, and property test verification suite across 5 target archetypes.
+
+- `dendrite pool <add|remove|list|resolve> [--json]`: Autonomous multi-directory project pool manager and deterministic topological DAG solver with cycle detection.
 
 ### 3. Unified Stacks Environment (`stacks/.env`)
 Dendrite maintains an enterprise-grade multi-service container orchestration stack parameterized via `stacks/.env` (and mirrored in `.env`):

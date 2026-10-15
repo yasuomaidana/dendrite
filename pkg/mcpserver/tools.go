@@ -788,4 +788,7 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 
 	// 25: Automated Test Synthesizer, Self-Healing Loop & Web UI Test Harness
 	s.registerTestGenTools(deps)
+
+	// 26-28: Autonomous Pool DAG Synchronization & Multi-Directory Project Tools
+	s.registerPoolTools(deps)
 }

@@ -152,6 +152,13 @@ func main() {
 		}
 		handleREACommand(ctx, os.Args[2], os.Args[3:])
 
+	case "pool":
+		if len(os.Args) < 3 {
+			printPoolUsage()
+			return
+		}
+		handlePoolCommand(ctx, os.Args[2], os.Args[3:])
+
 	default:
 		printUsage()
 	}
@@ -212,6 +219,7 @@ func printUsage() {
 	fmt.Println("  bench stress [flags]       Concurrency stress test against sliding window budget limiter")
 	fmt.Println("  rea showcase [target]      Open-source REA cleanroom analysis & parity verification")
 	fmt.Println("  rea list                   List registered open-source showcase targets and metadata")
+	fmt.Println("  pool <add|rm|list|resolve> Multi-directory dependency inference & topological DAG solver")
 	fmt.Println("  version                    Print Dendrite CLI version")
 }
 
