@@ -26,6 +26,9 @@ var (
 
 func handleStoryCommand(ctx context.Context, action string, args []string) {
 	switch action {
+	case "next":
+		handlePlaneCommand(ctx, "next", args)
+		return
 	case "start":
 		if len(args) == 0 {
 			fmt.Println("Usage: dendrite story start \"<story-name>\" [--sync-contracts] [--schema-dir <dir>]")

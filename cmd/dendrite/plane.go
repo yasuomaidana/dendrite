@@ -2,11 +2,20 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
 
+	"Dendrite/pkg/tracker"
+	"Dendrite/pkg/tracker/dag"
 	"Dendrite/pkg/tracker/plane"
 )
+
+var cliTicketPrefixRegex = regexp.MustCompile(`\[?(DEN-\d+)\]?`)
 
 func handlePlaneCommand(ctx context.Context, action string, args []string) {
 	client, err := plane.NewClientFromEnv()
@@ -63,7 +72,7 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 			}
 		}
 
-		fmt.Printf("[+] Moving %s content to Plane service (%s)...\n", filePath, client.BaseURL())
+		fmt.Printf("[+] Moving %s content to Plane service (%s) with Gantt timelines & dependencies...\n", filePath, client.BaseURL())
 		content, err := os.ReadFile(filePath)
 		if err != nil {
 			fmt.Printf("[-] Failed to read %s: %v\n", filePath, err)
@@ -81,8 +90,333 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 		fmt.Printf("    - Completed Tickets:    %d\n", report.CompletedTickets)
 		fmt.Printf("    - In Progress Tickets:  %d\n", report.InProgressTickets)
 		fmt.Printf("    - Milestones (Modules): %d\n", report.ModulesCount)
+		fmt.Printf("    - Gantt Dependencies:   %d\n", report.RelationsCount)
 		fmt.Printf("    - Roadmap Pages:        %d\n", report.PagesCount)
 		fmt.Printf("    - Overall Progress:     %.1f%%\n", report.OverallProgress)
+
+	case "next", "smart-select":
+		var requestedTicket string
+		var milestoneFilter string
+		jsonOutput := false
+
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--ticket", "-t":
+				if i+1 < len(args) {
+					requestedTicket = args[i+1]
+					i++
+				}
+			case "--milestone", "-m":
+				if i+1 < len(args) {
+					milestoneFilter = args[i+1]
+					i++
+				}
+			case "--json":
+				jsonOutput = true
+			}
+		}
+
+		issues, err := client.ListPlaneIssues(ctx)
+		if err != nil {
+			fmt.Printf("[-] Failed to query Plane issues: %v\n", err)
+			return
+		}
+		states, _ := client.ListStates(ctx)
+		stateMap := make(map[string]tracker.Status)
+		for _, st := range states {
+			g := strings.ToLower(st.Group)
+			n := strings.ToLower(st.Name)
+			switch {
+			case g == "completed" || strings.Contains(n, "done"):
+				stateMap[st.ID] = tracker.StatusDone
+			case strings.Contains(n, "review"):
+				stateMap[st.ID] = tracker.StatusInReview
+			case g == "started" || strings.Contains(n, "progress") || strings.Contains(n, "active"):
+				stateMap[st.ID] = tracker.StatusInProgress
+			case g == "unstarted" || strings.Contains(n, "todo") || strings.Contains(n, "to do"):
+				stateMap[st.ID] = tracker.StatusTodo
+			default:
+				stateMap[st.ID] = tracker.StatusBacklog
+			}
+		}
+
+		graph := dag.NewGraph()
+		uuidToID := make(map[string]string)
+		for _, iss := range issues {
+			if milestoneFilter != "" && !strings.Contains(strings.ToLower(iss.Name), strings.ToLower(milestoneFilter)) {
+				continue
+			}
+			id := fmt.Sprintf("DEN-%03d", iss.SequenceID)
+			m := cliTicketPrefixRegex.FindStringSubmatch(iss.Name)
+			if len(m) > 1 {
+				id = m[1]
+			}
+			uuidToID[iss.ID] = id
+
+			st := stateMap[iss.State]
+			if st == "" {
+				st = tracker.StatusTodo
+			}
+
+			prio := iss.Priority
+			if prio == "" || prio == "none" {
+				prio = dag.PriorityMedium
+			}
+
+			est := 5
+			if iss.EstimatePoint != nil {
+				est = *iss.EstimatePoint
+			}
+
+			sDate := ""
+			if iss.StartDate != nil {
+				sDate = *iss.StartDate
+			}
+			tDate := ""
+			if iss.TargetDate != nil {
+				tDate = *iss.TargetDate
+			}
+
+			graph.AddNode(&dag.Node{
+				ID:             id,
+				SequenceID:     iss.SequenceID,
+				Title:          iss.Name,
+				Status:         st,
+				Priority:       prio,
+				EstimatePoints: est,
+				StartDate:      sDate,
+				TargetDate:     tDate,
+			})
+		}
+
+		// Link relations from Plane
+		for _, iss := range issues {
+			currID := uuidToID[iss.ID]
+			rels, err := client.GetIssueRelations(ctx, iss.ID)
+			if err == nil && rels != nil {
+				for _, blocked := range rels.BlockedBy {
+					bID := uuidToID[blocked.ID]
+					if bID == "" {
+						m := cliTicketPrefixRegex.FindStringSubmatch(blocked.Name)
+						if len(m) > 1 {
+							bID = m[1]
+						}
+					}
+					if bID != "" && bID != currID {
+						_ = graph.AddEdge(bID, currID)
+					}
+				}
+			}
+		}
+
+		_, _ = graph.GenerateGanttPlan(time.Now().Truncate(24 * time.Hour))
+
+		res, err := graph.SmartSelect(requestedTicket)
+		if err != nil {
+			fmt.Printf("[-] Smart selection error: %v\n", err)
+			return
+		}
+
+		if jsonOutput {
+			data, _ := json.MarshalIndent(res, "", "  ")
+			fmt.Println(string(data))
+			return
+		}
+
+		fmt.Println("[+] Smart Ticket Prioritization & DAG Reachability (Source: Plane v2)")
+		t := res.SelectedTicket
+		fmt.Printf("    * Selected Ticket:    %s\n", t.ID)
+		fmt.Printf("    * Title:              %s\n", t.Title)
+		fmt.Printf("    * Priority:           %s (Base Score: %.0f, Total Score: %.1f)\n",
+			strings.ToUpper(t.Priority), t.PriorityScore, res.TotalScore)
+		fmt.Printf("    * Operational Status: %s\n", t.Status)
+		if res.IsActive {
+			fmt.Printf("    * Active State:       ALREADY IN PROGRESS\n")
+		}
+		if res.IsBlocked {
+			fmt.Printf("    * Blocker Warning:    BLOCKED by unresolved prerequisites: %s\n", strings.Join(res.BlockingTickets, ", "))
+		} else {
+			fmt.Printf("    * Dependency Status:  UNBLOCKED (all prerequisites satisfied)\n")
+		}
+		if len(res.UnblockedDownstream) > 0 {
+			fmt.Printf("    * Downstream Impact:  Unblocks %d dependent tickets: %s\n",
+				len(res.UnblockedDownstream), strings.Join(res.UnblockedDownstream, ", "))
+		}
+		if t.StartDate != "" && t.TargetDate != "" {
+			fmt.Printf("    * Gantt Schedule:     %s -> %s\n", t.StartDate, t.TargetDate)
+		}
+		fmt.Printf("    * Decision Reason:    %s\n", res.Reason)
+
+	case "link":
+		if len(args) < 3 {
+			fmt.Println("Usage: dendrite plane link <ticket_a> <blocking|blocked_by|relates_to|duplicate> <ticket_b>")
+			return
+		}
+		ticketA := args[0]
+		relType := args[1]
+		ticketB := args[2]
+
+		resolveUUID := func(raw string) (string, error) {
+			if len(raw) == 36 && strings.Count(raw, "-") == 4 {
+				return raw, nil
+			}
+			issues, err := client.ListPlaneIssues(ctx)
+			if err != nil {
+				return "", err
+			}
+			for _, iss := range issues {
+				if strings.Contains(iss.Name, "["+raw+"]") || strings.Contains(iss.Name, raw) {
+					return iss.ID, nil
+				}
+			}
+			return "", fmt.Errorf("ticket '%s' not found in Plane", raw)
+		}
+
+		uA, err := resolveUUID(ticketA)
+		if err != nil {
+			fmt.Printf("[-] Error: %v\n", err)
+			return
+		}
+		uB, err := resolveUUID(ticketB)
+		if err != nil {
+			fmt.Printf("[-] Error: %v\n", err)
+			return
+		}
+
+		if err := client.AddIssueRelation(ctx, uA, relType, []string{uB}); err != nil {
+			fmt.Printf("[-] Failed to link issues in Plane: %v\n", err)
+			return
+		}
+
+		fmt.Printf("[✓] Successfully linked %s -> %s (%s) for Plane Gantt dependency view\n", ticketA, ticketB, relType)
+
+	case "create", "issue-create":
+		var name string
+		var desc string
+		var milestone string
+		var priority = "medium"
+		var estimate *int
+		var blockedBy []string
+
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--name", "-n":
+				if i+1 < len(args) {
+					name = args[i+1]
+					i++
+				}
+			case "--desc", "-d":
+				if i+1 < len(args) {
+					desc = args[i+1]
+					i++
+				}
+			case "--milestone", "-m":
+				if i+1 < len(args) {
+					milestone = args[i+1]
+					i++
+				}
+			case "--priority", "-p":
+				if i+1 < len(args) {
+					priority = args[i+1]
+					i++
+				}
+			case "--estimate", "-e":
+				if i+1 < len(args) {
+					if n, err := strconv.Atoi(args[i+1]); err == nil {
+						estimate = &n
+					}
+					i++
+				}
+			case "--blocked-by", "-b":
+				if i+1 < len(args) {
+					parts := strings.Split(args[i+1], ",")
+					for _, p := range parts {
+						item := strings.TrimSpace(p)
+						if item != "" {
+							blockedBy = append(blockedBy, item)
+						}
+					}
+					i++
+				}
+			}
+		}
+
+		if name == "" {
+			fmt.Println("Usage: dendrite plane create --name \"[DEN-XXX] Title\" [--milestone \"M1\"] [--priority high] [--estimate 5] [--blocked-by \"DEN-001,DEN-002\"]")
+			return
+		}
+
+		now := time.Now().Truncate(24 * time.Hour)
+		days := 4
+		if estimate != nil {
+			days = dag.EstimateDays(*estimate, 0)
+		}
+		sDate := now.Format("2006-01-02")
+		tDate := now.AddDate(0, 0, days).Format("2006-01-02")
+
+		var moduleID string
+		if milestone != "" {
+			modules, err := client.ListModules(ctx)
+			if err == nil {
+				for _, mod := range modules {
+					if strings.Contains(strings.ToLower(mod.Name), strings.ToLower(milestone)) || mod.ID == milestone {
+						moduleID = mod.ID
+						break
+					}
+				}
+			}
+			if moduleID == "" {
+				newMod, err := client.CreateModuleWithDates(ctx, milestone, "in-progress", fmt.Sprintf("Milestone tracking for %s", milestone), &sDate, &tDate)
+				if err == nil && newMod != nil {
+					moduleID = newMod.ID
+				}
+			}
+		}
+
+		var blockerUUIDs []string
+		if len(blockedBy) > 0 {
+			existingIssues, _ := client.ListPlaneIssues(ctx)
+			for _, bStr := range blockedBy {
+				if len(bStr) == 36 && strings.Count(bStr, "-") == 4 {
+					blockerUUIDs = append(blockerUUIDs, bStr)
+				} else {
+					for _, iss := range existingIssues {
+						if strings.Contains(iss.Name, "["+bStr+"]") || strings.Contains(iss.Name, bStr) {
+							blockerUUIDs = append(blockerUUIDs, iss.ID)
+							break
+						}
+					}
+				}
+			}
+		}
+
+		descHTML := fmt.Sprintf("<div><p>%s</p></div>", desc)
+		created, err := client.CreatePlaneIssueWithDetails(ctx, plane.CreateIssueRequest{
+			Name:            name,
+			DescriptionHTML: descHTML,
+			Priority:        priority,
+			EstimatePoint:   estimate,
+			StartDate:       &sDate,
+			TargetDate:      &tDate,
+			ModuleID:        moduleID,
+			BlockedBy:       blockerUUIDs,
+		})
+		if err != nil {
+			fmt.Printf("[-] Failed to create issue in Plane: %v\n", err)
+			return
+		}
+
+		fmt.Printf("[✓] Successfully created ticket in Plane & placed on Gantt development plan:\n")
+		fmt.Printf("    - ID:             %s (#%d)\n", created.ID, created.SequenceID)
+		fmt.Printf("    - Name:           %s\n", created.Name)
+		fmt.Printf("    - Priority:       %s\n", strings.ToUpper(priority))
+		fmt.Printf("    - Gantt Timeline: %s -> %s\n", sDate, tDate)
+		if moduleID != "" {
+			fmt.Printf("    - Milestone:      %s\n", milestone)
+		}
+		if len(blockerUUIDs) > 0 {
+			fmt.Printf("    - Dependencies:   Blocked by %d tickets\n", len(blockerUUIDs))
+		}
 
 	case "doc", "docs":
 		if len(args) == 0 {
@@ -142,7 +476,15 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 			if st == "" {
 				st = iss.State
 			}
-			fmt.Printf("    [%s] #%d: %s\n", st, iss.SequenceID, iss.Name)
+			prio := iss.Priority
+			if prio == "" {
+				prio = "none"
+			}
+			dateSpan := ""
+			if iss.StartDate != nil && iss.TargetDate != nil {
+				dateSpan = fmt.Sprintf(" [%s -> %s]", *iss.StartDate, *iss.TargetDate)
+			}
+			fmt.Printf("    [%s | %s] #%d: %s%s\n", st, strings.ToUpper(prio), iss.SequenceID, iss.Name, dateSpan)
 		}
 
 	case "modules":
@@ -153,7 +495,11 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 		}
 		fmt.Printf("[+] Plane Modules / Milestones (%d):\n", len(modules))
 		for _, mod := range modules {
-			fmt.Printf("    - %s (Status: %s, ID: %s)\n", mod.Name, mod.Status, mod.ID)
+			dateSpan := ""
+			if mod.StartDate != nil && mod.TargetDate != nil {
+				dateSpan = fmt.Sprintf(" (Dates: %s -> %s)", *mod.StartDate, *mod.TargetDate)
+			}
+			fmt.Printf("    - %s (Status: %s, ID: %s)%s\n", mod.Name, mod.Status, mod.ID, dateSpan)
 		}
 
 	case "pages":
@@ -172,6 +518,9 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 		fmt.Println("Usage:")
 		fmt.Println("  dendrite plane replicate [--file DEV_STATUS.md] [--dry-run]")
 		fmt.Println("  dendrite plane push-status [--file DEV_STATUS.md]")
+		fmt.Println("  dendrite plane next [--ticket <id>] [--milestone <name>] [--json]")
+		fmt.Println("  dendrite plane link <ticket_a> <blocking|blocked_by|relates_to> <ticket_b>")
+		fmt.Println("  dendrite plane create --name \"[DEN-XXX] Title\" [--milestone \"M1\"] [--priority high] [--estimate 5] [--blocked-by \"DEN-001\"]")
 		fmt.Println("  dendrite plane doc <push|pull|sync> [--dir docs]")
 		fmt.Println("  dendrite plane issues")
 		fmt.Println("  dendrite plane modules")

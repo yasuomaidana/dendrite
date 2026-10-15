@@ -356,7 +356,13 @@ func (c *Client) CreatePlaneIssueWithDetails(ctx context.Context, req CreateIssu
 		body["state"] = req.StateID
 	}
 	if req.EstimatePoint != nil {
-		body["estimate_point"] = *req.EstimatePoint
+		ep := *req.EstimatePoint
+		if ep > 12 {
+			ep = 12
+		} else if ep < 0 {
+			ep = 0
+		}
+		body["estimate_point"] = ep
 	}
 	if req.Priority != "" {
 		body["priority"] = req.Priority
@@ -386,7 +392,8 @@ func (c *Client) CreatePlaneIssueWithDetails(ctx context.Context, req CreateIssu
 		return nil, ErrUnauthorized
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to create issue: status %d", resp.StatusCode)
+		errBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to create issue: status %d, err: %s", resp.StatusCode, string(errBytes))
 	}
 
 	var created PlaneIssue
@@ -431,7 +438,13 @@ func (c *Client) UpdatePlaneIssueWithDetails(ctx context.Context, id string, req
 		body["state"] = req.StateID
 	}
 	if req.EstimatePoint != nil {
-		body["estimate_point"] = *req.EstimatePoint
+		ep := *req.EstimatePoint
+		if ep > 12 {
+			ep = 12
+		} else if ep < 0 {
+			ep = 0
+		}
+		body["estimate_point"] = ep
 	}
 	if req.Priority != "" {
 		body["priority"] = req.Priority
@@ -464,7 +477,8 @@ func (c *Client) UpdatePlaneIssueWithDetails(ctx context.Context, id string, req
 		return nil, ErrIssueNotFound
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to patch issue: status %d", resp.StatusCode)
+		errBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to patch issue: status %d, err: %s", resp.StatusCode, string(errBytes))
 	}
 
 	var updated PlaneIssue
@@ -712,7 +726,8 @@ func (c *Client) AddIssueRelation(ctx context.Context, issueID string, relationT
 		return ErrUnauthorized
 	}
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("failed to add issue relation: status %d", resp.StatusCode)
+		errBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to add issue relation: status %d, err: %s", resp.StatusCode, string(errBytes))
 	}
 
 	return nil

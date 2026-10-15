@@ -400,6 +400,11 @@ func PushStatusToPlane(ctx context.Context, client *Client, mdContent string) (*
 				targetStr = &node.TargetDate
 				priority = node.Priority
 				est := node.EstimatePoints
+				if est > 12 {
+					est = 12
+				} else if est < 0 {
+					est = 0
+				}
 				estimate = &est
 			}
 		}

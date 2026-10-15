@@ -167,7 +167,20 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   51. `dendrite_story_abort`: Safely abort and purge all speculative worktrees and branches for a story without merging.
       - *Example*: `./bin/dendrite mcp call dendrite_story_abort '{"story_id":"DEN-064"}'`
 
+  52. `dendrite_ticket_smart_select` (and `dendrite_plane_ticket_smart_select`): Solves DAG reachability, critical-path unblocking weights ($W(u) = P(u) + \sum P(v)/\text{depth}$), priority ordering (Urgent > High > Medium > Low), and selects the optimal next unblocked ticket (or validates a user-selected ticket).
+      - *Example*: `./bin/dendrite mcp call dendrite_ticket_smart_select "{}"`
+      - *With Target*: `./bin/dendrite mcp call dendrite_ticket_smart_select '{"ticket_id":"DEN-037"}'`
+
+  53. `dendrite_plane_relation_link`: Establishes dependency arrows (`blocking`, `blocked_by`, `relates_to`) in Plane for Gantt diagrams.
+      - *Example*: `./bin/dendrite mcp call dendrite_plane_relation_link '{"issue_id":"DEN-037","relation_type":"blocked_by","related_issues":["DEN-036"]}'`
+
+  54. `dendrite_plane_issue_create`: Creates an issue with milestone module assignment, priority, start/target Gantt dates, and blocker dependency relations.
+      - *Example*: `./bin/dendrite mcp call dendrite_plane_issue_create '{"name":"[DEN-099] Test Feature","priority":"high","estimate_point":5,"blocked_by":["DEN-037"]}'`
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
+- `dendrite plane next [--ticket <id>] [--milestone <m>] [--json]`: Smart ticket prioritization & DAG reachability engine (aliases: `dev ticket next`, `stories next`). Selects the optimal unblocked ticket considering priority weighting and downstream critical path, or validates user-requested ticket.
+- `dendrite plane link <ticket-a> <blocking|blocked_by|relates_to> <ticket-b>`: Link ticket relationships in Plane to render Gantt dependency arrows (alias: `dev ticket link`).
+- `dendrite plane create --name "[DEN-XXX] Title" [--milestone "M"] [--priority high] [--estimate 5] [--blocked-by "DEN-A,DEN-B"]`: Create a ticket, link it to milestone modules, compute Gantt dates, and establish blocker relations for the development plan (alias: `dev ticket create`).
 - `dendrite story <start|check-contracts|fork|benchmark|resolve|abort|status>`: Speculative story branching, differential architecture benchmark harness, and Quad-IDE cross-language contract monitoring.
 - `dendrite tokens [status] [--model <m>] [--probe] [--json]`: Inspect Day Window (24h) and Week Window (7d) remaining tokens, quota reset countdown, safety reserve floor, and confirm live AGY access.
 - `dendrite commit [--ticket <id>] [--message <msg>] [--stage-all] [--model <model>] [--local] [--dry-run]`: Autonomous Git commit engine with automatic local model delegation for Conventional Commit message synthesis.
@@ -294,6 +307,16 @@ To achieve maximum engineering throughput without exhausting API token budgets o
 - Select the active ticket in state `In Progress` or the first ticket in `To Do`.
 - Cross-reference the ticket ID and governing specification in `docs/features/`.
 - Review existing code in target packages to understand existing module layouts and interfaces.
+
+### Step 0: Smart Ticket Selection & DAG Prioritization Protocol
+- **Authoritative Selection Engine**:
+  - Always execute `dendrite_ticket_smart_select` (or `./bin/dendrite plane next`) before beginning any task.
+  - **Priority-First Default**: Highest-priority unblocked tickets (Urgent > High > Medium > Low) with the highest downstream critical-path impact ($W(u) = P(u) + \sum P(v)/\text{depth}$) are pulled automatically by default.
+  - **User Override**: If the user explicitly specifies a ticket (e.g. `--ticket DEN-037`), the engine verifies dependency reachability, confirms all blockers are satisfied, and returns its Gantt timeline.
+  - **Strict Blocker Enforcement**: Never start work on a ticket whose blockers are incomplete.
+- **Plane Gantt & Relationship Mapping**:
+  - When tickets, stories, or milestones are created, ensure they are placed on the development plan with non-overlapping `start_date` and `target_date`.
+  - Link blocker relationships via `dendrite_plane_relation_link` (`./bin/dendrite plane link <ticket> blocked_by <blocker>`) so Plane Gantt charts visibly display dependency connection arrows.
 
 ### Step 1: Evaluate Requirement Clarity
 - Audit inputs, output types, error variants, boundary behaviors, and invariants.

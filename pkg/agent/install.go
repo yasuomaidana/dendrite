@@ -10,6 +10,11 @@ import (
 	"strings"
 )
 
+var (
+	lookPath       = exec.LookPath
+	commandContext = exec.CommandContext
+)
+
 // AgentInstallSpec describes the package manager command required to install an agent.
 type AgentInstallSpec struct {
 	Binary      string
@@ -23,7 +28,7 @@ func GetAgentInstallSpec(agentType AgentType) (AgentInstallSpec, error) {
 	switch agentType {
 	case AgentAider:
 		// Check for Homebrew on macOS / Linux
-		if _, err := exec.LookPath("brew"); err == nil {
+		if _, err := lookPath("brew"); err == nil {
 			return AgentInstallSpec{
 				Binary:      "aider",
 				Command:     "brew",
@@ -40,7 +45,7 @@ func GetAgentInstallSpec(agentType AgentType) (AgentInstallSpec, error) {
 		}, nil
 
 	case AgentCopilot, AgentGitHubCopilot:
-		if _, err := exec.LookPath("brew"); err == nil {
+		if _, err := lookPath("brew"); err == nil {
 			return AgentInstallSpec{
 				Binary:      "copilot",
 				Command:     "brew",
@@ -56,7 +61,7 @@ func GetAgentInstallSpec(agentType AgentType) (AgentInstallSpec, error) {
 		}, nil
 
 	case AgentOpenHands:
-		if _, err := exec.LookPath("pip3"); err == nil {
+		if _, err := lookPath("pip3"); err == nil {
 			return AgentInstallSpec{
 				Binary:      "openhands",
 				Command:     "pip3",
@@ -101,7 +106,7 @@ func PromptAndInstallAgent(ctx context.Context, agentType AgentType, autoApprove
 	}
 
 	// Check if already installed
-	if _, err := exec.LookPath(spec.Binary); err == nil {
+	if _, err := lookPath(spec.Binary); err == nil {
 		return nil
 	}
 
@@ -136,7 +141,7 @@ func PromptAndInstallAgent(ctx context.Context, agentType AgentType, autoApprove
 	}
 
 	_, _ = fmt.Fprintf(out, "[+] Executing: %s ...\n", cmdStr)
-	installCmd := exec.CommandContext(ctx, spec.Command, spec.Args...)
+	installCmd := commandContext(ctx, spec.Command, spec.Args...)
 	installCmd.Stdout = out
 	installCmd.Stderr = out
 	installCmd.Stdin = in
@@ -146,7 +151,7 @@ func PromptAndInstallAgent(ctx context.Context, agentType AgentType, autoApprove
 	}
 
 	// Verify binary is now available
-	if _, err := exec.LookPath(spec.Binary); err != nil {
+	if _, err := lookPath(spec.Binary); err != nil {
 		_, _ = fmt.Fprintf(out, "[!] `%s` finished, but %q is not yet in current PATH. You may need to restart your terminal.\n", cmdStr, spec.Binary)
 		return nil
 	}

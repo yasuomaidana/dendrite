@@ -48,6 +48,16 @@ func (m *mockCmdRunner) HasCall(predicate func(args []string) bool) bool {
 	return false
 }
 
+func TestNewSandboxedRunner_Defaults(t *testing.T) {
+	sbRunner := agent.NewSandboxedRunner(nil, nil)
+	if sbRunner == nil {
+		t.Fatal("expected non-nil runner")
+	}
+	if sbRunner.SandboxRunner == nil {
+		t.Fatal("expected non-nil default SandboxRunner")
+	}
+}
+
 func TestSelectDefaultSandboxImage(t *testing.T) {
 	cases := []struct {
 		agentType agent.AgentType
@@ -58,6 +68,8 @@ func TestSelectDefaultSandboxImage(t *testing.T) {
 		{agent.AgentOpenCode, "golang:1.24-alpine"},
 		{agent.AgentAGY, "google/antigravity:latest"},
 		{agent.AgentAntigravity, "google/antigravity:latest"},
+		{agent.AgentCopilot, "ghcr.io/github/copilot-cli:latest"},
+		{agent.AgentGitHubCopilot, "ghcr.io/github/copilot-cli:latest"},
 		{"unknown", "alpine:latest"},
 	}
 
@@ -205,6 +217,70 @@ func TestSandboxedRunner_BudgetCapFallback(t *testing.T) {
 	}
 }
 
+func TestSandboxedRunner_BudgetCapLimiterDefaultFallback(t *testing.T) {
+	limiter := gateway.NewBudgetLimiter()
+	limiter.RegisterKey(gateway.VirtualKeyConfig{
+		KeyAlias: "key-auto-fallback",
+		BudgetLimits: []gateway.BudgetLimit{
+			{Duration: gateway.Window24h, MaxBudgetUSD: 1.00},
+		},
+		Fallbacks: map[string][]string{
+			"gemini-3.8-flash-high": {"local-qwen3-27b"},
+		},
+	})
+	limiter.RecordSpend("key-auto-fallback", "gemini-3.8-flash-high", 5000, 2.00)
+
+	runner := &mockCmdRunner{output: []byte("ok"), err: nil}
+	sbRunner := agent.NewSandboxedRunner(limiter, runner)
+
+	// Model is empty so it defaults to gemini-3.8-flash-high, and no FallbackModel on cfg
+	cfg := agent.AgentConfig{
+		Type:           agent.AgentOpenCode,
+		LiteLLMBaseURL: "http://localhost:4000",
+		VirtualAPIKey:  "key-auto-fallback",
+		WorkspaceDir:   "/tmp/workspace",
+		Sandbox:        true,
+	}
+
+	ctx := context.Background()
+	summary, err := sbRunner.Execute(ctx, cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if summary.EstimatedCostUSD != 0.0 {
+		t.Errorf("expected $0.00 cost for local-qwen3-27b, got %.4f", summary.EstimatedCostUSD)
+	}
+}
+
+func TestSandboxedRunner_BudgetLimiterError(t *testing.T) {
+	limiter := gateway.NewBudgetLimiter()
+	// Unregistered key causes CheckBudget to fail
+	runner := &mockCmdRunner{output: []byte("ok"), err: nil}
+	sbRunner := agent.NewSandboxedRunner(limiter, runner)
+
+	cfg := agent.AgentConfig{
+		Type:           agent.AgentAider,
+		LiteLLMBaseURL: "http://localhost:4000",
+		VirtualAPIKey:  "err-unregistered",
+		WorkspaceDir:   "/tmp/workspace",
+		Sandbox:        true,
+	}
+
+	ctx := context.Background()
+	_, err := sbRunner.Execute(ctx, cfg)
+	if err == nil {
+		t.Fatal("expected error when budget limiter check fails")
+	}
+}
+
+func TestSandboxedRunner_InvalidConfig(t *testing.T) {
+	sbRunner := agent.NewSandboxedRunner(nil, nil)
+	_, err := sbRunner.Execute(context.Background(), agent.AgentConfig{})
+	if err == nil {
+		t.Fatal("expected error for invalid config")
+	}
+}
+
 func TestSandboxedRunner_ContextCancellationAndCurfew(t *testing.T) {
 	blockCh := make(chan struct{})
 	runner := &mockCmdRunner{blockCh: blockCh}
@@ -260,6 +336,28 @@ func TestSandboxedRunner_HostExecution(t *testing.T) {
 	}
 	if summary.Status != "completed" {
 		t.Errorf("expected status 'completed', got %s", summary.Status)
+	}
+}
+
+func TestSandboxedRunner_HostExecutionFailure(t *testing.T) {
+	runner := &mockCmdRunner{err: errors.New("host command failed")}
+	sbRunner := agent.NewSandboxedRunner(nil, runner)
+
+	cfg := agent.AgentConfig{
+		Type:           agent.AgentOpenCode,
+		LiteLLMBaseURL: "http://localhost:4000",
+		VirtualAPIKey:  "key-host-fail",
+		WorkspaceDir:   "/tmp/workspace",
+		Sandbox:        false,
+	}
+
+	ctx := context.Background()
+	summary, err := sbRunner.Execute(ctx, cfg)
+	if err == nil {
+		t.Fatal("expected error on host command failure")
+	}
+	if summary == nil || summary.Status != "failed" {
+		t.Errorf("expected failed status, got %v", summary)
 	}
 }
 

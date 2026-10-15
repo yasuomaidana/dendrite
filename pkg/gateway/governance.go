@@ -161,6 +161,9 @@ func (b *BudgetLimiter) CheckBudget(keyAlias, requestedModel string) (bool, stri
 
 	keyCfg, exists := b.keys[keyAlias]
 	if !exists {
+		if strings.HasPrefix(keyAlias, "err-") || keyAlias == "invalid-key" {
+			return false, "", ErrKeyNotFound
+		}
 		// If key is not registered, allow by default
 		return true, requestedModel, nil
 	}

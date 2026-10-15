@@ -192,7 +192,11 @@ func main() {
 	case "tokens", "token":
 		handleTokensCommand(ctx, os.Args[2:])
 
-	case "story":
+	case "story", "stories":
+		if len(os.Args) >= 3 && os.Args[2] == "next" {
+			handlePlaneCommand(ctx, "next", os.Args[3:])
+			return
+		}
 		if len(os.Args) < 3 {
 			printStoryUsage()
 			return
@@ -234,9 +238,13 @@ func printUsage() {
 	fmt.Println("  doc docusaurus [flags]     Docusaurus Docs-as-Code and project sharing")
 	fmt.Println("  doc reflect [flags]        Reflect documentation taxonomy (--reference, --source, --target)")
 	fmt.Println("  plane replicate [--file DEV_STATUS.md] Replicate DEV_STATUS.md from Plane service (Plane owns status)")
-	fmt.Println("  plane push-status                      Move local DEV_STATUS content to Plane service")
+	fmt.Println("  plane push-status                      Move local DEV_STATUS content to Plane service (Gantt dates & DAG)")
+	fmt.Println("  plane next [--ticket <id>] [--json]    Smart select next ticket from Plane (priority & DAG unblocked)")
+	fmt.Println("  plane link <src> <rel> <target>        Link dependency relationship in Plane for Gantt diagram")
+	fmt.Println("  plane create --name \"[DEN-XXX] Title\" Create ticket and place on Plane Gantt development plan")
 	fmt.Println("  plane doc <push|pull|sync> [--dir docs] Synchronize documentation between Plane and local repository")
 	fmt.Println("  plane <issues|modules|pages>           Inspect Plane issues, milestones, and documentation pages")
+	fmt.Println("  dev ticket next [--ticket <id>]        Smart select next unblocked ticket by priority")
 	fmt.Println("  jetbrains probe [url]      Probe JetBrains IDE MCP server and list available tools")
 	fmt.Println("  jetbrains open <f> [--line]Open target file in active JetBrains editor")
 	fmt.Println("  jetbrains problems <file>  Query inspections and diagnostics for file")
@@ -1067,6 +1075,12 @@ func handleDevCommand(ctx context.Context, sub string, args []string) {
 				msg += " and reflected in Plane service"
 			}
 			fmt.Println(msg)
+		} else if len(args) > 0 && args[0] == "next" {
+			handlePlaneCommand(ctx, "next", args[1:])
+		} else if len(args) > 0 && args[0] == "link" {
+			handlePlaneCommand(ctx, "link", args[1:])
+		} else if len(args) > 0 && (args[0] == "create" || args[0] == "add") {
+			handlePlaneCommand(ctx, "create", args[1:])
 		} else if len(args) > 0 && (args[0] == "sync-plane" || args[0] == "push-plane") {
 			handlePlaneCommand(ctx, "push-status", args[1:])
 		} else if len(args) > 0 && (args[0] == "replicate-plane" || args[0] == "pull-plane") {
