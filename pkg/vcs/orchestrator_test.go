@@ -30,12 +30,7 @@ func TestIsDegradedBudget(t *testing.T) {
 }
 
 func TestStackedBranchOrchestrator_Manifest(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "audit-manifest-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
+	tmpDir := t.TempDir()
 	manifestPath := filepath.Join(tmpDir, "audit_queue.json")
 	guard := NewGitGuard(tmpDir, ModeDegradedBudget)
 	orch := NewStackedBranchOrchestrator(guard, manifestPath)
@@ -70,28 +65,15 @@ func TestStackedBranchOrchestrator_Manifest(t *testing.T) {
 	}
 }
 
-func TestStackedBranchOrchestrator_Lifecycle(t *testing.T) {
-	mock := newMockRunner()
-	mock.responses["checkout develop"] = ""
-	mock.responses["show-ref --verify --quiet refs/heads/local/module-a"] = "error"
-	mock.errors["show-ref --verify --quiet refs/heads/local/module-a"] = os.ErrNotExist
-	mock.responses["checkout -b local/module-a develop"] = ""
-	mock.responses["rev-parse develop"] = "abc123sha"
-	mock.responses["rev-parse local/module-a"] = "def456sha"
-	mock.responses["symbolic-ref --short HEAD"] = "local/module-a"
-	mock.responses["status --porcelain"] = "M file.go"
-	mock.responses["add -A"] = ""
-	mock.responses["commit -m feat(module-a): complete #42 - Feature X"] = ""
-	mock.responses["push --set-upstream origin local/module-a"] = ""
-	mock.responses["rev-parse HEAD"] = "def456sha"
-
-	tmpDir, _ := os.MkdirTemp("", "orch-test-*")
-	defer os.RemoveAll(tmpDir)
-
-	guard := NewGitGuard(tmpDir, ModeDegradedBudget).WithRunner(mock)
-	orch := NewStackedBranchOrchestrator(guard, filepath.Join(tmpDir, "queue.json"))
-
+func TestStackedBranchOrchestrator_Lifecycle_RealGit(t *testing.T) {
+	repoDir, originDir := setupRealRepo(t)
 	ctx := context.Background()
+
+	guard := NewGitGuard(repoDir, ModeDegradedBudget)
+	manifestPath := filepath.Join(repoDir, ".dendrite", "audit_queue.json")
+	orch := NewStackedBranchOrchestrator(guard, manifestPath)
+
+	// 1. Start module branch
 	branch, err := orch.StartModuleBranch(ctx, "module-a", "")
 	if err != nil {
 		t.Fatalf("start module branch failed: %v", err)
@@ -100,13 +82,22 @@ func TestStackedBranchOrchestrator_Lifecycle(t *testing.T) {
 		t.Fatalf("expected 'local/module-a', got '%s'", branch)
 	}
 
-	// Record commit
-	tkt := &tracker.RoutingTicket{ID: "DEN-701", Title: "Feature X", GitHubIssueNum: 42}
+	// 2. Add real file and record commit
+	testFile := filepath.Join(repoDir, "module_code.go")
+	_ = os.WriteFile(testFile, []byte("package module_a\n"), 0644)
+
+	tkt := &tracker.RoutingTicket{ID: "DEN-704", Title: "Speculative Branching", GitHubIssueNum: 4}
 	if err := orch.RecordTicketCommit(ctx, "module-a", tkt, ""); err != nil {
 		t.Fatalf("record ticket commit failed: %v", err)
 	}
 
-	// Finalize module
+	// Verify commit exists on remote origin on branch local/module-a
+	logOut := runGitCmd(t, originDir, "log", "-n", "1", "--oneline", "local/module-a")
+	if !containsStr(logOut, "feat(module-a): complete #4 - Speculative Branching") {
+		t.Fatalf("commit not pushed to origin/local/module-a: %s", logOut)
+	}
+
+	// 3. Finalize module
 	if err := orch.FinalizeModuleForAudit(ctx, "module-a"); err != nil {
 		t.Fatalf("finalize failed: %v", err)
 	}
@@ -119,7 +110,39 @@ func TestStackedBranchOrchestrator_Lifecycle(t *testing.T) {
 	if len(items) != 1 || items[0].Status != StatusAwaitingAudit {
 		t.Fatalf("expected status AWAITING_AUDIT, got %+v", items)
 	}
-	if len(items[0].Tickets) != 1 || items[0].Tickets[0] != "DEN-701" {
-		t.Fatalf("expected ticket DEN-701 in queue item, got %+v", items[0].Tickets)
+	if len(items[0].Tickets) != 1 || items[0].Tickets[0] != "DEN-704" {
+		t.Fatalf("expected ticket DEN-704 in queue item, got %+v", items[0].Tickets)
+	}
+}
+
+func TestStackedBranchOrchestrator_StackedOnParent(t *testing.T) {
+	repoDir, _ := setupRealRepo(t)
+	ctx := context.Background()
+
+	guard := NewGitGuard(repoDir, ModeDegradedBudget)
+	orch := NewStackedBranchOrchestrator(guard, "")
+
+	// 1. Start parent branch
+	b1, err := orch.StartModuleBranch(ctx, "module-a", "")
+	if err != nil || b1 != "local/module-a" {
+		t.Fatalf("module-a failed: %v", err)
+	}
+
+	// 2. Start child branch stacked on parent
+	b2, err := orch.StartModuleBranch(ctx, "module-b", "module-a")
+	if err != nil || b2 != "local/module-b" {
+		t.Fatalf("module-b failed: %v", err)
+	}
+
+	// 3. Test branch mismatch error in RecordTicketCommit
+	tkt := &tracker.RoutingTicket{ID: "DEN-999", Title: "Mismatch"}
+	err = orch.RecordTicketCommit(ctx, "wrong-module", tkt, "")
+	if err == nil {
+		t.Fatal("expected error on branch mismatch")
+	}
+
+	// Test IsDegradedBudget edge case: totalTokens <= 0
+	if IsDegradedBudget(10, 0, false) {
+		t.Fatal("expected false when totalTokens <= 0")
 	}
 }

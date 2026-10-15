@@ -230,6 +230,12 @@ func main() {
 	case "github-sync", "sync-github":
 		handleGitHubSyncCommand(ctx, os.Args[2:])
 
+	case "quality":
+		handleQualityCommand(ctx, os.Args[2:])
+
+	case "sync-remote":
+		handleVCSCommand(ctx, []string{"sync-remote"})
+
 	default:
 		printUsage()
 	}
@@ -262,6 +268,8 @@ func printUsage() {
 	fmt.Println("  audit-changes [flags]      Topological vendor audit and rebase engine for local/* branches")
 	fmt.Println("  vcs <guard|check|status>   Enforce Git branch guardrails (prohibit main, develop default)")
 	fmt.Println("  github-sync [flags]        Synchronize prioritized tickets and DAG dependencies to GitHub Issues")
+	fmt.Println("  sync-remote                Detect, fetch, and rebase remote fixes with commit reconciliation")
+	fmt.Println("  quality <audit|hitl-sync>  Run anti-mock scan, 100% coverage profiler, and HITL verification poller")
 	fmt.Println("  doc docusaurus [flags]     Docusaurus Docs-as-Code and project sharing")
 	fmt.Println("  doc reflect [flags]        Reflect documentation taxonomy (--reference, --source, --target)")
 	fmt.Println("  plane replicate [--file DEV_STATUS.md] Replicate DEV_STATUS.md from Plane service (Plane owns status)")

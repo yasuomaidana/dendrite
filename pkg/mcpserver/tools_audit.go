@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"Dendrite/pkg/audit"
+	"Dendrite/pkg/quality"
 	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/github"
 	"Dendrite/pkg/vcs"
@@ -206,6 +207,123 @@ func (s *Server) registerAuditTools(deps Dependencies) {
 		}
 
 		data, _ := json.MarshalIndent(res, "", "  ")
+		return &CallToolResult{
+			Content: []ContentItem{{Type: "text", Text: string(data)}},
+		}, nil
+	})
+
+	// dendrite_remote_sync
+	s.RegisterTool(Tool{
+		Name:        "dendrite_remote_sync",
+		Description: "Fetch and detect remote commits/hotfixes, pull with rebase, and reconcile tickets.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"branch": map[string]interface{}{
+					"type":        "string",
+					"description": "Branch to sync (default: active branch)",
+				},
+			},
+		},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		branch, _ := args["branch"].(string)
+		guard := vcs.NewGitGuard(".", vcs.ModeStandard)
+		watcher := vcs.NewRemoteSyncWatcher(guard, nil)
+		status, err := watcher.SyncRemoteFixes(ctx, branch)
+		if err != nil {
+			return nil, fmt.Errorf("remote sync failed: %w", err)
+		}
+		data, err := json.MarshalIndent(status, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		return &CallToolResult{
+			Content: []ContentItem{{Type: "text", Text: string(data)}},
+		}, nil
+	})
+
+	// dendrite_quality_audit
+	s.RegisterTool(Tool{
+		Name:        "dendrite_quality_audit",
+		Description: "Execute anti-mock static scan and 100% coverage profiler against a package.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"pkg": map[string]interface{}{
+					"type":        "string",
+					"description": "Package path to audit (e.g. pkg/vcs)",
+				},
+			},
+			"required": []interface{}{"pkg"},
+		},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		pkgPath, _ := args["pkg"].(string)
+		if pkgPath == "" {
+			return nil, fmt.Errorf("missing pkg parameter")
+		}
+		spec := &quality.IssueSpec{
+			ID:                 "AUDIT-" + pkgPath,
+			Title:              "Package Audit: " + pkgPath,
+			State:              quality.StateToVerify,
+			CodebaseLocation:   pkgPath,
+			ReproductionSteps:  "go test -race ./" + pkgPath + "/...",
+			ProposedResolution: "Ensure zero mocks and 100% coverage",
+			AcceptanceCriteria: []string{"Zero mocks", "100% statement coverage"},
+		}
+		gaps, err := quality.AuditFinishedTicket(ctx, ".", spec, pkgPath, nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		out := map[string]interface{}{
+			"pkg":          pkgPath,
+			"ticket_state": spec.State,
+			"rejection":    spec.ProposedResolution,
+			"gap_tickets":  gaps,
+		}
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		return &CallToolResult{
+			Content: []ContentItem{{Type: "text", Text: string(data)}},
+		}, nil
+	})
+
+	// dendrite_hitl_sync
+	s.RegisterTool(Tool{
+		Name:        "dendrite_hitl_sync",
+		Description: "Poll remote GitHub Issues for Human-in-the-Loop review approvals or change feedback.",
+		InputSchema: map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{},
+		},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		poller := quality.NewGitHubHITLPoller("yasuomaidana/dendrite", &github.DefaultCommandExecutor{})
+		tickets := []*quality.IssueSpec{
+			{ID: "DEN-701", GitHubIssueNum: 1, State: quality.StateToVerify},
+			{ID: "DEN-702", GitHubIssueNum: 2, State: quality.StateToVerify},
+			{ID: "DEN-703", GitHubIssueNum: 3, State: quality.StateToVerify},
+			{ID: "DEN-704", GitHubIssueNum: 4, State: quality.StateToVerify},
+			{ID: "DEN-705", GitHubIssueNum: 5, State: quality.StateToVerify},
+		}
+		type resItem struct {
+			ID        string             `json:"id"`
+			State     quality.TicketState `json:"state"`
+			FollowUp  *quality.IssueSpec `json:"follow_up,omitempty"`
+		}
+		var items []resItem
+		for _, t := range tickets {
+			followUp, _ := poller.SyncValidationState(ctx, t)
+			items = append(items, resItem{
+				ID:       t.ID,
+				State:    t.State,
+				FollowUp: followUp,
+			})
+		}
+		data, err := json.MarshalIndent(items, "", "  ")
+		if err != nil {
+			return nil, err
+		}
 		return &CallToolResult{
 			Content: []ContentItem{{Type: "text", Text: string(data)}},
 		}, nil

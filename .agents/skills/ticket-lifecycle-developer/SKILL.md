@@ -184,9 +184,20 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 
   57. `dendrite_vcs_guard`: Check or enforce Git branch guardrails (prohibits direct work on main/master, guarantees develop default).
       - *Example*: `./bin/dendrite mcp call dendrite_vcs_guard '{"mode":"STANDARD"}'`
+  58. `dendrite_remote_sync`: Pre-flight divergence detection (ahead/behind), automated pull --rebase on remote commits, and commit-to-ticket reconciliation.
+      - *Example*: `./bin/dendrite mcp call dendrite_remote_sync '{"branch":"develop"}'`
+
+  59. `dendrite_quality_audit`: Anti-mock static scan (prohibiting mocks/stubs/fake responses) and 100% atomic statement coverage audit with automatic coverage gap ticket synthesis.
+      - *Example*: `./bin/dendrite mcp call dendrite_quality_audit '{"pkg":"pkg/vcs"}'`
+
+  60. `dendrite_hitl_sync`: Human-in-the-Loop verification poller checking linked GitHub issues: transitions approved (closed) issues to DONE, or parses feedback and generates follow-up blocker tickets.
+      - *Example*: `./bin/dendrite mcp call dendrite_hitl_sync '{}'`
+
 
 
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
+- `dendrite sync-remote`: Pre-flight remote divergence check, automatic rebase on remote fixes, and commit reconciliation.
+- `dendrite quality <audit|hitl-sync>`: Anti-mock quality gate, 100% coverage profiler, and Human-in-the-Loop verification poller.
 - `dendrite audit-changes [--branch <name>] [--dry-run] [--max-tokens <int>] [--model <m>]`: Topological vendor audit and rebase engine for local/* branches.
 - `dendrite vcs <guard|check|status|evacuate>`: Enforce Git branch guardrails, check policy, and evacuate forbidden branches.
 - `dendrite github-sync [--repo <owner/repo>]`: Synchronize sequenced P0 tickets, DAG dependencies, and governance labels to GitHub Issues.
