@@ -9,12 +9,15 @@ import (
 
 	"Dendrite/pkg/query/slice"
 	"Dendrite/pkg/query/swap"
+	"Dendrite/pkg/query/fuse"
 	"Dendrite/pkg/query/transpile"
+	"Dendrite/pkg/ui/modal"
 )
 
 var defaultSlicer = slice.NewIntentSlicer()
 var defaultSwapper = swap.NewSubsystemSwapper()
 var defaultTranspiler = transpile.NewRustTranspiler()
+var defaultFuser = fuse.NewArchitectureFuser()
 
 func handleQueryCommand(ctx context.Context, action string, args []string) {
 	if action == "swap" {
@@ -23,6 +26,10 @@ func handleQueryCommand(ctx context.Context, action string, args []string) {
 	}
 	if action == "transpile" {
 		handleTranspileCommand(ctx, args)
+		return
+	}
+	if action == "fuse" {
+		handleFuseCommand(ctx, args)
 		return
 	}
 
@@ -228,12 +235,88 @@ func handleTranspileCommand(ctx context.Context, args []string) {
 	}
 }
 
+
+func handleFuseCommand(ctx context.Context, args []string) {
+	req := fuse.FuseRequest{
+		TargetLanguage: "rust",
+		RegisterInPool: true,
+		Prompt: func(m *modal.DirectoryPickerModal) (string, error) {
+			return m.RenderCLI(os.Stdin, os.Stdout)
+		},
+	}
+
+	jsonOutput := false
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--sources":
+			if i+1 < len(args) {
+				raw := strings.Split(args[i+1], ",")
+				for _, r := range raw {
+					trimmed := strings.TrimSpace(r)
+					if trimmed != "" {
+						req.Sources = append(req.Sources, trimmed)
+					}
+				}
+				i++
+			}
+		case "--name":
+			if i+1 < len(args) {
+				req.FusedMemberName = args[i+1]
+				i++
+			}
+		case "--lang", "--language":
+			if i+1 < len(args) {
+				req.TargetLanguage = args[i+1]
+				i++
+			}
+		case "--target-dir":
+			if i+1 < len(args) {
+				req.TargetDirectory = args[i+1]
+				i++
+			}
+		case "--no-register-pool":
+			req.RegisterInPool = false
+		case "--json":
+			jsonOutput = true
+		}
+	}
+
+	if len(req.Sources) < 2 {
+		fmt.Println("[-] Usage: dendrite query fuse --sources <src1,src2,...> --name <member> [flags]")
+		return
+	}
+
+	res, err := defaultFuser.Fuse(ctx, req)
+	if err != nil {
+		fmt.Printf("[-] Architecture fusion failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	if jsonOutput {
+		data, _ := json.MarshalIndent(res, "", "  ")
+		fmt.Println(string(data))
+		return
+	}
+
+	fmt.Println("[+] Multi-Artifact Architecture Fusion:")
+	fmt.Printf("    Unified Member:      %s\n", res.FusedMemberName)
+	fmt.Printf("    Destination:         %s\n", res.TargetDirectory)
+	fmt.Printf("    Sources Merged (%d):  %s\n", len(res.SourceArtifacts), strings.Join(res.SourceArtifacts, ", "))
+	fmt.Printf("    Deduplicated Libs:   %s\n", strings.Join(res.DeduplicatedLibraries, ", "))
+	fmt.Printf("    Channel Mechanism:   %s\n", res.ChannelMechanism)
+	if res.PoolRegistered {
+		fmt.Println("    Pool Registered:     Added to .dendrite/pool.json")
+	}
+}
+
 func printQueryUsage() {
-	fmt.Println("Usage: dendrite query <slice|swap|transpile> [flags]")
+	fmt.Println("Usage: dendrite query <slice|swap|transpile|fuse> [flags]")
 	fmt.Println("\nSlice Subcommand:")
 	fmt.Println("  dendrite query slice --sources <path> --entrypoint <symbol> [flags] \"<intent>\"")
 	fmt.Println("\nSwap Subcommand:")
 	fmt.Println("  dendrite query swap --sources <path> --from <opengl|directx|vulkan> --to <wgpu|threejs> [--lang rust|go|ts]")
 	fmt.Println("\nTranspile Subcommand:")
 	fmt.Println("  dendrite query transpile --sources <artifact> [--to rust] [--no-std] [--output-dir <dir>] \"<prompt>\"")
+	fmt.Println("\nFuse Subcommand:")
+	fmt.Println("  dendrite query fuse --sources <src1,src2> --name <fused_member> [--target-dir <dir>] [--lang rust|go]")
 }

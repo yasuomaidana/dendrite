@@ -7,12 +7,14 @@ import (
 
 	"Dendrite/pkg/query/slice"
 	"Dendrite/pkg/query/swap"
+	"Dendrite/pkg/query/fuse"
 	"Dendrite/pkg/query/transpile"
 )
 
 var defaultMCPQuerySlicer = slice.NewIntentSlicer()
 var defaultMCPSwapper = swap.NewSubsystemSwapper()
 var defaultMCPTranspiler = transpile.NewRustTranspiler()
+var defaultMCPFuser = fuse.NewArchitectureFuser()
 
 func (s *Server) registerQueryTools(deps Dependencies) {
 	// 31. dendrite_query_slice
@@ -170,6 +172,70 @@ func (s *Server) registerQueryTools(deps Dependencies) {
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
 			return nil, fmt.Errorf("marshaling transpile result: %w", err)
+		}
+
+		return &CallToolResult{
+			Content: []ContentItem{{
+				Type: "text",
+				Text: string(data),
+			}},
+		}, nil
+	})
+
+	// 34. dendrite_query_fuse
+	s.RegisterTool(Tool{
+		Name:        "dendrite_query_fuse",
+		Description: "Combines multiple binaries/projects, deduplicating libraries and synthesizing zero-copy in-process channels",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"sources":           map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "List of source project or artifact paths"},
+				"fused_member_name": map[string]interface{}{"type": "string", "description": "Identifier for the combined member"},
+				"target_language":   map[string]interface{}{"type": "string", "enum": []string{"rust", "go"}, "description": "Target unified language"},
+				"target_directory":  map[string]interface{}{"type": "string", "description": "Destination directory for unified project"},
+				"register_in_pool":  map[string]interface{}{"type": "boolean", "description": "Register unified member in .dendrite/pool.json"},
+			},
+			"required": []interface{}{"sources", "fused_member_name", "target_directory"},
+		},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		rawSources, ok := args["sources"].([]interface{})
+		if !ok || len(rawSources) < 2 {
+			return nil, fmt.Errorf("sources must contain at least two entries")
+		}
+		var sources []string
+		for _, s := range rawSources {
+			if str, ok := s.(string); ok {
+				sources = append(sources, str)
+			}
+		}
+
+		memberName, _ := args["fused_member_name"].(string)
+		targetLang, _ := args["target_language"].(string)
+		targetDir, _ := args["target_directory"].(string)
+		registerPool, _ := args["register_in_pool"].(bool)
+
+		req := fuse.FuseRequest{
+			Sources:         sources,
+			FusedMemberName: memberName,
+			TargetLanguage:  targetLang,
+			TargetDirectory: targetDir,
+			RegisterInPool:  registerPool,
+		}
+
+		result, err := defaultMCPFuser.Fuse(ctx, req)
+		if err != nil {
+			return &CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: fmt.Sprintf("[-] Architecture fusion failed: %v", err),
+				}},
+				IsError: true,
+			}, nil
+		}
+
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("marshaling fuse result: %w", err)
 		}
 
 		return &CallToolResult{

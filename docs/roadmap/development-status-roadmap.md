@@ -20,13 +20,13 @@ Dendrite is an enterprise-grade, topology-agnostic control plane and developer p
 
 | Metric | Current Value | Target / Baseline | Status |
 | :--- | :--- | :--- | :--- |
-| **Active Milestone** | **Milestone 24** — Autonomous Pool DAG & Multi-IDE Project Synchronization (FEAT-029) | Milestone 37 (Project Final) | In Progress |
+| **Active Milestone** | **Milestone 24** — Autonomous Pool DAG & Multi-IDE Project Synchronization (FEAT-029) | Milestone 39 (Project Final) | In Progress |
 | **Current Focus Ticket** | `DEN-051` (Autonomous Dependency Inference & Multi-Directory DAG Solver) | Next in queue: `DEN-052` | Active Focus |
-| **Total Story Points (SP)** | 358 SP | 582 SP Planned | 61.5% SP Complete |
-| **Tickets Completed** | **50 / 90 Tickets** | 90 Tickets Total | **55.6% Completed** |
-| **Active / Queued Tickets** | **40 Tickets** (`DEN-051` through `DEN-090`) | 0 Blocked | On Track |
+| **Total Story Points (SP)** | 358 SP | 621 SP Planned | 57.6% SP Complete |
+| **Tickets Completed** | **50 / 96 Tickets** | 96 Tickets Total | **52.1% Completed** |
+| **Active / Queued Tickets** | **46 Tickets** (`DEN-051` through `DEN-096`) | 0 Blocked | On Track |
 | **Core Statement Coverage** | **$\ge 88.4\%$ Average** across all packages | $\ge 85.0\%$ DoD Threshold | Exceeds Target |
-| **Registered MCP Tools** | **21 Native Tools** (Stdio JSON-RPC 2.0) | JetBrains + Stacks | Operational |
+| **Registered MCP Tools** | **25+ Native Tools** (Stdio JSON-RPC 2.0) | JetBrains + Stacks | Operational |
 | **Supported Inference Backends** | 6 Engines (Ollama, OxiLLaMa, TGI, TEI, vLLM, llama.cpp)| Multi-Provider Gateway | Operational |
 | **Last Synchronized** | 2026-10-14 | Real-time Plane Sync | Verified |
 
@@ -247,6 +247,16 @@ All 23 project milestones and their associated tickets:
 - [ ] **DEN-069**: Pre-Commit Secret Scanner Interceptor & Pre-PR Verification Gate (`pkg/agent/security`)
 - [ ] **DEN-070**: Quota Failover Cascade, Git Worktree Isolation & Immutable Audit Log (`pkg/agent/resilience`, `pkg/audit`)
 
+### Milestone 38: Artifact & Package Publisher MCP Service & Registry Governance (FEAT-042)
+- [ ] **DEN-091**: Pluggable Registry Adapter Interface & Cargo Workspace Topological Publisher (`pkg/mcp/publisher`, `internal/mcp/publisher`)
+- [ ] **DEN-092**: Pre-Flight Validation, Dry-Run SemVer Guard & Secret-Isolated Execution Gate (`pkg/mcp/publisher`, `cmd/dendrite`)
+- [ ] **DEN-093**: Post-Publish Git Tag Lifecycle & Stdio JSON-RPC MCP Tool Registry (`pkg/mcp/publisher`, `pkg/mcpserver`)
+
+### Milestone 39: Local & Custom-Server Ephemeral CI/CD Routine & Mesh Runner (FEAT-043)
+- [ ] **DEN-094**: Ephemeral Container Sandbox Runner & Automated Dynamic On-Demand Activation (`pkg/routines/cicd`, `internal/routines/cicd`)
+- [ ] **DEN-095**: Remote Tailscale Mesh SSH/Docker Execution Target & One-Time GitHub Ephemeral Runner (`pkg/routines/cicd`, `pkg/topology/network`)
+- [ ] **DEN-096**: Token-Efficient Structured Log Tailing & MCP Routine Control Tools (`pkg/routines/cicd`, `pkg/mcpserver`, `cmd/dendrite`)
+
 ---
 
 ## 5. Detailed Engineering Specifications for Active & Queued Tickets
@@ -290,6 +300,76 @@ All 23 project milestones and their associated tickets:
     - [ ] Pre-flight health probe before executing benchmark; cascade to next healthy registered engine if primary unreachable.
     - [ ] Detailed failover latency accounting and switch events in benchmark summary scorecard.
     - [ ] Benchmark scenario report detailing cascade events, fallback latency delta, and upstream health status.
+
+
+### Ticket `DEN-091`: Pluggable Registry Adapter Interface & Cargo Workspace Topological Publisher
+- **Target Package**: `pkg/mcp/publisher`, `internal/mcp/publisher`
+- **Governing Specs**: [`docs/features/FEAT-042-artifact-package-publisher-mcp.md`](../features/FEAT-042-artifact-package-publisher-mcp.md)
+- **Goal**: Implement pluggable `PublisherAdapter` interface and `CratePublisher` supporting single crates and multi-crate Cargo workspaces with topological dependency ordering and index propagation delays.
+- **Acceptance Criteria**:
+    - [ ] `PublisherAdapter` interface implemented for Rust `cargo` with extensible hooks for `npm`, `pypi`, and `oci`.
+    - [ ] Computes deterministic topological dependency order for multi-crate Cargo workspaces, preventing publishing leaves before core crates.
+    - [ ] Implements configurable index propagation delay (`workspace_publish_delay_sec`, default 15s) between workspace crate publications.
+    - [ ] Typestate pattern used to guard transitions between `Unverified`, `PreflightPassed`, and `Published`.
+    - [ ] Testcontainers integration test spinning up a throwaway local registry container verifying multi-crate publication order.
+    - [ ] Statement test coverage >= 85%.
+
+### Ticket `DEN-092`: Pre-Flight Validation, Dry-Run SemVer Guard & Secret-Isolated Execution Gate
+- **Target Package**: `pkg/mcp/publisher`, `cmd/dendrite`
+- **Governing Specs**: [`docs/features/FEAT-042-artifact-package-publisher-mcp.md`](../features/FEAT-042-artifact-package-publisher-mcp.md)
+- **Goal**: Implement pre-flight dry-run gate, SemVer registry collision checker, clean Git worktree enforcer, and strict secret isolation resolving `CARGO_REGISTRY_TOKEN` only on the Execution Plane.
+- **Acceptance Criteria**:
+    - [ ] Enforces clean Git worktree unless `--allow-dirty` is explicitly provided.
+    - [ ] Validates `Cargo.toml` metadata completeness (`name`, `version`, `license`, `description`, `repository`).
+    - [ ] Checks upstream registry to confirm the target SemVer version does not already exist.
+    - [ ] Runs isolated `cargo publish --dry-run` and truncates diagnostics to <= 2048 bytes for token economy.
+    - [ ] Credentials strictly injected at child OS process level (`cmd.Env`); raw tokens never enter prompt context.
+    - [ ] Statement test coverage >= 85%.
+
+### Ticket `DEN-093`: Post-Publish Git Tag Lifecycle & Stdio JSON-RPC MCP Tool Registry
+- **Target Package**: `pkg/mcp/publisher`, `pkg/mcpserver`
+- **Governing Specs**: [`docs/features/FEAT-042-artifact-package-publisher-mcp.md`](../features/FEAT-042-artifact-package-publisher-mcp.md)
+- **Goal**: Implement post-publish annotated Git tagging (`vX.Y.Z`) and register native MCP tools `publisher_detect_targets`, `publisher_preflight`, and `publisher_execute`.
+- **Acceptance Criteria**:
+    - [ ] On successful registry confirmation, creates annotated Git tag (`vX.Y.Z`) and pushes to remote if configured.
+    - [ ] Registers `publisher_detect_targets`, `publisher_preflight`, and `publisher_execute` in Dendrite MCP server.
+    - [ ] Interactive approval gate (`require_approval`) blocks live publish unless `approved = true`.
+    - [ ] Integrates optional pre-publish ephemeral CI/CD verification hook (`run_cicd_before_publish`).
+    - [ ] Statement test coverage >= 85%.
+
+### Ticket `DEN-094`: Ephemeral Container Sandbox Runner & Automated Dynamic On-Demand Activation
+- **Target Package**: `pkg/routines/cicd`, `internal/routines/cicd`
+- **Governing Specs**: [`docs/features/FEAT-043-ephemeral-cicd-routine.md`](../features/FEAT-043-ephemeral-cicd-routine.md)
+- **Goal**: Implement ephemeral container execution routine with `--rm` lifecycle, read-only host repo bind mounts, memory-backed `/tmp/build` tmpfs, and dynamic on-demand enable/auto-disable toggle.
+- **Acceptance Criteria**:
+    - [ ] Routine defaults to `enabled = false` in `[routines.cicd]` (0 idle RAM/CPU).
+    - [ ] Dynamic activation via `SetEnabled(true, ephemeral)` with automatic revert to disabled once active job count reaches 0.
+    - [ ] Disposable container sandbox (`--rm`, `--tmpfs /tmp:rw,exec,size=2g`, `-v repo:ro`) copies code to `/tmp/build` ensuring host is untouched.
+    - [ ] RAII clean-drop deferred cleanup forcefully kills container on context cancellation or error.
+    - [ ] Testcontainers integration test validating zero residual containers and clean filesystem post-run.
+    - [ ] Statement test coverage >= 85%.
+
+### Ticket `DEN-095`: Remote Tailscale Mesh SSH/Docker Execution Target & One-Time GitHub Ephemeral Runner
+- **Target Package**: `pkg/routines/cicd`, `pkg/topology/network`
+- **Governing Specs**: [`docs/features/FEAT-043-ephemeral-cicd-routine.md`](../features/FEAT-043-ephemeral-cicd-routine.md)
+- **Goal**: Implement remote custom server execution target routed over Tailscale/WireGuard mesh (`ssh://dendrite@100.64.0.12`), and support one-time self-hosted GitHub Actions ephemeral runner backend.
+- **Acceptance Criteria**:
+    - [ ] When `execution_target = "custom_server"`, tunnels Docker daemon socket via Tailscale encrypted overlay with zero public ingress.
+    - [ ] Backend `github_ephemeral_runner` registers `--ephemeral` one-time runner against repo, processes one job, and de-registers.
+    - [ ] Configurable timeout (`job_timeout_sec`, default 1800s) with graceful abort.
+    - [ ] Testcontainers integration test validating remote SSH mock execution and timeout handling.
+    - [ ] Statement test coverage >= 85%.
+
+### Ticket `DEN-096`: Token-Efficient Structured Log Tailing & MCP Routine Control Tools
+- **Target Package**: `pkg/routines/cicd`, `pkg/mcpserver`, `cmd/dendrite`
+- **Governing Specs**: [`docs/features/FEAT-043-ephemeral-cicd-routine.md`](../features/FEAT-043-ephemeral-cicd-routine.md)
+- **Goal**: Implement persistent raw log capture to `pkg/store`, bounded error tailing (<= 2048 bytes / 40 lines), and native MCP tools `cicd_status`, `cicd_enable`, and `cicd_run_pipeline`.
+- **Acceptance Criteria**:
+    - [ ] Captures full raw logs to persistent store while extracting high-signal error tails (<= 2048 bytes) for agent responses.
+    - [ ] Registers `cicd_status`, `cicd_enable`, and `cicd_run_pipeline` in Dendrite MCP server.
+    - [ ] CLI subcommand `dendrite cicd run --repo <path> --steps <step1,step2> [--target <local|custom_server>]`.
+    - [ ] Cyclomatic complexity <= 15, Cognitive complexity <= 20 per function.
+    - [ ] Statement test coverage >= 85%.
 
 ---
 
@@ -428,6 +508,8 @@ All tickets map directly to living architectural documents and feature specifica
   - [FEAT-019: Azure Cloud-Burst Infrastructure](../features/FEAT-019-azure-cloud-burst.md)
   - [FEAT-020: Pluggable Multi-Provider Inference Engines](../features/FEAT-020-pluggable-inference-engines.md)
   - [FEAT-021: Performance Testing & k6 Benchmarking](../features/FEAT-021-performance-testing-k6-benchmark.md)
+  - [FEAT-042: Artifact & Package Publisher MCP Service](../features/FEAT-042-artifact-package-publisher-mcp.md)
+  - [FEAT-043: Local & Custom-Server Ephemeral CI/CD Routine](../features/FEAT-043-ephemeral-cicd-routine.md)
   - [FEAT-022: Agent Search & Capability Discovery](../features/FEAT-022-agent-search-and-capability-discovery.md)
   - [FEAT-023: Developer Test Automation & UI Integration](../features/FEAT-023-developer-test-automation-ui-harness.md)
   - [FEAT-024: Open-Source REA Showcase Pipeline](../features/FEAT-024-open-source-showcases.md)

@@ -106,6 +106,9 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   31. `dendrite_query_transpile`: Translates legacy binaries or repos to safe, idiomatic Rust with Newtypes, zero unsafe blocks, and differential tests.
       - *Example*: `./bin/dendrite mcp call dendrite_query_transpile '{"sources_artifact":"legacy.bin","target_language":"rust"}'`
 
+  32. `dendrite_query_fuse`: Combines multiple binaries/projects, deduplicating shared libraries and synthesizing zero-copy in-process channels.
+      - *Example*: `./bin/dendrite mcp call dendrite_query_fuse '{"sources":["proj-a","proj-b"],"fused_member_name":"fused-core","target_directory":"./fused-core"}'`
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
 - `dendrite agent <search|route>`: Search and rank agents with hybrid vector/BM25 search or auto-route tasks to optimal agents with LiteLLM virtual keys.
 - `dendrite test <auto|ui>`: Synthesize table-driven tests with Testcontainers & self-healing convergence, or run Web UI browser journeys & WebSocket telemetry load tests.
@@ -131,6 +134,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - `dendrite pool <add|remove|list|resolve> [--json]`: Autonomous multi-directory project pool manager and deterministic topological DAG solver with cycle detection.
 - `dendrite query [slice] --sources <path> --entrypoint <symbol> [flags] "<intent>"`: Universal intent-driven CFG/AST reachability slicer with golden vector test generation.
 - `dendrite query transpile --sources <artifact> [--to rust] [--no-std] [flags] "<prompt>"`: Safe idiomatic Rust transpiler with differential parity harness.
+- `dendrite query fuse --sources <src1,src2> --name <member> [--target-dir <dir>]`: Multi-artifact architecture fusion and in-process channel synthesizer.
 
 ### 3. Unified Stacks Environment (`stacks/.env`)
 Dendrite maintains an enterprise-grade multi-service container orchestration stack parameterized via `stacks/.env` (and mirrored in `.env`):
