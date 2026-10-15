@@ -175,60 +175,18 @@ type Runner interface {
 
 // EnsureAgentInstalled attempts to automatically install the agent tool if missing from host PATH.
 func EnsureAgentInstalled(ctx context.Context, agentType AgentType) error {
-	switch agentType {
-	case AgentAider:
-		if _, err := exec.LookPath("aider"); err == nil {
-			return nil
-		}
-		fmt.Println("[+] Aider is not installed in PATH. Automatically installing aider via Homebrew/pip...")
-		if _, bErr := exec.LookPath("brew"); bErr == nil {
-			cmd := exec.CommandContext(ctx, "brew", "install", "aider")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err == nil {
-				return nil
-			}
-		}
-		if _, pErr := exec.LookPath("pip3"); pErr == nil {
-			cmd := exec.CommandContext(ctx, "pip3", "install", "--break-system-packages", "aider-chat")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err == nil {
-				return nil
-			}
-		}
-		return errors.New("failed to automatically install aider: please install manually with 'brew install aider' or 'pip install aider-chat'")
-
-	case AgentOpenHands:
-		if _, err := exec.LookPath("openhands"); err == nil {
-			return nil
-		}
-		if _, dErr := exec.LookPath("docker"); dErr == nil {
-			// Container execution available
-			return nil
-		}
-		if _, pErr := exec.LookPath("pip3"); pErr == nil {
-			fmt.Println("[+] Installing openhands-ai via pip3...")
-			cmd := exec.CommandContext(ctx, "pip3", "install", "--break-system-packages", "openhands-ai")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			_ = cmd.Run()
-		}
-		return nil
-
-	default:
-		return nil
-	}
+	return PromptAndInstallAgent(ctx, agentType, true, os.Stdin, os.Stdout)
 }
 
 // HostRunner executes autonomous agent processes directly on the host machine.
 type HostRunner struct {
-	Interactive bool
-	Stdout      io.Writer
-	Stderr      io.Writer
-	Stdin       io.Reader
-	LookPath    func(file string) (string, error)
-	CommandFunc func(ctx context.Context, name string, arg ...string) *exec.Cmd
+	Interactive  bool
+	AllowInstall bool
+	Stdout       io.Writer
+	Stderr       io.Writer
+	Stdin        io.Reader
+	LookPath     func(file string) (string, error)
+	CommandFunc  func(ctx context.Context, name string, arg ...string) *exec.Cmd
 }
 
 // NewHostRunner creates an agent runner for host process execution.
@@ -265,8 +223,8 @@ func (h *HostRunner) Execute(ctx context.Context, cfg AgentConfig) (*SessionSumm
 	}
 	binaryPath, err := lookPath(cmdArgs[0])
 	if err != nil {
-		if cfg.Type == AgentAider || cfg.Type == AgentOpenHands {
-			if installErr := EnsureAgentInstalled(ctx, cfg.Type); installErr == nil {
+		if h.AllowInstall || h.Interactive {
+			if installErr := PromptAndInstallAgent(ctx, cfg.Type, h.AllowInstall, h.Stdin, h.Stdout); installErr == nil {
 				binaryPath, err = lookPath(cmdArgs[0])
 			}
 		}

@@ -5,7 +5,7 @@ status: approved
 plane_epic: PROJ-E-13
 dependencies: [FEAT-001, FEAT-002, FEAT-005, FEAT-006]
 repository: dendrite
-tags: [ai-agents, aider, openhands, opencode, agy, antigravity, copilot, github-copilot, orchestration, governance, sandboxing]
+tags: [ai-agents, aider, openhands, opencode, agy, antigravity, copilot, github-copilot, orchestration, governance, sandboxing, brew-install]
 ---
 
 # FEAT-013: Autonomous Coding Agent Harness & Tool Orchestration (Aider, OpenHands, OpenCode, Google AGY, GitHub Copilot)
@@ -13,6 +13,8 @@ tags: [ai-agents, aider, openhands, opencode, agy, antigravity, copilot, github-
 ## 1. User Story & Business Objective
 
 As a software engineer and platform architect, I need Dendrite to natively support and orchestrate premier autonomous coding agents—specifically **Aider**, **OpenHands** (formerly OpenDevin), **OpenCode**, **Google AGY (Antigravity)**, and **GitHub Copilot CLI**—by automatically bootstrapping their configurations, routing their API traffic through the LiteLLM Token Governance Gateway, enforcing sliding window budget caps and thermal curfews, injecting AST-compacted repository context, and executing them within ephemeral, cap-dropped container sandboxes with automated issue tracker status synchronization.
+
+Furthermore, if an agent tool is missing from the developer's host environment, Dendrite must provide an integrated, user-authorized package manager workflow (e.g. `brew install <tool>`) allowing developers to install missing tools interactively or with explicit approval flags, eliminating manual setup friction while guaranteeing zero unverified executions.
 
 ---
 
@@ -32,25 +34,43 @@ As a software engineer and platform architect, I need Dendrite to natively suppo
      - `OPENAI_API_KEY=<dendrite-virtual-key>`
      - `GOOGLE_GEMINI_BASE_URL=http://<control-plane-host>:4000/v1`
      - `GEMINI_API_KEY=<dendrite-virtual-key>`
-     - Model tier overrides (e.g., directing primary edits to `copilot-sonnet` or `gemini-2.5-pro` and automated test generation to `local-qwen-coder`).
+     - Model tier overrides (e.g., directing primary edits to `copilot-sonnet` or `gemini-3.8-flash-high` and automated test generation to `local-qwen-coder`).
 3. **AST Context Injection & Semantic Prompt Compaction**:
    - Prior to agent startup, extracts AST symbol graphs via `pkg/ast` and `pkg/devtool`, generating a compacted repository context envelope.
    - For Aider: Formats context as a repository map (`--map-tokens 2048` or custom repo prompt).
    - For OpenHands / OpenCode / AGY: Pre-loads the workspace context envelope into the initial prompt instructions.
 4. **Sandboxed & Ephemeral Execution Modes**:
-   - **Host Mode**: Runs directly in the developer's local terminal workspace (primarily for interactive Aider or AGY sessions).
-   - **Ephemeral Sandbox Mode**: Spawns agent inside a cap-dropped, read-only root Docker container (`pkg/sandbox`) with an isolated scratch volume and automatic RAII teardown upon process exit (`google/antigravity:latest`).
+   - **Host Mode**: Runs directly in the developer's local terminal workspace (primarily for interactive Aider, Copilot, or AGY sessions).
+   - **Ephemeral Sandbox Mode**: Spawns agent inside a cap-dropped, read-only root Docker container (`pkg/sandbox`) with an isolated scratch volume and automatic RAII teardown upon process exit (`docker.all-hands.dev/all-hands-ai/runtime:0.14-nikolaik` or `google/antigravity:latest`).
 5. **Issue Tracker & Git Provenance Linking**:
-   - Links agent sessions to active tickets (e.g., `DEN-006`, `DEN-028` or Jira/Plane issue keys).
-   - Formats git commit messages automatically: `[<TICKET-ID>] <Action Summary> (Agent: <aider|openhands|opencode|agy>)`.
+   - Links agent sessions to active tickets (e.g., `DEN-006`, `DEN-024`, `DEN-072` or Jira/Plane issue keys).
+   - Formats git commit messages automatically: `[<TICKET-ID>] <Action Summary> (Agent: <aider|openhands|opencode|agy|copilot>)`.
    - Posts session summaries and token spend metrics back to the active issue tracker.
+6. **Missing Agent Package Manager Installation Workflow (`brew install` & User Authorization)**:
+   - When a requested agent binary is not found on host `$PATH`, Dendrite detects available package managers (prioritizing Homebrew via `brew LookPath` on macOS/Linux).
+   - Generates deterministic installation specs:
+     - **Aider**: `brew install aider` (fallback: `pip3 install --break-system-packages aider-chat`)
+     - **GitHub Copilot CLI**: `brew install copilot-cli` (fallback: `npm install -g @githubnext/github-copilot-cli`)
+     - **OpenHands**: `pip3 install --break-system-packages openhands-ai` or Docker container sandbox runtime
+     - **Google AGY**: `curl -fsSL https://antigravity.google.com/install.sh`
+   - Prompts the user interactively before any command execution:
+     `[?] Do you allow Dendrite to execute 'brew install <tool>' to install <agent>? [y/N]: `
+   - Supports automated approval via CLI flags: `-y`, `--yes`, or `--allow-install`.
+   - If user confirms, Dendrite executes the installation, verifies binary presence, and seamlessly proceeds into the session.
+   - If user declines, the operation aborts cleanly and prints the manual command line for the developer.
 
 ```mermaid
 flowchart TD
     User([Developer / CI Trigger]) -->|dendrite agent run <tool>| CLI[Dendrite CLI]
+    User -->|dendrite env install <tool>| CLI
     
     subgraph "Dendrite Control Plane & Orchestrator"
-        CLI --> AgentEngine[Agent Orchestration Engine<br/>pkg/agent]
+        CLI --> DetectCheck{Is Agent Binary<br/>in PATH?}
+        DetectCheck -->|No| PromptInstall["Prompt User Authorization<br/>[?] Allow 'brew install ...'?"]
+        PromptInstall -->|Confirmed or -y| ExecBrew["Execute Package Manager<br/>brew install / pip3 / npm"]
+        PromptInstall -->|Declined| Abort[Clean Abort with Manual Command]
+        ExecBrew --> AgentEngine[Agent Orchestration Engine<br/>pkg/agent]
+        DetectCheck -->|Yes| AgentEngine
         AgentEngine --> TokenGov[LiteLLM Gateway Virtual Key Injector<br/>pkg/gateway]
         AgentEngine --> ContextGen[AST Context Envelope Injector<br/>pkg/ast]
         AgentEngine --> TrackerSync[Issue Tracker Sync<br/>pkg/tracker]
@@ -58,7 +78,7 @@ flowchart TD
 
     subgraph "Execution Target"
         AgentEngine -->|Local Terminal| HostExec[Host Workspace]
-        AgentEngine -->|Ephemeral Flag| SandboxExec[Sandboxed Container<br/>pkg/sandbox]
+        AgentEngine -->|Ephemeral Flag / Auto-Sandbox| SandboxExec[Sandboxed Container<br/>pkg/sandbox]
     end
 
     subgraph "Agent Engines"
@@ -66,9 +86,10 @@ flowchart TD
         HostExec & SandboxExec --> OpenHands["OpenHands<br/>(Full Autonomous Agent)"]
         HostExec & SandboxExec --> OpenCode["OpenCode<br/>(Headless Batch Refactoring)"]
         HostExec & SandboxExec --> AGY["Google AGY<br/>(Antigravity CLI Agent)"]
+        HostExec & SandboxExec --> Copilot["GitHub Copilot CLI<br/>(Autonomous Copilot)"]
     end
 
-    Aider & OpenHands & OpenCode & AGY -->|Governed API Calls| Gateway[LiteLLM Gateway :4000]
+    Aider & OpenHands & OpenCode & AGY & Copilot -->|Governed API Calls| Gateway[LiteLLM Gateway :4000]
     Gateway --> Fallback[Cascading Fallback & Spend Guardrails]
 ```
 
@@ -94,22 +115,30 @@ dendrite agent run copilot --ticket DEN-072 --task "Implement runtime adapter" -
 
 # 6. Display active and past agent sessions, spend metrics, and generated commits
 dendrite agent session list
+
+# 7. Explicitly install a missing agent tool via package manager workflow (Homebrew / pip)
+dendrite env install aider
+dendrite env install copilot -y
+
+# 8. Run an agent with auto-approval to allow package manager install if missing
+dendrite agent run aider --ticket DEN-006 --allow-install --task "Implement feature"
 ```
 
 ---
 
 ## 4. Acceptance Criteria & Verification Matrix
 
-- [x] **AC-1**: `dendrite agent run <aider|openhands|opencode|agy>` successfully configures the runtime environment with LiteLLM proxy base URL, virtual API keys, and model mappings without hardcoded secrets.
+- [x] **AC-1**: `dendrite agent run <aider|openhands|opencode|agy|copilot>` successfully configures the runtime environment with LiteLLM proxy base URL, virtual API keys, and model mappings without hardcoded secrets.
 - [x] **AC-2**: When budget limits or thermal curfews are reached, the agent harness cleanly terminates the process, commits progress, and posts spend logs to the active issue tracker.
 - [x] **AC-3**: Sandboxed execution (`--sandbox` / `--ephemeral`) boots the agent in an isolated container with zero unauthorized host filesystem mutations.
 - [x] **AC-4**: Commits produced during agent sessions include structured ticket metadata and agent provenance tags.
 - [x] **AC-5**: Real host process execution via `HostRunner` attaches terminal stdio and environment variables, with verified fallback handling when tools are missing from PATH.
+- [x] **AC-6**: Missing agent binaries trigger the package manager workflow (`brew install <agent>` where Homebrew is available). Dendrite explicitly prompts the user for permission before executing package manager commands unless `--yes` / `-y` / `--allow-install` is supplied.
 
 ---
 
 ## 5. Definition of Done (DoD) & Persistence Verification
 
-- **Automated Tests**: Unit tests assert environment variable generation, argument rendering, and config validation across all supported agent types with $\ge 85\%$ statement coverage.
+- **Automated Tests**: Unit tests assert environment variable generation, argument rendering, config validation, and package manager confirmation logic across all supported agent types with $\ge 85\%$ statement coverage.
 - **Persistent Layer Verification**: Session history and spend records persisted in SQLite/PostgreSQL verified via real container instances using [Testcontainers](https://rust.testcontainers.org).
 - **Complexity Guardrails**: Orchestrator functions adhere to Cyclomatic Complexity $\le 10$, Cognitive Complexity $\le 12$, and function length $\le 60$ LOC.

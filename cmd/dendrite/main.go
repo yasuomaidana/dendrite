@@ -463,7 +463,23 @@ func handleEnvCommand(ctx context.Context, action string, args []string) {
 
 	case "install":
 		if len(args) == 0 {
-			fmt.Println("[-] Usage: dendrite env install <linear|plane|penpot|ollama|litellm|postgres|docker> [--mode container|host]")
+			fmt.Println("[-] Usage: dendrite env install <aider|openhands|copilot|agy|linear|plane|penpot|ollama|litellm|postgres|docker> [--mode container|host] [-y|--yes]")
+			return
+		}
+		targetName := strings.ToLower(args[0])
+		aType := agent.AgentType(targetName)
+		if aType.IsValid() {
+			autoApprove := false
+			for _, a := range args[1:] {
+				if a == "-y" || a == "--yes" {
+					autoApprove = true
+				}
+			}
+			err := agent.PromptAndInstallAgent(ctx, aType, autoApprove, os.Stdin, os.Stdout)
+			if err != nil {
+				fmt.Printf("[-] Failed to install %s: %v\n", aType, err)
+				return
+			}
 			return
 		}
 		target := env.ReplicationTarget(args[0])
@@ -842,6 +858,7 @@ func handleAgentCommand(ctx context.Context, action string, args []string) {
 			WorkspaceDir:   cwd,
 		}
 
+		var allowInstall bool
 		// Parse flags if provided
 		for j := 1; j < len(args); j++ {
 			if args[j] == "--ticket" && j+1 < len(args) {
@@ -856,20 +873,17 @@ func handleAgentCommand(ctx context.Context, action string, args []string) {
 			} else if args[j] == "--sandbox" || args[j] == "--ephemeral" {
 				cfg.Sandbox = true
 				cfg.Ephemeral = true
+			} else if args[j] == "--yes" || args[j] == "-y" || args[j] == "--allow-install" {
+				allowInstall = true
 			}
 		}
 
-		// Auto-detect and auto-install/sandbox for OpenHands and Aider
+		// Auto-detect and sandbox fallback for OpenHands
 		if cfg.Type == agent.AgentOpenHands && !cfg.Sandbox {
 			if _, oErr := exec.LookPath("openhands"); oErr != nil {
 				fmt.Println("[+] OpenHands host binary not detected; auto-routing to hardened container sandbox...")
 				cfg.Sandbox = true
 				cfg.Ephemeral = true
-			}
-		}
-		if cfg.Type == agent.AgentAider && !cfg.Sandbox {
-			if _, aErr := exec.LookPath("aider"); aErr != nil {
-				_ = agent.EnsureAgentInstalled(ctx, cfg.Type)
 			}
 		}
 
@@ -912,7 +926,9 @@ func handleAgentCommand(ctx context.Context, action string, args []string) {
 		if cfg.Sandbox {
 			runner = agent.NewSandboxedRunner(nil, nil)
 		} else {
-			runner = agent.NewHostRunner(true)
+			hostR := agent.NewHostRunner(true)
+			hostR.AllowInstall = allowInstall
+			runner = hostR
 		}
 		summary, err := runner.Execute(ctx, cfg)
 		if err != nil {

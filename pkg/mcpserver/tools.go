@@ -805,6 +805,9 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 	// 45: Quad-IDE Cross-Language Schema & Contract Drift Tools
 	s.registerContractTools(deps)
 
+	// 47-50: Speculative Git Worktree Branching & Differential Benchmark Tools
+	s.registerStoryForkTools(deps)
+
 	// 46. dendrite_commit
 	s.RegisterTool(Tool{
 		Name:        "dendrite_commit",
