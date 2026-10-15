@@ -219,3 +219,21 @@ Dendrite strictly decouples local inference backends, recognizing **OxiLLaMa** a
 | **`ollama`** | **Local Ollama Metal**<br>Apple Silicon Metal GPU accelerated engine. | `http://127.0.0.1:11434` | `llama3.2:latest`, `hermes3:8b` | **Yes ($0.00)** |
 | **`ollama-validated`** | **JetBrains Validated Ollama**<br>JetBrains qualified models for FIM and tool-calling. | `http://127.0.0.1:11434` | `qwen2.5-coder:14b`, `llama3.2:3b` | **Yes ($0.00)** |
 | **`huggingface`** | **Hugging Face TGI / TEI**<br>Text Generation Inference & Text Embeddings Inference. | `http://tgi-node:8080`<br>`http://localhost:8082` | `deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct`<br>`BAAI/bge-large-en-v1.5` | **Yes ($0.00)** |
+
+---
+
+## Documentation Cleanliness, Taxonomy & Organization Mandate
+
+All autonomous agents and subagents must maintain repository documentation with absolute cleanliness, organization, and structural integrity:
+1. **Canonical Hierarchy & Placement**:
+   - Feature RFCs and engineering specifications belong strictly under `docs/features/` with standardized naming (`FEAT-XXX-<slug>.md`).
+   - Operational user stories and comprehensive end-to-end flows are maintained in `docs/SCENARIOS.md` and `docs/use-cases/`.
+   - Tool-specific guides (e.g. JetBrains IDE integration, Docusaurus portal, CI/CD) belong in `docs/guides/` or `docs/development/`.
+   - Architectural Decision Records belong in `docs/adr/`.
+2. **Hygiene & Anti-Sprawl Rules**:
+   - Never dump temporary analysis notes, scratch scripts, or unstructured logs into the repository root or top-level `docs/`.
+   - Keep document headers consistent using YAML frontmatter (`id`, `title`, `sidebar_position`, `tags`).
+   - Cross-reference integrity: Whenever a CLI command or MCP tool is modified, immediately update references across documentation tables, matrices, and skill manifests.
+3. **Continuous State Synchronization**:
+   - Synchronize authoritative project status directly from Plane v2 via `dendrite plane replicate` into `DEV_STATUS.md`.
+   - Keep Plane documentation pages in lockstep with repository markdown using `dendrite plane doc sync`.

@@ -8,10 +8,12 @@ import (
 	"strings"
 
 	"Dendrite/pkg/pool/dag"
+	"Dendrite/pkg/pool/switcher"
 )
 
 var defaultPoolManager = dag.NewPoolManager("")
 var defaultDAGSolver = dag.NewDAGSolver()
+var defaultSwitcher = switcher.NewDependencySwitcher()
 
 func handlePoolCommand(ctx context.Context, action string, args []string) {
 	switch action {
@@ -124,6 +126,80 @@ func handlePoolCommand(ctx context.Context, action string, args []string) {
 			fmt.Printf("    Root Nodes (Top-Level / No Dependents):        %s\n", strings.Join(res.RootNodes, ", "))
 		}
 
+	case "switch":
+		if len(args) < 2 {
+			fmt.Println("[-] Usage: dendrite pool switch <dep_name> --in <project_dir> --mode <published|branch|local|fork> [flags]")
+			return
+		}
+
+		depName := args[0]
+		req := switcher.SwitchRequest{
+			DependencyName:   depName,
+			TargetProjectDir: ".",
+			SyncIDE:          true,
+		}
+
+		for i := 1; i < len(args); i++ {
+			switch args[i] {
+			case "--in":
+				if i+1 < len(args) {
+					req.TargetProjectDir = args[i+1]
+					i++
+				}
+			case "--mode":
+				if i+1 < len(args) {
+					req.Mode = switcher.DependencyMode(args[i+1])
+					i++
+				}
+			case "--version":
+				if i+1 < len(args) {
+					req.Version = args[i+1]
+					i++
+				}
+			case "--branch":
+				if i+1 < len(args) {
+					req.BranchName = args[i+1]
+					i++
+				}
+			case "--commit":
+				if i+1 < len(args) {
+					req.CommitSHA = args[i+1]
+					i++
+				}
+			case "--local-path":
+				if i+1 < len(args) {
+					req.LocalPath = args[i+1]
+					i++
+				}
+			case "--fork-url":
+				if i+1 < len(args) {
+					req.ForkURL = args[i+1]
+					i++
+				}
+			case "--fork-branch":
+				if i+1 < len(args) {
+					req.ForkBranch = args[i+1]
+					i++
+				}
+			case "--no-sync-ide":
+				req.SyncIDE = false
+			}
+		}
+
+		result, err := defaultSwitcher.Switch(ctx, req)
+		if err != nil {
+			fmt.Printf("[-] Dependency mode switch failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("[+] Successfully switched '%s' dependency mode:\n", result.DependencyName)
+		fmt.Printf("    Target Project:     %s\n", result.TargetProject)
+		fmt.Printf("    Transition:         %s -> %s\n", result.PreviousMode, result.NewMode)
+		fmt.Printf("    Modified Files (%d): %s\n", len(result.ModifiedFiles), strings.Join(result.ModifiedFiles, ", "))
+		if result.IDEScopesUpdated {
+			fmt.Println("    JetBrains Scopes:   Synchronized (.idea/scopes/Dendrite_Local_Pool.xml)")
+		}
+
 	default:
 		printPoolUsage()
 	}
@@ -136,4 +212,7 @@ func printPoolUsage() {
 	fmt.Println("  remove <name_or_path>   Remove a registered project from the pool")
 	fmt.Println("  list [--json]           List all registered pool member projects")
 	fmt.Println("  resolve [--json]        Compute deterministic topological DAG & detect cycles")
+	fmt.Println("  switch <dep> [flags]    Switch dependency mode: published, branch, local, fork")
+	fmt.Println("                          Flags: --in <dir> --mode <m> --version <v> --branch <b>")
+	fmt.Println("                                 --local-path <p> --fork-url <u> --fork-branch <b>")
 }

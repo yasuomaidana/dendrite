@@ -91,6 +91,9 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   26. `dendrite_pool_add`: Registers project directories into `.dendrite/pool.json`.
       - *Example*: `./bin/dendrite mcp call dendrite_pool_add '{"directories":["/path/to/project"]}'`
 
+  27. `dendrite_pool_switch`: Atomically transition a dependency mode across Published, Branch, Local, or Fork with JetBrains scope sync.
+      - *Example*: `./bin/dendrite mcp call dendrite_pool_switch '{"target_project_dir":".","dependency_name":"dep-a","mode":"local","local_path":"../dep-a"}'`
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
 - `dendrite agent <search|route>`: Search and rank agents with hybrid vector/BM25 search or auto-route tasks to optimal agents with LiteLLM virtual keys.
 - `dendrite test <auto|ui>`: Synthesize table-driven tests with Testcontainers & self-healing convergence, or run Web UI browser journeys & WebSocket telemetry load tests.
@@ -131,6 +134,15 @@ Dendrite maintains an enterprise-grade multi-service container orchestration sta
 > Whenever a new CLI subcommand, MCP tool, or runtime adapter is implemented, immediately update `SKILL.md` across `.gemini/skills/` and `.agents/skills/` so subsequent agents and turns can leverage it immediately.
 
 ---
+
+
+### 5. Documentation Cleanliness & Taxonomy Mandate
+> [!IMPORTANT]
+> **Keep Documentation Clean, Structured, and Taxonomically Sound!**
+> - Feature RFCs and specifications must strictly reside in `docs/features/FEAT-XXX-*.md`.
+> - Operational workflows and end-to-end scenarios must reside in `docs/SCENARIOS.md` or `docs/use-cases/`.
+> - Never pollute the project root or top-level `docs/` with uncurated notes or loose scratch files.
+> - Ensure cross-reference links between specifications, CLI help, and skills are consistently maintained.
 
 ## Autonomous Agentic Loop: Aider Integration & Delegation
 

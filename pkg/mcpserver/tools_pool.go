@@ -6,10 +6,12 @@ import (
 	"fmt"
 
 	"Dendrite/pkg/pool/dag"
+	"Dendrite/pkg/pool/switcher"
 )
 
 var defaultMCPPoolManager = dag.NewPoolManager("")
 var defaultMCPDAGSolver = dag.NewDAGSolver()
+var defaultMCPSwitcher = switcher.NewDependencySwitcher()
 
 func (s *Server) registerPoolTools(deps Dependencies) {
 	// 26. dendrite_pool_resolve
@@ -155,6 +157,75 @@ func (s *Server) registerPoolTools(deps Dependencies) {
 			"status": "success",
 			"added":  added,
 		}, "", "  ")
+
+		return &CallToolResult{
+			Content: []ContentItem{{
+				Type: "text",
+				Text: string(data),
+			}},
+		}, nil
+	})
+
+	// 29. dendrite_pool_switch
+	s.RegisterTool(Tool{
+		Name:        "dendrite_pool_switch",
+		Description: "Atomically transition a dependency mode across Published, Branch, Local, or Fork with JetBrains scope sync",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"target_project_dir": map[string]interface{}{"type": "string", "description": "Target project directory containing manifests"},
+				"dependency_name":    map[string]interface{}{"type": "string", "description": "Name or module path of target dependency"},
+				"mode":               map[string]interface{}{"type": "string", "enum": []string{"published", "branch", "local", "fork"}, "description": "Target dependency mode"},
+				"version":            map[string]interface{}{"type": "string", "description": "Version string (required for published mode)"},
+				"branch_name":        map[string]interface{}{"type": "string", "description": "Branch name (for branch mode)"},
+				"commit_sha":         map[string]interface{}{"type": "string", "description": "Commit SHA (optional pin for branch mode)"},
+				"local_path":         map[string]interface{}{"type": "string", "description": "Relative or absolute filesystem path (required for local mode)"},
+				"fork_url":           map[string]interface{}{"type": "string", "description": "Remote git fork URL (required for fork mode)"},
+				"fork_branch":        map[string]interface{}{"type": "string", "description": "Remote branch on fork (optional for fork mode)"},
+				"sync_ide":           map[string]interface{}{"type": "boolean", "description": "Whether to synchronize JetBrains IDE scopes (.idea/scopes)"},
+			},
+			"required": []interface{}{"target_project_dir", "dependency_name", "mode"},
+		},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		targetDir, _ := args["target_project_dir"].(string)
+		depName, _ := args["dependency_name"].(string)
+		modeStr, _ := args["mode"].(string)
+		version, _ := args["version"].(string)
+		branchName, _ := args["branch_name"].(string)
+		commitSHA, _ := args["commit_sha"].(string)
+		localPath, _ := args["local_path"].(string)
+		forkURL, _ := args["fork_url"].(string)
+		forkBranch, _ := args["fork_branch"].(string)
+		syncIDE, _ := args["sync_ide"].(bool)
+
+		req := switcher.SwitchRequest{
+			TargetProjectDir: targetDir,
+			DependencyName:   depName,
+			Mode:             switcher.DependencyMode(modeStr),
+			Version:          version,
+			BranchName:       branchName,
+			CommitSHA:        commitSHA,
+			LocalPath:        localPath,
+			ForkURL:          forkURL,
+			ForkBranch:       forkBranch,
+			SyncIDE:          syncIDE,
+		}
+
+		result, err := defaultMCPSwitcher.Switch(ctx, req)
+		if err != nil {
+			return &CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: fmt.Sprintf("[-] Dependency mode switch failed: %v", err),
+				}},
+				IsError: true,
+			}, nil
+		}
+
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("marshaling switch result: %w", err)
+		}
 
 		return &CallToolResult{
 			Content: []ContentItem{{

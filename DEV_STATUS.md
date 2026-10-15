@@ -8,9 +8,9 @@ This document maintains the real-time development status, milestones, and active
 ## Current Status Overview
 
 - **Active Milestone**: Milestone 17 — Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)
-- **Current Focus**: `DEN-052: Multi-Mode Dependency Switcher: Published, Branch, Local Lockstep & Remote Fork (`pkg/pool/switcher`, `pkg/jetbrains`)`
+- **Current Focus**: `DEN-053: Mid-Flight Project Splitter & Mandatory Interactive Target Directory Gate (`pkg/pool/split`, `pkg/ui/modal`)`
 - **Last Updated**: 2026-10-14
-- **Overall Progress**: 54 / 99 Tickets Completed (54.5%)
+- **Overall Progress**: 55 / 99 Tickets Completed (55.6%)
 
 ---
 
