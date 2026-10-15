@@ -808,6 +808,8 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 
 	// 47-50: Speculative Git Worktree Branching & Differential Benchmark Tools
 	s.registerStoryForkTools(deps)
+	// Ticket-Milestone DAG Linker, Smart Prioritization & Plane Gantt Tools
+	s.registerPlaneDAGTools(deps)
 
 	// 46. dendrite_commit
 	s.RegisterTool(Tool{

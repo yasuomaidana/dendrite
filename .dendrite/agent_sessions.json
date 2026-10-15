@@ -51,5 +51,18 @@
       "Automated change via agent (Agent: agy)"
     ],
     "status": "completed"
+  },
+  {
+    "session_id": "sess-host-1792043861952751000",
+    "agent_type": "agy",
+    "start_time": "2026-10-14T23:57:41.952751-06:00",
+    "end_time": "2026-10-15T00:09:40.336841-06:00",
+    "duration": 718389046750,
+    "tokens_consumed": 1500,
+    "estimated_cost_usd": 0.003,
+    "commits_generated": [
+      "Automated change via agent (Agent: agy)"
+    ],
+    "status": "completed"
   }
 ]

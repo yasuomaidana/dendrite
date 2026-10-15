@@ -11,12 +11,14 @@ import (
 	"time"
 
 	"Dendrite/pkg/tracker"
+	"Dendrite/pkg/tracker/dag"
 )
 
 var (
-	devTicketLineRegex  = regexp.MustCompile(`^-\s+\[([ xX])\]\s+\*\*([A-Za-z0-9-]+)\*\*:\s+(.*?)(?:\s+\(` + "`" + `([^` + "`" + `]+)` + "`" + `\))?(?:\s+\*\(([A-Z_ ]+)\)\*)?$`)
-	milestoneHdrRegex   = regexp.MustCompile(`^###\s+(Milestone\s+\d+:.*?)(?:\s+\(([^)]+)\))?$`)
-	ticketIdPrefixRegex = regexp.MustCompile(`\[?(DEN-\d+)\]?`)
+	devTicketLineRegex        = regexp.MustCompile(`^-\s+\[([ xX])\]\s+\*\*([A-Za-z0-9-]+)\*\*:\s+(.*?)(?:\s+\(` + "`" + `([^` + "`" + `]+)` + "`" + `\))?(?:\s+\*\(([A-Z_ ]+)\)\*)?$`)
+	milestoneHdrRegex         = regexp.MustCompile(`^###\s+(Milestone\s+\d+:.*?)(?:\s+\(([^)]+)\))?$`)
+	ticketIdPrefixRegex       = regexp.MustCompile(`\[?(DEN-\d+)\]?`)
+	complexityTableRowRegex   = regexp.MustCompile(`\|\s*(?:\*\*\d+\*\*|\d+)\s*\|\s*\*?\*?([A-Za-z0-9-]+)\*?\*?\s*\|\s*([^|]+)\|\s*([^|]+)\|\s*(\d+)\s*SP\s*\|\s*([0-9.]+)\s*/\s*10`)
 )
 
 // ParsedDevTicket encapsulates all extracted metadata for a ticket from DEV_STATUS.md.
@@ -62,6 +64,12 @@ func ParseDevStatus(content string) (*DevStatusData, error) {
 		Milestones: make([]string, 0),
 	}
 
+	tableSpecs := make(map[string]struct {
+		featID     string
+		sp         string
+		complexity string
+	})
+
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	currentMilestone := "General"
 	seenMilestones := make(map[string]bool)
@@ -79,6 +87,19 @@ func ParseDevStatus(content string) (*DevStatusData, error) {
 		}
 		if strings.HasPrefix(line, "- **Last Updated**:") {
 			data.LastUpdated = strings.TrimSpace(strings.TrimPrefix(line, "- **Last Updated**:"))
+			continue
+		}
+
+		if tblMatches := complexityTableRowRegex.FindStringSubmatch(line); len(tblMatches) > 5 {
+			tID := tblMatches[1]
+			featID := strings.TrimSpace(tblMatches[3])
+			spStr := strings.TrimSpace(tblMatches[4])
+			scoreStr := strings.TrimSpace(tblMatches[5])
+			tableSpecs[tID] = struct {
+				featID     string
+				sp         string
+				complexity string
+			}{featID, spStr, scoreStr}
 			continue
 		}
 
@@ -122,6 +143,15 @@ func ParseDevStatus(content string) (*DevStatusData, error) {
 				Status:        st,
 			}
 			data.Tickets = append(data.Tickets, ticket)
+		}
+	}
+
+	for i := range data.Tickets {
+		t := &data.Tickets[i]
+		if ts, ok := tableSpecs[t.ID]; ok {
+			t.FeatureID = ts.featID
+			t.StoryPoints = ts.sp
+			t.ComplexityScore = ts.complexity
 		}
 	}
 
@@ -199,7 +229,7 @@ func parseDetailedSpecs(content string, data *DevStatusData) {
 	}
 }
 
-// PushStatusToPlane moves all DEV_STATUS content to Plane service.
+// PushStatusToPlane moves all DEV_STATUS content to Plane service, generating Gantt dates and blocker relations.
 func PushStatusToPlane(ctx context.Context, client *Client, mdContent string) (*StatusReplicationReport, error) {
 	start := time.Now()
 	data, err := ParseDevStatus(mdContent)
@@ -228,9 +258,94 @@ func PushStatusToPlane(ctx context.Context, client *Client, mdContent string) (*
 		moduleMap[mod.Name] = mod.ID
 	}
 
+	// Build DAG graph and generate Gantt schedule
+	graph := dag.NewGraph()
+	for _, t := range data.Tickets {
+		sp := 5
+		if t.StoryPoints != "" {
+			var parsedSP int
+			if n, _ := fmt.Sscanf(t.StoryPoints, "%d", &parsedSP); n > 0 {
+				sp = parsedSP
+			}
+		}
+		var comp float64 = 5.0
+		if t.ComplexityScore != "" {
+			var parsedComp float64
+			if n, _ := fmt.Sscanf(t.ComplexityScore, "%f", &parsedComp); n > 0 {
+				comp = parsedComp
+			}
+		}
+
+		prio := dag.PriorityMedium
+		switch {
+		case comp >= 9.0:
+			prio = dag.PriorityUrgent
+		case comp >= 7.0:
+			prio = dag.PriorityHigh
+		case comp >= 4.0:
+			prio = dag.PriorityMedium
+		default:
+			prio = dag.PriorityLow
+		}
+		if strings.Contains(data.ActiveMilestone, t.Milestone) && prio == dag.PriorityMedium {
+			prio = dag.PriorityHigh
+		}
+
+		graph.AddNode(&dag.Node{
+			ID:             t.ID,
+			SequenceID:     t.Number,
+			Title:          t.Title,
+			Milestone:      t.Milestone,
+			Story:          t.FeatureID,
+			Status:         t.Status,
+			Priority:       prio,
+			EstimatePoints: sp,
+			Complexity:     comp,
+		})
+	}
+
+	// Sequential dependency chaining within each milestone
+	milestoneTicketMap := make(map[string][]string)
+	for _, t := range data.Tickets {
+		milestoneTicketMap[t.Milestone] = append(milestoneTicketMap[t.Milestone], t.ID)
+	}
+	for _, tList := range milestoneTicketMap {
+		for i := 1; i < len(tList); i++ {
+			_ = graph.AddEdge(tList[i-1], tList[i])
+		}
+	}
+	// Cross-milestone sequential dependency chaining
+	for mIdx := 1; mIdx < len(data.Milestones); mIdx++ {
+		prevMilestone := data.Milestones[mIdx-1]
+		currMilestone := data.Milestones[mIdx]
+		prevList := milestoneTicketMap[prevMilestone]
+		currList := milestoneTicketMap[currMilestone]
+		if len(prevList) > 0 && len(currList) > 0 {
+			_ = graph.AddEdge(prevList[len(prevList)-1], currList[0])
+		}
+	}
+
+	// Generate complete Gantt schedule with non-overlapping timeline bars
+	ganttPlan, _ := graph.GenerateGanttPlan(time.Now().Truncate(24 * time.Hour))
+
 	for _, mName := range data.Milestones {
-		if _, exists := moduleMap[mName]; !exists {
-			newMod, err := client.CreateModule(ctx, mName, "in-progress", fmt.Sprintf("Milestone tracking for %s", mName))
+		var mStart, mTarget *string
+		if ganttPlan != nil {
+			if ms, ok := ganttPlan.Milestones[mName]; ok {
+				mStart = &ms.StartDate
+				mTarget = &ms.TargetDate
+			}
+		}
+
+		if existingID, exists := moduleMap[mName]; exists {
+			if mStart != nil && mTarget != nil {
+				_, _ = client.UpdateModule(ctx, existingID, UpdateModuleRequest{
+					StartDate:  mStart,
+					TargetDate: mTarget,
+				})
+			}
+		} else {
+			newMod, err := client.CreateModuleWithDates(ctx, mName, "in-progress", fmt.Sprintf("Milestone tracking for %s", mName), mStart, mTarget)
 			if err == nil && newMod != nil {
 				moduleMap[mName] = newMod.ID
 			}
@@ -250,6 +365,7 @@ func PushStatusToPlane(ctx context.Context, client *Client, mdContent string) (*
 		}
 	}
 
+	ticketUUIDLookup := make(map[string]string)
 	moduleAssignments := make(map[string][]string)
 	report := &StatusReplicationReport{
 		TotalTickets: len(data.Tickets),
@@ -275,14 +391,43 @@ func PushStatusToPlane(ctx context.Context, client *Client, mdContent string) (*
 		formattedName := fmt.Sprintf("[%s] %s", t.ID, t.Title)
 		var activeIssueID string
 
+		var startStr, targetStr *string
+		var priority string
+		var estimate *int
+		if ganttPlan != nil {
+			if node := graph.GetNode(t.ID); node != nil {
+				startStr = &node.StartDate
+				targetStr = &node.TargetDate
+				priority = node.Priority
+				est := node.EstimatePoints
+				estimate = &est
+			}
+		}
+
 		if existing, ok := planeIssueLookup[t.ID]; ok {
 			activeIssueID = existing.ID
-			_, err = client.UpdatePlaneIssue(ctx, existing.ID, formattedName, descHTML, targetStateID, nil)
+			_, err = client.UpdatePlaneIssueWithDetails(ctx, existing.ID, UpdateIssueRequest{
+				Name:            formattedName,
+				DescriptionHTML: descHTML,
+				StateID:         targetStateID,
+				Priority:        priority,
+				StartDate:       startStr,
+				TargetDate:      targetStr,
+				EstimatePoint:   estimate,
+			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to update issue %s in plane: %w", t.ID, err)
 			}
 		} else {
-			created, err := client.CreatePlaneIssue(ctx, formattedName, descHTML, targetStateID, nil)
+			created, err := client.CreatePlaneIssueWithDetails(ctx, CreateIssueRequest{
+				Name:            formattedName,
+				DescriptionHTML: descHTML,
+				StateID:         targetStateID,
+				Priority:        priority,
+				StartDate:       startStr,
+				TargetDate:      targetStr,
+				EstimatePoint:   estimate,
+			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to create issue %s in plane: %w", t.ID, err)
 			}
@@ -291,8 +436,31 @@ func PushStatusToPlane(ctx context.Context, client *Client, mdContent string) (*
 			}
 		}
 
+		if activeIssueID != "" {
+			ticketUUIDLookup[t.ID] = activeIssueID
+		}
+
 		if modID, ok := moduleMap[t.Milestone]; ok && activeIssueID != "" {
 			moduleAssignments[modID] = append(moduleAssignments[modID], activeIssueID)
+		}
+	}
+
+	// Link blocker relations in Plane for Gantt diagram arrows
+	for _, t := range data.Tickets {
+		if node := graph.GetNode(t.ID); node != nil {
+			blockedUUID := ticketUUIDLookup[t.ID]
+			if blockedUUID != "" && len(node.BlockedBy) > 0 {
+				var blockerUUIDs []string
+				for _, bID := range node.BlockedBy {
+					if u, ok := ticketUUIDLookup[bID]; ok && u != "" {
+						blockerUUIDs = append(blockerUUIDs, u)
+					}
+				}
+				if len(blockerUUIDs) > 0 {
+					_ = client.AddIssueRelation(ctx, blockedUUID, "blocked_by", blockerUUIDs)
+					report.RelationsCount += len(blockerUUIDs)
+				}
+			}
 		}
 	}
 
@@ -500,115 +668,68 @@ func renderDevStatusMarkdown(items []ticketItem, report *StatusReplicationReport
 		milestone string
 		ticketIDs []string
 	}{
-		{"Milestone 13: Remote SSH Hardware Discovery & Automated Service Placement Router (FEAT-017)", []string{"DEN-032"}},
-		{"Milestone 15: Azure Cloud-Burst Infrastructure & Managed Storage (FEAT-019)", []string{"DEN-034"}},
-		{"Milestone 21: Model Context Protocol (MCP) Server & Tool Registry Bridge (FEAT-025)", []string{"DEN-040"}},
-		{"Milestone 22: Distributed Codebase Ecosystem, Modular REA & Cross-Project Interoperability Coordinator (FEAT-026)", []string{"DEN-041", "DEN-042", "DEN-043", "DEN-044", "DEN-045", "DEN-046"}},
-		{"Milestone 16: Pluggable Multi-Provider Inference Engines (FEAT-020)", []string{"DEN-035"}},
-		{"Milestone 17: Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)", []string{"DEN-036"}},
-		{"Milestone 20: Open-Source REA Showcase Pipeline & Cleanroom Parity Verification Suite (FEAT-024)", []string{"DEN-039"}},
-		{"Milestone 18: Agent Search, Capability Discovery & Semantic Routing Engine (FEAT-022)", []string{"DEN-037"}},
-		{"Milestone 19: Developer Test Automation, Self-Healing Harness & UI Integration Suite (FEAT-023)", []string{"DEN-038"}},
-		{"Milestone 11: Pluggable Mesh Networking & Zero-Trust Connectivity (FEAT-015)", []string{"DEN-030"}},
-		{"Milestone 14: Hybrid Telemetry Architecture & Prometheus/Grafana Observability Suite (FEAT-018)", []string{"DEN-033"}},
-		{"Milestone 12: Open-Source Project Management & Design Tooling (FEAT-016)", []string{"DEN-031"}},
-		{"Milestone 10: IDE Intelligence & JetBrains MCP Bridge (FEAT-014)", []string{"DEN-028"}},
-		{"Milestone 9: Web UI & Dashboard Engine (FEAT-009)", []string{"DEN-014", "DEN-015"}},
-		{"Milestone 8: Multi-Project Workspaces & Pluggable Trackers (FEAT-005, FEAT-008)", []string{"DEN-012", "DEN-013", "DEN-027"}},
-		{"Milestone 7: Polyglot Translation & Documentation Reflection (FEAT-011, FEAT-012)", []string{"DEN-020", "DEN-021", "DEN-022", "DEN-023"}},
-		{"Milestone 6: AI-Assisted Token Optimization & Cleanroom Import (FEAT-010)", []string{"DEN-018", "DEN-019"}},
-		{"Milestone 5: Reverse Engineering & Sandboxed Intelligence (FEAT-003, FEAT-004, FEAT-006)", []string{"DEN-009", "DEN-010", "DEN-011"}},
-		{"Milestone 4: Autonomous Coding Agent Harness & Tool Orchestration (FEAT-013)", []string{"DEN-024", "DEN-025", "DEN-026"}},
-		{"Milestone 3: Token Budget Governance & Fallback Gateway (FEAT-002)", []string{"DEN-007", "DEN-008"}},
-		{"Milestone 2: Multi-Node Topology & Cloud-Burst Infrastructure (FEAT-001, FEAT-007)", []string{"DEN-005", "DEN-006", "DEN-016", "DEN-017", "DEN-029"}},
-		{"Milestone 1: Core Foundation, Developer Tools & Ollama Engine", []string{"DEN-001", "DEN-002", "DEN-003", "DEN-004"}},
+		{
+			milestone: "Milestone 16: Pluggable Multi-Provider Inference Engines (FEAT-020)",
+			ticketIDs: []string{"DEN-035"},
+		},
+		{
+			milestone: "Milestone 17: Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)",
+			ticketIDs: []string{"DEN-036"},
+		},
+		{
+			milestone: "Milestone 18: Agent Search, Capability Discovery & Semantic Routing Engine (FEAT-022)",
+			ticketIDs: []string{"DEN-037"},
+		},
+		{
+			milestone: "Milestone 19: Developer Test Automation, Self-Healing Harness & UI Integration Suite (FEAT-023)",
+			ticketIDs: []string{"DEN-038"},
+		},
+		{
+			milestone: "Milestone 20: Open-Source REA Showcase Pipeline & Cleanroom Parity Verification Suite (FEAT-024)",
+			ticketIDs: []string{"DEN-039"},
+		},
+		{
+			milestone: "Milestone 21: Model Context Protocol (MCP) Server & Tool Registry Bridge (FEAT-025)",
+			ticketIDs: []string{"DEN-040"},
+		},
+		{
+			milestone: "Milestone 22: Distributed Codebase Ecosystem, Modular REA & Cross-Project Interoperability Coordinator (FEAT-026)",
+			ticketIDs: []string{"DEN-041", "DEN-042", "DEN-043", "DEN-044", "DEN-045", "DEN-046"},
+		},
 	}
 
 	for _, m := range milestoneDefinitions {
 		sb.WriteString(fmt.Sprintf("### %s\n\n", m.milestone))
-		for _, tid := range m.ticketIDs {
-			if it, ok := itemLookup[tid]; ok {
+		for _, tID := range m.ticketIDs {
+			if it, ok := itemLookup[tID]; ok {
 				check := " "
-				suffix := ""
 				if it.status == tracker.StatusDone {
 					check = "x"
-				} else if it.status == tracker.StatusInProgress {
-					suffix = " *(IN PROGRESS)*"
 				}
-				pkgPart := ""
-				if it.targetPkg != "" && !strings.Contains(it.title, it.targetPkg) && !strings.HasSuffix(strings.TrimSpace(it.title), ")") {
-					pkgPart = fmt.Sprintf(" (`%s`)", it.targetPkg)
+				suffix := ""
+				if it.targetPkg != "" {
+					suffix = fmt.Sprintf(" (`%s`)", it.targetPkg)
 				}
-				sb.WriteString(fmt.Sprintf("- [%s] **%s**: %s%s%s\n", check, it.id, it.title, pkgPart, suffix))
+				sb.WriteString(fmt.Sprintf("- [%s] **%s**: %s%s\n", check, it.id, it.title, suffix))
 			}
 		}
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString("---\n\n")
-	sb.WriteString("## Detailed Specifications for Active & Queued Tickets\n\n")
-	sb.WriteString("### Ticket `DEN-036`: Performance Testing, Inference Benchmarking & Gateway Load Harness (k6)\n\n")
-	sb.WriteString("- **Target Package**: `pkg/perf`, `cmd/dendrite`, `tests/perf`\n")
-	sb.WriteString("- **Governing Specs**: [`docs/features/FEAT-021-performance-testing-k6-benchmark.md`](docs/features/FEAT-021-performance-testing-k6-benchmark.md)\n")
-	sb.WriteString("- **Goal**: Integrate k6 runner wrapper and scenario definitions to benchmark Time-To-First-Token (TTFT), Tokens-Per-Second (TPS), concurrent agent load, Apple Silicon thermal correlation, and LiteLLM cascade failovers under injected faults.\n")
-	sb.WriteString("- **Acceptance Criteria**:\n")
-	sb.WriteString("    - [ ] Implement `k6` benchmark scenario runner with TTFT/TPS metrics parsing.\n")
-	sb.WriteString("    - [ ] Fault injection harness simulating HTTP 429 and HTTP 503 failover triggers.\n")
-	sb.WriteString("    - [ ] CLI subcommand `dendrite bench <inference|gateway|matrix>`.\n")
-	sb.WriteString("    - [ ] Statement coverage $\\ge 85\\%$.\n\n")
-
-	sb.WriteString("### Ticket `DEN-039`: Open-Source Reverse Engineering Showcases & Cleanroom Parity Verification Suite\n\n")
-	sb.WriteString("- **Target Package**: `pkg/rea`, `pkg/ai/import`, `tests/showcase`, `cmd/dendrite`\n")
-	sb.WriteString("- **Governing Specs**: [`docs/features/FEAT-024-open-source-showcases.md`](docs/features/FEAT-024-open-source-showcases.md)\n")
-	sb.WriteString("- **Goal**: Implement automated end-to-end showcase runners and cleanroom verification suites using 5 open-source target archetypes.\n")
-	sb.WriteString("- **Acceptance Criteria**:\n")
-	sb.WriteString("    - [ ] CLI subcommand `dendrite rea showcase <aegis|dxball|ctf|th04|mattermost|all>` executing automated analysis and verification loops.\n")
-	sb.WriteString("    - [ ] Bounded evidence bundling conforming to $< 4,000$ tokens per showcase probe.\n")
-	sb.WriteString("    - [ ] Cleanroom synthesis pipeline producing test-verified Go/Rust implementations and ADR documents with YAML frontmatter.\n")
-	sb.WriteString("    - [ ] Table-driven integration and property test suite achieving $\\ge 85\\%$ statement coverage.\n\n")
-
-	sb.WriteString("### Ticket `DEN-041`: Distributed Codebase Multi-Source Ecosystem & Priority Resolver\n\n")
-	sb.WriteString("- **Target Package**: `pkg/distcodebase`, `cmd/dendrite`\n")
-	sb.WriteString("- **Governing Specs**: [`docs/features/FEAT-026-distributed-codebase-ecosystem.md`](docs/features/FEAT-026-distributed-codebase-ecosystem.md)\n")
-	sb.WriteString("- **Goal**: Implement multi-source registry prioritizing user/organization-owned repositories (P1), curated high-performance OSS engines (P2: wgpu, turso, diesel, diesel-cte-ext), and public registries (P3), forced modular decomposition, local LLM interoperability coordinator, and parallel/satellite project spawner with Plane v2 integration.\n")
-	sb.WriteString("- **Acceptance Criteria**:\n")
-	sb.WriteString("    - [x] Multi-source priority resolver prioritizing owned repos (P1) > curated OSS (P2) > public registries (P3).\n")
-	sb.WriteString("    - [x] Pre-configured libraries: `wgpu`, `yasuomaidana` repositories, `turso`, `diesel`, `diesel-cte-ext`.\n")
-	sb.WriteString("    - [x] Forced modular decomposition engine for REA evidence bundles and legacy systems.\n")
-	sb.WriteString("    - [x] Cross-project interoperability coordinator with `TODO(interop:...)` fallbacks and automatic reconciliation.\n")
-	sb.WriteString("    - [x] Parallel repository and Plane v2 satellite project spawner.\n")
-	sb.WriteString("    - [x] Native MCP tools (`dendrite_dist_sources`, `dendrite_dist_decompose`, `dendrite_dist_interop`, `dendrite_dist_spawn`) and CLI subcommands.\n")
-	sb.WriteString("    - [x] Statement test coverage $\\ge 85\\%$ (achieved 89.2%).\n\n")
-
 	return sb.String()
-}
-
-func extractTicketNumber(id string) int {
-	clean := strings.TrimPrefix(id, "DEN-")
-	n, _ := strconv.Atoi(clean)
-	return n
-}
-
-func extractTargetPackage(text string) string {
-	pkgRegex := regexp.MustCompile(`(?:Target Package:?\s*|` + "`" + `)(pkg/[a-zA-Z0-9_/]+|infra/[a-zA-Z0-9_/]+|stacks/[a-zA-Z0-9_./]+|cmd/[a-zA-Z0-9_/]+)`)
-	m := pkgRegex.FindStringSubmatch(text)
-	if len(m) > 1 {
-		return m[1]
-	}
-	return ""
 }
 
 func buildTicketDescriptionHTML(t ParsedDevTicket) string {
 	var sb strings.Builder
 	sb.WriteString("<div>")
-	if t.TargetPackage != "" {
-		sb.WriteString(fmt.Sprintf("<p><strong>Target Package:</strong> <code>%s</code></p>", t.TargetPackage))
-	}
 	if t.Milestone != "" {
 		sb.WriteString(fmt.Sprintf("<p><strong>Milestone:</strong> %s</p>", t.Milestone))
 	}
+	if t.TargetPackage != "" {
+		sb.WriteString(fmt.Sprintf("<p><strong>Target Package:</strong> <code>%s</code></p>", t.TargetPackage))
+	}
 	if t.GoverningSpecs != "" {
-		sb.WriteString(fmt.Sprintf("<p><strong>Governing Specs:</strong> %s</p>", t.GoverningSpecs))
+		sb.WriteString(fmt.Sprintf("<p><strong>Governing Specs:</strong> <code>%s</code></p>", t.GoverningSpecs))
 	}
 	if t.Goal != "" {
 		sb.WriteString(fmt.Sprintf("<p><strong>Goal:</strong> %s</p>", t.Goal))
@@ -616,7 +737,9 @@ func buildTicketDescriptionHTML(t ParsedDevTicket) string {
 	if len(t.AcceptanceCriteria) > 0 {
 		sb.WriteString("<p><strong>Acceptance Criteria:</strong></p><ul>")
 		for _, ac := range t.AcceptanceCriteria {
-			sb.WriteString(fmt.Sprintf("<li>%s</li>", ac))
+			text := strings.TrimPrefix(ac, "- [ ]")
+			text = strings.TrimPrefix(text, "- [x]")
+			sb.WriteString(fmt.Sprintf("<li>%s</li>", strings.TrimSpace(text)))
 		}
 		sb.WriteString("</ul>")
 	}
@@ -634,11 +757,41 @@ func buildDevStatusPageHTML(data *DevStatusData) string {
 	sb.WriteString(fmt.Sprintf("<li><strong>Current Focus:</strong> %s</li>", data.CurrentFocus))
 	sb.WriteString(fmt.Sprintf("<li><strong>Last Updated:</strong> %s</li>", data.LastUpdated))
 	sb.WriteString("</ul>")
-
-	sb.WriteString("<h2>Milestones & Execution Pipeline</h2><ul>")
+	sb.WriteString("<hr/>")
+	sb.WriteString("<h2>Milestones & Execution Pipeline</h2>")
 	for _, m := range data.Milestones {
-		sb.WriteString(fmt.Sprintf("<li><strong>%s</strong></li>", m))
+		sb.WriteString(fmt.Sprintf("<h3>%s</h3><ul>", m))
+		for _, t := range data.Tickets {
+			if t.Milestone == m {
+				stBadge := "[TODO]"
+				if t.Status == tracker.StatusDone {
+					stBadge = "[DONE]"
+				} else if t.Status == tracker.StatusInProgress {
+					stBadge = "[IN PROGRESS]"
+				}
+				sb.WriteString(fmt.Sprintf("<li><strong>%s</strong> %s: %s</li>", stBadge, t.ID, t.Title))
+			}
+		}
+		sb.WriteString("</ul>")
 	}
-	sb.WriteString("</ul>")
 	return sb.String()
+}
+
+func extractTargetPackage(content string) string {
+	pkgRegex := regexp.MustCompile(`(?:Target Package|package):\s*` + "`?" + `([^` + "`" + `\n<]+)`)
+	m := pkgRegex.FindStringSubmatch(content)
+	if len(m) > 1 {
+		return strings.TrimSpace(m[1])
+	}
+	return ""
+}
+
+func extractTicketNumber(id string) int {
+	numRegex := regexp.MustCompile(`\d+`)
+	m := numRegex.FindString(id)
+	if m != "" {
+		n, _ := strconv.Atoi(m)
+		return n
+	}
+	return 0
 }

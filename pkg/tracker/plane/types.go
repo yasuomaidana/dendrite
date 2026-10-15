@@ -67,6 +67,9 @@ type PlaneIssue struct {
 	StateDetail         PlaneStateDetail `json:"state_detail"`
 	EstimatePoint       *int             `json:"estimate_point,omitempty"`
 	Priority            string           `json:"priority,omitempty"`
+	StartDate           *string          `json:"start_date,omitempty"`
+	TargetDate          *string          `json:"target_date,omitempty"`
+	Parent              *string          `json:"parent,omitempty"`
 	CreatedAt           time.Time        `json:"created_at"`
 	UpdatedAt           time.Time        `json:"updated_at"`
 	CompletedAt         *time.Time       `json:"completed_at,omitempty"`
@@ -75,13 +78,78 @@ type PlaneIssue struct {
 
 // PlaneModule represents a milestone / module in Plane.
 type PlaneModule struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Status      string    `json:"status"` // "backlog", "planned", "in-progress", "paused", "completed", "cancelled"
-	SortOrder   float64   `json:"sort_order"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	Status          string    `json:"status"` // "backlog", "planned", "in-progress", "paused", "completed", "cancelled"
+	StartDate       *string   `json:"start_date,omitempty"`
+	TargetDate      *string   `json:"target_date,omitempty"`
+	TotalIssues     int       `json:"total_issues,omitempty"`
+	CompletedIssues int       `json:"completed_issues,omitempty"`
+	SortOrder       float64   `json:"sort_order"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// IssueRelation represents an issue relationship (blocking, blocked_by, duplicate, relates_to).
+type IssueRelation struct {
+	ID           string `json:"id"`
+	ProjectID    string `json:"project_id"`
+	SequenceID   int    `json:"sequence_id"`
+	RelationType string `json:"relation_type"`
+	Name         string `json:"name"`
+}
+
+// IssueRelationsResponse holds categorized relations for an issue.
+type IssueRelationsResponse struct {
+	Blocking  []IssueRelation `json:"blocking"`
+	BlockedBy []IssueRelation `json:"blocked_by"`
+	Duplicate []IssueRelation `json:"duplicate"`
+	RelatesTo []IssueRelation `json:"relates_to"`
+}
+
+// CreateIssueRequest defines inputs for creating an issue with full metadata.
+type CreateIssueRequest struct {
+	Name            string   `json:"name"`
+	DescriptionHTML string   `json:"description_html,omitempty"`
+	StateID         string   `json:"state,omitempty"`
+	EstimatePoint   *int     `json:"estimate_point,omitempty"`
+	Priority        string   `json:"priority,omitempty"`
+	StartDate       *string  `json:"start_date,omitempty"`
+	TargetDate      *string  `json:"target_date,omitempty"`
+	Parent          *string  `json:"parent,omitempty"`
+	ModuleID        string   `json:"module_id,omitempty"`
+	BlockedBy       []string `json:"blocked_by,omitempty"`
+}
+
+// UpdateIssueRequest defines inputs for modifying an issue in Plane.
+type UpdateIssueRequest struct {
+	Name            string  `json:"name,omitempty"`
+	DescriptionHTML string  `json:"description_html,omitempty"`
+	StateID         string  `json:"state,omitempty"`
+	EstimatePoint   *int    `json:"estimate_point,omitempty"`
+	Priority        string  `json:"priority,omitempty"`
+	StartDate       *string `json:"start_date,omitempty"`
+	TargetDate      *string `json:"target_date,omitempty"`
+	Parent          *string `json:"parent,omitempty"`
+}
+
+// CreateModuleRequest defines inputs for creating a module/milestone with date boundaries.
+type CreateModuleRequest struct {
+	Name        string  `json:"name"`
+	Status      string  `json:"status,omitempty"`
+	Description string  `json:"description,omitempty"`
+	StartDate   *string `json:"start_date,omitempty"`
+	TargetDate  *string `json:"target_date,omitempty"`
+}
+
+// UpdateModuleRequest defines inputs for patching a module/milestone.
+type UpdateModuleRequest struct {
+	Name        string  `json:"name,omitempty"`
+	Status      string  `json:"status,omitempty"`
+	Description string  `json:"description,omitempty"`
+	StartDate   *string `json:"start_date,omitempty"`
+	TargetDate  *string `json:"target_date,omitempty"`
 }
 
 // PlanePage represents a document / page in Plane.
@@ -127,5 +195,6 @@ type StatusReplicationReport struct {
 	CurrentFocus      string        `json:"current_focus"`
 	ModulesCount      int           `json:"modules_count"`
 	PagesCount        int           `json:"pages_count"`
+	RelationsCount    int           `json:"relations_count,omitempty"`
 	Duration          time.Duration `json:"duration"`
 }

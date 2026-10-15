@@ -565,3 +565,183 @@ func TestClient_ExtendedErrors(t *testing.T) {
 		t.Errorf("expected ErrPageNotFound on ArchivePage")
 	}
 }
+
+func TestClient_GanttAndRelationOperations(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/issues/iss-1/issue-relation/"):
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`[{"id": "rel-1", "relation_type": "blocked_by"}]`))
+
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/issues/iss-1/issue-relation/"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"blocking": [], "blocked_by": [{"id": "iss-2", "relation_type": "blocked_by"}], "duplicate": [], "relates_to": []}`))
+
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/issues/iss-1/remove-relation/"):
+			w.WriteHeader(http.StatusNoContent)
+
+		case r.Method == http.MethodPatch && strings.Contains(r.URL.Path, "/modules/mod-1/"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id": "mod-1", "name": "Patched Module", "start_date": "2026-10-15"}`))
+
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/modules/mod-1/module-issues/"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"results": [{"id": "iss-1", "name": "Module Issue 1"}]}`))
+
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/modules/"):
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id": "mod-new", "name": "Gantt Module", "start_date": "2026-10-15", "target_date": "2026-10-25"}`))
+
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/issues/"):
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id": "iss-rich", "name": "Rich Issue", "priority": "high", "start_date": "2026-10-15"}`))
+
+		case r.Method == http.MethodPatch && strings.Contains(r.URL.Path, "/issues/iss-1/"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id": "iss-1", "name": "Patched Rich", "priority": "urgent"}`))
+
+		default:
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Config{
+		BaseURL:       server.URL,
+		WorkspaceSlug: "ws",
+		ProjectID:     "proj",
+		DirectToken:   "sec-key",
+	}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+
+	// 1. CreatePlaneIssueWithDetails
+	sDate := "2026-10-15"
+	tDate := "2026-10-20"
+	est := 5
+	prio := "high"
+	iss, err := client.CreatePlaneIssueWithDetails(ctx, CreateIssueRequest{
+		Name:          "Rich Issue",
+		Priority:      prio,
+		StartDate:     &sDate,
+		TargetDate:    &tDate,
+		EstimatePoint: &est,
+		ModuleID:      "mod-1",
+		BlockedBy:     []string{"iss-0"},
+	})
+	if err != nil || iss.ID != "iss-rich" {
+		t.Fatalf("CreatePlaneIssueWithDetails failed: %v", err)
+	}
+
+	// 2. UpdatePlaneIssueWithDetails
+	prioUrgent := "urgent"
+	updatedIss, err := client.UpdatePlaneIssueWithDetails(ctx, "iss-1", UpdateIssueRequest{
+		Priority: prioUrgent,
+	})
+	if err != nil || updatedIss.Priority != "urgent" {
+		t.Fatalf("UpdatePlaneIssueWithDetails failed: %v", err)
+	}
+
+	// 3. CreateModuleWithDates & UpdateModule
+	mod, err := client.CreateModuleWithDates(ctx, "Gantt Module", "in-progress", "desc", &sDate, &tDate)
+	if err != nil || mod.ID != "mod-new" {
+		t.Fatalf("CreateModuleWithDates failed: %v", err)
+	}
+	upMod, err := client.UpdateModule(ctx, "mod-1", UpdateModuleRequest{
+		Name:      "Patched Module",
+		StartDate: &sDate,
+	})
+	if err != nil || upMod.ID != "mod-1" {
+		t.Fatalf("UpdateModule failed: %v", err)
+	}
+
+	// 4. ListModuleIssues
+	mIssues, err := client.ListModuleIssues(ctx, "mod-1")
+	if err != nil || len(mIssues) != 1 {
+		t.Fatalf("ListModuleIssues failed: %v", err)
+	}
+
+	// 5. AddIssueRelation, GetIssueRelations, RemoveIssueRelation
+	if err := client.AddIssueRelation(ctx, "iss-1", "blocked_by", []string{"iss-2"}); err != nil {
+		t.Fatalf("AddIssueRelation failed: %v", err)
+	}
+	if err := client.AddIssueRelation(ctx, "iss-1", "blocked_by", nil); err != nil {
+		t.Fatalf("AddIssueRelation empty slice should be nil: %v", err)
+	}
+	rels, err := client.GetIssueRelations(ctx, "iss-1")
+	if err != nil || len(rels.BlockedBy) != 1 {
+		t.Fatalf("GetIssueRelations failed: %v", err)
+	}
+	if err := client.RemoveIssueRelation(ctx, "iss-1", "blocked_by", "iss-2"); err != nil {
+		t.Fatalf("RemoveIssueRelation failed: %v", err)
+	}
+}
+
+func TestClient_GanttAndRelationErrors(t *testing.T) {
+	unauthServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer unauthServer.Close()
+
+	cUnauth, _ := NewClient(Config{
+		BaseURL:       unauthServer.URL,
+		WorkspaceSlug: "ws",
+		ProjectID:     "proj",
+		DirectToken:   "tok",
+	}, unauthServer.Client())
+
+	ctx := context.Background()
+
+	if _, err := cUnauth.CreatePlaneIssueWithDetails(ctx, CreateIssueRequest{Name: "iss"}); err != ErrUnauthorized {
+		t.Errorf("expected ErrUnauthorized on CreatePlaneIssueWithDetails")
+	}
+	if _, err := cUnauth.UpdatePlaneIssueWithDetails(ctx, "iss-1", UpdateIssueRequest{Name: "iss"}); err != ErrUnauthorized {
+		t.Errorf("expected ErrUnauthorized on UpdatePlaneIssueWithDetails")
+	}
+	if _, err := cUnauth.CreateModuleWithDates(ctx, "m", "p", "d", nil, nil); err != ErrUnauthorized {
+		t.Errorf("expected ErrUnauthorized on CreateModuleWithDates")
+	}
+	if _, err := cUnauth.UpdateModule(ctx, "mod-1", UpdateModuleRequest{Name: "m"}); err != ErrUnauthorized {
+		t.Errorf("expected ErrUnauthorized on UpdateModule")
+	}
+	if _, err := cUnauth.ListModuleIssues(ctx, "mod-1"); err != ErrUnauthorized {
+		t.Errorf("expected ErrUnauthorized on ListModuleIssues")
+	}
+	if err := cUnauth.AddIssueRelation(ctx, "iss-1", "blocked_by", []string{"iss-2"}); err != ErrUnauthorized {
+		t.Errorf("expected ErrUnauthorized on AddIssueRelation")
+	}
+	if _, err := cUnauth.GetIssueRelations(ctx, "iss-1"); err != ErrUnauthorized {
+		t.Errorf("expected ErrUnauthorized on GetIssueRelations")
+	}
+	if err := cUnauth.RemoveIssueRelation(ctx, "iss-1", "blocked_by", "iss-2"); err != ErrUnauthorized {
+		t.Errorf("expected ErrUnauthorized on RemoveIssueRelation")
+	}
+
+	// 404 server
+	notFoundServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer notFoundServer.Close()
+
+	c404, _ := NewClient(Config{
+		BaseURL:       notFoundServer.URL,
+		WorkspaceSlug: "ws",
+		ProjectID:     "proj",
+		DirectToken:   "tok",
+	}, notFoundServer.Client())
+
+	if _, err := c404.UpdateModule(ctx, "mod-1", UpdateModuleRequest{Name: "m"}); err != ErrModuleNotFound {
+		t.Errorf("expected ErrModuleNotFound on UpdateModule")
+	}
+	if _, err := c404.GetIssueRelations(ctx, "iss-1"); err != ErrIssueNotFound {
+		t.Errorf("expected ErrIssueNotFound on GetIssueRelations")
+	}
+	if _, err := c404.UpdatePlaneIssueWithDetails(ctx, "iss-1", UpdateIssueRequest{Name: "iss"}); err != ErrIssueNotFound {
+		t.Errorf("expected ErrIssueNotFound on UpdatePlaneIssueWithDetails")
+	}
+}
