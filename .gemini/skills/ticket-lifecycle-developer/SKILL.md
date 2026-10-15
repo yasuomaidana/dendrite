@@ -94,6 +94,9 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   27. `dendrite_pool_switch`: Atomically transition a dependency mode across Published, Branch, Local, or Fork with JetBrains scope sync.
       - *Example*: `./bin/dendrite mcp call dendrite_pool_switch '{"target_project_dir":".","dependency_name":"dep-a","mode":"local","local_path":"../dep-a"}'`
 
+  28. `dendrite_pool_split`: Extracts an AST slice and its tests into a new standalone pool member project, enforcing mandatory target directory selection.
+      - *Example*: `./bin/dendrite mcp call dendrite_pool_split '{"source_project_dir":".","module_subpath":"internal/matcher","new_member_name":"matcher-core","target_directory":"../matcher-core"}'`
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
 - `dendrite agent <search|route>`: Search and rank agents with hybrid vector/BM25 search or auto-route tasks to optimal agents with LiteLLM virtual keys.
 - `dendrite test <auto|ui>`: Synthesize table-driven tests with Testcontainers & self-healing convergence, or run Web UI browser journeys & WebSocket telemetry load tests.

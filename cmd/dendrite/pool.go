@@ -8,12 +8,15 @@ import (
 	"strings"
 
 	"Dendrite/pkg/pool/dag"
+	"Dendrite/pkg/pool/split"
 	"Dendrite/pkg/pool/switcher"
+	"Dendrite/pkg/ui/modal"
 )
 
 var defaultPoolManager = dag.NewPoolManager("")
 var defaultDAGSolver = dag.NewDAGSolver()
 var defaultSwitcher = switcher.NewDependencySwitcher()
+var defaultSplitter = split.NewProjectSplitter()
 
 func handlePoolCommand(ctx context.Context, action string, args []string) {
 	switch action {
@@ -200,6 +203,67 @@ func handlePoolCommand(ctx context.Context, action string, args []string) {
 			fmt.Println("    JetBrains Scopes:   Synchronized (.idea/scopes/Dendrite_Local_Pool.xml)")
 		}
 
+	case "split":
+		req := split.SplitRequest{
+			SourceProjectDir: ".",
+			WireLocalMode:    true,
+			RegisterInPool:   true,
+			Prompt: func(m *modal.DirectoryPickerModal) (string, error) {
+				return m.RenderCLI(os.Stdin, os.Stdout)
+			},
+		}
+
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--from":
+				if i+1 < len(args) {
+					req.SourceProjectDir = args[i+1]
+					i++
+				}
+			case "--module":
+				if i+1 < len(args) {
+					req.ModuleSubpath = args[i+1]
+					i++
+				}
+			case "--name":
+				if i+1 < len(args) {
+					req.NewMemberName = args[i+1]
+					i++
+				}
+			case "--target-dir":
+				if i+1 < len(args) {
+					req.TargetDirectory = args[i+1]
+					i++
+				}
+			case "--no-wire-local":
+				req.WireLocalMode = false
+			case "--no-register-pool":
+				req.RegisterInPool = false
+			}
+		}
+
+		if req.ModuleSubpath == "" || req.NewMemberName == "" {
+			fmt.Println("[-] Usage: dendrite pool split --from <dir> --module <pkg> --name <member> [--target-dir <dir>]")
+			return
+		}
+
+		result, err := defaultSplitter.Split(ctx, req)
+		if err != nil {
+			fmt.Printf("[-] Project split failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("[+] Successfully split module into new pool member '%s':\n", result.NewMemberName)
+		fmt.Printf("    Destination:      %s\n", result.TargetDirectory)
+		fmt.Printf("    Manifest Created: %s\n", result.ManifestCreated)
+		fmt.Printf("    Extracted Files:  %d files moved\n", len(result.ExtractedFiles))
+		if result.ParentWiredLocal {
+			fmt.Println("    Parent Wired:     Local dependency mode active in parent project")
+		}
+		if result.PoolRegistered {
+			fmt.Println("    Pool Registered:  Member added to .dendrite/pool.json")
+		}
+
 	default:
 		printPoolUsage()
 	}
@@ -212,6 +276,8 @@ func printPoolUsage() {
 	fmt.Println("  remove <name_or_path>   Remove a registered project from the pool")
 	fmt.Println("  list [--json]           List all registered pool member projects")
 	fmt.Println("  resolve [--json]        Compute deterministic topological DAG & detect cycles")
+	fmt.Println("  split [flags]           Extract module slice into a new project with mandatory directory gate")
+	fmt.Println("                          Flags: --from <dir> --module <pkg> --name <member> [--target-dir <dir>]")
 	fmt.Println("  switch <dep> [flags]    Switch dependency mode: published, branch, local, fork")
 	fmt.Println("                          Flags: --in <dir> --mode <m> --version <v> --branch <b>")
 	fmt.Println("                                 --local-path <p> --fork-url <u> --fork-branch <b>")

@@ -6,12 +6,14 @@ import (
 	"fmt"
 
 	"Dendrite/pkg/pool/dag"
+	"Dendrite/pkg/pool/split"
 	"Dendrite/pkg/pool/switcher"
 )
 
 var defaultMCPPoolManager = dag.NewPoolManager("")
 var defaultMCPDAGSolver = dag.NewDAGSolver()
 var defaultMCPSwitcher = switcher.NewDependencySwitcher()
+var defaultMCPSplitter = split.NewProjectSplitter()
 
 func (s *Server) registerPoolTools(deps Dependencies) {
 	// 26. dendrite_pool_resolve
@@ -225,6 +227,63 @@ func (s *Server) registerPoolTools(deps Dependencies) {
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
 			return nil, fmt.Errorf("marshaling switch result: %w", err)
+		}
+
+		return &CallToolResult{
+			Content: []ContentItem{{
+				Type: "text",
+				Text: string(data),
+			}},
+		}, nil
+	})
+
+	// 30. dendrite_pool_split
+	s.RegisterTool(Tool{
+		Name:        "dendrite_pool_split",
+		Description: "Extract an AST slice and its tests into a new standalone pool member project",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"source_project_dir": map[string]interface{}{"type": "string", "description": "Path to source project directory"},
+				"module_subpath":    map[string]interface{}{"type": "string", "description": "Relative path to module being extracted (e.g. internal/matcher)"},
+				"new_member_name":   map[string]interface{}{"type": "string", "description": "Identifier for the new project member"},
+				"target_directory":  map[string]interface{}{"type": "string", "description": "Target destination directory on filesystem"},
+				"wire_local_mode":   map[string]interface{}{"type": "boolean", "description": "Wire parent project to depend on new member in local mode"},
+				"register_in_pool":  map[string]interface{}{"type": "boolean", "description": "Register newly extracted project in .dendrite/pool.json"},
+			},
+			"required": []interface{}{"source_project_dir", "module_subpath", "new_member_name", "target_directory"},
+		},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		srcDir, _ := args["source_project_dir"].(string)
+		modSubpath, _ := args["module_subpath"].(string)
+		memberName, _ := args["new_member_name"].(string)
+		targetDir, _ := args["target_directory"].(string)
+		wireLocal, _ := args["wire_local_mode"].(bool)
+		regPool, _ := args["register_in_pool"].(bool)
+
+		req := split.SplitRequest{
+			SourceProjectDir: srcDir,
+			ModuleSubpath:    modSubpath,
+			NewMemberName:    memberName,
+			TargetDirectory:  targetDir,
+			WireLocalMode:    wireLocal,
+			RegisterInPool:   regPool,
+		}
+
+		result, err := defaultMCPSplitter.Split(ctx, req)
+		if err != nil {
+			return &CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: fmt.Sprintf("[-] Project split failed: %v", err),
+				}},
+				IsError: true,
+			}, nil
+		}
+
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("marshaling split result: %w", err)
 		}
 
 		return &CallToolResult{
