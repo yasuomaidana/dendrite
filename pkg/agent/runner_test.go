@@ -578,7 +578,7 @@ func TestHostRunner(t *testing.T) {
 			},
 		}
 		cfg := AgentConfig{
-			Type:           AgentAider,
+			Type:           AgentOpenCode,
 			LiteLLMBaseURL: "http://localhost:4000/v1",
 			VirtualAPIKey:  "sk-test",
 			WorkspaceDir:   "/tmp",

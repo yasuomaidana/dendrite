@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -841,7 +842,6 @@ func handleAgentCommand(ctx context.Context, action string, args []string) {
 			WorkspaceDir:   cwd,
 		}
 
-		var isMock bool
 		// Parse flags if provided
 		for j := 1; j < len(args); j++ {
 			if args[j] == "--ticket" && j+1 < len(args) {
@@ -856,8 +856,20 @@ func handleAgentCommand(ctx context.Context, action string, args []string) {
 			} else if args[j] == "--sandbox" || args[j] == "--ephemeral" {
 				cfg.Sandbox = true
 				cfg.Ephemeral = true
-			} else if args[j] == "--mock" || args[j] == "--dry-run" {
-				isMock = true
+			}
+		}
+
+		// Auto-detect and auto-install/sandbox for OpenHands and Aider
+		if cfg.Type == agent.AgentOpenHands && !cfg.Sandbox {
+			if _, oErr := exec.LookPath("openhands"); oErr != nil {
+				fmt.Println("[+] OpenHands host binary not detected; auto-routing to hardened container sandbox...")
+				cfg.Sandbox = true
+				cfg.Ephemeral = true
+			}
+		}
+		if cfg.Type == agent.AgentAider && !cfg.Sandbox {
+			if _, aErr := exec.LookPath("aider"); aErr != nil {
+				_ = agent.EnsureAgentInstalled(ctx, cfg.Type)
 			}
 		}
 
@@ -897,9 +909,7 @@ func handleAgentCommand(ctx context.Context, action string, args []string) {
 		fmt.Printf("[+] Command: %s\n", strings.Join(cmd, " "))
 
 		var runner agent.Runner
-		if isMock {
-			runner = &agent.MockRunner{}
-		} else if cfg.Sandbox {
+		if cfg.Sandbox {
 			runner = agent.NewSandboxedRunner(nil, nil)
 		} else {
 			runner = agent.NewHostRunner(true)

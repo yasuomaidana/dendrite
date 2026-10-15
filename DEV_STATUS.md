@@ -10,7 +10,7 @@ This document maintains the real-time development status, milestones, and active
 - **Active Milestone**: Milestone 17 — Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)
 - **Current Focus**: `DEN-064: Speculative Git Worktree Branching & Differential Architecture Benchmark Harness (`pkg/story/fork`, `pkg/perf`)`
 - **Last Updated**: 2026-10-14
-- **Overall Progress**: 67 / 100 Tickets Completed (67.0%)
+- **Overall Progress**: 66 / 100 Tickets Completed (66.0%)
 
 ---
 
@@ -142,7 +142,6 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 ### Milestone 1: Core Foundation, Developer Tools & Ollama Engine
 
-- [x] **DEN-003**: Developer Productivity Tools on the Fly & CLI Scaffold (`pkg/devtool`, `cmd/dendrite`)
 - [x] **DEN-004**: Ticket Module & Local Status Synchronization Engine
 
 ---

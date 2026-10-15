@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -384,10 +385,6 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 					"type":        "boolean",
 					"description": "Execute inside ephemeral container sandbox",
 				},
-				"mock": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Simulate agent run with mock runner (dry-run)",
-				},
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
@@ -397,8 +394,6 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 		model, _ := args["model"].(string)
 		sandbox, _ := args["sandbox"].(bool)
 		spendLimit, _ := args["spend_limit"].(float64)
-		isMock, _ := args["mock"].(bool)
-
 		aType := agent.AgentType(strings.ToLower(strings.TrimSpace(agentStr)))
 		if !aType.IsValid() {
 			return nil, fmt.Errorf("invalid agent type: %s", agentStr)
@@ -411,6 +406,12 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 				model = "claude-sonnet-4.5"
 			} else {
 				model = "copilot-sonnet"
+			}
+		}
+
+		if aType == agent.AgentOpenHands && !sandbox {
+			if _, oErr := exec.LookPath("openhands"); oErr != nil {
+				sandbox = true
 			}
 		}
 
@@ -437,22 +438,14 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 		}
 
 		var runner agent.Runner
-		if isMock {
-			runner = &agent.MockRunner{}
-		} else if sandbox {
+		if sandbox {
 			runner = agent.NewSandboxedRunner(nil, nil)
 		} else {
 			runner = agent.NewHostRunner(false)
 		}
 		summary, err := runner.Execute(ctx, cfg)
 		if err != nil {
-			if strings.Contains(err.Error(), "not found in PATH") {
-				mockRunner := &agent.MockRunner{}
-				summary, err = mockRunner.Execute(ctx, cfg)
-			}
-			if err != nil {
-				return nil, fmt.Errorf("agent execution failed: %w", err)
-			}
+			return nil, fmt.Errorf("agent execution failed: %w", err)
 		}
 
 		res := map[string]interface{}{
