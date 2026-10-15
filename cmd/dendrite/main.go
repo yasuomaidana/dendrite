@@ -206,6 +206,21 @@ func main() {
 	case "commit":
 		handleCommitCommand(ctx, os.Args[2:])
 
+	case "skill":
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: dendrite skill <ticket-relate|gantt-sync> [args...]")
+			return
+		}
+		if os.Args[2] == "ticket-relate" || os.Args[2] == "relate" {
+			handlePlaneCommand(ctx, "relate", os.Args[3:])
+			return
+		}
+		if os.Args[2] == "gantt-sync" || os.Args[2] == "align-gantt" {
+			handlePlaneCommand(ctx, "gantt-sync", os.Args[3:])
+			return
+		}
+		fmt.Printf("[-] Unknown skill: %s\n", os.Args[2])
+
 	default:
 		printUsage()
 	}

@@ -256,28 +256,12 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 		relType := args[1]
 		ticketB := args[2]
 
-		resolveUUID := func(raw string) (string, error) {
-			if len(raw) == 36 && strings.Count(raw, "-") == 4 {
-				return raw, nil
-			}
-			issues, err := client.ListPlaneIssues(ctx)
-			if err != nil {
-				return "", err
-			}
-			for _, iss := range issues {
-				if strings.Contains(iss.Name, "["+raw+"]") || strings.Contains(iss.Name, raw) {
-					return iss.ID, nil
-				}
-			}
-			return "", fmt.Errorf("ticket '%s' not found in Plane", raw)
-		}
-
-		uA, err := resolveUUID(ticketA)
+		uA, err := resolvePlaneTicketUUID(ctx, client, ticketA)
 		if err != nil {
 			fmt.Printf("[-] Error: %v\n", err)
 			return
 		}
-		uB, err := resolveUUID(ticketB)
+		uB, err := resolvePlaneTicketUUID(ctx, client, ticketB)
 		if err != nil {
 			fmt.Printf("[-] Error: %v\n", err)
 			return
@@ -289,6 +273,149 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 		}
 
 		fmt.Printf("[✓] Successfully linked %s -> %s (%s) for Plane Gantt dependency view\n", ticketA, ticketB, relType)
+
+	case "relate", "ticket-relate":
+		var ticketID string
+		var priority string
+		var blockedBy []string
+		var blocking []string
+		var relatesTo []string
+		var reason string
+		var startDate string
+		var targetDate string
+
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--ticket", "-t":
+				if i+1 < len(args) {
+					ticketID = args[i+1]
+					i++
+				}
+			case "--priority", "-p":
+				if i+1 < len(args) {
+					priority = strings.ToLower(args[i+1])
+					i++
+				}
+			case "--blocked-by", "-b":
+				if i+1 < len(args) {
+					parts := strings.Split(args[i+1], ",")
+					for _, p := range parts {
+						if tr := strings.TrimSpace(p); tr != "" {
+							blockedBy = append(blockedBy, tr)
+						}
+					}
+					i++
+				}
+			case "--blocking":
+				if i+1 < len(args) {
+					parts := strings.Split(args[i+1], ",")
+					for _, p := range parts {
+						if tr := strings.TrimSpace(p); tr != "" {
+							blocking = append(blocking, tr)
+						}
+					}
+					i++
+				}
+			case "--relates-to", "-r":
+				if i+1 < len(args) {
+					parts := strings.Split(args[i+1], ",")
+					for _, p := range parts {
+						if tr := strings.TrimSpace(p); tr != "" {
+							relatesTo = append(relatesTo, tr)
+						}
+					}
+					i++
+				}
+			case "--reason":
+				if i+1 < len(args) {
+					reason = args[i+1]
+					i++
+				}
+			case "--start", "-s":
+				if i+1 < len(args) {
+					startDate = args[i+1]
+					i++
+				}
+			case "--target":
+				if i+1 < len(args) {
+					targetDate = args[i+1]
+					i++
+				}
+			}
+		}
+
+		if ticketID == "" {
+			fmt.Println("Usage: dendrite plane relate --ticket <id> [--priority <prio>] [--blocked-by <ids>] [--blocking <ids>] [--relates-to <ids>] [--reason <reason>]")
+			return
+		}
+
+		uTarget, err := resolvePlaneTicketUUID(ctx, client, ticketID)
+		if err != nil {
+			fmt.Printf("[-] Error resolving ticket %s: %v\n", ticketID, err)
+			return
+		}
+
+		if priority != "" || startDate != "" || targetDate != "" {
+			patchReq := plane.UpdateIssueRequest{}
+			if priority != "" {
+				patchReq.Priority = priority
+			}
+			if startDate != "" {
+				patchReq.StartDate = &startDate
+			}
+			if targetDate != "" {
+				patchReq.TargetDate = &targetDate
+			}
+			_, err := client.UpdatePlaneIssueWithDetails(ctx, uTarget, patchReq)
+			if err != nil {
+				fmt.Printf("[-] Failed to update ticket metadata: %v\n", err)
+			} else {
+				fmt.Printf("[✓] Updated ticket %s metadata (Priority: %s)\n", ticketID, strings.ToUpper(priority))
+			}
+		}
+
+		for _, b := range blockedBy {
+			uB, err := resolvePlaneTicketUUID(ctx, client, b)
+			if err != nil {
+				fmt.Printf("[-] Warning: could not resolve blocker %s: %v\n", b, err)
+				continue
+			}
+			if err := client.AddIssueRelation(ctx, uTarget, "blocked_by", []string{uB}); err != nil {
+				fmt.Printf("[-] Failed to link blocked_by %s: %v\n", b, err)
+			} else {
+				fmt.Printf("[✓] Linked: %s is blocked_by %s\n", ticketID, b)
+			}
+		}
+
+		for _, blk := range blocking {
+			uBlk, err := resolvePlaneTicketUUID(ctx, client, blk)
+			if err != nil {
+				fmt.Printf("[-] Warning: could not resolve blocking target %s: %v\n", blk, err)
+				continue
+			}
+			if err := client.AddIssueRelation(ctx, uTarget, "blocking", []string{uBlk}); err != nil {
+				fmt.Printf("[-] Failed to link blocking %s: %v\n", blk, err)
+			} else {
+				fmt.Printf("[✓] Linked: %s is blocking %s\n", ticketID, blk)
+			}
+		}
+
+		for _, rel := range relatesTo {
+			uRel, err := resolvePlaneTicketUUID(ctx, client, rel)
+			if err != nil {
+				fmt.Printf("[-] Warning: could not resolve relates_to %s: %v\n", rel, err)
+				continue
+			}
+			if err := client.AddIssueRelation(ctx, uTarget, "relates_to", []string{uRel}); err != nil {
+				fmt.Printf("[-] Failed to link relates_to %s: %v\n", rel, err)
+			} else {
+				fmt.Printf("[✓] Linked: %s relates_to %s\n", ticketID, rel)
+			}
+		}
+
+		if reason != "" {
+			fmt.Printf("    * Stored context: %s\n", reason)
+		}
 
 	case "create", "issue-create":
 		var name string
@@ -513,6 +640,19 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 			fmt.Printf("    - %s (ID: %s, Updated: %s)\n", p.Name, p.ID, p.UpdatedAt.Format("2006-01-02 15:04"))
 		}
 
+	case "gantt-sync", "align-gantt":
+		fmt.Printf("[+] Synchronizing Plane Gantt timelines, milestone dates, and dependency arrows...\n")
+		rep, err := plane.SyncPlaneGanttAndRelations(ctx, client)
+		if err != nil {
+			fmt.Printf("[-] Gantt synchronization failed: %v\n", err)
+			return
+		}
+		fmt.Printf("[✓] Plane Gantt schedule & dependency relations synchronized in %v:\n", rep.Duration)
+		fmt.Printf("    - Milestones Scheduled:  %d (Total: %d)\n", rep.UpdatedModules, rep.TotalModules)
+		fmt.Printf("    - Tickets Scheduled:     %d (Total: %d)\n", rep.UpdatedTickets, rep.TotalTickets)
+		fmt.Printf("    - Dependency Arrows:     %d\n", rep.RelationsCreated)
+		fmt.Printf("    - Live Gantt View URL:   %s/dendrite-ws/projects/%s/issues/ (Layout: Gantt)\n", client.BaseURL(), client.ProjectID())
+
 	default:
 		fmt.Printf("[-] Unknown plane action: %s\n", action)
 		fmt.Println("Usage:")
@@ -520,10 +660,41 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 		fmt.Println("  dendrite plane push-status [--file DEV_STATUS.md]")
 		fmt.Println("  dendrite plane next [--ticket <id>] [--milestone <name>] [--json]")
 		fmt.Println("  dendrite plane link <ticket_a> <blocking|blocked_by|relates_to> <ticket_b>")
+		fmt.Println("  dendrite plane relate --ticket <id> [--priority <prio>] [--blocked-by <ids>] [--blocking <ids>] [--relates-to <ids>]")
+		fmt.Println("  dendrite plane gantt-sync (aligns all milestones, tickets, and Gantt dependency arrows)")
 		fmt.Println("  dendrite plane create --name \"[DEN-XXX] Title\" [--milestone \"M1\"] [--priority high] [--estimate 5] [--blocked-by \"DEN-001\"]")
 		fmt.Println("  dendrite plane doc <push|pull|sync> [--dir docs]")
 		fmt.Println("  dendrite plane issues")
 		fmt.Println("  dendrite plane modules")
 		fmt.Println("  dendrite plane pages")
 	}
+}
+
+func resolvePlaneTicketUUID(ctx context.Context, client *plane.Client, raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if len(raw) == 36 && strings.Count(raw, "-") == 4 {
+		return raw, nil
+	}
+	issues, err := client.ListPlaneIssues(ctx)
+	if err != nil {
+		return "", err
+	}
+	if seq, err := strconv.Atoi(raw); err == nil {
+		for _, iss := range issues {
+			if iss.SequenceID == seq {
+				return iss.ID, nil
+			}
+		}
+	}
+	for _, iss := range issues {
+		if strings.Contains(strings.ToLower(iss.Name), strings.ToLower("["+raw+"]")) {
+			return iss.ID, nil
+		}
+	}
+	for _, iss := range issues {
+		if strings.Contains(strings.ToLower(iss.Name), strings.ToLower(raw)) {
+			return iss.ID, nil
+		}
+	}
+	return "", fmt.Errorf("ticket '%s' not found in Plane", raw)
 }
