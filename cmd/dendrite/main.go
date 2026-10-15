@@ -221,6 +221,15 @@ func main() {
 		}
 		fmt.Printf("[-] Unknown skill: %s\n", os.Args[2])
 
+	case "audit-changes":
+		handleAuditChangesCommand(ctx, os.Args[2:])
+
+	case "vcs":
+		handleVCSCommand(ctx, os.Args[2:])
+
+	case "github-sync", "sync-github":
+		handleGitHubSyncCommand(ctx, os.Args[2:])
+
 	default:
 		printUsage()
 	}
@@ -250,6 +259,9 @@ func printUsage() {
 	fmt.Println("  agent run <tool> [flags]   Launch an autonomous coding agent (aider, openhands, opencode, agy, copilot)")
 	fmt.Println("  agent session [list]       View agent execution history and commits")
 	fmt.Println("  commit [flags]             Autonomous Git commit with local model message generation")
+	fmt.Println("  audit-changes [flags]      Topological vendor audit and rebase engine for local/* branches")
+	fmt.Println("  vcs <guard|check|status>   Enforce Git branch guardrails (prohibit main, develop default)")
+	fmt.Println("  github-sync [flags]        Synchronize prioritized tickets and DAG dependencies to GitHub Issues")
 	fmt.Println("  doc docusaurus [flags]     Docusaurus Docs-as-Code and project sharing")
 	fmt.Println("  doc reflect [flags]        Reflect documentation taxonomy (--reference, --source, --target)")
 	fmt.Println("  plane replicate [--file DEV_STATUS.md] Replicate DEV_STATUS.md from Plane service (Plane owns status)")
@@ -1028,6 +1040,10 @@ func runDoctor(ctx context.Context) {
 
 func handleDevCommand(ctx context.Context, sub string, args []string) {
 	switch sub {
+	case "audit-changes":
+		handleAuditChangesCommand(ctx, args)
+		return
+
 	case "ollama":
 		endpoint := ollama.DefaultBaseURL
 		if len(args) > 1 && args[0] == "probe" {

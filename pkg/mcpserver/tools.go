@@ -811,6 +811,9 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 	// Ticket-Milestone DAG Linker, Smart Prioritization & Plane Gantt Tools
 	s.registerPlaneDAGTools(deps)
 
+	// 55-57: Git Guardrails, Speculative Stacked Branches & Vendor Audit Tools
+	s.registerAuditTools(deps)
+
 	// 46. dendrite_commit
 	s.RegisterTool(Tool{
 		Name:        "dendrite_commit",

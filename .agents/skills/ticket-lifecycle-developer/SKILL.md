@@ -176,8 +176,20 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 
   54. `dendrite_plane_issue_create`: Creates an issue with milestone module assignment, priority, start/target Gantt dates, and blocker dependency relations.
       - *Example*: `./bin/dendrite mcp call dendrite_plane_issue_create '{"name":"[DEN-099] Test Feature","priority":"high","estimate_point":5,"blocked_by":["DEN-037"]}'`
+  55. `dendrite_audit_changes`: Topological vendor audit and rebase engine for local/* stacked branches. Validates diffs, runs test suites, non-fast-forward merges into develop, and rebases downstream branches.
+      - *Example*: `./bin/dendrite mcp call dendrite_audit_changes '{"dry_run":true}'`
+
+  56. `dendrite_github_sync`: Synchronize prioritized P0 tickets, dependency relations, and governance labels with remote GitHub Issues (yasuomaidana/dendrite).
+      - *Example*: `./bin/dendrite mcp call dendrite_github_sync '{"repo":"yasuomaidana/dendrite"}'`
+
+  57. `dendrite_vcs_guard`: Check or enforce Git branch guardrails (prohibits direct work on main/master, guarantees develop default).
+      - *Example*: `./bin/dendrite mcp call dendrite_vcs_guard '{"mode":"STANDARD"}'`
+
 
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
+- `dendrite audit-changes [--branch <name>] [--dry-run] [--max-tokens <int>] [--model <m>]`: Topological vendor audit and rebase engine for local/* branches.
+- `dendrite vcs <guard|check|status|evacuate>`: Enforce Git branch guardrails, check policy, and evacuate forbidden branches.
+- `dendrite github-sync [--repo <owner/repo>]`: Synchronize sequenced P0 tickets, DAG dependencies, and governance labels to GitHub Issues.
 - `dendrite plane next [--ticket <id>] [--milestone <m>] [--json]`: Smart ticket prioritization & DAG reachability engine (aliases: `dev ticket next`, `stories next`). Selects the optimal unblocked ticket considering priority weighting and downstream critical path, or validates user-requested ticket.
 - `dendrite plane link <ticket-a> <blocking|blocked_by|relates_to> <ticket-b>`: Link ticket relationships in Plane to render Gantt dependency arrows (alias: `dev ticket link`).
 - `dendrite plane relate --ticket <id> [--priority <prio>] [--blocked-by <ids>] [--blocking <ids>] [--relates-to <ids>] [--reason <reason>]`: Update ticket priority and synchronize DAG dependency relations in Plane (alias: `dendrite skill ticket-relate`).

@@ -1337,3 +1337,50 @@ dendrite dev ticket set TKT-IDE-002 "VS Code Extension" --priority Normal --depe
 # +-------------+-------------------+-------------------+--------------------+------------------+-------------------+
 
 ```
+
+---
+
+### Case 35: Speculative Stacked Branches, Degraded Budget Mode & Vendor LLM Audit Pipeline (`FEAT-070`)
+
+**User Story**: As an engineering team operating under metered cloud token quotas, I want Dendrite to automatically switch to `DegradedBudgetMode` when remaining token budget drops below 15% (or when `--delegate-local` is set), locking direct merges to `develop` (`ErrMergeLockedInDegradedMode`), spinning up speculative stacked branches (`local/<module-slug>`) driven by zero-cost local models (`qwen3.8:27b` on Metal), registering audit checkpoints in `.dendrite/audit_queue.json`, and validating/merging them topological through `dendrite audit-changes` once vendor budget is restored.
+
+**Workflow**:
+
+```bash
+# 1. Enforce Git branch guardrails and verify develop branch:
+dendrite vcs guard --check
+# [*] Branch Policy: ACTIVE: develop (Protected: main/master prohibited)
+
+# 2. Simulate Low Token Budget (< 15%) triggering DegradedBudgetMode:
+dendrite analyze policy --budget-mode degraded
+# [!] Low token budget detected (<= 15%). Switched execution state to DegradedBudgetMode.
+# [!] Merging directly into develop is locked (ErrMergeLockedInDegradedMode).
+
+# 3. Autonomous Local LLM implements ticket in stacked branch:
+# Creates local/module-a, runs go test, and commits with atomic auto-push:
+git status
+# On branch local/module-a
+# Commits: feat(module-a): complete DEN-702 - ticket domain model
+
+# 4. Once local module work is completed, branch is queued for audit:
+cat .dendrite/audit_queue.json
+# [
+#   {
+#     "branch": "local/module-a",
+#     "base": "develop",
+#     "status": "AWAITING_AUDIT",
+#     "tickets": ["DEN-702", "DEN-703"]
+#   }
+# ]
+
+# 5. Restore budget and invoke topological vendor audit & merge pipeline:
+dendrite audit-changes
+# [+] Beginning Topological Branch Audit:
+#     - Branch: local/module-a (Base: develop)
+#     - Rebased onto latest develop
+#     - Assembled compact context (Criteria + diff + test results)
+#     - Review Verdict: PASS
+#     - Non-fast-forward merged into develop
+#     - Pushed origin/develop atomically
+#     - Closed GitHub Issues #120, #121
+```
