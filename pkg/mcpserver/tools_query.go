@@ -7,10 +7,12 @@ import (
 
 	"Dendrite/pkg/query/slice"
 	"Dendrite/pkg/query/swap"
+	"Dendrite/pkg/query/transpile"
 )
 
 var defaultMCPQuerySlicer = slice.NewIntentSlicer()
 var defaultMCPSwapper = swap.NewSubsystemSwapper()
+var defaultMCPTranspiler = transpile.NewRustTranspiler()
 
 func (s *Server) registerQueryTools(deps Dependencies) {
 	// 31. dendrite_query_slice
@@ -111,6 +113,63 @@ func (s *Server) registerQueryTools(deps Dependencies) {
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
 			return nil, fmt.Errorf("marshaling swap result: %w", err)
+		}
+
+		return &CallToolResult{
+			Content: []ContentItem{{
+				Type: "text",
+				Text: string(data),
+			}},
+		}, nil
+	})
+
+	// 33. dendrite_query_transpile
+	s.RegisterTool(Tool{
+		Name:        "dendrite_query_transpile",
+		Description: "Translates legacy binaries or repos to safe, idiomatic Rust with Newtypes, zero unsafe blocks, and differential tests",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"sources_artifact":    map[string]interface{}{"type": "string", "description": "Target compiled binary or repository path"},
+				"target_language":     map[string]interface{}{"type": "string", "description": "Target language (default: rust)"},
+				"no_std":              map[string]interface{}{"type": "boolean", "description": "Generate no_std compatible embedded crate"},
+				"audit_library_reuse": map[string]interface{}{"type": "boolean", "description": "Enforce 3-tier library reuse hierarchy"},
+				"prompt":              map[string]interface{}{"type": "string", "description": "Natural language architectural guidance"},
+				"output_dir":          map[string]interface{}{"type": "string", "description": "Destination directory for synthesized crate"},
+			},
+			"required": []interface{}{"sources_artifact"},
+		},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		artifact, _ := args["sources_artifact"].(string)
+		targetLang, _ := args["target_language"].(string)
+		noStd, _ := args["no_std"].(bool)
+		auditReuse, _ := args["audit_library_reuse"].(bool)
+		prompt, _ := args["prompt"].(string)
+		outputDir, _ := args["output_dir"].(string)
+
+		req := transpile.TranspileRequest{
+			SourcesArtifact:   artifact,
+			TargetLanguage:    targetLang,
+			NoStd:             noStd,
+			AuditLibraryReuse: auditReuse,
+			Prompt:            prompt,
+			OutputDir:         outputDir,
+		}
+
+		result, err := defaultMCPTranspiler.Transpile(ctx, req)
+		if err != nil {
+			return &CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: fmt.Sprintf("[-] Transpilation failed: %v", err),
+				}},
+				IsError: true,
+			}, nil
+		}
+
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("marshaling transpile result: %w", err)
 		}
 
 		return &CallToolResult{
