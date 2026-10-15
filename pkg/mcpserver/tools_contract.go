@@ -26,7 +26,7 @@ func (s *Server) registerContractTools(deps Dependencies) {
 					"description": "List of directories containing .proto, openapi.yaml, or .json schema definitions",
 				},
 				"code_dirs": map[string]interface{}{
-					"type": "object",
+					"type":        "object",
 					"description": "Map of target languages ('go', 'rust', 'typescript', 'python') to repository source directories",
 				},
 			},

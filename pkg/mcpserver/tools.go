@@ -197,7 +197,8 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 			var err error
 			client, err = plane.NewClientFromEnv()
 			if err != nil {
-				return nil, fmt.Errorf("plane client error: %w", err)			}
+				return nil, fmt.Errorf("plane client error: %w", err)
+			}
 		}
 
 		issues, err := client.ListPlaneIssues(ctx)

@@ -7,10 +7,10 @@ import (
 	"os"
 	"strings"
 
-	"Dendrite/pkg/query/slice"
-	"Dendrite/pkg/query/swap"
 	"Dendrite/pkg/query/fuse"
 	"Dendrite/pkg/query/reuse"
+	"Dendrite/pkg/query/slice"
+	"Dendrite/pkg/query/swap"
 	"Dendrite/pkg/query/transpile"
 	"Dendrite/pkg/ui/modal"
 )
@@ -192,7 +192,6 @@ func handleSwapCommand(ctx context.Context, args []string) {
 	}
 }
 
-
 func handleTranspileCommand(ctx context.Context, args []string) {
 	req := transpile.TranspileRequest{
 		SourcesArtifact:   ".",
@@ -256,7 +255,6 @@ func handleTranspileCommand(ctx context.Context, args []string) {
 		fmt.Printf("    Destination:        %s\n", res.EmittedCratePath)
 	}
 }
-
 
 func handleFuseCommand(ctx context.Context, args []string) {
 	req := fuse.FuseRequest{

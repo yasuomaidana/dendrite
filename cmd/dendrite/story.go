@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	defaultStoryMonitor = contract.NewContractMonitor(nil)
+	defaultStoryMonitor  = contract.NewContractMonitor(nil)
 	defaultCLIController = fork.NewForkController(
 		".",
 		".dendrite/worktrees",

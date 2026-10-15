@@ -36,15 +36,15 @@ func (s *MockStore) Get(key string) ([]byte, bool) {
 
 // MockGitExecutor implements GitExecutor with recorded calls and programmable responses.
 type MockGitExecutor struct {
-	mu           sync.Mutex
-	branches     map[string]string
-	worktrees    []string
-	mergedBranch string
-	deletedBranches []string
+	mu               sync.Mutex
+	branches         map[string]string
+	worktrees        []string
+	mergedBranch     string
+	deletedBranches  []string
 	removedWorktrees []string
-	pruned       bool
-	cleanedLocks bool
-	failOnOp     string
+	pruned           bool
+	cleanedLocks     bool
+	failOnOp         string
 }
 
 func NewMockGitExecutor() *MockGitExecutor {
@@ -457,4 +457,3 @@ func TestControllerDefaultsAndEdgeCases(t *testing.T) {
 	}
 	_ = manifest
 }
-

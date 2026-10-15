@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"Dendrite/pkg/query/slice"
-	"Dendrite/pkg/query/swap"
 	"Dendrite/pkg/query/fuse"
 	"Dendrite/pkg/query/reuse"
+	"Dendrite/pkg/query/slice"
+	"Dendrite/pkg/query/swap"
 	"Dendrite/pkg/query/transpile"
 )
 

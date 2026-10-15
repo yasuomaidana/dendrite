@@ -110,4 +110,3 @@ func indentText(text, indent string) string {
 	}
 	return strings.Join(lines, "\n")
 }
-

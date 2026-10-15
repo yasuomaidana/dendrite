@@ -155,7 +155,20 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   47. `dendrite_tokens_status`: Inspect remaining tokens across the 24h Day Window and 7d Week Window, evaluate safety reserve floor hold, and confirm Google Antigravity (AGY) connectivity and availability.
       - *Example*: `./bin/dendrite mcp call dendrite_tokens_status '{"model":"gemini-3.8-flash-high","probe":true}'`
 
+  48. `dendrite_story_fork`: Fork a story into isolated Git worktrees and branches for competing implementation variants (`.dendrite/worktrees/<story>/<variant>`).
+      - *Example*: `./bin/dendrite mcp call dendrite_story_fork '{"story_id":"DEN-064","variants":["astar-bitvec","bidirectional-dijkstra"]}'`
+
+  49. `dendrite_story_benchmark`: Run comparative differential performance benchmarks (TTFT, TPS, memory, CPU) across variant worktrees.
+      - *Example*: `./bin/dendrite mcp call dendrite_story_benchmark '{"story_id":"DEN-064","iterations":100}'`
+
+  50. `dendrite_story_resolve`: Merge winning variant worktree, persist benchmark metrics into store, and purge alternate worktrees.
+      - *Example*: `./bin/dendrite mcp call dendrite_story_resolve '{"story_id":"DEN-064","winner":"astar-bitvec"}'`
+
+  51. `dendrite_story_abort`: Safely abort and purge all speculative worktrees and branches for a story without merging.
+      - *Example*: `./bin/dendrite mcp call dendrite_story_abort '{"story_id":"DEN-064"}'`
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
+- `dendrite story <start|check-contracts|fork|benchmark|resolve|abort|status>`: Speculative story branching, differential architecture benchmark harness, and Quad-IDE cross-language contract monitoring.
 - `dendrite tokens [status] [--model <m>] [--probe] [--json]`: Inspect Day Window (24h) and Week Window (7d) remaining tokens, quota reset countdown, safety reserve floor, and confirm live AGY access.
 - `dendrite commit [--ticket <id>] [--message <msg>] [--stage-all] [--model <model>] [--local] [--dry-run]`: Autonomous Git commit engine with automatic local model delegation for Conventional Commit message synthesis.
 - `dendrite agent <search|route>`: Search and rank agents with hybrid vector/BM25 search or auto-route tasks to optimal agents with LiteLLM virtual keys.
