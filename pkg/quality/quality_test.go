@@ -280,6 +280,146 @@ func TestAuditFinishedTicket_LogicalBugs(t *testing.T) {
 	}
 }
 
+type complexAnalyzer struct{}
+
+func (c *complexAnalyzer) AnalyzeFeature(ctx context.Context, pkgPath string, diff string) (AnalysisResult, error) {
+	return AnalysisResult{
+		TooComplexForLocal: true,
+	}, nil
+}
+
+func TestAuditFinishedTicket_ComplexEscalation(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "escalations.log")
+	agy := &AGYFallbackAnalyzer{LogPath: logPath}
+
+	spec := &IssueSpec{
+		ID:                 "DEN-COMPLEX-01",
+		Title:              "Complex feature",
+		State:              StateDone,
+		CodebaseLocation:   "pkg/test/test.go",
+		ReproductionSteps:  "run",
+		ProposedResolution: "fix",
+		AcceptanceCriteria: []string{"none"},
+	}
+
+	_, err := AuditFinishedTicket(context.Background(), ".", spec, "pkg/quality", &complexAnalyzer{}, agy)
+	if err != nil {
+		t.Fatalf("audit failed: %v", err)
+	}
+
+	content, err := os.ReadFile(logPath)
+	if err != nil || !containsString(string(content), "Escalated package pkg/quality to AGY") {
+		t.Fatalf("escalation log not written properly: %s", string(content))
+	}
+}
+
+func TestAuditFinishedTicket_MocksRejection(t *testing.T) {
+	tmpDir := t.TempDir()
+	runCmd := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		_ = cmd.Run()
+	}
+	runCmd("init", "-b", "main")
+	runCmd("config", "user.name", "Test")
+	runCmd("config", "user.email", "test@test.com")
+	mockFile := filepath.Join(tmpDir, "mock_test.go")
+	_ = os.WriteFile(mockFile, []byte("package sample\ntype MockRunner struct{}\n"), 0644)
+	runCmd("add", "mock_test.go")
+	runCmd("commit", "-m", "add mock")
+
+	spec := &IssueSpec{
+		ID:                 "DEN-MOCK-01",
+		Title:              "Mocked test",
+		State:              StateToVerify,
+		CodebaseLocation:   "mock_test.go",
+		ReproductionSteps:  "run",
+		ProposedResolution: "fix",
+		AcceptanceCriteria: []string{"none"},
+	}
+
+	_, err := AuditFinishedTicket(context.Background(), tmpDir, spec, "mock_test.go", nil, nil)
+	if err != nil {
+		t.Fatalf("audit failed: %v", err)
+	}
+	if spec.State != StateToDo {
+		t.Fatalf("expected demotion to TO_DO, got %s", spec.State)
+	}
+	if !containsString(spec.ProposedResolution, "[AUDIT REJECTION]: Mocks/stubs detected") {
+		t.Fatalf("rejection notes missing: %s", spec.ProposedResolution)
+	}
+}
+
+func TestRunCoverageAudit_RealGoCode(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	goMod := "module example.com/testpkg\n\ngo 1.22\n"
+	_ = os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goMod), 0644)
+
+	code := `package testpkg
+
+func CoveredFunc() int {
+	return 42
+}
+
+func UncoveredFunc() int {
+	a := 10
+	b := 20
+	return a + b
+}
+`
+	_ = os.WriteFile(filepath.Join(tmpDir, "calc.go"), []byte(code), 0644)
+
+	testCode := `package testpkg
+
+import "testing"
+
+func TestCoveredFunc(t *testing.T) {
+	if CoveredFunc() != 42 {
+		t.Fail()
+	}
+}
+`
+	_ = os.WriteFile(filepath.Join(tmpDir, "calc_test.go"), []byte(testCode), 0644)
+
+	uncovered, pct, failed, _ := RunCoverageAudit(context.Background(), tmpDir, ".")
+	if failed {
+		t.Fatal("expected test to pass")
+	}
+	if pct >= 100.0 {
+		t.Fatalf("expected coverage < 100%%, got %.2f%%", pct)
+	}
+	if len(uncovered) == 0 {
+		t.Fatal("expected uncovered blocks identified")
+	}
+}
+
+func TestRunCoverageAudit_FailingTest(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	goMod := "module example.com/failpkg\n\ngo 1.22\n"
+	_ = os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goMod), 0644)
+
+	testCode := `package failpkg
+
+import "testing"
+
+func TestBroken(t *testing.T) {
+	t.Fatal("intentionally broken")
+}
+`
+	_ = os.WriteFile(filepath.Join(tmpDir, "fail_test.go"), []byte(testCode), 0644)
+
+	_, _, failed, out := RunCoverageAudit(context.Background(), tmpDir, ".")
+	if !failed {
+		t.Fatal("expected failure")
+	}
+	if !containsString(out, "intentionally broken") {
+		t.Fatalf("expected failure output: %s", out)
+	}
+}
+
 func TestNewGitHubHITLPoller_Defaults(t *testing.T) {
 	poller := NewGitHubHITLPoller("", nil)
 	if poller.Repo != "yasuomaidana/dendrite" {
