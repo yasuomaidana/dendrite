@@ -6,9 +6,11 @@ import (
 	"fmt"
 
 	"Dendrite/pkg/query/slice"
+	"Dendrite/pkg/query/swap"
 )
 
 var defaultMCPQuerySlicer = slice.NewIntentSlicer()
+var defaultMCPSwapper = swap.NewSubsystemSwapper()
 
 func (s *Server) registerQueryTools(deps Dependencies) {
 	// 31. dendrite_query_slice
@@ -55,6 +57,60 @@ func (s *Server) registerQueryTools(deps Dependencies) {
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
 			return nil, fmt.Errorf("marshaling slice result: %w", err)
+		}
+
+		return &CallToolResult{
+			Content: []ContentItem{{
+				Type: "text",
+				Text: string(data),
+			}},
+		}, nil
+	})
+
+	// 32. dendrite_query_swap
+	s.RegisterTool(Tool{
+		Name:        "dendrite_query_swap",
+		Description: "Transforms legacy graphics/IO subsystems into clean trait boundaries and modern adapters (wgpu/threejs) while verifying kinematic parity",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"sources_path":    map[string]interface{}{"type": "string", "description": "Path to legacy application sources"},
+				"from_subsystem":  map[string]interface{}{"type": "string", "enum": []string{"opengl", "directx", "vulkan", "wgpu", "threejs"}, "description": "Current legacy subsystem"},
+				"to_subsystem":    map[string]interface{}{"type": "string", "enum": []string{"opengl", "directx", "vulkan", "wgpu", "threejs"}, "description": "Target modern subsystem"},
+				"target_language": map[string]interface{}{"type": "string", "enum": []string{"rust", "go", "typescript"}, "description": "Target implementation language"},
+				"output_dir":      map[string]interface{}{"type": "string", "description": "Optional destination directory to emit trait boundary & adapter"},
+			},
+			"required": []interface{}{"sources_path", "from_subsystem", "to_subsystem"},
+		},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		sourcesPath, _ := args["sources_path"].(string)
+		fromStr, _ := args["from_subsystem"].(string)
+		toStr, _ := args["to_subsystem"].(string)
+		lang, _ := args["target_language"].(string)
+		outputDir, _ := args["output_dir"].(string)
+
+		req := swap.SwapRequest{
+			SourcesPath:    sourcesPath,
+			FromSubsystem:  swap.SubsystemType(fromStr),
+			ToSubsystem:    swap.SubsystemType(toStr),
+			TargetLanguage: lang,
+			OutputDir:      outputDir,
+		}
+
+		result, err := defaultMCPSwapper.Swap(ctx, req)
+		if err != nil {
+			return &CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: fmt.Sprintf("[-] Subsystem swap failed: %v", err),
+				}},
+				IsError: true,
+			}, nil
+		}
+
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("marshaling swap result: %w", err)
 		}
 
 		return &CallToolResult{
