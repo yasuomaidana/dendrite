@@ -8,9 +8,9 @@ This document maintains the real-time development status, milestones, and active
 ## Current Status Overview
 
 - **Active Milestone**: Milestone 17 — Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)
-- **Current Focus**: `DEN-065: Sliced Upstream Commit Drift Analyzer & Bug Fix Porting Generator (`pkg/story/drift`, `pkg/query`)`
+- **Current Focus**: `DEN-015: Real-Time Telemetry Gauges & Thermal Monitoring Daemon`
 - **Last Updated**: 2026-10-15
-- **Overall Progress**: 67 / 100 Tickets Completed (67.0%)
+- **Overall Progress**: 58 / 100 Tickets Completed (58.0%)
 
 ---
 
@@ -26,9 +26,9 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 |      **3**      | **DEN-032** | Milestone 13 | FEAT-017   |     5 SP     |     5.0 / 10     | `pkg/topology/advisor`, `cmd/dendrite`                       |   **COMPLETED [x]**   |
 |      **4**      | **DEN-034** | Milestone 15 | FEAT-019   |     8 SP     |     6.0 / 10     | `infra/modules/azure-burst`, `pkg/orchestrator/azure`        |   **COMPLETED [x]**   |
 |      **5**      | **DEN-035** | Milestone 16 | FEAT-020   |     8 SP     |     7.0 / 10     | `pkg/inference`, `pkg/gateway`                               |   **COMPLETED [x]**   |
-|      **6**      | **DEN-036** | Milestone 17 | FEAT-021   |     8 SP     |     7.5 / 10     | `pkg/perf`, `cmd/dendrite`, `tests/perf`                     | **COMPLETED [x]** |
-|      **8**      | **DEN-037** | Milestone 18 | FEAT-022   |    13 SP     |     8.5 / 10     | `pkg/agentsearch`, `cmd/dendrite`                            |    **COMPLETED [x]**     |
-|      **9**      | **DEN-038** | Milestone 19 | FEAT-023   |    13 SP     |     9.0 / 10     | `pkg/testgen`, `pkg/uitest`, `cmd/dendrite`                  |    **COMPLETED [x]**     |
+|      **6**      | **DEN-036** | Milestone 17 | FEAT-021   |     8 SP     |     7.5 / 10     | `pkg/perf`, `cmd/dendrite`, `tests/perf`                     | **CURRENT FOCUS [ ]** |
+|      **8**      | **DEN-037** | Milestone 18 | FEAT-022   |    13 SP     |     8.5 / 10     | `pkg/agentsearch`, `cmd/dendrite`                            |    **QUEUED [ ]**     |
+|      **9**      | **DEN-038** | Milestone 19 | FEAT-023   |    13 SP     |     9.0 / 10     | `pkg/testgen`, `pkg/uitest`, `cmd/dendrite`                  |    **QUEUED [ ]**     |
 |      **7**      | **DEN-039** | Milestone 20 | FEAT-024   |     8 SP     |     8.0 / 10     | `pkg/rea`, `pkg/ai/import`, `tests/showcase`, `cmd/dendrite` |    **COMPLETED [x]**     |
 
 ---
@@ -62,7 +62,7 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 ### Milestone 17: Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)
 
-- [x] **DEN-036**: k6 Performance Testing, TTFT/TPS Benchmarking & Cascade Failover Load Harness (`pkg/perf`, `cmd/dendrite`, `tests/perf`)
+- [ ] **DEN-036**: k6 Performance Testing, TTFT/TPS Benchmarking & Cascade Failover Load Harness (`pkg/perf`, `cmd/dendrite`, `tests/perf`)
 
 ### Milestone 20: Open-Source REA Showcase Pipeline & Cleanroom Parity Verification Suite (FEAT-024)
 
@@ -70,11 +70,11 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 ### Milestone 18: Agent Search, Capability Discovery & Semantic Routing Engine (FEAT-022)
 
-- [x] **DEN-037**: Hybrid Agent Search, TEI Embeddings & Semantic Routing Engine (`pkg/agentsearch`, `cmd/dendrite`)
+- [ ] **DEN-037**: Hybrid Agent Search, TEI Embeddings & Semantic Routing Engine (`pkg/agentsearch`, `cmd/dendrite`)
 
 ### Milestone 19: Developer Test Automation, Self-Healing Harness & UI Integration Suite (FEAT-023)
 
-- [x] **DEN-038**: Automated Test Synthesizer, Self-Healing Convergence Loop & Web UI Test Harness (`pkg/testgen`, `pkg/uitest`, `cmd/dendrite`)
+- [ ] **DEN-038**: Automated Test Synthesizer, Self-Healing Convergence Loop & Web UI Test Harness (`pkg/testgen`, `pkg/uitest`, `cmd/dendrite`)
 
 ### Milestone 11: Pluggable Mesh Networking & Zero-Trust Connectivity (FEAT-015)
 
@@ -90,12 +90,12 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 ### Milestone 10: IDE Intelligence & JetBrains MCP Bridge (FEAT-014)
 
-- [x] **DEN-028**: JetBrains IDE MCP Integration & Communication Bridge
+- [ ] **DEN-028**: JetBrains IDE MCP Integration & Communication Bridge
 
 ### Milestone 9: Web UI & Dashboard Engine (FEAT-009)
 
 - [x] **DEN-014**: Embedded HTTP Control Server & WebSocket Telemetry
-- [x] **DEN-015**: Real-Time Telemetry Gauges & Thermal Monitoring Daemon
+- [ ] **DEN-015**: Real-Time Telemetry Gauges & Thermal Monitoring Daemon
 
 ### Milestone 8: Multi-Project Workspaces & Pluggable Trackers (FEAT-005, FEAT-008)
 
@@ -123,7 +123,7 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 ### Milestone 4: Autonomous Coding Agent Harness & Tool Orchestration (FEAT-013)
 
-- [x] **DEN-024**: Agent Runner Harness & Environment Injector for Aider, OpenHands, and OpenCode
+- [ ] **DEN-024**: Agent Runner Harness & Environment Injector for Aider, OpenHands, and OpenCode
 - [x] **DEN-025**: Agent Sandbox Isolation & LiteLLM Gateway Budget Binding
 - [x] **DEN-026**: Agent Session Tracker, Git Commit Provenance & Issue Tracker Sync
 
@@ -142,7 +142,6 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 ### Milestone 1: Core Foundation, Developer Tools & Ollama Engine
 
-- [x] **DEN-004**: Ticket Module & Local Status Synchronization Engine
 
 ---
 
