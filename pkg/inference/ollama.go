@@ -48,7 +48,7 @@ func (e *OllamaEngine) Generate(ctx context.Context, req CompletionRequest) (*Co
 		model = e.cfg.Models[0]
 	}
 	if model == "" {
-		model = "qwen2.5-coder:14b"
+		model = "qwen3.8:27b"
 	}
 
 	payload := map[string]interface{}{
@@ -108,7 +108,7 @@ func (e *OllamaEngine) Generate(ctx context.Context, req CompletionRequest) (*Co
 		OutputTokens: res.EvalCount,
 		Duration:     time.Since(start),
 		CreatedAt:    time.Now(),
-		ZeroCost:     true,
+		ZeroCost:     IsZeroCostSelfHostedModel(model) || e.IsSelfHosted(),
 	}, nil
 }
 
@@ -120,6 +120,9 @@ func (e *OllamaEngine) Stream(ctx context.Context, req CompletionRequest) (<-cha
 	model := req.Model
 	if model == "" && len(e.cfg.Models) > 0 {
 		model = e.cfg.Models[0]
+	}
+	if model == "" {
+		model = "qwen3.8:27b"
 	}
 
 	payload := map[string]interface{}{

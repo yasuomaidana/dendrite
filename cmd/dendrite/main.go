@@ -180,6 +180,23 @@ func main() {
 		}
 		handleStoreCommand(ctx, os.Args[2], os.Args[3:])
 
+	case "analyze":
+		if len(os.Args) < 3 {
+			printAnalyzeUsage()
+			return
+		}
+		handleAnalyzeCommand(ctx, os.Args[2], os.Args[3:])
+
+	case "story":
+		if len(os.Args) < 3 {
+			printStoryUsage()
+			return
+		}
+		handleStoryCommand(ctx, os.Args[2], os.Args[3:])
+
+	case "commit":
+		handleCommitCommand(ctx, os.Args[2:])
+
 	default:
 		printUsage()
 	}
@@ -208,6 +225,7 @@ func printUsage() {
 	fmt.Println("  agent route --task <desc>  Auto-route task to optimal agent with LiteLLM virtual key")
 	fmt.Println("  agent run <tool> [flags]   Launch an autonomous coding agent (aider, openhands, opencode, agy)")
 	fmt.Println("  agent session [list]       View agent execution history and commits")
+	fmt.Println("  commit [flags]             Autonomous Git commit with local model message generation")
 	fmt.Println("  doc docusaurus [flags]     Docusaurus Docs-as-Code and project sharing")
 	fmt.Println("  doc reflect [flags]        Reflect documentation taxonomy (--reference, --source, --target)")
 	fmt.Println("  plane replicate [--file DEV_STATUS.md] Replicate DEV_STATUS.md from Plane service (Plane owns status)")
@@ -1002,6 +1020,10 @@ func handleDevCommand(ctx context.Context, sub string, args []string) {
 		runTopologyInspect(ctx, scenarioStr)
 
 	case "gateway":
+		if len(args) > 0 && (args[0] == "zero-cost" || args[0] == "zerocost" || args[0] == "models") {
+			handleZeroCostCommand(args[1:])
+			return
+		}
 		scenarioStr := "local-hybrid"
 		if len(args) > 0 {
 			scenarioStr = args[0]

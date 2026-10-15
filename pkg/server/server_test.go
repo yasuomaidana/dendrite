@@ -369,3 +369,66 @@ func TestTelemetryHub_BroadcastAndFrames(t *testing.T) {
 		t.Errorf("expected SSE data in stream, got: %s", recSSE.Body.String())
 	}
 }
+
+func TestServer_ZeroCostEndpoints(t *testing.T) {
+	srv := NewServer(ServerConfig{Host: "127.0.0.1", Port: 0}, nil, nil)
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = srv.Shutdown(context.Background())
+	}()
+
+	baseURL := fmt.Sprintf("http://%s", srv.Addr())
+	client := &http.Client{Timeout: 3 * time.Second}
+
+	// 1. GET /api/v1/inference/zero-cost
+	resp, err := client.Get(baseURL + "/api/v1/inference/zero-cost")
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/v1/inference/zero-cost failed: %v, status: %v", err, resp.StatusCode)
+	}
+	var details map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&details); err != nil {
+		t.Fatalf("failed to decode json: %v", err)
+	}
+	if details["total_active"].(float64) <= 0 {
+		t.Errorf("expected positive total_active models, got: %v", details["total_active"])
+	}
+
+	// 2. POST /api/v1/inference/zero-cost (add custom model)
+	addReq := `{"name": "test-api-model", "is_prefix": false}`
+	respAdd, err := client.Post(baseURL+"/api/v1/inference/zero-cost", "application/json", strings.NewReader(addReq))
+	if err != nil || respAdd.StatusCode != http.StatusCreated {
+		t.Fatalf("POST add failed: %v, status: %v", err, respAdd.StatusCode)
+	}
+
+	// 3. GET /api/v1/inference/zero-cost/test
+	respTest, err := client.Get(baseURL + "/api/v1/inference/zero-cost/test?model=test-api-model")
+	if err != nil || respTest.StatusCode != http.StatusOK {
+		t.Fatalf("GET test failed: %v, status: %v", err, respTest.StatusCode)
+	}
+	var testResult map[string]interface{}
+	_ = json.NewDecoder(respTest.Body).Decode(&testResult)
+	if testResult["zero_cost"] != true {
+		t.Errorf("expected test-api-model to be zero cost, got: %v", testResult)
+	}
+
+	// 4. Test commercial model via /test
+	respComm, err := client.Get(baseURL + "/api/v1/inference/zero-cost/test?model=copilot-sonnet")
+	if err != nil || respComm.StatusCode != http.StatusOK {
+		t.Fatalf("GET test commercial failed: %v, status: %v", err, respComm.StatusCode)
+	}
+	var commResult map[string]interface{}
+	_ = json.NewDecoder(respComm.Body).Decode(&commResult)
+	if commResult["zero_cost"] != false {
+		t.Errorf("expected copilot-sonnet to NOT be zero cost, got: %v", commResult)
+	}
+
+	// 5. DELETE /api/v1/inference/zero-cost
+	delReq, _ := http.NewRequest(http.MethodDelete, baseURL+"/api/v1/inference/zero-cost", strings.NewReader(`{"name": "test-api-model"}`))
+	delReq.Header.Set("Content-Type", "application/json")
+	respDel, err := client.Do(delReq)
+	if err != nil || respDel.StatusCode != http.StatusOK {
+		t.Fatalf("DELETE failed: %v, status: %v", err, respDel.StatusCode)
+	}
+}

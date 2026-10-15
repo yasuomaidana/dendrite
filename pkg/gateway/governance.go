@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"Dendrite/pkg/inference"
 )
 
 // Standard errors for budget limiter and failover operations.
@@ -138,17 +140,12 @@ func CalculateRateBoundedCeiling(weeklyLimitUSD, currentConsumedUSD float64) flo
 
 // IsZeroCostSelfHostedModel checks if model is exempt from financial token budgeting.
 func IsZeroCostSelfHostedModel(model string) bool {
-	m := strings.ToLower(model)
-	return m == "local-qwen-coder" ||
-		m == "oxillama-rust" ||
-		m == "vllm-cluster" ||
-		m == "hf-tgi-remote" ||
-		m == "llamacpp-local" ||
-		strings.HasPrefix(m, "ollama/") ||
-		strings.HasPrefix(m, "oxillama/") ||
-		strings.HasPrefix(m, "vllm/") ||
-		strings.HasPrefix(m, "llamacpp/") ||
-		strings.HasPrefix(m, "huggingface-tei/")
+	return inference.IsZeroCostSelfHostedModel(model)
+}
+
+// GetZeroCostRegistry returns the active zero-cost model registry.
+func GetZeroCostRegistry() *inference.ZeroCostRegistry {
+	return inference.GetZeroCostRegistry()
 }
 
 // CheckBudget determines whether a model invocation is allowed, or returns a fallback candidate.

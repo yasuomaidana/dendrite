@@ -74,6 +74,44 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 			},
 		},
 		{
+			ModelName: "local-qwen3-27b",
+			LitellmParams: ModelParams{
+				Model:             "ollama/qwen3.8:27b",
+				APIBase:           ollamaBaseURL,
+				CustomLLMProvider: "ollama",
+				MaxTokens:         8192,
+			},
+			ModelInfo: &ModelInfo{
+				ID:                 "local-qwen3-27b",
+				Mode:               "chat",
+				InputCostPerToken:  0.0,
+				OutputCostPerToken: 0.0,
+				MaxInputTokens:     32768,
+				MaxOutputTokens:    8192,
+				BaseModel:          "qwen3.8:27b",
+				SkipBudgetChecks:   true,
+			},
+		},
+		{
+			ModelName: "local-qwen3-9b",
+			LitellmParams: ModelParams{
+				Model:             "ollama/qwen3.5:9b",
+				APIBase:           ollamaBaseURL,
+				CustomLLMProvider: "ollama",
+				MaxTokens:         4096,
+			},
+			ModelInfo: &ModelInfo{
+				ID:                 "local-qwen3-9b",
+				Mode:               "chat",
+				InputCostPerToken:  0.0,
+				OutputCostPerToken: 0.0,
+				MaxInputTokens:     32768,
+				MaxOutputTokens:    4096,
+				BaseModel:          "qwen3.5:9b",
+				SkipBudgetChecks:   true,
+			},
+		},
+		{
 			ModelName: "local-qwen-coder",
 			LitellmParams: ModelParams{
 				Model:             "ollama/qwen2.5-coder:14b",
@@ -94,18 +132,31 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 		},
 	}
 
+	// Apply dynamic zero-cost exemptions to default model list
+	for i := range modelList {
+		if IsZeroCostSelfHostedModel(modelList[i].ModelName) || IsZeroCostSelfHostedModel(modelList[i].LitellmParams.Model) {
+			if modelList[i].ModelInfo != nil {
+				modelList[i].ModelInfo.SkipBudgetChecks = true
+				modelList[i].ModelInfo.InputCostPerToken = 0.0
+				modelList[i].ModelInfo.OutputCostPerToken = 0.0
+			}
+		}
+	}
+
 	routerSettings := &RouterSettings{
 		RoutingStrategy: "usage-based-routing",
 		Timeout:         120,
 		Fallbacks: []map[string][]string{
 			{
-				"gemini-2.5-pro":   {"copilot-sonnet", "gemini-2.5-flash", "local-qwen-coder"},
-				"copilot-sonnet":   {"gemini-2.5-flash", "local-qwen-coder"},
-				"gemini-2.5-flash": {"local-qwen-coder"},
+				"gemini-2.5-pro":   {"copilot-sonnet", "gemini-2.5-flash", "local-qwen3-27b", "local-qwen-coder"},
+				"copilot-sonnet":   {"gemini-2.5-flash", "local-qwen3-27b", "local-qwen-coder"},
+				"gemini-2.5-flash": {"local-qwen3-27b", "local-qwen-coder"},
 			},
 		},
 		ContextWindowFallbacks: []map[string]string{
 			{"local-qwen-coder": "gemini-2.5-pro"},
+			{"local-qwen3-27b": "gemini-2.5-pro"},
+			{"local-qwen3-9b": "gemini-2.5-pro"},
 			{"gemini-2.5-flash": "gemini-2.5-pro"},
 		},
 	}
@@ -146,7 +197,11 @@ func MultiEngineLiteLLMConfig(engines []inference.InferenceEngine) *LiteLLMConfi
 		switch eng.Type() {
 		case inference.EngineOllama:
 			modelName = "local-coder"
-			upstreamModel = "ollama/qwen2.5-coder:14b"
+			mID := "qwen3.8:27b"
+			if len(ecfg.Models) > 0 {
+				mID = ecfg.Models[0]
+			}
+			upstreamModel = "ollama/" + mID
 			apiBase = endpoint
 			provider = "ollama"
 			skipBudget = true
@@ -220,6 +275,11 @@ func MultiEngineLiteLLMConfig(engines []inference.InferenceEngine) *LiteLLMConfi
 		}
 
 		if modelName != "" {
+			if eng.IsSelfHosted() || IsZeroCostSelfHostedModel(modelName) || IsZeroCostSelfHostedModel(upstreamModel) {
+				skipBudget = true
+				cost = 0.0
+			}
+
 			entry := ModelListEntry{
 				ModelName: modelName,
 				LitellmParams: ModelParams{
@@ -299,12 +359,18 @@ func (c *LiteLLMConfig) Validate() error {
 	return nil
 }
 
-// RenderYAML serializes the LiteLLMConfig to valid YAML bytes.
+// RenderYAML marshals the configuration into standard LiteLLM Proxy YAML.
 func RenderYAML(cfg *LiteLLMConfig) ([]byte, error) {
 	if err := cfg.Validate(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
-	return yaml.Marshal(cfg)
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal YAML: %w", err)
+	}
+
+	return data, nil
 }
 
 // RenderForTopology derives the Ollama base URL from an active TopologyConfig and generates the YAML.

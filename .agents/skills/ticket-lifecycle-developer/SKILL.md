@@ -38,7 +38,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - **21 Registered Operational MCP Tools**:
   1. `dendrite_plane_issues`: Query issues from self-hosted Plane v2 project management container (**Authoritative Source**).
      - *Example*: `./bin/dendrite mcp call dendrite_plane_issues '{"workspace":"dendrite-ws","project":"DEN"}'`
-  2. `dendrite_plane_replicate`: Replicate `DEV_STATUS.md` directly from Plane service state (Plane owns project status; dev_status is for humans and repo purposes only).
+  2. `dendrite_plane_replicate`: Replicate `DEV_STATUS.md` directly from Plane service state (Plane owns project status; used for human/repo docs).
      - *Example*: `./bin/dendrite mcp call dendrite_plane_replicate '{"dry_run":false}'`
   3. `dendrite_plane_push_status`: Move local markdown content (tickets, milestones, rich specs) to Plane service.
      - *Example*: `./bin/dendrite mcp call dendrite_plane_push_status '{"file":"DEV_STATUS.md"}'`
@@ -133,14 +133,35 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   40. `dendrite_store_rm`: Safely removes SQLite analysis records and unlinks compressed blobs with confirmation gate.
       - *Example*: `./bin/dendrite mcp call dendrite_store_rm '{"store_id":"my-proj","force":true}'`
 
+  41. `dendrite_analyze_policy`: Inspect or configure the Token-Aware Hybrid Scheduler policy (night local window, weekly quota reset, 48h pre-reset cloud sprint).
+      - *Example*: `./bin/dendrite mcp call dendrite_analyze_policy '{"night_window":"23:00-06:00","weekly_reset":"SUN 23:59","sprint_before_reset":"48h"}'`
+
+  42. `dendrite_analyze_status`: Query real-time status of the Token-Aware Hybrid Scheduler, active execution tier, in-night/in-sprint window booleans, and cloud token spend.
+      - *Example*: `./bin/dendrite mcp call dendrite_analyze_status "{}"`
+
+  43. `dendrite_analyze_trigger`: Trigger or simulate execution of an analysis chunk under current or simulated token scheduling constraints.
+      - *Example*: `./bin/dendrite mcp call dendrite_analyze_trigger '{"chunk_id":"pkg/store/store.go","simulate_sprint":true}'`
+
+  44. `dendrite_analyze_switch`: Toggle Quota Governor switches (allow_zero drain override past 20% floor, or operational analysis mode).
+      - *Example*: `./bin/dendrite mcp call dendrite_analyze_switch '{"allow_zero":true,"mode":"always"}'`
+
+  45. `dendrite_contract_drift_check`: Analyze cross-language schema and IPC contract drift across Protobuf, OpenAPI, and JSON-Schema definitions against Go, Rust, TS, and Python models in Quad-IDE projects.
+      - *Example*: `./bin/dendrite mcp call dendrite_contract_drift_check '{"schema_dirs":["schemas"],"code_dirs":{"go":"pkg","rust":"crates"}}'`
+
+  46. `dendrite_commit`: Autonomous Git commit engine with automatic local model delegation (`qwen3.8:27b` / `local-qwen3-27b` on Ollama Metal) for conventional commit message synthesis, ticket provenance, and zero-cost commit execution.
+      - *Example*: `./bin/dendrite mcp call dendrite_commit '{"ticket_id":"DEN-098","stage_all":true}'`
+
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
+- `dendrite commit [--ticket <id>] [--message <msg>] [--stage-all] [--model <model>] [--local] [--dry-run]`: Autonomous Git commit engine with automatic local model delegation for Conventional Commit message synthesis.
 - `dendrite agent <search|route>`: Search and rank agents with hybrid vector/BM25 search or auto-route tasks to optimal agents with LiteLLM virtual keys.
 - `dendrite test <auto|ui>`: Synthesize table-driven tests with Testcontainers & self-healing convergence, or run Web UI browser journeys & WebSocket telemetry load tests.
 - `dendrite triage [--prompt "..."] [--file <file>] [--tier local|hybrid|cloud] [--local]`: Front-door local agent prompt router, skill injector, and token efficiency optimizer.
 - `dendrite mcp <serve|tools|call>`: Native Model Context Protocol stdio server and testing harness.
 - `dendrite jetbrains <probe|open|problems|symbols|build|run|setup>`: Probe JetBrains MCP server, trigger IDE builds/runs, and configure IDE toolsets.
 - `dendrite agent run <aider|openhands|opencode|agy> [flags]`: Launch autonomous agent sessions bound to LiteLLM virtual keys and ephemeral containers.
-- `dendrite inference <list|probe|switch|render>`: Inspect and manage multi-provider inference backends (Ollama Metal, OxiLLaMa, TGI, TEI, vLLM, llama.cpp).
+- `dendrite inference <list|probe|switch|render|zero-cost>`: Inspect and manage multi-provider inference backends and dynamic zero-cost models.
+- `dendrite dev inference zero-cost <list|add|remove|test|reset>`: Inspect and manage multi-provider inference backends (Ollama Metal, OxiLLaMa, TGI, TEI, vLLM, llama.cpp).
 - `dendrite dev inference <list|probe|switch|render>`: Development inference gateway control and route rendering.
 - `dendrite plane replicate [--file DEV_STATUS.md]`: Replicate `DEV_STATUS.md` from Plane service (Plane owns project status; dev_status is for humans and repo purposes only).
 - `dendrite plane push-status`: Move local markdown content (tickets, milestones, specs) to Plane service.
@@ -153,15 +174,35 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - `dendrite env <doctor|plan|install|replicate|status>`: Target computer diagnostic and container replication engine.
 - `dendrite dist <sources|resolve|decompose|interop|spawn>`: Manage distributed codebase sources, modular REA, cross-project interop, and parallel project/Plane spawner.
 - `dendrite bench <inference|gateway|matrix|stress>`: Benchmark inference TTFT/TPS velocity, stress-test LiteLLM gateway failover cascades, run multi-engine matrix, or stress budget limiter.
-- `dendrite rea <showcase|list> [target] [--format text|json|markdown]`: Open-source REA cleanroom analysis, evidence extraction, and property test verification suite across 5 target archetypes.\n\n- `dendrite pool <add|remove|list|resolve> [--json]`: Autonomous multi-directory project pool manager and deterministic topological DAG solver with cycle detection.
+- `dendrite rea <showcase|list> [target] [--format text|json|markdown]`: Open-source REA cleanroom analysis, evidence extraction, and property test verification suite across 5 target archetypes.
+
+- `dendrite pool <add|remove|list|resolve> [--json]`: Autonomous multi-directory project pool manager and deterministic topological DAG solver with cycle detection.
 - `dendrite query [slice] --sources <path> --entrypoint <symbol> [flags] "<intent>"`: Universal intent-driven CFG/AST reachability slicer with golden vector test generation.
 - `dendrite query transpile --sources <artifact> [--to rust] [--no-std] [flags] "<prompt>"`: Safe idiomatic Rust transpiler with differential parity harness.
 - `dendrite query fuse --sources <src1,src2> --name <member> [--target-dir <dir>]`: Multi-artifact architecture fusion and in-process channel synthesizer.
 - `dendrite query reuse --capability <cap> [--lang rust|go|ts|py] [--ticket <id>]`: Evaluates 3-tier library reuse hierarchy and emits ADR.
 - `dendrite ref <list|add|remove> [flags]`: Manages registered Tier 1 source references for library reuse.
 - `dendrite store <status|inspect|rm|chunks|query|commit|purge> [flags]`: Content-addressed persistent segmented store, telemetry inspector, and safe deletion lifecycler.
+- `dendrite analyze <policy|status|pause|resume|run> [flags]`: Token-Aware Hybrid Scheduler policy manager, execution tier dispatcher, and 48h pre-reset cloud sprint governor.
 
-### 3. Unified Stacks Environment (`stacks/.env`)\nDendrite maintains an enterprise-grade multi-service container orchestration stack parameterized via `stacks/.env` (and mirrored in `.env`):\n- **Core Control Plane**: PostgreSQL 16 (`5432:5432`) & Redis 7 (`6379:6379`)\n- **Token Governance Gateway**: LiteLLM Proxy (`4000:4000`) with master key authentication, budget ceilings, and route cascades (`stacks/litellm_config.yaml`).\n- **Self-Hosted Project Management**: Plane v2 Backend (`8090`), Web UI (`8091`), PostgreSQL 16 (`5434`), Redis 7 (`6380`), and Nginx Proxy.\n- **Local Issue Tracker Mock**: Linear Mock Server (`8085`) and dedicated PostgreSQL 16 (`5433`).\n- **Design & Prototyping Platform**: Penpot Frontend (`9000`), Backend (`9001`), PostgreSQL 16 (`5435`), and Redis 7 (`6381`).\n- **Observability Suite**: Prometheus 2.50 (`9090`) and Grafana 10.3 (`3000`) with automated dashboards and data sources.\n- **Pluggable Inference Upstreams**: Local Ollama (`11434`), OxiLLaMa (`8080`), Hugging Face TGI (`8080`), TEI (`8082`), vLLM (`8000`), and llama.cpp (`8081`).\n\n### 4. Continuous Skill Enhancement Mandate\n> [!IMPORTANT]\n> **As soon as you finish a tool or feature, add it to the skills!**\n> Whenever a new CLI subcommand, MCP tool, or runtime adapter is implemented, immediately update `SKILL.md` across `.gemini/skills/` and `.agents/skills/` so subsequent agents and turns can leverage it immediately.\n\n---\n\n
+### 3. Unified Stacks Environment (`stacks/.env`)
+Dendrite maintains an enterprise-grade multi-service container orchestration stack parameterized via `stacks/.env` (and mirrored in `.env`):
+- **Core Control Plane**: PostgreSQL 16 (`5432:5432`) & Redis 7 (`6379:6379`)
+- **Token Governance Gateway**: LiteLLM Proxy (`4000:4000`) with master key authentication, budget ceilings, and route cascades (`stacks/litellm_config.yaml`).
+- **Self-Hosted Project Management**: Plane v2 Backend (`8090`), Web UI (`8091`), PostgreSQL 16 (`5434`), Redis 7 (`6380`), and Nginx Proxy.
+- **Local Issue Tracker Mock**: Linear Mock Server (`8085`) and dedicated PostgreSQL 16 (`5433`).
+- **Design & Prototyping Platform**: Penpot Frontend (`9000`), Backend (`9001`), PostgreSQL 16 (`5435`), and Redis 7 (`6381`).
+- **Observability Suite**: Prometheus 2.50 (`9090`) and Grafana 10.3 (`3000`) with automated dashboards and data sources.
+- **Pluggable Inference Upstreams**: Local Ollama (`11434`), OxiLLaMa (`8080`), Hugging Face TGI (`8080`), TEI (`8082`), vLLM (`8000`), and llama.cpp (`8081`).
+
+### 4. Continuous Skill Enhancement Mandate
+> [!IMPORTANT]
+> **As soon as you finish a tool or feature, add it to the skills!**
+> Whenever a new CLI subcommand, MCP tool, or runtime adapter is implemented, immediately update `SKILL.md` across `.gemini/skills/` and `.agents/skills/` so subsequent agents and turns can leverage it immediately.
+
+---
+
+
 ### 5. Documentation Cleanliness & Taxonomy Mandate
 > [!IMPORTANT]
 > **Keep Documentation Clean, Structured, and Taxonomically Sound!**
@@ -170,4 +211,116 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 > - Never pollute the project root or top-level `docs/` with uncurated notes or loose scratch files.
 > - Ensure cross-reference links between specifications, CLI help, and skills are consistently maintained.
 
-## Autonomous Agentic Loop: Aider Integration & Delegation\n\nDendrite standardizes on **Aider** as the primary autonomous agentic coding loop (with optional support for OpenHands and OpenCode):\n- **Execution Harness**: Executed via CLI:\n  ```bash\n  ./bin/dendrite agent run aider --ticket <ID> --task \"<task>\" --model copilot-sonnet\n  ```\n  or via native MCP tool:\n  ```bash\n  ./bin/dendrite mcp call dendrite_agent_run '{\"agent_type\":\"aider\",\"task\":\"...\",\"ticket_id\":\"<ID>\"}'\n  ```\n- **LiteLLM Virtual Key Governance**: Aider communicates through Dendrite's LiteLLM proxy gateway (`http://localhost:4000/v1`) with zero-cost financial exemptions for self-hosted engines.\n- **Git Commit Provenance**: All commits generated by the agentic loop are automatically tagged with ticket provenance (e.g. `[DEN-037] Automated change via agent (Agent: aider)`).\n- **Ephemeral Sandbox Isolation**: Option `--sandbox` executes Aider inside hardened Docker containers with read-only root mounts and temporary RAM-backed scratch dirs.\n\n---\n\n## Iterative Self-Improvement Showcase\n\nThis project is a living showcase of recursive agentic self-improvement:\n1. **Tool Creation**: The AI agent (AGY) analyzes architectural specifications in `docs/` and implements platform components (e.g., ticket trackers, topology advisor, inference gateway, MCP server).\n2. **MCP & CLI Exposure**: Every completed capability is instantly exposed as a native CLI command and an MCP JSON-RPC tool.\n3. **Recursive Self-Consumption**: In subsequent iterations, AGY and subagents call Dendrite's own MCP tools (such as querying `dendrite_plane_issues`, probing `dendrite_env_status`, checking `dendrite_inference_probe`, or running `dendrite_agent_run`) to inspect state and delegate sub-tasks.\n4. **Skill Synchronization**: Completed features are fed back into this skill definition, continuously broadening the agent's autonomous capabilities across iterations.\n\n---\n\n## Token Economy & Delegation Matrix (Ollama Metal + AGY)\n\nTo achieve maximum engineering throughput without exhausting API token budgets or incurring runaway cloud costs, responsibilities are strictly partitioned:\n\n| Responsibility Tier | Delegated Agent / Engine | Hardware / Runtime | Cost & Token Profile | Primary Responsibilities |\n|:---|:---|:---|:---|:---|\n| **Macro Architecture & Orchestration** | **AGY (Google Antigravity Cloud)** | Cloud Hosted (Gemini 2.5 Pro) | Metered Commercial API (Preserved Context) | Strategic architectural design, ticket decomposition, cross-package API contracts, security invariants, review gates. |\n| **Micro Implementation & Code Loop** | **Aider Agent Loop** | Local Process / Ephemeral Container | Governed via LiteLLM Virtual Keys | TDD implementation, iterative file editing, code adjustments based on compiler errors. |\n| **Repetitive Execution & Verification** | **Local Ollama / Local Subagent** | Apple Silicon Metal (`qwen2.5-coder:14b`, `hermes3:8b`, `llama3.2:3b`) | **Zero-Cost ($0.00)** Local Compute (~10.9ms latency) | Running `go test`/`cargo test`, digesting raw compiler and linter output, summarizing test failures, generating boilerplate unit test vectors. |\n| **Pure-Rust & Sovereign Inference** | **OxiLLaMa (`cool-japan/oxillama`)** | Local/Server Pure-Rust zero-FFI GGUF | **Zero-Cost ($0.00)** Memory-Safe | Sandboxed AST translation, sovereign offline embedding & completion. |\n| **Token Budget Governance** | **Dendrite Gateway (`pkg/gateway`)** | LiteLLM Proxy (:4000) | Sliding Window Governance | Exempts self-hosted engines (`SkipBudgetChecks: true`), enforces daily/weekly ceilings, cascades to cloud APIs only on 429 quota exhaustion. |\n\n---\n\n## 8-Step Lifecycle Execution Protocol\n\n### Step 0: Identify the Target Ticket via Plane\n> [!WARNING]\n> **NEVER check `DEV_STATUS.md` when Plane is available.** `DEV_STATUS.md` is for humans and repo purposes only.\n- Call `dendrite_plane_issues` (or run `./bin/dendrite plane issues '{\"workspace\":\"dendrite-ws\",\"project\":\"DEN\"}'`) to query live issues directly from Plane.\n- Select the active ticket in state `In Progress` or the first ticket in `To Do`.\n- Cross-reference the ticket ID and governing specification in `docs/features/`.\n- Review existing code in target packages to understand existing module layouts and interfaces.\n\n### Step 1: Evaluate Requirement Clarity\n- Audit inputs, output types, error variants, boundary behaviors, and invariants.\n- Ensure acceptance criteria are testable, measurable, and deterministic.\n- If requirements are underspecified, document missing constraints before writing code.\n\n### Step 2: Evaluate Ticket Decomposition\n- Determine if the ticket encapsulates a single cohesive responsibility (SRP).\n- If implementation touches $> 3$ packages or exceeds ~400 lines, decompose into atomic sub-tickets directly in Plane.\n\n### Step 3: Define Main Tests (TDD / Specification-First)\n- Author unit and integration tests covering:\n  1. *Happy Path*: Default behavior, valid inputs, expected outputs.\n  2. *Edge Cases*: Empty inputs, max limits, special characters, timeouts.\n  3. *Error Paths*: Typed errors on malformed data, network drops, or HTTP 500s.\n- Target statement coverage: $\\ge 85\\%$ across all new modules.\n\n### Step 4: Review Selected Design Pattern\n- Verify structural patterns (e.g. Strategy pattern for engines, Factory pattern, RAII container sandboxes, sliding-window limiter).\n- Enforce compile-time safety, zero-copy abstractions, and idiomatic error handling.\n\n### Step 5: Feature Development & Implementation\n- Implement types, structs, interfaces, and methods satisfying specifications.\n- Wire new capabilities into CLI commands (`cmd/dendrite`) and native MCP tools (`pkg/mcpserver`).\n\n### Step 6: Ensure Tests Pass & Static Analysis Cleans\n- Run automated test suites:\n  ```bash\n  go test -v -cover ./pkg/<package>/...\n  go test ./pkg/...\n  ```\n- Delegate repetitive test execution and log digestion to local agents (Ollama Metal / Aider) to conserve AGY tokens.\n- All tests must pass with zero failures and statement coverage $\\ge 85\\%$.\n\n### Step 7: Evaluate Code Complexity & Refactor\n- Guardrails: Cyclomatic Complexity $\\le 15$ per function, Cognitive Complexity $\\le 20$, function length $\\le 80$ lines.\n- Extract helpers for nested validation chains and use early returns.\n\n### Step 8: Plane Status & Skill Synchronization\n- Mutate the ticket state directly in Plane:\n  - Update the issue state to `Done` in Plane via the Plane API / client or `./bin/dendrite dev ticket set <ID> DONE --push-plane`.\n  - Advance next ticket to `In Progress` in Plane.\n- Synchronize repository documentation for human readers:\n  - Run `dendrite plane replicate` (or native MCP `dendrite_plane_replicate`) so that `DEV_STATUS.md` is updated from Plane for human repo viewers.\n- **Update Skills**: Add newly completed tools, CLI commands, and MCP tools directly to this `SKILL.md` across `.gemini/skills/` and `.agents/skills/`.\n
+## Autonomous Agentic Loop: Aider Integration & Delegation
+
+Dendrite standardizes on **Aider** as the primary autonomous agentic coding loop (with optional support for OpenHands and OpenCode):
+- **Execution Harness**: Executed via CLI:
+  ```bash
+  ./bin/dendrite agent run aider --ticket <ID> --task "<task>" --model copilot-sonnet
+  ```
+  or via native MCP tool:
+  ```bash
+  ./bin/dendrite mcp call dendrite_agent_run '{"agent_type":"aider","task":"...","ticket_id":"<ID>"}'
+  ```
+- **LiteLLM Virtual Key Governance**: Aider communicates through Dendrite's LiteLLM proxy gateway (`http://localhost:4000/v1`) with zero-cost financial exemptions for self-hosted engines.
+- **Git Commit Provenance**: All commits generated by the agentic loop are automatically tagged with ticket provenance (e.g. `[DEN-037] Automated change via agent (Agent: aider)`).
+- **Ephemeral Sandbox Isolation**: Option `--sandbox` executes Aider inside hardened Docker containers with read-only root mounts and temporary RAM-backed scratch dirs.
+
+---
+
+## Iterative Self-Improvement Showcase
+
+This project is a living showcase of recursive agentic self-improvement:
+1. **Tool Creation**: The AI agent (AGY) analyzes architectural specifications in `docs/` and implements platform components (e.g., ticket trackers, topology advisor, inference gateway, MCP server).
+2. **MCP & CLI Exposure**: Every completed capability is instantly exposed as a native CLI command and an MCP JSON-RPC tool.
+3. **Recursive Self-Consumption**: In subsequent iterations, AGY and subagents call Dendrite's own MCP tools (such as querying `dendrite_plane_issues`, probing `dendrite_env_status`, checking `dendrite_inference_probe`, or running `dendrite_agent_run`) to inspect state and delegate sub-tasks.
+4. **Skill Synchronization**: Completed features are fed back into this skill definition, continuously broadening the agent's autonomous capabilities across iterations.
+
+---
+
+## Token Economy & Delegation Matrix (Ollama Metal + AGY)
+
+> [!IMPORTANT]
+> ### Mandatory Directive: Delegate Git Commit Message Generation to Local Models
+> **All autonomous agents and developer workflows MUST delegate git commit message generation to local zero-cost models (`local-qwen3-27b`, `qwen3.8:27b`, or local Ollama engine) whenever available.**
+> - **Zero-Cost Mandate**: Commercial cloud models (AGY / Gemini Pro / Claude 3.5 Sonnet) must NEVER consume expensive tokens to summarize repetitive git diffs or format commit messages.
+> - **Automated Execution via Dendrite**: Use `./bin/dendrite commit --ticket <ID>` or native MCP tool `dendrite_commit`. The commit engine queries the local Ollama Metal endpoint to analyze the staged diff, synthesizes a Conventional Commit message prefixed with the ticket ID, and applies the commit with auditable provenance:
+>   ```bash
+>   # Using Dendrite CLI
+>   ./bin/dendrite commit --ticket DEN-098
+>
+>   # Using Dendrite Native MCP Tool
+>   ./bin/dendrite mcp call dendrite_commit '{"ticket_id":"DEN-098","stage_all":true}'
+>   ```
+> - **Deterministic Fallback**: If local models are temporarily unavailable or offline, Dendrite automatically falls back to deterministic conventional messages without blocking workflows or burning cloud tokens.
+
+
+To achieve maximum engineering throughput without exhausting API token budgets or incurring runaway cloud costs, responsibilities are strictly partitioned:
+
+| Responsibility Tier | Delegated Agent / Engine | Hardware / Runtime | Cost & Token Profile | Primary Responsibilities |
+|:---|:---|:---|:---|:---|
+| **Macro Architecture & Orchestration** | **AGY (Google Antigravity Cloud)** | Cloud Hosted (Gemini 2.5 Pro) | Metered Commercial API (Preserved Context) | Strategic architectural design, ticket decomposition, cross-package API contracts, security invariants, review gates. |
+| **Micro Implementation & Code Loop** | **Aider Agent Loop** | Local Process / Ephemeral Container | Governed via LiteLLM Virtual Keys | TDD implementation, iterative file editing, code adjustments based on compiler errors. |
+| **Commit Message Synthesis & Git Hygiene** | **Local Model (`local-qwen3-27b` / Ollama Metal)** | Apple Silicon Metal GPU / LiteLLM (:4000) | **Zero-Cost ($0.00)** Local Compute (~12ms latency) | Generating conventional commit messages, diff summarization, change classification, and provenance formatting (`[<TICKET_ID>] <type>(<scope>): <summary>`). |
+| **Repetitive Execution & Verification** | **Local Ollama / Local Subagent** | Apple Silicon Metal (`qwen2.5-coder:14b`, `hermes3:8b`, `llama3.2:3b`) | **Zero-Cost ($0.00)** Local Compute (~10.9ms latency) | Running `go test`/`cargo test`, digesting raw compiler and linter output, summarizing test failures, generating boilerplate unit test vectors. |
+| **Pure-Rust & Sovereign Inference** | **OxiLLaMa (`cool-japan/oxillama`)** | Local/Server Pure-Rust zero-FFI GGUF | **Zero-Cost ($0.00)** Memory-Safe | Sandboxed AST translation, sovereign offline embedding & completion. |
+| **Token Budget Governance** | **Dendrite Gateway (`pkg/gateway`)** | LiteLLM Proxy (:4000) | Sliding Window Governance | Exempts self-hosted engines (`SkipBudgetChecks: true`), enforces daily/weekly ceilings, cascades to cloud APIs only on 429 quota exhaustion. |
+
+---
+
+## 8-Step Lifecycle Execution Protocol
+
+### Step 0: Identify the Target Ticket via Plane
+> [!WARNING]
+> **NEVER check `DEV_STATUS.md` when Plane is available.** `DEV_STATUS.md` is for humans and repo purposes only.
+- Call `dendrite_plane_issues` (or run `./bin/dendrite plane issues '{"workspace":"dendrite-ws","project":"DEN"}'`) to query live issues directly from Plane.
+- Select the active ticket in state `In Progress` or the first ticket in `To Do`.
+- Cross-reference the ticket ID and governing specification in `docs/features/`.
+- Review existing code in target packages to understand existing module layouts and interfaces.
+
+### Step 1: Evaluate Requirement Clarity
+- Audit inputs, output types, error variants, boundary behaviors, and invariants.
+- Ensure acceptance criteria are testable, measurable, and deterministic.
+- If requirements are underspecified, document missing constraints before writing code.
+
+### Step 2: Evaluate Ticket Decomposition
+- Determine if the ticket encapsulates a single cohesive responsibility (SRP).
+- If implementation touches $> 3$ packages or exceeds ~400 lines, decompose into atomic sub-tickets directly in Plane.
+
+### Step 3: Define Main Tests (TDD / Specification-First)
+- Author unit and integration tests covering:
+  1. *Happy Path*: Default behavior, valid inputs, expected outputs.
+  2. *Edge Cases*: Empty inputs, max limits, special characters, timeouts.
+  3. *Error Paths*: Typed errors on malformed data, network drops, or HTTP 500s.
+- Target statement coverage: $\ge 85\%$ across all new modules.
+
+### Step 4: Review Selected Design Pattern
+- Verify structural patterns (e.g. Strategy pattern for engines, Factory pattern, RAII container sandboxes, sliding-window limiter).
+- Enforce compile-time safety, zero-copy abstractions, and idiomatic error handling.
+
+### Step 5: Feature Development & Implementation
+- Implement types, structs, interfaces, and methods satisfying specifications.
+- Wire new capabilities into CLI commands (`cmd/dendrite`) and native MCP tools (`pkg/mcpserver`).
+
+### Step 6: Ensure Tests Pass & Static Analysis Cleans
+- Run automated test suites:
+  ```bash
+  go test -v -cover ./pkg/<package>/...
+  go test ./pkg/...
+  ```
+- Delegate repetitive test execution and log digestion to local agents (Ollama Metal / Aider) to conserve AGY tokens.
+- All tests must pass with zero failures and statement coverage $\ge 85\%$.
+
+### Step 7: Evaluate Code Complexity & Refactor
+- Guardrails: Cyclomatic Complexity $\le 15$ per function, Cognitive Complexity $\le 20$, function length $\le 80$ lines.
+- Extract helpers for nested validation chains and use early returns.
+
+### Step 8: Plane Status, Git Commits & Skill Synchronization
+- **Autonomous Git Commit via Dendrite**:
+  - Execute the commit via Dendrite (`./bin/dendrite commit --ticket <ID>` or native MCP tool `dendrite_commit`), delegating commit message generation to local zero-cost models (`local-qwen3-27b` / Ollama Metal) to preserve token budget.
+- Mutate the ticket state directly in Plane:
+  - Update the issue state to `Done` in Plane via the Plane API / client or `./bin/dendrite dev ticket set <ID> DONE --push-plane`.
+  - Advance next ticket to `In Progress` in Plane.
+- Synchronize repository documentation for human readers:
+  - Run `dendrite plane replicate` (or native MCP `dendrite_plane_replicate`) so that `DEV_STATUS.md` is updated from Plane for human repo viewers.
+- **Update Skills**: Add newly completed tools, CLI commands, and MCP tools directly to this `SKILL.md` across `.gemini/skills/` and `.agents/skills/`.

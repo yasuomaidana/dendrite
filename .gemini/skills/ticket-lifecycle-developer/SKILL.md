@@ -133,14 +133,35 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   40. `dendrite_store_rm`: Safely removes SQLite analysis records and unlinks compressed blobs with confirmation gate.
       - *Example*: `./bin/dendrite mcp call dendrite_store_rm '{"store_id":"my-proj","force":true}'`
 
+  41. `dendrite_analyze_policy`: Inspect or configure the Token-Aware Hybrid Scheduler policy (night local window, weekly quota reset, 48h pre-reset cloud sprint).
+      - *Example*: `./bin/dendrite mcp call dendrite_analyze_policy '{"night_window":"23:00-06:00","weekly_reset":"SUN 23:59","sprint_before_reset":"48h"}'`
+
+  42. `dendrite_analyze_status`: Query real-time status of the Token-Aware Hybrid Scheduler, active execution tier, in-night/in-sprint window booleans, and cloud token spend.
+      - *Example*: `./bin/dendrite mcp call dendrite_analyze_status "{}"`
+
+  43. `dendrite_analyze_trigger`: Trigger or simulate execution of an analysis chunk under current or simulated token scheduling constraints.
+      - *Example*: `./bin/dendrite mcp call dendrite_analyze_trigger '{"chunk_id":"pkg/store/store.go","simulate_sprint":true}'`
+
+  44. `dendrite_analyze_switch`: Toggle Quota Governor switches (allow_zero drain override past 20% floor, or operational analysis mode).
+      - *Example*: `./bin/dendrite mcp call dendrite_analyze_switch '{"allow_zero":true,"mode":"always"}'`
+
+  45. `dendrite_contract_drift_check`: Analyze cross-language schema and IPC contract drift across Protobuf, OpenAPI, and JSON-Schema definitions against Go, Rust, TS, and Python models in Quad-IDE projects.
+      - *Example*: `./bin/dendrite mcp call dendrite_contract_drift_check '{"schema_dirs":["schemas"],"code_dirs":{"go":"pkg","rust":"crates"}}'`
+
+  46. `dendrite_commit`: Autonomous Git commit engine with automatic local model delegation (`qwen3.8:27b` / `local-qwen3-27b` on Ollama Metal) for conventional commit message synthesis, ticket provenance, and zero-cost commit execution.
+      - *Example*: `./bin/dendrite mcp call dendrite_commit '{"ticket_id":"DEN-098","stage_all":true}'`
+
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
+- `dendrite commit [--ticket <id>] [--message <msg>] [--stage-all] [--model <model>] [--local] [--dry-run]`: Autonomous Git commit engine with automatic local model delegation for Conventional Commit message synthesis.
 - `dendrite agent <search|route>`: Search and rank agents with hybrid vector/BM25 search or auto-route tasks to optimal agents with LiteLLM virtual keys.
 - `dendrite test <auto|ui>`: Synthesize table-driven tests with Testcontainers & self-healing convergence, or run Web UI browser journeys & WebSocket telemetry load tests.
 - `dendrite triage [--prompt "..."] [--file <file>] [--tier local|hybrid|cloud] [--local]`: Front-door local agent prompt router, skill injector, and token efficiency optimizer.
 - `dendrite mcp <serve|tools|call>`: Native Model Context Protocol stdio server and testing harness.
 - `dendrite jetbrains <probe|open|problems|symbols|build|run|setup>`: Probe JetBrains MCP server, trigger IDE builds/runs, and configure IDE toolsets.
 - `dendrite agent run <aider|openhands|opencode|agy> [flags]`: Launch autonomous agent sessions bound to LiteLLM virtual keys and ephemeral containers.
-- `dendrite inference <list|probe|switch|render>`: Inspect and manage multi-provider inference backends (Ollama Metal, OxiLLaMa, TGI, TEI, vLLM, llama.cpp).
+- `dendrite inference <list|probe|switch|render|zero-cost>`: Inspect and manage multi-provider inference backends and dynamic zero-cost models.
+- `dendrite dev inference zero-cost <list|add|remove|test|reset>`: Inspect and manage multi-provider inference backends (Ollama Metal, OxiLLaMa, TGI, TEI, vLLM, llama.cpp).
 - `dendrite dev inference <list|probe|switch|render>`: Development inference gateway control and route rendering.
 - `dendrite plane replicate [--file DEV_STATUS.md]`: Replicate `DEV_STATUS.md` from Plane service (Plane owns project status; dev_status is for humans and repo purposes only).
 - `dendrite plane push-status`: Move local markdown content (tickets, milestones, specs) to Plane service.
@@ -162,6 +183,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - `dendrite query reuse --capability <cap> [--lang rust|go|ts|py] [--ticket <id>]`: Evaluates 3-tier library reuse hierarchy and emits ADR.
 - `dendrite ref <list|add|remove> [flags]`: Manages registered Tier 1 source references for library reuse.
 - `dendrite store <status|inspect|rm|chunks|query|commit|purge> [flags]`: Content-addressed persistent segmented store, telemetry inspector, and safe deletion lifecycler.
+- `dendrite analyze <policy|status|pause|resume|run> [flags]`: Token-Aware Hybrid Scheduler policy manager, execution tier dispatcher, and 48h pre-reset cloud sprint governor.
 
 ### 3. Unified Stacks Environment (`stacks/.env`)
 Dendrite maintains an enterprise-grade multi-service container orchestration stack parameterized via `stacks/.env` (and mirrored in `.env`):
@@ -218,12 +240,28 @@ This project is a living showcase of recursive agentic self-improvement:
 
 ## Token Economy & Delegation Matrix (Ollama Metal + AGY)
 
+> [!IMPORTANT]
+> ### Mandatory Directive: Delegate Git Commit Message Generation to Local Models
+> **All autonomous agents and developer workflows MUST delegate git commit message generation to local zero-cost models (`local-qwen3-27b`, `qwen3.8:27b`, or local Ollama engine) whenever available.**
+> - **Zero-Cost Mandate**: Commercial cloud models (AGY / Gemini Pro / Claude 3.5 Sonnet) must NEVER consume expensive tokens to summarize repetitive git diffs or format commit messages.
+> - **Automated Execution via Dendrite**: Use `./bin/dendrite commit --ticket <ID>` or native MCP tool `dendrite_commit`. The commit engine queries the local Ollama Metal endpoint to analyze the staged diff, synthesizes a Conventional Commit message prefixed with the ticket ID, and applies the commit with auditable provenance:
+>   ```bash
+>   # Using Dendrite CLI
+>   ./bin/dendrite commit --ticket DEN-098
+>
+>   # Using Dendrite Native MCP Tool
+>   ./bin/dendrite mcp call dendrite_commit '{"ticket_id":"DEN-098","stage_all":true}'
+>   ```
+> - **Deterministic Fallback**: If local models are temporarily unavailable or offline, Dendrite automatically falls back to deterministic conventional messages without blocking workflows or burning cloud tokens.
+
+
 To achieve maximum engineering throughput without exhausting API token budgets or incurring runaway cloud costs, responsibilities are strictly partitioned:
 
 | Responsibility Tier | Delegated Agent / Engine | Hardware / Runtime | Cost & Token Profile | Primary Responsibilities |
 |:---|:---|:---|:---|:---|
 | **Macro Architecture & Orchestration** | **AGY (Google Antigravity Cloud)** | Cloud Hosted (Gemini 2.5 Pro) | Metered Commercial API (Preserved Context) | Strategic architectural design, ticket decomposition, cross-package API contracts, security invariants, review gates. |
 | **Micro Implementation & Code Loop** | **Aider Agent Loop** | Local Process / Ephemeral Container | Governed via LiteLLM Virtual Keys | TDD implementation, iterative file editing, code adjustments based on compiler errors. |
+| **Commit Message Synthesis & Git Hygiene** | **Local Model (`local-qwen3-27b` / Ollama Metal)** | Apple Silicon Metal GPU / LiteLLM (:4000) | **Zero-Cost ($0.00)** Local Compute (~12ms latency) | Generating conventional commit messages, diff summarization, change classification, and provenance formatting (`[<TICKET_ID>] <type>(<scope>): <summary>`). |
 | **Repetitive Execution & Verification** | **Local Ollama / Local Subagent** | Apple Silicon Metal (`qwen2.5-coder:14b`, `hermes3:8b`, `llama3.2:3b`) | **Zero-Cost ($0.00)** Local Compute (~10.9ms latency) | Running `go test`/`cargo test`, digesting raw compiler and linter output, summarizing test failures, generating boilerplate unit test vectors. |
 | **Pure-Rust & Sovereign Inference** | **OxiLLaMa (`cool-japan/oxillama`)** | Local/Server Pure-Rust zero-FFI GGUF | **Zero-Cost ($0.00)** Memory-Safe | Sandboxed AST translation, sovereign offline embedding & completion. |
 | **Token Budget Governance** | **Dendrite Gateway (`pkg/gateway`)** | LiteLLM Proxy (:4000) | Sliding Window Governance | Exempts self-hosted engines (`SkipBudgetChecks: true`), enforces daily/weekly ceilings, cascades to cloud APIs only on 429 quota exhaustion. |
@@ -277,7 +315,9 @@ To achieve maximum engineering throughput without exhausting API token budgets o
 - Guardrails: Cyclomatic Complexity $\le 15$ per function, Cognitive Complexity $\le 20$, function length $\le 80$ lines.
 - Extract helpers for nested validation chains and use early returns.
 
-### Step 8: Plane Status & Skill Synchronization
+### Step 8: Plane Status, Git Commits & Skill Synchronization
+- **Autonomous Git Commit via Dendrite**:
+  - Execute the commit via Dendrite (`./bin/dendrite commit --ticket <ID>` or native MCP tool `dendrite_commit`), delegating commit message generation to local zero-cost models (`local-qwen3-27b` / Ollama Metal) to preserve token budget.
 - Mutate the ticket state directly in Plane:
   - Update the issue state to `Done` in Plane via the Plane API / client or `./bin/dendrite dev ticket set <ID> DONE --push-plane`.
   - Advance next ticket to `In Progress` in Plane.

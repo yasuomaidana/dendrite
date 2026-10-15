@@ -233,3 +233,134 @@ func TestSyncDocs_PushAndPull(t *testing.T) {
 		t.Errorf("expected error for invalid direction")
 	}
 }
+
+func TestMarkdownToHTML_IndentedCodeAndTables(t *testing.T) {
+	md := `## Section
+
+- Item with indented code block:
+  ` + "```json\n  {\n    \"key\": \"val\"\n  }\n  ```" + `
+
+1. First ordered step
+2. Second ordered step
+
+| Column A | Column B |
+|:---|:---|
+| Row 1 A | Row 1 B |
+| Row 2 A | Row 2 B |
+`
+
+	htmlOut := MarkdownToHTML(md)
+
+	if !strings.Contains(htmlOut, "<pre><code>") || !strings.Contains(htmlOut, "</code></pre>") {
+		t.Errorf("missing pre/code tags: %s", htmlOut)
+	}
+	if strings.Contains(htmlOut, "&lt;/code&gt;&lt;/pre&gt;") {
+		t.Errorf("escaped code tags found: %s", htmlOut)
+	}
+	if !strings.Contains(htmlOut, "<ol><li>First ordered step</li>") {
+		t.Errorf("missing ordered list: %s", htmlOut)
+	}
+	if !strings.Contains(htmlOut, "<table><thead><tr><th>Column A</th><th>Column B</th></tr></thead>") {
+		t.Errorf("missing table thead: %s", htmlOut)
+	}
+	if !strings.Contains(htmlOut, "<tbody><tr><td>Row 1 A</td><td>Row 1 B</td></tr>") {
+		t.Errorf("missing table tbody: %s", htmlOut)
+	}
+}
+
+func TestTaxonomyPreservation_Pull(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "dendrite_taxonomy_test_*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	featDir := filepath.Join(tempDir, "features")
+	if err := os.MkdirAll(featDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	existingFile := filepath.Join(featDir, "FEAT-001-topology-scenarios.md")
+	initialContent := "---\nid: FEAT-001\ntitle: Topology Engine\n---\n\n# FEAT-001: Topology Engine\nInitial description\n"
+	if err := os.WriteFile(existingFile, []byte(initialContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/pages/") {
+			pages := []PlanePage{
+				{
+					ID:              "page-1",
+					Name:            "Topology Engine",
+					DescriptionHTML: "<p># FEAT-001: Topology Engine\nUpdated remote description</p>",
+				},
+				{
+					ID:              "page-2",
+					Name:            "FEAT-050: New Discovery Feature",
+					DescriptionHTML: "<p># FEAT-050: New Discovery Feature\nNew spec</p>",
+				},
+			}
+			_ = json.NewEncoder(w).Encode(pages)
+			return
+		}
+		if strings.Contains(r.URL.Path, "/pages/page-1") {
+			p := PlanePage{
+				ID:              "page-1",
+				Name:            "Topology Engine",
+				DescriptionHTML: "<p># FEAT-001: Topology Engine\nUpdated remote description</p>",
+			}
+			_ = json.NewEncoder(w).Encode(p)
+			return
+		}
+		if strings.Contains(r.URL.Path, "/pages/page-2") {
+			p := PlanePage{
+				ID:              "page-2",
+				Name:            "FEAT-050: New Discovery Feature",
+				DescriptionHTML: "<p># FEAT-050: New Discovery Feature\nNew spec</p>",
+			}
+			_ = json.NewEncoder(w).Encode(p)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Config{
+		BaseURL:       server.URL,
+		WorkspaceSlug: "ws",
+		ProjectID:     "p",
+		DirectToken:   "key",
+	}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := SyncDocs(context.Background(), client, tempDir, DirectionFromPlane)
+	if err != nil {
+		t.Fatalf("SyncDocs failed: %v", err)
+	}
+	if rep.FilesPulled != 2 {
+		t.Errorf("expected 2 files pulled, got %d", rep.FilesPulled)
+	}
+
+	// Assert root tempDir has NO dirty flat files
+	entries, _ := os.ReadDir(tempDir)
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+			t.Errorf("dirty flat file found in root docs directory: %s", e.Name())
+		}
+	}
+
+	// Assert existing file was updated in-place preserving frontmatter
+	updatedContent, _ := os.ReadFile(existingFile)
+	if !strings.Contains(string(updatedContent), "id: FEAT-001") {
+		t.Errorf("frontmatter was lost during in-place pull: %s", string(updatedContent))
+	}
+
+	// Assert new feature was placed in features/ subdirectory
+	newFeatFile := filepath.Join(featDir, "FEAT-050-feat-050-new-discovery-feature.md")
+	if _, err := os.Stat(newFeatFile); os.IsNotExist(err) {
+		t.Errorf("new feature was not placed in features/ directory: expected %s", newFeatFile)
+	}
+}

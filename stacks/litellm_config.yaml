@@ -42,20 +42,50 @@ model_list:
       max_input_tokens: 1048576
       max_output_tokens: 8192
       base_model: gemini/gemini-2.5-flash
-  - model_name: local-qwen-coder
+  - model_name: local-qwen3-27b
     litellm_params:
-      model: ollama/llama3.2:latest
+      model: ollama/qwen3.8:27b
+      api_base: http://host.docker.internal:11434
+      custom_llm_provider: ollama
+      max_tokens: 8192
+    model_info:
+      id: local-qwen3-27b
+      mode: chat
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+      max_input_tokens: 32768
+      max_output_tokens: 8192
+      base_model: qwen3.8:27b
+      skip_budget_checks: true
+  - model_name: local-qwen3-9b
+    litellm_params:
+      model: ollama/qwen3.5:9b
       api_base: http://host.docker.internal:11434
       custom_llm_provider: ollama
       max_tokens: 4096
+    model_info:
+      id: local-qwen3-9b
+      mode: chat
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+      max_input_tokens: 32768
+      max_output_tokens: 4096
+      base_model: qwen3.5:9b
+      skip_budget_checks: true
+  - model_name: local-qwen-coder
+    litellm_params:
+      model: ollama/qwen3.8:27b
+      api_base: http://host.docker.internal:11434
+      custom_llm_provider: ollama
+      max_tokens: 8192
     model_info:
       id: local-qwen-coder
       mode: chat
       input_cost_per_token: 0
       output_cost_per_token: 0
       max_input_tokens: 32768
-      max_output_tokens: 4096
-      base_model: llama3.2:latest
+      max_output_tokens: 8192
+      base_model: qwen3.8:27b
       skip_budget_checks: true
   - model_name: local-llama3
     litellm_params:
@@ -79,14 +109,19 @@ router_settings:
     - gemini-2.5-pro:
         - copilot-sonnet
         - gemini-2.5-flash
+        - local-qwen3-27b
         - local-qwen-coder
     - copilot-sonnet:
         - gemini-2.5-flash
+        - local-qwen3-27b
         - local-qwen-coder
     - gemini-2.5-flash:
+        - local-qwen3-27b
         - local-qwen-coder
   context_window_fallbacks:
     - local-qwen-coder: gemini-2.5-pro
+    - local-qwen3-27b: gemini-2.5-pro
+    - local-qwen3-9b: gemini-2.5-pro
     - gemini-2.5-flash: gemini-2.5-pro
   timeout: 120
 

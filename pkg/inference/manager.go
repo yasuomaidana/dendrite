@@ -204,16 +204,33 @@ func (m *Manager) ExecuteWithCascade(ctx context.Context, req CompletionRequest)
 	return nil, fmt.Errorf("%w: last error: %v", ErrNoAvailableEngine, lastErr)
 }
 
+// IsEngineZeroCost evaluates whether an engine qualifies for zero-cost routing,
+// either via its SelfHosted flag or if its registered models match zero-cost rules.
+func IsEngineZeroCost(eng InferenceEngine) bool {
+	if eng == nil {
+		return false
+	}
+	if eng.IsSelfHosted() {
+		return true
+	}
+	for _, m := range eng.Config().Models {
+		if IsZeroCostSelfHostedModel(m) {
+			return true
+		}
+	}
+	return false
+}
+
 // DefaultManager initializes a standard multi-provider manager with default local and self-hosted endpoints.
 func DefaultManager() *Manager {
 	mgr := NewManager()
 
-	// 1. Ollama (Metal local primary)
+	// 1. Ollama (Metal local primary - upgraded with high reasoning qwen3.8:27b & qwen3.5:9b)
 	_ = mgr.RegisterEngine(NewOllamaEngine(EngineConfig{
 		ID:       "ollama-metal",
 		Type:     EngineOllama,
 		Endpoint: "http://127.0.0.1:11434",
-		Models:   []string{"qwen2.5-coder:14b", "deepseek-coder:6.7b", "llama3.2:3b"},
+		Models:   []string{"qwen3.8:27b", "qwen3.5:9b", "qwen2.5-coder:14b", "deepseek-coder:6.7b", "llama3.2:3b"},
 	}, nil))
 
 	// 2. OxiLLaMa (Pure-Rust GGUF zero-FFI runner)

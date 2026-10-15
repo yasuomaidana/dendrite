@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -192,32 +191,20 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		token := os.Getenv("PLANE_API_KEY")
-		if token == "" {
-			token = "plane_sec_dendrite_token_12345"
+		client := deps.PlaneClient
+		if client == nil {
+			var err error
+			client, err = plane.NewClientFromEnv()
+			if err != nil {
+				return nil, fmt.Errorf("plane client error: %w", err)			}
 		}
-		ws := "dendrite-ws"
-		if w, ok := args["workspace"].(string); ok && w != "" {
-			ws = w
-		}
-		endpoint := fmt.Sprintf("http://localhost:8090/api/v1/workspaces/%s/projects/e6380603-1428-4a66-995e-e06039915d52/issues/", ws)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("x-api-key", token)
-		client := &http.Client{Timeout: 5 * time.Second}
-		resp, err := client.Do(req)
+
+		issues, err := client.ListPlaneIssues(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to connect to Plane: %w", err)
 		}
-		defer resp.Body.Close()
 
-		var res map[string]interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-			return nil, err
-		}
-		data, err := json.MarshalIndent(res, "", "  ")
+		data, err := json.MarshalIndent(issues, "", "  ")
 		if err != nil {
 			return nil, err
 		}
@@ -797,4 +784,98 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 
 	// 38-40: Persistent Segmented Store & Chunk Checkpointing Tools
 	s.registerStoreTools(deps)
+
+	// 41-43: Token-Aware Hybrid Scheduler & Quota Governance Tools
+	s.registerSchedulerTools(deps)
+
+	// 45: Quad-IDE Cross-Language Schema & Contract Drift Tools
+	s.registerContractTools(deps)
+
+	// 46. dendrite_commit
+	s.RegisterTool(Tool{
+		Name:        "dendrite_commit",
+		Description: "Autonomous Git commit engine with automatic local model delegation for conventional commit message synthesis and ticket provenance",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"ticket_id": map[string]interface{}{
+					"type":        "string",
+					"description": "Target ticket ID (e.g. DEN-098)",
+				},
+				"message": map[string]interface{}{
+					"type":        "string",
+					"description": "Explicit commit message. If omitted, synthesized via local model",
+				},
+				"files": map[string]interface{}{
+					"type": "array",
+					"items": map[string]interface{}{
+						"type": "string",
+					},
+					"description": "Specific file paths to stage (default: stage all)",
+				},
+				"stage_all": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Stage all modified and untracked files (default: true)",
+				},
+				"use_local_model": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Delegate commit message synthesis to local model (default: true)",
+				},
+				"model": map[string]interface{}{
+					"type":        "string",
+					"description": "Local model name (default: qwen3.8:27b)",
+				},
+				"dry_run": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Simulate staging and message synthesis without modifying git history",
+				},
+			},
+		},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		ticketID, _ := args["ticket_id"].(string)
+		msg, _ := args["message"].(string)
+		model, _ := args["model"].(string)
+		dryRun, _ := args["dry_run"].(bool)
+
+		stageAll := true
+		if sa, ok := args["stage_all"].(bool); ok {
+			stageAll = sa
+		}
+		useLocal := true
+		if ul, ok := args["use_local_model"].(bool); ok {
+			useLocal = ul
+		}
+
+		var files []string
+		if rawFiles, ok := args["files"].([]interface{}); ok {
+			for _, rf := range rawFiles {
+				if s, ok := rf.(string); ok && s != "" {
+					files = append(files, s)
+				}
+			}
+		}
+
+		opts := devtool.CommitOptions{
+			TicketID:      ticketID,
+			Message:       msg,
+			Files:         files,
+			StageAll:      stageAll,
+			UseLocalModel: useLocal,
+			Model:         model,
+			DryRun:        dryRun,
+		}
+
+		res, err := devtool.ExecuteCommit(ctx, opts)
+		if err != nil {
+			return nil, fmt.Errorf("commit failed: %w", err)
+		}
+
+		data, err := json.MarshalIndent(res, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		return &CallToolResult{
+			Content: []ContentItem{{Type: "text", Text: string(data)}},
+		}, nil
+	})
 }

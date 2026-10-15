@@ -145,6 +145,26 @@ func (s *SegmentedStore) ListCheckpoints(ctx context.Context, project string) ([
 	return s.index.ListCheckpoints(project)
 }
 
+// UpdateCheckpointState modifies the operational state of a chunk checkpoint.
+func (s *SegmentedStore) UpdateCheckpointState(ctx context.Context, chunkID string, newState ChunkState) (*ChunkCheckpoint, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cp, err := s.index.GetCheckpoint(chunkID)
+	if err != nil {
+		return nil, err
+	}
+
+	cp.State = newState
+	cp.UpdatedAt = time.Now().UTC()
+
+	if err := s.index.SaveCheckpointTx(*cp, cp.Segments); err != nil {
+		return nil, fmt.Errorf("updating checkpoint state: %w", err)
+	}
+
+	return cp, nil
+}
+
 // PurgeProject explicitly removes all data for a project (persists until this call).
 func (s *SegmentedStore) PurgeProject(ctx context.Context, project string) error {
 	s.mu.Lock()

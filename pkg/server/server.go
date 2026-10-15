@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"Dendrite/pkg/inference"
 	"Dendrite/pkg/telemetry/exporter"
 	"Dendrite/pkg/topology"
 	"Dendrite/pkg/workspace"
@@ -68,6 +69,8 @@ func NewServer(cfg ServerConfig, reg *workspace.Registry, hub *TelemetryHub) *Se
 	mux.HandleFunc("/api/v1/telemetry/events", s.hub.HandleSSE)
 	mux.HandleFunc("/metrics", s.handleMetrics)
 	mux.HandleFunc("/api/v1/telemetry/metrics", s.handleMetrics)
+	mux.HandleFunc("/api/v1/inference/zero-cost", s.handleZeroCost)
+	mux.HandleFunc("/api/v1/inference/zero-cost/test", s.handleZeroCostTest)
 
 	s.server = &http.Server{
 		Handler:     s.authMiddleware(mux),
@@ -317,6 +320,134 @@ func (s *Server) handleTelemetrySnapshot(w http.ResponseWriter, r *http.Request)
 	}
 
 	_ = json.NewEncoder(w).Encode(frame)
+}
+
+func (s *Server) handleZeroCost(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	reg := inference.GetZeroCostRegistry()
+
+	switch r.Method {
+	case http.MethodGet:
+		details := reg.GetDetails()
+		_ = json.NewEncoder(w).Encode(details)
+
+	case http.MethodPost:
+		var req struct {
+			Name     string `json:"name"`
+			IsPrefix bool   `json:"is_prefix"`
+			SyncEnv  bool   `json:"sync_env"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(req.Name) == "" {
+			http.Error(w, "name cannot be empty", http.StatusBadRequest)
+			return
+		}
+
+		var ok bool
+		if req.IsPrefix {
+			ok = reg.AddPrefix(req.Name)
+		} else {
+			ok, _ = reg.Add(req.Name)
+		}
+
+		if !ok {
+			http.Error(w, "failed to add zero-cost entry", http.StatusInternalServerError)
+			return
+		}
+
+		_ = reg.SaveToFile(inference.DefaultZeroCostConfigFile)
+		if req.SyncEnv {
+			_ = reg.SaveToEnvFile(".env")
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"name":    req.Name,
+			"details": reg.GetDetails(),
+		})
+
+	case http.MethodDelete:
+		var req struct {
+			Name     string `json:"name"`
+			IsPrefix bool   `json:"is_prefix"`
+			SyncEnv  bool   `json:"sync_env"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(req.Name) == "" {
+			http.Error(w, "name cannot be empty", http.StatusBadRequest)
+			return
+		}
+
+		var ok bool
+		if req.IsPrefix {
+			ok = reg.RemovePrefix(req.Name)
+		} else {
+			ok, _ = reg.Remove(req.Name)
+		}
+
+		if !ok {
+			http.Error(w, "failed to remove zero-cost entry", http.StatusInternalServerError)
+			return
+		}
+
+		_ = reg.SaveToFile(inference.DefaultZeroCostConfigFile)
+		if req.SyncEnv {
+			_ = reg.SaveToEnvFile(".env")
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"name":    req.Name,
+			"details": reg.GetDetails(),
+		})
+
+	case http.MethodPatch:
+		// Reset to defaults
+		reg.Reset()
+		reg.AutoLoad()
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"message": "reset to defaults and active .env",
+			"details": reg.GetDetails(),
+		})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleZeroCostTest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	reg := inference.GetZeroCostRegistry()
+
+	model := r.URL.Query().Get("model")
+	if model == "" && r.Method == http.MethodPost {
+		var req struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			model = req.Model
+		}
+	}
+
+	if strings.TrimSpace(model) == "" {
+		http.Error(w, "query param 'model' or json body 'model' required", http.StatusBadRequest)
+		return
+	}
+
+	isZeroCost, reason := reg.Test(model)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"model":     model,
+		"zero_cost": isZeroCost,
+		"reason":    reason,
+	})
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
