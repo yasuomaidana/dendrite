@@ -151,3 +151,16 @@ func (g *SymbolGraph) QueryBlastRadius(symbolID string, maxDepth int) (*BlastRad
 		MaxComplexity:   maxComplexity,
 	}, nil
 }
+
+// GetAllNodes returns a slice of all SymbolNodes currently registered in the graph.
+func (g *SymbolGraph) GetAllNodes() []*SymbolNode {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	res := make([]*SymbolNode, 0, len(g.nodes))
+	for _, n := range g.nodes {
+		cpy := *n
+		res = append(res, &cpy)
+	}
+	return res
+}

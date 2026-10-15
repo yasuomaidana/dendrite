@@ -159,6 +159,13 @@ func main() {
 		}
 		handlePoolCommand(ctx, os.Args[2], os.Args[3:])
 
+	case "query":
+		if len(os.Args) < 3 {
+			printQueryUsage()
+			return
+		}
+		handleQueryCommand(ctx, os.Args[2], os.Args[3:])
+
 	default:
 		printUsage()
 	}
@@ -220,6 +227,7 @@ func printUsage() {
 	fmt.Println("  rea showcase [target]      Open-source REA cleanroom analysis & parity verification")
 	fmt.Println("  rea list                   List registered open-source showcase targets and metadata")
 	fmt.Println("  pool <add|rm|list|resolve> Multi-directory dependency inference & topological DAG solver")
+	fmt.Println("  query [slice] [flags]      Universal intent-driven CFG/AST reachability slicing & debloater")
 	fmt.Println("  version                    Print Dendrite CLI version")
 }
 

@@ -791,4 +791,7 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 
 	// 26-28: Autonomous Pool DAG Synchronization & Multi-Directory Project Tools
 	s.registerPoolTools(deps)
+
+	// 29-31: Universal Intent Slicing & Query Engine Tools
+	s.registerQueryTools(deps)
 }
