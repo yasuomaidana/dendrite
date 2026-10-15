@@ -178,3 +178,57 @@ func TestOSCommandRunner(t *testing.T) {
 		t.Errorf("expected echo output, got out=%s, err=%v", string(out), err)
 	}
 }
+
+func TestSandboxSession_ExtraCoverage(t *testing.T) {
+	sessionNilRunner := sandbox.NewSession(&sandbox.SandboxConfig{}, nil)
+	if sessionNilRunner == nil || sessionNilRunner.Runner == nil {
+		t.Fatal("expected default OSCommandRunner")
+	}
+
+	sessionEmptyName := sandbox.NewSession(&sandbox.SandboxConfig{ContainerName: ""}, &mockRunner{})
+	if err := sessionEmptyName.Close(); err != nil {
+		t.Fatalf("unexpected error on Close: %v", err)
+	}
+
+	cfgErr := &sandbox.SandboxConfig{Image: "", Command: []string{"echo"}}
+	sessionErr := sandbox.NewSession(cfgErr, &mockRunner{})
+	_, err := sessionErr.Execute(context.Background())
+	if err == nil {
+		t.Fatal("expected error on invalid config in Execute")
+	}
+}
+
+func TestSandboxConfig_MinimalArgs(t *testing.T) {
+	cfg := &sandbox.SandboxConfig{
+		Image:               "alpine:latest",
+		Command:             []string{"sh"},
+		ContainerName:       "",
+		DropAllCapabilities: false,
+		NoNewPrivileges:     false,
+		ReadOnlyRoot:        false,
+		NetworkMode:         "",
+		TmpfsSize:           "",
+		MemoryLimitMB:       0,
+		CPULimit:            0,
+		HostScratchDir:      "",
+		Environment:         nil,
+	}
+
+	args, err := cfg.BuildDockerRunArgs()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	argStr := strings.Join(args, " ")
+	if !strings.Contains(argStr, "--network none") {
+		t.Errorf("expected default network none")
+	}
+	if strings.Contains(argStr, "--cap-drop") {
+		t.Errorf("did not expect cap-drop")
+	}
+	if strings.Contains(argStr, "--security-opt") {
+		t.Errorf("did not expect security-opt")
+	}
+	if strings.Contains(argStr, "--read-only") {
+		t.Errorf("did not expect read-only")
+	}
+}
