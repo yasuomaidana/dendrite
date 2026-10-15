@@ -32,6 +32,8 @@ func handleAnalyzeCommand(ctx context.Context, action string, args []string) {
 		handleAnalyzeResume(ctx, args)
 	case "run":
 		handleAnalyzeRun(ctx, args)
+	case "tokens", "token":
+		handleTokensCommand(ctx, args)
 	default:
 		printAnalyzeUsage()
 	}
@@ -332,7 +334,7 @@ func handleAnalyzeRun(ctx context.Context, args []string) {
 }
 
 func printAnalyzeUsage() {
-	fmt.Println("Usage: dendrite analyze <policy|status|switch|mode|pause|resume|run> [flags...]")
+	fmt.Println("Usage: dendrite analyze <policy|status|switch|mode|pause|resume|run|tokens> [flags...]")
 	fmt.Println("\nCommands:")
 	fmt.Println("  policy   View or set scheduler policy directives")
 	fmt.Println("           Flags: --night-window <HH:MM-HH:MM>")
@@ -342,6 +344,7 @@ func printAnalyzeUsage() {
 	fmt.Println("                  --allow-zero [true|false]")
 	fmt.Println("                  --mode <auto|always|night|sprint|paused>")
 	fmt.Println("  status   Inspect real-time scheduler state, countdowns, and active tiers")
+	fmt.Println("  tokens   Inspect day window and week window token availability & AGY access confirmation")
 	fmt.Println("  switch   Set runtime feature switches (e.g. --allow-zero on|off)")
 	fmt.Println("  mode     Switch operational analysis mode (always|policy|paused)")
 	fmt.Println("  pause    Pause scheduler analysis (persists chunk progress immediately)")

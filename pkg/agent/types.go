@@ -19,12 +19,16 @@ const (
 	AgentAGY AgentType = "agy"
 	// AgentAntigravity is the canonical alias for Google Antigravity.
 	AgentAntigravity AgentType = "antigravity"
+	// AgentCopilot is GitHub Copilot CLI autonomous coding agent.
+	AgentCopilot AgentType = "copilot"
+	// AgentGitHubCopilot is the canonical alias for GitHub Copilot.
+	AgentGitHubCopilot AgentType = "github-copilot"
 )
 
 // IsValid validates whether the AgentType is recognized.
 func (a AgentType) IsValid() bool {
 	switch a {
-	case AgentAider, AgentOpenHands, AgentOpenCode, AgentAGY, AgentAntigravity:
+	case AgentAider, AgentOpenHands, AgentOpenCode, AgentAGY, AgentAntigravity, AgentCopilot, AgentGitHubCopilot:
 		return true
 	default:
 		return false
@@ -66,7 +70,7 @@ type SessionSummary struct {
 // ValidateConfig verifies that required configuration values are populated and structurally sound.
 func ValidateConfig(cfg AgentConfig) error {
 	if !cfg.Type.IsValid() {
-		return fmt.Errorf("unsupported agent type: %q (must be aider, openhands, opencode, or agy)", cfg.Type)
+		return fmt.Errorf("unsupported agent type: %q (must be aider, openhands, opencode, agy, or copilot)", cfg.Type)
 	}
 	if cfg.LiteLLMBaseURL == "" {
 		return fmt.Errorf("litellm_base_url is required")

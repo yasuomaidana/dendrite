@@ -1,18 +1,18 @@
 ---
 id: FEAT-013
-title: Autonomous Coding Agent Harness & Tool Orchestration (Aider, OpenHands, OpenCode, Google AGY)
+title: Autonomous Coding Agent Harness & Tool Orchestration (Aider, OpenHands, OpenCode, Google AGY, GitHub Copilot)
 status: approved
 plane_epic: PROJ-E-13
 dependencies: [FEAT-001, FEAT-002, FEAT-005, FEAT-006]
 repository: dendrite
-tags: [ai-agents, aider, openhands, opencode, agy, antigravity, orchestration, governance, sandboxing]
+tags: [ai-agents, aider, openhands, opencode, agy, antigravity, copilot, github-copilot, orchestration, governance, sandboxing]
 ---
 
-# FEAT-013: Autonomous Coding Agent Harness & Tool Orchestration (Aider, OpenHands, OpenCode, Google AGY)
+# FEAT-013: Autonomous Coding Agent Harness & Tool Orchestration (Aider, OpenHands, OpenCode, Google AGY, GitHub Copilot)
 
 ## 1. User Story & Business Objective
 
-As a software engineer and platform architect, I need Dendrite to natively support and orchestrate premier autonomous coding agents—specifically **Aider**, **OpenHands** (formerly OpenDevin), **OpenCode**, and **Google AGY (Antigravity)**—by automatically bootstrapping their configurations, routing their API traffic through the LiteLLM Token Governance Gateway, enforcing sliding window budget caps and thermal curfews, injecting AST-compacted repository context, and executing them within ephemeral, cap-dropped container sandboxes with automated issue tracker status synchronization.
+As a software engineer and platform architect, I need Dendrite to natively support and orchestrate premier autonomous coding agents—specifically **Aider**, **OpenHands** (formerly OpenDevin), **OpenCode**, **Google AGY (Antigravity)**, and **GitHub Copilot CLI**—by automatically bootstrapping their configurations, routing their API traffic through the LiteLLM Token Governance Gateway, enforcing sliding window budget caps and thermal curfews, injecting AST-compacted repository context, and executing them within ephemeral, cap-dropped container sandboxes with automated issue tracker status synchronization.
 
 ---
 
@@ -24,6 +24,7 @@ As a software engineer and platform architect, I need Dendrite to natively suppo
      - **OpenHands (`openhands`)**: Containerized autonomous software engineer capable of running arbitrary bash commands, editing code, and browsing documentation.
      - **OpenCode (`opencode`)**: Headless, lightweight automated code generation, refactoring, and batch pull-request agent.
      - **Google AGY (`agy`, `antigravity`)**: Google DeepMind autonomous agent CLI supporting multi-directory workspaces (`--add-dir`), non-interactive task prompts (`-p`), and automated permission approval (`--dangerously-skip-permissions`).
+     - **GitHub Copilot (`copilot`, `github-copilot`)**: Official GitHub Copilot CLI autonomous coding agent supporting workspace targeting (`-C`), prompt execution (`-p`), and full autonomous permission delegation (`--allow-all`).
 2. **Automated Gateway Binding & Virtual Key Injection**:
    - Automatically generates ephemeral or workspace-scoped LiteLLM Virtual Keys for the agent session with strict budget ceilings (e.g. $5.00/session or $20.00/week).
    - Injects standard OpenAI/Anthropic/Gemini environment variables into the agent runtime:
@@ -86,9 +87,12 @@ dendrite agent run openhands --ticket PROJ-104 --sandbox --spend-limit 5.00
 dendrite agent run opencode --task "Refactor pkg/ast to reduce cognitive complexity" --ephemeral
 
 # 4. Run Google AGY (Antigravity) bound to LiteLLM gateway and ticket
-dendrite agent run agy --ticket DEN-028 --task "Implement AST compaction harness" --model gemini-2.5-pro
+dendrite agent run agy --ticket DEN-028 --task "Implement AST compaction harness" --model gemini-3.8-flash-high
 
-# 5. Display active and past agent sessions, spend metrics, and generated commits
+# 5. Run GitHub Copilot CLI bound to ticket and autonomous permissions
+dendrite agent run copilot --ticket DEN-072 --task "Implement runtime adapter" --model claude-sonnet-4.5
+
+# 6. Display active and past agent sessions, spend metrics, and generated commits
 dendrite agent session list
 ```
 
@@ -100,6 +104,7 @@ dendrite agent session list
 - [x] **AC-2**: When budget limits or thermal curfews are reached, the agent harness cleanly terminates the process, commits progress, and posts spend logs to the active issue tracker.
 - [x] **AC-3**: Sandboxed execution (`--sandbox` / `--ephemeral`) boots the agent in an isolated container with zero unauthorized host filesystem mutations.
 - [x] **AC-4**: Commits produced during agent sessions include structured ticket metadata and agent provenance tags.
+- [x] **AC-5**: Real host process execution via `HostRunner` attaches terminal stdio and environment variables, with verified fallback handling when tools are missing from PATH.
 
 ---
 

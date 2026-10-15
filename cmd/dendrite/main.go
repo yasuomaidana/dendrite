@@ -25,6 +25,7 @@ import (
 	"Dendrite/pkg/tracker/plane"
 	"Dendrite/pkg/workspace"
 	"encoding/json"
+	"path/filepath"
 )
 
 const version = "0.1.0-alpha"
@@ -187,6 +188,9 @@ func main() {
 		}
 		handleAnalyzeCommand(ctx, os.Args[2], os.Args[3:])
 
+	case "tokens", "token":
+		handleTokensCommand(ctx, os.Args[2:])
+
 	case "story":
 		if len(os.Args) < 3 {
 			printStoryUsage()
@@ -223,7 +227,7 @@ func printUsage() {
 	fmt.Println("  test ui [--base-url <url>] Run Web UI browser journeys & WebSocket burst load tests")
 	fmt.Println("  agent search <query>       Search and rank agents with hybrid vector & BM25 search")
 	fmt.Println("  agent route --task <desc>  Auto-route task to optimal agent with LiteLLM virtual key")
-	fmt.Println("  agent run <tool> [flags]   Launch an autonomous coding agent (aider, openhands, opencode, agy)")
+	fmt.Println("  agent run <tool> [flags]   Launch an autonomous coding agent (aider, openhands, opencode, agy, copilot)")
 	fmt.Println("  agent session [list]       View agent execution history and commits")
 	fmt.Println("  commit [flags]             Autonomous Git commit with local model message generation")
 	fmt.Println("  doc docusaurus [flags]     Docusaurus Docs-as-Code and project sharing")
@@ -262,6 +266,7 @@ func printUsage() {
 	fmt.Println("  ref <list|add|remove>      Manage Tier 1 source references for library reuse")
 	fmt.Println("  store <status|chunks|query> Persistent segmented store & chunk checkpointer")
 	fmt.Println("  query [slice] [flags]      Universal intent-driven CFG/AST reachability slicing & debloater")
+	fmt.Println("  tokens [status] [flags]    Inspect day & week token windows and confirm AGY access")
 	fmt.Println("  version                    Print Dendrite CLI version")
 }
 
@@ -811,19 +816,21 @@ func handleAgentCommand(ctx context.Context, action string, args []string) {
 		handleDocusaurusCommand(ctx, args)
 	case "run":
 		if len(args) == 0 {
-			fmt.Println("[-] Please specify an agent tool: aider, openhands, opencode, or agy")
+			fmt.Println("[-] Please specify an agent tool: aider, openhands, opencode, agy, or copilot")
 			return
 		}
 		agentType := agent.AgentType(strings.ToLower(args[0]))
 		if !agentType.IsValid() {
-			fmt.Printf("[-] Invalid agent type: %s (must be aider, openhands, opencode, or agy)\n", args[0])
+			fmt.Printf("[-] Invalid agent type: %s (must be aider, openhands, opencode, agy, or copilot)\n", args[0])
 			return
 		}
 
 		cwd, _ := os.Getwd()
 		defaultModel := "copilot-sonnet"
 		if agentType == agent.AgentAGY || agentType == agent.AgentAntigravity {
-			defaultModel = "gemini-2.5-pro"
+			defaultModel = "gemini-3.8-flash-high"
+		} else if agentType == agent.AgentCopilot || agentType == agent.AgentGitHubCopilot {
+			defaultModel = "claude-sonnet-4.5"
 		}
 
 		cfg := agent.AgentConfig{
@@ -834,20 +841,23 @@ func handleAgentCommand(ctx context.Context, action string, args []string) {
 			WorkspaceDir:   cwd,
 		}
 
+		var isMock bool
 		// Parse flags if provided
-		for i := 1; i < len(args); i++ {
-			if args[i] == "--ticket" && i+1 < len(args) {
-				cfg.TicketID = args[i+1]
-				i++
-			} else if args[i] == "--model" && i+1 < len(args) {
-				cfg.Model = args[i+1]
-				i++
-			} else if (args[i] == "--task" || args[i] == "--prompt") && i+1 < len(args) {
-				cfg.TaskDescription = args[i+1]
-				i++
-			} else if args[i] == "--sandbox" || args[i] == "--ephemeral" {
+		for j := 1; j < len(args); j++ {
+			if args[j] == "--ticket" && j+1 < len(args) {
+				cfg.TicketID = args[j+1]
+				j++
+			} else if args[j] == "--model" && j+1 < len(args) {
+				cfg.Model = args[j+1]
+				j++
+			} else if (args[j] == "--task" || args[j] == "--prompt") && j+1 < len(args) {
+				cfg.TaskDescription = args[j+1]
+				j++
+			} else if args[j] == "--sandbox" || args[j] == "--ephemeral" {
 				cfg.Sandbox = true
 				cfg.Ephemeral = true
+			} else if args[j] == "--mock" || args[j] == "--dry-run" {
+				isMock = true
 			}
 		}
 
@@ -879,19 +889,36 @@ func handleAgentCommand(ctx context.Context, action string, args []string) {
 		fmt.Println("[+] Injected Environment Variables:")
 		for k, v := range env {
 			displayVal := v
-			if strings.Contains(k, "KEY") {
+			if strings.Contains(k, "KEY") || strings.Contains(k, "TOKEN") {
 				displayVal = "********"
 			}
 			fmt.Printf("    - %s=%s\n", k, displayVal)
 		}
 		fmt.Printf("[+] Command: %s\n", strings.Join(cmd, " "))
 
-		runner := &agent.MockRunner{}
+		var runner agent.Runner
+		if isMock {
+			runner = &agent.MockRunner{}
+		} else if cfg.Sandbox {
+			runner = agent.NewSandboxedRunner(nil, nil)
+		} else {
+			runner = agent.NewHostRunner(true)
+		}
 		summary, err := runner.Execute(ctx, cfg)
 		if err != nil {
 			fmt.Printf("[-] Agent execution failed: %v\n", err)
 			return
 		}
+
+		// Record session to persistent ledger
+		_ = os.MkdirAll(".dendrite", 0755)
+		ledgerPath := filepath.Join(".dendrite", "agent_sessions.json")
+		ledger := agent.NewSessionLedger(nil, ledgerPath)
+		if data, err := os.ReadFile(ledgerPath); err == nil {
+			_ = ledger.LoadJSON(data)
+		}
+		_ = ledger.RecordSession(ctx, summary)
+
 		fmt.Printf("[✓] Agent session completed successfully (Session ID: %s, Duration: %v)\n", summary.SessionID, summary.Duration)
 		if len(summary.CommitsGenerated) > 0 {
 			fmt.Println("[+] Generated Commits:")
@@ -907,10 +934,22 @@ func handleAgentCommand(ctx context.Context, action string, args []string) {
 		handleAgentRouteCommand(ctx, args)
 
 	case "session":
-		fmt.Println("[+] Agent Sessions Ledger:")
-		fmt.Println("    - Active: None")
-		fmt.Println("    - Last Session: sess-mock (Agent: aider, Status: completed)")
-
+		ledgerPath := filepath.Join(".dendrite", "agent_sessions.json")
+		ledger := agent.NewSessionLedger(nil, ledgerPath)
+		if data, err := os.ReadFile(ledgerPath); err == nil {
+			_ = ledger.LoadJSON(data)
+		}
+		sessions := ledger.ListSessionsByTicket("")
+		fmt.Printf("[+] Agent Sessions Ledger (%d recorded sessions):\n", len(sessions))
+		if len(sessions) == 0 {
+			fmt.Println("    - Active: None")
+			fmt.Println("    - Last Session: None")
+		} else {
+			for idx, s := range sessions {
+				fmt.Printf("    %d. [%s] Agent: %s, Ticket: %s, Status: %s, Duration: %v, Cost: $%.4f\n",
+					idx+1, s.SessionID, s.AgentType, s.TicketID, s.Status, s.Duration, s.EstimatedCostUSD)
+			}
+		}
 	default:
 		fmt.Printf("[-] Unknown agent action: %s\n", action)
 	}

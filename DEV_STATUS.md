@@ -10,7 +10,7 @@ This document maintains the real-time development status, milestones, and active
 - **Active Milestone**: Milestone 17 — Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)
 - **Current Focus**: `DEN-064: Speculative Git Worktree Branching & Differential Architecture Benchmark Harness (`pkg/story/fork`, `pkg/perf`)`
 - **Last Updated**: 2026-10-14
-- **Overall Progress**: 66 / 100 Tickets Completed (66.0%)
+- **Overall Progress**: 67 / 100 Tickets Completed (67.0%)
 
 ---
 
@@ -142,7 +142,6 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 ### Milestone 1: Core Foundation, Developer Tools & Ollama Engine
 
-- [x] **DEN-002**: Implement Idiomatic Ollama Client & Metal Engine Support
 - [x] **DEN-003**: Developer Productivity Tools on the Fly & CLI Scaffold (`pkg/devtool`, `cmd/dendrite`)
 - [x] **DEN-004**: Ticket Module & Local Status Synchronization Engine
 
@@ -186,27 +185,3 @@ self-contained) to highest complexity (multi-component, distributed persistence,
     - [x] Native MCP tools (`dendrite_dist_sources`, `dendrite_dist_decompose`, `dendrite_dist_interop`, `dendrite_dist_spawn`) and CLI subcommands.
     - [x] Statement test coverage $\ge 85\%$ (achieved 89.2%).
 
-### Ticket `DEN-097`: Plane Doc Sync Taxonomy Guard & Markdown-to-HTML Robust Formatter
-
-- **Target Package**: `pkg/tracker/plane`, `cmd/dendrite`, `pkg/mcpserver`
-- **Governing Specs**: [`docs/features/FEAT-097-plane-doc-sync-taxonomy-guard.md`](docs/features/FEAT-097-plane-doc-sync-taxonomy-guard.md)
-- **Goal**: Implement taxonomy-preserving bidirectional documentation synchronization between Plane v2 and local repository, eliminating flat root `docs/` pollution, skipping unchanged writes, and providing a stateful Markdown-to-HTML parser preserving verbatim code blocks, tables, and lists in Plane UI.
-- **Acceptance Criteria**:
-    - [x] Taxonomy Guard indexing local specs and preserving subdirectories (`features/`, `architecture/`, `guides/`, etc.).
-    - [x] HTML equivalence check preventing disk churn on identical content.
-    - [x] Stateful line-by-line parser supporting indented code fences, semantic HTML tables, and ordered lists.
-    - [x] Plane UI page rendering verified cleanly (e.g. `e418008a-c399-464b-bff6-03359eb82f72`).
-    - [x] All 63 flat duplicate files removed from root `docs/` without loss of information.
-    - [x] Unit test coverage in `pkg/tracker/plane` $\ge 80\%$ (achieved 81.2%).
-
-### Ticket `DEN-098`: Autonomous Git Commit Engine with Local Model Message Delegation & Zero-Cost Synthesis
-
-- **Target Package**: `pkg/devtool`, `cmd/dendrite`, `pkg/mcpserver`
-- **Governing Specs**: [`docs/features/FEAT-098-autonomous-git-commit-engine.md`](docs/features/FEAT-098-autonomous-git-commit-engine.md)
-- **Goal**: Implement autonomous Git staging and commit engine delegating commit message synthesis to local models (`local-qwen3-27b` / `qwen3.8:27b` on Ollama Metal) to enforce strict zero-cost token economy while maintaining Conventional Commits format and ticket provenance.
-- **Acceptance Criteria**:
-    - [x] `pkg/devtool/commit.go`: Staging, diff analysis, local model query, and git commit execution with ticket formatting.
-    - [x] CLI subcommand `dendrite commit [--ticket <id>] [--message <msg>] [--all] [--model <model>] [--local] [--dry-run]`.
-    - [x] Native MCP tool `dendrite_commit` registered and tested.
-    - [x] Deterministic fallback ensuring $0.00 cost and zero cloud token waste when offline.
-    - [x] Unit tests in `pkg/devtool/commit_test.go` achieving 78.2% statement coverage.

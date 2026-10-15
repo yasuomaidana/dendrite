@@ -37,6 +37,8 @@ func SelectDefaultSandboxImage(agentType AgentType) string {
 		return "golang:1.24-alpine"
 	case AgentAGY, AgentAntigravity:
 		return "google/antigravity:latest"
+	case AgentCopilot, AgentGitHubCopilot:
+		return "ghcr.io/github/copilot-cli:latest"
 	default:
 		return "alpine:latest"
 	}
@@ -55,7 +57,7 @@ func (r *SandboxedRunner) Execute(ctx context.Context, cfg AgentConfig) (*Sessio
 	if r.Limiter != nil {
 		targetModel := cfg.Model
 		if targetModel == "" {
-			targetModel = "gemini-2.5-pro"
+			targetModel = "gemini-3.8-flash-high"
 		}
 
 		allowed, fallbackModel, err := r.Limiter.CheckBudget(cfg.VirtualAPIKey, targetModel)
@@ -133,7 +135,7 @@ func (r *SandboxedRunner) Execute(ctx context.Context, cfg AgentConfig) (*Sessio
 	// Calculate tokens and cost metrics
 	tokensConsumed := 1500
 	estimatedCostUSD := 0.003
-	if cfg.Model == "local-qwen-coder" {
+	if cfg.Model == "local-qwen-coder" || cfg.Model == "local-qwen3-27b" {
 		estimatedCostUSD = 0.0 // Zero-cost exempt
 	}
 

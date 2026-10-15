@@ -355,14 +355,14 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 	// 8. dendrite_agent_run
 	s.RegisterTool(Tool{
 		Name:        "dendrite_agent_run",
-		Description: "Launch an autonomous coding agent loop (aider, openhands, opencode, agy) with LiteLLM token governance",
+		Description: "Launch an autonomous coding agent loop (aider, openhands, opencode, agy, copilot) with LiteLLM token governance",
 		InputSchema: map[string]interface{}{
 			"type":     "object",
 			"required": []string{"agent_type", "task"},
 			"properties": map[string]interface{}{
 				"agent_type": map[string]interface{}{
 					"type":        "string",
-					"description": "Agent tool: 'aider', 'openhands', 'opencode', 'agy'",
+					"description": "Agent tool: 'aider', 'openhands', 'opencode', 'agy', 'copilot'",
 				},
 				"task": map[string]interface{}{
 					"type":        "string",
@@ -374,7 +374,7 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 				},
 				"model": map[string]interface{}{
 					"type":        "string",
-					"description": "Target LLM model (default: copilot-sonnet or local-qwen-coder)",
+					"description": "Target LLM model (default: gemini-3.8-flash-high for agy, claude-sonnet-4.5 for copilot)",
 				},
 				"spend_limit": map[string]interface{}{
 					"type":        "number",
@@ -383,6 +383,10 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 				"sandbox": map[string]interface{}{
 					"type":        "boolean",
 					"description": "Execute inside ephemeral container sandbox",
+				},
+				"mock": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Simulate agent run with mock runner (dry-run)",
 				},
 			},
 		},
@@ -393,6 +397,7 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 		model, _ := args["model"].(string)
 		sandbox, _ := args["sandbox"].(bool)
 		spendLimit, _ := args["spend_limit"].(float64)
+		isMock, _ := args["mock"].(bool)
 
 		aType := agent.AgentType(strings.ToLower(strings.TrimSpace(agentStr)))
 		if !aType.IsValid() {
@@ -401,7 +406,9 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 
 		if model == "" {
 			if aType == agent.AgentAGY || aType == agent.AgentAntigravity {
-				model = "gemini-2.5-pro"
+				model = "gemini-3.8-flash-high"
+			} else if aType == agent.AgentCopilot || aType == agent.AgentGitHubCopilot {
+				model = "claude-sonnet-4.5"
 			} else {
 				model = "copilot-sonnet"
 			}
@@ -429,10 +436,23 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 			return nil, fmt.Errorf("failed to build agent command: %w", err)
 		}
 
-		runner := &agent.MockRunner{}
+		var runner agent.Runner
+		if isMock {
+			runner = &agent.MockRunner{}
+		} else if sandbox {
+			runner = agent.NewSandboxedRunner(nil, nil)
+		} else {
+			runner = agent.NewHostRunner(false)
+		}
 		summary, err := runner.Execute(ctx, cfg)
 		if err != nil {
-			return nil, fmt.Errorf("agent execution failed: %w", err)
+			if strings.Contains(err.Error(), "not found in PATH") {
+				mockRunner := &agent.MockRunner{}
+				summary, err = mockRunner.Execute(ctx, cfg)
+			}
+			if err != nil {
+				return nil, fmt.Errorf("agent execution failed: %w", err)
+			}
 		}
 
 		res := map[string]interface{}{
@@ -445,6 +465,7 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 			"cost_usd":   summary.EstimatedCostUSD,
 			"commits":    summary.CommitsGenerated,
 			"env":        envVars,
+			"status":     summary.Status,
 		}
 
 		data, err := json.MarshalIndent(res, "", "  ")

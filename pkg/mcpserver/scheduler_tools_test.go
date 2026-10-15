@@ -21,6 +21,7 @@ func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
 		"dendrite_analyze_status",
 		"dendrite_analyze_trigger",
 		"dendrite_analyze_switch",
+		"dendrite_tokens_status",
 	}
 
 	for _, toolName := range expectedTools {
@@ -116,5 +117,23 @@ func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
 	}
 	if !strings.Contains(resSwitch.Content[0].Text, `"allow_zero_drain": true`) {
 		t.Errorf("expected allow_zero_drain in switch response: %s", resSwitch.Content[0].Text)
+	}
+
+	// 8. Test dendrite_tokens_status
+	tokensHandler := srv.handlers["dendrite_tokens_status"]
+	resTokens, err := tokensHandler(ctx, map[string]interface{}{
+		"model": "gemini-3.8-flash-high",
+	})
+	if err != nil {
+		t.Fatalf("tokensHandler failed: %v", err)
+	}
+	if len(resTokens.Content) == 0 || !strings.Contains(resTokens.Content[0].Text, "day_window") {
+		t.Errorf("expected day_window in tokens response: %+v", resTokens.Content)
+	}
+	if !strings.Contains(resTokens.Content[0].Text, "week_window") {
+		t.Errorf("expected week_window in tokens response: %+v", resTokens.Content)
+	}
+	if !strings.Contains(resTokens.Content[0].Text, "agy_status") {
+		t.Errorf("expected agy_status in tokens response: %+v", resTokens.Content)
 	}
 }

@@ -56,7 +56,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
      - *Example*: `./bin/dendrite mcp call dendrite_inference_probe '{"engine_id":"ollama-metal"}'`
   10. `dendrite_ollama_probe`: Probe local Ollama inference engine for latency and available local models (`qwen2.5-coder:14b`, `llama3.2:3b`, `hermes3:8b`).
       - *Example*: `./bin/dendrite mcp call dendrite_ollama_probe "{}"`
-  11. `dendrite_agent_run`: Launch an autonomous coding agent loop (Aider, OpenHands, OpenCode, AGY) with LiteLLM token governance, commit provenance, and sandboxing.
+  11. `dendrite_agent_run`: Launch an autonomous coding agent loop (Aider, OpenHands, OpenCode, AGY, GitHub Copilot) with LiteLLM token governance, commit provenance, and sandboxing.
       - *Example*: `./bin/dendrite mcp call dendrite_agent_run '{\"agent_type\":\"aider\",\"task\":\"Implement scenario runner\",\"ticket_id\":\"DEN-037\"}'`
   12. `dendrite_topology_advisor`: Evaluate hardware capabilities of compute nodes and calculate optimal placement of Dendrite microservices.
       - *Example*: `./bin/dendrite mcp call dendrite_topology_advisor '{"nodes":"local=localhost"}'`
@@ -152,14 +152,18 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
       - *Example*: `./bin/dendrite mcp call dendrite_commit '{"ticket_id":"DEN-098","stage_all":true}'`
 
 
+  47. `dendrite_tokens_status`: Inspect remaining tokens across the 24h Day Window and 7d Week Window, evaluate safety reserve floor hold, and confirm Google Antigravity (AGY) connectivity and availability.
+      - *Example*: `./bin/dendrite mcp call dendrite_tokens_status '{"model":"gemini-3.8-flash-high","probe":true}'`
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
+- `dendrite tokens [status] [--model <m>] [--probe] [--json]`: Inspect Day Window (24h) and Week Window (7d) remaining tokens, quota reset countdown, safety reserve floor, and confirm live AGY access.
 - `dendrite commit [--ticket <id>] [--message <msg>] [--stage-all] [--model <model>] [--local] [--dry-run]`: Autonomous Git commit engine with automatic local model delegation for Conventional Commit message synthesis.
 - `dendrite agent <search|route>`: Search and rank agents with hybrid vector/BM25 search or auto-route tasks to optimal agents with LiteLLM virtual keys.
 - `dendrite test <auto|ui>`: Synthesize table-driven tests with Testcontainers & self-healing convergence, or run Web UI browser journeys & WebSocket telemetry load tests.
 - `dendrite triage [--prompt "..."] [--file <file>] [--tier local|hybrid|cloud] [--local]`: Front-door local agent prompt router, skill injector, and token efficiency optimizer.
 - `dendrite mcp <serve|tools|call>`: Native Model Context Protocol stdio server and testing harness.
 - `dendrite jetbrains <probe|open|problems|symbols|build|run|setup>`: Probe JetBrains MCP server, trigger IDE builds/runs, and configure IDE toolsets.
-- `dendrite agent run <aider|openhands|opencode|agy> [flags]`: Launch autonomous agent sessions bound to LiteLLM virtual keys and ephemeral containers.
+- `dendrite agent run <aider|openhands|opencode|agy|copilot> [flags]`: Launch autonomous agent sessions bound to LiteLLM virtual keys and ephemeral containers.
 - `dendrite inference <list|probe|switch|render|zero-cost>`: Inspect and manage multi-provider inference backends and dynamic zero-cost models.
 - `dendrite dev inference zero-cost <list|add|remove|test|reset>`: Inspect and manage multi-provider inference backends (Ollama Metal, OxiLLaMa, TGI, TEI, vLLM, llama.cpp).
 - `dendrite dev inference <list|probe|switch|render>`: Development inference gateway control and route rendering.

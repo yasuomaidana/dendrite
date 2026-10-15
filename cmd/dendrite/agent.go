@@ -147,7 +147,12 @@ func handleAgentRouteCommand(ctx context.Context, args []string) {
 			WorkspaceDir:    cwd,
 			TaskDescription: taskDesc,
 		}
-		runner := &agent.MockRunner{}
+		var runner agent.Runner
+		if requireLocal {
+			runner = agent.NewSandboxedRunner(nil, nil)
+		} else {
+			runner = agent.NewHostRunner(true)
+		}
 		summary, rErr := runner.Execute(ctx, cfg)
 		if rErr != nil {
 			fmt.Printf("[-] Agent execution failed: %v\n", rErr)

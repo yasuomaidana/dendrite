@@ -2,3 +2,4 @@
 .DS_Store
 # Docusaurus generated doc outputs (single source of truth is docs/)
 website/docs/
+bin/

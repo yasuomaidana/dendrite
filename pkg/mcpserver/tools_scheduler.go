@@ -8,6 +8,7 @@ import (
 
 	"Dendrite/pkg/scheduler/governor"
 	"Dendrite/pkg/scheduler/token"
+	"Dendrite/pkg/tokens"
 )
 
 var defaultMCPScheduler = token.NewTokenScheduler(nil, nil, "")
@@ -251,6 +252,65 @@ func (s *Server) registerSchedulerTools(deps Dependencies) {
 
 		state := defaultMCPGovernor.GetState()
 		bytes, err := json.MarshalIndent(state, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+
+		return &CallToolResult{
+			Content: []ContentItem{
+				{
+					Type: "text",
+					Text: string(bytes),
+				},
+			},
+		}, nil
+	})
+
+	// 47. dendrite_tokens_status
+	s.RegisterTool(Tool{
+		Name:        "dendrite_tokens_status",
+		Description: "Inspect remaining tokens in the day window and week window, and confirm Google Antigravity (AGY) connectivity and availability",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"model": map[string]interface{}{
+					"type":        "string",
+					"description": "Target model identifier (default: \"gemini-3.8-flash-high\")",
+				},
+				"probe": map[string]interface{}{
+					"type":        "boolean",
+					"description": "If true, executes an active probe to confirm AGY endpoint responsiveness",
+				},
+				"spend_file": map[string]interface{}{
+					"type":        "string",
+					"description": "Optional path to spend.json override",
+				},
+				"policy_file": map[string]interface{}{
+					"type":        "string",
+					"description": "Optional path to scheduler_policy.json override",
+				},
+			},
+		},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		cfg := tokens.DefaultConfig()
+		if m, ok := args["model"].(string); ok && m != "" {
+			cfg.Model = m
+		}
+		if sf, ok := args["spend_file"].(string); ok && sf != "" {
+			cfg.SpendFile = sf
+		}
+		if pf, ok := args["policy_file"].(string); ok && pf != "" {
+			cfg.PolicyFile = pf
+		}
+		probe, _ := args["probe"].(bool)
+
+		eval := tokens.NewEvaluator(nil, nil)
+		rep, err := eval.Evaluate(ctx, cfg, probe)
+		if err != nil {
+			return nil, fmt.Errorf("evaluating token status: %w", err)
+		}
+
+		bytes, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
 			return nil, err
 		}

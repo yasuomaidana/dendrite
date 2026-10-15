@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"testing"
 )
 
@@ -224,6 +225,30 @@ func TestBuildAgentEnv(t *testing.T) {
 		}
 	})
 
+	t.Run("copilot environment", func(t *testing.T) {
+		cfg := AgentConfig{
+			Type:           AgentCopilot,
+			LiteLLMBaseURL: "http://localhost:4000/v1",
+			VirtualAPIKey:  "ghp_mock_token",
+			Model:          "claude-sonnet-4.5",
+			WorkspaceDir:   "/workspace",
+		}
+
+		env, err := BuildAgentEnv(cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if env["COPILOT_API_KEY"] != "ghp_mock_token" {
+			t.Errorf("expected COPILOT_API_KEY match, got %s", env["COPILOT_API_KEY"])
+		}
+		if env["GITHUB_TOKEN"] != "ghp_mock_token" {
+			t.Errorf("expected GITHUB_TOKEN match, got %s", env["GITHUB_TOKEN"])
+		}
+		if env["COPILOT_MODEL"] != "claude-sonnet-4.5" {
+			t.Errorf("expected COPILOT_MODEL claude-sonnet-4.5, got %s", env["COPILOT_MODEL"])
+		}
+	})
+
 	t.Run("invalid config returns error", func(t *testing.T) {
 		_, err := BuildAgentEnv(AgentConfig{})
 		if err == nil {
@@ -373,6 +398,64 @@ func TestBuildAgentCommand(t *testing.T) {
 		}
 	})
 
+	t.Run("copilot environment", func(t *testing.T) {
+		cfg := AgentConfig{
+			Type:           AgentCopilot,
+			LiteLLMBaseURL: "http://localhost:4000/v1",
+			VirtualAPIKey:  "ghp_mock_token",
+			Model:          "claude-sonnet-4.5",
+			WorkspaceDir:   "/workspace",
+		}
+
+		env, err := BuildAgentEnv(cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if env["COPILOT_API_KEY"] != "ghp_mock_token" {
+			t.Errorf("expected COPILOT_API_KEY match, got %s", env["COPILOT_API_KEY"])
+		}
+		if env["GITHUB_TOKEN"] != "ghp_mock_token" {
+			t.Errorf("expected GITHUB_TOKEN match, got %s", env["GITHUB_TOKEN"])
+		}
+		if env["COPILOT_MODEL"] != "claude-sonnet-4.5" {
+			t.Errorf("expected COPILOT_MODEL claude-sonnet-4.5, got %s", env["COPILOT_MODEL"])
+		}
+	})
+
+	t.Run("copilot command with prompt and ticket", func(t *testing.T) {
+		cfg := AgentConfig{
+			Type:            AgentCopilot,
+			LiteLLMBaseURL:  "http://localhost:4000/v1",
+			VirtualAPIKey:   "sk-test",
+			WorkspaceDir:    "/workspace",
+			Model:           "claude-sonnet-4.5",
+			TicketID:        "DEN-072",
+			TaskDescription: "Develop copilot runtime adapter",
+		}
+
+		cmd, err := BuildAgentCommand(cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		expected := []string{
+			"copilot",
+			"-C", "/workspace",
+			"--model", "claude-sonnet-4.5",
+			"--allow-all",
+			"-p", "[DEN-072] Develop copilot runtime adapter",
+		}
+
+		if len(cmd) != len(expected) {
+			t.Fatalf("expected len %d, got %d: %v", len(expected), len(cmd), cmd)
+		}
+		for i, v := range expected {
+			if cmd[i] != v {
+				t.Errorf("at index %d: expected %s, got %s", i, v, cmd[i])
+			}
+		}
+	})
+
 	t.Run("invalid config returns error", func(t *testing.T) {
 		_, err := BuildAgentCommand(AgentConfig{})
 		if err == nil {
@@ -481,6 +564,54 @@ func TestMockRunner(t *testing.T) {
 		_, err := runner.Execute(ctx, AgentConfig{})
 		if !errors.Is(err, expectedErr) {
 			t.Fatalf("expected custom failure, got %v", err)
+		}
+	})
+}
+
+func TestHostRunner(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("executable not found in PATH returns actionable error", func(t *testing.T) {
+		runner := &HostRunner{
+			LookPath: func(file string) (string, error) {
+				return "", errors.New("not found")
+			},
+		}
+		cfg := AgentConfig{
+			Type:           AgentAider,
+			LiteLLMBaseURL: "http://localhost:4000/v1",
+			VirtualAPIKey:  "sk-test",
+			WorkspaceDir:   "/tmp",
+		}
+		_, err := runner.Execute(ctx, cfg)
+		if err == nil {
+			t.Fatal("expected error for missing executable, got nil")
+		}
+	})
+
+	t.Run("successful host execution with mocked command", func(t *testing.T) {
+		runner := &HostRunner{
+			LookPath: func(file string) (string, error) {
+				return "/usr/bin/echo", nil
+			},
+			CommandFunc: func(ctx context.Context, name string, arg ...string) *exec.Cmd {
+				return exec.CommandContext(ctx, "echo", "mock-run")
+			},
+		}
+		cfg := AgentConfig{
+			Type:            AgentAGY,
+			LiteLLMBaseURL:  "http://localhost:4000/v1",
+			VirtualAPIKey:   "sk-test",
+			WorkspaceDir:    "/tmp",
+			TaskDescription: "test task",
+			TicketID:        "DEN-024",
+		}
+		summary, err := runner.Execute(ctx, cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if summary == nil || summary.Status != "completed" {
+			t.Fatalf("expected completed status, got %v", summary)
 		}
 	})
 }

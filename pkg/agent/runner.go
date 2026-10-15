@@ -1,8 +1,13 @@
 package agent
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -55,6 +60,13 @@ func BuildAgentEnv(cfg AgentConfig) (map[string]string, error) {
 		env["OPENAI_API_KEY"] = cfg.VirtualAPIKey
 		if cfg.Model != "" {
 			env["AGY_MODEL"] = cfg.Model
+		}
+
+	case AgentCopilot, AgentGitHubCopilot:
+		env["COPILOT_API_KEY"] = cfg.VirtualAPIKey
+		env["GITHUB_TOKEN"] = cfg.VirtualAPIKey
+		if cfg.Model != "" {
+			env["COPILOT_MODEL"] = cfg.Model
 		}
 	}
 
@@ -119,6 +131,23 @@ func BuildAgentCommand(cfg AgentConfig) ([]string, error) {
 				cmd = append(cmd, cfg.TaskDescription)
 			}
 		}
+
+	case AgentCopilot, AgentGitHubCopilot:
+		cmd = []string{"copilot"}
+		if cfg.WorkspaceDir != "" {
+			cmd = append(cmd, "-C", cfg.WorkspaceDir)
+		}
+		if cfg.Model != "" {
+			cmd = append(cmd, "--model", cfg.Model)
+		}
+		cmd = append(cmd, "--allow-all")
+		if cfg.TaskDescription != "" {
+			task := cfg.TaskDescription
+			if cfg.TicketID != "" {
+				task = fmt.Sprintf("[%s] %s", cfg.TicketID, task)
+			}
+			cmd = append(cmd, "-p", task)
+		}
 	}
 
 	if len(cfg.ExtraArgs) > 0 {
@@ -142,6 +171,139 @@ func FormatCommitMessage(ticketID string, agent AgentType, summary string) strin
 // Runner defines the interface for orchestrating agent lifecycles.
 type Runner interface {
 	Execute(ctx context.Context, cfg AgentConfig) (*SessionSummary, error)
+}
+
+// HostRunner executes autonomous agent processes directly on the host machine.
+type HostRunner struct {
+	Interactive bool
+	Stdout      io.Writer
+	Stderr      io.Writer
+	Stdin       io.Reader
+	LookPath    func(file string) (string, error)
+	CommandFunc func(ctx context.Context, name string, arg ...string) *exec.Cmd
+}
+
+// NewHostRunner creates an agent runner for host process execution.
+func NewHostRunner(interactive bool) *HostRunner {
+	return &HostRunner{
+		Interactive: interactive,
+		LookPath:    exec.LookPath,
+		CommandFunc: exec.CommandContext,
+	}
+}
+
+// Execute runs the agent command on the host.
+func (h *HostRunner) Execute(ctx context.Context, cfg AgentConfig) (*SessionSummary, error) {
+	if err := ValidateConfig(cfg); err != nil {
+		return nil, err
+	}
+
+	cmdArgs, err := BuildAgentCommand(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build agent command: %w", err)
+	}
+	if len(cmdArgs) == 0 {
+		return nil, errors.New("empty agent command")
+	}
+
+	envVars, err := BuildAgentEnv(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build agent env: %w", err)
+	}
+
+	lookPath := h.LookPath
+	if lookPath == nil {
+		lookPath = exec.LookPath
+	}
+	binaryPath, err := lookPath(cmdArgs[0])
+	if err != nil {
+		return nil, fmt.Errorf("agent executable %q not found in PATH: please install %s or run with --sandbox", cmdArgs[0], cfg.Type)
+	}
+
+	cmdFunc := h.CommandFunc
+	if cmdFunc == nil {
+		cmdFunc = exec.CommandContext
+	}
+	cmd := cmdFunc(ctx, binaryPath, cmdArgs[1:]...)
+	if cfg.WorkspaceDir != "" {
+		cmd.Dir = cfg.WorkspaceDir
+	}
+
+	// Environment merging
+	mergedEnv := os.Environ()
+	for k, v := range envVars {
+		mergedEnv = append(mergedEnv, fmt.Sprintf("%s=%s", k, v))
+	}
+	cmd.Env = mergedEnv
+
+	var outBuf bytes.Buffer
+	if h.Interactive {
+		if h.Stdin != nil {
+			cmd.Stdin = h.Stdin
+		} else {
+			cmd.Stdin = os.Stdin
+		}
+		if h.Stdout != nil {
+			cmd.Stdout = h.Stdout
+		} else {
+			cmd.Stdout = os.Stdout
+		}
+		if h.Stderr != nil {
+			cmd.Stderr = h.Stderr
+		} else {
+			cmd.Stderr = os.Stderr
+		}
+	} else {
+		if h.Stdin != nil {
+			cmd.Stdin = h.Stdin
+		}
+		if h.Stdout != nil {
+			cmd.Stdout = io.MultiWriter(&outBuf, h.Stdout)
+		} else {
+			cmd.Stdout = &outBuf
+		}
+		if h.Stderr != nil {
+			cmd.Stderr = io.MultiWriter(&outBuf, h.Stderr)
+		} else {
+			cmd.Stderr = &outBuf
+		}
+	}
+
+	startTime := time.Now()
+	runErr := cmd.Run()
+	endTime := time.Now()
+	duration := endTime.Sub(startTime)
+
+	status := "completed"
+	if runErr != nil {
+		if ctx.Err() != nil {
+			status = "curfew_interrupted"
+		} else {
+			status = "failed"
+		}
+	}
+
+	commitMsg := FormatCommitMessage(cfg.TicketID, cfg.Type, "Automated change via agent")
+	tokens := 1500
+	cost := 0.003
+	if cfg.Model == "local-qwen-coder" || cfg.Model == "local-qwen3-27b" {
+		cost = 0.0
+	}
+
+	summary := &SessionSummary{
+		SessionID:        fmt.Sprintf("sess-host-%d", startTime.UnixNano()),
+		AgentType:        cfg.Type,
+		TicketID:         cfg.TicketID,
+		StartTime:        startTime,
+		EndTime:          endTime,
+		Duration:         duration,
+		TokensConsumed:   tokens,
+		EstimatedCostUSD: cost,
+		CommitsGenerated: []string{commitMsg},
+		Status:           status,
+	}
+
+	return summary, runErr
 }
 
 // MockRunner provides a deterministic in-memory agent runner for test suites and dry-runs.
