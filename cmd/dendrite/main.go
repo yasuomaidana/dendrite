@@ -166,6 +166,13 @@ func main() {
 		}
 		handleQueryCommand(ctx, os.Args[2], os.Args[3:])
 
+	case "ref":
+		if len(os.Args) < 3 {
+			printRefUsage()
+			return
+		}
+		handleRefCommand(ctx, os.Args[2], os.Args[3:])
+
 	default:
 		printUsage()
 	}
@@ -227,6 +234,7 @@ func printUsage() {
 	fmt.Println("  rea showcase [target]      Open-source REA cleanroom analysis & parity verification")
 	fmt.Println("  rea list                   List registered open-source showcase targets and metadata")
 	fmt.Println("  pool <add|rm|list|resolve> Multi-directory dependency inference & topological DAG solver")
+	fmt.Println("  ref <list|add|remove>      Manage Tier 1 source references for library reuse")
 	fmt.Println("  query [slice] [flags]      Universal intent-driven CFG/AST reachability slicing & debloater")
 	fmt.Println("  version                    Print Dendrite CLI version")
 }

@@ -109,6 +109,15 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   32. `dendrite_query_fuse`: Combines multiple binaries/projects, deduplicating shared libraries and synthesizing zero-copy in-process channels.
       - *Example*: `./bin/dendrite mcp call dendrite_query_fuse '{"sources":["proj-a","proj-b"],"fused_member_name":"fused-core","target_directory":"./fused-core"}'`
 
+  33. `dendrite_query_reuse_audit`: Evaluates strict 3-tier library reuse hierarchy (Source Refs > Pool Members > Ecosystem Registries) and emits an Architecture Decision Record (ADR).
+      - *Example*: `./bin/dendrite mcp call dendrite_query_reuse_audit '{"capability":"linear_algebra","language":"rust"}'`
+
+  34. `dendrite_ref_list`: Lists registered Tier 1 source references for library reuse.
+      - *Example*: `./bin/dendrite mcp call dendrite_ref_list "{}"`
+
+  35. `dendrite_ref_add`: Registers a new Tier 1 source reference repository for library reuse.
+      - *Example*: `./bin/dendrite mcp call dendrite_ref_add '{"id":"ref-custom","repository":"https://github.com/org/repo"}'`
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
 - `dendrite agent <search|route>`: Search and rank agents with hybrid vector/BM25 search or auto-route tasks to optimal agents with LiteLLM virtual keys.
 - `dendrite test <auto|ui>`: Synthesize table-driven tests with Testcontainers & self-healing convergence, or run Web UI browser journeys & WebSocket telemetry load tests.
@@ -135,6 +144,8 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - `dendrite query [slice] --sources <path> --entrypoint <symbol> [flags] "<intent>"`: Universal intent-driven CFG/AST reachability slicer with golden vector test generation.
 - `dendrite query transpile --sources <artifact> [--to rust] [--no-std] [flags] "<prompt>"`: Safe idiomatic Rust transpiler with differential parity harness.
 - `dendrite query fuse --sources <src1,src2> --name <member> [--target-dir <dir>]`: Multi-artifact architecture fusion and in-process channel synthesizer.
+- `dendrite query reuse --capability <cap> [--lang rust|go|ts|py] [--ticket <id>]`: Evaluates 3-tier library reuse hierarchy and emits ADR.
+- `dendrite ref <list|add|remove> [flags]`: Manages registered Tier 1 source references for library reuse.
 
 ### 3. Unified Stacks Environment (`stacks/.env`)
 Dendrite maintains an enterprise-grade multi-service container orchestration stack parameterized via `stacks/.env` (and mirrored in `.env`):

@@ -10,6 +10,7 @@ import (
 	"Dendrite/pkg/query/slice"
 	"Dendrite/pkg/query/swap"
 	"Dendrite/pkg/query/fuse"
+	"Dendrite/pkg/query/reuse"
 	"Dendrite/pkg/query/transpile"
 	"Dendrite/pkg/ui/modal"
 )
@@ -18,6 +19,7 @@ var defaultSlicer = slice.NewIntentSlicer()
 var defaultSwapper = swap.NewSubsystemSwapper()
 var defaultTranspiler = transpile.NewRustTranspiler()
 var defaultFuser = fuse.NewArchitectureFuser()
+var defaultAuditor = reuse.NewAuditor(nil, nil, ".dendrite/pool.json")
 
 func handleQueryCommand(ctx context.Context, action string, args []string) {
 	if action == "swap" {
@@ -32,6 +34,10 @@ func handleQueryCommand(ctx context.Context, action string, args []string) {
 		handleFuseCommand(ctx, args)
 		return
 	}
+	if action == "reuse" {
+		handleReuseCommand(ctx, args)
+		return
+	}
 
 	req := slice.SliceRequest{
 		SourcesPath: ".",
@@ -41,6 +47,7 @@ func handleQueryCommand(ctx context.Context, action string, args []string) {
 	allArgs := append([]string{action}, args...)
 	var intentParts []string
 	jsonOutput := false
+	auditReuse := false
 
 	for i := 0; i < len(allArgs); i++ {
 		arg := allArgs[i]
@@ -67,6 +74,8 @@ func handleQueryCommand(ctx context.Context, action string, args []string) {
 				req.OutputDir = allArgs[i+1]
 				i++
 			}
+		case "--audit-library-reuse":
+			auditReuse = true
 		case "--json":
 			jsonOutput = true
 		default:
@@ -103,6 +112,19 @@ func handleQueryCommand(ctx context.Context, action string, args []string) {
 	fmt.Printf("    Golden Vectors:    %d parity vectors generated\n", len(res.GoldenVectors))
 	if res.EmittedProjectPath != "" {
 		fmt.Printf("    Emitted Project:   %s\n", res.EmittedProjectPath)
+	}
+	if auditReuse {
+		auditReq := reuse.AuditRequest{
+			Capability: res.EntryPoint,
+			Intent:     res.Intent,
+			TicketID:   "DEN-058",
+		}
+		if auditRes, err := defaultAuditor.AuditReuse(ctx, auditReq); err == nil {
+			fmt.Println("    [+] 3-Tier Reuse Audit:")
+			fmt.Printf("        Selected Tier: %s\n", auditRes.TierSelected)
+			fmt.Printf("        Candidate:     %s (%s)\n", auditRes.CandidateName, auditRes.Action)
+			fmt.Printf("        ADR Emitted:   %s\n", auditRes.ADRPath)
+		}
 	}
 }
 
@@ -309,8 +331,74 @@ func handleFuseCommand(ctx context.Context, args []string) {
 	}
 }
 
+func handleReuseCommand(ctx context.Context, args []string) {
+	req := reuse.AuditRequest{
+		Language: "rust",
+		TicketID: "DEN-058",
+	}
+	jsonOutput := false
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--cap", "--capability":
+			if i+1 < len(args) {
+				req.Capability = args[i+1]
+				i++
+			}
+		case "--lang", "--language":
+			if i+1 < len(args) {
+				req.Language = args[i+1]
+				i++
+			}
+		case "--ticket":
+			if i+1 < len(args) {
+				req.TicketID = args[i+1]
+				i++
+			}
+		case "--intent":
+			if i+1 < len(args) {
+				req.Intent = args[i+1]
+				i++
+			}
+		case "--json":
+			jsonOutput = true
+		}
+	}
+
+	if req.Capability == "" {
+		fmt.Println("[-] Usage: dendrite query reuse --capability <name> [--lang <lang>] [--ticket <id>]")
+		return
+	}
+
+	res, err := defaultAuditor.AuditReuse(ctx, req)
+	if err != nil {
+		fmt.Printf("[-] 3-Tier library reuse audit failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	if jsonOutput {
+		data, _ := json.MarshalIndent(res, "", "  ")
+		fmt.Println(string(data))
+		return
+	}
+
+	fmt.Println("[+] 3-Tier Library Reuse Evaluation:")
+	fmt.Printf("    Capability:        %s\n", req.Capability)
+	fmt.Printf("    Target Language:   %s\n", req.Language)
+	fmt.Printf("    Selected Tier:     %s\n", res.TierSelected)
+	fmt.Printf("    Candidate Package: %s\n", res.CandidateName)
+	fmt.Printf("    Action:            %s\n", res.Action)
+	fmt.Printf("    Package Spec:      %s\n", res.PackageSpec)
+	fmt.Printf("    Source URI:        %s\n", res.SourceURI)
+	if res.ImportPath != "" {
+		fmt.Printf("    Import Path:       %s\n", res.ImportPath)
+	}
+	fmt.Printf("    Rationale:         %s\n", res.Rationale)
+	fmt.Printf("    ADR Record:        %s (%s)\n", res.ADRPath, res.ADRID)
+}
+
 func printQueryUsage() {
-	fmt.Println("Usage: dendrite query <slice|swap|transpile|fuse> [flags]")
+	fmt.Println("Usage: dendrite query <slice|swap|transpile|fuse|reuse> [flags]")
 	fmt.Println("\nSlice Subcommand:")
 	fmt.Println("  dendrite query slice --sources <path> --entrypoint <symbol> [flags] \"<intent>\"")
 	fmt.Println("\nSwap Subcommand:")
@@ -319,4 +407,6 @@ func printQueryUsage() {
 	fmt.Println("  dendrite query transpile --sources <artifact> [--to rust] [--no-std] [--output-dir <dir>] \"<prompt>\"")
 	fmt.Println("\nFuse Subcommand:")
 	fmt.Println("  dendrite query fuse --sources <src1,src2> --name <fused_member> [--target-dir <dir>] [--lang rust|go]")
+	fmt.Println("\nReuse Subcommand:")
+	fmt.Println("  dendrite query reuse --capability <cap> [--lang rust|go|ts|py] [--ticket <id>]")
 }

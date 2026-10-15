@@ -8,9 +8,9 @@ This document maintains the real-time development status, milestones, and active
 ## Current Status Overview
 
 - **Active Milestone**: Milestone 17 — Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)
-- **Current Focus**: `DEN-058: Strict 3-Tier Library Reuse Hierarchy Lookup & ADR Provenance Recorder (`pkg/query/reuse`, `pkg/store`)`
+- **Current Focus**: `DEN-059: BLAKE3 Content-Addressed Persistent Segmented Store & Chunk Checkpointer (`pkg/store/segmented`, `cmd/dendrite`)`
 - **Last Updated**: 2026-10-14
-- **Overall Progress**: 60 / 99 Tickets Completed (60.6%)
+- **Overall Progress**: 61 / 99 Tickets Completed (61.6%)
 
 ---
 
