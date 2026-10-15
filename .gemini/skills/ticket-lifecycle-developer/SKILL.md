@@ -127,6 +127,12 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   38. `dendrite_store_query_partial`: Query committed segments for a project, including projects currently in ANALYZING_PARTIAL state.
       - *Example*: `./bin/dendrite mcp call dendrite_store_query_partial '{"project":"my-proj"}'`
 
+  39. `dendrite_store_inspect`: Detailed chunk-by-chunk and segment analysis breakdown for a specific stored project.
+      - *Example*: `./bin/dendrite mcp call dendrite_store_inspect '{"store_id":"my-proj"}'`
+
+  40. `dendrite_store_rm`: Safely removes SQLite analysis records and unlinks compressed blobs with confirmation gate.
+      - *Example*: `./bin/dendrite mcp call dendrite_store_rm '{"store_id":"my-proj","force":true}'`
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
 - `dendrite agent <search|route>`: Search and rank agents with hybrid vector/BM25 search or auto-route tasks to optimal agents with LiteLLM virtual keys.
 - `dendrite test <auto|ui>`: Synthesize table-driven tests with Testcontainers & self-healing convergence, or run Web UI browser journeys & WebSocket telemetry load tests.
@@ -155,7 +161,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - `dendrite query fuse --sources <src1,src2> --name <member> [--target-dir <dir>]`: Multi-artifact architecture fusion and in-process channel synthesizer.
 - `dendrite query reuse --capability <cap> [--lang rust|go|ts|py] [--ticket <id>]`: Evaluates 3-tier library reuse hierarchy and emits ADR.
 - `dendrite ref <list|add|remove> [flags]`: Manages registered Tier 1 source references for library reuse.
-- `dendrite store <status|chunks|query|commit|purge> [flags]`: Content-addressed persistent segmented store and crash-proof chunk checkpointer.
+- `dendrite store <status|inspect|rm|chunks|query|commit|purge> [flags]`: Content-addressed persistent segmented store, telemetry inspector, and safe deletion lifecycler.
 
 ### 3. Unified Stacks Environment (`stacks/.env`)
 Dendrite maintains an enterprise-grade multi-service container orchestration stack parameterized via `stacks/.env` (and mirrored in `.env`):

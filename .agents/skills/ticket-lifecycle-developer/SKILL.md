@@ -127,6 +127,12 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   38. `dendrite_store_query_partial`: Query committed segments for a project, including projects currently in ANALYZING_PARTIAL state.
       - *Example*: `./bin/dendrite mcp call dendrite_store_query_partial '{"project":"my-proj"}'`
 
+  39. `dendrite_store_inspect`: Detailed chunk-by-chunk and segment analysis breakdown for a specific stored project.
+      - *Example*: `./bin/dendrite mcp call dendrite_store_inspect '{"store_id":"my-proj"}'`
+
+  40. `dendrite_store_rm`: Safely removes SQLite analysis records and unlinks compressed blobs with confirmation gate.
+      - *Example*: `./bin/dendrite mcp call dendrite_store_rm '{"store_id":"my-proj","force":true}'`
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
 - `dendrite agent <search|route>`: Search and rank agents with hybrid vector/BM25 search or auto-route tasks to optimal agents with LiteLLM virtual keys.
 - `dendrite test <auto|ui>`: Synthesize table-driven tests with Testcontainers & self-healing convergence, or run Web UI browser journeys & WebSocket telemetry load tests.
@@ -153,7 +159,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - `dendrite query fuse --sources <src1,src2> --name <member> [--target-dir <dir>]`: Multi-artifact architecture fusion and in-process channel synthesizer.
 - `dendrite query reuse --capability <cap> [--lang rust|go|ts|py] [--ticket <id>]`: Evaluates 3-tier library reuse hierarchy and emits ADR.
 - `dendrite ref <list|add|remove> [flags]`: Manages registered Tier 1 source references for library reuse.
-- `dendrite store <status|chunks|query|commit|purge> [flags]`: Content-addressed persistent segmented store and crash-proof chunk checkpointer.
+- `dendrite store <status|inspect|rm|chunks|query|commit|purge> [flags]`: Content-addressed persistent segmented store, telemetry inspector, and safe deletion lifecycler.
 
 ### 3. Unified Stacks Environment (`stacks/.env`)\nDendrite maintains an enterprise-grade multi-service container orchestration stack parameterized via `stacks/.env` (and mirrored in `.env`):\n- **Core Control Plane**: PostgreSQL 16 (`5432:5432`) & Redis 7 (`6379:6379`)\n- **Token Governance Gateway**: LiteLLM Proxy (`4000:4000`) with master key authentication, budget ceilings, and route cascades (`stacks/litellm_config.yaml`).\n- **Self-Hosted Project Management**: Plane v2 Backend (`8090`), Web UI (`8091`), PostgreSQL 16 (`5434`), Redis 7 (`6380`), and Nginx Proxy.\n- **Local Issue Tracker Mock**: Linear Mock Server (`8085`) and dedicated PostgreSQL 16 (`5433`).\n- **Design & Prototyping Platform**: Penpot Frontend (`9000`), Backend (`9001`), PostgreSQL 16 (`5435`), and Redis 7 (`6381`).\n- **Observability Suite**: Prometheus 2.50 (`9090`) and Grafana 10.3 (`3000`) with automated dashboards and data sources.\n- **Pluggable Inference Upstreams**: Local Ollama (`11434`), OxiLLaMa (`8080`), Hugging Face TGI (`8080`), TEI (`8082`), vLLM (`8000`), and llama.cpp (`8081`).\n\n### 4. Continuous Skill Enhancement Mandate\n> [!IMPORTANT]\n> **As soon as you finish a tool or feature, add it to the skills!**\n> Whenever a new CLI subcommand, MCP tool, or runtime adapter is implemented, immediately update `SKILL.md` across `.gemini/skills/` and `.agents/skills/` so subsequent agents and turns can leverage it immediately.\n\n---\n\n
 ### 5. Documentation Cleanliness & Taxonomy Mandate

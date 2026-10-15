@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"Dendrite/pkg/store/segmented"
+	"Dendrite/pkg/store/status"
 )
 
 var defaultSegmentedStore, _ = segmented.NewSegmentedStore("")
+var defaultStoreInspector = status.NewStoreInspector(defaultSegmentedStore)
 
 func handleStoreCommand(ctx context.Context, action string, args []string) {
 	if defaultSegmentedStore == nil {
@@ -21,6 +23,10 @@ func handleStoreCommand(ctx context.Context, action string, args []string) {
 	switch action {
 	case "status":
 		handleStoreStatus(ctx, args)
+	case "inspect":
+		handleStoreInspect(ctx, args)
+	case "rm", "remove":
+		handleStoreRm(ctx, args)
 	case "chunks", "checkpoints":
 		handleStoreChunks(ctx, args)
 	case "query":
@@ -47,55 +53,100 @@ func handleStoreStatus(ctx context.Context, args []string) {
 		}
 	}
 
-	segs, err := defaultSegmentedStore.QueryPartial(ctx, project)
+	report, err := defaultStoreInspector.InspectStore(ctx, project)
 	if err != nil {
-		fmt.Printf("[-] Failed to query store segments: %v\n", err)
+		fmt.Printf("[-] Failed to inspect store status: %v\n", err)
 		os.Exit(1)
-	}
-
-	cps, err := defaultSegmentedStore.ListCheckpoints(ctx, project)
-	if err != nil {
-		fmt.Printf("[-] Failed to list checkpoints: %v\n", err)
-		os.Exit(1)
-	}
-
-	var storedCount, partialCount int
-	var totalRawBytes, totalCompBytes int64
-	for _, cp := range cps {
-		if cp.State == segmented.StateStored {
-			storedCount++
-		} else if cp.State == segmented.StateAnalyzingPartial {
-			partialCount++
-		}
-	}
-	for _, s := range segs {
-		totalRawBytes += s.SizeBytes
-		totalCompBytes += s.CompressedSize
-	}
-
-	statusMap := map[string]interface{}{
-		"project":            project,
-		"total_segments":     len(segs),
-		"total_checkpoints":  len(cps),
-		"stored_chunks":      storedCount,
-		"partial_chunks":     partialCount,
-		"raw_bytes":          totalRawBytes,
-		"compressed_bytes":   totalCompBytes,
 	}
 
 	if jsonOutput {
-		data, _ := json.MarshalIndent(statusMap, "", "  ")
+		data, _ := json.MarshalIndent(report, "", "  ")
 		fmt.Println(string(data))
 		return
 	}
 
 	fmt.Println("[+] Persistent Segmented Store Status:")
-	if project != "" {
-		fmt.Printf("    Target Project:     %s\n", project)
+	fmt.Print(status.FormatTable(report))
+	fmt.Printf("\nTotal: %d projects | %d segments | %d bytes raw -> %d bytes compressed\n",
+		report.TotalStores, report.TotalSegments, report.TotalRawBytes, report.TotalCompBytes)
+}
+
+func handleStoreInspect(ctx context.Context, args []string) {
+	if len(args) == 0 {
+		fmt.Println("[-] Usage: dendrite store inspect <id> [--json]")
+		return
 	}
-	fmt.Printf("    Total Segments:     %d (files, functions, AST blocks)\n", len(segs))
-	fmt.Printf("    Checkpoints:        %d (Stored: %d, Partial: %d)\n", len(cps), storedCount, partialCount)
-	fmt.Printf("    Storage Volume:     %d bytes raw -> %d bytes compressed\n", totalRawBytes, totalCompBytes)
+
+	storeID := args[0]
+	jsonOutput := false
+	for _, a := range args[1:] {
+		if a == "--json" {
+			jsonOutput = true
+		}
+	}
+
+	details, err := defaultStoreInspector.InspectStoreDetails(ctx, storeID)
+	if err != nil {
+		fmt.Printf("[-] Failed to inspect store '%s': %v\n", storeID, err)
+		os.Exit(1)
+	}
+
+	if jsonOutput {
+		data, _ := json.MarshalIndent(details, "", "  ")
+		fmt.Println(string(data))
+		return
+	}
+
+	s := details.Summary
+	fmt.Printf("[+] Store Analysis Details: %s\n", s.StoreID)
+	fmt.Printf("    Kind:          %s\n", s.Kind)
+	fmt.Printf("    Overall State: %s (%.1f%% complete)\n", s.State, s.Progress)
+	fmt.Printf("    Segments:      %d\n", s.SegmentsCount)
+	fmt.Printf("    Storage:       %d bytes raw -> %d bytes compressed\n", s.RawBytes, s.CompressedBytes)
+	fmt.Printf("    Est. Tokens:   %d tokens\n", s.TokensEstimated)
+	fmt.Printf("    Updated:       %s\n\n", s.UpdatedAt.Format("2006-01-02 15:04:05"))
+
+	fmt.Printf("    Chunk Breakdown (%d checkpoints):\n", len(details.Checkpoints))
+	for _, cp := range details.Checkpoints {
+		fmt.Printf("      • %-16s [%-18s] %d/%d segments (%.1f%%) updated %s\n",
+			cp.ChunkID, cp.State, cp.CommittedSegments, cp.TotalSegments, cp.PercentComplete, cp.UpdatedAt.Format("15:04:05"))
+	}
+
+	if len(details.Segments) > 0 {
+		fmt.Printf("\n    Sample Segments (first %d):\n", min(len(details.Segments), 5))
+		for _, seg := range details.Segments[:min(len(details.Segments), 5)] {
+			fmt.Printf("      - %-12s [%-12s] %s (%d bytes)\n", seg.Type, seg.Hash[:12], seg.Identifier, seg.SizeBytes)
+		}
+	}
+}
+
+func handleStoreRm(ctx context.Context, args []string) {
+	if len(args) == 0 {
+		fmt.Println("[-] Usage: dendrite store rm <id> [--force]")
+		return
+	}
+
+	storeID := args[0]
+	force := false
+	for _, a := range args[1:] {
+		if a == "--force" || a == "-f" {
+			force = true
+		}
+	}
+
+	if !force {
+		fmt.Printf("Are you sure you want to delete all stored analysis for '%s'? (pass --force to confirm)\n", storeID)
+		return
+	}
+
+	res, err := defaultStoreInspector.RemoveStore(ctx, storeID, true)
+	if err != nil {
+		fmt.Printf("[-] Failed to remove store '%s': %v\n", storeID, err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("[+] Safely removed store '%s': purged %d segments, unlinked %d blobs, freed %d bytes.\n",
+		res.StoreID, res.SegmentsPurged, res.BlobsUnlinked, res.BytesFreed)
 }
 
 func handleStoreChunks(ctx context.Context, args []string) {
@@ -247,11 +298,20 @@ func handleStoreCommit(ctx context.Context, args []string) {
 }
 
 func printStoreUsage() {
-	fmt.Println("Usage: dendrite store <status|chunks|query|commit|purge> [flags]")
+	fmt.Println("Usage: dendrite store <status|inspect|rm|chunks|query|commit|purge> [flags]")
 	fmt.Println("\nCommands:")
 	fmt.Println("  dendrite store status [--project <name>] [--json]")
+	fmt.Println("  dendrite store inspect <id> [--json]")
+	fmt.Println("  dendrite store rm <id> [--force]")
 	fmt.Println("  dendrite store chunks [--project <name>] [--json]")
 	fmt.Println("  dendrite store query --project <name> [--json]")
 	fmt.Println("  dendrite store commit --project <name> --chunk <id> --file <path> [--final]")
 	fmt.Println("  dendrite store purge --project <name>")
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

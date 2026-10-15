@@ -7,7 +7,10 @@ import (
 	"time"
 
 	"Dendrite/pkg/store/segmented"
+	"Dendrite/pkg/store/status"
 )
+
+var defaultMCPStoreInspector = status.NewStoreInspector(defaultMCPStore)
 
 var defaultMCPStore, _ = segmented.NewSegmentedStore("")
 
@@ -143,6 +146,70 @@ func (s *Server) registerStoreTools(deps Dependencies) {
 		}
 
 		data, _ := json.MarshalIndent(segs, "", "  ")
+		return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+	})
+	// 41. dendrite_store_inspect
+	s.RegisterTool(Tool{
+		Name:        "dendrite_store_inspect",
+		Description: "Detailed chunk-by-chunk and segment analysis breakdown for a specific stored project",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"store_id": map[string]interface{}{"type": "string", "description": "Project / Store identifier"},
+			},
+			"required": []interface{}{"store_id"},
+		},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		storeID, _ := args["store_id"].(string)
+		details, err := defaultMCPStoreInspector.InspectStoreDetails(ctx, storeID)
+		if err != nil {
+			return &CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: fmt.Sprintf("[-] Inspect failed: %v", err),
+				}},
+				IsError: true,
+			}, nil
+		}
+
+		data, err := json.MarshalIndent(details, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("marshaling inspect result: %w", err)
+		}
+		return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+	})
+
+	// 42. dendrite_store_rm
+	s.RegisterTool(Tool{
+		Name:        "dendrite_store_rm",
+		Description: "Safely removes SQLite analysis records and unlinks compressed blobs with confirmation gate",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"store_id": map[string]interface{}{"type": "string", "description": "Project / Store identifier to delete"},
+				"force":    map[string]interface{}{"type": "boolean", "description": "Mandatory confirmation gate to perform permanent deletion"},
+			},
+			"required": []interface{}{"store_id"},
+		},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		storeID, _ := args["store_id"].(string)
+		force, _ := args["force"].(bool)
+
+		res, err := defaultMCPStoreInspector.RemoveStore(ctx, storeID, force)
+		if err != nil {
+			return &CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: fmt.Sprintf("[-] Removal failed: %v", err),
+				}},
+				IsError: true,
+			}, nil
+		}
+
+		data, err := json.MarshalIndent(res, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("marshaling removal result: %w", err)
+		}
 		return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
 	})
 }

@@ -8,9 +8,9 @@ This document maintains the real-time development status, milestones, and active
 ## Current Status Overview
 
 - **Active Milestone**: Milestone 17 — Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)
-- **Current Focus**: `DEN-060: Store Inspection, Chunk Status Telemetry & Explicit User Purge Lifecycler (`pkg/store/status`, `pkg/ui/store`)`
+- **Current Focus**: `DEN-061: Token-Aware Hybrid Scheduler: Night Local Window & 48h Pre-Reset Cloud Sprint (`pkg/scheduler/token`, `pkg/gateway`)`
 - **Last Updated**: 2026-10-14
-- **Overall Progress**: 62 / 99 Tickets Completed (62.6%)
+- **Overall Progress**: 63 / 99 Tickets Completed (63.6%)
 
 ---
 
