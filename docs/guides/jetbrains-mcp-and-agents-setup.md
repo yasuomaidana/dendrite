@@ -3,7 +3,7 @@ id: jetbrains-mcp-and-agents-setup
 title: "JetBrains IDE MCP & Autonomous Agent Integration Guide"
 sidebar_label: "JetBrains MCP & Agents Setup"
 sidebar_position: 3
-tags: [jetbrains, mcp, agents, goland]
+tags: [jetbrains, mcp, agents, goland, publisher, cicd, ephemeral]
 ---
 
 # JetBrains IDE MCP & Autonomous Agent Integration Guide
@@ -13,7 +13,7 @@ tags: [jetbrains, mcp, agents, goland]
 Dendrite provides bidirectional integration with the **JetBrains IDE Ecosystem** (GoLand, IntelliJ IDEA, PyCharm, RustRover, WebStorm, CLion) through two complementary communication channels:
 
 1. **JetBrains Native MCP Client (IDE $\to$ Dendrite)**:
-   JetBrains IDEs (2024.3+, 2025+, 2026+) natively support the **Model Context Protocol (MCP 2024-11-05)**. By configuring Dendrite's native MCP server (`bin/dendrite mcp serve`), JetBrains AI Assistant, Junie, and embedded agents gain direct access to Dendrite's **20 operational MCP tools** (ticket tracking, multi-engine inference probing, topology advisor, agent runners, distributed codebase registry, modular decomposition, cross-project interop, satellite project spawning, environment replication, and telemetry).
+   JetBrains IDEs (2024.3+, 2025+, 2026+) natively support the **Model Context Protocol (MCP 2024-11-05)**. By configuring Dendrite's native MCP server (`bin/dendrite mcp serve`), JetBrains AI Assistant, Junie, and embedded agents gain direct access to Dendrite's **25+ operational MCP tools** (ticket tracking, multi-engine inference probing, topology advisor, agent runners, distributed codebase registry, modular decomposition, cross-project interop, satellite project spawning, environment replication, telemetry, **artifact/crate publishing**, and **ephemeral local/mesh CI/CD routines**).
 
 2. **Dendrite JetBrains Bridge (Dendrite $\to$ IDE)**:
    Through `pkg/jetbrains` and `dendrite jetbrains <probe|open|problems|symbols|build|run|setup>`, Dendrite's autonomous agents can reach back into the running JetBrains IDE over the IDE's built-in MCP server / port `63342` to navigate active editor tabs, trigger background compilations, query PSI symbols, and extract live compiler diagnostics.
@@ -32,9 +32,11 @@ flowchart LR
 
     subgraph "Dendrite Control Plane"
         DendriteCLI["Dendrite CLI / Binary<br/>./bin/dendrite"]
-        MCPServer["Dendrite MCP Server<br/>20 Operational Tools"]
+        MCPServer["Dendrite MCP Server<br/>25+ Operational Tools"]
         DistEngine["Distributed Codebase Engine<br/>pkg/distcodebase"]
         PlaneAdapter["Plane v2 Adapter<br/>pkg/tracker/plane"]
+        PublisherSvc["Publisher MCP Service<br/>pkg/mcp/publisher"]
+        CICDRoutine["Ephemeral CI/CD Routine<br/>pkg/routines/cicd"]
         JBBridge["JetBrains Bridge<br/>pkg/jetbrains"]
         AgentRunner["Agent Harness<br/>Aider / AGY / OpenHands"]
     end
@@ -43,6 +45,8 @@ flowchart LR
     AIAssistant -->|"tools/call (JSON-RPC stdio)"| MCPServer
     MCPServer --> DistEngine
     MCPServer --> PlaneAdapter
+    MCPServer --> PublisherSvc
+    MCPServer --> CICDRoutine
     MCPServer --> AgentRunner
 
     RunConfigs & ExtTools -->|Executes Actions| DendriteCLI
@@ -77,19 +81,23 @@ Alternatively, this routine can be triggered dynamically from any AI agent via t
 ### What the Routine Configures:
 1. **`.ai/mcp/mcp.json` (Project Root)**: Registers `dendrite` as an active project MCP server.
 2. **`~/.ai/mcp/mcp.json` (User Home)**: Registers `dendrite` as a globally available MCP server across all installed JetBrains IDEs.
-3. **`.idea/runConfigurations/`**: Generates 6 ready-to-run GoLand / IntelliJ configurations:
+3. **`.idea/runConfigurations/`**: Generates ready-to-run GoLand / IntelliJ configurations:
    - `Dendrite_MCP_Server.xml` (`dendrite mcp serve`)
    - `Dendrite_Agent_Aider.xml` (`dendrite agent run aider --ticket DEN-036`)
    - `Dendrite_Agent_Antigravity.xml` (`dendrite agent run agy`)
    - `Dendrite_Web_UI.xml` (`dendrite ui --port 3456`)
    - `Dendrite_Doctor.xml` (`dendrite doctor`)
    - `Dendrite_JetBrains_Probe.xml` (`dendrite jetbrains probe`)
+   - `Dendrite_Publisher_Preflight.xml` (`dendrite publish preflight`)
+   - `Dendrite_CICD_Run_Local.xml` (`dendrite cicd run --target local`)
 4. **`.idea/tools/External_Tools.xml`**: Adds context-menu IDE external tools:
    - `Dendrite: Run Aider on Active File`
    - `Dendrite: Run Antigravity on Active File`
    - `Dendrite: Probe MCP Diagnostics`
    - `Dendrite: List Registered MCP Tools`
    - `Dendrite: Telemetry Snapshot`
+   - `Dendrite: Preflight Package Publish`
+   - `Dendrite: Run Ephemeral CI/CD Pipeline`
 
 ---
 
@@ -144,11 +152,11 @@ Once saved, JetBrains's `McpProjectServerConfigurationService` reloads the file 
      - `PLANE_API_KEY`: `plane_sec_dendrite_token_12345`
      - `PLANE_URL`: `http://localhost:8090`
 5. Click **Apply** and **OK**.
-6. The IDE status bar MCP widget will display `dendrite (20 tools connected)`.
+6. The IDE status bar MCP widget will display `dendrite (25+ tools connected)`.
 
 ---
 
-## 4. Comprehensive Catalog of Dendrite's 19 Native MCP Tools
+## 4. Comprehensive Catalog of Dendrite's Native MCP Tools
 
 | Tool Identifier | Description & Capability | Primary Input Parameters |
 |:---|:---|:---|
@@ -171,10 +179,16 @@ Once saved, JetBrains's `McpProjectServerConfigurationService` reloads the file 
 | `dendrite_topology_advisor`| Recommend hardware placement topologies for target scenario. | `scenario` |
 | `dendrite_gateway_render` | Dynamically render LiteLLM gateway routing configurations. | `template_path` |
 | `dendrite_env_status` | Pre-flight diagnostics for Docker, Go, Git, Plane, and environment. | `{}` |
+| **`publisher_detect_targets`** | **FEAT-042**: Scans workspace and lists publishable packages, versions, and registries. | `workspace_path` |
+| **`publisher_preflight`** | **FEAT-042**: Runs Git worktree clean check, Cargo.toml completeness, SemVer collision, and dry-run. | `workspace_path`, `package_name`, `allow_dirty` |
+| **`publisher_execute`** | **FEAT-042**: Performs secret-isolated live publish with human approval gate and git tagging. | `workspace_path`, `package_name`, `approved`, `dry_run` |
+| **`cicd_status`** | **FEAT-043**: Returns CI/CD routine enable status, backend, active host, and running jobs. | `{}` |
+| **`cicd_enable`** | **FEAT-043**: Dynamically toggles CI/CD routine on/off with ephemeral and auto-disable overrides. | `enabled`, `ephemeral`, `auto_disable` |
+| **`cicd_run_pipeline`** | **FEAT-043**: Executes disposable ephemeral container pipeline locally or over Tailscale mesh. | `repo_path`, `commit`, `steps`, `image`, `target` |
 
 ---
 
-## 5. Technical Workflows: Distributed Codebase Scenarios 1 to 4 in JetBrains
+## 5. Technical Workflows: Distributed Codebase & Delivery Scenarios in JetBrains
 
 JetBrains AI Assistant or Junie can execute complex distributed codebase tasks through conversational prompts:
 
@@ -256,6 +270,50 @@ When executing full language translations (e.g. Carla simulator to 100% Rust), s
 
 ---
 
+### Scenario 5: Artifact Publishing with Secret-Isolated Dry-Run Gate (FEAT-042)
+Before publishing library crates or packages to upstream registries:
+1. Agent detects workspace targets and validates topological order.
+2. Performs isolated `cargo publish --dry-run` and validates metadata without leaking credentials.
+3. Prompts user for approval and triggers live publication with Git release tag.
+- **Prompt in JetBrains AI Chat**:
+  > *"Preflight and publish crate 'dendrite-core' to crates.io with git release tagging."*
+- **MCP Call Triggered**:
+  ```json
+  {
+    "tool": "publisher_preflight",
+    "arguments": {
+      "workspace_path": "/Users/yasuomaidana/GoLandProjects/Dendrite",
+      "package_name": "dendrite-core"
+    }
+  }
+  ```
+- **Result**: Preflight returns structured summary (warnings: 0, size: 42 KB, dry_run: PASS). Subsequent approved call to `publisher_execute` pushes to `crates.io` and creates tag `v0.4.2`.
+
+---
+
+### Scenario 6: Ephemeral Local/Mesh CI/CD Verification (FEAT-043)
+Offload heavy test compilation without paying for cloud runner minutes or draining local resources:
+1. Agent enables ephemeral routine on demand (`cicd_enable`).
+2. Runs build and test suite inside cleanroom container or over Tailscale mesh.
+3. Obtains bounded error tail if broken, or pass status, and routine auto-disables.
+- **Prompt in JetBrains AI Chat**:
+  > *"Run the test suite ephemerally on the remote Debian builder before opening a PR."*
+- **MCP Call Triggered**:
+  ```json
+  {
+    "tool": "cicd_run_pipeline",
+    "arguments": {
+      "repo_path": "/Users/yasuomaidana/GoLandProjects/Dendrite",
+      "commit": "HEAD",
+      "steps": ["cargo clippy -- -D warnings", "cargo test --all-targets"],
+      "target": "custom_server"
+    }
+  }
+  ```
+- **Result**: Offloads compilation to `ssh://dendrite@100.64.0.12`, streams truncated diagnostics ($< 2$ KB) back to AI Assistant, and automatically cleans up the remote container.
+
+---
+
 ## 6. How to Use Tools via JetBrains External Tools Menu
 
 You can invoke Dendrite operations directly on the file you are actively editing:
@@ -265,8 +323,10 @@ You can invoke Dendrite operations directly on the file you are actively editing
    - **`Dendrite: Run Aider on Active File`**: Launches an autonomous pair-programming loop targeted at the active file.
    - **`Dendrite: Run Antigravity on Active File`**: Invokes the high-cognition strategic agent to inspect the current file.
    - **`Dendrite: Probe MCP Diagnostics`**: Validates stdio MCP communication and lists tool status.
-   - **`Dendrite: List Registered MCP Tools`**: Displays all 19 MCP tools with schema descriptions in the IDE Run window.
+   - **`Dendrite: List Registered MCP Tools`**: Displays all MCP tools with schema descriptions in the IDE Run window.
    - **`Dendrite: Telemetry Snapshot`**: Displays real-time Apple Silicon thermals and LiteLLM token usage in the IDE console.
+   - **`Dendrite: Preflight Package Publish`**: Runs clean worktree, metadata, and dry-run packaging checks on the active crate.
+   - **`Dendrite: Run Ephemeral CI/CD Pipeline`**: Executes an immediate disposable container pipeline on the active repository.
 
 ---
 
@@ -276,12 +336,14 @@ In the top-right toolbar of GoLand or IntelliJ, click the Run Configuration drop
 
 | Configuration Name | Action Performed | Shortcut |
 |:---|:---|:---:|
-| `Dendrite_Web_UI` | Starts the embedded HTTP dashboard and WebSocket telemetry server on `http://localhost:3456`. | `Shift + F10` |
+| `Dendrite_Web_UI` | Starts embedded HTTP dashboard and WebSocket telemetry server on `http://localhost:3456`. | `Shift + F10` |
 | `Dendrite_Doctor` | Runs environment diagnostics checking Docker, Ollama, Plane, LiteLLM, and Go compiler. | `Shift + F10` |
-| `Dendrite_MCP_Server` | Launches the Model Context Protocol stdio server for external MCP debuggers. | `Shift + F10` |
-| `Dendrite_Agent_Aider` | Launches the Aider autonomous coding loop bound to virtual LiteLLM keys. | `Shift + F10` |
-| `Dendrite_Agent_Antigravity` | Launches the Antigravity high-cognition cloud agent session. | `Shift + F10` |
-| `Dendrite_JetBrains_Probe` | Probes the running JetBrains IDE's MCP port `63342` and verifies IDE control tools. | `Shift + F10` |
+| `Dendrite_MCP_Server` | Launches Model Context Protocol stdio server for external MCP debuggers. | `Shift + F10` |
+| `Dendrite_Agent_Aider` | Launches Aider autonomous coding loop bound to virtual LiteLLM keys. | `Shift + F10` |
+| `Dendrite_Agent_Antigravity` | Launches Antigravity high-cognition cloud agent session. | `Shift + F10` |
+| `Dendrite_JetBrains_Probe` | Probes running JetBrains IDE's MCP port `63342` and verifies IDE control tools. | `Shift + F10` |
+| `Dendrite_Publisher_Preflight` | Runs isolated metadata and dry-run preflight verification for package publishing. | `Shift + F10` |
+| `Dendrite_CICD_Run_Local` | Triggers immediate local ephemeral Docker pipeline with automatic `--rm` teardown. | `Shift + F10` |
 
 ---
 
@@ -313,12 +375,18 @@ Dendrite's autonomous coding agents (Aider, OpenHands, AGY) can leverage the run
 To verify that your JetBrains IDE and Dendrite MCP server are operating in perfect synchrony:
 
 ```bash
-# 1. Check all 19 MCP tools
+# 1. Check all registered MCP tools
 ./bin/dendrite mcp tools
 
 # 2. Test tool execution directly via CLI
 ./bin/dendrite mcp call dendrite_dist_sources '{"query":"wgpu"}'
 
-# 3. Check Plane connectivity
+# 3. Test publisher preflight via MCP
+./bin/dendrite mcp call publisher_preflight '{"workspace_path":"."}'
+
+# 4. Check ephemeral CI/CD routine status
+./bin/dendrite mcp call cicd_status '{}'
+
+# 5. Check Plane connectivity
 ./bin/dendrite plane status
 ```

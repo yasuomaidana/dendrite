@@ -20,11 +20,11 @@ Dendrite is an enterprise-grade, topology-agnostic control plane and developer p
 
 | Metric | Current Value | Target / Baseline | Status |
 | :--- | :--- | :--- | :--- |
-| **Active Milestone** | **Milestone 18** — Agent Search, Discovery & Routing | Milestone 23 (Project Final) | In Progress |
-| **Current Focus Ticket** | `DEN-037` (Hybrid Agent Search & Semantic Routing) | Next in queue: `DEN-038` | Active Focus |
-| **Total Story Points (SP)** | 328 SP | 349 SP Planned | 94.0% SP Complete |
-| **Tickets Completed** | **46 / 49 Tickets** | 49 Tickets Total | **93.9% Completed** |
-| **Active / Queued Tickets** | **3 Tickets** (`DEN-037`, `DEN-038`, `DEN-048`) | 0 Remaining | On Track |
+| **Active Milestone** | **Milestone 24** — Autonomous Pool DAG & Multi-IDE Project Synchronization (FEAT-029) | Milestone 37 (Project Final) | In Progress |
+| **Current Focus Ticket** | `DEN-051` (Autonomous Dependency Inference & Multi-Directory DAG Solver) | Next in queue: `DEN-052` | Active Focus |
+| **Total Story Points (SP)** | 358 SP | 582 SP Planned | 61.5% SP Complete |
+| **Tickets Completed** | **50 / 90 Tickets** | 90 Tickets Total | **55.6% Completed** |
+| **Active / Queued Tickets** | **40 Tickets** (`DEN-051` through `DEN-090`) | 0 Blocked | On Track |
 | **Core Statement Coverage** | **$\ge 88.4\%$ Average** across all packages | $\ge 85.0\%$ DoD Threshold | Exceeds Target |
 | **Registered MCP Tools** | **21 Native Tools** (Stdio JSON-RPC 2.0) | JetBrains + Stacks | Operational |
 | **Supported Inference Backends** | 6 Engines (Ollama, OxiLLaMa, TGI, TEI, vLLM, llama.cpp)| Multi-Provider Gateway | Operational |
@@ -32,8 +32,8 @@ Dendrite is an enterprise-grade, topology-agnostic control plane and developer p
 
 ```mermaid
 pie title Ticket Completion Status
-    "Completed Tickets (46)" : 46
-    "Queued / In-Progress Tickets (3)" : 3
+    "Completed Tickets (50)" : 50
+    "Queued / In-Progress Tickets (40)" : 40
 ```
 
 ---
@@ -65,6 +65,33 @@ flowchart TD
 6. **Verification & Test Passing**: Execute test suites (`go test -v -cover`). Achieve statement coverage $\ge 85\%$ across new modules.
 7. **Code Complexity Evaluation**: Cyclomatic complexity $\le 15$ per function, cognitive complexity $\le 20$, function length $\le 80$ lines.
 8. **Status & Skill Synchronization**: Update `DEV_STATUS.md`, advance `Current Focus`, update Plane via `dendrite plane push-status`, and update skills across `.gemini/skills/` and `.agents/skills/`.
+
+### 2.3 Semantic Hierarchical Branching & Merging Model
+
+When merging operations are permitted (Autonomy Levels 3, 4, 5), Dendrite enforces a strict 3-tier semantic branch hierarchy:
+1. **Milestone Integration Trunk (`milestone/<id>`)**: Created when a milestone begins (e.g. `milestone/M24-pool-dag`).
+2. **Story Isolation Branches (`story/<id>`)**: Branched exclusively from their parent `milestone/<id>` integration trunk.
+3. **Feature Component Branches (`feature/<id>`)**: Branched exclusively from their parent `story/<id>`.
+4. **Level-by-Level Merging**:
+   - `feature/*` merges only into parent `story/*` after unit tests pass.
+   - `story/*` merges only into parent `milestone/*` after integration tests pass.
+   - `milestone/*` creates a consolidated PR against `main`. Direct branch bypass or uncoordinated merging into `main` is strictly rejected by the policy gate.
+
+```mermaid
+graph TD
+    M[main]
+    MB[milestone/<id>]
+    S1[story/<id>]
+    F1[feature/<id>]
+
+    M -->|Branch Milestone| MB
+    MB -->|Branch Story| S1
+    S1 -->|Branch Feature| F1
+
+    F1 -->|Level 1 Merge| S1
+    S1 -->|Level 2 Merge| MB
+    MB -->|Level 3 Consolidated PR| M
+```
 
 ### 2.2 Token Economy & Delegation Matrix
 
@@ -190,6 +217,35 @@ All 23 project milestones and their associated tickets:
 - [x] **DEN-047**: Fix Goroutine Deadlock & Dynamic Buffer Starvation in Synthetic Load Benchmark Scenario (`pkg/perf`, `cmd/dendrite`)
 - [ ] **DEN-048**: Automatic Zero-Latency Fallback Cascade for Unreachable Inference Upstreams in Benchmark Scenarios (`pkg/perf`, `pkg/gateway`, `pkg/inference`)
 - [x] **DEN-049**: Multi-Digest Test Vector Errata & 63-Byte Alignment Invariant Suite for REA Showcases (`pkg/rea/showcase`, `tests/showcase`)
+
+### Milestone 24: Autonomous Pool DAG, Multi-IDE Project Lifecycler & Semantic Merging (FEAT-029, FEAT-035)
+- [ ] **DEN-050**: Multi-Directory Manifest & AST Inspector (`pkg/pool`, `cmd/dendrite`)
+- [ ] **DEN-051**: Autonomous Dependency Inference & Multi-Directory DAG Solver (`pkg/pool`)
+- [ ] **DEN-052**: Quad-Mode Dependency Switcher (`published`, `branch`, `local`, `fork`) & JetBrains Scope Synchronizer (`pkg/pool/switcher`, `pkg/jetbrains`)
+- [ ] **DEN-053**: Mandatory Target Directory Gate for Mid-Flight Split & Pool Member Scaffolding (`pkg/pool/split`, `cmd/dendrite`)
+- [ ] **DEN-054**: 5-Tier Git Version Governance Process Interceptor (`pkg/agent/governance`)
+- [ ] **DEN-055**: Semantic Hierarchical Branching & Level-by-Level Merge Engine (`pkg/agent/git`)
+
+### Milestone 25: Ticket-Milestone DAG Linker, Prioritization & IDE Connectors (FEAT-036, FEAT-100)
+- [ ] **DEN-056**: Multi-Source Ticket-Milestone Ingestor & Cycle Detector (`pkg/tracker/dag`)
+- [ ] **DEN-057**: Critical-Path Unblock Weight Calculator & `dendrite stories next` (`pkg/stories`)
+- [ ] **DEN-058**: Automated Stories / Tickets / Milestones DAG Connector (`FEAT-DAG-CONNECTOR` in `pkg/connector`)
+- [ ] **DEN-059**: Decoupled Core JSON-RPC Engine & IPC Bridge (`TKT-IDE-001` in `pkg/ide/rpc`) [Elevated to Normal Priority]
+- [ ] **DEN-060**: VS Code Extension MVP & Status Bar / Webview Integration (`TKT-IDE-002`) [Normal Priority]
+- [ ] **DEN-061**: Extended IDE Backlog Adapters for Neovim (Lua), Zed (Wasm) & IntelliJ (`TKT-IDE-003`) [Lowest Priority]
+
+### Milestone 26: Bidirectional Penpot UI Documentation & Polyglot Environment Bootstrapper (FEAT-037, FEAT-039)
+- [ ] **DEN-062**: UI Component Mutation Watcher & Design Token Diff Synthesizer (`pkg/ui/diff`)
+- [ ] **DEN-063**: Penpot MCP Server Bridge & Bidirectional Plane Deep-Linker (`pkg/penpot`)
+- [ ] **DEN-064**: Polyglot Project Manifest Fingerprinter & Multi-Stack Generator (`pkg/env/prepare`)
+- [ ] **DEN-065**:  22 Canonical Design-Pattern Analyzer Skill & SOTA Updater (`pkg/env/sota`)
+
+### Milestone 27: Offline-First Turso Cache, Self-Update Lifecycle & Resilience Guardrails (FEAT-038, FEAT-040, FEAT-041)
+- [ ] **DEN-066**: Embedded Turso libSQL WAL Cache Engine & `.gitignore` Sanitizer (`pkg/cache/turso`)
+- [ ] **DEN-067**: Transactional Outbox Queue & Exponential Backoff Replay Worker (`pkg/cache/outbox`)
+- [ ] **DEN-068**: Atomic Self-Update Swapper, Checksum Verifier & Dev-Mode Engine (`pkg/update`)
+- [ ] **DEN-069**: Pre-Commit Secret Scanner Interceptor & Pre-PR Verification Gate (`pkg/agent/security`)
+- [ ] **DEN-070**: Quota Failover Cascade, Git Worktree Isolation & Immutable Audit Log (`pkg/agent/resilience`, `pkg/audit`)
 
 ---
 
@@ -377,6 +433,23 @@ All tickets map directly to living architectural documents and feature specifica
   - [FEAT-024: Open-Source REA Showcase Pipeline](../features/FEAT-024-open-source-showcases.md)
   - [FEAT-025: Native Model Context Protocol (MCP) Server](../guides/jetbrains-mcp-and-agents-setup.md)
   - [FEAT-026: Distributed Codebase Ecosystem & Interoperability](../features/FEAT-026-distributed-codebase-ecosystem.md)
+  - [FEAT-027: Docusaurus Documentation Engine & Sharing](../features/FEAT-027-docusaurus-project-sharing.md)
+  - [FEAT-028: Local Agent Triage Gateway](../features/FEAT-028-local-agent-triage-gateway-token-efficiency.md)
+  - [FEAT-029: Autonomous Pool DAG Synchronization](../features/FEAT-029-autonomous-pool-dag-synchronization.md)
+  - [FEAT-100: Multi-IDE Ecosystem Support & Decoupled Architecture](../features/FEAT-100-multi-ide-ecosystem-support.md)
+  - [FEAT-030: Universal Intent & Query Engine (3-Tier Library Reuse)](../features/FEAT-030-universal-query-engine-3tier-library-reuse.md)
+  - [FEAT-031: Persistent Segmented Store & Hybrid Scheduler](../features/FEAT-031-persistent-store-hybrid-token-scheduler.md)
+  - [FEAT-032: Polyglot Contract Sync & Speculative Branching](../features/FEAT-032-polyglot-speculative-drift-workflows.md)
+  - [FEAT-033: Zero-Data-Loss Infrastructure Mobility & Smart Backup](../features/FEAT-033-infrastructure-mobility-smart-backup.md)
+  - [FEAT-034: Dual-Mode Configuration & Multi-Channel CI/CD](../features/FEAT-034-dual-mode-config-multichannel-distribution.md)
+  - [FEAT-035: Multi-Provider AI Runtime & 5-Tier Git Governance](../features/FEAT-035-multiprovider-agent-governance.md)
+  - [FEAT-036: Ticket-Milestone DAG Linker & Story Prioritization](../features/FEAT-036-ticket-milestone-dag-story-prioritization.md)
+  - [FEAT-037: Bidirectional Penpot UI Documentation & MCP Integration](../features/FEAT-037-penpot-ui-documentation-mcp-integration.md)
+  - [FEAT-038: Self-Update Lifecycle & Developer Mode Dual-Source Engine](../features/FEAT-038-self-update-lifecycle-devmode.md)
+  - [FEAT-039: Polyglot Environment Bootstrapper & Canonical Design-Pattern Analyzer](../features/FEAT-039-polyglot-env-bootstrapper-gof-patterns.md)
+  - [FEAT-040: Offline-First Local Cache & Outbox Sync Engine](../features/FEAT-040-turso-offline-cache-outbox-sync.md)
+  - [FEAT-041: Pre-Commit Secret Scanner & Pre-PR/Merge Quality Harness](../features/FEAT-041-agent-security-quality-resilience-guardrails.md)
+  - [FEAT-041: Autonomous Agent Security, Quality, Resilience & Audit Guardrails](../features/FEAT-041-agent-security-quality-resilience-guardrails.md)
 - **Quality Gates & Scorecards**:
   - [Scrum Master Alignment & Code Complexity Scorecard](../quality/scrum-and-complexity-scorecard.md)
   - [CLI Specification & Command Reference](../cli/dendrite-cli-specification.md)

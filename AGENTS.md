@@ -157,6 +157,23 @@ flowchart TD
 
 ---
 
+## Mandatory Workflow Rule: Stories / Tickets / Milestones Connector
+
+Whenever you draft or update a **Design Prompt** (including system architecture prompts or Penpot UI/UX design prompts) OR **insert/modify Tickets and User Stories**, you MUST execute the **Stories/Tickets/Milestones Connector** protocol before finalizing your output:
+
+1. **Link Graph Entities**:
+   - Explicitly map every new or modified ticket to its parent Story/Feature (`FEAT-*`), target Milestone (`M-*`), and upstream/downstream technical dependencies (`depends_on` / `blocks`).
+2. **Enforce IDE Priority Rules**:
+   - Keep general multi-IDE expansion (`FEAT-IDE-ECOSYSTEM` / `FEAT-100`: Neovim, Zed, Visual Studio, Eclipse) at `Lowest` priority.
+   - Keep **VS Code (`TKT-IDE-002`)** at `Normal` priority (alongside existing first-class JetBrains support).
+3. **Run Priority Propagation**:
+   - Audit the dependency chain. If a `Normal`, `High`, or `Urgent` ticket requires a shared module currently marked `Lowest` (e.g. `TKT-IDE-001: Shared Core Engine`), elevate that shared module's effective priority to match the dependent ticket (`Normal`) and move it into the active milestone.
+4. **Emit the Connector Sync Manifest**:
+   - Append a concise **Connector Sync Summary** table at the end of every design prompt or ticket insertion showing:
+     - `Entity ID` | `Type (Story/Ticket/Feature)` | `Assigned Priority` | `Effective Priority` | `Linked Milestone` | `DAG Edges Updated`
+
+---
+
 ## Declarative Orchestration & Local Intelligent Worker Protocol
 
 To maximize engineering velocity while strictly controlling commercial token expenditure, agents adopt the **Declarative Orchestration & Local Worker Protocol**:
