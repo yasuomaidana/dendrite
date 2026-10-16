@@ -755,3 +755,50 @@ func TestEngines_ErrorHandlingAndDefaults(t *testing.T) {
 		t.Errorf("expected error when all engines fail in cascade")
 	}
 }
+
+func TestDefaultManager_DynamicCascadeAndEnvOverrides(t *testing.T) {
+	oxServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data": []map[string]string{{"id": "qwen3.8:27b"}, {"id": "qwen3.5:9b"}},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer oxServer.Close()
+
+	t.Setenv("DENDRITE_OLLAMA_ENDPOINT", "http://127.0.0.1:19999")
+	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", oxServer.URL)
+	t.Setenv("DENDRITE_OXILLAMA_MODELS", "custom-qwen:32b,custom-qwen:14b")
+
+	mgr := DefaultManager()
+	if mgr == nil {
+		t.Fatalf("expected non-nil manager")
+	}
+
+	eng, err := mgr.GetEngine("oxillama-rust")
+	if err != nil {
+		t.Fatalf("expected oxillama-rust registered: %v", err)
+	}
+	if eng.Config().Endpoint != oxServer.URL {
+		t.Errorf("expected oxillama custom endpoint, got %s", eng.Config().Endpoint)
+	}
+	if len(eng.Config().Models) != 2 || eng.Config().Models[0] != "custom-qwen:32b" {
+		t.Errorf("expected custom models, got %v", eng.Config().Models)
+	}
+
+	ollamaEng, err := mgr.GetEngine("ollama-metal")
+	if err != nil {
+		t.Fatalf("expected ollama-metal registered: %v", err)
+	}
+	if ollamaEng.Config().Endpoint != "http://127.0.0.1:19999" {
+		t.Errorf("expected ollama custom endpoint, got %s", ollamaEng.Config().Endpoint)
+	}
+
+	order := mgr.GetCascadeOrder()
+	if len(order) == 0 || order[0] != "oxillama-rust" {
+		t.Errorf("expected oxillama-rust to be at index 0, got %v", order)
+	}
+}

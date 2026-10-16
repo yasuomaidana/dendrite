@@ -144,11 +144,14 @@ func EngineMaxIntelligence(ctx context.Context, eng InferenceEngine) (int, strin
 }
 
 // ReorderEnginesByIntelligence orders engines dynamically so engines hosting smarter models take precedence.
+// Live/reachable engines are prioritized ahead of offline engines, and within each tier, engines
+// hosting the highest ModelIntelligenceScore take top precedence.
 func ReorderEnginesByIntelligence(ctx context.Context, engines []InferenceEngine) []InferenceEngine {
 	type scoredEngine struct {
 		eng       InferenceEngine
 		maxScore  int
 		bestModel string
+		isLive    bool
 	}
 
 	scored := make([]scoredEngine, len(engines))
@@ -158,18 +161,24 @@ func ReorderEnginesByIntelligence(ctx context.Context, engines []InferenceEngine
 		wg.Add(1)
 		go func(idx int, eng InferenceEngine) {
 			defer wg.Done()
+			h := eng.Health(ctx)
+			isLive := h.Reachable
 			score, model := EngineMaxIntelligence(ctx, eng)
 			scored[idx] = scoredEngine{
 				eng:       eng,
 				maxScore:  score,
 				bestModel: model,
+				isLive:    isLive,
 			}
 		}(i, e)
 	}
 	wg.Wait()
 
-	// Sort descending by max intelligence score
+	// Sort: live engines first, then descending by max intelligence score
 	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].isLive != scored[j].isLive {
+			return scored[i].isLive
+		}
 		return scored[i].maxScore > scored[j].maxScore
 	})
 
@@ -198,15 +207,15 @@ func DefaultSmartCascadeConfig() SmartCascadeConfig {
 
 // SmartCascadeReport documents the cascade execution progression and failure counting.
 type SmartCascadeReport struct {
-	Attempts              int      `json:"attempts"`
-	TrialFailuresIgnored  int      `json:"trial_failures_ignored"` // Smaller model failures not counted against limit
-	SmartFailuresCounted  int      `json:"smart_failures_counted"` // Failures on top-tier smart models
-	MaxSmartThreshold     int      `json:"max_smart_threshold"`
-	LeveragedToPaid       bool     `json:"leveraged_to_paid"`
-	SelectedEngine        string   `json:"selected_engine"`
-	SelectedModel         string   `json:"selected_model"`
-	ModelIntelligence     int      `json:"model_intelligence"`
-	ProgressionLog        []string `json:"progression_log"`
+	Attempts             int      `json:"attempts"`
+	TrialFailuresIgnored int      `json:"trial_failures_ignored"` // Smaller model failures not counted against limit
+	SmartFailuresCounted int      `json:"smart_failures_counted"` // Failures on top-tier smart models
+	MaxSmartThreshold    int      `json:"max_smart_threshold"`
+	LeveragedToPaid      bool     `json:"leveraged_to_paid"`
+	SelectedEngine       string   `json:"selected_engine"`
+	SelectedModel        string   `json:"selected_model"`
+	ModelIntelligence    int      `json:"model_intelligence"`
+	ProgressionLog       []string `json:"progression_log"`
 }
 
 // ExecuteSmartCascade dispatches completion requests honoring:

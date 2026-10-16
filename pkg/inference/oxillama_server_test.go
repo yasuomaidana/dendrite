@@ -30,6 +30,9 @@ func TestOxiLLaMaServer_LifecycleAndAPI(t *testing.T) {
 	if err := srv.Start(); err != nil {
 		t.Fatalf("failed to start server: %v", err)
 	}
+	if !srv.IsRunning() {
+		t.Errorf("expected server to be running")
+	}
 	defer func() {
 		_ = srv.Stop(context.Background())
 	}()
@@ -117,4 +120,44 @@ func TestOxiLLaMaServer_LifecycleAndAPI(t *testing.T) {
 		t.Errorf("expected 404 for missing model, got %d", resp.StatusCode)
 	}
 	_ = resp.Body.Close()
+
+	// 6. POST /v1/chat/completions (RAG prompt)
+	ragPayload := map[string]interface{}{
+		"model": "qwen3.5:9b",
+		"messages": []map[string]string{
+			{"role": "user", "content": "Retrieved Project Context:\n$ dendrite inference list\ncheck available llms"},
+		},
+		"stream": false,
+	}
+	ragBytes, _ := json.Marshal(ragPayload)
+	resp, err = client.Post("http://127.0.0.1:18080/v1/chat/completions", "application/json", bytes.NewReader(ragBytes))
+	if err == nil {
+		_ = resp.Body.Close()
+	}
+
+	// 7. POST /v1/chat/completions (Conventional Commit prompt)
+	commitPayload := map[string]interface{}{
+		"model": "qwen3.5:9b",
+		"messages": []map[string]string{
+			{"role": "user", "content": "You are an expert Git engineer following Conventional Commits.\nActive Ticket: [DEN-817] Decouple Git Commit Synthesis Engine\nGit Diff Summary:\npkg/devtool/commit.go | 50 +++\n"},
+		},
+		"stream": false,
+	}
+	commitBytes, _ := json.Marshal(commitPayload)
+	resp, err = client.Post("http://127.0.0.1:18080/v1/chat/completions", "application/json", bytes.NewReader(commitBytes))
+	if err != nil {
+		t.Fatalf("commit completion failed: %v", err)
+	}
+	var commitResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&commitResp)
+	_ = resp.Body.Close()
+	if len(commitResp.Choices) == 0 || !strings.Contains(commitResp.Choices[0].Message.Content, "feat(devtool)") {
+		t.Errorf("expected conventional commit with feat(devtool), got: %+v", commitResp)
+	}
 }

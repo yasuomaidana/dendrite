@@ -58,10 +58,12 @@ type mockEngineWithModel struct {
 	failModels map[string]error
 }
 
-func (m *mockEngineWithModel) ID() string             { return m.id }
-func (m *mockEngineWithModel) Type() EngineType       { return EngineOxiLLaMa }
-func (m *mockEngineWithModel) Config() EngineConfig   { return EngineConfig{ID: m.id, Models: m.models, SelfHosted: m.selfHosted} }
-func (m *mockEngineWithModel) IsSelfHosted() bool     { return m.selfHosted }
+func (m *mockEngineWithModel) ID() string       { return m.id }
+func (m *mockEngineWithModel) Type() EngineType { return EngineOxiLLaMa }
+func (m *mockEngineWithModel) Config() EngineConfig {
+	return EngineConfig{ID: m.id, Models: m.models, SelfHosted: m.selfHosted}
+}
+func (m *mockEngineWithModel) IsSelfHosted() bool { return m.selfHosted }
 func (m *mockEngineWithModel) Health(ctx context.Context) EngineHealth {
 	return EngineHealth{EngineID: m.id, Reachable: true, Models: m.models}
 }
@@ -270,5 +272,48 @@ func TestCandleEngine_Methods(t *testing.T) {
 	stream, err := eng.Stream(ctx, CompletionRequest{Prompt: "stream"})
 	if err != nil || stream == nil {
 		t.Errorf("expected stream channel")
+	}
+}
+
+func TestModelIntelligenceScore_FullCoverage(t *testing.T) {
+	cases := map[string]int{
+		"":                                10,
+		"deepseek-ai/deepseek-coder:6.7b": 70, // 60 + 5 (deepseek) + 5 (coder)
+		"llama3.2:1b":                     25,
+		"llama3.2:1.5b":                   25,
+		"mistral:7b":                      62, // 60 + 2 (mistral)
+		"hermes:8b":                       67, // 65 + 2 (hermes)
+		"unknown-instruct":                60,
+		"unknown-plain":                   45,
+	}
+
+	for model, minExpected := range cases {
+		score := ModelIntelligenceScore(model)
+		if score < minExpected-5 || score > minExpected+5 {
+			t.Errorf("model %q: expected ~%d, got %d", model, minExpected, score)
+		}
+	}
+
+	// Test IsEngineZeroCost branches
+	if IsEngineZeroCost(nil) {
+		t.Errorf("expected nil engine to not be zero cost")
+	}
+
+	nonSelfHostedZeroCost := &mockEngineWithModel{
+		id:         "non-self-zero",
+		selfHosted: false,
+		models:     []string{"local-qwen3-27b"},
+	}
+	if !IsEngineZeroCost(nonSelfHostedZeroCost) {
+		t.Errorf("expected engine with local-qwen3-27b to be zero cost")
+	}
+
+	nonSelfHostedPaid := &mockEngineWithModel{
+		id:         "non-self-paid",
+		selfHosted: false,
+		models:     []string{"claude-3.5-sonnet"},
+	}
+	if IsEngineZeroCost(nonSelfHostedPaid) {
+		t.Errorf("expected engine with claude-3.5-sonnet to NOT be zero cost")
 	}
 }

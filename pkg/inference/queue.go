@@ -54,13 +54,13 @@ type QueueMetrics struct {
 }
 
 type queueItem struct {
-	id        int64
-	priority  RequestPriority
+	id         int64
+	priority   RequestPriority
 	enqueuedAt time.Time
-	index     int
-	task      func(ctx context.Context) error
-	done      chan error
-	ctx       context.Context
+	index      int
+	task       func(ctx context.Context) error
+	done       chan error
+	ctx        context.Context
 }
 
 type priorityQueue []*queueItem

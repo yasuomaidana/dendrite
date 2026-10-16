@@ -2,6 +2,8 @@ package triage
 
 import (
 	"time"
+
+	"Dendrite/pkg/rag"
 )
 
 // ExecutionTier represents the compute and cost classification of a task.
@@ -49,6 +51,8 @@ type TriageRequest struct {
 	WorkspaceDir                  string          `json:"workspace_dir,omitempty"`
 	ExecuteLocal                  bool            `json:"execute_local,omitempty"`
 	EnableDeclarativeOrchestrator bool            `json:"enable_declarative_orchestrator,omitempty"`
+	EnableRAG                     bool            `json:"enable_rag,omitempty"`
+	RAGTopK                       int             `json:"rag_top_k,omitempty"`
 }
 
 // TriageResult encapsulates the routing decision, selected skills, token metrics, and execution result.
@@ -75,6 +79,9 @@ type TriageResult struct {
 	WorkerEngine               SupportedEngine  `json:"worker_engine,omitempty"`
 	DeclarativePlan            *DeclarativePlan `json:"declarative_plan,omitempty"`
 	LocalWorkerExecutionResult string           `json:"local_worker_execution_result,omitempty"`
+	// RAG Context Fields
+	RetrievedRAGChunks         []rag.Chunk      `json:"retrieved_rag_chunks,omitempty"`
+	RAGTokens                  int              `json:"rag_tokens,omitempty"`
 }
 
 // SkillMatcher holds a skill's metadata and matching keywords.

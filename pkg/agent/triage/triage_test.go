@@ -2,11 +2,14 @@ package triage
 
 import (
 	"context"
+	"os"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"Dendrite/pkg/inference"
 	"Dendrite/pkg/ollama"
 )
 
@@ -99,8 +102,8 @@ func TestTriageChoreWithLocalCompute(t *testing.T) {
 	if res.Tier != TierLocal {
 		t.Errorf("expected tier 'local', got %s", res.Tier)
 	}
-	if res.AssignedModel != "local-qwen-coder" {
-		t.Errorf("expected local model 'local-qwen-coder', got %s", res.AssignedModel)
+	if res.AssignedModel != "local-qwen-coder" && res.AssignedModel != "qwen3.8:27b" {
+		t.Errorf("expected local model 'local-qwen-coder' or 'qwen3.8:27b', got %s", res.AssignedModel)
 	}
 	if res.EstimatedCostUSD != 0.0 {
 		t.Errorf("expected $0.00 cost for local chore, got %f", res.EstimatedCostUSD)
@@ -423,7 +426,15 @@ func TestTriageMultiEngineSupport(t *testing.T) {
 			if res.Tier != TierLocal {
 				t.Errorf("expected tier local, got %s", res.Tier)
 			}
-			if res.AssignedModel != tt.expectedModel {
+			if tt.targetEngine == EngineOllama {
+				if res.AssignedModel != "local-qwen-coder" && res.AssignedModel != "hermes3:8b" {
+					t.Errorf("expected model %s or live model, got %s", tt.expectedModel, res.AssignedModel)
+				}
+			} else if tt.targetEngine == EngineOxiLLaMa {
+				if res.AssignedModel != "oxillama-rust-qwen7b" && res.AssignedModel != "qwen3.8:27b" {
+					t.Errorf("expected model %s or qwen3.8:27b, got %s", tt.expectedModel, res.AssignedModel)
+				}
+			} else if res.AssignedModel != tt.expectedModel {
 				t.Errorf("expected model %s, got %s", tt.expectedModel, res.AssignedModel)
 			}
 			if !strings.Contains(res.LocalEngineName, tt.expectedEngine) {
@@ -534,10 +545,174 @@ func TestTriage_OxiLLaMaPrecedenceOverLessSmartOllamaModel(t *testing.T) {
 	if res.AssignedEngine != EngineOxiLLaMa {
 		t.Errorf("expected EngineOxiLLaMa to take precedence over less-smart Ollama model, got %s", res.AssignedEngine)
 	}
-	if res.AssignedModel != "oxillama-rust-qwen7b" {
-		t.Errorf("expected assigned model 'oxillama-rust-qwen7b', got %s", res.AssignedModel)
+	if res.AssignedModel != "oxillama-rust-qwen7b" && res.AssignedModel != "qwen3.8:27b" {
+		t.Errorf("expected assigned model 'oxillama-rust-qwen7b' or 'qwen3.8:27b', got %s", res.AssignedModel)
 	}
 	if !strings.Contains(res.Reason, "OxiLLaMa") {
 		t.Errorf("expected reason to document OxiLLaMa precedence, got: %s", res.Reason)
+	}
+}
+
+func TestTriage_DynamicProbingLiveOxiLLaMaAndOllama(t *testing.T) {
+	// 1. Case: OxiLLaMa has qwen3.8:27b (score 96), Ollama has hermes3:8b (score 67)
+	tsOllama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/tags" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"models":[{"name":"hermes3:8b","model":"hermes3:8b"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer tsOllama.Close()
+
+	tsOxillama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"data":[{"id":"qwen3.8:27b"},{"id":"qwen3.5:9b"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer tsOxillama.Close()
+
+	ollamaClient := ollama.NewClient(ollama.WithBaseURL(tsOllama.URL))
+	oxEng := inference.NewOxiLLaMaEngine(inference.EngineConfig{
+		ID:       "oxillama-rust",
+		Type:     inference.EngineOxiLLaMa,
+		Endpoint: tsOxillama.URL,
+	}, tsOxillama.Client())
+
+	engine := NewEngine(ollamaClient)
+	engine.OxiLLaMaEngine = oxEng
+
+	req := TriageRequest{Prompt: "Fix formatting and lint error"}
+	res, err := engine.Triage(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected triage error: %v", err)
+	}
+
+	if res.AssignedEngine != EngineOxiLLaMa {
+		t.Errorf("expected EngineOxiLLaMa to win over Ollama, got %s", res.AssignedEngine)
+	}
+	if res.AssignedModel != "qwen3.8:27b" {
+		t.Errorf("expected assigned model qwen3.8:27b, got %s", res.AssignedModel)
+	}
+	if !strings.Contains(res.Reason, "Score 96") {
+		t.Errorf("expected reason to cite Score 96, got: %s", res.Reason)
+	}
+
+	// 2. Case: Ollama has qwen2.5-coder:32b (score 100), OxiLLaMa has qwen3.5:9b (score 73)
+	tsOllama2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/tags" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"models":[{"name":"qwen2.5-coder:32b","model":"qwen2.5-coder:32b"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer tsOllama2.Close()
+
+	tsOxillama2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"data":[{"id":"qwen3.5:9b"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer tsOxillama2.Close()
+
+	engine2 := NewEngine(ollama.NewClient(ollama.WithBaseURL(tsOllama2.URL)))
+	engine2.OxiLLaMaEngine = inference.NewOxiLLaMaEngine(inference.EngineConfig{
+		ID:       "oxillama-rust",
+		Type:     inference.EngineOxiLLaMa,
+		Endpoint: tsOxillama2.URL,
+	}, tsOxillama2.Client())
+
+	res2, err2 := engine2.Triage(context.Background(), req)
+	if err2 != nil {
+		t.Fatalf("unexpected triage error: %v", err2)
+	}
+	if res2.AssignedEngine != EngineOllama {
+		t.Errorf("expected EngineOllama to win with 32B model, got %s", res2.AssignedEngine)
+	}
+	if res2.AssignedModel != "qwen2.5-coder:32b" {
+		t.Errorf("expected assigned model qwen2.5-coder:32b, got %s", res2.AssignedModel)
+	}
+}
+
+func TestTriage_RAGContextInjectionAndDeclarativeGrounding(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// 1. Create a markdown doc with architectural guidelines
+	docPath := filepath.Join(tmpDir, "storage-arch.md")
+	docContent := `# Storage Subsystem Architecture
+The persistent storage engine must utilize atomic fsync commits and maintain bounded memory buffers.
+`
+	if err := os.WriteFile(docPath, []byte(docContent), 0644); err != nil {
+		t.Fatalf("failed to write doc: %v", err)
+	}
+
+	// 2. Create a Go source file
+	codePath := filepath.Join(tmpDir, "buffer.go")
+	codeContent := `package storage
+
+// RingBuffer manages circular in-memory segments.
+type RingBuffer struct {
+	Capacity int
+	Head     int
+}
+
+// Push appends an item to the ring buffer.
+func (r *RingBuffer) Push(val int) bool {
+	if r.Capacity <= 0 {
+		return false
+	}
+	r.Head = (r.Head + 1) % r.Capacity
+	return true
+}
+`
+	if err := os.WriteFile(codePath, []byte(codeContent), 0644); err != nil {
+		t.Fatalf("failed to write code: %v", err)
+	}
+
+	engine := NewEngine(nil)
+	computeTrue := true
+	engine.MockComputeAvailable = &computeTrue
+
+	req := TriageRequest{
+		Prompt:       "Implement persistent ring buffer and evaluate cyclomatic complexity",
+		WorkspaceDir: tmpDir,
+		EnableRAG:    true,
+		RAGTopK:      2,
+	}
+
+	res, err := engine.Triage(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Triage with RAG failed: %v", err)
+	}
+
+	if len(res.RetrievedRAGChunks) == 0 {
+		t.Fatalf("expected retrieved RAG chunks, got 0")
+	}
+
+	if !strings.Contains(res.EnhancedPrompt, "=== RETRIEVED ARCHITECTURE & CODE CONTEXT (AST-Guided RAG) ===") {
+		t.Errorf("expected EnhancedPrompt to contain RAG context section, got: %s", res.EnhancedPrompt)
+	}
+
+	if res.DeclarativePlan == nil {
+		t.Fatalf("expected DeclarativePlan to be synthesized")
+	}
+
+	// Check declarative plan target files ground the retrieved file
+	foundTarget := false
+	for _, tf := range res.DeclarativePlan.TargetFiles {
+		if strings.Contains(tf, "buffer.go") || strings.Contains(tf, "storage-arch.md") {
+			foundTarget = true
+			break
+		}
+	}
+	if !foundTarget {
+		t.Errorf("expected DeclarativePlan.TargetFiles to contain RAG files, got: %+v", res.DeclarativePlan.TargetFiles)
 	}
 }

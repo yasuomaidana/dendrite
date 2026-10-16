@@ -3,17 +3,21 @@ package triage
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"Dendrite/pkg/ai/tokenopt"
 	"Dendrite/pkg/inference"
 	"Dendrite/pkg/ollama"
+	"Dendrite/pkg/rag"
 )
 
 // Engine orchestrates local agent triage, hardware probing, skill matching, and token optimization.
 type Engine struct {
 	OllamaClient         *ollama.Client
+	OxiLLaMaEngine       inference.InferenceEngine
+	RAGIndexer           *rag.Indexer
 	SkillMatchers        []SkillMatcher
 	LocalModelName       string
 	HybridModelName      string
@@ -29,6 +33,7 @@ func NewEngine(ollamaClient *ollama.Client) *Engine {
 	}
 	return &Engine{
 		OllamaClient:      ollamaClient,
+		RAGIndexer:        rag.NewIndexer(),
 		SkillMatchers:     DefaultSkillMatchers(),
 		LocalModelName:    "local-qwen-coder",
 		HybridModelName:   "copilot-sonnet",
@@ -58,30 +63,71 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 	localAvailable := false
 	localEngineName := "Ollama Metal GPU"
 
-	// Smart Local Model Precedence: if auto-routing, check whether OxiLLaMa has a smarter model than Ollama
-	if req.TargetEngine == "" && e.OllamaClient != nil {
-		probeCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
-		defer cancel()
-		ollamaModels, err := e.OllamaClient.ListModels(probeCtx)
-		if err == nil && len(ollamaModels) > 0 {
-			maxOllamaScore := 0
+	oxEng := e.OxiLLaMaEngine
+	if oxEng == nil {
+		oxEndpoint := os.Getenv("DENDRITE_OXILLAMA_ENDPOINT")
+		if oxEndpoint == "" {
+			oxEndpoint = "http://127.0.0.1:8080"
+		}
+		oxEng = inference.NewOxiLLaMaEngine(inference.EngineConfig{
+			ID:       "oxillama-rust",
+			Type:     inference.EngineOxiLLaMa,
+			Endpoint: oxEndpoint,
+		}, nil)
+	}
+
+	var bestOxillamaModel string
+	maxOxillamaScore := 0
+
+	var bestOllamaModel string
+	maxOllamaScore := 0
+
+	// Probe OxiLLaMa live via oxillama.SupportedModels()
+	probeCtxOx, cancelOx := context.WithTimeout(ctx, 1500*time.Millisecond)
+	oxModels, oxErr := oxEng.SupportedModels(probeCtxOx)
+	cancelOx()
+	if oxErr == nil && len(oxModels) > 0 {
+		for _, m := range oxModels {
+			sc := inference.ModelIntelligenceScore(m)
+			if sc > maxOxillamaScore {
+				maxOxillamaScore = sc
+				bestOxillamaModel = m
+			}
+		}
+	} else {
+		bestOxillamaModel = "oxillama-rust-qwen7b"
+		maxOxillamaScore = inference.ModelIntelligenceScore(bestOxillamaModel)
+	}
+
+	// Probe Ollama live
+	if e.OllamaClient != nil {
+		probeCtxOl, cancelOl := context.WithTimeout(ctx, 1500*time.Millisecond)
+		ollamaModels, oErr := e.OllamaClient.ListModels(probeCtxOl)
+		cancelOl()
+		if oErr == nil && len(ollamaModels) > 0 {
 			for _, m := range ollamaModels {
-				score := inference.ModelIntelligenceScore(m.Name)
-				if score > maxOllamaScore {
-					maxOllamaScore = score
+				sc := inference.ModelIntelligenceScore(m.Name)
+				if sc > maxOllamaScore {
+					maxOllamaScore = sc
+					bestOllamaModel = m.Name
 				}
 			}
-			oxillamaScore := inference.ModelIntelligenceScore("oxillama-rust-qwen7b")
-			// If Ollama only has less-smart models (e.g. 3B or 1.5B) while OxiLLaMa has a smarter model (e.g. 7B),
-			// OxiLLaMa takes precedence!
-			if maxOllamaScore < oxillamaScore {
-				assignedEngine = EngineOxiLLaMa
-				localEngineName = "OxiLLaMa Pure-Rust Sovereign Engine (cool-japan/oxillama)"
-				localAvailable = true
-				if tier == TierLocal {
-					reason = fmt.Sprintf("%s Smarter local model on OxiLLaMa (Score %d) takes precedence over smaller Ollama models (Max Score %d).", reason, oxillamaScore, maxOllamaScore)
-				}
+		}
+	}
+
+	// Smart Local Model Precedence: if auto-routing, check whether OxiLLaMa has a smarter model than Ollama
+	if req.TargetEngine == "" {
+		if maxOxillamaScore > maxOllamaScore {
+			assignedEngine = EngineOxiLLaMa
+			localEngineName = fmt.Sprintf("OxiLLaMa Pure-Rust Sovereign Engine (%s)", bestOxillamaModel)
+			localAvailable = true
+			if tier == TierLocal {
+				reason = fmt.Sprintf("%s Smarter local model on OxiLLaMa (Score %d) takes precedence over smaller Ollama models (Max Score %d).", reason, maxOxillamaScore, maxOllamaScore)
 			}
+		} else if maxOllamaScore > 0 {
+			assignedEngine = EngineOllama
+			localEngineName = fmt.Sprintf("Ollama Metal GPU (%s)", bestOllamaModel)
+			localAvailable = true
 		}
 	}
 
@@ -119,8 +165,15 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 		localEngineName = "OxiLLaMa Pure-Rust Sovereign Engine (cool-japan/oxillama)"
 		if e.MockComputeAvailable != nil {
 			localAvailable = *e.MockComputeAvailable
-		} else {
+		} else if oxErr == nil && len(oxModels) > 0 {
 			localAvailable = true
+		} else {
+			probeCtx3, cancel3 := context.WithTimeout(ctx, 1500*time.Millisecond)
+			defer cancel3()
+			h := oxEng.Health(probeCtx3)
+			if h.Reachable {
+				localAvailable = true
+			}
 		}
 
 	case EngineCandle:
@@ -158,6 +211,36 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 	for _, s := range matchedSkills {
 		skillNames = append(skillNames, s.Name)
 		skillGuidelines = append(skillGuidelines, fmt.Sprintf("- [%s]: %s", s.Name, s.Guideline))
+	}
+
+	// 4b. RAG Context Retrieval & AST Grounding
+	var retrievedChunks []rag.Chunk
+	ragTokens := 0
+	if req.EnableRAG || req.WorkspaceDir != "" {
+		topK := req.RAGTopK
+		if topK <= 0 {
+			topK = 3
+		}
+		workspaceRoot := req.WorkspaceDir
+		if workspaceRoot == "" {
+			workspaceRoot = "."
+		}
+		if e.RAGIndexer != nil {
+			if e.RAGIndexer.ChunksCount() == 0 {
+				_ = e.RAGIndexer.IndexProject(ctx, workspaceRoot)
+			}
+			chunks, err := e.RAGIndexer.Retrieve(ctx, req.Prompt, rag.SearchOptions{
+				TopK:      topK,
+				MinScore:  0.01,
+				MaxTokens: 1500,
+			})
+			if err == nil && len(chunks) > 0 {
+				retrievedChunks = chunks
+				for _, c := range chunks {
+					ragTokens += tokenopt.EstimateTokens(c.Content + " " + c.Heading)
+				}
+			}
+		}
 	}
 
 	// 4. Token Estimation & Context Compaction
@@ -202,12 +285,25 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 		}
 	}
 
-	// 5. Construct Enhanced Prompt with Skill Directives and Compacted Context
+	// 5. Construct Enhanced Prompt with Skill Directives, RAG Architecture Context, and Compacted Context
 	var sb strings.Builder
 	if len(skillGuidelines) > 0 {
 		sb.WriteString("=== ACTIVE SKILL DIRECTIVES ===\n")
 		sb.WriteString(strings.Join(skillGuidelines, "\n"))
 		sb.WriteString("\n=== END DIRECTIVES ===\n\n")
+	}
+	if len(retrievedChunks) > 0 {
+		sb.WriteString("=== RETRIEVED ARCHITECTURE & CODE CONTEXT (AST-Guided RAG) ===\n")
+		for i, c := range retrievedChunks {
+			heading := ""
+			if c.Heading != "" {
+				heading = fmt.Sprintf(" | %s", c.Heading)
+			}
+			sb.WriteString(fmt.Sprintf("[%d] Source: %s (lines %d-%d)%s\n", i+1, c.FilePath, c.LineStart, c.LineEnd, heading))
+			sb.WriteString(c.Content)
+			sb.WriteString("\n--------------------------------------------------------------------\n")
+		}
+		sb.WriteString("=== END RETRIEVED CONTEXT ===\n\n")
 	}
 	sb.WriteString(req.Prompt)
 	if compactedContent != "" {
@@ -229,11 +325,19 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 		case EngineHuggingFace:
 			assignedModel = "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"
 		case EngineOxiLLaMa:
-			assignedModel = "oxillama-rust-qwen7b"
+			if bestOxillamaModel != "" {
+				assignedModel = bestOxillamaModel
+			} else {
+				assignedModel = "oxillama-rust-qwen7b"
+			}
 		case EngineCandle:
 			assignedModel = "candle-quant-llama"
 		default:
-			assignedModel = e.LocalModelName
+			if bestOllamaModel != "" {
+				assignedModel = bestOllamaModel
+			} else {
+				assignedModel = e.LocalModelName
+			}
 		}
 		estCostUSD = 0.0 // 100% Zero Cost!
 		tokenSavingsPct = 100.0
@@ -290,7 +394,7 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 			workerModel = "local-qwen-coder"
 		}
 
-		declarativePlan = e.SynthesizeDeclarativePlan(req.Prompt, req.ActiveFile, skillNames)
+		declarativePlan = e.SynthesizeDeclarativePlan(req.Prompt, req.ActiveFile, skillNames, retrievedChunks)
 
 		if req.ExecuteLocal {
 			localWorkerResult = fmt.Sprintf("[%s (%s)] Executed %d declarative instructions locally. Synthesized code & verified invariants on local hardware with zero cloud output tokens.",
@@ -320,21 +424,46 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 		WorkerEngine:               assignedEngine,
 		DeclarativePlan:            declarativePlan,
 		LocalWorkerExecutionResult: localWorkerResult,
+		RetrievedRAGChunks:         retrievedChunks,
+		RAGTokens:                  ragTokens,
 	}, nil
 }
 
-// SynthesizeDeclarativePlan generates a concise set of declarative instructions as a cloud orchestrator would.
-func (e *Engine) SynthesizeDeclarativePlan(prompt, activeFile string, skills []string) *DeclarativePlan {
+// SynthesizeDeclarativePlan generates a concise set of declarative instructions as a cloud orchestrator would,
+// grounded by retrieved RAG architecture chunks and AST constraints.
+func (e *Engine) SynthesizeDeclarativePlan(prompt, activeFile string, skills []string, ragChunks []rag.Chunk) *DeclarativePlan {
 	var targetFiles []string
 	if activeFile != "" {
 		targetFiles = append(targetFiles, activeFile)
 	}
 
+	for _, c := range ragChunks {
+		if c.FilePath != "" && c.FilePath != activeFile {
+			found := false
+			for _, tf := range targetFiles {
+				if tf == c.FilePath {
+					found = true
+					break
+				}
+			}
+			if !found && len(targetFiles) < 4 {
+				targetFiles = append(targetFiles, c.FilePath)
+			}
+		}
+	}
+
 	instructions := []string{
 		fmt.Sprintf("1. Decompose requirement into atomic functions matching: %s", prompt),
-		"2. Implement core interfaces, structs, and boundary error handling.",
-		"3. Author comprehensive unit test suite covering happy paths and edge cases.",
-		"4. Verify zero compiler warnings and run static analysis.",
+	}
+	if len(ragChunks) > 0 && ragChunks[0].FilePath != "" {
+		instructions = append(instructions, fmt.Sprintf("2. Respect existing architectural patterns and types from %s", ragChunks[0].FilePath))
+		instructions = append(instructions, "3. Implement core interfaces, structs, and boundary error handling.")
+		instructions = append(instructions, "4. Author comprehensive unit test suite covering happy paths and edge cases.")
+		instructions = append(instructions, "5. Verify zero compiler warnings and run static analysis.")
+	} else {
+		instructions = append(instructions, "2. Implement core interfaces, structs, and boundary error handling.")
+		instructions = append(instructions, "3. Author comprehensive unit test suite covering happy paths and edge cases.")
+		instructions = append(instructions, "4. Verify zero compiler warnings and run static analysis.")
 	}
 
 	constraints := []string{
@@ -354,8 +483,7 @@ func (e *Engine) SynthesizeDeclarativePlan(prompt, activeFile string, skills []s
 	}
 
 	// Calculate token footprint
-	// A declarative plan is ~100 tokens, whereas a full implementation by cloud is ~1,500-2,500 tokens
-	estOrchTokens := 110
+	estOrchTokens := 110 + len(targetFiles)*10
 	estDirectTokens := 1600
 	savingsPct := (1.0 - float64(estOrchTokens)/float64(estDirectTokens)) * 100.0
 

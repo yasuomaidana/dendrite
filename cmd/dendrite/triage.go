@@ -16,6 +16,7 @@ func handleTriageCommand(ctx context.Context, args []string) {
 	forceTierStr := ""
 	targetEngineStr := ""
 	executeLocal := false
+	enableRAG := false
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -41,6 +42,8 @@ func handleTriageCommand(ctx context.Context, args []string) {
 			}
 		case "--local", "-l":
 			executeLocal = true
+		case "--rag", "-r":
+			enableRAG = true
 		}
 	}
 
@@ -49,7 +52,7 @@ func handleTriageCommand(ctx context.Context, args []string) {
 	}
 
 	if prompt == "" {
-		fmt.Println("Usage: dendrite triage --prompt \"<prompt>\" [--file <file>] [--tier local|hybrid|cloud] [--engine ollama|ollama-validated|huggingface|candle|oxillama] [--local]")
+		fmt.Println("Usage: dendrite triage --prompt \"<prompt>\" [--file <file>] [--tier local|hybrid|cloud] [--engine ollama|ollama-validated|huggingface|candle|oxillama] [--local] [--rag]")
 		return
 	}
 
@@ -95,6 +98,8 @@ func handleTriageCommand(ctx context.Context, args []string) {
 		ForceTier:    forceTier,
 		TargetEngine: targetEngine,
 		ExecuteLocal: executeLocal,
+		EnableRAG:    enableRAG,
+		WorkspaceDir: ".",
 	}
 
 	res, err := engine.Triage(ctx, req)
@@ -111,6 +116,16 @@ func handleTriageCommand(ctx context.Context, args []string) {
 	fmt.Printf("    - Decision Reason:    %s\n", res.Reason)
 	if len(res.SelectedSkills) > 0 {
 		fmt.Printf("    - Matched Skills:     %s\n", strings.Join(res.SelectedSkills, ", "))
+	}
+	if len(res.RetrievedRAGChunks) > 0 {
+		fmt.Printf("    - RAG Context:        %d chunks retrieved (%d tokens)\n", len(res.RetrievedRAGChunks), res.RAGTokens)
+		for i, c := range res.RetrievedRAGChunks {
+			heading := ""
+			if c.Heading != "" {
+				heading = fmt.Sprintf(" (%s)", c.Heading)
+			}
+			fmt.Printf("      * [%d] %s:%d-%d%s\n", i+1, c.FilePath, c.LineStart, c.LineEnd, heading)
+		}
 	}
 	fmt.Printf("    - Original Tokens:    %d\n", res.OriginalTokens)
 	fmt.Printf("    - Compacted Tokens:   %d\n", res.CompactedTokens)

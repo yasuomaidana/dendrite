@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -147,6 +149,7 @@ func (m *Manager) DynamicCascadeOrderByIntelligence(ctx context.Context) []strin
 	for i, e := range reordered {
 		ids[i] = e.ID()
 	}
+	_ = m.SetCascadeOrder(ids)
 	return ids
 }
 
@@ -248,32 +251,75 @@ func IsEngineZeroCost(eng InferenceEngine) bool {
 	return false
 }
 
-// DefaultManager initializes a standard multi-provider manager with default local and self-hosted endpoints.
+func getInferenceEnvOrDefault(key, fallback string) string {
+	if val := os.Getenv(key); strings.TrimSpace(val) != "" {
+		return strings.TrimSpace(val)
+	}
+	return fallback
+}
+
+func getInferenceEnvSliceOrDefault(key string, fallback []string) []string {
+	val := os.Getenv(key)
+	if strings.TrimSpace(val) == "" {
+		return fallback
+	}
+	parts := strings.Split(val, ",")
+	res := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			res = append(res, trimmed)
+		}
+	}
+	if len(res) == 0 {
+		return fallback
+	}
+	return res
+}
+
+// DefaultManager initializes a standard multi-provider manager with configurable local and self-hosted endpoints.
+// It dynamically resolves and probes active model intelligence, reordering the cascade so that the engine
+// hosting the highest ModelIntelligenceScore is positioned at index 0.
 func DefaultManager() *Manager {
 	mgr := NewManager()
 
-	// 1. Ollama (Metal local primary - upgraded with high reasoning qwen3.8:27b & qwen3.5:9b)
+	ollamaEndpoint := getInferenceEnvOrDefault("DENDRITE_OLLAMA_ENDPOINT", "http://127.0.0.1:11434")
+	oxillamaEndpoint := getInferenceEnvOrDefault("DENDRITE_OXILLAMA_ENDPOINT", "http://127.0.0.1:8080")
+	vllmEndpoint := getInferenceEnvOrDefault("DENDRITE_VLLM_ENDPOINT", "http://vllm-node:8000")
+	hfTGIEndpoint := getInferenceEnvOrDefault("DENDRITE_HF_TGI_ENDPOINT", "http://tgi-node:8080")
+	hfTEIEndpoint := getInferenceEnvOrDefault("DENDRITE_HF_TEI_ENDPOINT", "http://localhost:8082")
+	candleEndpoint := getInferenceEnvOrDefault("DENDRITE_CANDLE_ENDPOINT", "http://127.0.0.1:8083")
+	llamaCppEndpoint := getInferenceEnvOrDefault("DENDRITE_LLAMACPP_ENDPOINT", "http://localhost:8081")
+
+	ollamaModels := getInferenceEnvSliceOrDefault("DENDRITE_OLLAMA_MODELS", []string{"qwen3.8:27b", "qwen3.5:9b", "qwen2.5-coder:14b", "deepseek-coder:6.7b", "llama3.2:3b"})
+	oxillamaModels := getInferenceEnvSliceOrDefault("DENDRITE_OXILLAMA_MODELS", []string{"qwen3.8:27b", "qwen3.5:9b", "qwen2.5-coder-7b", "mistral-7b-instruct"})
+	vllmModels := getInferenceEnvSliceOrDefault("DENDRITE_VLLM_MODELS", []string{"Qwen/Qwen2.5-Coder-32B-Instruct"})
+	hfTGIModels := getInferenceEnvSliceOrDefault("DENDRITE_HF_TGI_MODELS", []string{"deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"})
+	hfTEIModels := getInferenceEnvSliceOrDefault("DENDRITE_HF_TEI_MODELS", []string{"BAAI/bge-large-en-v1.5"})
+	candleModels := getInferenceEnvSliceOrDefault("DENDRITE_CANDLE_MODELS", []string{"candle-quant-llama", "candle-mistral"})
+	llamaCppModels := getInferenceEnvSliceOrDefault("DENDRITE_LLAMACPP_MODELS", []string{"mistral-7b-instruct-q4"})
+
+	// 1. Ollama (Metal local primary)
 	_ = mgr.RegisterEngine(NewOllamaEngine(EngineConfig{
 		ID:       "ollama-metal",
 		Type:     EngineOllama,
-		Endpoint: "http://127.0.0.1:11434",
-		Models:   []string{"qwen3.8:27b", "qwen3.5:9b", "qwen2.5-coder:14b", "deepseek-coder:6.7b", "llama3.2:3b"},
+		Endpoint: ollamaEndpoint,
+		Models:   ollamaModels,
 	}, nil))
 
 	// 2. OxiLLaMa (Pure-Rust GGUF zero-FFI runner)
 	_ = mgr.RegisterEngine(NewOxiLLaMaEngine(EngineConfig{
 		ID:       "oxillama-rust",
 		Type:     EngineOxiLLaMa,
-		Endpoint: "http://127.0.0.1:8080",
-		Models:   []string{"qwen2.5-coder-7b", "mistral-7b-instruct"},
+		Endpoint: oxillamaEndpoint,
+		Models:   oxillamaModels,
 	}, nil))
 
 	// 3. vLLM (High-throughput PagedAttention cluster)
 	_ = mgr.RegisterEngine(NewVLLMEngine(EngineConfig{
 		ID:         "vllm-cluster",
 		Type:       EngineVLLM,
-		Endpoint:   "http://vllm-node:8000",
-		Models:     []string{"Qwen/Qwen2.5-Coder-32B-Instruct"},
+		Endpoint:   vllmEndpoint,
+		Models:     vllmModels,
 		SelfHosted: true,
 	}, nil))
 
@@ -281,8 +327,8 @@ func DefaultManager() *Manager {
 	_ = mgr.RegisterEngine(NewHuggingFaceTGIEngine(EngineConfig{
 		ID:         "hf-tgi-remote",
 		Type:       EngineHuggingFaceTGI,
-		Endpoint:   "http://tgi-node:8080",
-		Models:     []string{"deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"},
+		Endpoint:   hfTGIEndpoint,
+		Models:     hfTGIModels,
 		SelfHosted: true,
 	}, nil))
 
@@ -290,35 +336,41 @@ func DefaultManager() *Manager {
 	_ = mgr.RegisterEngine(NewHuggingFaceTEIEngine(EngineConfig{
 		ID:         "hf-tei-embed",
 		Type:       EngineHuggingFaceTEI,
-		Endpoint:   "http://localhost:8082",
-		Models:     []string{"BAAI/bge-large-en-v1.5"},
+		Endpoint:   hfTEIEndpoint,
+		Models:     hfTEIModels,
 		SelfHosted: true,
 	}, nil))
 
-	// 7. Candle (Hugging Face Minimalist Rust ML Framework)
+	// 6. Candle (Hugging Face Minimalist Rust ML Framework)
 	_ = mgr.RegisterEngine(NewCandleEngine(EngineConfig{
 		ID:       "candle-rust",
 		Type:     EngineCandle,
-		Endpoint: "http://127.0.0.1:8083",
-		Models:   []string{"candle-quant-llama", "candle-mistral"},
+		Endpoint: candleEndpoint,
+		Models:   candleModels,
 	}, nil))
 
-	// 6. llama.cpp (Lightweight C++ GGUF server)
+	// 7. llama.cpp (Lightweight C++ GGUF server)
 	_ = mgr.RegisterEngine(NewLlamaCppEngine(EngineConfig{
 		ID:       "llamacpp-local",
 		Type:     EngineLlamaCpp,
-		Endpoint: "http://localhost:8081",
-		Models:   []string{"mistral-7b-instruct-q4"},
+		Endpoint: llamaCppEndpoint,
+		Models:   llamaCppModels,
 	}, nil))
 
+	// Set baseline default cascade order
 	_ = mgr.SetCascadeOrder([]string{
-		"ollama-metal",
 		"oxillama-rust",
+		"ollama-metal",
 		"candle-rust",
 		"vllm-cluster",
 		"hf-tgi-remote",
 		"llamacpp-local",
 	})
+
+	// Dynamic Cascade Initialization: run live probing and intelligence ordering
+	probeCtx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
+	defer cancel()
+	_ = mgr.DynamicCascadeOrderByIntelligence(probeCtx)
 
 	return mgr
 }
