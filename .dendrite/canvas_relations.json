@@ -1,0 +1,10 @@
+{
+  "DEN-807": {
+    "ticket_id": "DEN-807",
+    "feature_name": "Canvas Workspace",
+    "penpot_frame_id": "canvas-workspace",
+    "penpot_frame_url": "http://localhost:9000/#/workspace/dendrite/project/ui?frame=canvas-workspace",
+    "current_state": "IN_PROGRESS",
+    "last_synced_at": "2026-10-16T15:33:32.769986Z"
+  }
+}

@@ -530,3 +530,32 @@ func TestRegistry_UIHandlersViaDispatch(t *testing.T) {
 		t.Errorf("unexpected UIBridgeResult in updateResp")
 	}
 }
+
+func TestPenpotUIBridge_Persistence(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	storageFile := filepath.Join(tmpDir, "relations.json")
+
+	bridge1 := NewPenpotUIBridge(nil, "http://localhost:9000")
+	bridge1.SetStoragePath(storageFile)
+
+	err := bridge1.RelateTicketToFeature(ctx, TicketFeatureRelation{
+		TicketID:    "DEN-807",
+		FeatureName: "Persistence Test Feature",
+	})
+	if err != nil {
+		t.Fatalf("relate failed: %v", err)
+	}
+
+	// Create bridge2 loading same file
+	bridge2 := NewPenpotUIBridge(nil, "http://localhost:9000")
+	bridge2.SetStoragePath(storageFile)
+
+	rel, ok := bridge2.GetTicketFeatureRelation("DEN-807")
+	if !ok {
+		t.Fatal("expected DEN-807 to be loaded from storage file")
+	}
+	if rel.FeatureName != "Persistence Test Feature" {
+		t.Errorf("unexpected feature name: %s", rel.FeatureName)
+	}
+}

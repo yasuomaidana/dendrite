@@ -367,7 +367,11 @@ func (s *Server) registerPlaneDAGTools(deps Dependencies) {
 				},
 				"description": map[string]interface{}{
 					"type":        "string",
-					"description": "Optional description (HTML or markdown)",
+					"description": "Mandatory ticket description (HTML or markdown detailing goals, acceptance criteria, and DoD)",
+				},
+				"context": map[string]interface{}{
+					"type":        "string",
+					"description": "Alias for description",
 				},
 				"milestone": map[string]interface{}{
 					"type":        "string",
@@ -397,14 +401,20 @@ func (s *Server) registerPlaneDAGTools(deps Dependencies) {
 					"description": "List of ticket IDs or UUIDs that block this ticket",
 				},
 			},
-			"required": []interface{}{"name"},
+			"required": []interface{}{"name", "description"},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		name, _ := args["name"].(string)
-		if name == "" {
+		if strings.TrimSpace(name) == "" {
 			return nil, fmt.Errorf("missing required 'name' parameter")
 		}
 		desc, _ := args["description"].(string)
+		if desc == "" {
+			desc, _ = args["context"].(string)
+		}
+		if plane.IsEmptyContext(desc) {
+			return nil, fmt.Errorf("ticket context/description cannot be empty: acceptance criteria and architectural context are mandatory")
+		}
 		mName, _ := args["milestone"].(string)
 		prio, _ := args["priority"].(string)
 		if prio == "" {

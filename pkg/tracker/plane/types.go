@@ -2,23 +2,36 @@ package plane
 
 import (
 	"errors"
+	"regexp"
+	"strings"
 	"time"
 )
 
 // Standard typed errors for Plane v2 provider operations.
 var (
-	ErrEmptyBaseURL      = errors.New("plane base URL cannot be empty")
-	ErrEmptyWorkspace    = errors.New("plane workspace slug cannot be empty")
-	ErrEmptyProjectID    = errors.New("plane project ID cannot be empty")
-	ErrMissingAPIToken   = errors.New("plane API token environment variable is empty or not set")
-	ErrUnauthorized      = errors.New("plane request unauthorized: invalid API key")
-	ErrIssueNotFound     = errors.New("plane issue not found")
-	ErrStateNotFound     = errors.New("no matching plane state found for requested status")
-	ErrValidationTimeout = errors.New("plane credential validation timed out")
-	ErrPageNotFound      = errors.New("plane page not found")
-	ErrModuleNotFound    = errors.New("plane module not found")
-	ErrProjectNotFound   = errors.New("plane project not found")
+	ErrEmptyBaseURL       = errors.New("plane base URL cannot be empty")
+	ErrEmptyWorkspace     = errors.New("plane workspace slug cannot be empty")
+	ErrEmptyProjectID     = errors.New("plane project ID cannot be empty")
+	ErrMissingAPIToken    = errors.New("plane API token environment variable is empty or not set")
+	ErrUnauthorized       = errors.New("plane request unauthorized: invalid API key")
+	ErrIssueNotFound      = errors.New("plane issue not found")
+	ErrStateNotFound      = errors.New("no matching plane state found for requested status")
+	ErrValidationTimeout  = errors.New("plane credential validation timed out")
+	ErrPageNotFound       = errors.New("plane page not found")
+	ErrModuleNotFound     = errors.New("plane module not found")
+	ErrProjectNotFound    = errors.New("plane project not found")
+	ErrEmptyTicketContext = errors.New("ticket context/description cannot be empty")
 )
+
+var contextHtmlTagRegex = regexp.MustCompile("<[^>]*>")
+
+// IsEmptyContext checks whether a description or context string is empty,
+// accounting for HTML markup tags like <div><p></p></div> and non-breaking spaces.
+func IsEmptyContext(htmlOrText string) bool {
+	cleaned := contextHtmlTagRegex.ReplaceAllString(htmlOrText, " ")
+	cleaned = strings.ReplaceAll(cleaned, "&nbsp;", " ")
+	return strings.TrimSpace(cleaned) == ""
+}
 
 // Config encapsulates settings for the Plane v2 REST client.
 type Config struct {

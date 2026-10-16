@@ -150,12 +150,40 @@ func TestMCP_PlaneDAGTools(t *testing.T) {
 	}
 
 	// 4. Test dendrite_plane_issue_create
+	// 4a. Verify rejection of empty description / context
+	emptyReq, _ := json.Marshal(map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]interface{}{
+			"name": "dendrite_plane_issue_create",
+			"arguments": map[string]interface{}{
+				"name":        "[DEN-100] Empty Context Ticket",
+				"description": "",
+			},
+		},
+	})
+	emptyResp := mcpServer.HandleRequest(context.Background(), emptyReq)
+	if emptyResp == nil {
+		t.Fatalf("expected response")
+	}
+	resVal, ok := emptyResp.Result.(CallToolResult)
+	if !ok {
+		resPtr, okPtr := emptyResp.Result.(*CallToolResult)
+		if !okPtr || !resPtr.IsError {
+			t.Errorf("expected IsError=true when creating ticket with empty description")
+		}
+	} else if !resVal.IsError {
+		t.Errorf("expected IsError=true when creating ticket with empty description")
+	}
+
 	createRes := callTool("dendrite_plane_issue_create", map[string]interface{}{
-		"name":       "[DEN-100] New Feature",
-		"milestone":  "Milestone 1",
-		"priority":   "high",
-		"estimate":   8,
-		"blocked_by": []interface{}{"DEN-010"},
+		"name":        "[DEN-100] New Feature",
+		"description": "Detailed acceptance criteria, DoD and implementation context",
+		"milestone":   "Milestone 1",
+		"priority":    "high",
+		"estimate":    8,
+		"blocked_by":  []interface{}{"DEN-010"},
 	})
 	if !strings.Contains(createRes.Content[0].Text, "gantt_plan_placed") {
 		t.Errorf("expected gantt_plan_placed in issue create output: %s", createRes.Content[0].Text)

@@ -57,7 +57,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "version",
 		Aliases:     []string{"--version", "-v"},
-		Category:    "Cortex & Cockpit",
+		Category:    "Cortex & Sensory Integration",
 		Description: "Print Dendrite CLI version",
 		Run: func(ctx context.Context, args []string) error {
 			fmt.Printf("Dendrite CLI v%s\n", version)
@@ -68,7 +68,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "doctor",
 		Aliases:     []string{"soma-diagnose", "probe", "diag"},
-		Category:    "Soma & State Nucleus",
+		Category:    "Soma & Axon Hillock",
 		Description: "Run environment pre-flight diagnostics",
 		Run: func(ctx context.Context, args []string) error {
 			runDoctor(ctx)
@@ -79,7 +79,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "env",
 		Aliases:     []string{"soma", "homeostasis", "soma-homeostasis"},
-		Category:    "Soma & State Nucleus",
+		Category:    "Soma & Axon Hillock",
 		Description: "Manage and replicate development environments",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
@@ -94,7 +94,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "triage",
 		Aliases:     []string{"inhibitory-triage", "trg"},
-		Category:    "Terminal Boutons & Effectors",
+		Category:    "Postsynaptic Effectors & Actuation",
 		Description: "Resolve local agent task triage and priority routing",
 		Run: func(ctx context.Context, args []string) error {
 			handleTriageCommand(ctx, args)
@@ -105,7 +105,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "test",
 		Aliases:     []string{"myotatic-reflex", "reflex", "tst"},
-		Category:    "Terminal Boutons & Effectors",
+		Category:    "Postsynaptic Effectors & Actuation",
 		Description: "Table-driven test synthesis, Testcontainers & UI tests",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
@@ -119,8 +119,8 @@ func buildRegistry() *cli.Registry {
 
 	reg.Register(&cli.Command{
 		Name:        "agent",
-		Aliases:     []string{"bouton-dispatch", "bouton", "agt"},
-		Category:    "Terminal Boutons & Effectors",
+		Aliases:     []string{"effector-dispatch", "bouton-dispatch", "dispatch", "bouton", "agt"},
+		Category:    "Postsynaptic Effectors & Actuation",
 		Description: "Autonomous coding agent harness (Aider, OpenHands, OpenCode)",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
@@ -135,7 +135,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "project",
 		Aliases:     []string{"ganglion-workspace", "ganglion", "prj"},
-		Category:    "Soma & State Nucleus",
+		Category:    "Soma & Axon Hillock",
 		Description: "Manage multi-project isolated workspaces",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
@@ -150,7 +150,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "doc",
 		Aliases:     []string{"engram-codex", "codex"},
-		Category:    "Cortex & Cockpit",
+		Category:    "Cortex & Sensory Integration",
 		Description: "Docs-as-Code reflection, Docusaurus synthesis and portal",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
@@ -165,7 +165,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "ui",
 		Aliases:     []string{"cortex-cockpit", "cortex"},
-		Category:    "Cortex & Cockpit",
+		Category:    "Cortex & Sensory Integration",
 		Description: "Embedded Web Control Cockpit and telemetry server",
 		Run: func(ctx context.Context, args []string) error {
 			handleUICommand(ctx, args)
@@ -176,7 +176,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "telemetry",
 		Aliases:     []string{"afferent-telemetry", "sensory", "tel"},
-		Category:    "Cortex & Cockpit",
+		Category:    "Cortex & Sensory Integration",
 		Description: "Hardware thermal, token spend, and Prometheus telemetry",
 		Run: func(ctx context.Context, args []string) error {
 			handleTelemetryCommand(ctx, args)
@@ -186,7 +186,7 @@ func buildRegistry() *cli.Registry {
 
 	reg.Register(&cli.Command{
 		Name:        "dev",
-		Category:    "Soma & State Nucleus",
+		Category:    "Soma & Axon Hillock",
 		Description: "Developer diagnostics, local Ollama probe, and ticket tools",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
@@ -216,7 +216,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "topology",
 		Aliases:     []string{"axon-pathway", "axon", "top"},
-		Category:    "Axon & Mesh",
+		Category:    "Axon & Myelin Sheath",
 		Description: "Multi-node placement models and hardware service router",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
@@ -261,7 +261,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "plane",
 		Aliases:     []string{"chronos-tracker", "chronos", "pln"},
-		Category:    "Soma & State Nucleus",
+		Category:    "Soma & Axon Hillock",
 		Description: "Sovereign issue tracking, Gantt alignment, and DAG scheduler",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
@@ -291,7 +291,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "dist",
 		Aliases:     []string{"distcodebase", "distributed", "neural-mesh", "syn-mesh"},
-		Category:    "Axon & Mesh",
+		Category:    "Axon & Myelin Sheath",
 		Description: "Distributed codebase spawner, modular REA, and repo coordinator",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
@@ -306,7 +306,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "bench",
 		Aliases:     []string{"benchmark", "conduction-velocity", "velocity", "bnch"},
-		Category:    "Myelin & Guardrails",
+		Category:    "Axon & Myelin Sheath",
 		Description: "TTFT, TPS, and gateway resilience benchmarking suite",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
@@ -335,8 +335,8 @@ func buildRegistry() *cli.Registry {
 
 	reg.Register(&cli.Command{
 		Name:        "pool",
-		Aliases:     []string{"plexus-pool", "plexus", "plx"},
-		Category:    "Soma & State Nucleus",
+		Aliases:     []string{"connectome-pool", "plexus-pool", "connectome", "plexus", "plx"},
+		Category:    "Soma & Axon Hillock",
 		Description: "Multi-directory dependency inference & topological DAG solver",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
@@ -381,7 +381,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "store",
 		Aliases:     []string{"engram-store", "engram", "gram"},
-		Category:    "Soma & State Nucleus",
+		Category:    "Soma & Axon Hillock",
 		Description: "Persistent segmented store, memory checkpointer, and chunk query",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
@@ -396,7 +396,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "analyze",
 		Aliases:     []string{"cognitive-analysis", "cognition", "anlz"},
-		Category:    "Myelin & Guardrails",
+		Category:    "Glial Regulation & Pruning",
 		Description: "Cognitive complexity analyzer, structural anti-pattern scanner, and policy router",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
@@ -410,8 +410,8 @@ func buildRegistry() *cli.Registry {
 
 	reg.Register(&cli.Command{
 		Name:        "tokens",
-		Aliases:     []string{"token", "vesicle-quota", "vesicle", "tok"},
-		Category:    "Synaptic Cleft & Gating",
+		Aliases:     []string{"token", "vesicle-quota", "quota", "vesicle", "tok"},
+		Category:    "Terminal Boutons & Vesicles",
 		Description: "Inspect 24h & 7d token consumption windows and tier quotas",
 		Run: func(ctx context.Context, args []string) error {
 			handleTokensCommand(ctx, args)
@@ -422,7 +422,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "story",
 		Aliases:     []string{"stories", "synaptic-saga", "saga", "sty"},
-		Category:    "Terminal Boutons & Effectors",
+		Category:    "Postsynaptic Effectors & Actuation",
 		Description: "Autonomous multi-turn story execution and DAG branching",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) >= 1 && args[0] == "next" {
@@ -441,7 +441,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "commit",
 		Aliases:     []string{"quantal-commit", "quantal", "cmt"},
-		Category:    "Terminal Boutons & Effectors",
+		Category:    "Terminal Boutons & Vesicles",
 		Description: "Autonomous Git commit with local model message generation",
 		Run: func(ctx context.Context, args []string) error {
 			handleCommitCommand(ctx, args)
@@ -451,7 +451,7 @@ func buildRegistry() *cli.Registry {
 
 	reg.Register(&cli.Command{
 		Name:        "skill",
-		Category:    "Terminal Boutons & Effectors",
+		Category:    "Postsynaptic Effectors & Actuation",
 		Description: "Execute skill integrations (ticket-relate, gantt-sync)",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
@@ -473,8 +473,8 @@ func buildRegistry() *cli.Registry {
 
 	reg.Register(&cli.Command{
 		Name:        "audit-changes",
-		Aliases:     []string{"synaptic-pruning", "prune", "prn"},
-		Category:    "Myelin & Guardrails",
+		Aliases:     []string{"microglial-prune", "synaptic-pruning", "prune", "prn"},
+		Category:    "Glial Regulation & Pruning",
 		Description: "Topological vendor audit and rebase engine for local/* branches",
 		Run: func(ctx context.Context, args []string) error {
 			handleAuditChangesCommand(ctx, args)
@@ -484,8 +484,8 @@ func buildRegistry() *cli.Registry {
 
 	reg.Register(&cli.Command{
 		Name:        "vcs",
-		Aliases:     []string{"myelin-guard", "guard"},
-		Category:    "Myelin & Guardrails",
+		Aliases:     []string{"hillock-guard", "myelin-guard", "guard", "vcs"},
+		Category:    "Soma & Axon Hillock",
 		Description: "Git branch guardrails prohibiting main pushes and ensuring rebase integrity",
 		Run: func(ctx context.Context, args []string) error {
 			handleVCSCommand(ctx, args)
@@ -496,7 +496,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "github-sync",
 		Aliases:     []string{"sync-github", "saltatory-sync", "salt-sync", "gsync"},
-		Category:    "Axon & Mesh",
+		Category:    "Axon & Myelin Sheath",
 		Description: "Synchronize prioritized tickets and DAG dependencies to GitHub Issues",
 		Run: func(ctx context.Context, args []string) error {
 			handleGitHubSyncCommand(ctx, args)
@@ -506,8 +506,8 @@ func buildRegistry() *cli.Registry {
 
 	reg.Register(&cli.Command{
 		Name:        "quality",
-		Aliases:     []string{"allostasis-audit", "allostasis", "qlty"},
-		Category:    "Myelin & Guardrails",
+		Aliases:     []string{"homeostatic-audit", "allostasis-audit", "allostasis", "qlty"},
+		Category:    "Glial Regulation & Pruning",
 		Description: "Anti-mock scan, 100% coverage profiler, and HITL verification poller",
 		Run: func(ctx context.Context, args []string) error {
 			handleQualityCommand(ctx, args)
@@ -517,7 +517,7 @@ func buildRegistry() *cli.Registry {
 
 	reg.Register(&cli.Command{
 		Name:        "sync-remote",
-		Category:    "Axon & Mesh",
+		Category:    "Axon & Myelin Sheath",
 		Description: "Detect, fetch, and rebase remote fixes with commit reconciliation",
 		Run: func(ctx context.Context, args []string) error {
 			handleVCSCommand(ctx, []string{"sync-remote"})
@@ -528,7 +528,7 @@ func buildRegistry() *cli.Registry {
 	reg.Register(&cli.Command{
 		Name:        "move",
 		Aliases:     []string{"axonal-translocation", "translocate", "mv"},
-		Category:    "Axon & Mesh",
+		Category:    "Axon & Myelin Sheath",
 		Description: "Zero-credential interactive service migration across SSH nodes",
 		Run: func(ctx context.Context, args []string) error {
 			handleMoveCommand(ctx, args)
@@ -538,8 +538,8 @@ func buildRegistry() *cli.Registry {
 
 	reg.Register(&cli.Command{
 		Name:        "service",
-		Aliases:     []string{"effector-service", "effector", "svc"},
-		Category:    "Terminal Boutons & Effectors",
+		Aliases:     []string{"motor-unit", "effector-service", "motor", "svc"},
+		Category:    "Postsynaptic Effectors & Actuation",
 		Description: "Manage microservices (Plane, Penpot, Ollama, LiteLLM)",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
@@ -552,9 +552,20 @@ func buildRegistry() *cli.Registry {
 	})
 
 	reg.Register(&cli.Command{
+		Name:        "canvas",
+		Aliases:     []string{"creative-canvas", "interactive-canvas", "pcontext-canvas"},
+		Category:    "Postsynaptic Effectors & Actuation",
+		Description: "Interactive writing canvas and Penpot UI direct creative action bridge",
+		Run: func(ctx context.Context, args []string) error {
+			handleCanvasCommand(ctx, args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
 		Name:        "greeting",
 		Aliases:     []string{"greet", "pcontext-greeting"},
-		Category:    "Synaptic Cleft & Bridges",
+		Category:    "Synaptic Cleft & Gating",
 		Description: "Generate dynamic 10-style greeting with cliché suppression",
 		Run: func(ctx context.Context, args []string) error {
 			handleGreetingCommand(ctx, args)
@@ -600,7 +611,7 @@ func printUsage() {
 	fmt.Println("  plane push-status                      Move local DEV_STATUS content to Plane service (Gantt dates & DAG)")
 	fmt.Println("  plane next [--ticket <id>] [--json]    Smart select next ticket from Plane (priority & DAG unblocked)")
 	fmt.Println("  plane link <src> <rel> <target>        Link dependency relationship in Plane for Gantt diagram")
-	fmt.Println("  plane create --name \"[DEN-XXX] Title\" Create ticket and place on Plane Gantt development plan")
+	fmt.Println("  plane create --name \"[DEN-XXX] Title\" --desc \"...\" Create ticket with context and place on Plane Gantt development plan")
 	fmt.Println("  plane doc <push|pull|sync> [--dir docs] Synchronize documentation between Plane and local repository")
 	fmt.Println("  plane <issues|modules|pages>           Inspect Plane issues, milestones, and documentation pages")
 	fmt.Println("  dev ticket next [--ticket <id>]        Smart select next unblocked ticket by priority")
@@ -636,6 +647,7 @@ func printUsage() {
 	fmt.Println("  query [slice] [flags]      Universal intent-driven CFG/AST reachability slicing & debloater")
 	fmt.Println("  tokens [status] [flags]    Inspect day & week token windows and confirm AGY access")
 	fmt.Println("  move <svc> to --ssh <tgt>  Zero-credential interactive service migration to remote SSH server")
+	fmt.Println("  canvas <actions|dispatch|relate|sync|update-state> Interactive writing canvas & Penpot UI creative action bridge")
 	fmt.Println("  service <start|stop|restart|health|list|ui-sync> Manage local and remote microservices (Penpot, Plane, Ollama, etc.)")
 	fmt.Println("  version                    Print Dendrite CLI version")
 }

@@ -2,6 +2,7 @@ package plane
 
 import (
 	"context"
+	"errors"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -627,7 +628,8 @@ func TestClient_GanttAndRelationOperations(t *testing.T) {
 	est := 5
 	prio := "high"
 	iss, err := client.CreatePlaneIssueWithDetails(ctx, CreateIssueRequest{
-		Name:          "Rich Issue",
+		Name:            "Rich Issue",
+		DescriptionHTML: "<p>Rich Issue Context</p>",
 		Priority:      prio,
 		StartDate:     &sDate,
 		TargetDate:    &tDate,
@@ -698,7 +700,7 @@ func TestClient_GanttAndRelationErrors(t *testing.T) {
 
 	ctx := context.Background()
 
-	if _, err := cUnauth.CreatePlaneIssueWithDetails(ctx, CreateIssueRequest{Name: "iss"}); err != ErrUnauthorized {
+	if _, err := cUnauth.CreatePlaneIssueWithDetails(ctx, CreateIssueRequest{Name: "iss", DescriptionHTML: "<p>Context</p>"}); err != ErrUnauthorized {
 		t.Errorf("expected ErrUnauthorized on CreatePlaneIssueWithDetails")
 	}
 	if _, err := cUnauth.UpdatePlaneIssueWithDetails(ctx, "iss-1", UpdateIssueRequest{Name: "iss"}); err != ErrUnauthorized {
@@ -744,5 +746,35 @@ func TestClient_GanttAndRelationErrors(t *testing.T) {
 	}
 	if _, err := c404.UpdatePlaneIssueWithDetails(ctx, "iss-1", UpdateIssueRequest{Name: "iss"}); err != ErrIssueNotFound {
 		t.Errorf("expected ErrIssueNotFound on UpdatePlaneIssueWithDetails")
+	}
+}
+
+func TestClient_CreatePlaneIssue_EmptyContext(t *testing.T) {
+	client, err := NewClient(Config{
+		BaseURL:       "http://localhost",
+		WorkspaceSlug: "ws",
+		ProjectID:     "proj",
+		DirectToken:   "tok",
+	}, nil)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	ctx := context.Background()
+	// Test empty description string
+	if _, err := client.CreatePlaneIssueWithDetails(ctx, CreateIssueRequest{Name: "iss", DescriptionHTML: ""}); !errors.Is(err, ErrEmptyTicketContext) {
+		t.Errorf("expected ErrEmptyTicketContext for empty string, got: %v", err)
+	}
+	// Test empty HTML tags
+	if _, err := client.CreatePlaneIssueWithDetails(ctx, CreateIssueRequest{Name: "iss", DescriptionHTML: "<div><p></p></div>"}); !errors.Is(err, ErrEmptyTicketContext) {
+		t.Errorf("expected ErrEmptyTicketContext for empty HTML tags, got: %v", err)
+	}
+	// Test whitespace only
+	if _, err := client.CreatePlaneIssueWithDetails(ctx, CreateIssueRequest{Name: "iss", DescriptionHTML: "   \t\n  "}); !errors.Is(err, ErrEmptyTicketContext) {
+		t.Errorf("expected ErrEmptyTicketContext for whitespace, got: %v", err)
+	}
+	// Test empty name
+	if _, err := client.CreatePlaneIssueWithDetails(ctx, CreateIssueRequest{Name: "", DescriptionHTML: "<p>valid</p>"}); err == nil {
+		t.Errorf("expected error for empty name")
 	}
 }

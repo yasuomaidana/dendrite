@@ -2,6 +2,7 @@ package plane
 
 import (
 	"bytes"
+	"errors"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -347,6 +348,12 @@ func (c *Client) CreatePlaneIssue(ctx context.Context, name, descHTML, stateID s
 
 // CreatePlaneIssueWithDetails creates a new issue with full Gantt dates, priority, and parent link.
 func (c *Client) CreatePlaneIssueWithDetails(ctx context.Context, req CreateIssueRequest) (*PlaneIssue, error) {
+	if strings.TrimSpace(req.Name) == "" {
+		return nil, errors.New("ticket name cannot be empty")
+	}
+	if IsEmptyContext(req.DescriptionHTML) {
+		return nil, ErrEmptyTicketContext
+	}
 	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/", c.workspaceSlug, c.projectID)
 	body := map[string]interface{}{
 		"name":             req.Name,
@@ -964,6 +971,11 @@ func (c *Client) ArchivePage(ctx context.Context, pageID string) error {
 }
 
 // AddComment appends an activity comment to the Plane issue.
+// AddIssueComment appends an activity comment to the Plane issue using string ID.
+func (c *Client) AddIssueComment(ctx context.Context, id string, comment string) error {
+	return c.AddComment(ctx, tracker.TicketID(id), comment)
+}
+
 func (c *Client) AddComment(ctx context.Context, id tracker.TicketID, comment string) error {
 	issueUUID := string(id)
 	if len(issueUUID) != 36 || strings.Count(issueUUID, "-") != 4 {

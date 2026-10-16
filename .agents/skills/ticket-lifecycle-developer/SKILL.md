@@ -17,7 +17,8 @@ description: Guides and executes the end-to-end development lifecycle for projec
 > ### Mandatory Issue Creation Gate & Zero Code Without Plane Ticket Mandate
 > **No agent or human engineer is permitted to author code, modify tests, or execute git commits without an active, authoritative ticket in Plane v2.**
 > If an issue does not already exist for a requested feature, bug fix, or refactor, the agent **MUST immediately create the issue in Plane** before authoring any code using:
-> - CLI: `dendrite plane create --name "[DEN-XXX] Title" [--milestone "M"] [--priority high] [--estimate 5] [--blocked-by "DEN-A,DEN-B"]`
+> - CLI: `dendrite plane create --name "[DEN-XXX] Title" --desc "Detailed context & acceptance criteria" [--milestone "M"] [--priority high] [--estimate 5] [--blocked-by "DEN-A,DEN-B"]`
+> - **Strict Empty Context Prevention**: Creating tickets with empty context/description is strictly rejected by Dendrite CLI, MCP tools, and client validation.
 > - Native MCP Tool: `dendrite_plane_issue_create` (`./bin/dendrite mcp call dendrite_plane_issue_create '{"name":"[DEN-XXX] Title", ...}'`)
 >
 > All ticket creations MUST strictly follow the **Rules of Smart Creation**:
@@ -229,7 +230,14 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   66. `dendrite_env_prepare`: Prepares, synchronizes, and enforces CI/CD practices on a project repository with GitHub Copilot as default, scaffolding copilot instructions, CI workflows with >= 85% coverage gate, and agent rules.
       - *Example*: `./bin/dendrite mcp call dendrite_env_prepare '{"project_path":".","default_tool":"copilot"}'`
 
+  67. `dendrite_canvas_action_dispatch`: Execute a Canvas interactive writing action (15 modes) or UI creative action handler with full context assembly and tone/diff formatting.
+      - *Example*: `./bin/dendrite mcp call dendrite_canvas_action_dispatch '{"action":"WRITE_PLAN","prompt":"Roll out Penpot bridge","mode":"DRAFT"}'`
+
+  68. `dendrite_canvas_penpot_bridge`: Relate Plane tickets and UI project functionalities to Penpot visual design frames and execute bidirectional project state synchronization.
+      - *Example*: `./bin/dendrite mcp call dendrite_canvas_penpot_bridge '{"subaction":"relate","ticket_id":"DEN-807","feature_name":"Canvas Workspace"}'`
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
+- `dendrite canvas <actions|dispatch|relate|sync|update-state|list> [flags]`: Interactive writing canvas, Penpot UI creative action bridge, and bidirectional project state synchronization.
 - `dendrite env <prepare|sync|update> [--path <dir>] [--tool <name>] [--no-cicd] [--no-skills] [--dry-run] [--json]`: Prepares environment, synchronizes agent rules and skills, and enforces CI/CD with GitHub Copilot as default (alias: `dendrite project <prepare|sync|update>`).
 - `dendrite greeting [--topic <t>] [--milestone <m>] [--event <e>] [--days <d>] [--options <a,b>] [--challenge <c>] [--stress] [--hobby] [--suppress <g1,g2>] [--json]`: Dynamic 10-Style Greeting Matrix resolution with strict cliché suppression.
 - `dendrite move <svc> to --ssh <target> [--dry-run] [--yes] [--no-prune]`: Zero-credential interactive service migration pipeline moving containerized services to a remote SSH server.
@@ -244,7 +252,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - `dendrite plane link <ticket-a> <blocking|blocked_by|relates_to> <ticket-b>`: Link ticket relationships in Plane to render Gantt dependency arrows (alias: `dev ticket link`).
 - `dendrite plane relate --ticket <id> [--priority <prio>] [--blocked-by <ids>] [--blocking <ids>] [--relates-to <ids>] [--reason <reason>]`: Update ticket priority and synchronize DAG dependency relations in Plane (alias: `dendrite skill ticket-relate`).
 - `dendrite plane gantt-sync`: Synchronize all milestone modules, ticket schedules, and blocker dependency arrows in Plane so interactive Gantt charts render with full timelines and dependency lines.
-- `dendrite plane create --name "[DEN-XXX] Title" [--milestone "M"] [--priority high] [--estimate 5] [--blocked-by "DEN-A,DEN-B"]`: Create a ticket, link it to milestone modules, compute Gantt dates, and establish blocker relations for the development plan (alias: `dev ticket create`).
+- `dendrite plane create --name "[DEN-XXX] Title" --desc "Detailed context & acceptance criteria" [--milestone "M"] [--priority high] [--estimate 5] [--blocked-by "DEN-A,DEN-B"]`: Create a ticket, link it to milestone modules, compute Gantt dates, and establish blocker relations for the development plan (alias: `dev ticket create`).
 - `dendrite story <start|check-contracts|fork|benchmark|resolve|abort|status>`: Speculative story branching, differential architecture benchmark harness, and Quad-IDE cross-language contract monitoring.
 - `dendrite tokens [status] [--model <m>] [--probe] [--json]`: Inspect Day Window (24h) and Week Window (7d) remaining tokens, quota reset countdown, safety reserve floor, and confirm live AGY access.
 - `dendrite commit [--ticket <id>] [--message <msg>] [--stage-all] [--model <model>] [--local] [--dry-run]`: Autonomous Git commit engine with automatic local model delegation for Conventional Commit message synthesis.

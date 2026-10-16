@@ -432,7 +432,7 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 					name = args[i+1]
 					i++
 				}
-			case "--desc", "-d":
+			case "--desc", "-d", "--context", "-c":
 				if i+1 < len(args) {
 					desc = args[i+1]
 					i++
@@ -468,8 +468,11 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 			}
 		}
 
-		if name == "" {
-			fmt.Println("Usage: dendrite plane create --name \"[DEN-XXX] Title\" [--milestone \"M1\"] [--priority high] [--estimate 5] [--blocked-by \"DEN-001,DEN-002\"]")
+		if strings.TrimSpace(name) == "" || plane.IsEmptyContext(desc) {
+			fmt.Println("Usage: dendrite plane create --name \"[DEN-XXX] Title\" --desc \"Acceptance criteria and context\" [--milestone \"M1\"] [--priority high] [--estimate 5] [--blocked-by \"DEN-001,DEN-002\"]")
+			if strings.TrimSpace(name) != "" && plane.IsEmptyContext(desc) {
+				fmt.Println("[-] Error: ticket context/description is mandatory and cannot be empty. In theory and practice, empty tickets are forbidden. Provide --desc or --context with acceptance criteria and goal.")
+			}
 			return
 		}
 
@@ -662,7 +665,7 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 		fmt.Println("  dendrite plane link <ticket_a> <blocking|blocked_by|relates_to> <ticket_b>")
 		fmt.Println("  dendrite plane relate --ticket <id> [--priority <prio>] [--blocked-by <ids>] [--blocking <ids>] [--relates-to <ids>]")
 		fmt.Println("  dendrite plane gantt-sync (aligns all milestones, tickets, and Gantt dependency arrows)")
-		fmt.Println("  dendrite plane create --name \"[DEN-XXX] Title\" [--milestone \"M1\"] [--priority high] [--estimate 5] [--blocked-by \"DEN-001\"]")
+		fmt.Println("  dendrite plane create --name \"[DEN-XXX] Title\" --desc \"Acceptance criteria and context\" [--milestone \"M1\"] [--priority high] [--estimate 5] [--blocked-by \"DEN-001\"]")
 		fmt.Println("  dendrite plane doc <push|pull|sync> [--dir docs]")
 		fmt.Println("  dendrite plane issues")
 		fmt.Println("  dendrite plane modules")

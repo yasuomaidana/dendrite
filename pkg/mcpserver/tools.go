@@ -912,4 +912,6 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 	s.registerGreetingTools(deps)
 	// Project Environment Preparation & CI/CD Tools
 	s.registerEnvPrepareTools(deps)
+	// Canvas Interactive Writing & Penpot Creative Bridge Tools
+	s.registerCanvasTools(deps)
 }

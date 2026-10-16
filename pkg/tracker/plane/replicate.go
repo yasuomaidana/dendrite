@@ -748,6 +748,9 @@ func buildTicketDescriptionHTML(t ParsedDevTicket) string {
 		}
 		sb.WriteString("</ul>")
 	}
+	if sb.Len() == len("<div>") {
+		sb.WriteString(fmt.Sprintf("<p>Context and implementation requirements for %s: %s</p>", t.ID, t.Title))
+	}
 	sb.WriteString("</div>")
 	return sb.String()
 }

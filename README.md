@@ -15,69 +15,98 @@
 
 In mammalian neurobiology, no single neuron acts as an isolated monolith. Biological intelligence emerges not from brute-force scale within a single cell, but from a decentralized, highly specialized anatomical architecture where distinct cellular structures connect multiple neurons into a coherent, self-regulating biological network.
 
+> [!NOTE]
+> ### Disclaimer on Biological Analogies
+> The neurobiological parallels used throughout this document serve as structural metaphors to illustrate architectural separation of concerns, pipeline routing, and bounded execution in distributed systems. Biological nervous systems rely on stochastic, continuous electrochemical dynamics, chemical diffusion, and emergent multi-cellular ensembles. Features described here as organelles, sheaths, or clefts (e.g., token rate limiters, Git validation checks, and deterministic AST parsers) map biological concepts onto software primitives for clarity, not literal bio-mimetic simulation.
+
+### Multi-Scale Architectural Model: Micro-Neuron vs. Macro-Connectome
+To prevent category confusion between individual cells and distributed networks, Dendrite distinguishes between two hierarchical tiers:
+- **Intra-Neuron / Micro-Scale (The Synthetic Execution Unit)**: A single task execution pipeline, workspace sandbox, or compute worker functions as an individual synthetic neuron—sampling code inputs via dendrites, integrating state in its soma, gating all-or-none execution at the axon hillock, conducting action potentials down its axonal conduit, and packaging verified mutations into presynaptic vesicles.
+- **Inter-Neuron / Macro-Scale (The Synthetic Connectome & Synaptic Mesh)**: The distributed multi-node ecosystem (local developer workstation, remote persistent control plane, elastic cloud burst nodes) forms a multi-cellular synthetic neural network. Communication across physical nodes is mediated by **intercellular synapses** over encrypted zero-trust meshes using the **Model Context Protocol (MCP)** [3].
+
 ```mermaid
 flowchart LR
-    subgraph Dendrites["Dendritic Arbor (Afferent Ingestion)"]
+    subgraph Dendrites["1. Dendritic Arbor (Afferent Ingestion)"]
         D1["Sensory Ingestion & Context"]
         D2["AST Reachability & Slicing"]
         D3["Hardware & Spend Telemetry"]
     end
 
-    subgraph Soma["Soma / Perikaryon (Integration Nucleus)"]
+    subgraph Soma["2. Soma & Axon Hillock (Integration & Threshold)"]
         S1["Workspace Context & State"]
-        S2["Declarative Replication Planning"]
+        S2["Axon Hillock Gate (vcs guard)"]
         S3["Sovereign DAG Issue Tracking"]
     end
 
-    subgraph Axon["Axon & Myelin (Conductive Mesh)"]
+    subgraph Axon["3. Axon & Myelin (Conductive Transmission)"]
         A1["Zero-Trust Multi-Node Mesh"]
-        A2["Saltatory Conduction / Low Latency"]
+        A2["Saltatory Conduction / Latency Bench"]
         A3["Remote Service Translocation"]
     end
 
-    subgraph Synapse["Synaptic Cleft (Governed Gating)"]
-        SY1["Token Budget Governance (LiteLLM)"]
-        SY2["Rate-Bounded Throttling"]
-        SY3["Interneuron MCP Protocols"]
+    subgraph Boutons["4. Terminal Boutons & Vesicles (Presynaptic Packaging)"]
+        B1["Synaptic Vesicle Quantization"]
+        B2["Discrete State Packaging"]
+        B3["Quantal Verified Commits [1]"]
     end
 
-    subgraph Boutons["Terminal Boutons (Efferent Actuation)"]
-        B1["Autonomous Coding Agents (Aider/OpenHands)"]
-        B2["Self-Healing Test Loops (Testcontainers)"]
-        B3["Quantal Semantic Commits"]
+    subgraph Synapse["5. Synaptic Cleft & Receptors (Governed Transmission)"]
+        SY1["Token Budget Governance (LiteLLM)"]
+        SY2["Rate-Bounded Receptor Gating"]
+        SY3["Intercellular MCP Protocols [3]"]
+    end
+
+    subgraph Effectors["6. Postsynaptic Effectors (Efferent Actuation)"]
+        E1["Autonomous Coding Agents (Aider/OpenHands)"]
+        E2["Myotatic Self-Healing Reflex (Testcontainers)"]
+        E3["Motor Unit Microservices (Plane/Penpot)"]
     end
 
     Dendrites --> Soma
     Soma --> Axon
-    Axon --> Synapse
-    Synapse --> Boutons
+    Axon --> Boutons
+    Boutons --> Synapse
+    Synapse --> Effectors
 ```
 
 The anatomical structures that bridge and interconnect neurons provide the foundational design pattern for **Dendrite**:
 
 1. **Dendritic Arbors (Afferent Ingestion & Input Sampling)**:
-   In biological tissue, dendrites form intricate branching trees that listen to surrounding cells, collecting biochemical potentials and sensory inputs across dendritic spines. In Dendrite, this corresponds to afferent signal ingestion: universal AST/CFG reachability slicing (`query slice`), external reference digestion (`ref`), reverse-engineering disassembly (`rea`), and hardware thermal telemetry (`telemetry`). The system never blindly dumps raw monolithic repos into prompts; it prunes and filters inputs through its dendritic tree.
+   In biological tissue, dendrites form intricate branching trees that listen to surrounding cells, collecting biochemical potentials and sensory inputs across dendritic spines. In Dendrite, this corresponds to afferent signal ingestion: universal AST/CFG reachability slicing (`query slice`), external reference digestion (`ref`), reverse-engineering disassembly (`rea`), and hardware thermal telemetry (`telemetry`). The system never blindly dumps raw monolithic repositories into prompts; it prunes and filters inputs through its dendritic tree.
 
-2. **The Soma / Perikaryon (Cell Body & Integration Nucleus)**:
-   The soma is the metabolic engine and central command of the neuron, housing the nucleus, endoplasmic reticulum, and mitochondria. It integrates thousands of microvolt postsynaptic graded potentials across its membrane until reaching the critical threshold of excitation. In Dendrite, the Soma embodies workspace state management (`project`), declarative environment replication blueprints (`env plan`/`replicate`), persistent segmented memory checkpoints (`store`), and sovereign issue tracking (`plane`).
+2. **The Soma & Axon Hillock (Cell Body, Integration Nucleus & All-or-None Firing Gate)**:
+   The soma is the metabolic engine and central command of the neuron, housing the nucleus, endoplasmic reticulum, and mitochondria. It integrates thousands of microvolt postsynaptic graded potentials across its membrane until reaching the critical threshold of excitation. In Dendrite, the Soma embodies workspace state management (`project`), declarative environment replication blueprints (`env plan`/`replicate`), persistent segmented memory checkpoints (`store`), and sovereign issue tracking (`plane`). Crucially, the **Axon Hillock / Initial Segment** enforces the *all-or-none* firing threshold—analogous to Git branch protection guardrails (`vcs guard` / `hillock-guard`) that strictly arrest unverified or malformed pushes before they can propagate down the axonal tract.
 
-3. **The Axon Hillock & Axonal Tract (Conductive Transmission Conduit)**:
-   The axon is the neuron's high-speed long-distance fiber, carrying all-or-none action potentials away from the cell body across physical space without signal degradation. In Dendrite, the Axon represents the encrypted multi-node zero-trust network mesh (Tailscale, Cloudflare, SSH tunnels) that transports compute tasks across physical distances—connecting a local MacBook workstation to remote Debian servers and elastic AWS/Azure cloud-burst nodes (`topology`, `move`).
+3. **The Axonal Tract & Multi-Node Conduction (Conduit for Action Potentials)**:
+   The axon is the neuron's high-speed long-distance fiber, carrying all-or-none action potentials away from the cell body across physical space without signal degradation. In Dendrite, the Axon represents the encrypted multi-node zero-trust network mesh (Tailscale, Cloudflare, SSH tunnels) that transports compute tasks across physical distances—connecting a local MacBook workstation to remote Debian servers and elastic AWS/Azure cloud-burst nodes (`topology`, `move`, `dist`).
 
-4. **Myelin Sheath & Nodes of Ranvier (Saltatory Conduction & Shielding)**:
-   Glial cells wrap axons in lipid-rich myelin sheaths, punctuated periodically by unmyelinated **Nodes of Ranvier**. Instead of crawling slowly down the membrane, action potentials leap discontinuously between nodes—a mechanism called **saltatory conduction** that achieves phenomenal propagation velocities while preventing energy dissipation. In Dendrite, Myelin represents velocity accelerators and protective guardrails: inference and gateway performance benchmarks (`bench`), Git branch guardrails (`vcs guard`), and topological branch rebase auditors (`audit-changes`).
+4. **Myelin Sheaths & Nodes of Ranvier (Capacitive Shielding & Saltatory Conduction)** [2]:
+   Glial cells wrap axons in lipid-rich myelin sheaths, punctuated periodically by unmyelinated **Nodes of Ranvier** where dense voltage-gated $Na^+$ channel clusters regenerate the action potential. This enables high-speed **saltatory conduction** while providing passive capacitive isolation. In Dendrite, Myelin represents low-latency multi-node transport, tenant container isolation (preventing signal crosstalk/leakage between concurrent workloads), and conduction velocity benchmarks (`bench <inference|gateway>`).
 
-5. **Synaptic Cleft & Neurotransmitter Gating (Governed Transmission)**:
-   The synapse is the 20-nanometer intercellular junction where an axon terminal meets a downstream dendrite. Rather than letting unbounded electrical current flood the system, neurotransmitters cross the synaptic cleft only when activation thresholds and receptor densities permit, preventing excitotoxicity and seizure storms. In Dendrite, the Synapse is token budget governance (`gateway`, `tokens`)—enforcing sliding-window financial limiters, rate-bounded supervisory throttling ($R_{\text{target}}$), and Model Context Protocol (`mcp`) standard interneuron bridges.
+5. **Glial Regulation & Synaptic Pruning (Immune Surveillance & Maintenance)** [4]:
+   In the central nervous system, astrocytes and microglia maintain the extracellular environment, perform continuous immune surveillance, and actively prune aberrantly connected or redundant synapses. In Dendrite, this corresponds to automated rebase conflict resolution and vendor branch cleanup (`audit-changes` / `microglial-prune`), code complexity analysis (`analyze`), and whole-project test coverage audits (`quality audit` / `homeostatic-audit`).
 
-6. **Synaptic Vesicles & Quantal Release (Discrete Atomic Payloads)**:
-   Neurotransmitters are packaged into discrete membrane-bound bubbles called vesicles, released in quantified packets (quanta). In Dendrite, this corresponds to atomic, verified changes: autonomous Git commits with local LLM message generation (`commit`) and persistent memory chunks (`store commit`).
+6. **Terminal Boutons & Synaptic Vesicles (Presynaptic Quantal Packaging)** [1]:
+   At the presynaptic nerve ending, neurotransmitters are packaged into discrete membrane-bound vesicles. While biological vesicle exocytosis is probabilistic and driven by local intracellular calcium ($Ca^{2+}$) dynamics, Dendrite adapts this quantal packaging principle into deterministic transactions: state changes are packaged into atomic, verified vesicular quanta—autonomous Git commits with local LLM message generation (`commit` / `quantal-commit`) and persistent memory chunks (`store commit`).
 
-7. **Telodendria & Terminal Boutons (Efferent Dispatchers & Actuators)**:
-   The axon terminates in delicate telodendria crowned with synaptic knobs (boutons) that interface with effector muscles or target neurons to produce physical movement or downstream thought. In Dendrite, Boutons are autonomous coding agents (`agent run aider/openhands`), microservice orchestrators (`service`), and automated test synthesizers with Testcontainers self-healing (`test auto`).
+7. **Synaptic Cleft & Postsynaptic Gating (Governed Intercellular Transmission)** [3]:
+   The 20-nanometer intercellular junction between distinct neurons. Neurotransmitters cross the synaptic cleft only when receptor densities and activation thresholds permit, preventing excitotoxicity and seizure storms. In Dendrite, the Synapse represents token budget governance (`gateway`, `tokens` / `vesicle-quota`)—enforcing sliding-window financial limiters, rate-bounded supervisory throttling ($R_{\text{target}}$), and Model Context Protocol (`mcp`) standard intercellular bridges connecting discrete nodes, agents, and IDEs (`jetbrains` / `neuromuscular-bridge`).
 
-8. **Synaptic Plasticity (Long-Term Potentiation & Pruning)**:
-   Biological neural networks continuously reshape themselves through Hebbian plasticity: *"neurons that fire together, wire together"* (Long-Term Potentiation), while unneeded or noisy pathways are metabolically pruned. In Dendrite, Plasticity manifests in multi-directory topological DAG solving (`pool resolve`), cleanroom reverse engineering (`rea`), and AST code transpilation/fusion (`query fuse`).
+8. **Postsynaptic Effectors & Neuromuscular Actuation (Efferent Dispatch & Execution)**:
+   The target structures (downstream neurons, motor endplates, or effector muscle fibers) that translate synaptic neurotransmission into concrete physical work or downstream cognitive actions. In Dendrite, Effectors are autonomous coding agent loops (`agent run aider/openhands` / `effector-dispatch`), self-healing myotatic test loops (`test auto` / `myotatic-reflex`), and managed microservice process daemons (`service` / `motor-unit`).
+
+9. **Connectomics, Morphogenesis & Activity-Dependent Plasticity** [4]:
+   Dendrite differentiates static graph structure from dynamic adaptation:
+   - **Connectomic Topology**: Multi-directory dependency graphs and topological DAG sorting (`pool resolve` / `connectome-pool`) map the structural connectome of the repository ecosystem.
+   - **Dendritic Morphogenesis**: Polyglot cross-language translation (`query transpile`) and multi-source AST synthesis (`query fuse`) remodel the syntactic geometry of the code tree.
+   - **Activity-Dependent Pruning**: Pruning stale vendor branches (`audit-changes` / `microglial-prune`) and promoting heavily activated context caches (`query reuse-audit`).
+
+> [!NOTE]
+> ### Scientific Footnotes on Biological Analogies
+> - **[1] On Signal Flow and Presynaptic Anatomy (Mermaid & Sections 6, 7 & 8)**: For anatomical rigor, terminal boutons (axon terminals) are the physical presynaptic structures containing the neurotransmitter vesicular apparatus that directly precede the synaptic cleft. Downstream coding execution occurs at the postsynaptic effector stage (analogous to the motor endplate or target dendrite).
+> - **[2] On the Myelin & Ranvier Analogy (Section 4)**: In electrophysiology, myelin and the Nodes of Ranvier provide electrical capacitive insulation and signal regeneration ($Na^+$ clusters) to accelerate conduction velocity. Their role in Dendrite is an engineering metaphor for multi-node low-latency transport, tenant isolation, and throughput benchmarking rather than an exact biological parallel to passive lipid membranes.
+> - **[3] On Scale Equivocation: Subcellular Organelles vs. Network Topologies (Sections 2, 3 & 7)**: This architecture operates across two distinct scales: the micro-scale (an individual synthetic neuron modeling the pipeline of a single workspace/task) and the macro-scale (an intercellular synthetic connectome where discrete compute nodes interact across network meshes via the Model Context Protocol).
+> - **[4] On Hebbian Plasticity vs. Deterministic Graph Solvers (Section 9)**: Biological plasticity (LTP, synaptic depression, dendritic spine remodeling) is an emergent, history-dependent process governed by continuous activation histories. Here, it is analogized to deterministic AST manipulation, connectomic DAG resolution, and microglial repository pruning rather than statistical connectionist weight updates.
 
 ---
 
@@ -90,39 +119,39 @@ Dendrite supports **dual nomenclature**: developers may invoke commands using st
 | **Dendritic Arbor**<br/>*(Afferent Signal & Context Ingestion)* | `query slice` | `dendrite-slice` | `arbor` / `dslc` | Intent-driven AST/CFG reachability slicing and context debloater | `Active [x]` |
 | | `query swap` | `dendrite-swap` | `swap` / `dswp` | AST-aware pattern and framework replacement engine | `Active [x]` |
 | | `query transpile` | `dendrite-transpile` | `transpile` / `dtr` | Polyglot cross-language code translation & verification | `Active [x]` |
-| | `query fuse` | `dendrite-fuse` | `fuse` / `dfus` | Multi-source AST blending and syntax tree synthesis | `Active [x]` |
-| | `query reuse-audit` | `dendrite-audit` | `d-audit` / `drau` | AST token reuse audit and anti-duplication scanner | `Active [x]` |
+| | `query fuse` | `dendritic-morphogenesis` [4] | `morph` / `dfus` | Multi-source AST blending and syntax tree synthesis | `Active [x]` |
+| | `query reuse-audit` | `activity-reuse` [4] | `d-audit` / `drau` | AST token reuse audit and anti-duplication scanner | `Active [x]` |
 | | `ref <list\|add\|remove>` | `dendritic-afferent` | `afferent` / `aff` | Ingest Tier 1 external code references for cleanroom synthesis | `Active [x]` |
 | | `rea <showcase\|list>` | `retrograde-analysis` | `retro` / `rea` | Open-source cleanroom disassembly and AST parity verification | `Active [x]` |
-| **Soma / Perikaryon**<br/>*(Central State, Nucleus & Life-Cycle)* | `env doctor` / `doctor` | `soma-diagnose` | `probe` / `diag` | Host system capability discovery and pre-flight diagnostics | `Active [x]` |
-| | `env plan` | `soma-plan` | `blueprint` / `splan` | Declarative environment replication planning (host/container/hybrid) | `Active [x]` |
+| **Soma & Axon Hillock**<br/>*(Central State, Life-Cycle & Firing Gate)* | `env doctor` / `doctor` | `soma-diagnose` | `probe` / `diag` | Host system capability discovery and pre-flight diagnostics | `Active [x]` |
+| | `env plan` | `soma-blueprint` | `blueprint` / `splan` | Declarative environment replication planning (host/container/hybrid) | `Active [x]` |
 | | `env replicate` | `soma-genesis` | `genesis` / `srep` | Multi-node toolchain and containerized environment replication | `Active [x]` |
 | | `env status` | `soma-homeostasis` | `homeo` / `sst` | Real-time health monitoring of replicated services & containers | `Active [x]` |
 | | `project <add\|switch\|list>`| `ganglion-workspace`| `ganglion` / `prj` | Multi-project workspace registry with <50ms context switching | `Active [x]` |
 | | `plane <status\|next\|push>` | `chronos-tracker` | `chronos` / `pln` | Sovereign issue tracking, DAG scheduling, and Gantt alignment | `Active [x]` |
 | | `store <status\|chunks\|rm>` | `engram-store` | `engram` / `gram` | Persistent segmented chunk checkpointing and contextual memory | `Active [x]` |
-| | `pool <add\|rm\|resolve>` | `plexus-pool` | `plexus` / `plx` | Multi-directory dependency inference & topological DAG solver | `Active [x]` |
-| **Axon & Axon Hillock**<br/>*(Conductive Conduction & Mesh)* | `topology [advisor]` | `axon-pathway` | `axon` / `top` | Dynamic multi-node service placement and hardware router | `Active [x]` |
+| | `pool <add\|rm\|resolve>` | `connectome-pool` [4] | `connectome` / `plx` | Multi-directory dependency inference & topological DAG solver | `Active [x]` |
+| | `vcs <guard\|check\|status>` | `hillock-guard` [1] | `guard` / `vcs` | Axon Hillock all-or-none gate prohibiting unverified main pushes | `Active [x]` |
+| **Axon & Myelin Sheath**<br/>*(Saltatory Conduction, Shielding & Latency)* | `topology [advisor]` | `axonal-pathway` | `axon` / `top` | Dynamic multi-node service placement and hardware router | `Active [x]` |
 | | `move <svc> to --ssh` | `axonal-translocation`| `translocate` / `mv` | Zero-credential interactive service migration across SSH nodes | `Active [x]` |
 | | `sync-remote` / `github-sync`| `saltatory-sync` | `salt-sync` / `gsync`| Bidirectional git/issue sync with commit reconciliation | `Active [x]` |
-| | `dist <spawn\|interop>` | `neural-mesh` | `syn-mesh` / `dist` | Distributed codebase spawner and cross-project coordinator | `Active [x]` |
-| **Myelin & Nodes of Ranvier**<br/>*(Acceleration & Shielding)* | `bench <inference\|gateway>` | `conduction-velocity`| `velocity` / `bnch` | TTFT, TPS, and load resilience stress-test benchmarking | `Active [x]` |
-| | `vcs <guard\|check\|status>` | `myelin-guard` | `guard` / `vcs` | Branch protection guardrails prohibiting unreviewed main pushes | `Active [x]` |
-| | `audit-changes` | `synaptic-pruning` | `prune` / `prn` | Topological vendor branch audit, conflict detection, and rebase | `Active [x]` |
-| | `quality <audit\|hitl-sync>` | `allostasis-audit` | `allostasis` / `qlty` | Anti-mock scan, 100% coverage profiler, and HITL synchronization | `Active [x]` |
+| | `dist <spawn\|interop>` | `neural-mesh` [3] | `syn-mesh` / `dist` | Distributed codebase spawner and cross-project coordinator | `Active [x]` |
+| | `bench <inference\|gateway>` | `conduction-velocity` [2]| `velocity` / `bnch` | TTFT, TPS, and load resilience stress-test benchmarking | `Active [x]` |
+| **Glial Regulation & Pruning**<br/>*(Immune Surveillance & Cleanup)* | `audit-changes` | `microglial-prune` [4] | `prune` / `prn` | Microglial vendor branch audit, conflict detection, and rebase | `Active [x]` |
+| | `quality <audit\|hitl-sync>` | `homeostatic-audit` | `allostasis` / `qlty` | Anti-mock scan, 100% coverage profiler, and HITL synchronization | `Active [x]` |
 | | `analyze <status\|policy>` | `cognitive-analysis` | `cognition` / `anlz` | Cognitive complexity analyzer and execution policy router | `Active [x]` |
-| **Synaptic Cleft & Gating**<br/>*(Governed Neurotransmission)* | `inference <list\|probe>` | `action-potential` | `spike` / `inf` | Pluggable multi-engine inference (Ollama, OxiLLaMa, vLLM, TGI) | `Active [x]` |
+| **Terminal Boutons & Vesicles**<br/>*(Presynaptic Packaging & Quantal Release)* | `commit [flags]` | `quantal-commit` [1] | `quantal` / `cmt` | Discrete vesicular packaging with local LLM commit synthesis | `Active [x]` |
+| | `tokens [status]` | `vesicle-quota` | `quota` / `tok` | Sliding 24h/7d financial expenditure limiter and token quota | `Active [x]` |
+| **Synaptic Cleft & Gating**<br/>*(Governed Intercellular Transmission)* | `inference <list\|probe>` | `action-potential` | `spike` / `inf` | Pluggable multi-engine inference (Ollama, OxiLLaMa, vLLM, TGI) | `Active [x]` |
 | | `gateway` / `dev gateway` | `synaptic-cleft` | `cleft` / `gate` | LiteLLM token governance, rate-limiting, and key provisioning | `Active [x]` |
-| | `tokens [status]` | `vesicle-quota` | `vesicle` / `tok` | Sliding 24h/7d financial expenditure limiter and token quota | `Active [x]` |
-| | `mcp <serve\|tools\|call>` | `interneuron-mcp` | `inter` / `mcp` | Model Context Protocol bridge connecting tools, agents, and IDEs | `Active [x]` |
+| | `mcp <serve\|tools\|call>` | `interneuron-mcp` [3] | `inter` / `mcp` | Intercellular Model Context Protocol bridge connecting nodes/IDEs | `Active [x]` |
 | | `jetbrains <probe\|open>` | `neuromuscular-bridge`| `bridge` / `jb` | GoLand/IntelliJ PSI symbol indexer, problems probe, and run harness | `Active [x]` |
-| **Terminal Boutons**<br/>*(Efferent Actuation & Effectors)* | `agent <search\|route\|run>` | `bouton-dispatch` | `bouton` / `agt` | Autonomous coding agent harness (Aider, OpenHands, OpenCode) | `Active [x]` |
+| **Postsynaptic Effectors**<br/>*(Downstream Efferent Actuation)* | `agent <search\|route\|run>` | `effector-dispatch` [1]| `dispatch` / `agt` | Autonomous coding agent harness (Aider, OpenHands, OpenCode) | `Active [x]` |
 | | `test <auto\|ui>` | `myotatic-reflex` | `reflex` / `tst` | Testcontainers table-driven synthesis and self-healing test loop | `Active [x]` |
-| | `commit [flags]` | `quantal-commit` | `quantal` / `cmt` | Autonomous commit synthesis with local LLM SemVer adherence | `Active [x]` |
-| | `service <start\|stop\|health>`| `effector-service` | `effector` / `svc` | Process manager for microservices (Penpot, Plane, Ollama) | `Active [x]` |
+| | `service <start\|stop\|health>`| `motor-unit` | `motor` / `svc` | Process manager for microservices (Penpot, Plane, Ollama) | `Active [x]` |
 | | `story <next\|fork\|resolve>` | `synaptic-saga` | `saga` / `sty` | Autonomous multi-step story execution and DAG branching | `Active [x]` |
 | | `triage` | `inhibitory-triage` | `triage` / `trg` | Local agent conflict resolution and priority arbitration | `Active [x]` |
-| **Cortex & Consciousness**<br/>*(Sensory Cockpit & Knowledge)* | `ui [--port 3456]` | `cortex-cockpit` | `cortex` / `ui` | Real-time embedded Web Control Cockpit (<800ms startup) | `Active [x]` |
+| **Cortex & Sensory Integration**<br/>*(Sensory Cockpit & Knowledge Codex)* | `ui [--port 3456]` | `cortex-cockpit` | `cortex` / `ui` | Real-time embedded Web Control Cockpit (<800ms startup) | `Active [x]` |
 | | `telemetry [snapshot\|metrics]`| `afferent-telemetry` | `sensory` / `tel` | Real-time Apple Silicon SoC thermals and Prometheus telemetry | `Active [x]` |
 | | `doc <docusaurus\|reflect>` | `engram-codex` | `codex` / `doc` | Docs-as-Code reflection, taxonomy generation, and Docusaurus sync | `Active [x]` |
 
@@ -267,12 +296,12 @@ dendrite up azure-burst
 dendrite down
 ```
 
-### Autonomous Coding Agent Harness (Bouton Dispatch)
+### Autonomous Coding Agent Harness (Effector Dispatch)
 Orchestrate autonomous coding tools through LiteLLM governance:
 
 ```bash
 # Run Aider bound to virtual key spend limits
-dendrite bouton run aider --ticket DEN-030 --spend-cap 5.00
+dendrite dispatch run aider --ticket DEN-030 --spend-cap 5.00
 
 # Inspect past agent sessions, commits, and token expenditure
 dendrite agent session list

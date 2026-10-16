@@ -361,6 +361,12 @@ flowchart LR
 > **Governing Ticket**:
 > - `DEN-807`: Canvas Interactive Writing & Direct Creative Action Handlers
 
+The Canvas Subsystem provides a dual-faceted interactive workspace:
+1. **Interactive Text & Narrative Canvas**: 15 direct action handlers supporting multi-turn drafting, refinement, expansion, condensation, tone modulation, critiquing, and formatting.
+2. **Penpot UI Creative Action Bridge**: Direct creative action handlers bridging frontend visual prototyping tools (Penpot `:9000`) with software engineering projects. It binds Plane tickets (`DEN-XXX`) to project functionalities/components, maps them to Penpot frames, and executes bidirectional project state synchronization.
+
+### 6.1 15 Interactive Canvas Writing Action Handlers
+
 Extracted from the Gemini share payload `45688944`, the system provides native dispatchers for 15 Canvas interactive writing and refinement modes:
 
 | Canvas Action ID | Display Label & Capability | Assistant Delivery Mode |
@@ -380,6 +386,103 @@ Extracted from the Gemini share payload `45688944`, the system provides native d
 | `WRITE_POEM` | Draft and refine a poem alongside Gemini | Meter, rhyme scheme, and stanza styling |
 | `WRITE_PLAN` | Have Gemini propose a plan and refine it | Milestone decomposition, Gantt dates, and risks |
 | `WRITE_PRESENTATION` | Create and refine a presentation deck | Slide title, speaker bullets, visual layout suggestions |
+
+#### Writing Execution Modes
+Every writing action handler supports 7 operational modes:
+- `DRAFT`: Synthesize a comprehensive initial version from user prompt and context.
+- `REFINE`: Target existing content, polishing sentence flow and vocabulary.
+- `EXPAND`: Broaden scope, deepening explanations and adding examples.
+- `CONDENSE`: Synthesize concise summaries, removing redundancy.
+- `CHANGE_TONE`: Shift voice (e.g. professional, casual, authoritative, empathetic).
+- `CRITIQUE`: Evaluate against best practices and output actionable feedback.
+- `FORMAT`: Reformat into structured Markdown, tables, or target markup.
+
+### 6.2 Penpot UI Creative Action Bridge for UI Projects
+
+When software engineering projects include user interfaces, text-only canvas editing is insufficient. The **Penpot UI Creative Action Bridge** treats visual canvas workspaces (Penpot `:9000`) as first-class creative peers to code repositories and issue trackers.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Developer / AI Agent
+    participant Canvas as Canvas Registry (pkg/canvas)
+    participant Bridge as Penpot UI Bridge
+    participant Penpot as Penpot Container (:9000)
+    participant Plane as Plane v2 (:8090)
+    participant Code as Codebase (Svelte/React/Vue)
+
+    Note over Dev,Plane: Phase 1: Relate Ticket & Functionality
+    Dev->>Canvas: Dispatch(RELATE_TICKET_FEATURE, Ticket: "DEN-807", Feature: "CanvasUI")
+    Canvas->>Bridge: RelateTicketToFeature(relation)
+    Bridge->>Plane: Post Relational Context & Penpot Frame Deep-Link
+    Bridge-->>Canvas: Relation Bound (Ticket <-> Feature <-> Frame)
+
+    Note over Dev,Code: Phase 2: Design & Component Sync
+    Dev->>Canvas: Dispatch(DESIGN_UI_COMPONENT, Feature: "CanvasUI", Framework: "svelte")
+    Canvas-->>Dev: Synthesized ComponentSpec + Tailwind Design Tokens
+    Dev->>Canvas: Dispatch(SYNC_PENPOT_FRAME, File: "web/src/Canvas.svelte")
+    Canvas->>Bridge: SyncComponentWithPenpot(ticket, file)
+    Bridge->>Penpot: Check Frame Health & Extract Token Diff
+    Bridge->>Plane: Comment Frame URL & Token Drift Analysis
+
+    Note over Dev,Plane: Phase 3: Bidirectional State Synchronization
+    Penpot-->>Bridge: Design Approved / Iterated
+    Dev->>Canvas: Dispatch(UPDATE_PROJECT_STATE, TargetState: "To Verify")
+    Canvas->>Bridge: UpdateProjectState(ticket, state)
+    Bridge->>Plane: Mutate Ticket State ("To Verify") & Replicate Status
+    Bridge-->>Dev: State Synchronized (Plane Updated = true)
+```
+
+#### 4 UI Creative Action Handlers
+1. `DESIGN_UI_COMPONENT`:
+   - Synthesizes structural frontend component specifications (.svelte, .tsx, .vue) and Tailwind tokens from acceptance criteria.
+   - Extracts component states (`hover`, `focus`, `active`, `disabled`), properties, and visual layouts.
+2. `SYNC_PENPOT_FRAME`:
+   - Inspects UI files, parses Tailwind classes and reactive properties, and dispatches them to Penpot.
+   - Generates persistent deep-links (`http://localhost:9000/#/workspace/dendrite/project/ui?frame=<slug>`).
+3. `RELATE_TICKET_FEATURE`:
+   - Binds Plane tickets (`DEN-XXX`) to high-level project functionalities (e.g. `Canvas Workspace`, `Telemetry Panel`, `Prompt Editor`) and Penpot frame UUIDs.
+   - Persists relations in memory and synchronizes relational annotations to Plane issue comments.
+4. `UPDATE_PROJECT_STATE`:
+   - **Inbound Sync**: Detects design completion or token updates in Penpot and triggers issue status progression in Plane (e.g. moving from `In Progress` to `To Verify`).
+   - **Outbound Sync**: Reflects Plane milestone updates, blocker notifications, or review requests back to Penpot frame metadata.
+
+### 6.3 Relational Schema & State Transition Mapping
+
+| Entity | Primary Key | Bound Attributes | Synchronized Target |
+| :--- | :--- | :--- | :--- |
+| **Plane Ticket** | `TicketID` (`DEN-XXX`) | Name, Status, Priority, Estimate, Start/Target Date | Plane API (`:8090`) |
+| **Project Feature** | `FeatureName` | Description, Module, Architectural Layer | Repository Documentation & Specs |
+| **UI Component** | `ComponentPath` | Framework, Props, States, Tailwind Tokens | Frontend Codebase (`web/src/...`) |
+| **Penpot Canvas** | `PenpotFrameID` | Frame URL, Workspace, Project, Health | Penpot REST/Web (`:9000`) |
+
+### 6.4 Go Architecture & Core Interfaces (`pkg/personalcontext/canvas`)
+
+```go
+// ActionID identifies a standard Canvas writing or UI creative action.
+type ActionID string
+
+// ActionHandler executes a discrete Canvas creative action.
+type ActionHandler interface {
+    ActionID() ActionID
+    Execute(ctx context.Context, req ActionRequest) (*ActionResponse, error)
+}
+
+// Registry maintains thread-safe registration and dispatching of Canvas actions.
+type Registry struct { ... }
+
+// PenpotUIBridge coordinates tickets, functionalities, and Penpot visual frames.
+type PenpotUIBridge struct { ... }
+
+// RelateTicketToFeature establishes a binding between a Plane ticket and UI feature.
+func (b *PenpotUIBridge) RelateTicketToFeature(ctx context.Context, rel TicketFeatureRelation) error
+
+// SyncComponentWithPenpot inspects a component and syncs tokens with Penpot and Plane.
+func (b *PenpotUIBridge) SyncComponentWithPenpot(ctx context.Context, ticketID, filePath string, dryRun bool) (*UIBridgeResult, error)
+
+// UpdateProjectState executes bidirectional state mutation across Penpot and Plane.
+func (b *PenpotUIBridge) UpdateProjectState(ctx context.Context, req ProjectStateUpdateRequest) (*ProjectStateUpdateResponse, error)
+```
 
 ---
 

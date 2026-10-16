@@ -2,8 +2,10 @@ package canvas
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -29,6 +31,7 @@ type PenpotUIBridge struct {
 	relations      map[string]*TicketFeatureRelation // key: TicketID
 	planeClient    *plane.Client
 	penpotEndpoint string
+	storagePath    string
 	parser         *penpot.Parser
 	synchronizer   *penpot.Synchronizer
 }
@@ -40,13 +43,64 @@ func NewPenpotUIBridge(planeClient *plane.Client, endpoint string) *PenpotUIBrid
 	}
 	endpoint = strings.TrimRight(endpoint, "/")
 
-	return &PenpotUIBridge{
+	bridge := &PenpotUIBridge{
 		relations:      make(map[string]*TicketFeatureRelation),
 		planeClient:    planeClient,
 		penpotEndpoint: endpoint,
 		parser:         penpot.NewParser(),
 		synchronizer:   penpot.NewSynchronizer(planeClient),
 	}
+
+	// Default persistence location
+	defaultStorage := filepath.Join(".dendrite", "canvas_relations.json")
+	if _, err := os.Stat(".dendrite"); err == nil {
+		bridge.storagePath = defaultStorage
+		_ = bridge.load()
+	}
+
+	return bridge
+}
+
+// SetStoragePath overrides the persistence file path for relations.
+func (b *PenpotUIBridge) SetStoragePath(path string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.storagePath = path
+	_ = b.loadLocked()
+}
+
+func (b *PenpotUIBridge) load() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.loadLocked()
+}
+
+func (b *PenpotUIBridge) loadLocked() error {
+	if b.storagePath == "" {
+		return nil
+	}
+	data, err := os.ReadFile(b.storagePath)
+	if err != nil {
+		return err
+	}
+	var loaded map[string]*TicketFeatureRelation
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		return err
+	}
+	b.relations = loaded
+	return nil
+}
+
+func (b *PenpotUIBridge) saveLocked() error {
+	if b.storagePath == "" {
+		return nil
+	}
+	_ = os.MkdirAll(filepath.Dir(b.storagePath), 0755)
+	data, err := json.MarshalIndent(b.relations, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(b.storagePath, data, 0644)
 }
 
 // RelateTicketToFeature establishes and persists a relationship between a Plane ticket and UI feature.
@@ -90,6 +144,7 @@ func (b *PenpotUIBridge) RelateTicketToFeature(ctx context.Context, rel TicketFe
 	}
 
 	b.relations[ticketID] = persisted
+	_ = b.saveLocked()
 
 	// If planeClient is active, post a status note linking Penpot Frame
 	if b.planeClient != nil && rel.Description != "" {
@@ -178,6 +233,7 @@ func (b *PenpotUIBridge) SyncComponentWithPenpot(ctx context.Context, ticketID, 
 			rel.PenpotFrameURL = penpotURL
 			rel.LastSyncedAt = time.Now().UTC()
 		}
+		_ = b.saveLocked()
 	}
 	b.mu.Unlock()
 
@@ -223,6 +279,7 @@ func (b *PenpotUIBridge) UpdateProjectState(ctx context.Context, req ProjectStat
 		}
 		b.relations[ticketID] = rel
 	}
+	_ = b.saveLocked()
 	b.mu.Unlock()
 
 	resp := &ProjectStateUpdateResponse{
