@@ -2,9 +2,11 @@ package audit
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"Dendrite/pkg/tracker/github"
@@ -182,4 +184,221 @@ func TestAuditor_TargetBranchFilter(t *testing.T) {
 	if summary.BranchesMerged != 1 {
 		t.Fatalf("expected 1 merged, got %d", summary.BranchesMerged)
 	}
+}
+
+func TestAuditor_LoadManifest_Error(t *testing.T) {
+	repoDir, _ := setupRealAuditRepo(t)
+	ctx := context.Background()
+
+	guard := vcs.NewGitGuard(repoDir, vcs.ModeAuditChanges)
+	manifest := filepath.Join(repoDir, ".dendrite", "audit_queue.json")
+	_ = os.MkdirAll(filepath.Dir(manifest), 0755)
+	_ = os.WriteFile(manifest, []byte("invalid JSON format"), 0644)
+	orch := vcs.NewStackedBranchOrchestrator(guard, manifest)
+
+	auditor := NewAuditor(guard, orch, nil)
+	summary, err := auditor.AuditChanges(ctx, AuditOptions{})
+	if err == nil {
+		t.Fatalf("expected LoadManifest error, got nil")
+	}
+	if summary != nil {
+		t.Fatalf("expected nil summary on error, got %v", summary)
+	}
+}
+
+func TestAuditor_AuditChanges_StatusMerged_Skip(t *testing.T) {
+	repoDir, _ := setupRealAuditRepo(t)
+	ctx := context.Background()
+
+	guard := vcs.NewGitGuard(repoDir, vcs.ModeAuditChanges)
+	manifest := filepath.Join(repoDir, ".dendrite", "audit_queue.json")
+	orch := vcs.NewStackedBranchOrchestrator(guard, manifest)
+
+	_ = orch.SaveManifest([]*vcs.AuditQueueItem{
+		{Branch: "local/mod-done", BaseBranch: "develop", Status: vcs.StatusMerged},
+	})
+
+	auditor := NewAuditor(guard, orch, nil)
+	summary, err := auditor.AuditChanges(ctx, AuditOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if summary.BranchesAudited != 0 {
+		t.Fatalf("expected 0 branches audited because status was merged, got %d", summary.BranchesAudited)
+	}
+}
+
+func TestAuditor_AuditChanges_AuditBranch_Error(t *testing.T) {
+	repoDir, _ := setupRealAuditRepo(t)
+	ctx := context.Background()
+
+	guard := vcs.NewGitGuard(repoDir, vcs.ModeAuditChanges)
+	manifest := filepath.Join(repoDir, ".dendrite", "audit_queue.json")
+	orch := vcs.NewStackedBranchOrchestrator(guard, manifest)
+
+	_ = orch.SaveManifest([]*vcs.AuditQueueItem{
+		{Branch: "local/does-not-exist", BaseBranch: "develop", Status: vcs.StatusAwaitingAudit},
+	})
+
+	auditor := NewAuditor(guard, orch, nil)
+	summary, err := auditor.AuditChanges(ctx, AuditOptions{})
+	if err == nil {
+		t.Fatalf("expected audit error on nonexistent branch, got nil")
+	}
+	if summary == nil || summary.Success {
+		t.Fatalf("expected summary.Success to be false")
+	}
+}
+
+func TestAuditor_RebaseDownstream_DirectDevelop_And_Errors(t *testing.T) {
+	repoDir, _ := setupRealAuditRepo(t)
+	ctx := context.Background()
+
+	runGit(t, repoDir, "checkout", "-b", "local/sub-branch", "develop")
+	f := filepath.Join(repoDir, "sub.txt")
+	_ = os.WriteFile(f, []byte("sub\n"), 0644)
+	runGit(t, repoDir, "add", "sub.txt")
+	runGit(t, repoDir, "commit", "-m", "feat: sub commit")
+	runGit(t, repoDir, "push", "-u", "origin", "local/sub-branch")
+
+	guard := vcs.NewGitGuard(repoDir, vcs.ModeAuditChanges)
+	auditor := NewAuditor(guard, nil, nil)
+
+	// Case 1: empty oldParentSHA (rebases develop directly)
+	err := auditor.RebaseDownstream(ctx, "local/sub-branch", "")
+	if err != nil {
+		t.Fatalf("expected successful rebase with empty parent sha: %v", err)
+	}
+
+	// Case 1b: non-empty oldParentSHA (rebases --onto develop oldParentSHA childBranch)
+	headSHA := strings.TrimSpace(runGit(t, repoDir, "rev-parse", "HEAD"))
+	err = auditor.RebaseDownstream(ctx, "local/sub-branch", headSHA)
+	if err != nil {
+		t.Fatalf("expected successful rebase with non-empty parent sha: %v", err)
+	}
+
+	// Case 2: nonexistent branch error
+	err = auditor.RebaseDownstream(ctx, "local/ghost-branch", "")
+	if err == nil {
+		t.Fatalf("expected checkout failure for ghost-branch, got nil")
+	}
+}
+
+func TestAuditor_AuditBranch_PushDivergence_AutoRebase(t *testing.T) {
+	repoDir, originDir := setupRealAuditRepo(t)
+	ctx := context.Background()
+
+	// 1. Create local/feat-div in repoDir
+	runGit(t, repoDir, "checkout", "-b", "local/feat-div", "develop")
+	f1 := filepath.Join(repoDir, "f1.txt")
+	_ = os.WriteFile(f1, []byte("feature 1\n"), 0644)
+	runGit(t, repoDir, "add", "f1.txt")
+	runGit(t, repoDir, "commit", "-m", "feat: feat-div")
+	runGit(t, repoDir, "push", "-u", "origin", "local/feat-div")
+	runGit(t, repoDir, "checkout", "develop")
+
+	// 2. Clone a second repo and push a concurrent commit to develop
+	tmp := t.TempDir()
+	secondRepo := filepath.Join(tmp, "second")
+	runGit(t, tmp, "clone", originDir, secondRepo)
+	runGit(t, secondRepo, "config", "user.name", "Second Agent")
+	runGit(t, secondRepo, "config", "user.email", "second@dendrite.ai")
+	remoteFile := filepath.Join(secondRepo, "remote.txt")
+	_ = os.WriteFile(remoteFile, []byte("remote\n"), 0644)
+	runGit(t, secondRepo, "add", "remote.txt")
+	runGit(t, secondRepo, "commit", "-m", "remote commit")
+	runGit(t, secondRepo, "push", "origin", "develop")
+
+	// 3. Now run AuditBranch on feat-div. Push will fail initially due to divergence, then auto pull --rebase & push!
+	guard := vcs.NewGitGuard(repoDir, vcs.ModeAuditChanges)
+	manifest := filepath.Join(repoDir, ".dendrite", "audit_queue.json")
+	orch := vcs.NewStackedBranchOrchestrator(guard, manifest)
+	auditor := NewAuditor(guard, orch, nil)
+
+	item := &vcs.AuditQueueItem{
+		Branch:     "local/feat-div",
+		BaseBranch: "develop",
+		Status:     vcs.StatusAwaitingAudit,
+	}
+
+	res, err := auditor.AuditBranch(ctx, item, AuditOptions{})
+	if err != nil {
+		t.Fatalf("expected divergence recovery in AuditBranch, got err: %v", err)
+	}
+	if !res.Merged {
+		t.Fatalf("expected branch to be merged after divergence recovery")
+	}
+}
+
+func TestAuditor_AuditBranch_FaultErrors(t *testing.T) {
+	repoDir, _ := setupRealAuditRepo(t)
+	ctx := context.Background()
+
+	runGit(t, repoDir, "checkout", "-b", "local/feat-err", "develop")
+	f := filepath.Join(repoDir, "err.txt")
+	_ = os.WriteFile(f, []byte("err\n"), 0644)
+	runGit(t, repoDir, "add", "err.txt")
+	runGit(t, repoDir, "commit", "-m", "feat: err")
+	runGit(t, repoDir, "push", "-u", "origin", "local/feat-err")
+	runGit(t, repoDir, "checkout", "develop")
+
+	item := &vcs.AuditQueueItem{
+		Branch:     "local/feat-err",
+		BaseBranch: "develop",
+		Status:     vcs.StatusAwaitingAudit,
+	}
+
+	// Case 1: Status command failure
+	runner1 := &interceptedGitRunner{
+		base: &vcs.DefaultGitRunner{},
+		failOnMatch: func(args []string) bool {
+			return len(args) > 0 && args[0] == "status"
+		},
+	}
+	guard1 := vcs.NewGitGuard(repoDir, vcs.ModeAuditChanges).WithRunner(runner1)
+	auditor1 := NewAuditor(guard1, nil, nil)
+	_, err := auditor1.AuditBranch(ctx, item, AuditOptions{})
+	if err == nil || !strings.Contains(err.Error(), "git status error") {
+		t.Fatalf("expected status error, got: %v", err)
+	}
+
+	// Case 2: Checkout develop failure
+	runner2 := &interceptedGitRunner{
+		base: &vcs.DefaultGitRunner{},
+		failOnMatch: func(args []string) bool {
+			return len(args) > 1 && args[0] == "checkout" && args[1] == "develop"
+		},
+	}
+	guard2 := vcs.NewGitGuard(repoDir, vcs.ModeAuditChanges).WithRunner(runner2)
+	auditor2 := NewAuditor(guard2, nil, nil)
+	_, err = auditor2.AuditBranch(ctx, item, AuditOptions{})
+	if err == nil || !strings.Contains(err.Error(), "failed to checkout develop") {
+		t.Fatalf("expected checkout develop error, got: %v", err)
+	}
+
+	// Case 3: Merge failure
+	runner3 := &interceptedGitRunner{
+		base: &vcs.DefaultGitRunner{},
+		failOnMatch: func(args []string) bool {
+			return len(args) > 0 && args[0] == "merge"
+		},
+	}
+	guard3 := vcs.NewGitGuard(repoDir, vcs.ModeAuditChanges).WithRunner(runner3)
+	auditor3 := NewAuditor(guard3, nil, nil)
+	_, err = auditor3.AuditBranch(ctx, item, AuditOptions{})
+	if err == nil || !strings.Contains(err.Error(), "failed to merge") {
+		t.Fatalf("expected merge error, got: %v", err)
+	}
+}
+
+type interceptedGitRunner struct {
+	base        vcs.GitRunner
+	failOnMatch func(args []string) bool
+}
+
+func (r *interceptedGitRunner) RunGit(ctx context.Context, dir string, args ...string) (string, error) {
+	if r.failOnMatch != nil && r.failOnMatch(args) {
+		return "", errors.New("simulated git execution failure")
+	}
+	return r.base.RunGit(ctx, dir, args...)
 }
