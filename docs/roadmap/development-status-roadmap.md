@@ -271,6 +271,7 @@ All 23 project milestones and their associated tickets:
 - [ ] **DEN-053**: Mandatory Target Directory Gate for Mid-Flight Split & Pool Member Scaffolding (`pkg/pool/split`, `cmd/dendrite`)
 - [ ] **DEN-054**: 5-Tier Git Version Governance Process Interceptor (`pkg/agent/governance`)
 - [ ] **DEN-055**: Semantic Hierarchical Branching & Level-by-Level Merge Engine (`pkg/agent/git`)
+- [?] **DEN-813**: Project Environment Preparation, Agent/Skill Sync & CI/CD Enforcement with GitHub Copilot (To Verify [?])
 
 ### Milestone 25: Ticket-Milestone DAG Linker, Prioritization & IDE Connectors (FEAT-036, FEAT-100)
 - [ ] **DEN-056**: Multi-Source Ticket-Milestone Ingestor & Cycle Detector (`pkg/tracker/dag`)
@@ -595,3 +596,17 @@ All tickets map directly to living architectural documents and feature specifica
 - **Quality Gates & Scorecards**:
   - [Scrum Master Alignment & Code Complexity Scorecard](../quality/scrum-and-complexity-scorecard.md)
   - [CLI Specification & Command Reference](../cli/dendrite-cli-specification.md)
+
+### Ticket `DEN-813`: Project Environment Preparation, Agent/Skill Sync & CI/CD Enforcement with GitHub Copilot
+
+- **Target Package**: `pkg/env/bootstrap`, `cmd/dendrite`, `pkg/mcpserver`
+- **Governing Specs**: [`docs/features/FEAT-039-polyglot-env-bootstrapper-gof-patterns.md`](../features/FEAT-039-polyglot-env-bootstrapper-gof-patterns.md), [`docs/features/FEAT-043-ephemeral-cicd-routine.md`](../features/FEAT-043-ephemeral-cicd-routine.md)
+- **Goal**: Implement project environment preparation, synchronization, and update capabilities (`dendrite env prepare/sync/update` and `dendrite project prepare/sync/update`). Inspects and fingerprints repository manifests, synchronizes stack-tailored agent rules (`.agents/rules.md`) and standard skills (`.agents/skills`, `.gemini/skills`), and enforces CI/CD practices using GitHub Copilot as the default tool (`.github/copilot-instructions.md`, `.github/workflows/ci.yml`, and toolchain detection).
+- **Acceptance Criteria**:
+    - [x] Fingerprints repository manifests (`go.mod`, `Cargo.toml`, `package.json`, `pyproject.toml`) detecting runtime stack, Go version, and linters.
+    - [x] Scaffolds and synchronizes stack-tailored agent rules in `.agents/rules.md` and seeds standard skills in `.agents/skills` and `.gemini/skills`.
+    - [x] Enforces CI/CD practices by generating `.github/copilot-instructions.md` with domain isolation, Go concurrency standards, zero-mock policy, and Testcontainers mandate.
+    - [x] Generates automated GitHub Actions workflow `.github/workflows/ci.yml` verifying formatting, linting, tests with race detection, statement test coverage $\ge 85\%$, and compilation.
+    - [x] Probes default CI/CD assistant (`copilot` / `gh copilot`) and outputs actionable installation guidance when missing.
+    - [x] Exposes CLI commands `dendrite env <prepare|sync|update>` and `dendrite project <prepare|sync|update>`, as well as MCP tool `dendrite_env_prepare`.
+    - [x] Passes with zero mocks and statement test coverage $\ge 86.9\%$ across `pkg/env/bootstrap`.
