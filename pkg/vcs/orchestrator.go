@@ -112,7 +112,7 @@ func (o *StackedBranchOrchestrator) SaveManifest(items []*AuditQueueItem) error 
 
 // StartModuleBranch creates or checks out a stacked branch 'local/<module>' branched from 'develop' or parent branch.
 func (o *StackedBranchOrchestrator) StartModuleBranch(ctx context.Context, module string, parentModule string) (string, error) {
-	if module == "" {
+	if strings.TrimSpace(module) == "" {
 		return "", errors.New("module name cannot be empty")
 	}
 
@@ -181,6 +181,10 @@ func (o *StackedBranchOrchestrator) StartModuleBranch(ctx context.Context, modul
 
 // RecordTicketCommit executes local validation gate, commits with issue reference, and pushes to origin/local/<module>.
 func (o *StackedBranchOrchestrator) RecordTicketCommit(ctx context.Context, module string, ticket *tracker.RoutingTicket, customSummary string) error {
+	if ticket == nil {
+		return errors.New("ticket cannot be nil")
+	}
+
 	currBranch, err := o.Guard.CurrentBranch(ctx)
 	if err != nil {
 		return err
@@ -232,6 +236,10 @@ func (o *StackedBranchOrchestrator) RecordTicketCommit(ctx context.Context, modu
 
 // FinalizeModuleForAudit transitions the module branch to AWAITING_AUDIT state in the manifest.
 func (o *StackedBranchOrchestrator) FinalizeModuleForAudit(ctx context.Context, module string) error {
+	if strings.TrimSpace(module) == "" {
+		return errors.New("module name cannot be empty")
+	}
+
 	branch := "local/" + strings.TrimPrefix(module, "local/")
 	items, err := o.LoadManifest()
 	if err != nil {

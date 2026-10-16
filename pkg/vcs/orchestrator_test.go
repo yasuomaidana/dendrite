@@ -146,3 +146,118 @@ func TestStackedBranchOrchestrator_StackedOnParent(t *testing.T) {
 		t.Fatal("expected false when totalTokens <= 0")
 	}
 }
+
+func TestStackedBranchOrchestrator_ValidationErrors_And_EdgeCases(t *testing.T) {
+	repoDir, _ := setupRealRepo(t)
+	ctx := context.Background()
+
+	guard := NewGitGuard(repoDir, ModeDegradedBudget)
+	manifestPath := filepath.Join(repoDir, ".dendrite", "audit_queue.json")
+	orch := NewStackedBranchOrchestrator(guard, manifestPath)
+
+	// 1. Corrupt manifest unmarshal error
+	_ = os.MkdirAll(filepath.Dir(manifestPath), 0755)
+	_ = os.WriteFile(manifestPath, []byte("bad-json"), 0644)
+	_, err := orch.LoadManifest()
+	if err == nil {
+		t.Fatal("expected LoadManifest error on corrupt JSON, got nil")
+	}
+
+	// 2. Empty module slug error
+	_, err = orch.StartModuleBranch(ctx, "", "")
+	if err == nil {
+		t.Fatal("expected error on empty module slug, got nil")
+	}
+
+	// 3. RecordTicketCommit with nil ticket
+	err = orch.RecordTicketCommit(ctx, "mod", nil, "")
+	if err == nil {
+		t.Fatal("expected error on nil ticket, got nil")
+	}
+
+	// 4. FinalizeModuleForAudit with empty slug or non-existent module
+	_ = os.WriteFile(manifestPath, []byte("[]"), 0644)
+	err = orch.FinalizeModuleForAudit(ctx, "")
+	if err == nil {
+		t.Fatal("expected error on empty slug for finalize")
+	}
+	err = orch.FinalizeModuleForAudit(ctx, "nonexistent-module")
+	if err != nil {
+		t.Fatalf("expected nonexistent module to be appended to manifest: %v", err)
+	}
+
+	// 5. Existing branch re-checkout in StartModuleBranch
+	runGitCmd(t, repoDir, "checkout", "-b", "local/mod-exist", "develop")
+	runGitCmd(t, repoDir, "checkout", "develop")
+	_ = os.WriteFile(manifestPath, []byte(`[{"module":"mod-exist","branch":"local/mod-exist","base_branch":"develop","status":"IN_PROGRESS"}]`), 0644)
+	b, err := orch.StartModuleBranch(ctx, "mod-exist", "")
+	if err != nil || b != "local/mod-exist" {
+		t.Fatalf("expected re-checkout of existing branch to succeed, got %s, err: %v", b, err)
+	}
+
+	// 6. RecordTicketCommit duplicate ticket handling
+	tkt := &tracker.RoutingTicket{ID: "DEN-DUPE", Title: "Dupe"}
+	_ = orch.RecordTicketCommit(ctx, "mod-exist", tkt, "feat: commit 1")
+	_ = orch.RecordTicketCommit(ctx, "mod-exist", tkt, "feat: commit 2")
+	items, _ := orch.LoadManifest()
+	for _, it := range items {
+		if it.Module == "mod-exist" {
+			count := 0
+			for _, id := range it.Tickets {
+				if id == "DEN-DUPE" {
+					count++
+				}
+			}
+			if count != 1 {
+				t.Fatalf("expected duplicate ticket not to be appended twice, got count %d", count)
+			}
+		}
+	}
+}
+
+func TestRemoteSyncWatcher_AdditionalBranches(t *testing.T) {
+	repoDir, originDir := setupRealRepo(t)
+	ctx := context.Background()
+
+	guard := NewGitGuard(repoDir, ModeStandard)
+
+	// Default orchestrator fallback test (orch == nil) and branch == ""
+	wDefault := NewRemoteSyncWatcher(guard, nil)
+	statusDefault, err := wDefault.FetchAndDetect(ctx, "")
+	if err != nil {
+		t.Fatalf("fetch and detect failed with empty branch: %v", err)
+	}
+	if statusDefault.Branch != "develop" {
+		t.Fatalf("expected develop branch, got %s", statusDefault.Branch)
+	}
+
+	// Up to date sync (Behind == 0)
+	w := NewRemoteSyncWatcher(guard, nil)
+	status, err := w.SyncRemoteFixes(ctx, "develop")
+	if err != nil {
+		t.Fatalf("unexpected error on up-to-date sync: %v", err)
+	}
+	if status.Updated || status.Behind != 0 {
+		t.Fatalf("expected 0 behind commits when up to date, got %+v", status)
+	}
+
+	// Remote commits detection
+	tmp := t.TempDir()
+	secondClone := filepath.Join(tmp, "second")
+	runGitCmd(t, tmp, "clone", originDir, secondClone)
+	runGitCmd(t, secondClone, "config", "user.name", "Second")
+	runGitCmd(t, secondClone, "config", "user.email", "second@dendrite.ai")
+	rf := filepath.Join(secondClone, "remote_file.txt")
+	_ = os.WriteFile(rf, []byte("remote fix\n"), 0644)
+	runGitCmd(t, secondClone, "add", "remote_file.txt")
+	runGitCmd(t, secondClone, "commit", "-m", "[DEN-001] fix: remote fix")
+	runGitCmd(t, secondClone, "push", "origin", "develop")
+
+	statusBehind, err := w.FetchAndDetect(ctx, "develop")
+	if err != nil {
+		t.Fatalf("fetch and detect failed: %v", err)
+	}
+	if statusBehind.Behind != 1 {
+		t.Fatalf("expected 1 behind commit, got %+v", statusBehind)
+	}
+}
