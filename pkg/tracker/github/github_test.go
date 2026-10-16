@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -9,8 +10,11 @@ import (
 )
 
 type TestScriptExecutor struct {
-	history []string
-	calls   map[string]string
+	history        []string
+	calls          map[string]string
+	failCmd        string
+	createResponse string
+	createErr      error
 }
 
 func newTestScriptExecutor() *TestScriptExecutor {
@@ -23,11 +27,20 @@ func newTestScriptExecutor() *TestScriptExecutor {
 func (m *TestScriptExecutor) Execute(ctx context.Context, name string, args ...string) (string, error) {
 	cmd := name + " " + strings.Join(args, " ")
 	m.history = append(m.history, cmd)
-	if resp, ok := m.calls[cmd]; ok {
-		return resp, nil
+	if m.failCmd != "" && strings.Contains(cmd, m.failCmd) {
+		return "", errors.New("simulated script failure")
 	}
 	if strings.Contains(cmd, "issue create") {
+		if m.createErr != nil {
+			return "", m.createErr
+		}
+		if m.createResponse != "" {
+			return m.createResponse, nil
+		}
 		return "https://github.com/yasuomaidana/dendrite/issues/42", nil
+	}
+	if resp, ok := m.calls[cmd]; ok {
+		return resp, nil
 	}
 	return "", nil
 }
@@ -40,6 +53,14 @@ func TestDefaultCommandExecutor_RealCommand(t *testing.T) {
 	}
 	if strings.TrimSpace(out) != "hello world" {
 		t.Fatalf("expected 'hello world', got '%s'", out)
+	}
+}
+
+func TestDefaultCommandExecutor_CommandError(t *testing.T) {
+	exec := &DefaultCommandExecutor{}
+	_, err := exec.Execute(context.Background(), "false")
+	if err == nil {
+		t.Fatalf("expected error from false command, got nil")
 	}
 }
 
@@ -95,6 +116,16 @@ func TestGitHubClient_ProvisionLabels(t *testing.T) {
 	}
 }
 
+func TestGitHubClient_ProvisionLabels_ErrorContinue(t *testing.T) {
+	executor := newTestScriptExecutor()
+	executor.failCmd = "label create"
+	client := NewGitHubClient("").WithExecutor(executor)
+	err := client.ProvisionLabels(context.Background(), "testmod")
+	if err != nil {
+		t.Fatalf("expected nil error on label create failure, got %v", err)
+	}
+}
+
 func TestGitHubClient_CreateOrUpdateIssue_ExistingNumber(t *testing.T) {
 	mock := newTestScriptExecutor()
 	client := NewGitHubClient("yasuomaidana/dendrite").WithExecutor(mock)
@@ -141,6 +172,31 @@ func TestGitHubClient_CreateOrUpdateIssue_FoundViaSearch(t *testing.T) {
 	}
 }
 
+func TestGitHubClient_CreateOrUpdateIssue_ErrorsAndParseFailure(t *testing.T) {
+	// Case 1: issue create fails
+	executor1 := newTestScriptExecutor()
+	executor1.createErr = errors.New("simulated create failure")
+	client1 := NewGitHubClient("").WithExecutor(executor1)
+	tkt1 := &tracker.RoutingTicket{ID: "DEN-ERR", Title: "Err"}
+	_, err := client1.CreateOrUpdateIssue(context.Background(), tkt1, map[string]int{})
+	if err == nil {
+		t.Fatalf("expected create issue error, got nil")
+	}
+
+	// Case 2: output URL does not end with integer
+	executor2 := newTestScriptExecutor()
+	executor2.createResponse = "https://github.com/org/repo/issues/not-a-number"
+	client2 := NewGitHubClient("").WithExecutor(executor2)
+	tkt2 := &tracker.RoutingTicket{ID: "DEN-NAN", Title: "NaN"}
+	num, err := client2.CreateOrUpdateIssue(context.Background(), tkt2, map[string]int{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if num != 0 {
+		t.Fatalf("expected issue #0 on non-integer parse, got %d", num)
+	}
+}
+
 func TestGitHubClient_SyncTickets(t *testing.T) {
 	mock := newTestScriptExecutor()
 	client := NewGitHubClient("yasuomaidana/dendrite").WithExecutor(mock)
@@ -156,6 +212,22 @@ func TestGitHubClient_SyncTickets(t *testing.T) {
 	}
 	if len(synced) != 2 {
 		t.Fatalf("expected 2 tickets synced, got %d", len(synced))
+	}
+}
+
+func TestGitHubClient_SyncTickets_WithExistingNumber(t *testing.T) {
+	executor := newTestScriptExecutor()
+	client := NewGitHubClient("").WithExecutor(executor)
+	tickets := []*tracker.RoutingTicket{
+		{ID: "DEN-EXISTING", Title: "Existing", GitHubIssueNum: 10},
+		{ID: "DEN-NEW", Title: "New", DependsOn: []string{"DEN-EXISTING"}},
+	}
+	synced, err := client.SyncTickets(context.Background(), tickets)
+	if err != nil {
+		t.Fatalf("unexpected sync error: %v", err)
+	}
+	if len(synced) != 2 {
+		t.Fatalf("expected 2 synced tickets, got %d", len(synced))
 	}
 }
 
