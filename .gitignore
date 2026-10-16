@@ -9,3 +9,4 @@ coverage.out
 *.tmp
 .venv/
 node_modules/
+.dendrite/rag_cache.json

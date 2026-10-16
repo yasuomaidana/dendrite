@@ -307,9 +307,9 @@ func (s *Server) registerAuditTools(deps Dependencies) {
 			{ID: "DEN-705", GitHubIssueNum: 5, State: quality.StateToVerify},
 		}
 		type resItem struct {
-			ID        string             `json:"id"`
-			State     quality.TicketState `json:"state"`
-			FollowUp  *quality.IssueSpec `json:"follow_up,omitempty"`
+			ID       string              `json:"id"`
+			State    quality.TicketState `json:"state"`
+			FollowUp *quality.IssueSpec  `json:"follow_up,omitempty"`
 		}
 		var items []resItem
 		for _, t := range tickets {

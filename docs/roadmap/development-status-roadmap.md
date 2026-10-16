@@ -24,10 +24,10 @@ The authoritative project state is tracked in **Plane v2** (`http://localhost:80
 | :--- | :--- | :--- | :--- |
 | **Active Milestone** | **Milestone 24** — Autonomous Pool DAG & Multi-IDE Project Synchronization (FEAT-029) | Milestone 39 (Project Final) | In Progress |
 | **Current Focus Ticket** | `DEN-807` (Canvas Interactive Writing & Direct Creative Action Handlers) | Next in queue: `DEN-808` / `DEN-051` | Active Focus |
-| **Total Tracked Tickets** | **101 Tickets** (Authoritative Plane v2 Ledger) | 101 Tickets Active | 100% Tracked |
-| **Formally Done & Verified** | **2 / 101 Tickets** (**2.0% Done**) | Formally closed by human review | Verified Done [x] |
-| **Ongoing / In Backlog** | **3 / 101 Tickets** (**3.0% Ongoing**) | Queued / Active execution | In Progress [-] |
-| **To Be Verified by Human** | **96 / 101 Tickets** (**95.0% To Verify**) | DoD Passed ($\ge 85\%$ cov), pending HITL sign-off | Awaiting Human [?] |
+| **Total Tracked Tickets** | **102 Tickets** (Authoritative Plane v2 Ledger) | 102 Tickets Active | 100% Tracked |
+| **Formally Done & Verified** | **2 / 102 Tickets** (**2.0% Done**) | Formally closed by human review | Verified Done [x] |
+| **Ongoing / In Backlog** | **3 / 102 Tickets** (**2.9% Ongoing**) | Queued / Active execution | In Progress [-] |
+| **To Be Verified by Human** | **97 / 102 Tickets** (**95.1% To Verify**) | DoD Passed ($\ge 85\%$ cov), pending HITL sign-off | Awaiting Human [?] |
 | **Core Statement Coverage** | **$\ge 88.4\%$ Average** across all packages | $\ge 85.0\%$ DoD Threshold | Exceeds Target |
 | **Registered MCP Tools** | **66+ Native Tools** (Stdio JSON-RPC 2.0) | JetBrains + Stacks | Operational |
 | **Supported Inference Backends** | 6 Engines (Ollama, OxiLLaMa, TGI, TEI, vLLM, llama.cpp)| Multi-Provider Gateway | Operational |
@@ -242,8 +242,12 @@ All 23 project milestones and their associated tickets:
 ### Milestone 18: Agent Search, Capability Discovery & Semantic Routing Engine (FEAT-022)
 - [ ] **DEN-037**: Hybrid Agent Search, TEI Embeddings & Semantic Routing Engine (`pkg/agentsearch`, `cmd/dendrite`) *(CURRENT FOCUS)*
 
-### Milestone 19: Developer Test Automation, Self-Healing Harness & UI Integration Suite (FEAT-023)
+### Milestone 19: Developer Test Automation, Anti-Mock & uv/bun Toolchain Migration (FEAT-023, FEAT-044)
 - [ ] **DEN-038**: Automated Test Synthesizer, Self-Healing Convergence Loop & Web UI Test Harness (`pkg/testgen`, `pkg/uitest`, `cmd/dendrite`)
+- [ ] **DEND-101**: Tree-sitter Anti-Mock AST Lint Guard & Pre-Commit Interceptor (`pkg/ast`, `pkg/quality`)
+- [ ] **DEND-102**: Plane `To Verify` Intermediate State Transition & HITL Poller (`pkg/tracker/plane`, `pkg/quality`)
+- [ ] **DEND-103**: Toolchain Modernization Specification on `uv` & `bun` (`docs/features/FEAT-044-two-stage-governance-and-anti-mock.md`)
+- [?] **DEN-821**: Standardize Toolchain Migration on uv (Python), bun (Node/TS), and cargo (Rust) across Website, Scripts & CI/CD (`pkg/env/bootstrap`, `scripts`, `website`, `.github/workflows`) *(To Verify [?])*
 
 ### Milestone 20: Open-Source REA Showcase Pipeline & Cleanroom Parity Verification Suite (FEAT-024)
 - [x] **DEN-039**: Open-Source Reverse Engineering Showcases & Cleanroom Parity Verification Suite (`pkg/rea`, `pkg/ai/import`, `tests/showcase`, `cmd/dendrite`)
@@ -569,6 +573,7 @@ All tickets map directly to living architectural documents and feature specifica
   - [FEAT-019: Azure Cloud-Burst Infrastructure](../features/FEAT-019-azure-cloud-burst.md)
   - [FEAT-020: Pluggable Multi-Provider Inference Engines](../features/FEAT-020-pluggable-inference-engines.md)
   - [FEAT-021: Performance Testing & k6 Benchmarking](../features/FEAT-021-performance-testing-k6-benchmark.md)
+  - [FEAT-044: Two-Stage Governance, Zero-Mock Policy & uv/bun Toolchain Migration](../features/FEAT-044-two-stage-governance-and-anti-mock.md)
   - [FEAT-042: Artifact & Package Publisher MCP Service](../features/FEAT-042-artifact-package-publisher-mcp.md)
   - [FEAT-043: Local & Custom-Server Ephemeral CI/CD Routine](../features/FEAT-043-ephemeral-cicd-routine.md)
   - [FEAT-022: Agent Search & Capability Discovery](../features/FEAT-022-agent-search-and-capability-discovery.md)
@@ -596,6 +601,19 @@ All tickets map directly to living architectural documents and feature specifica
 - **Quality Gates & Scorecards**:
   - [Scrum Master Alignment & Code Complexity Scorecard](../quality/scrum-and-complexity-scorecard.md)
   - [CLI Specification & Command Reference](../cli/dendrite-cli-specification.md)
+
+### Ticket `DEN-821`: Standardize Toolchain Migration on uv (Python), bun (Node/TS), and cargo (Rust) across Website, Scripts & CI/CD
+
+- **Target Package**: `pkg/env/bootstrap`, `cmd/dendrite`, `scripts`, `website`, `.github/workflows`
+- **Governing Specs**: [`docs/features/FEAT-044-two-stage-governance-and-anti-mock.md`](../features/FEAT-044-two-stage-governance-and-anti-mock.md), [`docs/GANTT_AND_RELATIONS.md`](../GANTT_AND_RELATIONS.md)
+- **Goal**: Standardize and enforce project dependency management and script execution on `uv` (replacing legacy `pip`), `bun` (replacing legacy `npm`), `cargo` (for Rust components), and `go` (Go toolchain) across repository build, test, and CI/CD pipelines.
+- **Acceptance Criteria**:
+    - [x] **AC-1 (Python Toolchain Standardization on uv)**: Configured `scripts/pyproject.toml` with `uv` metadata for maintenance scripts; banned legacy `pip install`.
+    - [x] **AC-2 (JS/TS Toolchain Standardization on bun)**: Configured `website/package.json` with `packageManager: "bun@1.2.0"` and test runner; sub-second verification.
+    - [x] **AC-3 (Rust Toolchain Standardization on cargo)**: Added `cargo` toolchain inspection, probing, and test execution (`cargo test --verbose`).
+    - [x] **AC-4 (Environment Bootstrapper Enforcement)**: Extended `pkg/env/bootstrap` with `ToolchainInfo`, `DetectStack` toolchain details, and `ProbeToolchains` covering `go`, `cargo`, `bun`, `uv`.
+    - [x] **AC-5 (Polyglot CI/CD Workflow & Verification Script)**: Generated `.github/workflows/ci.yml` and updated `scripts/verify-cicd-local.sh` to run automated verification across Go, Cargo, Bun, and uv.
+    - [x] **AC-6 (DoD & Coverage)**: Statement test coverage $\ge 91.1\%$ across `pkg/env/bootstrap` with zero mocks.
 
 ### Ticket `DEN-813`: Project Environment Preparation, Agent/Skill Sync & CI/CD Enforcement with GitHub Copilot
 

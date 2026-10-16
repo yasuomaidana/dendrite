@@ -79,6 +79,8 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
       - *Example*: `./bin/dendrite mcp call dendrite_topology_advisor '{"nodes":"local=localhost"}'`
   13. `dendrite_gateway_render`: Render dynamic LiteLLM YAML routing configuration for a given topology scenario (`local-hybrid`, `cloud-burst`, `full-local`).
       - *Example*: `./bin/dendrite mcp call dendrite_gateway_render '{"scenario":"local-hybrid"}'`
+  13a. `dendrite_gateway_update`: Dynamically discover live inference engines (OxiLLaMa, Ollama, etc.), score models by intelligence, and update LiteLLM routing table (`stacks/litellm_config.yaml`).
+      - *Example*: `./bin/dendrite mcp call dendrite_gateway_update '{"dry_run":true}'`
   14. `dendrite_telemetry`: Sample real-time SoC thermal metrics, mesh node reachability, and 24h/7d token spend totals.
       - *Example*: `./bin/dendrite mcp call dendrite_telemetry "{}"`
   15. `dendrite_jetbrains_setup`: Configure JetBrains IDE toolset with Dendrite MCP servers (`.ai/mcp/mcp.json`), agent run configurations, and external tools.
@@ -273,6 +275,8 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - `dendrite plane <issues|modules|pages>`: Query live Plane issues, milestones/modules, and documentation pages.
 - `dendrite dev ticket <list|set|push-plane|replicate-plane>`: Inspect or mutate ticket status and sync with Plane.
 - `dendrite dev gateway [scenario]`: Render dynamic LiteLLM configuration YAML.
+- `dendrite gateway update [--file <path>] [--dry-run] [--docker] [--json]`: Manually trigger dynamic LiteLLM routing table discovery and update.
+- `dendrite gateway schedule [--interval 24h] [--file <path>] [--daemon]`: Run daily background daemon updating LiteLLM routing table once every 24h.
 - `dendrite topology advisor [--nodes ...]`: Run remote SSH/local hardware discovery and dynamic microservice placement routing.
 - `dendrite telemetry [metrics|status]`: Emit Prometheus exposition metrics or real-time Apple Silicon SoC thermals.
 - `dendrite env <doctor|plan|install|replicate|status>`: Target computer diagnostic and container replication engine.

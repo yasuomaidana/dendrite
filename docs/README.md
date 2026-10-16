@@ -141,6 +141,7 @@ flowchart TD
    - [JetBrains IDE MCP & Autonomous Agent Integration Guide](./guides/jetbrains-mcp-and-agents-setup.md)
    - [Using Dendrite Tools with JetBrains IDEs Guide](./guides/using-dendrite-tools-with-jetbrains.md)
    - [Development Environment Installation & Replication Guide (Container vs Host)](./guides/environment-replication.md)
+   - [Tutorial: Asking Project Questions with Local RAG & Paid LLM Escalation](./guides/asking-questions-to-dendrite.md)
    - [Environment Sharing, Onboarding & Bootstrap Guide](./guides/sharing-and-onboarding.md)
 4. **CLI & Dashboard System Design**:
    - [Dendrite CLI Specification & Command Reference](./cli/dendrite-cli-specification.md)

@@ -364,6 +364,21 @@ go test -cover ./pkg/...
 
 ---
 
+### Standardized Polyglot Toolchains: Go, Cargo, Bun, uv
+
+Dendrite strictly standardizes on modern, zero-latency toolchains across all sub-projects and documentation portals:
+- **Go (`go`)**: Tested with `go test -v -race -cover ./pkg/...` and formatted with `gofmt` / `golangci-lint`.
+- **Rust (`cargo`)**: Pure-Rust zero-FFI modules and crates managed via `cargo` (`cargo test`, `cargo build`, `cargo clippy`).
+- **JavaScript / TypeScript (`bun`)**: Sub-second documentation build and test execution for `website/` and UI extensions via `bun` (`bun test`, `bun run build`) with zero legacy `npm` or `yarn`.
+- **Python (`uv`)**: Extremely fast dependency resolution and script execution via `uv` (`uv run`, `uv pip`, `scripts/pyproject.toml`) with zero legacy `pip`.
+
+To verify all toolchains locally:
+```bash
+./scripts/verify-cicd-local.sh --toolchains
+```
+
+---
+
 ## 8. Roadmap & Milestone Progress
 
 Active milestone progress and tickets are tracked authoritatively in **Plane v2** (`http://localhost:8090`). **[DEV_STATUS.md](DEV_STATUS.md)** is maintained purely as a human-readable repository mirror replicated from Plane (`dendrite plane replicate`). Autonomous agents must never check or rely on `DEV_STATUS.md` when Plane is available.

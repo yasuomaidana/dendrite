@@ -7,7 +7,7 @@ This document maintains the real-time development status, milestones, and active
 
 ## Current Status Overview
 
-- **Active Milestone**: Milestone 17 — Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)
+- **Active Milestone**: Milestone 24 — Autonomous Pool DAG & Multi-IDE Project Synchronization (FEAT-029)
 - **Current Focus**: 
 - **Last Updated**: 2026-10-16
 - **Overall Progress**: 1 / 100 Tickets Completed (1.0%)
@@ -40,8 +40,25 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 ### Milestone 18: Agent Search, Capability Discovery & Semantic Routing Engine (FEAT-022)
 
 
-### Milestone 19: Developer Test Automation, Self-Healing Harness & UI Integration Suite (FEAT-023)
+### Milestone 19: Developer Test Automation, Anti-Mock & uv/bun Toolchain Migration (FEAT-023, FEAT-044)
 
+- [ ] **DEND-101**: [Anti-Mock Guard]: Tree-sitter AST mock detection & pre-commit hook
+- [ ] **DEND-102**: [Verification Routine]: Plane To Verify intermediate state & dendrite verify skill
+- [ ] **DEND-103**: [Toolchain Migration]: Standardize build & test tooling on uv and bun
+- [ ] **DEN-821**: Standardize Toolchain Migration on uv (Python) and bun (Node/TS) across Website, Scripts & CI/CD
+
+### Milestone 24: Autonomous Pool DAG, Multi-IDE Lifecycler & Toolchain Enforcement (FEAT-029)
+
+- [ ] **DEN-807**: Canvas Interactive Writing & Direct Creative Action Handlers
+- [ ] **DEN-813**: Project Environment Preparation, Agent/Skill Sync & CI/CD Enforcement with GitHub Copilot
+- [ ] **DEN-814**: Dynamic LiteLLM Routing Table Updater & Daily Scheduler with Manual Trigger
+- [ ] **DEN-815**: Decouple Hardcoded Inference Engine Endpoints, Cascade Sequence & Model Catalog
+- [ ] **DEN-816**: Dynamic Triage Engine Hardware Probing & Model Precedence Resolution
+- [ ] **DEN-817**: Decouple Git Commit Synthesis Engine: OxiLLaMa HTTP Adapter & Configurable Fallbacks
+- [ ] **DEN-818**: Externalize Hardcoded Tailscale IPs & Topology Mesh Endpoints
+- [ ] **DEN-819**: Externalize Agent Runner Gateway Credentials & Virtual Key Governance
+- [ ] **DEN-820**: Dynamic Gateway Renderer Model Routing by Live Engine Intelligence
+- [ ] **DEN-821**: Standardize Toolchain Migration on uv (Python) and bun (Node/TS) across Website, Scripts & CI/CD
 
 ### Milestone 20: Open-Source REA Showcase Pipeline & Cleanroom Parity Verification Suite (FEAT-024)
 
@@ -51,6 +68,4 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 ### Milestone 22: Distributed Codebase Ecosystem, Modular REA & Cross-Project Interoperability Coordinator (FEAT-026)
 
-- [ ] **DEN-045**: Scenario 4: Generative Satellite Project Synthesis & Autonomous Plane Project Provisioning (pkg/distcodebase, pkg/tracker/plane, cmd/dendrite)
-- [ ] **DEN-046**: JetBrains IDE Toolset Integration, 19 MCP Tools & Agentic Developer Workflow Guide (pkg/jetbrains, pkg/mcpserver, cmd/dendrite)
 
