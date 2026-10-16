@@ -30,6 +30,7 @@ import (
 	"encoding/json"
 	"flag"
 	"Dendrite/pkg/personalcontext/greeting"
+	"Dendrite/pkg/env/bootstrap"
 	"path/filepath"
 )
 
@@ -776,6 +777,9 @@ func handleEnvCommand(ctx context.Context, action string, args []string) {
 	replicator := env.NewReplicator(nil, *host)
 
 	switch action {
+	case "prepare", "sync", "update":
+		handleEnvPrepareCommand(ctx, args)
+		return
 	case "docusaurus", "site":
 		handleDocusaurusCommand(ctx, args)
 	case "doctor":
@@ -961,6 +965,9 @@ func handleProjectCommand(ctx context.Context, action string, args []string) {
 	}
 
 	switch action {
+	case "prepare", "sync", "update":
+		handleEnvPrepareCommand(ctx, args)
+		return
 	case "docusaurus", "site":
 		handleDocusaurusCommand(ctx, args)
 	case "add":
@@ -1782,4 +1789,67 @@ func handleGreetingCommand(ctx context.Context, args []string) {
 	fmt.Printf("    - Style:    [%s] %s\n", res.StyleID, res.StyleName)
 	fmt.Printf("    - Headline: %s\n", res.Headline)
 	fmt.Printf("    - Template: %s\n", res.TemplateUsed)
+}
+
+func handleEnvPrepareCommand(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("env-prepare", flag.ContinueOnError)
+	tgtPath := fs.String("path", ".", "Target project directory path")
+	tool := fs.String("tool", "copilot", "Default developer and CI/CD assistant tool")
+	noCICD := fs.Bool("no-cicd", false, "Disable CI/CD and Copilot enforcement")
+	noSkills := fs.Bool("no-skills", false, "Disable agent rules and skills synchronization")
+	dryRun := fs.Bool("dry-run", false, "Preview environment preparation without file mutations")
+	asJSON := fs.Bool("json", false, "Output preparation report in JSON format")
+
+	if err := fs.Parse(args); err != nil {
+		return
+	}
+
+	opts := bootstrap.PrepareOptions{
+		ProjectPath: *tgtPath,
+		DefaultTool: *tool,
+		EnforceCICD: !*noCICD,
+		SyncSkills:  !*noSkills,
+		DryRun:      *dryRun,
+	}
+
+	prep := bootstrap.NewPreparer()
+	report, err := prep.Prepare(ctx, opts)
+	if err != nil {
+		fmt.Printf("[-] Failed to prepare project environment: %v\n", err)
+		return
+	}
+
+	if *asJSON {
+		data, _ := json.MarshalIndent(report, "", "  ")
+		fmt.Println(string(data))
+		return
+	}
+
+	fmt.Println("[+] Project Environment Preparation & CI/CD Enforcement:")
+	fmt.Printf("    - Project Path:       %s\n", report.ProjectPath)
+	fmt.Printf("    - Primary Stack:      %s\n", strings.ToUpper(string(report.Stack.PrimaryStack)))
+	if len(report.Stack.SecondaryStacks) > 0 {
+		var sec []string
+		for _, s := range report.Stack.SecondaryStacks {
+			sec = append(sec, strings.ToUpper(string(s)))
+		}
+		fmt.Printf("    - Secondary Stacks:   %s\n", strings.Join(sec, ", "))
+	}
+	fmt.Printf("    - Default Tool:       %s (Installed: %v)\n", report.CICD.DefaultTool, report.CICD.ToolInstalled)
+	if !report.CICD.ToolInstalled && report.CICD.ToolInstallCommand != "" {
+		fmt.Printf("      * Tooling Guide:    %s\n", report.CICD.ToolInstallCommand)
+	}
+	fmt.Printf("    - Coverage Gate:      >= %.1f%%\n", report.CICD.CoverageThreshold)
+	fmt.Printf("    - Copilot Rules:      %s\n", report.CICD.CopilotInstructions)
+	fmt.Printf("    - CI/CD Workflow:     %s\n", report.CICD.CIWorkflowPath)
+	if len(report.FilesCreated) > 0 {
+		fmt.Printf("    - Files Created (%d): %s\n", len(report.FilesCreated), strings.Join(report.FilesCreated, ", "))
+	}
+	if len(report.FilesUpdated) > 0 {
+		fmt.Printf("    - Files Updated (%d): %s\n", len(report.FilesUpdated), strings.Join(report.FilesUpdated, ", "))
+	}
+	if len(report.SkillsSynced) > 0 {
+		fmt.Printf("    - Skills Synced (%d): %s\n", len(report.SkillsSynced), strings.Join(report.SkillsSynced, ", "))
+	}
+	fmt.Printf("    - Execution Duration: %v\n", report.Duration)
 }

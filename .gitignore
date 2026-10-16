@@ -5,3 +5,5 @@ website/docs/
 bin/
 .aider*
 .env
+coverage.out
+*.tmp

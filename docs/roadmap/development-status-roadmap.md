@@ -26,17 +26,17 @@ The authoritative project state is tracked in **Plane v2** (`http://localhost:80
 | **Current Focus Ticket** | `DEN-807` (Canvas Interactive Writing & Direct Creative Action Handlers) | Next in queue: `DEN-808` / `DEN-051` | Active Focus |
 | **Total Tracked Tickets** | **101 Tickets** (Authoritative Plane v2 Ledger) | 101 Tickets Active | 100% Tracked |
 | **Formally Done & Verified** | **2 / 101 Tickets** (**2.0% Done**) | Formally closed by human review | Verified Done [x] |
-| **Ongoing / In Backlog** | **4 / 101 Tickets** (**4.0% Ongoing**) | Queued / Active execution | In Progress [-] |
-| **To Be Verified by Human** | **95 / 101 Tickets** (**94.1% To Verify**) | DoD Passed ($\ge 85\%$ cov), pending HITL sign-off | Awaiting Human [?] |
+| **Ongoing / In Backlog** | **3 / 101 Tickets** (**3.0% Ongoing**) | Queued / Active execution | In Progress [-] |
+| **To Be Verified by Human** | **96 / 101 Tickets** (**95.0% To Verify**) | DoD Passed ($\ge 85\%$ cov), pending HITL sign-off | Awaiting Human [?] |
 | **Core Statement Coverage** | **$\ge 88.4\%$ Average** across all packages | $\ge 85.0\%$ DoD Threshold | Exceeds Target |
-| **Registered MCP Tools** | **65+ Native Tools** (Stdio JSON-RPC 2.0) | JetBrains + Stacks | Operational |
+| **Registered MCP Tools** | **66+ Native Tools** (Stdio JSON-RPC 2.0) | JetBrains + Stacks | Operational |
 | **Supported Inference Backends** | 6 Engines (Ollama, OxiLLaMa, TGI, TEI, vLLM, llama.cpp)| Multi-Provider Gateway | Operational |
 | **Last Synchronized** | 2026-10-16 | Real-time Plane Sync | Verified |
 
 ```mermaid
 pie title Real-Time Ticket Status Breakdown (Plane v2 Authority)
-    "To Be Verified by Human (95)" : 95
-    "Ongoing / Active Backlog (4)" : 4
+    "To Be Verified by Human (96)" : 96
+    "Ongoing / Active Backlog (3)" : 3
     "Done / Formally Verified (2)" : 2
 ```
 

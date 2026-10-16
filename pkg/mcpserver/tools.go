@@ -910,4 +910,6 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 	s.registerMigrateTools(deps)
 	// Personal Context Greeting Tools
 	s.registerGreetingTools(deps)
+	// Project Environment Preparation & CI/CD Tools
+	s.registerEnvPrepareTools(deps)
 }

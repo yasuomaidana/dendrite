@@ -226,7 +226,11 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   65. `dendrite_pcontext_greeting_generate`: Generates dynamic 10-style personalized headline greeting with strict cliché suppression, sliding history tracking, and journey context resolution.
       - *Example*: `./bin/dendrite mcp call dendrite_pcontext_greeting_generate '{"topic":"Project Dendrite","milestone":"Beta Launch","milestone_achieved":true}'`
 
+  66. `dendrite_env_prepare`: Prepares, synchronizes, and enforces CI/CD practices on a project repository with GitHub Copilot as default, scaffolding copilot instructions, CI workflows with >= 85% coverage gate, and agent rules.
+      - *Example*: `./bin/dendrite mcp call dendrite_env_prepare '{"project_path":".","default_tool":"copilot"}'`
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
+- `dendrite env <prepare|sync|update> [--path <dir>] [--tool <name>] [--no-cicd] [--no-skills] [--dry-run] [--json]`: Prepares environment, synchronizes agent rules and skills, and enforces CI/CD with GitHub Copilot as default (alias: `dendrite project <prepare|sync|update>`).
 - `dendrite greeting [--topic <t>] [--milestone <m>] [--event <e>] [--days <d>] [--options <a,b>] [--challenge <c>] [--stress] [--hobby] [--suppress <g1,g2>] [--json]`: Dynamic 10-Style Greeting Matrix resolution with strict cliché suppression.
 - `dendrite move <svc> to --ssh <target> [--dry-run] [--yes] [--no-prune]`: Zero-credential interactive service migration pipeline moving containerized services to a remote SSH server.
 - `dendrite move debian --ssh <target>`: Automatically migrates all services compatible with target Debian server (Plane + LiteLLM + Database within 4 GB RAM / 1 TB Disk budget).
