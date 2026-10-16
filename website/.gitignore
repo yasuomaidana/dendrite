@@ -5,6 +5,3 @@ build/
 *.log
 .DS_Store
 dendrite-docs.tar.gz
-
-# Generated doc copies (single source of truth is docs/)
-docs/

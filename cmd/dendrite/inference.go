@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os/exec"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -186,6 +187,38 @@ func handleInferenceCommand(ctx context.Context, args []string) {
 		if daemonMode {
 			fmt.Println("[+] Running in daemon mode. Press Ctrl+C to terminate.")
 			select {}
+		}
+
+	case "stop", "kill":
+		port := 8080
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--port" && i+1 < len(args) {
+				if p, err := strconv.Atoi(args[i+1]); err == nil {
+					port = p
+				}
+				i++
+			}
+		}
+
+		fmt.Printf("[+] Stopping OxiLLaMa server on port %d...\n", port)
+		lsofCmd := exec.CommandContext(ctx, "lsof", "-ti", fmt.Sprintf(":%d", port))
+		out, _ := lsofCmd.Output()
+		pids := strings.Fields(string(out))
+		stopped := 0
+		for _, pidStr := range pids {
+			if pid, pErr := strconv.Atoi(pidStr); pErr == nil && pid > 0 {
+				if proc, fErr := os.FindProcess(pid); fErr == nil {
+					_ = proc.Kill()
+					stopped++
+				}
+			}
+		}
+		_ = exec.CommandContext(ctx, "pkill", "-f", "oxillama serve").Run()
+
+		if stopped > 0 {
+			fmt.Printf("[✓] Successfully stopped OxiLLaMa server (terminated %d process(es) on port %d)\n", stopped, port)
+		} else {
+			fmt.Printf("[✓] OxiLLaMa server is not currently running on port %d.\n", port)
 		}
 
 	case "zero-cost", "zerocost", "models":
@@ -384,6 +417,7 @@ func printInferenceUsage() {
 	fmt.Println("  switch <engine_id>            Set primary inference engine at front of fallback cascade")
 	fmt.Println("  render                        Render upstream model routes into litellm_config.yaml")
 	fmt.Println("  serve [--port 8080] [-d]      Start local OxiLLaMa OpenAI-compatible HTTP server")
+	fmt.Println("  stop [--port 8080]            Stop running OxiLLaMa server and free port")
 	fmt.Println("  migrate <model> [flags]       Migrate model from Ollama to OxiLLaMa and evict source blobs")
 	fmt.Println("  zero-cost <list|add|rm|test>  Manage and test zero-cost self-hosted models and prefixes")
 }
