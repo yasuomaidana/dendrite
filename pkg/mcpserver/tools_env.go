@@ -10,6 +10,10 @@ import (
 )
 
 func (s *Server) registerEnvBootstrapTools(deps Dependencies) {
+	s.registerEnvPrepareTools(deps)
+}
+
+func (s *Server) registerEnvPrepareTools(deps Dependencies) {
 	// dendrite_env_prepare
 	s.RegisterTool(Tool{
 		Name:        "dendrite_env_prepare",
