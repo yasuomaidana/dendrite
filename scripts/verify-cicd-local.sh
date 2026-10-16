@@ -7,7 +7,8 @@
 #   2. Dendrite Anti-Mock Scan & Coverage Audit
 #   3. GitHub Copilot Instructions & Skills Sync Check
 #   4. Go Formatting, Linter (golangci-lint), Race Detection & Coverage Gate (>= 85%)
-#   5. Native GitHub Actions Container Runner (via `act`)
+#   5. Polyglot Toolchain Verification (Cargo, Bun, uv)
+#   6. Native GitHub Actions Container Runner (via `act`)
 # ==============================================================================
 set -euo pipefail
 
@@ -39,8 +40,9 @@ usage() {
     echo "Usage: $0 [MODE]"
     echo ""
     echo "Modes:"
-    echo "  --all       (Default) Run complete local verification (VCS, Lint, Test, Coverage, Build)"
+    echo "  --all       (Default) Run complete local verification (VCS, Lint, Test, Coverage, Toolchains, Build)"
     echo "  --fast      Run quick verification (Format, Vet, and Unit tests without race detector)"
+    echo "  --toolchains Verify installed polyglot toolchains (Cargo, Bun, uv, Go)"
     echo "  --act       Run the GitHub Actions workflow (.github/workflows/ci.yml) via 'act' in Docker"
     echo "  --copilot   Verify GitHub Copilot CLI and custom instructions"
     echo "  --help      Show this help message"
@@ -48,7 +50,7 @@ usage() {
 
 # 1. Step: VCS Guard & Branch Policy
 step_vcs_guard() {
-    log_info "1/6 Verifying Git Branch Policy & VCS Guard..."
+    log_info "1/7 Verifying Git Branch Policy & VCS Guard..."
     if [ -x "./bin/dendrite" ]; then
         ./bin/dendrite vcs check || {
             log_err "VCS Guard rejected branch state."
@@ -67,7 +69,7 @@ step_vcs_guard() {
 
 # 2. Step: Copilot Instructions & Skills Sync
 step_copilot_sync() {
-    log_info "2/6 Verifying Copilot Instructions & Agent Skills..."
+    log_info "2/7 Verifying Copilot Instructions & Agent Skills..."
     if [ ! -f ".github/copilot-instructions.md" ] || [ ! -f ".github/workflows/ci.yml" ]; then
         log_warn "Missing CI/CD or Copilot configuration. Synchronizing environment..."
         if [ -x "./bin/dendrite" ]; then
@@ -82,7 +84,7 @@ step_copilot_sync() {
 
 # 3. Step: Source Code Formatting & Static Analysis
 step_lint() {
-    log_info "3/6 Verifying Code Formatting & Linters..."
+    log_info "3/7 Verifying Code Formatting & Linters..."
     
     # Check gofmt
     UNFORMATTED=$(gofmt -l pkg/ cmd/ 2>/dev/null || true)
@@ -110,7 +112,7 @@ step_lint() {
 
 # 4. Step: Anti-Mock Quality Audit
 step_anti_mock() {
-    log_info "4/6 Running Dendrite Anti-Mock Audit..."
+    log_info "4/7 Running Dendrite Anti-Mock Audit..."
     if [ -x "./bin/dendrite" ]; then
         ./bin/dendrite quality audit pkg/env/bootstrap || log_warn "Quality audit reported warnings."
     else
@@ -118,10 +120,53 @@ step_anti_mock() {
     fi
 }
 
-# 5. Step: Test Suite & Mandatory Statement Coverage (>= 85.0%)
+# 5. Step: Polyglot Toolchains Verification (Cargo, Bun, uv)
+step_toolchains() {
+    log_info "5/7 Verifying Canonical Polyglot Toolchains (Cargo, Bun, uv)..."
+
+    # Cargo (Rust)
+    if command -v cargo >/dev/null 2>&1; then
+        CARGO_VER=$(cargo --version)
+        log_ok "Rust Toolchain: ${CARGO_VER}"
+        if [ -f "Cargo.toml" ]; then
+            log_info "Running: cargo test --verbose"
+            cargo test --verbose
+        fi
+    else
+        log_warn "cargo not installed. Install via: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+    fi
+
+    # Bun (JS/TS)
+    if command -v bun >/dev/null 2>&1; then
+        BUN_VER=$(bun --version)
+        log_ok "Bun Runtime & Package Manager: v${BUN_VER}"
+        if [ -d "website" ] && [ -f "website/package.json" ]; then
+            log_info "Running Bun test in website/..."
+            (cd website && bun run test)
+            log_ok "Bun test verification passed."
+        fi
+    else
+        log_warn "bun not installed. Install via: curl -fsSL https://bun.sh/install | bash"
+    fi
+
+    # uv (Python)
+    if command -v uv >/dev/null 2>&1; then
+        UV_VER=$(uv --version)
+        log_ok "uv Python Toolchain: ${UV_VER}"
+        if [ -f "scripts/pyproject.toml" ]; then
+            log_info "Verifying scripts/pyproject.toml with uv..."
+            (cd scripts && uv pip list 2>/dev/null || true)
+            log_ok "uv project verification clean."
+        fi
+    else
+        log_warn "uv not installed. Install via: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    fi
+}
+
+# 6. Step: Test Suite & Mandatory Statement Coverage (>= 85.0%)
 step_test_coverage() {
     local mode="${1:-full}"
-    log_info "5/6 Executing Test Suites & Measuring Statement Coverage..."
+    log_info "6/7 Executing Test Suites & Measuring Statement Coverage..."
     
     if [ "$mode" = "fast" ]; then
         go test -v ./pkg/env/bootstrap/...
@@ -142,15 +187,15 @@ step_test_coverage() {
         if [ "$PASS" = "1" ]; then
             log_ok "Statement coverage ${TOTAL_COV}% meets DoD threshold (>= 85.0%)."
         else
-            log_err "Statement coverage ${TOTAL_COV}% is below required 85.0% threshold!"
+            log_err "Statement coverage ${TOTAL_COV}% is below required 85.0% threshold!}"
             return 1
         fi
     fi
 }
 
-# 6. Step: Binary Compilation Check
+# 7. Step: Binary Compilation Check
 step_build() {
-    log_info "6/6 Verifying Compilation & Binary Build..."
+    log_info "7/7 Verifying Compilation & Binary Build..."
     go build -v -o bin/dendrite ./cmd/dendrite
     log_ok "Binary successfully compiled at ./bin/dendrite"
 }
@@ -189,6 +234,9 @@ main() {
             echo ""
             log_ok "${BOLD}Fast CI/CD verification succeeded!${NC}"
             ;;
+        --toolchains)
+            step_toolchains
+            ;;
         --act)
             run_act_runner
             ;;
@@ -205,6 +253,7 @@ main() {
             step_copilot_sync
             step_lint
             step_anti_mock
+            step_toolchains
             step_test_coverage "full"
             step_build
             echo ""

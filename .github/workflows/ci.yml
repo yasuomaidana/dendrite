@@ -28,3 +28,28 @@ jobs:
           total=$(go tool cover -func=coverage.out | grep 'total:' | awk '{print $3}' | sed 's/%//')
           echo "Total Statement Coverage: ${total}%"
           awk -v cov="$total" 'BEGIN { if (cov < 85.0) { print "[-] Statement coverage " cov "% is below required 85.0%"; exit 1 } else { print "[✓] Coverage gate passed: " cov "%"; exit 0 } }'
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Run Bun Tests & Build
+        run: |
+          if [ -d "website" ]; then
+            cd website && bun install --frozen-lockfile && bun run build
+          else
+            bun test
+          fi
+
+      - name: Set up uv (Python)
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Verify Python Environment with uv
+        run: |
+          uv --version
+          if [ -f "scripts/pyproject.toml" ]; then
+            cd scripts && uv pip list || true
+          fi

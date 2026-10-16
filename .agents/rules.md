@@ -8,5 +8,10 @@
 ## Architecture & CI/CD Tooling Defaults
 - Default CI/CD & Assistant Tool: **GitHub Copilot** (`.github/copilot-instructions.md`).
 - Primary Stack: `go`
+- Standardized Toolsets:
+  - **Go**: `go test -v -race`, `golangci-lint`
+  - **Rust**: `cargo test`, `cargo build`, `cargo clippy`
+  - **JavaScript / TypeScript**: `bun test`, `bun run build` (zero npm)
+  - **Python**: `uv run`, `uv pip` (zero legacy pip)
 - Statement coverage threshold: **>= 85.0%**.
 - Anti-mock policy: genuine structs and Testcontainers only.

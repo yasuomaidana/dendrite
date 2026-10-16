@@ -40,9 +40,12 @@ func TestDetectStack(t *testing.T) {
 		if len(fp.Linters) == 0 || fp.Linters[0] != "golangci-lint" {
 			t.Errorf("expected golangci-lint in linters, got %v", fp.Linters)
 		}
+		if len(fp.Toolchains) == 0 || fp.Toolchains[0] != "go" {
+			t.Errorf("expected go in toolchains, got %v", fp.Toolchains)
+		}
 	})
 
-	t.Run("detect rust and polyglot typescript project", func(t *testing.T) {
+	t.Run("detect rust and polyglot typescript project with cargo and bun", func(t *testing.T) {
 		tmpDir, err := os.MkdirTemp("", "polyglot-proj-*")
 		if err != nil {
 			t.Fatalf("failed to create temp dir: %v", err)
@@ -62,12 +65,24 @@ func TestDetectStack(t *testing.T) {
 		if fp.PrimaryStack != StackRust {
 			t.Errorf("expected StackRust primary, got %s", fp.PrimaryStack)
 		}
+		if !fp.HasCargo {
+			t.Errorf("expected HasCargo true")
+		}
+		if !fp.HasBun {
+			t.Errorf("expected HasBun true")
+		}
 		if len(fp.SecondaryStacks) == 0 || fp.SecondaryStacks[0] != StackTypeScript {
 			t.Errorf("expected StackTypeScript secondary, got %v", fp.SecondaryStacks)
 		}
+		if tc, ok := fp.ToolchainDetails["cargo"]; !ok || tc.Binary != "cargo" {
+			t.Errorf("expected cargo toolchain details")
+		}
+		if tc, ok := fp.ToolchainDetails["bun"]; !ok || tc.Binary != "bun" {
+			t.Errorf("expected bun toolchain details")
+		}
 	})
 
-	t.Run("detect python project", func(t *testing.T) {
+	t.Run("detect python project with uv", func(t *testing.T) {
 		tmpDir, err := os.MkdirTemp("", "py-proj-*")
 		if err != nil {
 			t.Fatalf("failed to create temp dir: %v", err)
@@ -84,6 +99,12 @@ func TestDetectStack(t *testing.T) {
 
 		if fp.PrimaryStack != StackPython {
 			t.Errorf("expected StackPython, got %s", fp.PrimaryStack)
+		}
+		if !fp.HasUV {
+			t.Errorf("expected HasUV true")
+		}
+		if tc, ok := fp.ToolchainDetails["uv"]; !ok || tc.Binary != "uv" {
+			t.Errorf("expected uv toolchain details")
 		}
 	})
 }
@@ -149,6 +170,43 @@ func TestProbeGitHubCopilot(t *testing.T) {
 	})
 }
 
+func TestProbeToolchains(t *testing.T) {
+	p := NewPreparer()
+	p.SetLookPath(func(cmd string) (string, error) {
+		switch cmd {
+		case "go":
+			return "/usr/local/go/bin/go", nil
+		case "cargo":
+			return "/Users/test/.cargo/bin/cargo", nil
+		case "bun":
+			return "/Users/test/.bun/bin/bun", nil
+		case "uv":
+			return "/opt/homebrew/bin/uv", nil
+		default:
+			return "", errors.New("not found")
+		}
+	})
+
+	tools := p.ProbeToolchains()
+	if len(tools) != 4 {
+		t.Fatalf("expected 4 toolchains, got %d", len(tools))
+	}
+
+	found := make(map[string]bool)
+	for _, tc := range tools {
+		if !tc.Installed {
+			t.Errorf("expected toolchain %s to be installed", tc.Name)
+		}
+		found[tc.Name] = true
+	}
+
+	for _, expected := range []string{"go", "cargo", "bun", "uv"} {
+		if !found[expected] {
+			t.Errorf("missing toolchain %s in probe results", expected)
+		}
+	}
+}
+
 func TestPreparePipeline_EndToEnd(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "prepare-test-*")
 	if err != nil {
@@ -156,17 +214,33 @@ func TestPreparePipeline_EndToEnd(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create fake go project
-	_ = os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module github.com/org/app\n\ngo 1.24\n"), 0644)
+	// Create fake polyglot project (Go + Cargo + Bun + uv)
+	_ = os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module github.com/org/app\n\ngo 1.25\n"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "Cargo.toml"), []byte("[package]\nname = \"rust-core\"\n"), 0644)
+	_ = os.MkdirAll(filepath.Join(tmpDir, "website"), 0755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "website", "package.json"), []byte("{\"name\": \"web-portal\"}\n"), 0644)
+	_ = os.MkdirAll(filepath.Join(tmpDir, "scripts"), 0755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "scripts", "pyproject.toml"), []byte("[project]\nname = \"scripts\"\n"), 0644)
+
 	_ = os.MkdirAll(filepath.Join(tmpDir, ".gemini", "skills", "my-skill"), 0755)
 	_ = os.WriteFile(filepath.Join(tmpDir, ".gemini", "skills", "my-skill", "SKILL.md"), []byte("# My Skill\n"), 0644)
 
 	p := NewPreparer()
 	p.SetLookPath(func(cmd string) (string, error) {
-		if cmd == "copilot" {
+		switch cmd {
+		case "copilot":
 			return "/usr/local/bin/copilot", nil
+		case "go":
+			return "/usr/local/go/bin/go", nil
+		case "cargo":
+			return "/Users/test/.cargo/bin/cargo", nil
+		case "bun":
+			return "/Users/test/.bun/bin/bun", nil
+		case "uv":
+			return "/opt/homebrew/bin/uv", nil
+		default:
+			return "", errors.New("not found")
 		}
-		return "", errors.New("not found")
 	})
 
 	ctx := context.Background()
@@ -210,8 +284,8 @@ func TestPreparePipeline_EndToEnd(t *testing.T) {
 	if report.CICD.DefaultTool != "copilot" {
 		t.Errorf("expected default tool copilot, got %s", report.CICD.DefaultTool)
 	}
-	if report.CICD.CoverageThreshold != 85.0 {
-		t.Errorf("expected coverage threshold 85.0, got %f", report.CICD.CoverageThreshold)
+	if len(report.CICD.Toolchains) != 4 {
+		t.Errorf("expected 4 toolchains in CICD report, got %d", len(report.CICD.Toolchains))
 	}
 
 	// Verify files actually created on disk
@@ -220,11 +294,15 @@ func TestPreparePipeline_EndToEnd(t *testing.T) {
 		t.Errorf("expected %s to exist", copilotMD)
 	}
 	content, _ := os.ReadFile(copilotMD)
-	if !strings.Contains(string(content), "Zero Code Without Plane Ticket Mandate") {
+	strContent := string(content)
+	if !strings.Contains(strContent, "Zero Code Without Plane Ticket Mandate") {
 		t.Errorf("missing Plane mandate in copilot instructions")
 	}
-	if !strings.Contains(string(content), ">= 85.0%") {
-		t.Errorf("missing coverage gate in copilot instructions")
+	if !strings.Contains(strContent, "Approved & Enforced Toolchains (Go, Cargo, Bun, uv)") {
+		t.Errorf("missing approved toolchains section in copilot instructions")
+	}
+	if !strings.Contains(strContent, "bun") || !strings.Contains(strContent, "uv") || !strings.Contains(strContent, "cargo") {
+		t.Errorf("missing bun/uv/cargo references in copilot instructions")
 	}
 
 	ciYML := filepath.Join(tmpDir, ".github", "workflows", "ci.yml")
@@ -232,13 +310,27 @@ func TestPreparePipeline_EndToEnd(t *testing.T) {
 		t.Errorf("expected %s to exist", ciYML)
 	}
 	ciContent, _ := os.ReadFile(ciYML)
-	if !strings.Contains(string(ciContent), "setup-go") {
+	strCI := string(ciContent)
+	if !strings.Contains(strCI, "setup-go") {
 		t.Errorf("expected go setup in CI workflow")
+	}
+	if !strings.Contains(strCI, "cargo test") {
+		t.Errorf("expected cargo test in CI workflow")
+	}
+	if !strings.Contains(strCI, "setup-bun") {
+		t.Errorf("expected bun setup in CI workflow")
+	}
+	if !strings.Contains(strCI, "setup-uv") {
+		t.Errorf("expected uv setup in CI workflow")
 	}
 
 	rulesMD := filepath.Join(tmpDir, ".agents", "rules.md")
 	if !fileExists(rulesMD) {
 		t.Errorf("expected %s to exist", rulesMD)
+	}
+	rulesData, _ := os.ReadFile(rulesMD)
+	if !strings.Contains(string(rulesData), "bun") || !strings.Contains(string(rulesData), "cargo") || !strings.Contains(string(rulesData), "uv") {
+		t.Errorf("expected rules to state bun, cargo, uv toolsets")
 	}
 
 	agentsMD := filepath.Join(tmpDir, "AGENTS.md")

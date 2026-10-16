@@ -58,6 +58,46 @@ func (p *Preparer) ProbeGitHubCopilot() (bool, string, string) {
 	return false, "", "Install GitHub Copilot CLI via: npm install -g @github/copilot-cli OR gh extension install github/gh-copilot"
 }
 
+// ProbeToolchains evaluates availability of canonical toolchains: go, cargo, bun, uv.
+func (p *Preparer) ProbeToolchains() []ToolchainInfo {
+	if p.lookPathFn == nil {
+		p.lookPathFn = exec.LookPath
+	}
+
+	defs := []struct {
+		name       string
+		bin        string
+		installCmd string
+		testCmd    string
+		buildCmd   string
+	}{
+		{"go", "go", "curl -fsSL https://go.dev/dl/ || brew install go", "go test -v -race -cover ./pkg/...", "go build -v -o bin/dendrite ./cmd/dendrite"},
+		{"cargo", "cargo", "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh", "cargo test --verbose", "cargo build --release"},
+		{"bun", "bun", "curl -fsSL https://bun.sh/install | bash", "bun test", "bun run build"},
+		{"uv", "uv", "curl -LsSf https://astral.sh/uv/install.sh | sh", "uv run pytest", "uv build"},
+	}
+
+	var results []ToolchainInfo
+	for _, d := range defs {
+		path, err := p.lookPathFn(d.bin)
+		installed := err == nil && path != ""
+		info := ToolchainInfo{
+			Name:           d.name,
+			Binary:         d.bin,
+			Installed:      installed,
+			InstallCommand: d.installCmd,
+			TestCommand:    d.testCmd,
+			BuildCommand:   d.buildCmd,
+		}
+		if installed {
+			info.Binary = path
+		}
+		results = append(results, info)
+	}
+
+	return results
+}
+
 // Prepare runs the complete environment preparation, agent synchronization, and CI/CD enforcement pipeline.
 func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareReport, error) {
 	start := time.Now()
@@ -83,9 +123,11 @@ func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareRe
 		Success:      true,
 	}
 
-	// 1. CI/CD & GitHub Copilot Enforcement
+	// 1. CI/CD & Toolchain Enforcement
 	if opts.EnforceCICD {
 		installed, bin, installCmd := p.ProbeGitHubCopilot()
+		toolchains := p.ProbeToolchains()
+
 		cicd := CICDStatus{
 			DefaultTool:         opts.DefaultTool,
 			ToolInstalled:       installed,
@@ -94,6 +136,7 @@ func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareRe
 			CoverageThreshold:   85.0,
 			CopilotInstructions: filepath.Join(".github", "copilot-instructions.md"),
 			CIWorkflowPath:      filepath.Join(".github", "workflows", "ci.yml"),
+			Toolchains:          toolchains,
 			Enforced:            true,
 		}
 
@@ -172,7 +215,7 @@ func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool)
 		updated = append(updated, filepath.Join(".github", "workflows", "ci.yml"))
 	}
 
-	// 3. Ensure .gitignore excludes coverage and build artifacts
+	// 3. Ensure .gitignore excludes coverage, build artifacts, lockfiles
 	giCreated, giUpdated := ensureGitignoreEntries(root, dryRun)
 	if giCreated {
 		created = append(created, ".gitignore")
@@ -290,6 +333,8 @@ func ensureGitignoreEntries(root string, dryRun bool) (bool, bool) {
 		"coverage.out",
 		"*.tmp",
 		"bin/",
+		".venv/",
+		"node_modules/",
 	}
 
 	var toAppend []string
@@ -340,17 +385,27 @@ func renderCopilotInstructions(fp ProjectFingerprint) string {
 	sb.WriteString("- All persistent database layers (Postgres, Redis, MinIO) must use **Testcontainers** for real integration tests.\n")
 	sb.WriteString("- Maintain minimum statement coverage: **>= 85.0%** across all new packages.\n\n")
 
-	sb.WriteString("## 3. Technology Stack & Coding Standards\n")
+	sb.WriteString("## 3. Approved & Enforced Toolchains (Go, Cargo, Bun, uv)\n")
+	sb.WriteString("All tooling and dependency operations must use project-approved toolchains:\n")
+	sb.WriteString("- **Go**: `go` (`go test -v -race -cover ./pkg/...`, `golangci-lint`)\n")
+	sb.WriteString("- **Rust**: `cargo` (`cargo test --verbose`, `cargo build --release`, `cargo clippy`)\n")
+	sb.WriteString("- **JavaScript / TypeScript**: `bun` (`bun test`, `bun run build`, `bun install --frozen-lockfile`) - legacy `npm` and `yarn` are strictly banned\n")
+	sb.WriteString("- **Python**: `uv` (`uv run pytest`, `uv pip list`, `uv venv`) - legacy `pip install` is strictly banned\n\n")
+
+	sb.WriteString("## 4. Technology Stack & Coding Standards\n")
 	sb.WriteString(fmt.Sprintf("- **Primary Stack**: %s\n", strings.ToUpper(string(fp.PrimaryStack))))
 	if fp.GoVersion != "" {
 		sb.WriteString(fmt.Sprintf("- **Go Toolchain**: %s\n", fp.GoVersion))
+	}
+	if len(fp.Toolchains) > 0 {
+		sb.WriteString(fmt.Sprintf("- **Active Toolchains**: %s\n", strings.Join(fp.Toolchains, ", ")))
 	}
 	if len(fp.Linters) > 0 {
 		sb.WriteString(fmt.Sprintf("- **Enforced Linters**: %s\n", strings.Join(fp.Linters, ", ")))
 	}
 	sb.WriteString("- **Complexity Limits**: Cyclomatic Complexity <= 15 per function, Cognitive Complexity <= 20, max function length <= 80 lines.\n\n")
 
-	sb.WriteString("## 4. Model Precedence & Zero-Cost Delegation\n")
+	sb.WriteString("## 5. Model Precedence & Zero-Cost Delegation\n")
 	sb.WriteString("- Commit messages and repetitive test digestions must be delegated to local zero-cost models (`qwen3.8:27b` / Ollama Metal) to conserve API tokens.\n")
 	sb.WriteString("- Cloud models (Gemini Pro, Copilot Sonnet) are reserved for macro architecture, complex decomposition, and review gates.\n")
 
@@ -373,11 +428,11 @@ func renderCIWorkflow(fp ProjectFingerprint) string {
 	sb.WriteString("      - name: Checkout Code\n")
 	sb.WriteString("        uses: actions/checkout@v4\n\n")
 
-	switch fp.PrimaryStack {
-	case StackGo:
+	// 1. Go toolchain (if Go is detected or is primary)
+	if fp.HasGoMod || fp.PrimaryStack == StackGo {
 		goVer := fp.GoVersion
 		if goVer == "" {
-			goVer = "1.24"
+			goVer = "1.25"
 		}
 		sb.WriteString("      - name: Set up Go\n")
 		sb.WriteString("        uses: actions/setup-go@v5\n")
@@ -385,15 +440,33 @@ func renderCIWorkflow(fp ProjectFingerprint) string {
 		sb.WriteString("      - name: Run Tests with Coverage\n")
 		sb.WriteString("        run: |\n          go test -v -race -coverprofile=coverage.out -covermode=atomic ./pkg/...\n")
 		sb.WriteString("      - name: Verify Coverage Threshold (>= 85%)\n")
-		sb.WriteString("        run: |\n          total=$(go tool cover -func=coverage.out | grep 'total:' | awk '{print $3}' | sed 's/%//')\n          echo \"Total Statement Coverage: ${total}%\"\n          awk -v cov=\"$total\" 'BEGIN { if (cov < 85.0) { print \"[-] Statement coverage \" cov \"% is below required 85.0%\"; exit 1 } else { print \"[\u2713] Coverage gate passed: \" cov \"%\"; exit 0 } }'\n")
-	case StackRust:
-		sb.WriteString("      - name: Set up Rust\n")
+		sb.WriteString("        run: |\n          total=$(go tool cover -func=coverage.out | grep 'total:' | awk '{print $3}' | sed 's/%//')\n          echo \"Total Statement Coverage: ${total}%\"\n          awk -v cov=\"$total\" 'BEGIN { if (cov < 85.0) { print \"[-] Statement coverage \" cov \"% is below required 85.0%\"; exit 1 } else { print \"[\u2713] Coverage gate passed: \" cov \"%\"; exit 0 } }'\n\n")
+	}
+
+	// 2. Rust & Cargo toolchain
+	if fp.HasCargoToml || fp.HasCargo || fp.PrimaryStack == StackRust {
+		sb.WriteString("      - name: Set up Rust (cargo)\n")
 		sb.WriteString("        uses: dtolnay/rust-toolchain@stable\n\n")
-		sb.WriteString("      - name: Run Tests\n")
-		sb.WriteString("        run: cargo test --verbose\n")
-	default:
-		sb.WriteString("      - name: Run Verification\n")
-		sb.WriteString("        run: echo \"Running automated stack tests...\"\n")
+		sb.WriteString("      - name: Run Cargo Tests\n")
+		sb.WriteString("        run: cargo test --verbose\n\n")
+	}
+
+	// 3. JS/TS & Bun toolchain
+	if fp.HasPackageJSON || fp.HasBun || fp.PrimaryStack == StackJavaScript || fp.PrimaryStack == StackTypeScript {
+		sb.WriteString("      - name: Set up Bun\n")
+		sb.WriteString("        uses: oven-sh/setup-bun@v2\n")
+		sb.WriteString("        with:\n          bun-version: latest\n\n")
+		sb.WriteString("      - name: Run Bun Tests & Build\n")
+		sb.WriteString("        run: |\n          if [ -d \"website\" ]; then\n            cd website && bun install --frozen-lockfile && bun run build\n          else\n            bun test\n          fi\n\n")
+	}
+
+	// 4. Python & uv toolchain
+	if fp.HasPyProject || fp.HasUV || fp.PrimaryStack == StackPython {
+		sb.WriteString("      - name: Set up uv (Python)\n")
+		sb.WriteString("        uses: astral-sh/setup-uv@v5\n")
+		sb.WriteString("        with:\n          enable-cache: true\n\n")
+		sb.WriteString("      - name: Verify Python Environment with uv\n")
+		sb.WriteString("        run: |\n          uv --version\n          if [ -f \"scripts/pyproject.toml\" ]; then\n            cd scripts && uv pip list || true\n          fi\n")
 	}
 
 	return sb.String()
@@ -410,6 +483,11 @@ func renderAgentRules(fp ProjectFingerprint) string {
 	sb.WriteString("## Architecture & CI/CD Tooling Defaults\n")
 	sb.WriteString("- Default CI/CD & Assistant Tool: **GitHub Copilot** (`.github/copilot-instructions.md`).\n")
 	sb.WriteString(fmt.Sprintf("- Primary Stack: `%s`\n", fp.PrimaryStack))
+	sb.WriteString("- Standardized Toolsets:\n")
+	sb.WriteString("  - **Go**: `go test -v -race`, `golangci-lint`\n")
+	sb.WriteString("  - **Rust**: `cargo test`, `cargo build`, `cargo clippy`\n")
+	sb.WriteString("  - **JavaScript / TypeScript**: `bun test`, `bun run build` (zero npm)\n")
+	sb.WriteString("  - **Python**: `uv run`, `uv pip` (zero legacy pip)\n")
 	sb.WriteString("- Statement coverage threshold: **>= 85.0%**.\n")
 	sb.WriteString("- Anti-mock policy: genuine structs and Testcontainers only.\n")
 
@@ -423,6 +501,7 @@ func renderAgentsOverview(fp ProjectFingerprint) string {
 	sb.WriteString("## Standard Tooling\n")
 	sb.WriteString("- **Default CI/CD Assistant**: GitHub Copilot (`.github/copilot-instructions.md`)\n")
 	sb.WriteString(fmt.Sprintf("- **Runtime Stack**: %s\n", strings.ToUpper(string(fp.PrimaryStack))))
+	sb.WriteString("- **Enforced Toolchains**: Go (`go`), Rust (`cargo`), Bun (`bun`), uv (`uv`)\n")
 	sb.WriteString("- **Authoritative Issue Tracker**: Plane v2 (`http://localhost:8090`)\n")
 	sb.WriteString("- **Token Governor**: LiteLLM Gateway (`http://localhost:4000`)\n\n")
 	sb.WriteString("## Preparation & Sync\n")

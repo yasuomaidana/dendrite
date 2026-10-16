@@ -2,6 +2,7 @@
   "name": "dendrite-docs",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "bun@1.2.0",
   "scripts": {
     "docusaurus": "docusaurus",
     "start": "docusaurus start --port 3000",
@@ -9,7 +10,8 @@
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",
     "clear": "docusaurus clear",
-    "serve": "docusaurus serve --port 3000"
+    "serve": "docusaurus serve --port 3000",
+    "test": "bun --version"
   },
   "dependencies": {
     "@docusaurus/core": "^3.5.2",

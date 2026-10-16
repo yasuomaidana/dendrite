@@ -7,3 +7,5 @@ bin/
 .env
 coverage.out
 *.tmp
+.venv/
+node_modules/

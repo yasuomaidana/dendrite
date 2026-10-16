@@ -1,0 +1,18 @@
+[project]
+name = "dendrite-scripts"
+version = "0.1.0"
+description = "Dendrite maintenance and verification scripts managed via uv"
+requires-python = ">=3.10"
+readme = "README.md"
+dependencies = [
+    "requests>=2.31.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0.0",
+]
