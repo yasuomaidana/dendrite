@@ -51,7 +51,6 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 ### Milestone 22: Distributed Codebase Ecosystem, Modular REA & Cross-Project Interoperability Coordinator (FEAT-026)
 
-- [ ] **DEN-042**: Scenario 1: REA Modular Decomposition & Ecosystem Reuse Discovery Engine (pkg/distcodebase, pkg/rea, cmd/dendrite)
 - [ ] **DEN-043**: Scenario 2: Parallel Multi-Project Workspace & Repository Spawner (pkg/distcodebase, pkg/workspace, cmd/dendrite)
 - [ ] **DEN-044**: Scenario 3: Local LLM Cross-Project Interoperability Coordinator (pkg/distcodebase, pkg/ollama, cmd/dendrite)
 - [ ] **DEN-045**: Scenario 4: Generative Satellite Project Synthesis & Autonomous Plane Project Provisioning (pkg/distcodebase, pkg/tracker/plane, cmd/dendrite)

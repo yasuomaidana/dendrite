@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/pkg/cli"
 	"context"
 	"fmt"
 	"net/http"
@@ -33,230 +34,528 @@ import (
 const version = "0.1.0-alpha"
 
 func main() {
+	reg := buildRegistry()
+
 	if len(os.Args) < 2 {
 		printUsage()
 		return
 	}
 
-	cmd := os.Args[1]
 	ctx := context.Background()
-
-	switch cmd {
-	case "version", "--version", "-v":
-		fmt.Printf("Dendrite CLI v%s\n", version)
-
-	case "doctor":
-		runDoctor(ctx)
-
-	case "env":
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: dendrite env <doctor|plan|install|replicate|status> [flags...]")
-			return
-		}
-		handleEnvCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "triage":
-		handleTriageCommand(ctx, os.Args[2:])
-
-	case "test":
-		if len(os.Args) < 3 {
-			printTestUsage()
-			return
-		}
-		handleTestCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "agent":
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: dendrite agent <search|route|run|session> [tool] [flags...]")
-			return
-		}
-		handleAgentCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "project":
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: dendrite project <add|switch|list|remove> [args...]")
-			return
-		}
-		handleProjectCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "doc":
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: dendrite doc <docusaurus|reflect|plane> [args...]")
-			return
-		}
-		handleDocCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "ui":
-		handleUICommand(ctx, os.Args[2:])
-
-	case "telemetry":
-		handleTelemetryCommand(ctx, os.Args[2:])
-
-	case "dev":
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: dendrite dev <ollama|ticket|topology|gateway|audit-prompt> [args...]")
-			return
-		}
-		handleDevCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "topology":
-		if len(os.Args) < 3 {
-			runTopologyAdvisor(ctx, nil)
-			return
-		}
-		handleTopologyCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "jetbrains":
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: dendrite jetbrains <probe|open|problems|symbols|build|run|setup> [args...]")
-			return
-		}
-		handleJetBrainsCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "inference":
-		if len(os.Args) < 3 {
-			handleInferenceCommand(ctx, []string{"list"})
-			return
-		}
-		handleInferenceCommand(ctx, os.Args[2:])
-
-	case "plane":
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: dendrite plane <status|replicate|push-status|doc|issues|modules|pages> [args...]")
-			return
-		}
-		handlePlaneCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "mcp":
-		if len(os.Args) < 3 {
-			handleMCPCommand(ctx, "serve", nil)
-			return
-		}
-		handleMCPCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "dist", "distcodebase", "distributed":
-		if len(os.Args) < 3 {
-			handleDistCommand(ctx, "help", nil)
-			return
-		}
-		handleDistCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "bench", "benchmark":
-		if len(os.Args) < 3 {
-			printBenchUsage()
-			return
-		}
-		handleBenchCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "rea":
-		if len(os.Args) < 3 {
-			printREAUsage()
-			return
-		}
-		handleREACommand(ctx, os.Args[2], os.Args[3:])
-
-	case "pool":
-		if len(os.Args) < 3 {
-			printPoolUsage()
-			return
-		}
-		handlePoolCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "query":
-		if len(os.Args) < 3 {
-			printQueryUsage()
-			return
-		}
-		handleQueryCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "ref":
-		if len(os.Args) < 3 {
-			printRefUsage()
-			return
-		}
-		handleRefCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "store":
-		if len(os.Args) < 3 {
-			printStoreUsage()
-			return
-		}
-		handleStoreCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "analyze":
-		if len(os.Args) < 3 {
-			printAnalyzeUsage()
-			return
-		}
-		handleAnalyzeCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "tokens", "token":
-		handleTokensCommand(ctx, os.Args[2:])
-
-	case "story", "stories":
-		if len(os.Args) >= 3 && os.Args[2] == "next" {
-			handlePlaneCommand(ctx, "next", os.Args[3:])
-			return
-		}
-		if len(os.Args) < 3 {
-			printStoryUsage()
-			return
-		}
-		handleStoryCommand(ctx, os.Args[2], os.Args[3:])
-
-	case "commit":
-		handleCommitCommand(ctx, os.Args[2:])
-
-	case "skill":
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: dendrite skill <ticket-relate|gantt-sync> [args...]")
-			return
-		}
-		if os.Args[2] == "ticket-relate" || os.Args[2] == "relate" {
-			handlePlaneCommand(ctx, "relate", os.Args[3:])
-			return
-		}
-		if os.Args[2] == "gantt-sync" || os.Args[2] == "align-gantt" {
-			handlePlaneCommand(ctx, "gantt-sync", os.Args[3:])
-			return
-		}
-		fmt.Printf("[-] Unknown skill: %s\n", os.Args[2])
-
-	case "audit-changes":
-		handleAuditChangesCommand(ctx, os.Args[2:])
-
-	case "vcs":
-		handleVCSCommand(ctx, os.Args[2:])
-
-	case "github-sync", "sync-github":
-		handleGitHubSyncCommand(ctx, os.Args[2:])
-
-	case "quality":
-		handleQualityCommand(ctx, os.Args[2:])
-
-	case "sync-remote":
-		handleVCSCommand(ctx, []string{"sync-remote"})
-
-	case "move":
-		handleMoveCommand(ctx, os.Args[2:])
-
-	case "service":
-		if len(os.Args) < 3 {
-			printServiceUsage()
-			return
-		}
-		handleServiceCommand(ctx, os.Args[2], os.Args[3:])
-
-	default:
-		printUsage()
+	err := reg.Execute(ctx, os.Args[1:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[-] %v\n", err)
 	}
+}
+
+func buildRegistry() *cli.Registry {
+	reg := cli.NewRegistry()
+
+	reg.Register(&cli.Command{
+		Name:        "version",
+		Aliases:     []string{"--version", "-v"},
+		Category:    "Cortex & Cockpit",
+		Description: "Print Dendrite CLI version",
+		Run: func(ctx context.Context, args []string) error {
+			fmt.Printf("Dendrite CLI v%s\n", version)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "doctor",
+		Aliases:     []string{"soma-diagnose", "probe", "diag"},
+		Category:    "Soma & State Nucleus",
+		Description: "Run environment pre-flight diagnostics",
+		Run: func(ctx context.Context, args []string) error {
+			runDoctor(ctx)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "env",
+		Aliases:     []string{"soma", "homeostasis", "soma-homeostasis"},
+		Category:    "Soma & State Nucleus",
+		Description: "Manage and replicate development environments",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				fmt.Println("Usage: dendrite env <doctor|plan|install|replicate|status> [flags...]")
+				return nil
+			}
+			handleEnvCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "triage",
+		Aliases:     []string{"inhibitory-triage", "trg"},
+		Category:    "Terminal Boutons & Effectors",
+		Description: "Resolve local agent task triage and priority routing",
+		Run: func(ctx context.Context, args []string) error {
+			handleTriageCommand(ctx, args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "test",
+		Aliases:     []string{"myotatic-reflex", "reflex", "tst"},
+		Category:    "Terminal Boutons & Effectors",
+		Description: "Table-driven test synthesis, Testcontainers & UI tests",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				printTestUsage()
+				return nil
+			}
+			handleTestCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "agent",
+		Aliases:     []string{"bouton-dispatch", "bouton", "agt"},
+		Category:    "Terminal Boutons & Effectors",
+		Description: "Autonomous coding agent harness (Aider, OpenHands, OpenCode)",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				fmt.Println("Usage: dendrite agent <search|route|run|session> [tool] [flags...]")
+				return nil
+			}
+			handleAgentCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "project",
+		Aliases:     []string{"ganglion-workspace", "ganglion", "prj"},
+		Category:    "Soma & State Nucleus",
+		Description: "Manage multi-project isolated workspaces",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				fmt.Println("Usage: dendrite project <add|switch|list|remove> [args...]")
+				return nil
+			}
+			handleProjectCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "doc",
+		Aliases:     []string{"engram-codex", "codex"},
+		Category:    "Cortex & Cockpit",
+		Description: "Docs-as-Code reflection, Docusaurus synthesis and portal",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				fmt.Println("Usage: dendrite doc <docusaurus|reflect|plane> [args...]")
+				return nil
+			}
+			handleDocCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "ui",
+		Aliases:     []string{"cortex-cockpit", "cortex"},
+		Category:    "Cortex & Cockpit",
+		Description: "Embedded Web Control Cockpit and telemetry server",
+		Run: func(ctx context.Context, args []string) error {
+			handleUICommand(ctx, args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "telemetry",
+		Aliases:     []string{"afferent-telemetry", "sensory", "tel"},
+		Category:    "Cortex & Cockpit",
+		Description: "Hardware thermal, token spend, and Prometheus telemetry",
+		Run: func(ctx context.Context, args []string) error {
+			handleTelemetryCommand(ctx, args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "dev",
+		Category:    "Soma & State Nucleus",
+		Description: "Developer diagnostics, local Ollama probe, and ticket tools",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				fmt.Println("Usage: dendrite dev <ollama|ticket|topology|gateway|audit-prompt> [args...]")
+				return nil
+			}
+			handleDevCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "gateway",
+		Aliases:     []string{"synaptic-cleft", "cleft", "gate"},
+		Category:    "Synaptic Cleft & Gating",
+		Description: "LiteLLM token gateway rendering and rate limiter",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				handleDevCommand(ctx, "gateway", []string{"local-hybrid"})
+				return nil
+			}
+			handleDevCommand(ctx, "gateway", args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "topology",
+		Aliases:     []string{"axon-pathway", "axon", "top"},
+		Category:    "Axon & Mesh",
+		Description: "Multi-node placement models and hardware service router",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				runTopologyAdvisor(ctx, nil)
+				return nil
+			}
+			handleTopologyCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "jetbrains",
+		Aliases:     []string{"neuromuscular-bridge", "bridge", "jb"},
+		Category:    "Synaptic Cleft & Gating",
+		Description: "JetBrains IDE MCP protocol integration and PSI symbol indexer",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				fmt.Println("Usage: dendrite jetbrains <probe|open|problems|symbols|build|run|setup> [args...]")
+				return nil
+			}
+			handleJetBrainsCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "inference",
+		Aliases:     []string{"action-potential", "spike", "inf"},
+		Category:    "Synaptic Cleft & Gating",
+		Description: "Unified multi-provider inference engine gateway (Ollama, OxiLLaMa, vLLM, TGI)",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				handleInferenceCommand(ctx, []string{"list"})
+				return nil
+			}
+			handleInferenceCommand(ctx, args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "plane",
+		Aliases:     []string{"chronos-tracker", "chronos", "pln"},
+		Category:    "Soma & State Nucleus",
+		Description: "Sovereign issue tracking, Gantt alignment, and DAG scheduler",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				fmt.Println("Usage: dendrite plane <status|replicate|push-status|doc|issues|modules|pages> [args...]")
+				return nil
+			}
+			handlePlaneCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "mcp",
+		Aliases:     []string{"interneuron-mcp", "inter"},
+		Category:    "Synaptic Cleft & Gating",
+		Description: "Model Context Protocol (MCP) server over stdio",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				handleMCPCommand(ctx, "serve", nil)
+				return nil
+			}
+			handleMCPCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "dist",
+		Aliases:     []string{"distcodebase", "distributed", "neural-mesh", "syn-mesh"},
+		Category:    "Axon & Mesh",
+		Description: "Distributed codebase spawner, modular REA, and repo coordinator",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				handleDistCommand(ctx, "help", nil)
+				return nil
+			}
+			handleDistCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "bench",
+		Aliases:     []string{"benchmark", "conduction-velocity", "velocity", "bnch"},
+		Category:    "Myelin & Guardrails",
+		Description: "TTFT, TPS, and gateway resilience benchmarking suite",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				printBenchUsage()
+				return nil
+			}
+			handleBenchCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "rea",
+		Aliases:     []string{"retrograde-analysis", "retro"},
+		Category:    "Dendritic Arbor",
+		Description: "Reverse engineering cleanroom analysis and parity verification",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				printREAUsage()
+				return nil
+			}
+			handleREACommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "pool",
+		Aliases:     []string{"plexus-pool", "plexus", "plx"},
+		Category:    "Soma & State Nucleus",
+		Description: "Multi-directory dependency inference & topological DAG solver",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				printPoolUsage()
+				return nil
+			}
+			handlePoolCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "query",
+		Aliases:     []string{"dendritic-arbor", "arbor", "dend"},
+		Category:    "Dendritic Arbor",
+		Description: "Intent-driven CFG/AST reachability slicing, debloater, transpile & fuse",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				printQueryUsage()
+				return nil
+			}
+			handleQueryCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "ref",
+		Aliases:     []string{"dendritic-afferent", "afferent", "aff"},
+		Category:    "Dendritic Arbor",
+		Description: "Manage Tier 1 source references for library reuse and cleanroom synthesis",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				printRefUsage()
+				return nil
+			}
+			handleRefCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "store",
+		Aliases:     []string{"engram-store", "engram", "gram"},
+		Category:    "Soma & State Nucleus",
+		Description: "Persistent segmented store, memory checkpointer, and chunk query",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				printStoreUsage()
+				return nil
+			}
+			handleStoreCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "analyze",
+		Aliases:     []string{"cognitive-analysis", "cognition", "anlz"},
+		Category:    "Myelin & Guardrails",
+		Description: "Cognitive complexity analyzer, structural anti-pattern scanner, and policy router",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				printAnalyzeUsage()
+				return nil
+			}
+			handleAnalyzeCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "tokens",
+		Aliases:     []string{"token", "vesicle-quota", "vesicle", "tok"},
+		Category:    "Synaptic Cleft & Gating",
+		Description: "Inspect 24h & 7d token consumption windows and tier quotas",
+		Run: func(ctx context.Context, args []string) error {
+			handleTokensCommand(ctx, args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "story",
+		Aliases:     []string{"stories", "synaptic-saga", "saga", "sty"},
+		Category:    "Terminal Boutons & Effectors",
+		Description: "Autonomous multi-turn story execution and DAG branching",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) >= 1 && args[0] == "next" {
+				handlePlaneCommand(ctx, "next", args[1:])
+				return nil
+			}
+			if len(args) < 1 {
+				printStoryUsage()
+				return nil
+			}
+			handleStoryCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "commit",
+		Aliases:     []string{"quantal-commit", "quantal", "cmt"},
+		Category:    "Terminal Boutons & Effectors",
+		Description: "Autonomous Git commit with local model message generation",
+		Run: func(ctx context.Context, args []string) error {
+			handleCommitCommand(ctx, args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "skill",
+		Category:    "Terminal Boutons & Effectors",
+		Description: "Execute skill integrations (ticket-relate, gantt-sync)",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				fmt.Println("Usage: dendrite skill <ticket-relate|gantt-sync> [args...]")
+				return nil
+			}
+			if args[0] == "ticket-relate" || args[0] == "relate" {
+				handlePlaneCommand(ctx, "relate", args[1:])
+				return nil
+			}
+			if args[0] == "gantt-sync" || args[0] == "align-gantt" {
+				handlePlaneCommand(ctx, "gantt-sync", args[1:])
+				return nil
+			}
+			fmt.Printf("[-] Unknown skill: %s\n", args[0])
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "audit-changes",
+		Aliases:     []string{"synaptic-pruning", "prune", "prn"},
+		Category:    "Myelin & Guardrails",
+		Description: "Topological vendor audit and rebase engine for local/* branches",
+		Run: func(ctx context.Context, args []string) error {
+			handleAuditChangesCommand(ctx, args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "vcs",
+		Aliases:     []string{"myelin-guard", "guard"},
+		Category:    "Myelin & Guardrails",
+		Description: "Git branch guardrails prohibiting main pushes and ensuring rebase integrity",
+		Run: func(ctx context.Context, args []string) error {
+			handleVCSCommand(ctx, args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "github-sync",
+		Aliases:     []string{"sync-github", "saltatory-sync", "salt-sync", "gsync"},
+		Category:    "Axon & Mesh",
+		Description: "Synchronize prioritized tickets and DAG dependencies to GitHub Issues",
+		Run: func(ctx context.Context, args []string) error {
+			handleGitHubSyncCommand(ctx, args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "quality",
+		Aliases:     []string{"allostasis-audit", "allostasis", "qlty"},
+		Category:    "Myelin & Guardrails",
+		Description: "Anti-mock scan, 100% coverage profiler, and HITL verification poller",
+		Run: func(ctx context.Context, args []string) error {
+			handleQualityCommand(ctx, args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "sync-remote",
+		Category:    "Axon & Mesh",
+		Description: "Detect, fetch, and rebase remote fixes with commit reconciliation",
+		Run: func(ctx context.Context, args []string) error {
+			handleVCSCommand(ctx, []string{"sync-remote"})
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "move",
+		Aliases:     []string{"axonal-translocation", "translocate", "mv"},
+		Category:    "Axon & Mesh",
+		Description: "Zero-credential interactive service migration across SSH nodes",
+		Run: func(ctx context.Context, args []string) error {
+			handleMoveCommand(ctx, args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "service",
+		Aliases:     []string{"effector-service", "effector", "svc"},
+		Category:    "Terminal Boutons & Effectors",
+		Description: "Manage microservices (Plane, Penpot, Ollama, LiteLLM)",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				printServiceUsage()
+				return nil
+			}
+			handleServiceCommand(ctx, args[0], args[1:])
+			return nil
+		},
+	})
+
+	return reg
 }
 
 func printUsage() {
 	fmt.Println("Dendrite - Autonomous AI Development & Infrastructure Control Plane")
 	fmt.Println("\nUsage:")
 	fmt.Println("  dendrite [command]")
-	fmt.Println("\nAvailable Commands:")
+	fmt.Println("\nAvailable Commands (Neuro-Lore aliases supported, e.g. probe, arbor, cortex, axon, bouton, cleft):")
 	fmt.Println("  doctor                     Run environment pre-flight diagnostics")
 	fmt.Println("  ui [--port 3456] [--daemon]Launch Dendrite embedded web UI and dashboard (< 800ms)")
 	fmt.Println("  telemetry [snapshot|metrics]Sample real-time SoC thermal & spend telemetry or raw Prometheus metrics")

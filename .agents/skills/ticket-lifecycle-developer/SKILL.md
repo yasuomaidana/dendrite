@@ -13,6 +13,22 @@ description: Guides and executes the end-to-end development lifecycle for projec
 > - **Querying Tickets**: Use `dendrite_plane_issues` or `./bin/dendrite plane issues` to find unstarted/in-progress tickets.
 > - **Mutating State**: Update Plane issues directly via Plane API or client.
 > - **DEV_STATUS.md Role**: `DEV_STATUS.md` is strictly a read-only mirror for humans and git history, synchronized via `dendrite plane replicate` ONLY after Plane has been updated. Agents must NEVER read or check `DEV_STATUS.md` to determine what to work on.
+>
+> ### Mandatory Issue Creation Gate & Zero Code Without Plane Ticket Mandate
+> **No agent or human engineer is permitted to author code, modify tests, or execute git commits without an active, authoritative ticket in Plane v2.**
+> If an issue does not already exist for a requested feature, bug fix, or refactor, the agent **MUST immediately create the issue in Plane** before authoring any code using:
+> - CLI: `dendrite plane create --name "[DEN-XXX] Title" [--milestone "M"] [--priority high] [--estimate 5] [--blocked-by "DEN-A,DEN-B"]`
+> - Native MCP Tool: `dendrite_plane_issue_create` (`./bin/dendrite mcp call dendrite_plane_issue_create '{"name":"[DEN-XXX] Title", ...}'`)
+>
+> All ticket creations MUST strictly follow the **Rules of Smart Creation**:
+> 1. **Standardized Naming & Scope**: Name must start with `[DEN-XXX]` and state clear imperative intent (e.g. `[DEN-104] Implement AST Cache Eviction & Memory Guard`).
+> 2. **Milestone / Module Binding**: Every ticket must be resolved and bound to an existing milestone module (`--milestone`), preserving the macro architectural hierarchy.
+> 3. **Critical Path & Priority Weighting**: Set priority (`urgent`, `high`, `medium`, `low`) factoring downstream DAG reachability and critical-path impact ($W(u) = P(u) + \sum P(v)/\text{depth}$).
+> 4. **Fibonacci Estimation**: Assign realistic story point estimation (1, 2, 3, 5, 8, 13 SP) determining realistic implementation scope.
+> 5. **Automated Gantt Scheduling**: Compute non-overlapping `start_date` and `target_date` derived from story points ($D = f(\text{estimate})$), positioning the issue onto the live interactive Gantt roadmap.
+> 6. **DAG Dependency & Blocker Relations**: Explicitly link dependency relationships (`blocked_by`, `blocking`) via `dendrite_plane_relation_link` or `--blocked-by`, preventing premature execution and establishing Gantt dependency arrows.
+> 7. **Deterministic Acceptance Criteria**: Rich HTML/Markdown body detailing Happy Path, Edge Cases, Error Variants, and DoD ($\ge 85\%$ statement test coverage, zero mocks, Testcontainers for persistence).
+> 8. **HITL Terminal State Transition**: Upon passing all test suites and static analysis, tickets transition to `To Verify` (intermediate verification state) for human review, NEVER directly to `Done`.
 
 ## Persona & Operating Role
 You are an Autonomous Senior Systems & AI Architect and Technical Lead. Your mission is to identify the first undone ticket via **Plane v2** and drive it from inception to completion following an 8-phase rigorous engineering workflow:
@@ -338,6 +354,18 @@ To achieve maximum engineering throughput without exhausting API token budgets o
 | **Pure-Rust & Sovereign Inference** | **OxiLLaMa (`cool-japan/oxillama`)** | Local/Server Pure-Rust zero-FFI GGUF | **Zero-Cost ($0.00)** Memory-Safe | Sandboxed AST translation, sovereign offline embedding & completion. |
 | **Token Budget Governance** | **Dendrite Gateway (`pkg/gateway`)** | LiteLLM Proxy (:4000) | Sliding Window Governance | Exempts self-hosted engines (`SkipBudgetChecks: true`), enforces daily/weekly ceilings, cascades to cloud APIs only on 429 quota exhaustion. |
 
+### Model Priority & Local Intelligence Precedence Rules
+
+1. **Smarter Local Models Take Precedence**:
+   - Local models are ranked strictly by capability and parameter scale ($27\text{B}/32\text{B} > 14\text{B} > 9\text{B}/7\text{B} > 3\text{B}$).
+   - **OxiLLaMa vs. Ollama Dynamic Precedence**: If Ollama is running only smaller or less-smart models (e.g. `llama3.2:3b`, `qwen2.5:1.5b`) while OxiLLaMa has a smarter model loaded (e.g. `qwen2.5-coder-7b` or `qwen3.5:9b`), **OxiLLaMa is granted strict precedence over Ollama**. Engines are never prioritized by static name; they are prioritized dynamically by the intelligence of their best loaded model.
+2. **Trial Failures on Smaller Models Do NOT Count**:
+   - Fast speculative attempts with smaller/lighter local models that fail are treated as zero-cost trials and are **NOT counted against the failure threshold**.
+3. **Smart Failure Counting**:
+   - Failures are **ONLY** counted against the failure limit when execution is attempted on the **smartest available local model(s)**.
+4. **Escalation to Paid Models**:
+   - Only if the smartest available local model(s) fail **twice or three times** (configurable threshold, default: 2) is the local tier declared failed. At that point, the task leverages and escalates to paid commercial models (`gemini-2.5-pro` or `copilot-sonnet`).
+
 ---
 
 ## 8-Step Lifecycle Execution Protocol
@@ -401,7 +429,8 @@ To achieve maximum engineering throughput without exhausting API token budgets o
 - **Autonomous Git Commit via Dendrite**:
   - Execute the commit via Dendrite (`./bin/dendrite commit --ticket <ID>` or native MCP tool `dendrite_commit`), delegating commit message generation to local zero-cost models (`local-qwen3-27b` / Ollama Metal) to preserve token budget.
 - Mutate the ticket state directly in Plane:
-  - Update the issue state to `Done` in Plane via the Plane API / client or `./bin/dendrite dev ticket set <ID> DONE --push-plane`.
+  - Transition the issue state to `To Verify` in Plane via the Plane API / client or `./bin/dendrite dev ticket set <ID> "To Verify" --push-plane`.
+  - Autonomous agents must NEVER mark an issue directly as `Done`; issues remain in `To Verify` until formally signed off through human verification (`dendrite hitl-sync` or Plane web UI).
   - Advance next ticket to `In Progress` in Plane.
 - Synchronize repository documentation for human readers:
   - Run `dendrite plane replicate` (or native MCP `dendrite_plane_replicate`) so that `DEV_STATUS.md` is updated from Plane for human repo viewers.

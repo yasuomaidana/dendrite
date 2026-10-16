@@ -2,8 +2,12 @@ package triage
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"Dendrite/pkg/ollama"
 )
 
 func TestClassifyTaskComplexity(t *testing.T) {
@@ -497,5 +501,43 @@ func TestTriageDeclarativeOrchestrator(t *testing.T) {
 
 	if !strings.Contains(res.LocalWorkerExecutionResult, "Executed") {
 		t.Errorf("expected local worker execution result, got: %s", res.LocalWorkerExecutionResult)
+	}
+}
+
+func TestTriage_OxiLLaMaPrecedenceOverLessSmartOllamaModel(t *testing.T) {
+	// Mock Ollama server that returns only a small, less-smart model (llama3.2:3b)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/tags" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"models":[{"name":"llama3.2:3b","model":"llama3.2:3b"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	ollamaClient := ollama.NewClient(ollama.WithBaseURL(ts.URL))
+
+	engine := NewEngine(ollamaClient)
+
+	req := TriageRequest{
+		Prompt: "Fix formatting and add docstrings for this struct",
+	}
+
+	res, err := engine.Triage(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected triage error: %v", err)
+	}
+
+	// Because Ollama only has llama3.2:3b (score 38) and OxiLLaMa has 7b (score 65),
+	// smarter local model rule gives precedence to OxiLLaMa!
+	if res.AssignedEngine != EngineOxiLLaMa {
+		t.Errorf("expected EngineOxiLLaMa to take precedence over less-smart Ollama model, got %s", res.AssignedEngine)
+	}
+	if res.AssignedModel != "oxillama-rust-qwen7b" {
+		t.Errorf("expected assigned model 'oxillama-rust-qwen7b', got %s", res.AssignedModel)
+	}
+	if !strings.Contains(res.Reason, "OxiLLaMa") {
+		t.Errorf("expected reason to document OxiLLaMa precedence, got: %s", res.Reason)
 	}
 }

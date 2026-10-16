@@ -18,23 +18,33 @@ Dendrite is an enterprise-grade, topology-agnostic control plane and developer p
 
 ### Current Real-Time Status Snapshot
 
+The authoritative project state is tracked in **Plane v2** (`http://localhost:8090`). All tasks are subject to the project strict Human-in-the-Loop (HITL) verification gate: autonomous AI implementations transition to `To Verify` upon achieving passing tests and $\ge 85\%$ statement coverage, and require human verification before being marked `Done`.
+
 | Metric | Current Value | Target / Baseline | Status |
 | :--- | :--- | :--- | :--- |
 | **Active Milestone** | **Milestone 24** — Autonomous Pool DAG & Multi-IDE Project Synchronization (FEAT-029) | Milestone 39 (Project Final) | In Progress |
-| **Current Focus Ticket** | `DEN-051` (Autonomous Dependency Inference & Multi-Directory DAG Solver) | Next in queue: `DEN-052` | Active Focus |
-| **Total Story Points (SP)** | 358 SP | 621 SP Planned | 57.6% SP Complete |
-| **Tickets Completed** | **50 / 96 Tickets** | 96 Tickets Total | **52.1% Completed** |
-| **Active / Queued Tickets** | **46 Tickets** (`DEN-051` through `DEN-096`) | 0 Blocked | On Track |
+| **Current Focus Ticket** | `DEN-809` (Model Migration Engine & Inference Priority) | Next in queue: `DEN-810` / `DEN-051` | Active Focus |
+| **Total Tracked Tickets** | **101 Tickets** (Authoritative Plane v2 Ledger) | 101 Tickets Active | 100% Tracked |
+| **Formally Done & Verified** | **2 / 101 Tickets** (**2.0% Done**) | Formally closed by human review | Verified Done [x] |
+| **Ongoing / In Backlog** | **5 / 101 Tickets** (**5.0% Ongoing**) | Queued / Active execution | In Progress [-] |
+| **To Be Verified by Human** | **94 / 101 Tickets** (**93.1% To Verify**) | DoD Passed ($\ge 85\%$ cov), pending HITL sign-off | Awaiting Human [?] |
 | **Core Statement Coverage** | **$\ge 88.4\%$ Average** across all packages | $\ge 85.0\%$ DoD Threshold | Exceeds Target |
-| **Registered MCP Tools** | **25+ Native Tools** (Stdio JSON-RPC 2.0) | JetBrains + Stacks | Operational |
+| **Registered MCP Tools** | **64+ Native Tools** (Stdio JSON-RPC 2.0) | JetBrains + Stacks | Operational |
 | **Supported Inference Backends** | 6 Engines (Ollama, OxiLLaMa, TGI, TEI, vLLM, llama.cpp)| Multi-Provider Gateway | Operational |
-| **Last Synchronized** | 2026-10-14 | Real-time Plane Sync | Verified |
+| **Last Synchronized** | 2026-10-16 | Real-time Plane Sync | Verified |
 
 ```mermaid
-pie title Ticket Completion Status
-    "Completed Tickets (50)" : 50
-    "Queued / In-Progress Tickets (40)" : 40
+pie title Real-Time Ticket Status Breakdown (Plane v2 Authority)
+    "To Be Verified by Human (94)" : 94
+    "Ongoing / Active Backlog (5)" : 5
+    "Done / Formally Verified (2)" : 2
 ```
+
+> [!NOTE]
+> ### Real-Time Status Breakdown & The Human-in-the-Loop (HITL) Gate
+> - **Done / Formally Verified (2.0%, 2 Tickets)**: Tickets that have been reviewed, audited, and approved through human verification or `dendrite hitl-sync` (`[DEN-809]` #139, `[DEND-401]` #114).
+> - **Ongoing / Active Backlog (5.0%, 5 Tickets)**: Tasks currently queued or undergoing active feature implementation (`[DEN-812]` #141, `[DEN-809]` #137, `[DEN-808]` #136, `[DEN-807]` #135, `[DEN-806]` #134).
+> - **To Be Verified by Human (94.0%, 94 Tickets)**: Autonomous agent deliverables that have satisfied all engineering criteria (compiling code, zero mock policy, Testcontainers integration, statement coverage $\ge 85\%$) and transitioned into Plane mandatory terminal `To Verify` state. These tickets await human inspection and sign-off before advancing to `Done`.
 
 ---
 
@@ -42,29 +52,50 @@ pie title Ticket Completion Status
 
 Dendrite operates under a strict, automated engineering lifecycle enforced across human engineers and autonomous agent loops (**Aider**, **OpenHands**, **OpenCode**, and **Google Antigravity / AGY**).
 
-### 2.1 The 8-Phase Lifecycle Protocol
+### 2.1 The Mandatory Issue Creation Gate & Rules of Smart Creation
+
+> [!IMPORTANT]
+> ### Zero Code Without Plane Ticket Mandate
+> **No agent or human engineer is permitted to author code, modify tests, or execute git commits without an active, authoritative ticket in Plane v2.**
+> If an issue does not already exist for a requested feature, bug fix, or refactor, the agent **MUST immediately create the issue in Plane** before authoring any code using:
+> - CLI: `dendrite plane create --name "[DEN-XXX] Title" [--milestone "M"] [--priority high] [--estimate 5] [--blocked-by "DEN-A,DEN-B"]`
+> - Native MCP Tool: `dendrite_plane_issue_create` (`./bin/dendrite mcp call dendrite_plane_issue_create '{"name":"[DEN-XXX] Title", ...}'`)
+>
+> All ticket creations MUST strictly follow the **Rules of Smart Creation**:
+> 1. **Standardized Naming & Scope**: Name must start with `[DEN-XXX]` and state clear imperative intent (e.g. `[DEN-104] Implement AST Cache Eviction & Memory Guard`).
+> 2. **Milestone / Module Binding**: Every ticket must be resolved and bound to an existing milestone module (`--milestone`), preserving the macro architectural hierarchy.
+> 3. **Critical Path & Priority Weighting**: Set priority (`urgent`, `high`, `medium`, `low`) factoring downstream DAG reachability and critical-path impact ($W(u) = P(u) + \sum P(v)/\text{depth}$).
+> 4. **Fibonacci Estimation**: Assign realistic story point estimation (1, 2, 3, 5, 8, 13 SP) determining realistic implementation scope.
+> 5. **Automated Gantt Scheduling**: Compute non-overlapping `start_date` and `target_date` derived from story points ($D = f(\text{estimate})$), positioning the issue onto the live interactive Gantt roadmap.
+> 6. **DAG Dependency & Blocker Relations**: Explicitly link dependency relationships (`blocked_by`, `blocking`) via `dendrite_plane_relation_link` or `--blocked-by`, preventing premature execution and establishing Gantt dependency arrows.
+> 7. **Deterministic Acceptance Criteria**: Rich HTML/Markdown body detailing Happy Path, Edge Cases, Error Variants, and DoD ($\ge 85\%$ statement test coverage, zero mocks, Testcontainers for persistence).
+> 8. **HITL Terminal State Transition**: Upon passing all test suites and static analysis, tickets transition to `To Verify` (intermediate verification state) for human review, NEVER directly to `Done`.
+
+### 2.2 The 8-Phase Lifecycle Protocol
 
 Every ticket progresses through eight distinct, auditable phases:
 
 ```mermaid
 flowchart TD
-    P1[1. Requirement Clarity Evaluation] --> P2[2. Scope & Decomposition Evaluation]
+    P0[0. Issue Creation / Smart Selection & Blocker Verification] --> P1[1. Requirement Clarity Evaluation]
+    P1 --> P2[2. Scope & Decomposition Evaluation]
     P2 --> P3[3. Test-Driven Specification TDD]
     P3 --> P4[4. Design Pattern & Architecture Review]
     P4 --> P5[5. Feature Implementation & Tool Wiring]
     P5 --> P6[6. Verification & Test Coverage >= 85%]
     P6 --> P7[7. Complexity Evaluation & Refactoring]
-    P7 --> P8[8. Status & Skill Synchronization]
+    P7 --> P8[8. To Verify State Transition & Skill Sync]
 ```
 
+0. **Issue Creation & Smart Ticket Selection**: Verify that an authoritative ticket exists in Plane v2. If missing, create it adhering to the **Rules of Smart Creation**. Select unblocked tickets via `dendrite_ticket_smart_select` (`dendrite plane next`).
 1. **Requirement Clarity Evaluation**: Audit inputs, output contracts, error variants, boundary conditions, and domain invariants before writing code.
-2. **Ticket Scope & Decomposition**: Ensure Single Responsibility Principle (SRP). Tickets modifying $> 3$ packages or exceeding ~400 lines are decomposed into sub-tickets.
-3. **Test-Driven Specification (TDD)**: Author test suites first (happy path, edge cases, typed errors). Persistent layers (Postgres, Redis, SQLite, MinIO) **must** use Testcontainers per DoD.
+2. **Ticket Scope & Decomposition**: Ensure Single Responsibility Principle (SRP). Tickets modifying $> 3$ packages or exceeding ~400 lines are decomposed into sub-tickets in Plane.
+3. **Test-Driven Specification (TDD)**: Author test suites first (happy path, edge cases, typed errors). Persistent layers (Postgres, Redis, SQLite, MinIO) **must** use Testcontainers per DoD. Anti-mock policy strictly enforced.
 4. **Design Pattern Review**: Apply idiomatic patterns (Strategy for engine plugins, Factory for clients, RAII/Clean-Drop for ephemeral sandboxes, sliding-window limiter for budgets).
-5. **Feature Implementation**: Write clean Go code, wire commands into CLI (`cmd/dendrite`) and native MCP JSON-RPC server (`pkg/mcpserver`).
+5. **Feature Implementation**: Write clean Go/Rust code, wire commands into CLI (`cmd/dendrite`) and native MCP JSON-RPC server (`pkg/mcpserver`).
 6. **Verification & Test Passing**: Execute test suites (`go test -v -cover`). Achieve statement coverage $\ge 85\%$ across new modules.
 7. **Code Complexity Evaluation**: Cyclomatic complexity $\le 15$ per function, cognitive complexity $\le 20$, function length $\le 80$ lines.
-8. **Status & Skill Synchronization**: Update `DEV_STATUS.md`, advance `Current Focus`, update Plane via `dendrite plane push-status`, and update skills across `.gemini/skills/` and `.agents/skills/`.
+8. **To Verify State Transition & Skill Synchronization**: Update ticket state to `To Verify` in Plane (awaiting human verification), delegate commit message generation to local models (`local-qwen3-27b`), replicate `DEV_STATUS.md` for human documentation, and update skills in `.gemini/skills/` and `.agents/skills/`.
 
 ### 2.3 Semantic Hierarchical Branching & Merging Model
 
@@ -93,17 +124,30 @@ graph TD
     MB -->|Level 3 Consolidated PR| M
 ```
 
-### 2.2 Token Economy & Delegation Matrix
+### 2.4 Token Economy, Model Precedence & Smart Failure Governance
 
-To prevent runaway commercial API token expenses while maintaining high architectural velocity, compute tasks are divided across four tiers:
+To prevent runaway commercial API token expenses while maintaining high architectural velocity, compute tasks are partitioned across specialized tiers:
 
 | Tier | Engine / Agent | Hardware / Runtime | Cost Profile | Primary Mandate |
 | :--- | :--- | :--- | :--- | :--- |
 | **Macro Orchestration** | **Google AGY / Antigravity** | Cloud API (Gemini 2.5 Pro) | Metered Commercial | Architecture design, cross-package API contracts, security reviews, ticket decomposition. |
 | **Micro Code Loop** | **Aider Agent Loop** | Local / Ephemeral Docker | Governed LiteLLM Virtual Keys | Interactive TDD implementation, compiler-driven syntax adjustments, precise diff application. |
-| **Repetitive Verification**| **Local Ollama Metal** | Apple Silicon Metal (`qwen2.5-coder:14b`) | **Zero-Cost ($0.00)** Local | Running `go test`, digesting compiler logs, summarizing test failures, generating boilerplate vectors. |
-| **Sovereign Inference** | **OxiLLaMa** | Pure-Rust Zero-FFI GGUF | **Zero-Cost ($0.00)** Memory-Safe | Sandboxed AST translation, sovereign offline embedding and code completion. |
+| **Commit Message Synthesis** | **Local Model (`local-qwen3-27b` / Ollama Metal)** | Apple Silicon Metal GPU / LiteLLM (:4000) | **Zero-Cost ($0.00)** Local | Conventional commit messages, diff summaries, and provenance formatting. |
+| **Sovereign Pure-Rust Inference** | **OxiLLaMa (`cool-japan/oxillama`)** | Pure-Rust Zero-FFI GGUF (:8080) | **Zero-Cost ($0.00)** Memory-Safe | Sandboxed AST translation, sovereign offline embedding and code completion. |
+| **Repetitive Verification**| **Local Ollama Metal** | Apple Silicon Metal (`qwen3.8:27b`, `qwen2.5-coder:14b`, `llama3.2:3b`) | **Zero-Cost ($0.00)** Local | Running `go test`, digesting compiler logs, summarizing test failures, generating boilerplate vectors. |
 | **Token Budget Governance**| **LiteLLM Gateway** | LiteLLM Proxy (:4000) | Sliding Window Limiter | Daily/weekly ceilings, automatic cascade failover to cloud API on local exhaustion. |
+
+#### Model Priority & Local Intelligence Precedence Rules
+
+1. **Smarter Local Models Take Precedence**:
+   - Local models are ranked strictly by capability and parameter scale ($27\text{B}/32\text{B} > 14\text{B} > 9\text{B}/7\text{B} > 3\text{B}$).
+   - **OxiLLaMa vs. Ollama Dynamic Precedence**: If Ollama is running only smaller or less-smart models (e.g. `llama3.2:3b`, `qwen2.5:1.5b`) while OxiLLaMa has a smarter model loaded (e.g. `qwen2.5-coder-7b` or `qwen3.5:9b`), **OxiLLaMa is granted strict precedence over Ollama**. Engines are never prioritized by static name; they are prioritized dynamically by the intelligence of their best loaded model.
+2. **Trial Failures on Smaller Models Do NOT Count**:
+   - Fast speculative attempts with smaller/lighter local models that fail are treated as zero-cost trials and are **NOT counted against the failure threshold**.
+3. **Smart Failure Counting**:
+   - Failures are **ONLY** counted against the failure limit when execution is attempted on the **smartest available local model(s)**.
+4. **Escalation to Paid Models**:
+   - Only if the smartest available local model(s) fail **twice or three times** (configurable threshold, default: 2) is the local tier declared failed. At that point, the task leverages and escalates to paid commercial models (`gemini-2.5-pro` or `copilot-sonnet`).
 
 ---
 
@@ -116,6 +160,7 @@ Incomplete tickets are prioritized using multi-factor complexity scoring (depend
 | **1** | **DEN-048** | Milestone 23 | FEAT-020 | 8 SP | **6.5 / 10** | `pkg/perf`, `pkg/gateway`, `pkg/inference` | **QUEUED [ ]** |
 | **2** | **DEN-037** | Milestone 18 | FEAT-022 | 13 SP | **8.5 / 10** | `pkg/agentsearch`, `cmd/dendrite` | **CURRENT FOCUS [ ]** |
 | **3** | **DEN-038** | Milestone 19 | FEAT-023 | 13 SP | **9.0 / 10** | `pkg/testgen`, `pkg/uitest`, `cmd/dendrite` | **QUEUED [ ]** |
+| **4** | **DEN-812** | Milestone 8 | FEAT-008, FEAT-047 | 8 SP | **7.5 / 10** | `pkg/vendor`, `pkg/tracker/sync`, `pkg/ui/penpot`, `cmd/dendrite` | **QUEUED [ ]** |
 
 ---
 
@@ -164,6 +209,7 @@ All 23 project milestones and their associated tickets:
 - [x] **DEN-012**: Multi-Project Workspace Registry & Context Switcher (`pkg/workspace`)
 - [x] **DEN-013**: Pluggable Issue Tracker Interface & Atlassian Jira Adapter (`pkg/tracker/jira`)
 - [x] **DEN-027**: Plane v2 & Linear Strategy Adapters (`pkg/tracker/plane`, `pkg/tracker/linear`)
+- [ ] **DEN-812**: Bidirectional Multi-Vendor Migration & Real-Time Sync Engine (Plane <-> Jira, Penpot <-> Figma) (`pkg/vendor`, `pkg/tracker/sync`, `pkg/ui/penpot`, `cmd/dendrite`)
 
 ### Milestone 9: Web UI & Dashboard Engine (FEAT-009)
 - [x] **DEN-014**: Embedded HTTP Control Server & WebSocket Telemetry (`pkg/server`)
@@ -260,6 +306,20 @@ All 23 project milestones and their associated tickets:
 ---
 
 ## 5. Detailed Engineering Specifications for Active & Queued Tickets
+
+### Ticket `DEN-812`: Bidirectional Multi-Vendor Migration & Real-Time Sync Engine (Plane <-> Jira, Penpot <-> Figma)
+
+- **Target Package**: `pkg/vendor`, `pkg/tracker/sync`, `pkg/ui/penpot`, `cmd/dendrite`, `pkg/mcpserver`
+- **Governing Specs**: [`docs/features/FEAT-008-pluggable-issue-trackers.md`](../features/FEAT-008-pluggable-issue-trackers.md), [`docs/features/FEAT-047-infrastructure-orchestration-ssh-penpot.md`](../features/FEAT-047-infrastructure-orchestration-ssh-penpot.md)
+- **Goal**: Implement a provider-agnostic bidirectional vendor migration and continuous synchronization engine. Automatically introspects and detects service compatibility and bidirectional capabilities across registered toolchains (Plane <-> Jira for issue tracking; Penpot <-> Figma for design tokens and components), executes one-way atomic cutover migrations with immutable ID mapping tables, and supports dual-app continuous synchronization with deterministic conflict resolution and loop-prevention guardrails.
+- **Acceptance Criteria**:
+    - [ ] **Service Capability Auto-Detection (`dendrite vendor detect`)**: Introspects workspace configuration, active containers, and environment credentials to build a real-time capability matrix identifying compatible migration pairs, schema compatibility, and flagging bidirectional readiness in $< 1.0\text{s}$.
+    - [ ] **Bidirectional Issue Migration (Plane $\leftrightarrow$ Jira)**: Atomic batch migration from Plane v2 to Atlassian Jira and from Jira to Plane v2 (`dendrite vendor migrate --service tracker --from plane --to jira`), mapping states, markdown/ADF content, issue relations, and labels with zero data loss and transactional rollback on partial failure.
+    - [ ] **Dual-App Real-Time Sync Mode (`dendrite vendor sync`)**: Continuous or scheduled two-way synchronization when two applications serve the same business domain concurrently (e.g. Jira for enterprise stakeholders, Plane for engineering execution), maintaining synchronized issue states and descriptions.
+    - [ ] **Conflict Resolution & Loop Prevention**: Implements configurable resolution strategies (`LastWriteWins`, `SourcePriority`, `PromptHITL`) and provenance tracking headers to prevent recursive event echoing.
+    - [ ] **Penpot $\leftrightarrow$ Figma Design Token Sync**: Bidirectional sync between Penpot design frames/CSS tokens and Figma API design tokens, preserving typography, palette colors, and layout constraints.
+    - [ ] **CLI & MCP Tool Suite**: CLI subcommands `dendrite vendor <detect|migrate|sync|status>` and native MCP tools `dendrite_vendor_detect`, `dendrite_vendor_migrate`, and `dendrite_vendor_sync` registered in `pkg/mcpserver`.
+    - [ ] **DoD & Test Passing**: Statement test coverage $\ge 85\%$ across `pkg/vendor` and `pkg/tracker/sync` using Testcontainers (wiremock Jira mock and self-hosted Plane instance) with zero mocks policy and Cyclomatic Complexity $\le 15$.
 
 ### Ticket `DEN-037`: Hybrid Agent Search, TEI Embeddings & Semantic Routing Engine
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/ai/tokenopt"
+	"Dendrite/pkg/inference"
 	"Dendrite/pkg/ollama"
 )
 
@@ -56,6 +57,33 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 
 	localAvailable := false
 	localEngineName := "Ollama Metal GPU"
+
+	// Smart Local Model Precedence: if auto-routing, check whether OxiLLaMa has a smarter model than Ollama
+	if req.TargetEngine == "" && e.OllamaClient != nil {
+		probeCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+		defer cancel()
+		ollamaModels, err := e.OllamaClient.ListModels(probeCtx)
+		if err == nil && len(ollamaModels) > 0 {
+			maxOllamaScore := 0
+			for _, m := range ollamaModels {
+				score := inference.ModelIntelligenceScore(m.Name)
+				if score > maxOllamaScore {
+					maxOllamaScore = score
+				}
+			}
+			oxillamaScore := inference.ModelIntelligenceScore("oxillama-rust-qwen7b")
+			// If Ollama only has less-smart models (e.g. 3B or 1.5B) while OxiLLaMa has a smarter model (e.g. 7B),
+			// OxiLLaMa takes precedence!
+			if maxOllamaScore < oxillamaScore {
+				assignedEngine = EngineOxiLLaMa
+				localEngineName = "OxiLLaMa Pure-Rust Sovereign Engine (cool-japan/oxillama)"
+				localAvailable = true
+				if tier == TierLocal {
+					reason = fmt.Sprintf("%s Smarter local model on OxiLLaMa (Score %d) takes precedence over smaller Ollama models (Max Score %d).", reason, oxillamaScore, maxOllamaScore)
+				}
+			}
+		}
+	}
 
 	switch assignedEngine {
 	case EngineOllamaValidated:

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -307,8 +308,11 @@ func MultiEngineLiteLLMConfig(engines []inference.InferenceEngine) *LiteLLMConfi
 		}
 	}
 
-	// Dynamic cascade integration
+	// Dynamic cascade integration: prioritize smarter local models
 	if len(engineFallbackNames) > 0 {
+		sort.SliceStable(engineFallbackNames, func(i, j int) bool {
+			return inference.ModelIntelligenceScore(engineFallbackNames[i]) > inference.ModelIntelligenceScore(engineFallbackNames[j])
+		})
 		cascadeList := append([]string{"copilot-sonnet", "gemini-2.5-flash"}, engineFallbackNames...)
 		cfg.RouterSettings.Fallbacks = []map[string][]string{
 			{

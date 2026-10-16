@@ -138,6 +138,18 @@ func (m *Manager) GetCascadeOrder() []string {
 	return append([]string(nil), m.cascadeOrder...)
 }
 
+// DynamicCascadeOrderByIntelligence reorders the active cascade dynamically,
+// prioritizing engines hosting smarter local models over those with smaller/less-smart models.
+func (m *Manager) DynamicCascadeOrderByIntelligence(ctx context.Context) []string {
+	engines := m.ListEngines()
+	reordered := ReorderEnginesByIntelligence(ctx, engines)
+	ids := make([]string, len(reordered))
+	for i, e := range reordered {
+		ids[i] = e.ID()
+	}
+	return ids
+}
+
 // PollHealthAll queries health of all registered engines in parallel.
 func (m *Manager) PollHealthAll(ctx context.Context) map[string]EngineHealth {
 	m.mu.RLock()
@@ -202,6 +214,21 @@ func (m *Manager) ExecuteWithCascade(ctx context.Context, req CompletionRequest)
 	}
 
 	return nil, fmt.Errorf("%w: last error: %v", ErrNoAvailableEngine, lastErr)
+}
+
+// ExecuteWithSmartPrecedence dispatches a prompt honoring model intelligence rules:
+// - Smarter local models (whether on OxiLLaMa or Ollama) have precedence over smaller models.
+// - Failed attempts on smaller/less-smart models are NOT counted against the failure threshold.
+// - Failures are ONLY counted when executing on the smartest available local model(s).
+// - If smartest local models fail twice or three times (cfg.MaxSmartFailures), it leverages to paid models.
+func (m *Manager) ExecuteWithSmartPrecedence(
+	ctx context.Context,
+	req CompletionRequest,
+	paidCaller func(ctx context.Context, req CompletionRequest, paidModel string) (*CompletionResponse, error),
+	cfg SmartCascadeConfig,
+) (*CompletionResponse, *SmartCascadeReport, error) {
+	engines := m.ListEngines()
+	return ExecuteSmartCascade(ctx, engines, req, paidCaller, cfg)
 }
 
 // IsEngineZeroCost evaluates whether an engine qualifies for zero-cost routing,

@@ -11,7 +11,124 @@
 
 ---
 
-## 1. Architectural Philosophy: Decoupled Compute Tiers
+## 1. The Neurobiological Inspiration: A Synthetic Nervous System
+
+In mammalian neurobiology, no single neuron acts as an isolated monolith. Biological intelligence emerges not from brute-force scale within a single cell, but from a decentralized, highly specialized anatomical architecture where distinct cellular structures connect multiple neurons into a coherent, self-regulating biological network.
+
+```mermaid
+flowchart LR
+    subgraph Dendrites["Dendritic Arbor (Afferent Ingestion)"]
+        D1["Sensory Ingestion & Context"]
+        D2["AST Reachability & Slicing"]
+        D3["Hardware & Spend Telemetry"]
+    end
+
+    subgraph Soma["Soma / Perikaryon (Integration Nucleus)"]
+        S1["Workspace Context & State"]
+        S2["Declarative Replication Planning"]
+        S3["Sovereign DAG Issue Tracking"]
+    end
+
+    subgraph Axon["Axon & Myelin (Conductive Mesh)"]
+        A1["Zero-Trust Multi-Node Mesh"]
+        A2["Saltatory Conduction / Low Latency"]
+        A3["Remote Service Translocation"]
+    end
+
+    subgraph Synapse["Synaptic Cleft (Governed Gating)"]
+        SY1["Token Budget Governance (LiteLLM)"]
+        SY2["Rate-Bounded Throttling"]
+        SY3["Interneuron MCP Protocols"]
+    end
+
+    subgraph Boutons["Terminal Boutons (Efferent Actuation)"]
+        B1["Autonomous Coding Agents (Aider/OpenHands)"]
+        B2["Self-Healing Test Loops (Testcontainers)"]
+        B3["Quantal Semantic Commits"]
+    end
+
+    Dendrites --> Soma
+    Soma --> Axon
+    Axon --> Synapse
+    Synapse --> Boutons
+```
+
+The anatomical structures that bridge and interconnect neurons provide the foundational design pattern for **Dendrite**:
+
+1. **Dendritic Arbors (Afferent Ingestion & Input Sampling)**:
+   In biological tissue, dendrites form intricate branching trees that listen to surrounding cells, collecting biochemical potentials and sensory inputs across dendritic spines. In Dendrite, this corresponds to afferent signal ingestion: universal AST/CFG reachability slicing (`query slice`), external reference digestion (`ref`), reverse-engineering disassembly (`rea`), and hardware thermal telemetry (`telemetry`). The system never blindly dumps raw monolithic repos into prompts; it prunes and filters inputs through its dendritic tree.
+
+2. **The Soma / Perikaryon (Cell Body & Integration Nucleus)**:
+   The soma is the metabolic engine and central command of the neuron, housing the nucleus, endoplasmic reticulum, and mitochondria. It integrates thousands of microvolt postsynaptic graded potentials across its membrane until reaching the critical threshold of excitation. In Dendrite, the Soma embodies workspace state management (`project`), declarative environment replication blueprints (`env plan`/`replicate`), persistent segmented memory checkpoints (`store`), and sovereign issue tracking (`plane`).
+
+3. **The Axon Hillock & Axonal Tract (Conductive Transmission Conduit)**:
+   The axon is the neuron's high-speed long-distance fiber, carrying all-or-none action potentials away from the cell body across physical space without signal degradation. In Dendrite, the Axon represents the encrypted multi-node zero-trust network mesh (Tailscale, Cloudflare, SSH tunnels) that transports compute tasks across physical distances—connecting a local MacBook workstation to remote Debian servers and elastic AWS/Azure cloud-burst nodes (`topology`, `move`).
+
+4. **Myelin Sheath & Nodes of Ranvier (Saltatory Conduction & Shielding)**:
+   Glial cells wrap axons in lipid-rich myelin sheaths, punctuated periodically by unmyelinated **Nodes of Ranvier**. Instead of crawling slowly down the membrane, action potentials leap discontinuously between nodes—a mechanism called **saltatory conduction** that achieves phenomenal propagation velocities while preventing energy dissipation. In Dendrite, Myelin represents velocity accelerators and protective guardrails: inference and gateway performance benchmarks (`bench`), Git branch guardrails (`vcs guard`), and topological branch rebase auditors (`audit-changes`).
+
+5. **Synaptic Cleft & Neurotransmitter Gating (Governed Transmission)**:
+   The synapse is the 20-nanometer intercellular junction where an axon terminal meets a downstream dendrite. Rather than letting unbounded electrical current flood the system, neurotransmitters cross the synaptic cleft only when activation thresholds and receptor densities permit, preventing excitotoxicity and seizure storms. In Dendrite, the Synapse is token budget governance (`gateway`, `tokens`)—enforcing sliding-window financial limiters, rate-bounded supervisory throttling ($R_{\text{target}}$), and Model Context Protocol (`mcp`) standard interneuron bridges.
+
+6. **Synaptic Vesicles & Quantal Release (Discrete Atomic Payloads)**:
+   Neurotransmitters are packaged into discrete membrane-bound bubbles called vesicles, released in quantified packets (quanta). In Dendrite, this corresponds to atomic, verified changes: autonomous Git commits with local LLM message generation (`commit`) and persistent memory chunks (`store commit`).
+
+7. **Telodendria & Terminal Boutons (Efferent Dispatchers & Actuators)**:
+   The axon terminates in delicate telodendria crowned with synaptic knobs (boutons) that interface with effector muscles or target neurons to produce physical movement or downstream thought. In Dendrite, Boutons are autonomous coding agents (`agent run aider/openhands`), microservice orchestrators (`service`), and automated test synthesizers with Testcontainers self-healing (`test auto`).
+
+8. **Synaptic Plasticity (Long-Term Potentiation & Pruning)**:
+   Biological neural networks continuously reshape themselves through Hebbian plasticity: *"neurons that fire together, wire together"* (Long-Term Potentiation), while unneeded or noisy pathways are metabolically pruned. In Dendrite, Plasticity manifests in multi-directory topological DAG solving (`pool resolve`), cleanroom reverse engineering (`rea`), and AST code transpilation/fusion (`query fuse`).
+
+---
+
+## 2. Command Matrix: Standard & Neuro-Lore Nomenclature
+
+Dendrite supports **dual nomenclature**: developers may invoke commands using standard devops terminology or their biological **Neuro-Lore Names** (with concise **Short Lore Aliases**). Both syntaxes are first-class citizens in the CLI.
+
+| Anatomical Origin | Standard Command | Neuro-Lore Name | Short Alias | Functional Scope & Capabilities | Status |
+| :--- | :--- | :--- | :--- | :--- | :---: |
+| **Dendritic Arbor**<br/>*(Afferent Signal & Context Ingestion)* | `query slice` | `dendrite-slice` | `arbor` / `dslc` | Intent-driven AST/CFG reachability slicing and context debloater | `Active [x]` |
+| | `query swap` | `dendrite-swap` | `swap` / `dswp` | AST-aware pattern and framework replacement engine | `Active [x]` |
+| | `query transpile` | `dendrite-transpile` | `transpile` / `dtr` | Polyglot cross-language code translation & verification | `Active [x]` |
+| | `query fuse` | `dendrite-fuse` | `fuse` / `dfus` | Multi-source AST blending and syntax tree synthesis | `Active [x]` |
+| | `query reuse-audit` | `dendrite-audit` | `d-audit` / `drau` | AST token reuse audit and anti-duplication scanner | `Active [x]` |
+| | `ref <list\|add\|remove>` | `dendritic-afferent` | `afferent` / `aff` | Ingest Tier 1 external code references for cleanroom synthesis | `Active [x]` |
+| | `rea <showcase\|list>` | `retrograde-analysis` | `retro` / `rea` | Open-source cleanroom disassembly and AST parity verification | `Active [x]` |
+| **Soma / Perikaryon**<br/>*(Central State, Nucleus & Life-Cycle)* | `env doctor` / `doctor` | `soma-diagnose` | `probe` / `diag` | Host system capability discovery and pre-flight diagnostics | `Active [x]` |
+| | `env plan` | `soma-plan` | `blueprint` / `splan` | Declarative environment replication planning (host/container/hybrid) | `Active [x]` |
+| | `env replicate` | `soma-genesis` | `genesis` / `srep` | Multi-node toolchain and containerized environment replication | `Active [x]` |
+| | `env status` | `soma-homeostasis` | `homeo` / `sst` | Real-time health monitoring of replicated services & containers | `Active [x]` |
+| | `project <add\|switch\|list>`| `ganglion-workspace`| `ganglion` / `prj` | Multi-project workspace registry with <50ms context switching | `Active [x]` |
+| | `plane <status\|next\|push>` | `chronos-tracker` | `chronos` / `pln` | Sovereign issue tracking, DAG scheduling, and Gantt alignment | `Active [x]` |
+| | `store <status\|chunks\|rm>` | `engram-store` | `engram` / `gram` | Persistent segmented chunk checkpointing and contextual memory | `Active [x]` |
+| | `pool <add\|rm\|resolve>` | `plexus-pool` | `plexus` / `plx` | Multi-directory dependency inference & topological DAG solver | `Active [x]` |
+| **Axon & Axon Hillock**<br/>*(Conductive Conduction & Mesh)* | `topology [advisor]` | `axon-pathway` | `axon` / `top` | Dynamic multi-node service placement and hardware router | `Active [x]` |
+| | `move <svc> to --ssh` | `axonal-translocation`| `translocate` / `mv` | Zero-credential interactive service migration across SSH nodes | `Active [x]` |
+| | `sync-remote` / `github-sync`| `saltatory-sync` | `salt-sync` / `gsync`| Bidirectional git/issue sync with commit reconciliation | `Active [x]` |
+| | `dist <spawn\|interop>` | `neural-mesh` | `syn-mesh` / `dist` | Distributed codebase spawner and cross-project coordinator | `Active [x]` |
+| **Myelin & Nodes of Ranvier**<br/>*(Acceleration & Shielding)* | `bench <inference\|gateway>` | `conduction-velocity`| `velocity` / `bnch` | TTFT, TPS, and load resilience stress-test benchmarking | `Active [x]` |
+| | `vcs <guard\|check\|status>` | `myelin-guard` | `guard` / `vcs` | Branch protection guardrails prohibiting unreviewed main pushes | `Active [x]` |
+| | `audit-changes` | `synaptic-pruning` | `prune` / `prn` | Topological vendor branch audit, conflict detection, and rebase | `Active [x]` |
+| | `quality <audit\|hitl-sync>` | `allostasis-audit` | `allostasis` / `qlty` | Anti-mock scan, 100% coverage profiler, and HITL synchronization | `Active [x]` |
+| | `analyze <status\|policy>` | `cognitive-analysis` | `cognition` / `anlz` | Cognitive complexity analyzer and execution policy router | `Active [x]` |
+| **Synaptic Cleft & Gating**<br/>*(Governed Neurotransmission)* | `inference <list\|probe>` | `action-potential` | `spike` / `inf` | Pluggable multi-engine inference (Ollama, OxiLLaMa, vLLM, TGI) | `Active [x]` |
+| | `gateway` / `dev gateway` | `synaptic-cleft` | `cleft` / `gate` | LiteLLM token governance, rate-limiting, and key provisioning | `Active [x]` |
+| | `tokens [status]` | `vesicle-quota` | `vesicle` / `tok` | Sliding 24h/7d financial expenditure limiter and token quota | `Active [x]` |
+| | `mcp <serve\|tools\|call>` | `interneuron-mcp` | `inter` / `mcp` | Model Context Protocol bridge connecting tools, agents, and IDEs | `Active [x]` |
+| | `jetbrains <probe\|open>` | `neuromuscular-bridge`| `bridge` / `jb` | GoLand/IntelliJ PSI symbol indexer, problems probe, and run harness | `Active [x]` |
+| **Terminal Boutons**<br/>*(Efferent Actuation & Effectors)* | `agent <search\|route\|run>` | `bouton-dispatch` | `bouton` / `agt` | Autonomous coding agent harness (Aider, OpenHands, OpenCode) | `Active [x]` |
+| | `test <auto\|ui>` | `myotatic-reflex` | `reflex` / `tst` | Testcontainers table-driven synthesis and self-healing test loop | `Active [x]` |
+| | `commit [flags]` | `quantal-commit` | `quantal` / `cmt` | Autonomous commit synthesis with local LLM SemVer adherence | `Active [x]` |
+| | `service <start\|stop\|health>`| `effector-service` | `effector` / `svc` | Process manager for microservices (Penpot, Plane, Ollama) | `Active [x]` |
+| | `story <next\|fork\|resolve>` | `synaptic-saga` | `saga` / `sty` | Autonomous multi-step story execution and DAG branching | `Active [x]` |
+| | `triage` | `inhibitory-triage` | `triage` / `trg` | Local agent conflict resolution and priority arbitration | `Active [x]` |
+| **Cortex & Consciousness**<br/>*(Sensory Cockpit & Knowledge)* | `ui [--port 3456]` | `cortex-cockpit` | `cortex` / `ui` | Real-time embedded Web Control Cockpit (<800ms startup) | `Active [x]` |
+| | `telemetry [snapshot\|metrics]`| `afferent-telemetry` | `sensory` / `tel` | Real-time Apple Silicon SoC thermals and Prometheus telemetry | `Active [x]` |
+| | `doc <docusaurus\|reflect>` | `engram-codex` | `codex` / `doc` | Docs-as-Code reflection, taxonomy generation, and Docusaurus sync | `Active [x]` |
+
+---
+
+## 3. Architectural Philosophy: Decoupled Compute Tiers
 
 Running background databases, AST graph indexing, binary disassemblers, and heavy model inference on a single developer workstation drains battery life, induces thermal throttling, and destabilizes editor responsiveness.
 
@@ -55,7 +172,7 @@ flowchart TB
 
 ---
 
-## 2. Core Capabilities
+## 4. Core Capabilities
 
 ### 🧠 Pluggable Inference Engines ([FEAT-020](docs/features/FEAT-020-pluggable-inference-engines.md))
 - **Ollama Engine**: Metal GPU acceleration on Apple Silicon with zero-cost token accounting.
@@ -87,37 +204,53 @@ flowchart TB
 
 ---
 
-## 3. Quickstart & Command Reference
+## 5. Quickstart & Command Reference
 
-### Installation & Environment Replication
-Dendrite replicates entire environments natively on the host or inside Docker containers across local and remote nodes:
+### Pre-Flight Diagnostics & Health (Soma Diagnosis)
+Run environment diagnostics using either standard or lore commands:
 
 ```bash
-# 1. Audit target machine capabilities (OS, arch, installed tools)
+# Standard syntax
 dendrite env doctor
 
-# 2. Plan replication in Hybrid Mode (services in Docker, dev tools on host)
+# Or using the Neuro-Lore alias (<800ms)
+dendrite probe
+```
+
+### Environment Replication (Soma Genesis)
+Replicate entire environments natively on the host or inside Docker containers across local and remote nodes:
+
+```bash
+# 1. Plan replication in Hybrid Mode (services in Docker, dev tools on host)
 dendrite env plan --mode hybrid --with-plane --with-penpot
 
-# 3. Execute replication
+# 2. Execute replication (or: dendrite genesis --mode hybrid)
 dendrite env replicate --mode hybrid --with-plane --with-penpot
 
-# 4. Check real-time component health
+# 3. Check real-time component health (or: dendrite homeo)
 dendrite env status
 ```
 
-### Launching the Web Control Cockpit
+### Launching the Web Control Cockpit (Cortex Cockpit)
 Spin up the embedded HTTP and WebSocket control server:
 
 ```bash
-# Launch UI and automatically open default browser (<800ms startup)
+# Standard syntax
 dendrite ui
 
-# Run control server as a headless background daemon
-dendrite ui --daemon --port 3456
+# Or using the Neuro-Lore alias (<800ms startup)
+dendrite cortex
 ```
 
-### Multi-Node Topology Management
+### Intent-Driven AST Slicing (Dendritic Arbor)
+Debloat context and extract exact call graphs before feeding LLM prompts:
+
+```bash
+# Extract only reachable AST nodes for a specific intent
+dendrite arbor slice --sources ./pkg/env --entrypoint Replicate "verify docker container mounts"
+```
+
+### Multi-Node Topology Management (Axonal Pathways)
 Switch between deployment scenarios declaratively:
 
 ```bash
@@ -134,12 +267,12 @@ dendrite up azure-burst
 dendrite down
 ```
 
-### Autonomous Coding Agent Harness
+### Autonomous Coding Agent Harness (Bouton Dispatch)
 Orchestrate autonomous coding tools through LiteLLM governance:
 
 ```bash
 # Run Aider bound to virtual key spend limits
-dendrite agent run aider --ticket DEN-030 --spend-cap 5.00
+dendrite bouton run aider --ticket DEN-030 --spend-cap 5.00
 
 # Inspect past agent sessions, commits, and token expenditure
 dendrite agent session list
@@ -147,7 +280,7 @@ dendrite agent session list
 
 ---
 
-## 4. Repository Structure
+## 6. Repository Structure
 
 ```
 .
@@ -160,6 +293,7 @@ dendrite agent session list
 │   ├── agent/             # Autonomous coding agent harness (Aider, OpenHands, OpenCode)
 │   ├── ai/                # Context compaction, token optimization & polyglot translation
 │   ├── ast/               # Tree-sitter AST & complexity analyzer
+│   ├── cli/               # Modular Command Registry, Dispatcher & Levenshtein Typo Advisor
 │   ├── devtool/           # Productivity tools & ticket sync
 │   ├── docgen/            # Docs-as-Code synthesizer & reflection
 │   ├── env/               # Environment discovery, planner & replicator
@@ -186,7 +320,7 @@ dendrite agent session list
 
 ---
 
-## 5. Quality & Definition of Done (DoD)
+## 7. Quality & Definition of Done (DoD)
 
 Dendrite adheres to autonomous software craftsmanship standards:
 
@@ -201,6 +335,6 @@ go test -cover ./pkg/...
 
 ---
 
-## 6. Roadmap & Milestone Progress
+## 8. Roadmap & Milestone Progress
 
 Active milestone progress and tickets are tracked authoritatively in **Plane v2** (`http://localhost:8090`). **[DEV_STATUS.md](DEV_STATUS.md)** is maintained purely as a human-readable repository mirror replicated from Plane (`dendrite plane replicate`). Autonomous agents must never check or rely on `DEV_STATUS.md` when Plane is available.
