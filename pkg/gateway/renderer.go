@@ -2,8 +2,11 @@ package gateway
 
 import (
 	"fmt"
+	"net/http"
+	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -11,10 +14,53 @@ import (
 	"Dendrite/pkg/topology"
 )
 
+func isOxiLLaMaPresent(endpoint string) bool {
+	client := &http.Client{Timeout: 300 * time.Millisecond}
+	resp, err := client.Get(strings.TrimRight(endpoint, "/") + "/v1/models")
+	if err == nil {
+		resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}
+	resp, err = client.Get(strings.TrimRight(endpoint, "/") + "/health")
+	if err == nil {
+		resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}
+	return false
+}
+
 // DefaultLiteLLMConfig creates a production-grade LiteLLM configuration with the 4-tier model hierarchy.
 func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 	if strings.TrimSpace(ollamaBaseURL) == "" {
 		ollamaBaseURL = "http://127.0.0.1:11434"
+	}
+
+	oxillamaBaseURL := os.Getenv("DENDRITE_OXILLAMA_ENDPOINT")
+	if oxillamaBaseURL == "" {
+		oxillamaBaseURL = "http://127.0.0.1:8080"
+	}
+	oxillamaOnline := isOxiLLaMaPresent(oxillamaBaseURL) || os.Getenv("DENDRITE_GATEWAY_OXILLAMA_ROUTING") == "true"
+
+	qwen27bModel := "ollama/qwen3.8:27b"
+	qwen27bAPIBase := ollamaBaseURL
+	qwen27bProvider := "ollama"
+	qwen27bAPIKey := ""
+
+	qwen9bModel := "ollama/qwen3.5:9b"
+	qwen9bAPIBase := ollamaBaseURL
+	qwen9bProvider := "ollama"
+	qwen9bAPIKey := ""
+
+	if oxillamaOnline {
+		qwen27bModel = "openai/qwen3.8:27b"
+		qwen27bAPIBase = strings.TrimRight(oxillamaBaseURL, "/") + "/v1"
+		qwen27bProvider = "openai"
+		qwen27bAPIKey = "EMPTY"
+
+		qwen9bModel = "openai/qwen3.5:9b"
+		qwen9bAPIBase = strings.TrimRight(oxillamaBaseURL, "/") + "/v1"
+		qwen9bProvider = "openai"
+		qwen9bAPIKey = "EMPTY"
 	}
 
 	modelList := []ModelListEntry{
@@ -77,9 +123,10 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 		{
 			ModelName: "local-qwen3-27b",
 			LitellmParams: ModelParams{
-				Model:             "ollama/qwen3.8:27b",
-				APIBase:           ollamaBaseURL,
-				CustomLLMProvider: "ollama",
+				Model:             qwen27bModel,
+				APIBase:           qwen27bAPIBase,
+				APIKey:            qwen27bAPIKey,
+				CustomLLMProvider: qwen27bProvider,
 				MaxTokens:         8192,
 			},
 			ModelInfo: &ModelInfo{
@@ -96,9 +143,10 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 		{
 			ModelName: "local-qwen3-9b",
 			LitellmParams: ModelParams{
-				Model:             "ollama/qwen3.5:9b",
-				APIBase:           ollamaBaseURL,
-				CustomLLMProvider: "ollama",
+				Model:             qwen9bModel,
+				APIBase:           qwen9bAPIBase,
+				APIKey:            qwen9bAPIKey,
+				CustomLLMProvider: qwen9bProvider,
 				MaxTokens:         4096,
 			},
 			ModelInfo: &ModelInfo{
@@ -319,6 +367,28 @@ func MultiEngineLiteLLMConfig(engines []inference.InferenceEngine) *LiteLLMConfi
 				"gemini-2.5-pro": cascadeList,
 				"copilot-sonnet": engineFallbackNames,
 			},
+		}
+	}
+
+	// Point local-qwen3 aliases to OxiLLaMa when present in registered engines
+	for _, eng := range engines {
+		if eng.Type() == inference.EngineOxiLLaMa {
+			oxEP := strings.TrimRight(eng.Config().Endpoint, "/") + "/v1"
+			for i := range cfg.ModelList {
+				switch cfg.ModelList[i].ModelName {
+				case "local-qwen3-27b":
+					cfg.ModelList[i].LitellmParams.Model = "openai/qwen3.8:27b"
+					cfg.ModelList[i].LitellmParams.APIBase = oxEP
+					cfg.ModelList[i].LitellmParams.CustomLLMProvider = "openai"
+					cfg.ModelList[i].LitellmParams.APIKey = "EMPTY"
+				case "local-qwen3-9b":
+					cfg.ModelList[i].LitellmParams.Model = "openai/qwen3.5:9b"
+					cfg.ModelList[i].LitellmParams.APIBase = oxEP
+					cfg.ModelList[i].LitellmParams.CustomLLMProvider = "openai"
+					cfg.ModelList[i].LitellmParams.APIKey = "EMPTY"
+				}
+			}
+			break
 		}
 	}
 

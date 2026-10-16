@@ -1,6 +1,8 @@
 package gateway_test
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -201,5 +203,55 @@ func TestGatewayValidationError(t *testing.T) {
 	}
 	if !strings.Contains(vErrNoCause.Error(), "field_only") {
 		t.Errorf("expected error string to contain field name")
+	}
+}
+
+func TestDefaultLiteLLMConfig_OxiLLaMaRoutingWhenPresent(t *testing.T) {
+	oxServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"data":[{"id":"qwen3.8:27b"},{"id":"qwen3.5:9b"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer oxServer.Close()
+
+	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", oxServer.URL)
+	t.Setenv("DENDRITE_GATEWAY_OXILLAMA_ROUTING", "true")
+
+	cfg := gateway.DefaultLiteLLMConfig("http://127.0.0.1:11434")
+	if cfg == nil {
+		t.Fatalf("expected non-nil config")
+	}
+
+	found27b := false
+	found9b := false
+	for _, m := range cfg.ModelList {
+		if m.ModelName == "local-qwen3-27b" {
+			found27b = true
+			if m.LitellmParams.CustomLLMProvider != "openai" {
+				t.Errorf("expected openai provider for local-qwen3-27b, got %s", m.LitellmParams.CustomLLMProvider)
+			}
+			if m.LitellmParams.Model != "openai/qwen3.8:27b" {
+				t.Errorf("expected openai/qwen3.8:27b, got %s", m.LitellmParams.Model)
+			}
+			if !strings.Contains(m.LitellmParams.APIBase, oxServer.URL) {
+				t.Errorf("expected APIBase to point to oxServer, got %s", m.LitellmParams.APIBase)
+			}
+		}
+		if m.ModelName == "local-qwen3-9b" {
+			found9b = true
+			if m.LitellmParams.CustomLLMProvider != "openai" {
+				t.Errorf("expected openai provider for local-qwen3-9b, got %s", m.LitellmParams.CustomLLMProvider)
+			}
+			if m.LitellmParams.Model != "openai/qwen3.5:9b" {
+				t.Errorf("expected openai/qwen3.5:9b, got %s", m.LitellmParams.Model)
+			}
+		}
+	}
+
+	if !found27b || !found9b {
+		t.Errorf("missing local-qwen3 models in rendered config")
 	}
 }
