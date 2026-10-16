@@ -1804,8 +1804,18 @@ func handleEnvPrepareCommand(ctx context.Context, args []string) {
 		return
 	}
 
+	pathVal := *tgtPath
+	if pathVal == "." && len(fs.Args()) > 0 {
+		pathVal = fs.Args()[0]
+	}
+	if reg, err := workspace.NewRegistry("", ""); err == nil {
+		if p, err := reg.GetProject(pathVal); err == nil && p != nil {
+			pathVal = p.Path
+		}
+	}
+
 	opts := bootstrap.PrepareOptions{
-		ProjectPath: *tgtPath,
+		ProjectPath: pathVal,
 		DefaultTool: *tool,
 		EnforceCICD: !*noCICD,
 		SyncSkills:  !*noSkills,

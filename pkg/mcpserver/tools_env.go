@@ -4,75 +4,71 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"Dendrite/pkg/env/bootstrap"
 )
 
-func (s *Server) registerEnvPrepareTools(deps Dependencies) {
+func (s *Server) registerEnvBootstrapTools(deps Dependencies) {
 	// dendrite_env_prepare
 	s.RegisterTool(Tool{
 		Name:        "dendrite_env_prepare",
-		Description: "Prepares, synchronizes, and enforces CI/CD practices on a project repository with GitHub Copilot as default, scaffolding copilot instructions, CI workflows with >= 85% coverage gate, and agent rules",
+		Description: "Prepares or synchronizes project environment, updates agent rules and skills, and enforces CI/CD tooling (default: GitHub Copilot)",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"project_path": map[string]interface{}{
 					"type":        "string",
-					"description": "Path to target project root (defaults to '.')",
+					"description": "Target workspace project root directory (default: current directory)",
 				},
 				"default_tool": map[string]interface{}{
 					"type":        "string",
-					"description": "Default CI/CD and developer tool (defaults to 'copilot')",
+					"description": "Default CI/CD assistant tool (default: 'copilot')",
 				},
 				"enforce_cicd": map[string]interface{}{
 					"type":        "boolean",
-					"description": "Whether to enforce CI/CD workflows and copilot instructions (default true)",
-				},
-				"sync_skills": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Whether to synchronize agent rules and skills (default true)",
+					"description": "Enforce CI/CD practices and GitHub Copilot configuration (default: true)",
 				},
 				"dry_run": map[string]interface{}{
 					"type":        "boolean",
-					"description": "Preview changes without modifying filesystem",
+					"description": "If true, simulates preparation without writing files",
 				},
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		opts := bootstrap.PrepareOptions{
-			ProjectPath: ".",
-			DefaultTool: "copilot",
-			EnforceCICD: true,
-			SyncSkills:  true,
+		path := "."
+		if p, ok := args["project_path"].(string); ok && strings.TrimSpace(p) != "" {
+			path = p
 		}
-
-		if p, ok := args["project_path"].(string); ok && p != "" {
-			opts.ProjectPath = p
+		tool := "copilot"
+		if t, ok := args["default_tool"].(string); ok && strings.TrimSpace(t) != "" {
+			tool = t
 		}
-		if t, ok := args["default_tool"].(string); ok && t != "" {
-			opts.DefaultTool = t
-		}
+		enforceCICD := true
 		if e, ok := args["enforce_cicd"].(bool); ok {
-			opts.EnforceCICD = e
+			enforceCICD = e
 		}
-		if s, ok := args["sync_skills"].(bool); ok {
-			opts.SyncSkills = s
-		}
+		dryRun := false
 		if d, ok := args["dry_run"].(bool); ok {
-			opts.DryRun = d
+			dryRun = d
 		}
 
-		preparer := bootstrap.NewPreparer()
-		report, err := preparer.Prepare(ctx, opts)
+		prep := bootstrap.NewPreparer()
+		report, err := prep.Prepare(ctx, bootstrap.PrepareOptions{
+			ProjectPath: path,
+			DefaultTool: tool,
+			EnforceCICD: enforceCICD,
+			SyncSkills:  true,
+			DryRun:      dryRun,
+		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to prepare project environment: %w", err)
+			return nil, fmt.Errorf("environment preparation failed: %w", err)
 		}
 
 		data, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			return nil, err
 		}
-
 		return &CallToolResult{
 			Content: []ContentItem{
 				{Type: "text", Text: string(data)},

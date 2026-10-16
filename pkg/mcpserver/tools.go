@@ -813,6 +813,7 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 
 	// 55-57: Git Guardrails, Speculative Stacked Branches & Vendor Audit Tools
 	s.registerAuditTools(deps)
+	s.registerEnvBootstrapTools(deps)
 
 	// 46. dendrite_commit
 	s.RegisterTool(Tool{
