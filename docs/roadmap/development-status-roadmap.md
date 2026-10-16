@@ -23,27 +23,27 @@ The authoritative project state is tracked in **Plane v2** (`http://localhost:80
 | Metric | Current Value | Target / Baseline | Status |
 | :--- | :--- | :--- | :--- |
 | **Active Milestone** | **Milestone 24** — Autonomous Pool DAG & Multi-IDE Project Synchronization (FEAT-029) | Milestone 39 (Project Final) | In Progress |
-| **Current Focus Ticket** | `DEN-809` (Model Migration Engine & Inference Priority) | Next in queue: `DEN-810` / `DEN-051` | Active Focus |
+| **Current Focus Ticket** | `DEN-807` (Canvas Interactive Writing & Direct Creative Action Handlers) | Next in queue: `DEN-808` / `DEN-051` | Active Focus |
 | **Total Tracked Tickets** | **101 Tickets** (Authoritative Plane v2 Ledger) | 101 Tickets Active | 100% Tracked |
 | **Formally Done & Verified** | **2 / 101 Tickets** (**2.0% Done**) | Formally closed by human review | Verified Done [x] |
-| **Ongoing / In Backlog** | **5 / 101 Tickets** (**5.0% Ongoing**) | Queued / Active execution | In Progress [-] |
-| **To Be Verified by Human** | **94 / 101 Tickets** (**93.1% To Verify**) | DoD Passed ($\ge 85\%$ cov), pending HITL sign-off | Awaiting Human [?] |
+| **Ongoing / In Backlog** | **4 / 101 Tickets** (**4.0% Ongoing**) | Queued / Active execution | In Progress [-] |
+| **To Be Verified by Human** | **95 / 101 Tickets** (**94.1% To Verify**) | DoD Passed ($\ge 85\%$ cov), pending HITL sign-off | Awaiting Human [?] |
 | **Core Statement Coverage** | **$\ge 88.4\%$ Average** across all packages | $\ge 85.0\%$ DoD Threshold | Exceeds Target |
-| **Registered MCP Tools** | **64+ Native Tools** (Stdio JSON-RPC 2.0) | JetBrains + Stacks | Operational |
+| **Registered MCP Tools** | **65+ Native Tools** (Stdio JSON-RPC 2.0) | JetBrains + Stacks | Operational |
 | **Supported Inference Backends** | 6 Engines (Ollama, OxiLLaMa, TGI, TEI, vLLM, llama.cpp)| Multi-Provider Gateway | Operational |
 | **Last Synchronized** | 2026-10-16 | Real-time Plane Sync | Verified |
 
 ```mermaid
 pie title Real-Time Ticket Status Breakdown (Plane v2 Authority)
-    "To Be Verified by Human (94)" : 94
-    "Ongoing / Active Backlog (5)" : 5
+    "To Be Verified by Human (95)" : 95
+    "Ongoing / Active Backlog (4)" : 4
     "Done / Formally Verified (2)" : 2
 ```
 
 > [!NOTE]
 > ### Real-Time Status Breakdown & The Human-in-the-Loop (HITL) Gate
 > - **Done / Formally Verified (2.0%, 2 Tickets)**: Tickets that have been reviewed, audited, and approved through human verification or `dendrite hitl-sync` (`[DEN-809]` #139, `[DEND-401]` #114).
-> - **Ongoing / Active Backlog (5.0%, 5 Tickets)**: Tasks currently queued or undergoing active feature implementation (`[DEN-812]` #141, `[DEN-809]` #137, `[DEN-808]` #136, `[DEN-807]` #135, `[DEN-806]` #134).
+> - **Ongoing / Active Backlog (5.0%, 5 Tickets)**: Tasks currently queued or undergoing active feature implementation (`[DEN-812]` #141, `[DEN-808]` #136, `[DEN-807]` #135).
 > - **To Be Verified by Human (94.0%, 94 Tickets)**: Autonomous agent deliverables that have satisfied all engineering criteria (compiling code, zero mock policy, Testcontainers integration, statement coverage $\ge 85\%$) and transitioned into Plane mandatory terminal `To Verify` state. These tickets await human inspection and sign-off before advancing to `Done`.
 
 ---
