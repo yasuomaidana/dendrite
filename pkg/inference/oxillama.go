@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -235,6 +237,8 @@ func (e *OxiLLaMaEngine) Health(ctx context.Context) EngineHealth {
 	h.Latency = time.Since(start)
 	if err != nil {
 		h.Error = err.Error()
+		models, _ := e.SupportedModels(ctx)
+		h.Models = models
 		return h
 	}
 	defer resp.Body.Close()
@@ -245,6 +249,8 @@ func (e *OxiLLaMaEngine) Health(ctx context.Context) EngineHealth {
 		h.Models = models
 	} else {
 		h.Error = fmt.Sprintf("HTTP status %d", resp.StatusCode)
+		models, _ := e.SupportedModels(ctx)
+		h.Models = models
 	}
 
 	return h
@@ -257,28 +263,55 @@ func (e *OxiLLaMaEngine) SupportedModels(ctx context.Context) ([]string, error) 
 		return nil, err
 	}
 
-	resp, err := e.httpClient.Do(req)
-	if err != nil {
-		return nil, err
+	resp, doErr := e.httpClient.Do(req)
+	if doErr == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			var res struct {
+				Data []struct {
+					ID string `json:"id"`
+				} `json:"data"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&res) == nil {
+				var names []string
+				for _, m := range res.Data {
+					names = append(names, m.ID)
+				}
+				return names, nil
+			}
+		} else {
+			return nil, fmt.Errorf("oxillama models failed with HTTP %d", resp.StatusCode)
+		}
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("models failed with HTTP %d", resp.StatusCode)
+	// Local discovery fallback from ~/.oxillama/models if daemon unreachable
+	home, _ := os.UserHomeDir()
+	oxillamaDir := filepath.Join(home, ".oxillama", "models")
+	entries, readErr := os.ReadDir(oxillamaDir)
+	if readErr == nil && len(entries) > 0 {
+		var localModels []string
+		for _, entry := range entries {
+			if entry.IsDir() {
+				mfPath := filepath.Join(oxillamaDir, entry.Name(), "oxillama-manifest.json")
+				if data, mfErr := os.ReadFile(mfPath); mfErr == nil {
+					var mf struct {
+						Name string `json:"name"`
+					}
+					if json.Unmarshal(data, &mf) == nil && mf.Name != "" {
+						localModels = append(localModels, mf.Name)
+						continue
+					}
+				}
+				localModels = append(localModels, entry.Name())
+			}
+		}
+		if len(localModels) > 0 {
+			return localModels, nil
+		}
 	}
 
-	var res struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
+	if doErr != nil {
+		return nil, doErr
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return nil, err
-	}
-
-	var names []string
-	for _, m := range res.Data {
-		names = append(names, m.ID)
-	}
-	return names, nil
+	return e.cfg.Models, nil
 }

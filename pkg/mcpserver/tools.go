@@ -901,4 +901,11 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 			Content: []ContentItem{{Type: "text", Text: string(data)}},
 		}, nil
 	})
+
+	// Model Migration Tools
+	s.registerInferenceTools(deps)
+	// UI & Penpot Tools
+	s.registerPenpotTools(deps)
+	// Service Migration & Node Mobility Tools
+	s.registerMigrateTools(deps)
 }

@@ -6,35 +6,38 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
 // CommitOptions defines the parameters for an autonomous Git commit.
 type CommitOptions struct {
-	TicketID        string   `json:"ticket_id,omitempty"`
-	Message         string   `json:"message,omitempty"`
-	Files           []string `json:"files,omitempty"`
-	StageAll        bool     `json:"stage_all"`
-	UseLocalModel   bool     `json:"use_local_model"`
-	Model           string   `json:"model,omitempty"`
-	DryRun          bool     `json:"dry_run,omitempty"`
-	OllamaEndpoint  string   `json:"ollama_endpoint,omitempty"`
-	LiteLLMEndpoint string   `json:"litellm_endpoint,omitempty"`
-	LiteLLMKey      string   `json:"litellm_key,omitempty"`
-	RepoDir         string   `json:"repo_dir,omitempty"`
+	TicketID         string   `json:"ticket_id,omitempty"`
+	Message          string   `json:"message,omitempty"`
+	Files            []string `json:"files,omitempty"`
+	StageAll         bool     `json:"stage_all"`
+	UseLocalModel    bool     `json:"use_local_model"`
+	Model            string   `json:"model,omitempty"`
+	DryRun           bool     `json:"dry_run,omitempty"`
+	OxillamaEndpoint string   `json:"oxillama_endpoint,omitempty"`
+	OllamaEndpoint   string   `json:"ollama_endpoint,omitempty"`
+	LiteLLMEndpoint  string   `json:"litellm_endpoint,omitempty"`
+	LiteLLMKey       string   `json:"litellm_key,omitempty"`
+	RepoDir          string   `json:"repo_dir,omitempty"`
 }
 
 // CommitResult encapsulates the outcome of a commit operation.
 type CommitResult struct {
-	CommitSHA   string   `json:"commit_sha"`
-	Message     string   `json:"message"`
-	Files       []string `json:"files"`
-	TicketID    string   `json:"ticket_id,omitempty"`
-	ModelUsed   string   `json:"model_used,omitempty"`
-	CostUSD     float64  `json:"cost_usd"`
-	DryRun      bool     `json:"dry_run,omitempty"`
+	CommitSHA string   `json:"commit_sha"`
+	Message   string   `json:"message"`
+	Files     []string `json:"files"`
+	TicketID  string   `json:"ticket_id,omitempty"`
+	ModelUsed string   `json:"model_used,omitempty"`
+	CostUSD   float64  `json:"cost_usd"`
+	DryRun    bool     `json:"dry_run,omitempty"`
 }
 
 // FormatTicketCommit ensures the commit message has the proper ticket prefix.
@@ -56,9 +59,6 @@ func GenerateLocalCommitMessage(ctx context.Context, diffStat, fullDiff, ticketI
 	if model == "" {
 		model = "qwen3.8:27b"
 	}
-	if ollamaURL == "" {
-		ollamaURL = "http://localhost:11434"
-	}
 
 	prompt := fmt.Sprintf(`You are an expert Git and AI engineer following the Conventional Commits specification.
 Based on the following staged git diff summary and details, synthesize a clear, professional git commit message.
@@ -73,8 +73,57 @@ Git Diff Summary:
 Git Diff Content (truncated):
 %s`, diffStat, truncateString(fullDiff, 2000))
 
-	// 1. Try Ollama directly (Fastest zero-cost path)
 	client := &http.Client{Timeout: 35 * time.Second}
+
+	// 1. Try OxiLLaMa Native Pure-Rust Zero-FFI Engine
+	tryOxillama := strings.Contains(strings.ToLower(model), "oxillama") ||
+		ollamaURL == "" || ollamaURL == "http://localhost:11434" || ollamaURL == "http://127.0.0.1:11434"
+	if tryOxillama {
+		oxillamaPath, _ := exec.LookPath("oxillama")
+		if oxillamaPath == "" {
+			home, _ := os.UserHomeDir()
+			candidate := filepath.Join(home, ".cargo", "bin", "oxillama")
+			if _, err := os.Stat(candidate); err == nil {
+				oxillamaPath = candidate
+			}
+		}
+		if oxillamaPath != "" {
+			home, _ := os.UserHomeDir()
+			normModel := strings.ReplaceAll(strings.TrimPrefix(model, "oxillama/"), ":", "_")
+			modelDir := filepath.Join(home, ".oxillama", "models", normModel)
+			if _, err := os.Stat(modelDir); err == nil {
+				cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				oxCmd := exec.CommandContext(cmdCtx, oxillamaPath, "run", "--model", modelDir, prompt, "--max-tokens", "64")
+				var outBuf, errBuf bytes.Buffer
+				oxCmd.Stdout = &outBuf
+				oxCmd.Stderr = &errBuf
+				if err := oxCmd.Run(); err == nil {
+					cancel()
+					outStr := outBuf.String()
+					lines := strings.Split(outStr, "\n")
+					var filtered []string
+					for _, l := range lines {
+						trimmed := strings.TrimSpace(l)
+						if trimmed == "" || strings.HasPrefix(trimmed, "INFO") || strings.HasPrefix(trimmed, "WARN") || strings.HasPrefix(trimmed, "✓") || strings.HasPrefix(trimmed, "OxiLLaMa") {
+							continue
+						}
+						filtered = append(filtered, l)
+					}
+					cleaned := cleanCommitText(strings.Join(filtered, "\n"))
+					if cleaned != "" {
+						return FormatTicketCommit(ticketID, cleaned), model + " (OxiLLaMa Pure-Rust Zero-FFI)", nil
+					}
+				} else {
+					cancel()
+				}
+			}
+		}
+	}
+
+	// 2. Try Ollama directly
+	if ollamaURL == "" {
+		ollamaURL = "http://localhost:11434"
+	}
 	ollamaReq := map[string]interface{}{
 		"model":  model,
 		"prompt": prompt,
@@ -97,7 +146,7 @@ Git Diff Content (truncated):
 		}
 	}
 
-	// 2. Try LiteLLM Proxy (:4000)
+	// 3. Try LiteLLM Proxy (:4000)
 	if litellmURL == "" {
 		litellmURL = "http://localhost:4000/v1"
 	}
@@ -138,7 +187,7 @@ Git Diff Content (truncated):
 		}
 	}
 
-	// 3. Fallback deterministic message
+	// 4. Fallback deterministic message
 	defaultMsg := "chore(repo): update codebase and synchronizations"
 	if diffStat != "" {
 		firstLine := strings.Split(diffStat, "\n")[0]

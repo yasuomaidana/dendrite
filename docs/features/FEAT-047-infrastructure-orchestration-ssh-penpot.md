@@ -87,3 +87,16 @@ sequenceDiagram
   # 2. Check health of all 5 Penpot containers
   dendrite service health penpot --deep
   ```
+
+---
+
+## 5. Implementation & Operational Guides
+- **Tutorial & Operations Guide**: [`docs/guides/moving-services-to-ssh-server.md`](../guides/moving-services-to-ssh-server.md)
+- **Engine Package**: `pkg/node/migrate`
+- **CLI Subcommands**:
+  - `dendrite move <svc> to --ssh <target>`: Migrate services (e.g. `plane`, `litellm`, `database`) to remote SSH server.
+  - `dendrite move debian --ssh <target>`: Automatically migrate all services compatible with target Debian server.
+  - `dendrite move plan [--ram <size>] [--disk <size>]`: Capacity evaluation breakdown for target compute node.
+- **Native MCP Tools**:
+  - `dendrite_service_move`: Autonomous agent tool for executing service migration.
+  - `dendrite_service_plan`: Hardware capacity evaluation for compute nodes.

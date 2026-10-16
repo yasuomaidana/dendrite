@@ -965,7 +965,20 @@ func (c *Client) ArchivePage(ctx context.Context, pageID string) error {
 
 // AddComment appends an activity comment to the Plane issue.
 func (c *Client) AddComment(ctx context.Context, id tracker.TicketID, comment string) error {
-	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/%s/comments/", c.workspaceSlug, c.projectID, id)
+	issueUUID := string(id)
+	if len(issueUUID) != 36 || strings.Count(issueUUID, "-") != 4 {
+		issues, err := c.ListPlaneIssues(ctx)
+		if err == nil {
+			for _, iss := range issues {
+				if strings.Contains(iss.Name, "["+string(id)+"]") || strings.Contains(iss.Name, string(id)) {
+					issueUUID = iss.ID
+					break
+				}
+			}
+		}
+	}
+
+	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/%s/comments/", c.workspaceSlug, c.projectID, issueUUID)
 	body := map[string]string{
 		"comment_html": fmt.Sprintf("<p>%s</p>", comment),
 	}

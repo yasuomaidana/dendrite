@@ -56,12 +56,15 @@ services:
       penpot-redis:
         condition: service_healthy
     environment:
-      PENPOT_DATABASE_URI: "postgresql://${PENPOT_DB_USER:-penpot_user}:${PENPOT_DB_PASSWORD:-penpot_password}@penpot-postgres:5432/${PENPOT_DB_NAME:-penpot_dev}"
+      PENPOT_FLAGS: "enable-prepl-server disable-email-verification disable-secure-session-cookies"
+      PENPOT_DATABASE_URI: "postgresql://penpot-postgres:5432/${PENPOT_DB_NAME:-penpot_dev}"
+      PENPOT_DATABASE_USERNAME: "${PENPOT_DB_USER:-penpot_user}"
+      PENPOT_DATABASE_PASSWORD: "${PENPOT_DB_PASSWORD:-penpot_password}"
       PENPOT_REDIS_URI: "redis://penpot-redis:6379/0"
       PENPOT_SECRET_KEY: "${PENPOT_SECRET_KEY:-dendrite_penpot_secret_key_mock_local}"
-      PENPOT_PUBLIC_URI: "http://localhost:${PENPOT_BACKEND_PORT:-9001}"
+      PENPOT_PUBLIC_URI: "http://localhost:${PENPOT_FRONTEND_PORT:-9000}"
     ports:
-      - "${PENPOT_BACKEND_PORT:-9001}:6001"
+      - "${PENPOT_BACKEND_PORT:-9001}:6060"
     volumes:
       - penpot-assets:/opt/data/assets
     networks:
@@ -74,13 +77,16 @@ services:
     depends_on:
       - penpot-backend
     environment:
-      PENPOT_BACKEND_URI: "http://penpot-backend:6001"
+      PENPOT_FLAGS: "enable-prepl-server disable-email-verification disable-secure-session-cookies"
+      PENPOT_PUBLIC_URI: "http://localhost:${PENPOT_FRONTEND_PORT:-9000}"
+      PENPOT_BACKEND_URI: "http://penpot-backend:6060"
+      PENPOT_EXPORTER_URI: "http://penpot-backend:6060"
     ports:
-      - "${PENPOT_FRONTEND_PORT:-9000}:80"
+      - "${PENPOT_FRONTEND_PORT:-9000}:8080"
     networks:
       - dendrite-mesh
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
       interval: 10s
       timeout: 5s
       retries: 3

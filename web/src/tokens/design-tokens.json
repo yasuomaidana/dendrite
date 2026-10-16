@@ -1,0 +1,36 @@
+{
+  "system": "Dendrite Penpot Design System",
+  "version": "1.0.0",
+  "palette": {
+    "primary": {
+      "50": "#eef2ff",
+      "500": "#6366f1",
+      "600": "#4f46e5",
+      "700": "#4338ca",
+      "800": "#3730a3"
+    },
+    "surface": {
+      "card": "#ffffff",
+      "background": "#f8fafc",
+      "darkCard": "#1e293b",
+      "darkBackground": "#0f172a"
+    },
+    "status": {
+      "healthy": "#10b981",
+      "warning": "#f59e0b",
+      "critical": "#ef4444"
+    }
+  },
+  "spacing": {
+    "sm": "8px",
+    "md": "16px",
+    "lg": "24px",
+    "xl": "32px"
+  },
+  "radius": {
+    "md": "8px",
+    "lg": "12px",
+    "xl": "16px",
+    "2xl": "24px"
+  }
+}

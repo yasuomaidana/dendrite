@@ -106,12 +106,15 @@ services:
       penpot-redis:
         condition: service_healthy
     environment:
-      PENPOT_DATABASE_URI: "postgresql://penpot_user:penpot_password@penpot-postgres:5432/penpot_dev"
+      PENPOT_FLAGS: "enable-prepl-server disable-email-verification disable-secure-session-cookies"
+      PENPOT_DATABASE_URI: "postgresql://penpot-postgres:5432/penpot_dev"
+      PENPOT_DATABASE_USERNAME: "penpot_user"
+      PENPOT_DATABASE_PASSWORD: "penpot_password"
       PENPOT_REDIS_URI: "redis://penpot-redis:6379/0"
       PENPOT_SECRET_KEY: "%s"
       PENPOT_PUBLIC_URI: "http://localhost:%d"
     ports:
-      - "%d:6001"
+      - "%d:6060"
     volumes:
       - penpot-assets:/opt/data/assets
     networks:
@@ -124,17 +127,20 @@ services:
     depends_on:
       - penpot-backend
     environment:
-      PENPOT_BACKEND_URI: "http://penpot-backend:6001"
+      PENPOT_FLAGS: "enable-prepl-server disable-email-verification disable-secure-session-cookies"
+      PENPOT_PUBLIC_URI: "http://localhost:%d"
+      PENPOT_BACKEND_URI: "http://penpot-backend:6060"
+      PENPOT_EXPORTER_URI: "http://penpot-backend:6060"
     ports:
-      - "%d:80"
+      - "%d:8080"
     networks:
       - dendrite-mesh
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
       interval: 10s
       timeout: 5s
       retries: 3
-`, cfg.DBPort, cfg.RedisPort, cfg.SecretKey, cfg.BackendPort, cfg.BackendPort, cfg.FrontendPort)
+`, cfg.DBPort, cfg.RedisPort, cfg.SecretKey, cfg.FrontendPort, cfg.BackendPort, cfg.FrontendPort, cfg.FrontendPort)
 }
 
 // CheckPenpotHealth tests reachability of a running Penpot service instance.

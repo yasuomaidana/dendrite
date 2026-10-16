@@ -117,6 +117,28 @@ dendrite [global flags] <subcommand> [args...]
 
 ## 3. Subcommand Specifications & Ergonomics
 
+### `dendrite move <services> to --ssh <target>`
+Zero-credential interactive service migration pipeline moving containerized services (Plane v2, LiteLLM Gateway, PostgreSQL/Redis control storage, or full Debian-compatible suite) to a remote SSH server:
+
+```bash
+# 1. Capacity planning: evaluate services fitting on a 4 GB RAM / 1 TB Disk Debian server
+dendrite move plan --ram 4GB --disk 1TB
+
+# 2. Dry-run simulation of Debian service migration (zero modifications)
+dendrite move debian to --ssh user@debian-server --dry-run
+
+# 3. Live interactive migration with terminal authorization gate
+dendrite move plane,litellm,database to --ssh user@debian-server
+
+# 4. Automated unattended migration with explicit auto-approval
+dendrite move debian --ssh user@debian-server --yes
+
+# 5. Migrate without local container teardown
+dendrite move plane to --ssh user@debian-server --no-prune
+```
+
+---
+
 ### `dendrite env <action>`
 Inspects, replicates, and provisions the development environment either in Docker containers or directly on the host computer:
 

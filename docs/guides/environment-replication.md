@@ -3,7 +3,7 @@ id: environment-replication
 title: "Development Environment Installation & Replication Guide"
 sidebar_label: "Environment Replication"
 sidebar_position: 2
-tags: [replication, docker, environment, host]
+tags: [replication, docker, environment, host, penpot, plane]
 ---
 
 # Development Environment Installation & Replication Guide
@@ -18,14 +18,14 @@ Dendrite accommodates both isolated, reproducible cloud/local container setups a
 
 1. **Docker Containerized Mode (`--mode container`)**:
    - Spins up all services, databases, gateways, and mock backends in Docker containers.
-   - Ideal for reproducible setups, sandboxed testing, clean teardown, and hosting local instances of tools (such as **Linear** in a container with a dedicated PostgreSQL database).
+   - Ideal for reproducible setups, sandboxed testing, clean teardown, and hosting local instances of tools (such as **Penpot** design studio, **Plane** issue tracker, or **Linear** GraphQL engine).
    - Zero host pollution, guaranteed port isolation, and automated health checks.
 2. **Direct Host Installation Mode (`--mode host`)**:
    - Installs and configures development tooling directly on the target workstation (macOS or Linux).
    - Leverages native package managers (Homebrew on macOS, APT/DNF/Pacman on Linux, or verified installer scripts).
    - Unlocks maximum performance for local Metal inference (Ollama GPU acceleration on Apple Silicon) and native CLI tools (Linear CLI, Go toolchain, Tailscale).
 3. **Hybrid Mode (`--mode hybrid`)**:
-   - The recommended default for developers: heavy background infrastructure (PostgreSQL 16, Redis 7, LiteLLM Proxy, containerized Linear issue tracker) runs in Docker, while local developer tools (Go, Ollama Metal, Tailscale, Linear CLI) run natively on the host computer.
+   - The recommended default for developers: heavy background infrastructure (PostgreSQL 16, Redis 7, LiteLLM Proxy, Penpot, Plane) runs in Docker, while local developer tools (Go, Ollama Metal, Tailscale) run natively on the host computer.
 
 ```mermaid
 flowchart TD
@@ -42,7 +42,9 @@ flowchart TD
         DockerRun --> PG[(Postgres 16)]
         DockerRun --> Redis[(Redis 7)]
         DockerRun --> LiteLLM[LiteLLM Proxy Gateway]
-        DockerRun --> LinearBox[Containerized Linear Server & DB]
+        DockerRun --> PenpotBox[Penpot Design Suite - Port 9000]
+        DockerRun --> PlaneBox[Plane v2 Issue Tracker - Port 8091]
+        DockerRun --> LinearBox[Containerized Linear Server - Port 8085]
     end
 
     subgraph "Direct Host Installation Mode"
@@ -65,7 +67,7 @@ flowchart TD
 ## 2. Replicating the Environment with Docker Containers
 
 ### Fast Replicate Command
-To bootstrap the entire stack in containers (including the containerized Linear issue tracker):
+To bootstrap the entire stack in containers:
 
 ```bash
 # Preview replication actions without making changes
@@ -77,6 +79,18 @@ dendrite env replicate --mode container
 
 ### Composing Individual Stacks Manually
 Dendrite maintains pre-configured, production-grade Docker Compose manifests under `stacks/`:
+
+- **Penpot Design Stack** (`stacks/compose.penpot.yaml`):
+  Runs Penpot frontend on port `9000`, backend API on port `9001` (internal `6060`), PostgreSQL on `5435`, and Redis on `6381`.
+  ```bash
+  docker compose -f stacks/compose.penpot.yaml up -d
+  ```
+
+- **Plane v2 Project & Issue Tracker** (`stacks/compose.plane.yaml`):
+  Runs Plane proxy and web UI on port `8091`, backend API on port `8090`, PostgreSQL on `5434`, and Redis on `6380`.
+  ```bash
+  docker compose -f stacks/compose.plane.yaml up -d
+  ```
 
 - **All-in-One Dev Stack** (`stacks/compose.dev.yaml`):
   Combines PostgreSQL, Redis, LiteLLM Gateway, and containerized Linear.
@@ -96,16 +110,21 @@ Dendrite maintains pre-configured, production-grade Docker Compose manifests und
   docker compose -f stacks/compose.control.yaml up -d
   ```
 
-### Verifying Containerized Linear
-Once started, the containerized Linear service exposes:
-- **GraphQL Endpoint**: `http://localhost:8085/graphql`
-- **Healthcheck Probe**: `http://localhost:8085/health`
-- **Dedicated PostgreSQL Database**: `localhost:5433` (DB: `linear_dev`, User: `linear_user`)
+> 💡 **New to Penpot and Plane?** Check out our friendly, beginner-oriented walkthrough:  
+> [Beginner's Guide to Penpot & Plane](penpot-and-plane-beginner-tutorial.md) for initial account creation, UI navigation, and troubleshooting tips.
 
-You can test reachability directly:
+### Verifying Service Reachability
+Once started, test reachability directly:
+
 ```bash
+# Verify Penpot
+curl -i http://localhost:9000/api/main/methods/get-profile
+
+# Verify Plane
+curl -i http://localhost:8091/
+
+# Verify Linear
 curl -s http://localhost:8085/health
-# {"status":"ok","service":"linear-mock","database":"healthy"}
 ```
 
 ---
@@ -174,6 +193,8 @@ Example status dashboard:
 ```
 [+] Real-Time Environment Component Status:
     [ONLINE / HEALTHY] docker       - Docker Engine & Container Runtime (Endpoint: )
+    [ONLINE / HEALTHY] penpot       - Penpot Design Studio (Endpoint: http://localhost:9000)
+    [ONLINE / HEALTHY] plane        - Plane v2 Issue Tracker (Endpoint: http://localhost:8091)
     [ONLINE / HEALTHY] linear       - Linear Issue Tracker (Containerized / Local Service) (Endpoint: http://localhost:8085)
     [ONLINE / HEALTHY] litellm      - LiteLLM Token Governance Gateway (Endpoint: http://localhost:4000)
     [ONLINE / HEALTHY] ollama       - Ollama Local Inference Engine (Endpoint: http://localhost:11434)

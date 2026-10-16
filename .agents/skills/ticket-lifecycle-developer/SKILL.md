@@ -193,9 +193,24 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   60. `dendrite_hitl_sync`: Human-in-the-Loop verification poller checking linked GitHub issues: transitions approved (closed) issues to DONE, or parses feedback and generates follow-up blocker tickets.
       - *Example*: `./bin/dendrite mcp call dendrite_hitl_sync '{}'`
 
+  61. `dendrite_inference_migrate_model`: Moves models from Ollama to OxiLLaMa pure-Rust inference engine and evicts source blobs to save memory.
+      - *Example*: `./bin/dendrite mcp call dendrite_inference_migrate_model model:qwen3.5:9b`
+
+  62. `dendrite_ui_penpot_sync`: Synchronizes UI component development (.svelte, .tsx, .vue, .css) with Penpot design frames and posts deep-links to Plane issues.
+      - *Example*: `./bin/dendrite mcp call dendrite_ui_penpot_sync file:web/src/components/Button.svelte`
+
+
+  63. `dendrite_service_move`: Migrates containerized Dendrite services (Plane v2, LiteLLM, Database, Penpot, or `debian` bundle) to a remote Debian SSH server with zero-credential authorization, ephemeral streaming, health probe, and safe local reclamation.
+      - *Example*: `./bin/dendrite mcp call dendrite_service_move '{"services":["plane"],"target_host":"user@debian-server","dry_run":true}'`
+
+  64. `dendrite_service_plan`: Evaluates hardware capacity (RAM and Disk) and returns which services can live on a Debian server (e.g. 4 GB RAM with 1 TB Disk).
+      - *Example*: `./bin/dendrite mcp call dendrite_service_plan '{"ram_mb":4096,"disk_gb":1000}'`
 
 
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
+- `dendrite move <svc> to --ssh <target> [--dry-run] [--yes] [--no-prune]`: Zero-credential interactive service migration pipeline moving containerized services to a remote SSH server.
+- `dendrite move debian --ssh <target>`: Automatically migrates all services compatible with target Debian server (Plane + LiteLLM + Database within 4 GB RAM / 1 TB Disk budget).
+- `dendrite move plan [--ram <size>] [--disk <size>]`: Capacity evaluation breakdown for target compute node.
 - `dendrite sync-remote`: Pre-flight remote divergence check, automatic rebase on remote fixes, and commit reconciliation.
 - `dendrite quality <audit|hitl-sync>`: Anti-mock quality gate, 100% coverage profiler, and Human-in-the-Loop verification poller.
 - `dendrite audit-changes [--branch <name>] [--dry-run] [--max-tokens <int>] [--model <m>]`: Topological vendor audit and rebase engine for local/* branches.
@@ -213,6 +228,8 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - `dendrite test <auto|ui>`: Synthesize table-driven tests with Testcontainers & self-healing convergence, or run Web UI browser journeys & WebSocket telemetry load tests.
 - `dendrite triage [--prompt "..."] [--file <file>] [--tier local|hybrid|cloud] [--local]`: Front-door local agent prompt router, skill injector, and token efficiency optimizer.
 - `dendrite mcp <serve|tools|call>`: Native Model Context Protocol stdio server and testing harness.
+- `dendrite dev inference migrate <model> [--from ollama] [--to oxillama] [--delete-source] [--dry-run]`: Migrate models from Ollama to OxiLLaMa and evict source blobs.
+- `dendrite ui sync --file <path> [--ticket <id>] [--endpoint <url>] [--dry-run]`: Synchronize UI component props and design tokens with Penpot and Plane tickets.
 - `dendrite jetbrains <probe|open|problems|symbols|build|run|setup>`: Probe JetBrains MCP server, trigger IDE builds/runs, and configure IDE toolsets.
 - `dendrite agent run <aider|openhands|opencode|agy|copilot> [flags]`: Launch autonomous agent sessions bound to LiteLLM virtual keys and ephemeral containers.
 - `dendrite inference <list|probe|switch|render|zero-cost>`: Inspect and manage multi-provider inference backends and dynamic zero-cost models.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"Dendrite/pkg/gateway"
@@ -96,6 +97,96 @@ func handleInferenceCommand(ctx context.Context, args []string) {
 			return
 		}
 		fmt.Printf("[+] Rendered LiteLLM Configuration for Multi-Engine Inference:\n\n%s\n", string(yamlBytes))
+
+	case "migrate", "move":
+		if len(args) < 2 {
+			fmt.Println("[-] Usage: dendrite dev inference migrate <model_name> [--from ollama] [--to oxillama] [--delete-source] [--dry-run]")
+			return
+		}
+		modelName := args[1]
+		fromEngine := "ollama"
+		toEngine := "oxillama"
+		deleteSource := false
+		dryRun := false
+
+		for i := 2; i < len(args); i++ {
+			switch args[i] {
+			case "--from":
+				if i+1 < len(args) {
+					fromEngine = args[i+1]
+					i++
+				}
+			case "--to":
+				if i+1 < len(args) {
+					toEngine = args[i+1]
+					i++
+				}
+			case "--delete-source", "--rm-source", "--evict":
+				deleteSource = true
+			case "--dry-run":
+				dryRun = true
+			}
+		}
+
+		fmt.Printf("[+] Initiating model migration for '%s' (%s -> %s)...\n", modelName, fromEngine, toEngine)
+		migrator := inference.NewModelMigrator("", "", nil)
+		res, err := migrator.Migrate(ctx, inference.ModelMigrationOptions{
+			ModelName:    modelName,
+			SourceEngine: fromEngine,
+			TargetEngine: toEngine,
+			DeleteSource: deleteSource,
+			DryRun:       dryRun,
+		})
+		if err != nil {
+			fmt.Printf("[-] Migration failed: %v\n", err)
+			return
+		}
+
+		fmt.Printf("[✓] Successfully migrated model '%s' to %s in %v\n", res.ModelName, res.TargetEngine, res.Duration)
+		fmt.Printf("    * Blobs Migrated:     %d\n", res.BlobsMigrated)
+		fmt.Printf("    * Total Data Size:    %.2f GB (%d bytes)\n", float64(res.TotalBytesMigrated)/(1024*1024*1024), res.TotalBytesMigrated)
+		fmt.Printf("    * Target Manifest:    %s\n", res.TargetManifest)
+		if res.SourceEvicted {
+			fmt.Printf("    * Source Evicted:     YES (Reclaimed %.2f GB memory/disk from %s)\n", float64(res.BytesFreed)/(1024*1024*1024), res.SourceEngine)
+		} else if deleteSource {
+			fmt.Printf("    * Source Evicted:     NO (%s)\n", res.Error)
+		} else {
+			fmt.Println("    * Source Retained:    (pass --delete-source to evict from source and reclaim memory)")
+		}
+
+	case "serve", "start":
+		port := 8080
+		daemonMode := false
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--port" && i+1 < len(args) {
+				if p, err := strconv.Atoi(args[i+1]); err == nil {
+					port = p
+				}
+				i++
+			} else if args[i] == "--daemon" || args[i] == "-d" {
+				daemonMode = true
+			}
+		}
+
+		srv := inference.NewOxiLLaMaServer(inference.OxiLLaMaServerConfig{
+			Host: "127.0.0.1",
+			Port: port,
+		})
+
+		if err := srv.Start(); err != nil {
+			fmt.Printf("[-] Failed to start OxiLLaMa server: %v\n", err)
+			return
+		}
+
+		fmt.Printf("[✓] OxiLLaMa Pure-Rust OpenAI Server listening at http://127.0.0.1:%d\n", port)
+		fmt.Printf("    * Models Endpoint:     http://127.0.0.1:%d/v1/models\n", port)
+		fmt.Printf("    * Chat Endpoint:       http://127.0.0.1:%d/v1/chat/completions\n", port)
+		fmt.Printf("    * Storage Directory:   ~/.oxillama/models\n")
+
+		if daemonMode {
+			fmt.Println("[+] Running in daemon mode. Press Ctrl+C to terminate.")
+			select {}
+		}
 
 	case "zero-cost", "zerocost", "models":
 		handleZeroCostCommand(args[1:])
@@ -286,11 +377,13 @@ func printEngineHealth(h inference.EngineHealth) {
 }
 
 func printInferenceUsage() {
-	fmt.Println("Usage: dendrite dev inference <list|probe|switch|render|zero-cost> [args...]")
+	fmt.Println("Usage: dendrite dev inference <list|probe|switch|render|migrate|zero-cost> [args...]")
 	fmt.Println("\nCommands:")
 	fmt.Println("  list                          List registered engines, models, and fallback cascade order")
 	fmt.Println("  probe [engine_id]             Check reachability, latency, and available models (<2s)")
 	fmt.Println("  switch <engine_id>            Set primary inference engine at front of fallback cascade")
 	fmt.Println("  render                        Render upstream model routes into litellm_config.yaml")
+	fmt.Println("  serve [--port 8080] [-d]      Start local OxiLLaMa OpenAI-compatible HTTP server")
+	fmt.Println("  migrate <model> [flags]       Migrate model from Ollama to OxiLLaMa and evict source blobs")
 	fmt.Println("  zero-cost <list|add|rm|test>  Manage and test zero-cost self-hosted models and prefixes")
 }
