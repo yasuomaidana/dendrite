@@ -103,3 +103,19 @@ func TestSortForLowBudgetQueue(t *testing.T) {
 		t.Fatalf("expected third ticket to be T2, got %s", tickets[2].ID)
 	}
 }
+
+func TestSortForLowBudgetQueue_SequenceOrderFallback(t *testing.T) {
+	tickets := []*RoutingTicket{
+		{ID: "T_LATER", Priority: "medium", Difficulty: TierL2Low, LocalFeasible: true, SequenceOrder: 10},
+		{ID: "T_EARLIER", Priority: "medium", Difficulty: TierL2Low, LocalFeasible: true, SequenceOrder: 5},
+	}
+
+	SortForLowBudgetQueue(tickets)
+
+	if tickets[0].ID != "T_EARLIER" {
+		t.Fatalf("expected T_EARLIER first by sequence order, got %s", tickets[0].ID)
+	}
+	if tickets[1].ID != "T_LATER" {
+		t.Fatalf("expected T_LATER second, got %s", tickets[1].ID)
+	}
+}
