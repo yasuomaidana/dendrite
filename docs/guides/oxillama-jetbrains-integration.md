@@ -189,7 +189,7 @@ lsof -ti :8080 | xargs kill -9
 
 Once the server is running on `http://127.0.0.1:8080`, configure your JetBrains IDE using any of the following integrations:
 
-### 5.1 Option A: JetBrains AI Assistant (Custom Local LLM)
+### 5.2 Option A: JetBrains AI Assistant (Built-in Chat)
 Starting with JetBrains 2024.3 and 2025+, AI Assistant supports custom OpenAI-compatible endpoints:
 
 1. Open **Settings / Preferences** (`Cmd + ,` on macOS).
@@ -203,7 +203,7 @@ Starting with JetBrains 2024.3 and 2025+, AI Assistant supports custom OpenAI-co
 5. Click **Test Connection**; JetBrains queries `GET /v1/models` and confirms a green checkmark.
 6. Select `OxiLLaMa Pure-Rust` as your active chat or code completion engine.
 
-### 5.2 Option B: Continue Plugin for JetBrains
+### 5.3 Option B: Continue Plugin (Recommended for Zero-Subscription)
 The **Continue** extension (`continue.dev`) is the premier open-source coding copilot for JetBrains:
 
 1. Install **Continue** from **Settings $\to$ Plugins $\to$ Marketplace**.
@@ -238,7 +238,7 @@ The **Continue** extension (`continue.dev`) is the premier open-source coding co
 ```
 4. Save the file. Continue will immediately reload and expose the local sovereign OxiLLaMa engine in the IDE sidebar and inline autocomplete.
 
-### 5.3 Option C: CodeGPT Plugin
+### 5.4 Option C: CodeGPT Plugin
 1. Install **CodeGPT** from **Settings $\to$ Plugins**.
 2. Navigate to **Settings $\to$ Tools $\to$ CodeGPT $\to$ Providers**.
 3. Select **Custom OpenAI**.
