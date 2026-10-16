@@ -15,9 +15,10 @@ import (
 	"Dendrite/pkg/devtool"
 	"Dendrite/pkg/docgen/reflect"
 	"Dendrite/pkg/env"
-	"Dendrite/pkg/gateway"
+	"Dendrite/pkg/env/bootstrap"
 	"Dendrite/pkg/jetbrains"
 	"Dendrite/pkg/ollama"
+	"Dendrite/pkg/personalcontext/greeting"
 	"Dendrite/pkg/server"
 	"Dendrite/pkg/telemetry"
 	"Dendrite/pkg/telemetry/exporter"
@@ -25,12 +26,10 @@ import (
 	"Dendrite/pkg/topology/advisor"
 	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/plane"
-	"Dendrite/pkg/workspace"
 	"Dendrite/pkg/ui/penpot"
+	"Dendrite/pkg/workspace"
 	"encoding/json"
 	"flag"
-	"Dendrite/pkg/personalcontext/greeting"
-	"Dendrite/pkg/env/bootstrap"
 	"path/filepath"
 )
 
@@ -202,13 +201,13 @@ func buildRegistry() *cli.Registry {
 		Name:        "gateway",
 		Aliases:     []string{"synaptic-cleft", "cleft", "gate"},
 		Category:    "Synaptic Cleft & Gating",
-		Description: "LiteLLM token gateway rendering and rate limiter",
+		Description: "LiteLLM token gateway rendering, dynamic routing updater & scheduler",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
-				handleDevCommand(ctx, "gateway", []string{"local-hybrid"})
+				handleGatewayCommand(ctx, []string{"update"})
 				return nil
 			}
-			handleDevCommand(ctx, "gateway", args)
+			handleGatewayCommand(ctx, args)
 			return nil
 		},
 	})
@@ -563,6 +562,17 @@ func buildRegistry() *cli.Registry {
 	})
 
 	reg.Register(&cli.Command{
+		Name:        "ask",
+		Aliases:     []string{"query-project", "rag-ask", "q"},
+		Category:    "Cortex & Sensory Integration",
+		Description: "Ask questions to Dendrite about a project with local RAG and interactive paid fallback",
+		Run: func(ctx context.Context, args []string) error {
+			handleAskCommand(ctx, args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
 		Name:        "greeting",
 		Aliases:     []string{"greet", "pcontext-greeting"},
 		Category:    "Synaptic Cleft & Gating",
@@ -629,6 +639,7 @@ func printUsage() {
 	fmt.Println("  topology [scenario]         Inspect and validate topology scenario placements")
 	fmt.Println("  dev topology [scenario]    Inspect and validate topology scenario placements")
 	fmt.Println("  dev gateway [scenario]     Render dynamic LiteLLM configuration YAML")
+	fmt.Println("  gateway <update|schedule>  Dynamic LiteLLM routing table updater and daily scheduler")
 	fmt.Println("  dev audit-prompt <text>    Analyze prompt length and estimated token volume")
 	fmt.Println("  inference [list|probe|switch|render] Unified multi-provider inference engine gateway")
 	fmt.Println("  dev inference <list|probe|switch|render> Multi-provider inference gateway control")
@@ -649,6 +660,7 @@ func printUsage() {
 	fmt.Println("  move <svc> to --ssh <tgt>  Zero-credential interactive service migration to remote SSH server")
 	fmt.Println("  canvas <actions|dispatch|relate|sync|update-state> Interactive writing canvas & Penpot UI creative action bridge")
 	fmt.Println("  service <start|stop|restart|health|list|ui-sync> Manage local and remote microservices (Penpot, Plane, Ollama, etc.)")
+	fmt.Println("  ask [flags] \"<question>\"    Ask questions about the project with local RAG & interactive paid fallback")
 	fmt.Println("  version                    Print Dendrite CLI version")
 }
 
@@ -1542,33 +1554,11 @@ func handleDevCommand(ctx context.Context, sub string, args []string) {
 		runTopologyInspect(ctx, scenarioStr)
 
 	case "gateway":
-		if len(args) > 0 && (args[0] == "zero-cost" || args[0] == "zerocost" || args[0] == "models") {
-			handleZeroCostCommand(args[1:])
+		if len(args) == 0 {
+			handleGatewayCommand(ctx, []string{"local-hybrid"})
 			return
 		}
-		scenarioStr := "local-hybrid"
-		if len(args) > 0 {
-			scenarioStr = args[0]
-		}
-		sc, err := topology.ParseScenario(scenarioStr)
-		if err != nil {
-			fmt.Printf("[-] Invalid scenario: %v\n", err)
-			return
-		}
-		top, err := topology.NewTopologyConfig(sc, topology.TailscaleEndpoints{
-			ControlPlane:   "100.84.12.10",
-			ExecutionPlane: "100.84.12.25",
-		})
-		if err != nil {
-			fmt.Printf("[-] Failed to create topology: %v\n", err)
-			return
-		}
-		yamlData, err := gateway.RenderForTopology(top)
-		if err != nil {
-			fmt.Printf("[-] Failed to render LiteLLM gateway config: %v\n", err)
-			return
-		}
-		fmt.Printf("[+] Rendered LiteLLM Config for scenario '%s':\n\n%s\n", sc, string(yamlData))
+		handleGatewayCommand(ctx, args)
 
 	case "inference":
 		if len(args) == 0 {

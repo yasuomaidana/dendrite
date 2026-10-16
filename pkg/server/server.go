@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/inference"
+	"Dendrite/pkg/rag"
 	"Dendrite/pkg/telemetry/exporter"
 	"Dendrite/pkg/topology"
 	"Dendrite/pkg/workspace"
@@ -71,6 +72,8 @@ func NewServer(cfg ServerConfig, reg *workspace.Registry, hub *TelemetryHub) *Se
 	mux.HandleFunc("/api/v1/telemetry/metrics", s.handleMetrics)
 	mux.HandleFunc("/api/v1/inference/zero-cost", s.handleZeroCost)
 	mux.HandleFunc("/api/v1/inference/zero-cost/test", s.handleZeroCostTest)
+	mux.HandleFunc("/api/v1/rag/ask", s.handleRAGAsk)
+	mux.HandleFunc("/api/v1/rag/retrieve", s.handleRAGRetrieve)
 
 	s.server = &http.Server{
 		Handler:     s.authMiddleware(mux),
@@ -491,4 +494,95 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 </body>
 </html>`
 	_, _ = w.Write([]byte(html))
+}
+
+func (s *Server) handleRAGAsk(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req rag.AskRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request payload: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if strings.TrimSpace(req.Question) == "" {
+		http.Error(w, "question is required", http.StatusBadRequest)
+		return
+	}
+
+	if req.ProjectPath == "" {
+		req.ProjectPath = "."
+	}
+	if req.PaidModel == "" {
+		req.PaidModel = "gemini-2.5-pro"
+	}
+	if req.TopK <= 0 {
+		req.TopK = 4
+	}
+	req.Input = strings.NewReader("n\n")
+
+	engine := rag.NewAskEngine(nil)
+	res, err := engine.Ask(r.Context(), req)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("rag ask failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(res)
+}
+
+func (s *Server) handleRAGRetrieve(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var body struct {
+		Query       string  `json:"query"`
+		ProjectPath string  `json:"project_path"`
+		TopK        int     `json:"top_k"`
+		MinScore    float32 `json:"min_score"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request payload: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if strings.TrimSpace(body.Query) == "" {
+		http.Error(w, "query is required", http.StatusBadRequest)
+		return
+	}
+
+	if body.ProjectPath == "" {
+		body.ProjectPath = "."
+	}
+	if body.TopK <= 0 {
+		body.TopK = 4
+	}
+	if body.MinScore <= 0 {
+		body.MinScore = 0.01
+	}
+
+	indexer := rag.NewIndexer()
+	if err := indexer.IndexProject(r.Context(), body.ProjectPath); err != nil {
+		http.Error(w, fmt.Sprintf("failed to index project: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	chunks, err := indexer.Retrieve(r.Context(), body.Query, rag.SearchOptions{
+		TopK:      body.TopK,
+		MinScore:  body.MinScore,
+		MaxTokens: 2500,
+	})
+	if err != nil {
+		http.Error(w, fmt.Sprintf("retrieval failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(chunks)
 }

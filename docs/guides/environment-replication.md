@@ -199,3 +199,20 @@ Example status dashboard:
     [ONLINE / HEALTHY] litellm      - LiteLLM Token Governance Gateway (Endpoint: http://localhost:4000)
     [ONLINE / HEALTHY] ollama       - Ollama Local Inference Engine (Endpoint: http://localhost:11434)
 ```
+
+
+---
+
+## 6. Querying Replicated Environments & LLM Configuration
+
+Once your environment is replicated and services like Ollama and LiteLLM are online, you can ask Dendrite questions directly about the project and check the state of available LLMs using the local-first RAG engine:
+
+```bash
+# Query the project about available LLMs using local RAG
+dendrite ask "I want to know how to check available LLMs"
+
+# With automated paid escalation if local inference fails
+dendrite ask -y "I want to know how to check available LLMs"
+```
+
+For complete details, interactive human escalation workflows, and options, see the dedicated [Project Q&A with Local RAG Tutorial](./asking-questions-to-dendrite.md).

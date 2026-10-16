@@ -432,3 +432,51 @@ func TestServer_ZeroCostEndpoints(t *testing.T) {
 		t.Fatalf("DELETE failed: %v, status: %v", err, respDel.StatusCode)
 	}
 }
+
+func TestServer_RAGEndpoints(t *testing.T) {
+	tmpDir := t.TempDir()
+	docFile := filepath.Join(tmpDir, "arch.md")
+	docContent := "# Architecture\nDendrite RAG server provides context retrieval."
+	_ = os.WriteFile(docFile, []byte(docContent), 0644)
+
+	cfg := ServerConfig{Port: 0, Host: "127.0.0.1"}
+	s := NewServer(cfg, nil, nil)
+	if err := s.Start(); err != nil {
+		t.Fatalf("failed to start server: %v", err)
+	}
+	defer func() { _ = s.Shutdown(context.Background()) }()
+
+	baseURL := fmt.Sprintf("http://%s", s.listener.Addr().String())
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// 1. POST /api/v1/rag/retrieve
+	retReq := fmt.Sprintf(`{"query": "Architecture context retrieval", "project_path": "%s", "top_k": 2}`, tmpDir)
+	respRet, err := client.Post(baseURL+"/api/v1/rag/retrieve", "application/json", strings.NewReader(retReq))
+	if err != nil || respRet.StatusCode != http.StatusOK {
+		t.Fatalf("POST retrieve failed: %v, status: %v", err, respRet.StatusCode)
+	}
+
+	var chunks []map[string]interface{}
+	if err := json.NewDecoder(respRet.Body).Decode(&chunks); err != nil {
+		t.Fatalf("failed to decode retrieve response: %v", err)
+	}
+	if len(chunks) == 0 {
+		t.Errorf("expected at least 1 retrieved chunk, got 0")
+	}
+
+	// 2. Bad requests (method not allowed & missing params)
+	respGet, _ := client.Get(baseURL + "/api/v1/rag/retrieve")
+	if respGet.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 on GET retrieve, got: %d", respGet.StatusCode)
+	}
+
+	respBadQuery, _ := client.Post(baseURL+"/api/v1/rag/retrieve", "application/json", strings.NewReader(`{"query": ""}`))
+	if respBadQuery.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 on empty query, got: %d", respBadQuery.StatusCode)
+	}
+
+	respBadAsk, _ := client.Post(baseURL+"/api/v1/rag/ask", "application/json", strings.NewReader(`{"question": ""}`))
+	if respBadAsk.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 on empty question, got: %d", respBadAsk.StatusCode)
+	}
+}

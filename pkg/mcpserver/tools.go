@@ -354,6 +354,56 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 		}, nil
 	})
 
+	// dendrite_gateway_update
+	s.RegisterTool(Tool{
+		Name:        "dendrite_gateway_update",
+		Description: "Dynamically discover live inference engines (Ollama, OxiLLaMa, etc.), score loaded models by intelligence, and update LiteLLM routing table (default: stacks/litellm_config.yaml)",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"file": map[string]interface{}{
+					"type":        "string",
+					"description": "Target litellm_config.yaml path (default: stacks/litellm_config.yaml)",
+				},
+				"dry_run": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Simulate update without modifying disk (default: false)",
+				},
+				"use_container_host": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Use host.docker.internal for container networking (default: true for stacks/)",
+				},
+			},
+		},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		opts := gateway.DefaultUpdaterOptions()
+		if f, ok := args["file"].(string); ok && strings.TrimSpace(f) != "" {
+			opts.ConfigPath = strings.TrimSpace(f)
+		}
+		if dr, ok := args["dry_run"].(bool); ok {
+			opts.DryRun = dr
+		}
+		if uch, ok := args["use_container_host"].(bool); ok {
+			opts.UseContainerHost = uch
+		}
+
+		updater := gateway.NewRoutingTableUpdater(opts)
+		rep, err := updater.UpdateNow(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("gateway update failed: %w", err)
+		}
+
+		data, err := json.MarshalIndent(rep, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		return &CallToolResult{
+			Content: []ContentItem{
+				{Type: "text", Text: string(data)},
+			},
+		}, nil
+	})
+
 	// 8. dendrite_agent_run
 	s.RegisterTool(Tool{
 		Name:        "dendrite_agent_run",
@@ -914,4 +964,6 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 	s.registerEnvPrepareTools(deps)
 	// Canvas Interactive Writing & Penpot Creative Bridge Tools
 	s.registerCanvasTools(deps)
+	// Project RAG & AST Retrieval Tools
+	s.registerRAGTools(deps)
 }
