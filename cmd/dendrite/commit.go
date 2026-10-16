@@ -9,10 +9,12 @@ import (
 )
 
 func handleCommitCommand(ctx context.Context, args []string) {
+	stageAllSet := false
 	opts := devtool.CommitOptions{
-		StageAll:      true,
+		StageAll:      false,
 		UseLocalModel: true,
 		Model:         "qwen3.8:27b",
+		Smart:         true,
 	}
 
 	for i := 0; i < len(args); i++ {
@@ -35,6 +37,15 @@ func handleCommitCommand(ctx context.Context, args []string) {
 			}
 		case "--all", "-a":
 			opts.StageAll = true
+			stageAllSet = true
+		case "--amend":
+			opts.Amend = true
+		case "--smart":
+			opts.Smart = true
+			opts.NoSmart = false
+		case "--no-smart":
+			opts.Smart = false
+			opts.NoSmart = true
 		case "--model":
 			if i+1 < len(args) {
 				opts.Model = args[i+1]
@@ -52,9 +63,20 @@ func handleCommitCommand(ctx context.Context, args []string) {
 		}
 	}
 
+	// If user did not specify files or --all, and nothing is staged yet, default to staging all
+	if !stageAllSet && len(opts.Files) == 0 {
+		// devtool.ExecuteCommit will intelligently check if index already has staged files
+		opts.StageAll = false
+	}
+
 	fmt.Println("[+] Initializing Autonomous Git Commit Engine...")
 	if opts.TicketID != "" {
 		fmt.Printf("    - Active Ticket:    %s\n", opts.TicketID)
+	} else if !opts.NoSmart {
+		fmt.Println("    - Smart Strategy:   Auto-resolving active ticket and context from Plane / DAG...")
+	}
+	if opts.Amend {
+		fmt.Println("    - Commit Mode:      AMEND (--amend)")
 	}
 	if opts.UseLocalModel && opts.Message == "" {
 		fmt.Printf("    - Message Model:    %s (Delegated Local Engine)\n", opts.Model)
@@ -73,6 +95,12 @@ func handleCommitCommand(ctx context.Context, args []string) {
 
 	if res.DryRun {
 		fmt.Println("[✓] Dry run commit preview generated:")
+		if res.SmartTicket != nil && res.SmartTicket.ID != "" {
+			fmt.Printf("    - Smart Strategy:   Resolved [%s] via %s\n", res.SmartTicket.ID, res.SmartSource)
+			if res.SmartTicket.Title != "" {
+				fmt.Printf("      * Title:          %s\n", res.SmartTicket.Title)
+			}
+		}
 		fmt.Printf("    - Proposed Message:\n%s\n", indentText(res.Message, "      "))
 		fmt.Printf("    - Staged Files (%d):\n", len(res.Files))
 		for _, f := range res.Files {
@@ -83,6 +111,12 @@ func handleCommitCommand(ctx context.Context, args []string) {
 	}
 
 	fmt.Printf("[✓] Commit applied successfully (%s)\n", res.CommitSHA[:min(8, len(res.CommitSHA))])
+	if res.SmartTicket != nil && res.SmartTicket.ID != "" {
+		fmt.Printf("    - Smart Strategy:   Resolved [%s] via %s\n", res.SmartTicket.ID, res.SmartSource)
+		if res.SmartTicket.Title != "" {
+			fmt.Printf("      * Title:          %s\n", res.SmartTicket.Title)
+		}
+	}
 	fmt.Printf("    - Message:\n%s\n", indentText(res.Message, "      "))
 	fmt.Printf("    - Files Committed (%d):\n", len(res.Files))
 	for _, f := range res.Files {
@@ -98,6 +132,8 @@ func printCommitUsage() {
 	fmt.Println("  --message, -m <msg>   Explicit commit message (skips local model generation)")
 	fmt.Println("  --files, -f <f1,f2>   Comma-separated files to stage (defaults to git add -A)")
 	fmt.Println("  --all, -a             Stage all modified and untracked files (default true)")
+	fmt.Println("  --amend               Amend previous commit instead of creating a new commit")
+	fmt.Println("  --smart / --no-smart  Enable/disable smart ticket auto-detection (default enabled)")
 	fmt.Println("  --model <model>       Target local model for message synthesis (default qwen3.8:27b)")
 	fmt.Println("  --local / --no-local  Enable/disable local model delegation (default enabled)")
 	fmt.Println("  --dry-run             Preview staged diff and synthesized commit message without committing")
