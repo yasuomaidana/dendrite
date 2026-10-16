@@ -223,7 +223,11 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
       - *Example*: `./bin/dendrite mcp call dendrite_service_plan '{"ram_mb":4096,"disk_gb":1000}'`
 
 
+  65. `dendrite_pcontext_greeting_generate`: Generates dynamic 10-style personalized headline greeting with strict cliché suppression, sliding history tracking, and journey context resolution.
+      - *Example*: `./bin/dendrite mcp call dendrite_pcontext_greeting_generate '{"topic":"Project Dendrite","milestone":"Beta Launch","milestone_achieved":true}'`
+
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
+- `dendrite greeting [--topic <t>] [--milestone <m>] [--event <e>] [--days <d>] [--options <a,b>] [--challenge <c>] [--stress] [--hobby] [--suppress <g1,g2>] [--json]`: Dynamic 10-Style Greeting Matrix resolution with strict cliché suppression.
 - `dendrite move <svc> to --ssh <target> [--dry-run] [--yes] [--no-prune]`: Zero-credential interactive service migration pipeline moving containerized services to a remote SSH server.
 - `dendrite move debian --ssh <target>`: Automatically migrates all services compatible with target Debian server (Plane + LiteLLM + Database within 4 GB RAM / 1 TB Disk budget).
 - `dendrite move plan [--ram <size>] [--disk <size>]`: Capacity evaluation breakdown for target compute node.

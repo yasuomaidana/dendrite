@@ -908,4 +908,6 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 	s.registerPenpotTools(deps)
 	// Service Migration & Node Mobility Tools
 	s.registerMigrateTools(deps)
+	// Personal Context Greeting Tools
+	s.registerGreetingTools(deps)
 }
