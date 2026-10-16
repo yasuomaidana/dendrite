@@ -49,7 +49,7 @@ func (s *Server) registerPlaneDAGTools(deps Dependencies) {
 					switch {
 					case g == "completed" || strings.Contains(n, "done"):
 						stateMap[st.ID] = tracker.StatusDone
-					case strings.Contains(n, "review"):
+					case strings.Contains(n, "review") || strings.Contains(n, "verify"):
 						stateMap[st.ID] = tracker.StatusInReview
 					case g == "started" || strings.Contains(n, "progress") || strings.Contains(n, "active"):
 						stateMap[st.ID] = tracker.StatusInProgress

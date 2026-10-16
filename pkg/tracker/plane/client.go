@@ -1074,7 +1074,7 @@ func mapPlaneState(group, name string) tracker.Status {
 	switch {
 	case g == "completed" || strings.Contains(n, "done"):
 		return tracker.StatusDone
-	case strings.Contains(n, "review"):
+	case strings.Contains(n, "review") || strings.Contains(n, "verify"):
 		return tracker.StatusInReview
 	case g == "started" || strings.Contains(n, "progress") || strings.Contains(n, "active"):
 		return tracker.StatusInProgress

@@ -298,6 +298,7 @@ func TestMapPlaneState(t *testing.T) {
 	}{
 		{"completed", "Closed", tracker.StatusDone},
 		{"started", "In Code Review", tracker.StatusInReview},
+		{"started", "To Verify", tracker.StatusInReview},
 		{"started", "Active Coding", tracker.StatusInProgress},
 		{"unstarted", "To Do List", tracker.StatusTodo},
 		{"backlog", "Icebox", tracker.StatusBacklog},

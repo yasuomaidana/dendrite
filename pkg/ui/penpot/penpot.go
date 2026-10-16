@@ -308,6 +308,8 @@ func (s *Synchronizer) Sync(ctx context.Context, opts SyncOptions) (*SyncResult,
 
 	res.Success = true
 	res.Duration = time.Since(start)
-	res.Notes = healthNote
+	if res.Notes == "" {
+		res.Notes = healthNote
+	}
 	return res, nil
 }

@@ -240,6 +240,13 @@ func main() {
 	case "move":
 		handleMoveCommand(ctx, os.Args[2:])
 
+	case "service":
+		if len(os.Args) < 3 {
+			printServiceUsage()
+			return
+		}
+		handleServiceCommand(ctx, os.Args[2], os.Args[3:])
+
 	default:
 		printUsage()
 	}
@@ -316,6 +323,7 @@ func printUsage() {
 	fmt.Println("  query [slice] [flags]      Universal intent-driven CFG/AST reachability slicing & debloater")
 	fmt.Println("  tokens [status] [flags]    Inspect day & week token windows and confirm AGY access")
 	fmt.Println("  move <svc> to --ssh <tgt>  Zero-credential interactive service migration to remote SSH server")
+	fmt.Println("  service <start|stop|restart|health|list|ui-sync> Manage local and remote microservices (Penpot, Plane, Ollama, etc.)")
 	fmt.Println("  version                    Print Dendrite CLI version")
 }
 

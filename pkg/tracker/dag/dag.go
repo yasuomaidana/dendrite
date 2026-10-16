@@ -366,7 +366,7 @@ func (g *Graph) SmartSelect(preferredTicketID string) (*SelectionResult, error) 
 		var blockingUnfinished []string
 		for _, bID := range node.BlockedBy {
 			if bNode, exists := g.nodes[bID]; exists {
-				if bNode.Status != tracker.StatusDone {
+				if bNode.Status != tracker.StatusDone && bNode.Status != tracker.StatusInReview {
 					blockingUnfinished = append(blockingUnfinished, bID)
 				}
 			} else {
@@ -426,14 +426,14 @@ func (g *Graph) SmartSelect(preferredTicketID string) (*SelectionResult, error) 
 	var blockedCandidates []*Node
 
 	for _, node := range g.nodes {
-		if node.Status == tracker.StatusDone {
+		if node.Status == tracker.StatusDone || node.Status == tracker.StatusInReview {
 			continue
 		}
 
 		isBlocked := false
 		for _, bID := range node.BlockedBy {
 			if bNode, exists := g.nodes[bID]; exists {
-				if bNode.Status != tracker.StatusDone {
+				if bNode.Status != tracker.StatusDone && bNode.Status != tracker.StatusInReview {
 					isBlocked = true
 					break
 				}
