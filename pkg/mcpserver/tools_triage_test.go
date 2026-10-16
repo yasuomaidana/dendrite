@@ -3,15 +3,24 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
 func TestDendriteLocalAgentTriageTool(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"models":[{"name":"qwen2.5-coder:7b"}]}`))
+	}))
+	defer ts.Close()
+
 	srv := NewServer(ServerConfig{Name: "dendrite", Version: "1.0.0"})
 	srv.RegisterDefaultTools(Dependencies{
 		DevStatus: "DEV_STATUS.md",
-		OllamaURL: "http://127.0.0.1:11434",
+		OllamaURL: ts.URL,
 	})
 
 	// 1. Test chore task with forced local tier
