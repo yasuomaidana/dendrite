@@ -96,6 +96,13 @@ func (s *ProjectSpawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnRes
 			planeErr = fmt.Sprintf("identifier %s: %v", ident, err)
 		} else if proj != nil {
 			planeID = proj.ID
+			if _, ensureErr := s.planeClient.EnsureLifecycleStates(ctx, proj.ID); ensureErr != nil {
+				if planeErr != "" {
+					planeErr = fmt.Sprintf("%s; ensure states: %v", planeErr, ensureErr)
+				} else {
+					planeErr = fmt.Sprintf("ensure states: %v", ensureErr)
+				}
+			}
 		}
 	}
 

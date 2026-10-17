@@ -267,7 +267,7 @@ func buildRegistry() *cli.Registry {
 		Description: "Sovereign issue tracking, Gantt alignment, and DAG scheduler",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
-				fmt.Println("Usage: dendrite plane <status|replicate|push-status|doc|issues|modules|pages> [args...]")
+				fmt.Println("Usage: dendrite plane <status|replicate|push-status|doc|issues|modules|pages|update|states> [args...]")
 				return nil
 			}
 			handlePlaneCommand(ctx, args[0], args[1:])

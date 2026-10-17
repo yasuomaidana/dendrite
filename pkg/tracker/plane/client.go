@@ -2,9 +2,9 @@ package plane
 
 import (
 	"bytes"
-	"errors"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/quality"
+	"Dendrite/pkg/tracker"
 )
 
 var specRegex = regexp.MustCompile(`\b(FEAT-\d+|ADR-\d+)\b`)
@@ -320,9 +320,17 @@ func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tr
 		issueList, _ := c.ListPlaneIssues(ctx)
 		var matchedIssue *PlaneIssue
 		for _, iss := range issueList {
-			if iss.ID == issueUUIDCheck || strings.Contains(iss.Name, "["+string(id)+"]") || strings.Contains(iss.Name, string(id)) {
+			if iss.ID == issueUUIDCheck || strings.Contains(iss.Name, "["+string(id)+"]") {
 				matchedIssue = &iss
 				break
+			}
+		}
+		if matchedIssue == nil {
+			for _, iss := range issueList {
+				if strings.Contains(iss.Name, string(id)) {
+					matchedIssue = &iss
+					break
+				}
 			}
 		}
 		if matchedIssue != nil {
@@ -339,10 +347,20 @@ func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tr
 	if len(issueUUID) != 36 || strings.Count(issueUUID, "-") != 4 {
 		issues, err := c.ListPlaneIssues(ctx)
 		if err == nil {
+			found := false
 			for _, iss := range issues {
-				if strings.Contains(iss.Name, "["+string(id)+"]") || strings.Contains(iss.Name, string(id)) {
+				if strings.Contains(iss.Name, "["+string(id)+"]") {
 					issueUUID = iss.ID
+					found = true
 					break
+				}
+			}
+			if !found {
+				for _, iss := range issues {
+					if strings.Contains(iss.Name, string(id)) {
+						issueUUID = iss.ID
+						break
+					}
 				}
 			}
 		}
@@ -1022,10 +1040,20 @@ func (c *Client) AddComment(ctx context.Context, id tracker.TicketID, comment st
 	if len(issueUUID) != 36 || strings.Count(issueUUID, "-") != 4 {
 		issues, err := c.ListPlaneIssues(ctx)
 		if err == nil {
+			found := false
 			for _, iss := range issues {
-				if strings.Contains(iss.Name, "["+string(id)+"]") || strings.Contains(iss.Name, string(id)) {
+				if strings.Contains(iss.Name, "["+string(id)+"]") {
 					issueUUID = iss.ID
+					found = true
 					break
+				}
+			}
+			if !found {
+				for _, iss := range issues {
+					if strings.Contains(iss.Name, string(id)) {
+						issueUUID = iss.ID
+						break
+					}
 				}
 			}
 		}

@@ -2,8 +2,8 @@ package plane
 
 import (
 	"context"
-	"errors"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -630,12 +630,12 @@ func TestClient_GanttAndRelationOperations(t *testing.T) {
 	iss, err := client.CreatePlaneIssueWithDetails(ctx, CreateIssueRequest{
 		Name:            "Rich Issue",
 		DescriptionHTML: "<p>Rich Issue Context</p>",
-		Priority:      prio,
-		StartDate:     &sDate,
-		TargetDate:    &tDate,
-		EstimatePoint: &est,
-		ModuleID:      "mod-1",
-		BlockedBy:     []string{"iss-0"},
+		Priority:        prio,
+		StartDate:       &sDate,
+		TargetDate:      &tDate,
+		EstimatePoint:   &est,
+		ModuleID:        "mod-1",
+		BlockedBy:       []string{"iss-0"},
 	})
 	if err != nil || iss.ID != "iss-rich" {
 		t.Fatalf("CreatePlaneIssueWithDetails failed: %v", err)
@@ -818,5 +818,109 @@ func TestClient_UpdateStatus_ZeroMockRejection(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "zero-mock policy gate violation") {
 		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestClient_UpdateStatus_ExactIDResolution(t *testing.T) {
+	var patchedIDs []string
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/workspaces/ws1/projects/p1/states/" {
+			data := `[
+				{"id": "st-todo", "name": "To Do", "group": "unstarted"},
+				{"id": "st-done", "name": "Done", "group": "completed"}
+			]`
+			_, _ = w.Write([]byte(data))
+			return
+		}
+
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/workspaces/ws1/projects/p1/issues/" {
+			// DEN-900 appears FIRST in list; DEN-90 appears second
+			data := `[
+				{"id": "uuid-den-900", "name": "[DEN-900] Substring ticket", "sequence_id": 900},
+				{"id": "uuid-den-90", "name": "[DEN-90] Target ticket", "sequence_id": 90}
+			]`
+			_, _ = w.Write([]byte(data))
+			return
+		}
+
+		if r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/workspaces/ws1/projects/p1/issues/") {
+			parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+			issueID := parts[len(parts)-1]
+			patchedIDs = append(patchedIDs, issueID)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id": "` + issueID + `"}`))
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	client, err := NewClient(Config{
+		BaseURL:       ts.URL,
+		WorkspaceSlug: "ws1",
+		ProjectID:     "p1",
+		DirectToken:   "tok-1",
+	}, nil)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// 1. UpdateStatus with "DEN-90": must match "[DEN-90]" and NOT "[DEN-900]"
+	if err := client.UpdateStatus(ctx, "DEN-90", tracker.StatusDone); err != nil {
+		t.Fatalf("UpdateStatus failed: %v", err)
+	}
+
+	if len(patchedIDs) != 1 {
+		t.Fatalf("expected exactly 1 patch, got %d (%v)", len(patchedIDs), patchedIDs)
+	}
+	if patchedIDs[0] != "uuid-den-90" {
+		t.Errorf("expected patched issue to be uuid-den-90, got: %s", patchedIDs[0])
+	}
+
+	// 2. Fallback: non-bracketed issue name
+	patchedIDs = nil
+	fallbackTS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/workspaces/ws1/projects/p1/states/" {
+			_, _ = w.Write([]byte(`[{"id": "st-done", "name": "Done", "group": "completed"}]`))
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/workspaces/ws1/projects/p1/issues/" {
+			_, _ = w.Write([]byte(`[{"id": "uuid-plain-90", "name": "DEN-90 without brackets", "sequence_id": 90}]`))
+			return
+		}
+		if r.Method == http.MethodPatch {
+			parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+			issueID := parts[len(parts)-1]
+			patchedIDs = append(patchedIDs, issueID)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id": "` + issueID + `"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer fallbackTS.Close()
+
+	fallbackClient, err := NewClient(Config{
+		BaseURL:       fallbackTS.URL,
+		WorkspaceSlug: "ws1",
+		ProjectID:     "p1",
+		DirectToken:   "tok-1",
+	}, nil)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	if err := fallbackClient.UpdateStatus(ctx, "DEN-90", tracker.StatusDone); err != nil {
+		t.Fatalf("UpdateStatus fallback failed: %v", err)
+	}
+	if len(patchedIDs) != 1 || patchedIDs[0] != "uuid-plain-90" {
+		t.Errorf("expected fallback to match uuid-plain-90, got: %v", patchedIDs)
 	}
 }
