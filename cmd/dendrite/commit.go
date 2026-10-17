@@ -57,6 +57,8 @@ func handleCommitCommand(ctx context.Context, args []string) {
 			opts.UseLocalModel = false
 		case "--dry-run":
 			opts.DryRun = true
+		case "--allow-mocks", "--no-mock-gate":
+			opts.AllowMocks = true
 		case "--help", "-h":
 			printCommitUsage()
 			return

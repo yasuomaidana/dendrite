@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/tracker/plane"
+	"Dendrite/pkg/quality"
 )
 
 // CommitOptions defines the parameters for an autonomous Git commit.
@@ -35,6 +36,7 @@ type CommitOptions struct {
 	LiteLLMEndpoint  string           `json:"litellm_endpoint,omitempty"`
 	LiteLLMKey       string           `json:"litellm_key,omitempty"`
 	RepoDir          string           `json:"repo_dir,omitempty"`
+	AllowMocks       bool             `json:"allow_mocks,omitempty"`
 }
 
 // CommitResult encapsulates the outcome of a commit operation.
@@ -692,6 +694,13 @@ func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, erro
 	if opts.Amend && diffStat == "" {
 		diffStat, _ = runGit("show", "--stat", "HEAD")
 		fullDiff, _ = runGit("show", "HEAD")
+	}
+
+	// 2a. Zero-Mock Policy Enforcement Gate
+	if !opts.AllowMocks {
+		if hasMocks, mockLocs, _ := quality.ScanFilesForMocks(opts.RepoDir, stagedFiles); hasMocks {
+			return nil, fmt.Errorf("zero-mock policy violation: staged changes contain banned mocks/stubs:\n%s\nMust implement real production services (or pass --allow-mocks for emergency bypass)", strings.Join(mockLocs, "\n"))
+		}
 	}
 
 	// 3. Smart Ticket Resolution

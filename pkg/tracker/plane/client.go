@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/tracker"
+	"Dendrite/pkg/quality"
 )
 
 var specRegex = regexp.MustCompile(`\b(FEAT-\d+|ADR-\d+)\b`)
@@ -200,45 +201,63 @@ func (c *Client) GetIssue(ctx context.Context, id tracker.TicketID) (*tracker.Un
 	}, nil
 }
 
-// ListPlaneIssues queries all issues for the project.
+// ListPlaneIssues queries all issues for the project across all pages.
 func (c *Client) ListPlaneIssues(ctx context.Context) ([]PlaneIssue, error) {
-	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/", c.workspaceSlug, c.projectID)
-	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
+	var allIssues []PlaneIssue
+	cursor := ""
+
+	for {
+		endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/", c.workspaceSlug, c.projectID)
+		if cursor != "" {
+			endpoint = fmt.Sprintf("%s?cursor=%s", endpoint, cursor)
+		}
+		req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			resp.Body.Close()
+			return nil, ErrUnauthorized
+		}
+		if resp.StatusCode >= 400 {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to list plane issues: status %d", resp.StatusCode)
+		}
+
+		bodyBytes, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+
+		var paginated struct {
+			NextPageResults bool         `json:"next_page_results"`
+			NextCursor      string       `json:"next_cursor"`
+			Results         []PlaneIssue `json:"results"`
+		}
+		if err := json.Unmarshal(bodyBytes, &paginated); err == nil && len(paginated.Results) > 0 {
+			allIssues = append(allIssues, paginated.Results...)
+			if !paginated.NextPageResults || paginated.NextCursor == "" {
+				break
+			}
+			cursor = paginated.NextCursor
+			continue
+		}
+
+		var directList []PlaneIssue
+		if err := json.Unmarshal(bodyBytes, &directList); err == nil {
+			allIssues = append(allIssues, directList...)
+		}
+		break
 	}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to list plane issues: status %d", resp.StatusCode)
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var paginated struct {
-		Results []PlaneIssue `json:"results"`
-	}
-	if err := json.Unmarshal(bodyBytes, &paginated); err == nil && len(paginated.Results) > 0 {
-		return paginated.Results, nil
-	}
-
-	var directList []PlaneIssue
-	if err := json.Unmarshal(bodyBytes, &directList); err == nil {
-		return directList, nil
-	}
-
-	return paginated.Results, nil
+	return allIssues, nil
 }
 
 // ListStates queries all states configured for the project.
@@ -292,6 +311,28 @@ func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tr
 	targetStateID := findMatchingPlaneStateFromList(states, state)
 	if targetStateID == "" {
 		return ErrStateNotFound
+	}
+
+	// Zero-Mock Policy Enforcement Gate:
+	// Prohibit transitioning issues to review/verify/done if any mocks exist in associated packages
+	if state == tracker.StatusDone || state == tracker.StatusInReview {
+		issueUUIDCheck := string(id)
+		issueList, _ := c.ListPlaneIssues(ctx)
+		var matchedIssue *PlaneIssue
+		for _, iss := range issueList {
+			if iss.ID == issueUUIDCheck || strings.Contains(iss.Name, "["+string(id)+"]") || strings.Contains(iss.Name, string(id)) {
+				matchedIssue = &iss
+				break
+			}
+		}
+		if matchedIssue != nil {
+			pkgs := quality.ExtractPackages(matchedIssue.Name + " " + matchedIssue.DescriptionHTML)
+			if len(pkgs) > 0 {
+				if hasMocks, mockLocs, _ := quality.ValidateZeroMockGate(".", pkgs); hasMocks {
+					return fmt.Errorf("zero-mock policy gate violation: cannot transition ticket %s to %s because mocks/stubs were detected in %v: %s", id, state, pkgs, strings.Join(mockLocs, "; "))
+				}
+			}
+		}
 	}
 
 	issueUUID := string(id)

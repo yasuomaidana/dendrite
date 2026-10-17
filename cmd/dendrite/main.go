@@ -1118,14 +1118,12 @@ func getJetBrainsClient() (*jetbrains.Client, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
 
-	if _, err := client.Connect(ctx); err == nil {
+	connErr := error(nil)
+	if _, connErr = client.Connect(ctx); connErr == nil {
 		return client, nil
 	}
 
-	mockTransport := jetbrains.NewMockTransport()
-	mockClient, _ := jetbrains.NewClient(mockTransport)
-	_, _ = mockClient.Connect(context.Background())
-	return mockClient, nil
+	return nil, fmt.Errorf("failed to connect to live JetBrains IDE MCP server at http://localhost:63342/api/mcp: %w (Zero-Mock Policy: live IDE connection required)", connErr)
 }
 
 func handleJetBrainsCommand(ctx context.Context, action string, args []string) {
@@ -1512,14 +1510,16 @@ func handleDevCommand(ctx context.Context, sub string, args []string) {
 		} else if args[0] == "set" && len(args) >= 3 {
 			id := args[1]
 			st := tracker.Status(strings.ToUpper(args[2]))
-			mdErr := devtool.UpdateTicketInMarkdown(ctx, filePath, id, st)
 			pClient, pErr := plane.NewClientFromEnv()
 			planeSynced := false
 			if pErr == nil && pClient != nil {
-				if err := pClient.UpdateStatus(ctx, tracker.TicketID(id), st); err == nil {
-					planeSynced = true
+				if err := pClient.UpdateStatus(ctx, tracker.TicketID(id), st); err != nil {
+					fmt.Printf("[-] Failed to update ticket status in Plane: %v\n", err)
+					return
 				}
+				planeSynced = true
 			}
+			mdErr := devtool.UpdateTicketInMarkdown(ctx, filePath, id, st)
 
 			if mdErr != nil && !planeSynced {
 				fmt.Printf("[-] Failed to update ticket: %v\n", mdErr)

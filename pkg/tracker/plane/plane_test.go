@@ -778,3 +778,45 @@ func TestClient_CreatePlaneIssue_EmptyContext(t *testing.T) {
 		t.Errorf("expected error for empty name")
 	}
 }
+
+func TestClient_UpdateStatus_ZeroMockRejection(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/workspaces/ws1/projects/p1/states/" {
+			data := `[
+				{"id": "st-todo", "name": "To Do", "group": "unstarted"},
+				{"id": "st-done", "name": "Done", "group": "completed"}
+			]`
+			_, _ = w.Write([]byte(data))
+			return
+		}
+		if r.URL.Path == "/api/v1/workspaces/ws1/projects/p1/issues/" {
+			data := `[
+				{"id": "iss-mock-1", "name": "[DEN-038] Automated Test Synthesizer (pkg/uitest)", "description_html": "<div>Needs Playwright</div>"}
+			]`
+			_, _ = w.Write([]byte(data))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	cfg := Config{
+		BaseURL:       ts.URL,
+		WorkspaceSlug: "ws1",
+		ProjectID:     "p1",
+		DirectToken:   "tok-1",
+	}
+	client, err := NewClient(cfg, nil)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	err = client.UpdateStatus(context.Background(), "DEN-038", tracker.StatusDone)
+	if err == nil {
+		t.Fatalf("expected zero-mock gate rejection on DEN-038, got nil")
+	}
+	if !strings.Contains(err.Error(), "zero-mock policy gate violation") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}

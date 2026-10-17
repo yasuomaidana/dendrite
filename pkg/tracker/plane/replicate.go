@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/tracker"
+	"Dendrite/pkg/quality"
 	"Dendrite/pkg/tracker/dag"
 )
 
@@ -373,6 +374,17 @@ func PushStatusToPlane(ctx context.Context, client *Client, mdContent string) (*
 	}
 
 	for _, t := range data.Tickets {
+		// Zero-Mock Policy Enforcement Gate:
+		// Prohibit pushing any ticket as DONE or IN_REVIEW if associated packages contain mocks
+		if t.Status == tracker.StatusDone || t.Status == tracker.StatusInReview {
+			pkgs := quality.ExtractPackages(t.Title + " " + t.TargetPackage)
+			if len(pkgs) > 0 {
+				if hasMocks, _, _ := quality.ValidateZeroMockGate(".", pkgs); hasMocks {
+					t.Status = tracker.StatusTodo
+				}
+			}
+		}
+
 		switch t.Status {
 		case tracker.StatusDone:
 			report.CompletedTickets++

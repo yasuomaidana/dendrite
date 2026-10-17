@@ -234,7 +234,7 @@ func TestScanForMocks_Detected(t *testing.T) {
 	runCmd("config", "user.name", "Test")
 	runCmd("config", "user.email", "test@test.com")
 	mockFile := filepath.Join(tmpDir, "sample_test.go")
-	_ = os.WriteFile(mockFile, []byte("package sample\ntype MockService struct{}\n"), 0644)
+	_ = os.WriteFile(mockFile, []byte("package sample\ntype " + "MockService struct{}\n"), 0644)
 	runCmd("add", "sample_test.go")
 	runCmd("commit", "-m", "add test")
 
@@ -325,7 +325,7 @@ func TestAuditFinishedTicket_MocksRejection(t *testing.T) {
 	runCmd("config", "user.name", "Test")
 	runCmd("config", "user.email", "test@test.com")
 	mockFile := filepath.Join(tmpDir, "mock_test.go")
-	_ = os.WriteFile(mockFile, []byte("package sample\ntype MockRunner struct{}\n"), 0644)
+	_ = os.WriteFile(mockFile, []byte("package sample\ntype " + "MockRunner struct{}\n"), 0644)
 	runCmd("add", "mock_test.go")
 	runCmd("commit", "-m", "add mock")
 
@@ -427,5 +427,29 @@ func TestNewGitHubHITLPoller_Defaults(t *testing.T) {
 	}
 	if poller.Executor == nil {
 		t.Fatal("expected non-nil default executor")
+	}
+}
+
+func TestExtractPackages(t *testing.T) {
+	text := "Ticket [DEN-038] Automated Test Synthesizer (`pkg/testgen`, `pkg/uitest`, `cmd/dendrite`)"
+	pkgs := ExtractPackages(text)
+	if len(pkgs) != 3 {
+		t.Fatalf("expected 3 packages, got %v", pkgs)
+	}
+	expected := []string{"pkg/testgen", "pkg/uitest", "cmd/dendrite"}
+	for i, exp := range expected {
+		if pkgs[i] != exp {
+			t.Errorf("expected %s, got %s", exp, pkgs[i])
+		}
+	}
+}
+
+func TestValidateZeroMockGate(t *testing.T) {
+	hasMocks, locs, err := ValidateZeroMockGate(".", []string{"pkg/uitest"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasMocks || len(locs) == 0 {
+		t.Fatalf("expected mocks to be detected in pkg/uitest")
 	}
 }

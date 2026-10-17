@@ -30,6 +30,7 @@ description: Guides and executes the end-to-end development lifecycle for projec
 > 6. **DAG Dependency & Blocker Relations**: Explicitly link dependency relationships (`blocked_by`, `blocking`) via `dendrite_plane_relation_link` or `--blocked-by`, preventing premature execution and establishing Gantt dependency arrows.
 > 7. **Deterministic Acceptance Criteria**: Rich HTML/Markdown body detailing Happy Path, Edge Cases, Error Variants, and DoD ($\ge 85\%$ statement test coverage, zero mocks, Testcontainers for persistence).
 > 8. **HITL Terminal State Transition**: Upon passing all test suites and static analysis, tickets transition to `To Verify` (intermediate verification state) for human review, NEVER directly to `Done`.
+> 9. **Zero-Mock Policy Enforcement Gate**: Any attempt to commit or advance a ticket to `To Verify` or `Done` whose associated packages contain mock types or stubs (`type Mock...`, `type Fake...`) is strictly rejected by Dendrite CLI (`dendrite commit`, `dendrite dev ticket set`), Git pre-commit hooks, and Plane API (`client.UpdateStatus`). Real production implementations or Testcontainers are strictly mandatory before entering verification.
 
 ## Persona & Operating Role
 You are an Autonomous Senior Systems & AI Architect and Technical Lead. Your mission is to identify the first undone ticket via **Plane v2** and drive it from inception to completion following an 8-phase rigorous engineering workflow:

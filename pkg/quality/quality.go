@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -190,10 +191,131 @@ func (a *AGYFallbackAnalyzer) AnalyzeFeature(ctx context.Context, pkgPath string
 	}, nil
 }
 
-// ScanForMocks checks for mock or stub patterns in test files.
+var pkgPathRegex = regexp.MustCompile(`\b(pkg/[a-zA-Z0-9_\-]+(?:/[a-zA-Z0-9_\-]+)*|cmd/[a-zA-Z0-9_\-]+)\b`)
+
+// ExtractPackages scans text (e.g. ticket title, description, diff) for repository package paths.
+func ExtractPackages(text string) []string {
+	seen := make(map[string]bool)
+	var pkgs []string
+
+	matches := pkgPathRegex.FindAllString(text, -1)
+	for _, m := range matches {
+		if !seen[m] {
+			seen[m] = true
+			pkgs = append(pkgs, m)
+		}
+	}
+
+	lower := strings.ToLower(text)
+	// Also correlate known core packages by keyword
+	coreModules := []string{
+		"jetbrains", "uitest", "telemetry", "agentsearch",
+		"quality", "gateway", "store", "tokens", "pool",
+		"query", "vcs", "agent", "env", "rea",
+	}
+	for _, mod := range coreModules {
+		if strings.Contains(lower, mod) {
+			pkgPath := "pkg/" + mod
+			if !seen[pkgPath] {
+				seen[pkgPath] = true
+				pkgs = append(pkgs, pkgPath)
+			}
+		}
+	}
+
+	return pkgs
+}
+
+// ValidateZeroMockGate enforces that none of the target packages contain mocks or stubs.
+func ValidateZeroMockGate(repoDir string, pkgs []string) (bool, []string, error) {
+	var allViolations []string
+	for _, p := range pkgs {
+		hasMocks, locs, err := ScanProductionMocks(repoDir, p)
+		if err != nil {
+			return false, nil, err
+		}
+		if hasMocks {
+			allViolations = append(allViolations, locs...)
+		}
+	}
+	return len(allViolations) > 0, allViolations, nil
+}
+
+// ScanFilesForMocks scans a specific list of files (e.g. staged git files) for mock patterns.
+func ScanFilesForMocks(repoDir string, files []string) (bool, []string, error) {
+	if len(files) == 0 {
+		return false, nil, nil
+	}
+	var targetFiles []string
+	for _, f := range files {
+		clean := filepath.ToSlash(f)
+		if strings.HasSuffix(clean, ".go") || strings.HasSuffix(clean, ".rs") || strings.HasSuffix(clean, ".ts") || strings.HasSuffix(clean, ".py") {
+			targetFiles = append(targetFiles, clean)
+		}
+	}
+	if len(targetFiles) == 0 {
+		return false, nil, nil
+	}
+	args := append([]string{"grep", "-n", "-E", `(` + "go" + "mock|" + "testify/" + "mock|" + `t\.Skip\(|type[[:space:]]+[Mm]ock|type[[:space:]]+[Ff]ake)`, "--"}, targetFiles...)
+	cmd := exec.Command("git", args...)
+	if repoDir != "" {
+		cmd.Dir = repoDir
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return false, nil, nil
+		}
+		return false, nil, err
+	}
+	raw := strings.TrimSpace(string(out))
+	if raw == "" {
+		return false, nil, nil
+	}
+	lines := strings.Split(raw, "\n")
+	return true, lines, nil
+}
+
+// ScanProductionMocks scans non-test files for mock/fake type definitions shipped in production code.
+func ScanProductionMocks(repoDir, pkgPath string) (bool, []string, error) {
+	if repoDir == "" || repoDir == "." {
+		if root, err := exec.Command("git", "rev-parse", "--show-toplevel").Output(); err == nil {
+			repoDir = strings.TrimSpace(string(root))
+		}
+	}
+	pattern := `(type[[:space:]]+[Mm]ock|type[[:space:]]+[Ff]ake)`
+	cmd := exec.Command("git", "grep", "-n", "-E", pattern, "--", pkgPath, ":!*_test.go")
+	if repoDir != "" {
+		cmd.Dir = repoDir
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return false, nil, nil
+		}
+		return false, nil, err
+	}
+	raw := strings.TrimSpace(string(out))
+	if raw == "" {
+		return false, nil, nil
+	}
+	lines := strings.Split(raw, "\n")
+	return true, lines, nil
+}
+
+// ScanForMocks checks for mock or stub patterns in test files and production code.
 func ScanForMocks(repoDir, pkgPath string) (bool, []string, error) {
-	cmd := exec.Command("git", "grep", "-n", "-E", `(gomock|testify/mock|t\.Skip\(|type[[:space:]]+[Mm]ock|type[[:space:]]+[Ff]ake)`, "--", pkgPath)
-	cmd.Dir = repoDir
+	if repoDir == "" || repoDir == "." {
+		if root, err := exec.Command("git", "rev-parse", "--show-toplevel").Output(); err == nil {
+			repoDir = strings.TrimSpace(string(root))
+		}
+	}
+	cmd := exec.Command("git", "grep", "-n", "-E", `(` + "go" + "mock|" + "testify/" + "mock|" + `t\.Skip\(|type[[:space:]]+[Mm]ock|type[[:space:]]+[Ff]ake)`, "--", pkgPath)
+	if repoDir != "" {
+		cmd.Dir = repoDir
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		var exitErr *exec.ExitError
