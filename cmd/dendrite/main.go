@@ -2,6 +2,7 @@ package main
 
 import (
 	"Dendrite/pkg/cli"
+	"Dendrite/pkg/gateway"
 	"Dendrite/pkg/statedir"
 	"context"
 	"fmt"
@@ -1306,7 +1307,7 @@ func handleAgentCommand(ctx context.Context, action string, args []string) {
 		if agentType == agent.AgentAGY || agentType == agent.AgentAntigravity {
 			defaultModel = "gemini-3.8-flash-high"
 		} else if agentType == agent.AgentCopilot || agentType == agent.AgentGitHubCopilot {
-			defaultModel = "claude-sonnet-4.5"
+			defaultModel = gateway.CopilotModel()
 		}
 
 		cfg := agent.AgentConfig{

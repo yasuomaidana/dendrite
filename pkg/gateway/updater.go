@@ -351,7 +351,7 @@ func (u *RoutingTableUpdater) buildDynamicConfig(
 		{
 			ModelName: opts.BackupCloudModel,
 			LitellmParams: ModelParams{
-				Model:      "github_copilot/claude-sonnet-4.5",
+				Model:      "github_copilot/" + CopilotModel(),
 				APIKey:     "os.environ/COPILOT_API_KEY",
 				DropParams: true,
 				ExtraHeaders: map[string]string{
@@ -367,7 +367,7 @@ func (u *RoutingTableUpdater) buildDynamicConfig(
 				OutputCostPerToken: 0.000015,
 				MaxInputTokens:     200000,
 				MaxOutputTokens:    8192,
-				BaseModel:          "claude-sonnet-4.5",
+				BaseModel:          CopilotModel(),
 			},
 		},
 		{

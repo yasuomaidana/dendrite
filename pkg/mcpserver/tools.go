@@ -426,7 +426,7 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 				},
 				"model": map[string]interface{}{
 					"type":        "string",
-					"description": "Target LLM model (default: gemini-3.8-flash-high for agy, claude-sonnet-4.5 for copilot)",
+					"description": "Target LLM model (default: gemini-3.8-flash-high for agy, the DENDRITE_COPILOT_MODEL default for copilot)",
 				},
 				"spend_limit": map[string]interface{}{
 					"type":        "number",
@@ -454,7 +454,7 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 			if aType == agent.AgentAGY || aType == agent.AgentAntigravity {
 				model = "gemini-3.8-flash-high"
 			} else if aType == agent.AgentCopilot || aType == agent.AgentGitHubCopilot {
-				model = "claude-sonnet-4.5"
+				model = gateway.CopilotModel()
 			} else {
 				model = "copilot-sonnet"
 			}
