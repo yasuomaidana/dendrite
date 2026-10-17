@@ -1,6 +1,7 @@
 package tokens
 
 import (
+	"Dendrite/pkg/statedir"
 	"time"
 )
 
@@ -64,7 +65,7 @@ func DefaultConfig() TokenTrackerConfig {
 		WeekBudgetUSD:      350.0,
 		Model:              "gemini-3.8-flash-high",
 		GatewayBaseURL:     "http://localhost:4000/v1",
-		PolicyFile:         ".dendrite/scheduler_policy.json",
-		SpendFile:          ".dendrite/spend.json",
+		PolicyFile:         statedir.Resolve(".dendrite/scheduler_policy.json"),
+		SpendFile:          statedir.Resolve(".dendrite/spend.json"),
 	}
 }

@@ -15,7 +15,7 @@ func TestHandleAskCommand_UsageAndFlags(t *testing.T) {
 	handleAskCommand(ctx, []string{"--help"})
 
 	// 3. Empty question after flags: prints error & usage
-	handleAskCommand(ctx, []string{"-y", "--project", "."})
+	handleAskCommand(ctx, []string{"-y", "--project", t.TempDir()})
 
 	// 4. JSON flag with question
 	handleAskCommand(ctx, []string{"--json", "-y", "--top-k", "2", "test question"})

@@ -1,6 +1,7 @@
 package segmented
 
 import (
+	"Dendrite/pkg/statedir"
 	"context"
 	"os"
 	"path/filepath"
@@ -227,7 +228,7 @@ func TestSegmentedStore_CrashMidWriteZeroCorruption(t *testing.T) {
 func TestSegmentedStore_DefaultsAndListing(t *testing.T) {
 	// Test default constructors
 	bs := NewBlobStore("")
-	if bs.baseDir != ".dendrite/store/blobs" {
+	if bs.baseDir != statedir.Resolve(".dendrite/store/blobs") {
 		t.Fatalf("unexpected blob default: %s", bs.baseDir)
 	}
 

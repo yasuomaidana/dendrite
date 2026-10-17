@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/gateway"
+	"Dendrite/pkg/statedir"
 )
 
 // ChunkProcessResult records the outcome of scheduling and executing a chunk analysis.
@@ -42,6 +43,7 @@ func NewTokenScheduler(clock Clock, limiter *gateway.BudgetLimiter, policyPath s
 	if policyPath == "" {
 		policyPath = DefaultPolicyFile
 	}
+	policyPath = statedir.Resolve(policyPath)
 
 	pol, err := LoadPolicy(policyPath)
 	if err != nil {

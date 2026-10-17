@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"Dendrite/pkg/statedir"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,7 +17,7 @@ var defaultMCPQuerySlicer = slice.NewIntentSlicer()
 var defaultMCPSwapper = swap.NewSubsystemSwapper()
 var defaultMCPTranspiler = transpile.NewRustTranspiler()
 var defaultMCPFuser = fuse.NewArchitectureFuser()
-var defaultMCPReuseAuditor = reuse.NewAuditor(nil, nil, ".dendrite/pool.json")
+var defaultMCPReuseAuditor = reuse.NewAuditor(nil, nil, statedir.Resolve(".dendrite/pool.json"))
 var defaultMCPRefMgr = reuse.NewRefManager(".dendrite/refs.json")
 
 func (s *Server) registerQueryTools(deps Dependencies) {

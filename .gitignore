@@ -10,3 +10,9 @@ coverage.out
 .venv/
 node_modules/
 .dendrite/rag_cache.json
+# Runtime state must live in the repo-root .dendrite/ only (DEN-901)
+pkg/**/.dendrite/
+cmd/**/.dendrite/
+tests/**/.dendrite/
+pkg/**/.ai/
+cmd/**/.ai/

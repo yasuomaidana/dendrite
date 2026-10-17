@@ -12,6 +12,7 @@ import (
 
 	"Dendrite/pkg/inference"
 	"Dendrite/pkg/rag"
+	"Dendrite/pkg/statedir"
 	"Dendrite/pkg/telemetry/exporter"
 	"Dendrite/pkg/topology"
 	"Dendrite/pkg/workspace"
@@ -361,7 +362,7 @@ func (s *Server) handleZeroCost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		_ = reg.SaveToFile(inference.DefaultZeroCostConfigFile)
+		_ = reg.SaveToFile(statedir.Resolve(inference.DefaultZeroCostConfigFile))
 		if req.SyncEnv {
 			_ = reg.SaveToEnvFile(".env")
 		}
@@ -400,7 +401,7 @@ func (s *Server) handleZeroCost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		_ = reg.SaveToFile(inference.DefaultZeroCostConfigFile)
+		_ = reg.SaveToFile(statedir.Resolve(inference.DefaultZeroCostConfigFile))
 		if req.SyncEnv {
 			_ = reg.SaveToEnvFile(".env")
 		}

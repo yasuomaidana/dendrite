@@ -1,6 +1,7 @@
 package dag
 
 import (
+	"Dendrite/pkg/statedir"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -26,6 +27,7 @@ func NewPoolManager(configFile string) *PoolManager {
 	if configFile == "" {
 		configFile = DefaultPoolConfigFile
 	}
+	configFile = statedir.Resolve(configFile)
 	pm := &PoolManager{
 		configFile: configFile,
 		scanner:    NewManifestScanner(),
@@ -177,11 +179,11 @@ func (s *DAGSolver) Resolve(projects []ProjectInfo) (*DAGResolution, error) {
 
 	for _, p := range projects {
 		node := &DAGNode{
-			ID:          p.Name,
-			Path:        p.Path,
-			Ecosystems:  p.Ecosystems,
-			DependsOn:   []string{},
-			DependedBy:  []string{},
+			ID:         p.Name,
+			Path:       p.Path,
+			Ecosystems: p.Ecosystems,
+			DependsOn:  []string{},
+			DependedBy: []string{},
 		}
 		nodes[p.Name] = node
 		nameToID[p.Name] = p.Name

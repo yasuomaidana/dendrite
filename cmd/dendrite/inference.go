@@ -2,15 +2,16 @@ package main
 
 import (
 	"context"
-	"os/exec"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
 	"Dendrite/pkg/gateway"
 	"Dendrite/pkg/inference"
+	"Dendrite/pkg/statedir"
 )
 
 func handleInferenceCommand(ctx context.Context, args []string) {
@@ -313,14 +314,14 @@ func handleZeroCostCommand(args []string) {
 			return
 		}
 
-		_ = reg.SaveToFile(inference.DefaultZeroCostConfigFile)
+		_ = reg.SaveToFile(statedir.Resolve(inference.DefaultZeroCostConfigFile))
 
 		kind := "exact model"
 		if isPrefix {
 			kind = "prefix rule"
 		}
 		fmt.Printf("[✓] Registered '%s' as zero-cost %s (editable on the go)\n", target, kind)
-		fmt.Printf("    Saved to dynamic config: %s\n", inference.DefaultZeroCostConfigFile)
+		fmt.Printf("    Saved to dynamic config: %s\n", statedir.Resolve(inference.DefaultZeroCostConfigFile))
 
 		// Check if .env exists and sync if requested or default .env found
 		envPath := ".env"
@@ -349,14 +350,14 @@ func handleZeroCostCommand(args []string) {
 			return
 		}
 
-		_ = reg.SaveToFile(inference.DefaultZeroCostConfigFile)
+		_ = reg.SaveToFile(statedir.Resolve(inference.DefaultZeroCostConfigFile))
 
 		kind := "exact model"
 		if isPrefix {
 			kind = "prefix rule"
 		}
 		fmt.Printf("[✓] Removed '%s' from zero-cost %s\n", target, kind)
-		fmt.Printf("    Updated dynamic config: %s\n", inference.DefaultZeroCostConfigFile)
+		fmt.Printf("    Updated dynamic config: %s\n", statedir.Resolve(inference.DefaultZeroCostConfigFile))
 
 		envPath := ".env"
 		if _, err := os.Stat(envPath); err == nil || syncEnv {
@@ -380,7 +381,7 @@ func handleZeroCostCommand(args []string) {
 
 	case "reset":
 		reg.Reset()
-		_ = os.Remove(inference.DefaultZeroCostConfigFile)
+		_ = os.Remove(statedir.Resolve(inference.DefaultZeroCostConfigFile))
 		reg.AutoLoad()
 		fmt.Println("[✓] Successfully reset zero-cost models to defaults + active .env configuration.")
 

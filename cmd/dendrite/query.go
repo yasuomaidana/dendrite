@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/pkg/statedir"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,7 +20,7 @@ var defaultSlicer = slice.NewIntentSlicer()
 var defaultSwapper = swap.NewSubsystemSwapper()
 var defaultTranspiler = transpile.NewRustTranspiler()
 var defaultFuser = fuse.NewArchitectureFuser()
-var defaultAuditor = reuse.NewAuditor(nil, nil, ".dendrite/pool.json")
+var defaultAuditor = reuse.NewAuditor(nil, nil, statedir.Resolve(".dendrite/pool.json"))
 
 func handleQueryCommand(ctx context.Context, action string, args []string) {
 	if action == "swap" {

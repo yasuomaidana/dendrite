@@ -1,6 +1,7 @@
 package reuse
 
 import (
+	"Dendrite/pkg/statedir"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -18,9 +19,9 @@ type RefManager struct {
 // NewRefManager creates a new RefManager storing state at filePath.
 func NewRefManager(filePath string) *RefManager {
 	if filePath == "" {
-		filePath = ".dendrite/refs.json"
+		filePath = statedir.Resolve(".dendrite/refs.json")
 	}
-	return &RefManager{filePath: filePath}
+	return &RefManager{filePath: statedir.Resolve(filePath)}
 }
 
 // ListRefs returns all registered source references.

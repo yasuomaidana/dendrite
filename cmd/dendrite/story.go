@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/pkg/statedir"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,7 +18,7 @@ var (
 	defaultStoryMonitor  = contract.NewContractMonitor(nil)
 	defaultCLIController = fork.NewForkController(
 		".",
-		".dendrite/worktrees",
+		statedir.Resolve(".dendrite/worktrees"),
 		fork.NewOSGitExecutor(),
 		fork.NewDefaultBenchmarkHarness(),
 		store.NewStore(".dendrite/store", "docs/adr"),

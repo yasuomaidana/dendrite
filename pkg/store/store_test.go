@@ -1,6 +1,7 @@
 package store
 
 import (
+	"Dendrite/pkg/statedir"
 	"os"
 	"path/filepath"
 	"testing"
@@ -132,7 +133,7 @@ func TestStore_ADRLifecycle(t *testing.T) {
 
 func TestStore_DefaultPaths(t *testing.T) {
 	s := NewStore("", "")
-	if s.baseDir != ".dendrite/store" || s.adrDir != "docs/adr" {
+	if s.baseDir != statedir.Resolve(".dendrite/store") || s.adrDir != "docs/adr" {
 		t.Fatalf("unexpected defaults: baseDir=%s, adrDir=%s", s.baseDir, s.adrDir)
 	}
 }

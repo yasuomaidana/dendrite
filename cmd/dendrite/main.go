@@ -2,6 +2,7 @@ package main
 
 import (
 	"Dendrite/pkg/cli"
+	"Dendrite/pkg/statedir"
 	"context"
 	"fmt"
 	"net/http"
@@ -1396,7 +1397,7 @@ func handleAgentCommand(ctx context.Context, action string, args []string) {
 
 		// Record session to persistent ledger
 		_ = os.MkdirAll(".dendrite", 0755)
-		ledgerPath := filepath.Join(".dendrite", "agent_sessions.json")
+		ledgerPath := statedir.Resolve(filepath.Join(".dendrite", "agent_sessions.json"))
 		ledger := agent.NewSessionLedger(nil, ledgerPath)
 		if data, err := os.ReadFile(ledgerPath); err == nil {
 			_ = ledger.LoadJSON(data)
@@ -1418,7 +1419,7 @@ func handleAgentCommand(ctx context.Context, action string, args []string) {
 		handleAgentRouteCommand(ctx, args)
 
 	case "session":
-		ledgerPath := filepath.Join(".dendrite", "agent_sessions.json")
+		ledgerPath := statedir.Resolve(filepath.Join(".dendrite", "agent_sessions.json"))
 		ledger := agent.NewSessionLedger(nil, ledgerPath)
 		if data, err := os.ReadFile(ledgerPath); err == nil {
 			_ = ledger.LoadJSON(data)

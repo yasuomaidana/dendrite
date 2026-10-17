@@ -1,6 +1,7 @@
 package canvas
 
 import (
+	"Dendrite/pkg/statedir"
 	"context"
 	"encoding/json"
 	"errors"
@@ -52,8 +53,8 @@ func NewPenpotUIBridge(planeClient *plane.Client, endpoint string) *PenpotUIBrid
 	}
 
 	// Default persistence location
-	defaultStorage := filepath.Join(".dendrite", "canvas_relations.json")
-	if _, err := os.Stat(".dendrite"); err == nil {
+	defaultStorage := statedir.Resolve(filepath.Join(".dendrite", "canvas_relations.json"))
+	if _, err := os.Stat(statedir.Resolve(".dendrite")); err == nil {
 		bridge.storagePath = defaultStorage
 		_ = bridge.load()
 	}

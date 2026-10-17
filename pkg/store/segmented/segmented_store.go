@@ -1,6 +1,7 @@
 package segmented
 
 import (
+	"Dendrite/pkg/statedir"
 	"context"
 	"fmt"
 	"os"
@@ -11,10 +12,10 @@ import (
 
 // SegmentedStore coordinates persistent content-addressed segmented storage and chunk checkpointing.
 type SegmentedStore struct {
-	baseDir   string
-	blobs     *BlobStore
-	index     *SQLiteIndex
-	mu        sync.RWMutex
+	baseDir string
+	blobs   *BlobStore
+	index   *SQLiteIndex
+	mu      sync.RWMutex
 }
 
 // Blobs returns the underlying BlobStore.
@@ -34,7 +35,7 @@ func NewSegmentedStore(baseDir string) (*SegmentedStore, error) {
 		if home != "" {
 			baseDir = filepath.Join(home, ".dendrite", "store")
 		} else {
-			baseDir = ".dendrite/store"
+			baseDir = statedir.Resolve(".dendrite/store")
 		}
 	}
 

@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"Dendrite/pkg/statedir"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,7 +12,7 @@ import (
 
 var defaultForkController = fork.NewForkController(
 	".",
-	".dendrite/worktrees",
+	statedir.Resolve(".dendrite/worktrees"),
 	fork.NewOSGitExecutor(),
 	fork.NewDefaultBenchmarkHarness(),
 	store.NewStore(".dendrite/store", "docs/adr"),

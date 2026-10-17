@@ -194,7 +194,8 @@ func TestDefaultTools_Execution(t *testing.T) {
 	}
 
 	// 6. dendrite_jetbrains_setup
-	setupReq := `{"jsonrpc": "2.0", "id": 15, "method": "tools/call", "params": {"name": "dendrite_jetbrains_setup", "arguments": {"project_only": true}}}`
+	setupDir, _ := json.Marshal(t.TempDir())
+	setupReq := `{"jsonrpc": "2.0", "id": 15, "method": "tools/call", "params": {"name": "dendrite_jetbrains_setup", "arguments": {"project_only": true, "project_dir": ` + string(setupDir) + `}}}`
 	setupResp := srv.HandleRequest(context.Background(), []byte(setupReq))
 	if setupResp.Error != nil {
 		t.Fatalf("dendrite_jetbrains_setup error: %v", setupResp.Error)

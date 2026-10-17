@@ -1,6 +1,7 @@
 package segmented
 
 import (
+	"Dendrite/pkg/statedir"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -22,6 +23,7 @@ func NewSQLiteIndex(dbPath string) (*SQLiteIndex, error) {
 	if dbPath == "" {
 		dbPath = ".dendrite/store/meta.db"
 	}
+	dbPath = statedir.Resolve(dbPath)
 
 	idx := &SQLiteIndex{dbPath: dbPath}
 	if err := idx.initSchema(); err != nil {

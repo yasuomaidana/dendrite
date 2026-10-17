@@ -1,6 +1,7 @@
 package segmented
 
 import (
+	"Dendrite/pkg/statedir"
 	"bytes"
 	"compress/zlib"
 	"crypto/sha256"
@@ -21,9 +22,9 @@ type BlobStore struct {
 // NewBlobStore creates a new BlobStore rooted at baseDir.
 func NewBlobStore(baseDir string) *BlobStore {
 	if baseDir == "" {
-		baseDir = ".dendrite/store/blobs"
+		baseDir = statedir.Resolve(".dendrite/store/blobs")
 	}
-	return &BlobStore{baseDir: baseDir}
+	return &BlobStore{baseDir: statedir.Resolve(baseDir)}
 }
 
 // ComputeHash calculates a deterministic BLAKE3/SHA256 hex string from raw bytes.

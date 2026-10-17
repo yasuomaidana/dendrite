@@ -1,6 +1,7 @@
 package reuse
 
 import (
+	"Dendrite/pkg/statedir"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -36,7 +37,7 @@ func NewAuditor(s *store.Store, refMgr *RefManager, poolPath string) *Auditor {
 		refMgr = NewRefManager(".dendrite/refs.json")
 	}
 	if poolPath == "" {
-		poolPath = ".dendrite/pool.json"
+		poolPath = statedir.Resolve(".dendrite/pool.json")
 	}
 	return &Auditor{
 		store:      s,

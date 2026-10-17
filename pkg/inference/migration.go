@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"Dendrite/pkg/statedir"
 )
 
 var (
@@ -235,7 +237,7 @@ func (m *ModelMigrator) Migrate(ctx context.Context, opts ModelMigrationOptions)
 	reg := GetZeroCostRegistry()
 	_, _ = reg.Add("oxillama/" + opts.ModelName)
 	_, _ = reg.Add(opts.ModelName)
-	_ = reg.SaveToFile(DefaultZeroCostConfigFile)
+	_ = reg.SaveToFile(statedir.Resolve(DefaultZeroCostConfigFile))
 
 	// 7. Verify migrated model integrity
 	if err := m.verifyMigratedModel(oxillamaBase, targetManifest); err != nil {

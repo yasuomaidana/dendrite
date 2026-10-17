@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/scheduler/token"
+	"Dendrite/pkg/statedir"
 	"Dendrite/pkg/store/segmented"
 )
 
@@ -37,6 +38,7 @@ func NewQuotaGovernor(cfg GovernorConfig, store *segmented.SegmentedStore, sched
 	if cfg.ConfigFile == "" {
 		cfg.ConfigFile = DefaultConfigFile
 	}
+	cfg.ConfigFile = statedir.Resolve(cfg.ConfigFile)
 
 	loaded, err := loadConfigFile(cfg.ConfigFile)
 	if err == nil && loaded != nil {

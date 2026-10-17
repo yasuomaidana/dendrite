@@ -1,6 +1,7 @@
 package rag
 
 import (
+	"Dendrite/pkg/statedir"
 	"bufio"
 	"context"
 	"encoding/json"
@@ -236,7 +237,11 @@ func (idx *Indexer) IndexProjectIncremental(ctx context.Context, rootDir string,
 		rootDir = "."
 	}
 
+	// The current directory shares the repository-wide state dir; explicit project roots keep their own cache.
 	cacheFile := filepath.Join(rootDir, ".dendrite", "rag_cache.json")
+	if filepath.Clean(rootDir) == "." {
+		cacheFile = statedir.Resolve(".dendrite/rag_cache.json")
+	}
 	var status = "cached"
 	modifiedCount := 0
 

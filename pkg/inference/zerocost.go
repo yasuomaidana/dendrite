@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"Dendrite/pkg/statedir"
 )
 
 // Environment variable keys for zero-cost model configuration.
@@ -97,7 +99,7 @@ var (
 // GetZeroCostRegistry returns the global singleton registry.
 func GetZeroCostRegistry() *ZeroCostRegistry {
 	onceZeroCostRegistry.Do(func() {
-		globalZeroCostRegistry = NewZeroCostRegistry(DefaultZeroCostConfigFile)
+		globalZeroCostRegistry = NewZeroCostRegistry(statedir.Resolve(DefaultZeroCostConfigFile))
 		globalZeroCostRegistry.AutoLoad()
 	})
 	return globalZeroCostRegistry

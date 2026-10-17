@@ -1,6 +1,7 @@
 package store
 
 import (
+	"Dendrite/pkg/statedir"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -24,8 +25,9 @@ type Store struct {
 // NewStore initializes a Store in the given base and ADR directories.
 func NewStore(baseDir, adrDir string) *Store {
 	if baseDir == "" {
-		baseDir = ".dendrite/store"
+		baseDir = statedir.Resolve(".dendrite/store")
 	}
+	baseDir = statedir.Resolve(baseDir)
 	if adrDir == "" {
 		adrDir = "docs/adr"
 	}
