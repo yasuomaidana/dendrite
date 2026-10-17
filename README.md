@@ -11,6 +11,18 @@
 
 ---
 
+## Overview: What Dendrite Does
+
+**Dendrite** is an autonomous AI development and infrastructure control plane that orchestrates distributed multi-node compute tiers, governs token budgets, unifies inference providers, and empowers developers with sovereign project management and IDE intelligence:
+
+- **Token Budget Governance**: Enforces sliding 24-hour and 7-day expenditure limits, rate-bounded supervisory throttling ($R_{\text{target}}$), and per-agent virtual key isolation through a managed LiteLLM gateway.
+- **Pluggable Multi-Engine Inference**: Unifies local Apple Silicon Metal GPU engines (Ollama, pure-Rust OxiLLaMa), high-throughput containerized inference (vLLM, Hugging Face TGI/TEI, llama.cpp), and commercial fallback models (Gemini, Claude, Copilot) under a single automatic failover cascade.
+- **Sovereign Issue Tracking & DAG Scheduling**: Integrates directly with self-hosted Plane v2 (`stacks/compose.plane.yaml`) as the authoritative source of truth for tickets, milestones, and Gantt charts.
+- **Autonomous Coding Agent Harness**: Dispatches, monitors, and records autonomous agent loops (Aider, OpenHands, OpenCode, Google AGY, GitHub Copilot) inside ephemeral, RAII-cleaned container sandboxes.
+- **IDE Intelligence & Model Context Protocol (MCP)**: Bridges GoLand, IntelliJ, and JetBrains IDEs via bidirectional MCP servers connecting AST symbols, diagnostic problem inspections, and background run configurations.
+- **Living Docs-as-Code Reflection**: Introspects live CLI and MCP registries to automatically generate and strictly audit reference documentation ([`docs/cli/`](docs/cli/), [`docs/mcp/`](docs/mcp/)) via `dendrite docs generate --reference` and `dendrite docs audit --strict`.
+
+
 ## 1. The Neurobiological Inspiration: A Synthetic Nervous System
 
 In mammalian neurobiology, no single neuron acts as an isolated monolith. Biological intelligence emerges not from brute-force scale within a single cell, but from a decentralized, highly specialized anatomical architecture where distinct cellular structures connect multiple neurons into a coherent, self-regulating biological network.
@@ -233,7 +245,46 @@ flowchart TB
 
 ---
 
-## 5. Quickstart & Command Reference
+## 5. Installation, First Steps & Quickstart
+
+### Prerequisites
+- **Go**: Version `1.25` or higher ([go.dev/dl](https://go.dev/dl/))
+- **Git**: Version `2.30+`
+- **Docker & Docker Compose**: (Optional) For containerized microservice stacks (Plane, Penpot, LiteLLM)
+- **Polyglot Toolchains**: (Optional) `bun` (for documentation site), `cargo` (for Rust modules), `uv` (for Python scripts)
+
+### Installation from Source
+
+Clone the repository and compile the single `dendrite` binary:
+
+```bash
+# Clone the repository
+git clone https://github.com/yasuomaidana/dendrite.git
+cd dendrite
+
+# Build binary into ./bin/dendrite
+go build -v -o bin/dendrite ./cmd/dendrite
+
+# Optionally install globally to $GOPATH/bin
+go install ./cmd/dendrite
+```
+
+Verify binary execution:
+```bash
+./bin/dendrite version
+```
+
+### First Steps: Environment Preparation & Synchronization
+
+Initialize your workspace and synchronize agent rules, skills, and CI/CD tools:
+
+```bash
+# Synchronize environment, skills, and toolchain rules
+dendrite env prepare
+
+# Run pre-flight host and service diagnostics (<800ms)
+dendrite doctor
+```
 
 ### Pre-Flight Diagnostics & Health (Soma Diagnosis)
 Run environment diagnostics using either standard or lore commands:
@@ -306,6 +357,25 @@ dendrite dispatch run aider --ticket DEN-030 --spend-cap 5.00
 # Inspect past agent sessions, commits, and token expenditure
 dendrite agent session list
 ```
+
+### Living Documentation & Generated References
+
+Dendrite features an automated Docs-as-Code reflection and audit engine that guarantees committed documentation never drifts from code:
+
+- **[CLI Command Reference](docs/cli/) (`docs/cli/`)**: Individual reference pages for all 39 top-level commands (e.g. [`doctor.md`](docs/cli/doctor.md), [`env.md`](docs/cli/env.md), [`agent.md`](docs/cli/agent.md), [`doc.md`](docs/cli/doc.md)), documenting descriptions, aliases, subcommands, flags, and executable examples.
+- **[MCP Tool Reference](docs/mcp/) (`docs/mcp/`)**: Individual reference pages for all registered Model Context Protocol tools (e.g. [`dendrite_env_status.md`](docs/mcp/dendrite_env_status.md), [`dendrite_ticket_list.md`](docs/mcp/dendrite_ticket_list.md), [`dendrite_commit.md`](docs/mcp/dendrite_commit.md)), documenting descriptions, JSON schemas, and example JSON-RPC/CLI calls.
+- **[CLI Specification & Architecture Guide](docs/cli/dendrite-cli-specification.md)**: Design patterns, typestate lifecycles, and architecture boundaries.
+- **[System Topology & Decoupled Compute Tiers](docs/architecture/01-system-topology.md)**: Network mesh routing and node placement models.
+
+```bash
+# Generate/regenerate reference documentation from live registries:
+dendrite docs generate --reference
+
+# Audit documentation completeness (exits 1 if any command or tool is undocumented or stale):
+dendrite docs audit --strict
+```
+
+Both the local pre-commit hook (`scripts/pre-commit-hook.sh`) and CI workflow (`.github/workflows/ci.yml`) run `dendrite docs audit --strict` on every commit.
 
 ---
 

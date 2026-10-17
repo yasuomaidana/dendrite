@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 
+	"Dendrite/pkg/docgen/reflect"
 	"Dendrite/pkg/docusaurus"
 )
 
@@ -15,14 +17,14 @@ func printDocusaurusUsage() {
 	fmt.Println("Usage: dendrite doc docusaurus <generate|init|share|audit|serve|build> [flags...]")
 	fmt.Println("")
 	fmt.Println("Subcommands:")
-	fmt.Println("  generate [--docs <dir>] [--out <dir>] [--title <t>] [--tier <public|internal|federated>]")
-	fmt.Println("           Synthesize complete Docusaurus site, Project Sharing Hub, and manifest")
+	fmt.Println("  generate [--reference] [--docs <dir>] [--out <dir>] [--title <t>] [--tier <public|internal|federated>]")
+	fmt.Println("           Synthesize complete Docusaurus site or live reference documentation (--reference)")
 	fmt.Println("  init [--out <dir>]")
 	fmt.Println("           Scaffold a blank Docusaurus project skeleton")
 	fmt.Println("  share [--site <dir>] [--out <path>]")
 	fmt.Println("           Export portable documentation archive and compute SHA-256 manifest")
-	fmt.Println("  audit [--root <dir>] [--docs <dir>]")
-	fmt.Println("           Audit documentation coverage, frontmatter, and feature traceability")
+	fmt.Println("  audit [--strict] [--root <dir>] [--docs <dir>]")
+	fmt.Println("           Audit documentation coverage, frontmatter, and feature traceability (--strict for registry enforcement)")
 	fmt.Println("  serve [--site <dir>] [--port <port>]")
 	fmt.Println("           Start embedded live preview and sharing portal HTTP server")
 	fmt.Println("  build [--site <dir>]")
@@ -59,6 +61,7 @@ func handleDocusaurusCommand(ctx context.Context, args []string) {
 }
 
 func handleDocusaurusGenerate(ctx context.Context, svc docusaurus.Service, args []string) {
+	isReference := false
 	docsDir := "docs"
 	targetDir := "website"
 	title := "Dendrite Documentation"
@@ -67,6 +70,12 @@ func handleDocusaurusGenerate(ctx context.Context, svc docusaurus.Service, args 
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "--reference":
+			isReference = true
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				docsDir = args[i+1]
+				i++
+			}
 		case "--docs":
 			if i+1 < len(args) {
 				docsDir = args[i+1]
@@ -95,6 +104,20 @@ func handleDocusaurusGenerate(ctx context.Context, svc docusaurus.Service, args 
 				i++
 			}
 		}
+	}
+
+	if isReference {
+		reg := buildRegistry()
+		srv := buildMCPServer()
+		fmt.Printf("[+] Generating reference documentation into '%s'...\n", docsDir)
+		res, err := reflect.GenerateReferenceDocs(docsDir, reg, srv)
+		if err != nil {
+			fmt.Printf("[-] Failed to generate reference docs: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("[✓] Reference documentation generated successfully (%d files: %d CLI, %d MCP)\n",
+			res.TotalWritten, len(res.CLIFilesWritten), len(res.MCPFilesWritten))
+		return
 	}
 
 	fmt.Printf("[+] Synthesizing Docusaurus documentation from '%s' into '%s'...\n", docsDir, targetDir)
@@ -167,17 +190,60 @@ func handleDocusaurusShare(ctx context.Context, svc docusaurus.Service, args []s
 }
 
 func handleDocusaurusAudit(ctx context.Context, svc docusaurus.Service, args []string) {
+	strict := false
+	isReferenceAudit := false
 	projectRoot := "."
 	docsDir := "docs"
 
 	for i := 0; i < len(args); i++ {
-		if args[i] == "--root" && i+1 < len(args) {
-			projectRoot = args[i+1]
-			i++
-		} else if args[i] == "--docs" && i+1 < len(args) {
-			docsDir = args[i+1]
-			i++
+		switch args[i] {
+		case "--strict":
+			strict = true
+			isReferenceAudit = true
+		case "--reference":
+			isReferenceAudit = true
+		case "--root":
+			if i+1 < len(args) {
+				projectRoot = args[i+1]
+				i++
+			}
+		case "--docs":
+			if i+1 < len(args) {
+				docsDir = args[i+1]
+				i++
+			}
 		}
+	}
+
+	if isReferenceAudit {
+		reg := buildRegistry()
+		srv := buildMCPServer()
+		rep, err := reflect.AuditReferenceDocs(docsDir, reg, srv)
+		if err != nil {
+			fmt.Printf("[-] Reference audit error: %v\n", err)
+			if strict {
+				os.Exit(1)
+			}
+			return
+		}
+		if !rep.Passed {
+			fmt.Println("==================================================")
+			fmt.Println("       REFERENCE DOCUMENTATION AUDIT FAILED       ")
+			fmt.Println("==================================================")
+			for _, item := range rep.Items {
+				fmt.Printf("  [-] [%s] %s (%s): %s\n", strings.ToUpper(item.Reason), item.Type, item.Name, item.Path)
+			}
+			fmt.Println("==================================================")
+			fmt.Printf("Total: %d missing, %d stale\n", rep.MissingCount, rep.StaleCount)
+			if strict {
+				os.Exit(1)
+			}
+			return
+		}
+		fmt.Println("[✓] Reference documentation audit passed:")
+		fmt.Printf("    - %d total items checked\n", rep.TotalChecked)
+		fmt.Println("    - 0 missing, 0 stale")
+		return
 	}
 
 	fmt.Println("[+] Running Docusaurus & Project Sharing Documentation Audit...")

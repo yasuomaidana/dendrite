@@ -195,9 +195,17 @@ step_test_coverage() {
 
 # 7. Step: Binary Compilation Check
 step_build() {
-    log_info "7/7 Verifying Compilation & Binary Build..."
+    log_info "7/8 Verifying Compilation & Binary Build..."
     go build -v -o bin/dendrite ./cmd/dendrite
     log_ok "Binary successfully compiled at ./bin/dendrite"
+}
+
+# 8. Step: Documentation Completeness Audit (--strict)
+step_docs_audit() {
+    log_info "8/8 Auditing CLI & MCP Documentation Completeness (--strict)..."
+    # Always audit against the current source, never a possibly stale ./bin/dendrite.
+    go run ./cmd/dendrite docs audit --strict
+    log_ok "Documentation reference audit passed (--strict)."
 }
 
 # Optional Step: Native GitHub Actions Runner (via `act`)
@@ -256,6 +264,7 @@ main() {
             step_toolchains
             step_test_coverage "full"
             step_build
+            step_docs_audit
             echo ""
             log_ok "${BOLD}All local CI/CD verification gates passed successfully! Safe to push.${NC}"
             ;;

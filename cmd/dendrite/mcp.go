@@ -11,7 +11,8 @@ import (
 	"Dendrite/pkg/ollama"
 )
 
-func handleMCPCommand(ctx context.Context, action string, args []string) {
+// buildMCPServer constructs the live Dendrite Control Plane MCP server with registered default tools.
+func buildMCPServer() *mcpserver.Server {
 	srv := mcpserver.NewServer(mcpserver.ServerConfig{
 		Name:    "Dendrite Control Plane MCP Server",
 		Version: version,
@@ -20,6 +21,11 @@ func handleMCPCommand(ctx context.Context, action string, args []string) {
 		DevStatus: "DEV_STATUS.md",
 		OllamaURL: ollama.DefaultBaseURL,
 	})
+	return srv
+}
+
+func handleMCPCommand(ctx context.Context, action string, args []string) {
+	srv := buildMCPServer()
 
 	switch action {
 	case "serve", "stdio":

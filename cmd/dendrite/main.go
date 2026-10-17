@@ -151,12 +151,12 @@ func buildRegistry() *cli.Registry {
 
 	reg.Register(&cli.Command{
 		Name:        "doc",
-		Aliases:     []string{"engram-codex", "codex"},
+		Aliases:     []string{"docs", "engram-codex", "codex"},
 		Category:    "Cortex & Sensory Integration",
 		Description: "Docs-as-Code reflection, Docusaurus synthesis and portal",
 		Run: func(ctx context.Context, args []string) error {
 			if len(args) < 1 {
-				fmt.Println("Usage: dendrite doc <docusaurus|reflect|plane> [args...]")
+				fmt.Println("Usage: dendrite doc <generate|audit|docusaurus|reflect|plane> [args...]")
 				return nil
 			}
 			handleDocCommand(ctx, args[0], args[1:])
@@ -1070,6 +1070,10 @@ func handleProjectCommand(ctx context.Context, action string, args []string) {
 
 func handleDocCommand(ctx context.Context, action string, args []string) {
 	switch action {
+	case "generate":
+		handleDocusaurusCommand(ctx, append([]string{"generate"}, args...))
+	case "audit":
+		handleDocusaurusCommand(ctx, append([]string{"audit"}, args...))
 	case "docusaurus", "site":
 		handleDocusaurusCommand(ctx, args)
 	case "plane":
