@@ -1512,7 +1512,11 @@ func handleDevCommand(ctx context.Context, sub string, args []string) {
 			}
 		} else if args[0] == "set" && len(args) >= 3 {
 			id := args[1]
-			st := tracker.Status(strings.ToUpper(args[2]))
+			st, err := tracker.ParseStatus(args[2])
+			if err != nil {
+				fmt.Printf("[-] %v. Accepted: backlog, todo, in progress, to verify, done\n", err)
+				return
+			}
 			pClient, pErr := plane.NewClientFromEnv()
 			planeSynced := false
 			if pErr == nil && pClient != nil {

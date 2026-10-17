@@ -3,6 +3,7 @@ package tracker
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -16,6 +17,31 @@ const (
 	StatusInReview   Status = "IN_REVIEW"
 	StatusDone       Status = "DONE"
 )
+
+// ParseStatus parses a human-readable or enum status string into a Status.
+// It accepts backlog; todo/to do; in progress/wip; in review/review/to verify/verify;
+// done/complete/completed — case-insensitive, with '-', '_', or space as equivalent separators.
+func ParseStatus(s string) (Status, error) {
+	norm := strings.ToLower(strings.TrimSpace(s))
+	norm = strings.ReplaceAll(norm, "-", " ")
+	norm = strings.ReplaceAll(norm, "_", " ")
+	norm = strings.Join(strings.Fields(norm), " ")
+
+	switch norm {
+	case "backlog":
+		return StatusBacklog, nil
+	case "todo", "to do":
+		return StatusTodo, nil
+	case "in progress", "wip":
+		return StatusInProgress, nil
+	case "in review", "review", "to verify", "verify":
+		return StatusInReview, nil
+	case "done", "complete", "completed":
+		return StatusDone, nil
+	default:
+		return "", fmt.Errorf("unknown status: %q", s)
+	}
+}
 
 // TicketID is a domain newtype for ticket identifiers (e.g., "DEN-001", "PROJ-142").
 type TicketID string
