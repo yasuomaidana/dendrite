@@ -9,9 +9,15 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"Dendrite/pkg/telemetry"
 )
+
+type fixedSensor struct {
+	temp float64
+}
+
+func (f *fixedSensor) GetSoCTemperature(_ context.Context) (float64, error) {
+	return f.temp, nil
+}
 
 func TestTypestateLifecycle(t *testing.T) {
 	cfg := BenchmarkConfig{
@@ -127,13 +133,13 @@ func TestSyntheticRunnerWithSSEMockAndRun(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	sensor := telemetry.NewMockThermalSensor(48.5)
+	sensor := &fixedSensor{temp: 48.5}
 	runner := NewSyntheticRunner(sensor)
 
 	cfg := BenchmarkConfig{
 		TargetEndpoint:    ts.URL,
-		EngineID:          "mock-sse",
-		Model:             "mock-model",
+		EngineID:          "sse-server",
+		Model:             "test-model",
 		VirtualUsers:      3,
 		Duration:          250 * time.Millisecond,
 		Prompt:            "test prompt",
@@ -155,8 +161,8 @@ func TestSyntheticRunnerWithSSEMockAndRun(t *testing.T) {
 	if completed.ID() != session.ID() {
 		t.Errorf("expected matching completed ID")
 	}
-	if completed.Config().Model != "mock-model" {
-		t.Errorf("expected mock-model in completed config")
+	if completed.Config().Model != "test-model" {
+		t.Errorf("expected test-model in completed config")
 	}
 
 	summary := completed.Summary()
@@ -293,7 +299,7 @@ func TestBudgetLimiterConcurrencyStress(t *testing.T) {
 }
 
 func TestThermalMonitoringAndThrottling(t *testing.T) {
-	sensor := telemetry.NewMockThermalSensor(88.0)
+	sensor := &fixedSensor{temp: 88.0}
 	mon := NewThermalMonitor(sensor, 0) // Test zero interval fallback
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -315,7 +321,7 @@ func TestThermalMonitoringAndThrottling(t *testing.T) {
 	}
 
 	// Normal condition
-	normalSensor := telemetry.NewMockThermalSensor(50.0)
+	normalSensor := &fixedSensor{temp: 50.0}
 	normalMon := NewThermalMonitor(normalSensor, 10*time.Millisecond)
 	ctxNorm, cancelNorm := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancelNorm()

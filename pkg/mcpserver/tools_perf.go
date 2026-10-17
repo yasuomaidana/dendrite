@@ -128,7 +128,7 @@ func (s *Server) registerPerfTools(deps Dependencies) {
 			ThermalMonitoring: true,
 		}
 
-		sensor := telemetry.NewMockThermalSensor(48.0)
+		sensor := telemetry.NewHostThermalSensor()
 		runner := perf.DefaultRunner(sensor)
 		session := perf.NewSession(cfg)
 		prov, err := session.Provision(runner)

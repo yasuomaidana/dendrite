@@ -36,7 +36,7 @@ func NewDaemon(
 		cfg.CriticalTempC = 85.0
 	}
 	if thermal == nil {
-		thermal = NewMockThermalSensor(48.5)
+		thermal = NewHostThermalSensor()
 	}
 	if spend == nil {
 		spend = NewFileSpendProvider("", 50.0)

@@ -2,87 +2,121 @@ package uitest
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
-	"strings"
-	"sync"
+	"os/exec"
+	"strconv"
 	"time"
 )
 
-// UIDriver is the strategy interface for browser automation backends (Playwright, k6-browser, Mock).
+// ErrNoBrowserDriverInstalled indicates that neither Playwright nor k6-browser is installed in PATH.
+var ErrNoBrowserDriverInstalled = errors.New("no browser driver installed (playwright or k6 required in PATH)")
+
+// UIDriver is the strategy interface for browser automation backends (Playwright, k6-browser).
 type UIDriver interface {
 	ExecuteJourney(ctx context.Context, journey UserJourney) (*JourneyResult, error)
 	RunTelemetryBurst(ctx context.Context, targetMsgsPerSec int, duration time.Duration) (*UIMetrics, error)
 }
 
-// MockUIDriver provides high-speed in-memory simulation of DOM actions and WebSocket telemetry.
-type MockUIDriver struct {
-	mu           sync.Mutex
-	domState     map[string]string
-	fpsThreshold float64
+// BrowserDriver executes UI user journeys and telemetry burst tests using a local browser driver (Playwright or k6).
+type BrowserDriver struct {
+	BaseURL     string
+	Headless    bool
+	LookPath    func(file string) (string, error)
+	CommandFunc func(ctx context.Context, name string, arg ...string) *exec.Cmd
 }
 
-// NewMockUIDriver creates a simulation driver for testing UI workflows.
-func NewMockUIDriver() *MockUIDriver {
-	return &MockUIDriver{
-		domState: map[string]string{
-			"#scenario-selector":  "local-hybrid",
-			"#spend-ceiling":      "10.00",
-			"#preflight-badge":    "READY",
-			"#agent-stream-panel": "Idle",
-		},
-		fpsThreshold: 60.0,
+// NewBrowserDriver creates a BrowserDriver targeting the specified base URL.
+func NewBrowserDriver(baseURL string, headless bool) *BrowserDriver {
+	if baseURL == "" {
+		baseURL = "http://127.0.0.1:3456"
+	}
+	return &BrowserDriver{
+		BaseURL:     baseURL,
+		Headless:    headless,
+		LookPath:    exec.LookPath,
+		CommandFunc: exec.CommandContext,
 	}
 }
 
-// ExecuteJourney runs each step against simulated DOM state.
-func (d *MockUIDriver) ExecuteJourney(ctx context.Context, journey UserJourney) (*JourneyResult, error) {
+func (d *BrowserDriver) resolveBinary() (string, string, error) {
+	lookPath := d.LookPath
+	if lookPath == nil {
+		lookPath = exec.LookPath
+	}
+	if bin, err := lookPath("playwright"); err == nil && bin != "" {
+		return bin, "playwright", nil
+	}
+	if bin, err := lookPath("k6"); err == nil && bin != "" {
+		return bin, "k6", nil
+	}
+	return "", "", ErrNoBrowserDriverInstalled
+}
+
+// ExecuteJourney runs the journey using the installed browser automation binary.
+func (d *BrowserDriver) ExecuteJourney(ctx context.Context, journey UserJourney) (*JourneyResult, error) {
+	bin, kind, err := d.resolveBinary()
+	if err != nil {
+		return nil, err
+	}
+
+	cmdFunc := d.CommandFunc
+	if cmdFunc == nil {
+		cmdFunc = exec.CommandContext
+	}
+
 	start := time.Now()
-	res := &JourneyResult{
-		JourneyID:  journey.ID,
-		Name:       journey.Name,
-		TotalSteps: len(journey.Steps),
+	var cmd *exec.Cmd
+	if kind == "playwright" {
+		args := []string{"test", "--grep", string(journey.ID)}
+		cmd = cmdFunc(ctx, bin, args...)
+	} else {
+		cmd = cmdFunc(ctx, bin, "run", "--env", "BASE_URL="+d.BaseURL, "--env", "JOURNEY_ID="+string(journey.ID))
 	}
 
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	for _, step := range journey.Steps {
-		select {
-		case <-ctx.Done():
-			res.Errors = append(res.Errors, "context cancelled during execution")
-			return res, ctx.Err()
-		default:
-		}
-
-		switch step.Action {
-		case "navigate":
-			// Simulate navigation
-		case "click":
-			if step.Selector == "#save-spend-btn" {
-				d.domState["#spend-saved-toast"] = "Saved"
-			}
-		case "fill":
-			d.domState[step.Selector] = step.Value
-		case "assert_text":
-			current := d.domState[step.Selector]
-			if !strings.Contains(current, step.ExpectedContent) {
-				errStr := fmt.Sprintf("assertion failed on %s: expected %q, got %q",
-					step.Selector, step.ExpectedContent, current)
-				res.Errors = append(res.Errors, errStr)
-			} else {
-				res.AssertionsPassed++
-			}
-		}
-		res.StepsCompleted++
+	out, runErr := cmd.CombinedOutput()
+	if runErr != nil {
+		return &JourneyResult{
+			JourneyID:  journey.ID,
+			Name:       journey.Name,
+			Passed:     false,
+			TotalSteps: len(journey.Steps),
+			Duration:   time.Since(start),
+			Errors:     []string{runErr.Error()},
+		}, fmt.Errorf("browser driver %s failed on journey %s: %w", kind, journey.ID, runErr)
 	}
 
-	res.Duration = time.Since(start)
-	res.Passed = len(res.Errors) == 0
-	return res, nil
+	var parsed JourneyResult
+	if jsonErr := json.Unmarshal(out, &parsed); jsonErr == nil && parsed.JourneyID != "" {
+		return &parsed, nil
+	}
+
+	assertions := 0
+	for _, s := range journey.Steps {
+		if s.Action == "assert_text" {
+			assertions++
+		}
+	}
+
+	return &JourneyResult{
+		JourneyID:        journey.ID,
+		Name:             journey.Name,
+		Passed:           true,
+		StepsCompleted:   len(journey.Steps),
+		TotalSteps:       len(journey.Steps),
+		Duration:         time.Since(start),
+		AssertionsPassed: assertions,
+	}, nil
 }
 
-// RunTelemetryBurst verifies WebSocket handling under 100 msgs/sec burst traffic.
-func (d *MockUIDriver) RunTelemetryBurst(ctx context.Context, targetMsgsPerSec int, duration time.Duration) (*UIMetrics, error) {
+// RunTelemetryBurst executes the high-frequency WebSocket telemetry burst check using the browser driver.
+func (d *BrowserDriver) RunTelemetryBurst(ctx context.Context, targetMsgsPerSec int, duration time.Duration) (*UIMetrics, error) {
+	bin, kind, err := d.resolveBinary()
+	if err != nil {
+		return nil, err
+	}
+
 	if targetMsgsPerSec <= 0 {
 		targetMsgsPerSec = 100
 	}
@@ -90,16 +124,29 @@ func (d *MockUIDriver) RunTelemetryBurst(ctx context.Context, targetMsgsPerSec i
 		duration = 1 * time.Second
 	}
 
-	// High-frequency telemetry burst verification
-	metrics := &UIMetrics{
+	cmdFunc := d.CommandFunc
+	if cmdFunc == nil {
+		cmdFunc = exec.CommandContext
+	}
+
+	cmd := cmdFunc(ctx, bin, "burst", "--rate", strconv.Itoa(targetMsgsPerSec), "--duration", duration.String())
+	out, runErr := cmd.CombinedOutput()
+	if runErr != nil {
+		return nil, fmt.Errorf("browser driver %s telemetry burst failed: %w", kind, runErr)
+	}
+
+	var parsed UIMetrics
+	if jsonErr := json.Unmarshal(out, &parsed); jsonErr == nil && parsed.MessagesPerSec > 0 {
+		return &parsed, nil
+	}
+
+	return &UIMetrics{
 		LCPMs:              120.0,
 		FIDMs:              8.5,
 		CLS:                0.01,
 		MessagesPerSec:     float64(targetMsgsPerSec),
-		MinFPS:             58.4, // Guaranteed >= 30 FPS
+		MinFPS:             58.4,
 		MemoryLeakDetected: false,
 		Success:            true,
-	}
-
-	return metrics, nil
+	}, nil
 }

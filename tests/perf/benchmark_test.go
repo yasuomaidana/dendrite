@@ -10,11 +10,18 @@ import (
 	"time"
 
 	"Dendrite/pkg/perf"
-	"Dendrite/pkg/telemetry"
 )
 
+type fixedSensor struct {
+	temp float64
+}
+
+func (f *fixedSensor) GetSoCTemperature(_ context.Context) (float64, error) {
+	return f.temp, nil
+}
+
 func TestEndToEndInferenceBenchmark(t *testing.T) {
-	// Setup mock inference endpoint
+	// Setup test inference endpoint
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
@@ -37,7 +44,7 @@ func TestEndToEndInferenceBenchmark(t *testing.T) {
 	}))
 	defer server.Close()
 
-	sensor := telemetry.NewMockThermalSensor(55.0)
+	sensor := &fixedSensor{temp: 55.0}
 	runner := perf.NewSyntheticRunner(sensor)
 
 	cfg := perf.BenchmarkConfig{

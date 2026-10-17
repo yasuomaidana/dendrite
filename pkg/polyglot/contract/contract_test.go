@@ -2,7 +2,10 @@ package contract_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -468,12 +471,22 @@ func TestContractMonitor_QuadLanguageScan(t *testing.T) {
 	}
 }
 
-func TestContractMonitor_NotifyIDEWithMockTransport(t *testing.T) {
-	mock := jetbrains.NewMockTransport()
-	mock.RegisterHandler("execute_terminal_command", func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error) {
-		return &jetbrains.JSONRPCResponse{JSONRPC: "2.0", ID: req.ID, Result: []byte(`{"output": "ok"}`)}, nil
-	})
-	client, err := jetbrains.NewClient(mock)
+func TestContractMonitor_NotifyIDEWithHTTPTransport(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req jetbrains.JSONRPCRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		res := jetbrains.JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result:  json.RawMessage(`{"protocolVersion":"2024-11-05","serverInfo":{"name":"JetBrains","version":"2024.3"},"content":[{"type":"text","text":"ok"}]}`),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(res)
+	}))
+	defer server.Close()
+
+	transport := jetbrains.NewHTTPTransport(server.URL, server.Client())
+	client, err := jetbrains.NewClient(transport)
 	if err != nil {
 		t.Fatalf("failed creating client: %v", err)
 	}
@@ -485,11 +498,11 @@ func TestContractMonitor_NotifyIDEWithMockTransport(t *testing.T) {
 		TotalViolations: 2,
 		HasErrors:       true,
 		Violations: []contract.DriftViolation{
-			{SchemaName: "User", FieldName: "id", Message: "missing"},
+			{SchemaName: "User", FieldName: "id", Message: "missing", TargetFile: "user.go", Line: 10},
 		},
 	}
 
 	if err := monitor.NotifyIDE(context.Background(), report); err != nil {
-		t.Errorf("expected clean NotifyIDE with mock transport: %v", err)
+		t.Errorf("expected clean NotifyIDE with http transport: %v", err)
 	}
 }

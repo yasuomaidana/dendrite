@@ -85,7 +85,7 @@ func runBenchInference(ctx context.Context, args []string) {
 	fmt.Printf("[+] Initializing Inference Benchmark for '%s' (%s at %s)...\n", *engineID, *model, targetURL)
 	fmt.Printf("    Virtual Users: %d | Duration: %v\n", *vus, *duration)
 
-	sensor := telemetry.NewMockThermalSensor(45.0)
+	sensor := telemetry.NewHostThermalSensor()
 	runner := perf.DefaultRunner(sensor)
 	session := perf.NewSession(cfg)
 
@@ -151,7 +151,7 @@ func runBenchGateway(ctx context.Context, args []string) {
 	fmt.Printf("[+] Initializing LiteLLM Gateway Stress Benchmark (Fault: %s)...\n", fault)
 	fmt.Printf("    Virtual Users: %d | Duration: %v\n", *vus, *duration)
 
-	sensor := telemetry.NewMockThermalSensor(48.0)
+	sensor := telemetry.NewHostThermalSensor()
 	runner := perf.DefaultRunner(sensor)
 	session := perf.NewSession(cfg)
 
@@ -194,7 +194,7 @@ func runBenchMatrix(ctx context.Context, args []string) {
 	engines := mgr.ListEngines()
 
 	var summaries []*perf.BenchmarkSummary
-	sensor := telemetry.NewMockThermalSensor(45.0)
+	sensor := telemetry.NewHostThermalSensor()
 	runner := perf.DefaultRunner(sensor)
 
 	for _, eng := range engines {

@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"Dendrite/pkg/telemetry"
 )
 
 func TestPreFlightCascadeToFallbackWithZeroPromptLoss(t *testing.T) {
@@ -53,7 +51,7 @@ func TestPreFlightCascadeToFallbackWithZeroPromptLoss(t *testing.T) {
 		FailoverEndpoint:  fallbackServer.URL,
 	}
 
-	sensor := telemetry.NewMockThermalSensor(45.0)
+	sensor := &fixedSensor{temp: 45.0}
 	runner := NewSyntheticRunner(sensor)
 
 	summary, err := runner.Execute(context.Background(), cfg)

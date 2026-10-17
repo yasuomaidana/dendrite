@@ -4,18 +4,207 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"Dendrite/pkg/jetbrains"
 )
 
+type scriptedServer struct {
+	server       *httptest.Server
+	mu           sync.Mutex
+	handlers     map[string]func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error)
+	sentRequests []*jetbrains.JSONRPCRequest
+}
+
+func newScriptedServer(t *testing.T) (*scriptedServer, *jetbrains.HTTPTransport) {
+	t.Helper()
+	s := &scriptedServer{
+		handlers:     make(map[string]func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error)),
+		sentRequests: make([]*jetbrains.JSONRPCRequest, 0),
+	}
+	s.registerDefaultHandlers()
+	s.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req jetbrains.JSONRPCRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.mu.Lock()
+		s.sentRequests = append(s.sentRequests, &req)
+		handler, exists := s.handlers[req.Method]
+		s.mu.Unlock()
+
+		if !exists {
+			http.Error(w, fmt.Sprintf("unhandled method: %s", req.Method), http.StatusNotImplemented)
+			return
+		}
+		resp, err := handler(&req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(func() {
+		s.server.Close()
+	})
+	return s, jetbrains.NewHTTPTransport(s.server.URL, s.server.Client())
+}
+
+func (s *scriptedServer) RegisterHandler(method string, handler func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.handlers[method] = handler
+}
+
+func (s *scriptedServer) registerDefaultHandlers() {
+	s.handlers["initialize"] = func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error) {
+		initResult := jetbrains.InitializeResult{
+			ProtocolVersion: jetbrains.DefaultProtocolVersion,
+			ServerInfo: jetbrains.ServerInfo{
+				Name:    "JetBrains GoLand MCP Server",
+				Version: "2024.3",
+			},
+			Capabilities: jetbrains.ServerCapabilities{
+				Tools:     &jetbrains.ToolsCapability{ListChanged: true},
+				Resources: &jetbrains.ResourcesCapability{Subscribe: false},
+			},
+		}
+		resBytes, _ := json.Marshal(initResult)
+		return &jetbrains.JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result:  resBytes,
+		}, nil
+	}
+
+	s.handlers["notifications/initialized"] = func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error) {
+		return &jetbrains.JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+		}, nil
+	}
+
+	s.handlers["ping"] = func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error) {
+		return &jetbrains.JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result:  json.RawMessage(`{}`),
+		}, nil
+	}
+
+	s.handlers["tools/list"] = func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error) {
+		listRes := jetbrains.ListToolsResult{
+			Tools: []jetbrains.Tool{
+				{
+					Name:        "open_file_in_editor",
+					Description: "Opens the specified file in the active JetBrains editor window.",
+				},
+				{
+					Name:        "get_file_problems",
+					Description: "Retrieves inspection problems and syntax errors for a file.",
+				},
+				{
+					Name:        "search_symbol",
+					Description: "Searches for symbols matching query across project index.",
+				},
+				{
+					Name:        "build_project",
+					Description: "Compiles and builds the currently open project in JetBrains.",
+				},
+				{
+					Name:        "execute_run_configuration",
+					Description: "Runs a specified run/test configuration inside the IDE.",
+				},
+				{
+					Name:        "lint_files",
+					Description: "Lints specified file paths using JetBrains inspections.",
+				},
+			},
+		}
+		resBytes, _ := json.Marshal(listRes)
+		return &jetbrains.JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result:  resBytes,
+		}, nil
+	}
+
+	s.handlers["tools/call"] = func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error) {
+		paramsBytes, _ := json.Marshal(req.Params)
+		var callParams jetbrains.CallToolParams
+		if err := json.Unmarshal(paramsBytes, &callParams); err != nil {
+			return nil, err
+		}
+
+		var callRes jetbrains.CallToolResult
+		switch callParams.Name {
+		case "open_file_in_editor":
+			callRes = jetbrains.CallToolResult{
+				Content: []jetbrains.ContentItem{{Type: "text", Text: "File opened successfully"}},
+			}
+		case "get_file_problems":
+			problems := []jetbrains.Problem{
+				{File: "main.go", Line: 12, Column: 5, Severity: "warning", Description: "Unused variable: count"},
+			}
+			pBytes, _ := json.Marshal(problems)
+			callRes = jetbrains.CallToolResult{
+				Content: []jetbrains.ContentItem{{Type: "text", Text: string(pBytes)}},
+			}
+		case "search_symbol":
+			symbols := []jetbrains.Symbol{
+				{Name: "NewClient", Kind: "function", File: "pkg/jetbrains/client.go", Line: 30},
+			}
+			sBytes, _ := json.Marshal(symbols)
+			callRes = jetbrains.CallToolResult{
+				Content: []jetbrains.ContentItem{{Type: "text", Text: string(sBytes)}},
+			}
+		case "build_project":
+			callRes = jetbrains.CallToolResult{
+				Content: []jetbrains.ContentItem{{Type: "text", Text: "Build completed successfully in 1.45s"}},
+			}
+		case "execute_run_configuration":
+			configName := "Test"
+			if v, ok := callParams.Arguments["configuration_name"].(string); ok {
+				configName = v
+			}
+			callRes = jetbrains.CallToolResult{
+				Content: []jetbrains.ContentItem{{Type: "text", Text: fmt.Sprintf("Run configuration '%s' finished with exit code 0", configName)}},
+			}
+		case "lint_files":
+			callRes = jetbrains.CallToolResult{
+				Content: []jetbrains.ContentItem{{Type: "text", Text: "[]"}},
+			}
+		default:
+			return &jetbrains.JSONRPCResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Error: &jetbrains.JSONRPCError{
+					Code:    -32601,
+					Message: fmt.Sprintf("tool '%s' not found", callParams.Name),
+				},
+			}, nil
+		}
+
+		resBytes, _ := json.Marshal(callRes)
+		return &jetbrains.JSONRPCResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result:  resBytes,
+		}, nil
+	}
+}
+
 func TestClient_Lifecycle_And_Tools(t *testing.T) {
 	ctx := context.Background()
-	mockTransport := jetbrains.NewMockTransport()
+	_, transport := newScriptedServer(t)
 
-	client, err := jetbrains.NewClient(mockTransport,
+	client, err := jetbrains.NewClient(transport,
 		jetbrains.WithClientInfo("test-agent", "1.0.0"),
 		jetbrains.WithProtocolVersion(jetbrains.DefaultProtocolVersion),
 	)
@@ -141,10 +330,10 @@ func TestClient_NilTransport(t *testing.T) {
 
 func TestClient_ErrorResponses(t *testing.T) {
 	ctx := context.Background()
-	mock := jetbrains.NewMockTransport()
+	srv, transport := newScriptedServer(t)
 
 	// Handler returning JSON-RPC error
-	mock.RegisterHandler("initialize", func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error) {
+	srv.RegisterHandler("initialize", func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error) {
 		return &jetbrains.JSONRPCResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
@@ -155,7 +344,7 @@ func TestClient_ErrorResponses(t *testing.T) {
 		}, nil
 	})
 
-	client, err := jetbrains.NewClient(mock)
+	client, err := jetbrains.NewClient(transport)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -168,16 +357,16 @@ func TestClient_ErrorResponses(t *testing.T) {
 
 func TestClient_ListTools_And_Ping_Errors(t *testing.T) {
 	ctx := context.Background()
-	mock := jetbrains.NewMockTransport()
+	srv, transport := newScriptedServer(t)
 
-	client, err := jetbrains.NewClient(mock)
+	client, err := jetbrains.NewClient(transport)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	_, _ = client.Connect(ctx)
 
 	// ListTools returns JSON-RPC error
-	mock.RegisterHandler("tools/list", func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error) {
+	srv.RegisterHandler("tools/list", func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error) {
 		return &jetbrains.JSONRPCResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
@@ -193,7 +382,7 @@ func TestClient_ListTools_And_Ping_Errors(t *testing.T) {
 	}
 
 	// Ping returns JSON-RPC error
-	mock.RegisterHandler("ping", func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error) {
+	srv.RegisterHandler("ping", func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error) {
 		return &jetbrains.JSONRPCResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
@@ -211,9 +400,9 @@ func TestClient_ListTools_And_Ping_Errors(t *testing.T) {
 
 func TestClient_ToolExecutionFailure(t *testing.T) {
 	ctx := context.Background()
-	mock := jetbrains.NewMockTransport()
+	srv, transport := newScriptedServer(t)
 
-	mock.RegisterHandler("tools/call", func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error) {
+	srv.RegisterHandler("tools/call", func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error) {
 		res := jetbrains.CallToolResult{
 			IsError: true,
 			Content: []jetbrains.ContentItem{{Type: "text", Text: "Internal compilation failure"}},
@@ -226,7 +415,7 @@ func TestClient_ToolExecutionFailure(t *testing.T) {
 		}, nil
 	})
 
-	client, err := jetbrains.NewClient(mock)
+	client, err := jetbrains.NewClient(transport)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -240,8 +429,8 @@ func TestClient_ToolExecutionFailure(t *testing.T) {
 
 func TestBridge_HighLevelMethods(t *testing.T) {
 	ctx := context.Background()
-	mock := jetbrains.NewMockTransport()
-	client, err := jetbrains.NewClient(mock)
+	_, transport := newScriptedServer(t)
+	client, err := jetbrains.NewClient(transport)
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
@@ -317,15 +506,15 @@ func TestBridge_HighLevelMethods(t *testing.T) {
 		t.Fatalf("LintFiles failed: %v", err)
 	}
 	if len(lintProblems) != 0 {
-		t.Errorf("expected 0 lint problems for mock, got %d", len(lintProblems))
+		t.Errorf("expected 0 lint problems, got %d", len(lintProblems))
 	}
 }
 
 func TestBridge_EmptyAndFallbackContent(t *testing.T) {
 	ctx := context.Background()
-	mock := jetbrains.NewMockTransport()
+	srv, transport := newScriptedServer(t)
 
-	mock.RegisterHandler("tools/call", func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error) {
+	srv.RegisterHandler("tools/call", func(req *jetbrains.JSONRPCRequest) (*jetbrains.JSONRPCResponse, error) {
 		paramsBytes, _ := json.Marshal(req.Params)
 		var callParams jetbrains.CallToolParams
 		_ = json.Unmarshal(paramsBytes, &callParams)
@@ -353,7 +542,7 @@ func TestBridge_EmptyAndFallbackContent(t *testing.T) {
 		}
 	})
 
-	client, err := jetbrains.NewClient(mock)
+	client, err := jetbrains.NewClient(transport)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -474,31 +663,5 @@ func TestStdioTransport_Echo(t *testing.T) {
 
 	if resp.JSONRPC != "2.0" {
 		t.Errorf("expected jsonrpc 2.0, got %s", resp.JSONRPC)
-	}
-}
-
-func TestMockTransport_SentRequests(t *testing.T) {
-	mock := jetbrains.NewMockTransport()
-	ctx := context.Background()
-
-	req := &jetbrains.JSONRPCRequest{
-		JSONRPC: "2.0",
-		ID:      100,
-		Method:  "ping",
-	}
-	_, err := mock.Send(ctx, req)
-	if err != nil {
-		t.Fatalf("Send failed: %v", err)
-	}
-
-	sent := mock.GetSentRequests()
-	if len(sent) != 1 || sent[0].Method != "ping" {
-		t.Errorf("unexpected sent requests: %+v", sent)
-	}
-
-	_ = mock.Close()
-	_, err = mock.Send(ctx, req)
-	if !errors.Is(err, jetbrains.ErrNotConnected) {
-		t.Errorf("expected ErrNotConnected after close, got: %v", err)
 	}
 }

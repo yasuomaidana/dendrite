@@ -14,7 +14,7 @@ type UIHarness struct {
 // NewUIHarness constructs an integration test harness with the specified driver.
 func NewUIHarness(driver UIDriver) *UIHarness {
 	if driver == nil {
-		driver = NewMockUIDriver()
+		driver = NewBrowserDriver("", true)
 	}
 	return &UIHarness{driver: driver}
 }

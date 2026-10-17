@@ -186,7 +186,7 @@ func DefaultLeidenClusters() []LeidenCluster {
 // NewSearchEngine creates and indexes a SearchEngine.
 func NewSearchEngine(embedClient EmbeddingClient, ledger *agent.SessionLedger, clusters []LeidenCluster) *SearchEngine {
 	if embedClient == nil {
-		embedClient = NewMockEmbeddingClient(64)
+		embedClient = NewOllamaEmbeddingClient("", "", nil)
 	}
 	if len(clusters) == 0 {
 		clusters = DefaultLeidenClusters()

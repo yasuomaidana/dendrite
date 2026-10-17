@@ -92,7 +92,7 @@ func handleTestUICommand(ctx context.Context, args []string) {
 	}
 
 	fmt.Printf("[+] Executing Web UI Test Harness (Target: %s, Headless: %v)...\n", baseURL, headless)
-	driver := uitest.NewMockUIDriver()
+	driver := uitest.NewBrowserDriver(baseURL, headless)
 	harness := uitest.NewUIHarness(driver)
 
 	results, err := harness.RunAllJourneys(ctx)

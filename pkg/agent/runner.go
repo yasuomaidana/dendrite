@@ -319,34 +319,3 @@ func (h *HostRunner) Execute(ctx context.Context, cfg AgentConfig) (*SessionSumm
 	return summary, runErr
 }
 
-// MockRunner provides a deterministic in-memory agent runner for test suites and dry-runs.
-type MockRunner struct {
-	ExecuteFunc func(ctx context.Context, cfg AgentConfig) (*SessionSummary, error)
-}
-
-// Execute runs the simulated or injected agent lifecycle.
-func (m *MockRunner) Execute(ctx context.Context, cfg AgentConfig) (*SessionSummary, error) {
-	if m.ExecuteFunc != nil {
-		return m.ExecuteFunc(ctx, cfg)
-	}
-
-	if err := ValidateConfig(cfg); err != nil {
-		return nil, err
-	}
-
-	now := time.Now()
-	commitMsg := FormatCommitMessage(cfg.TicketID, cfg.Type, "Automated change via agent")
-
-	return &SessionSummary{
-		SessionID:        fmt.Sprintf("sess-%d", now.UnixNano()),
-		AgentType:        cfg.Type,
-		TicketID:         cfg.TicketID,
-		StartTime:        now,
-		EndTime:          now.Add(2 * time.Second),
-		Duration:         2 * time.Second,
-		TokensConsumed:   1250,
-		EstimatedCostUSD: 0.0025,
-		CommitsGenerated: []string{commitMsg},
-		Status:           "completed",
-	}, nil
-}

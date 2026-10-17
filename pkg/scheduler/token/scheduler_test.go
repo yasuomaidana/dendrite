@@ -12,6 +12,22 @@ import (
 	"Dendrite/pkg/scheduler/token"
 )
 
+type fixedClock struct {
+	Current time.Time
+}
+
+func (f *fixedClock) Now() time.Time {
+	return f.Current
+}
+
+func (f *fixedClock) Advance(d time.Duration) {
+	f.Current = f.Current.Add(d)
+}
+
+func (f *fixedClock) Set(t time.Time) {
+	f.Current = t
+}
+
 func TestTokenScheduler_LifecycleAndTransitions(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "scheduler_test_*")
 	if err != nil {
@@ -23,11 +39,11 @@ func TestTokenScheduler_LifecycleAndTransitions(t *testing.T) {
 
 	// Start on Wednesday at 14:00 (Day window outside sprint)
 	initialTime := time.Date(2026, 10, 14, 14, 0, 0, 0, time.UTC)
-	mockClock := &token.MockClock{Current: initialTime}
-	mockClock.Advance(0) // test Advance
+	clk := &fixedClock{Current: initialTime}
+	clk.Advance(0) // test Advance
 	limiter := gateway.NewBudgetLimiter()
 
-	sched := token.NewTokenScheduler(mockClock, limiter, policyFile)
+	sched := token.NewTokenScheduler(clk, limiter, policyFile)
 
 	// Verify GetPolicy & SetPolicy
 	pol := sched.GetPolicy()
@@ -65,7 +81,7 @@ func TestTokenScheduler_LifecycleAndTransitions(t *testing.T) {
 	called := false
 	caller := func(ctx context.Context, model string) (string, int, float64, error) {
 		called = true
-		return "mock LLM output", 500, 0.01, nil
+		return "LLM output", 500, 0.01, nil
 	}
 
 	res, err := sched.ProcessChunk(context.Background(), "chunk-001", caller)
@@ -79,8 +95,8 @@ func TestTokenScheduler_LifecycleAndTransitions(t *testing.T) {
 		t.Errorf("expected 0 cost and tokens, got cost=%f, tokens=%d", res.CostUSD, res.Tokens)
 	}
 
-	// 2. Advance Mock Clock to Night Window (23:30)
-	mockClock.Advance(9*time.Hour + 30*time.Minute)
+	// 2. Advance Fixed Clock to Night Window (23:30)
+	clk.Advance(9*time.Hour + 30*time.Minute)
 	stNight, err := sched.Status()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -106,8 +122,8 @@ func TestTokenScheduler_LifecycleAndTransitions(t *testing.T) {
 		t.Errorf("expected $0.00 cost for local model, got %f", resNight.CostUSD)
 	}
 
-	// 3. Advance Mock Clock to Sprint Window (Saturday 14:00)
-	mockClock.Set(time.Date(2026, 10, 17, 14, 0, 0, 0, time.UTC))
+	// 3. Advance Fixed Clock to Sprint Window (Saturday 14:00)
+	clk.Set(time.Date(2026, 10, 17, 14, 0, 0, 0, time.UTC))
 	sched.SetRemainingQuota(0.80) // 80% quota remaining
 	sched.RecordCloudSpend(1.50)
 
@@ -215,8 +231,8 @@ func TestTokenScheduler_ErrorPaths(t *testing.T) {
 	}
 
 	// Caller error propagation in Sprint
-	mockClock := &token.MockClock{Current: time.Date(2026, 10, 17, 14, 0, 0, 0, time.UTC)}
-	schedSprint := token.NewTokenScheduler(mockClock, nil, "")
+	clkSprint := &fixedClock{Current: time.Date(2026, 10, 17, 14, 0, 0, 0, time.UTC)}
+	schedSprint := token.NewTokenScheduler(clkSprint, nil, "")
 	schedSprint.SetRemainingQuota(0.8)
 
 	failingCaller := func(ctx context.Context, model string) (string, int, float64, error) {
@@ -229,8 +245,8 @@ func TestTokenScheduler_ErrorPaths(t *testing.T) {
 	}
 
 	// Caller error propagation in Night
-	mockClockNight := &token.MockClock{Current: time.Date(2026, 10, 14, 23, 30, 0, 0, time.UTC)}
-	schedNight := token.NewTokenScheduler(mockClockNight, nil, "")
+	clkNight := &fixedClock{Current: time.Date(2026, 10, 14, 23, 30, 0, 0, time.UTC)}
+	schedNight := token.NewTokenScheduler(clkNight, nil, "")
 	_, err = schedNight.ProcessChunk(context.Background(), "chunk-err2", failingCaller)
 	if err == nil {
 		t.Errorf("expected error propagation from failing night caller")

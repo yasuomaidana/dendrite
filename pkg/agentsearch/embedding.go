@@ -3,8 +3,6 @@ package agentsearch
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -178,71 +176,6 @@ func (c *OllamaEmbeddingClient) Embed(ctx context.Context, texts []string) ([][]
 	}
 
 	return results, nil
-}
-
-// MockEmbeddingClient provides deterministic in-memory pseudo-embeddings for testing.
-type MockEmbeddingClient struct {
-	dimension int
-}
-
-// NewMockEmbeddingClient creates a mock embedding generator.
-func NewMockEmbeddingClient(dimension int) *MockEmbeddingClient {
-	if dimension <= 0 {
-		dimension = 64
-	}
-	return &MockEmbeddingClient{dimension: dimension}
-}
-
-// Dimension returns the mock vector dimension.
-func (m *MockEmbeddingClient) Dimension() int {
-	return m.dimension
-}
-
-// Embed generates deterministic normalized pseudo-vectors based on SHA-256 tokens.
-func (m *MockEmbeddingClient) Embed(ctx context.Context, texts []string) ([][]float32, error) {
-	if len(texts) == 0 {
-		return nil, ErrEmptyText
-	}
-
-	embeddings := make([][]float32, len(texts))
-	for i, t := range texts {
-		embeddings[i] = m.generateVector(t)
-	}
-	return embeddings, nil
-}
-
-func (m *MockEmbeddingClient) generateVector(text string) []float32 {
-	vec := make([]float32, m.dimension)
-	words := strings.Fields(strings.ToLower(text))
-	for _, w := range words {
-		hash := sha256.Sum256([]byte(w))
-		for j := 0; j < m.dimension; j++ {
-			byteIdx := (j * 4) % (len(hash) - 4)
-			val := binary.BigEndian.Uint32(hash[byteIdx : byteIdx+4])
-			// Map to [-1.0, 1.0]
-			flt := (float32(val%10000) / 5000.0) - 1.0
-			vec[j] += flt
-		}
-	}
-
-	// Normalize vector
-	return normalizeVector(vec)
-}
-
-func normalizeVector(vec []float32) []float32 {
-	var sum float64
-	for _, v := range vec {
-		sum += float64(v * v)
-	}
-	norm := float32(math.Sqrt(sum))
-	if norm == 0 {
-		return vec
-	}
-	res := make([]float32, len(vec))
-	for i, v := range vec {
-		res[i] = v / norm
-	}
-	return res
 }
 
 // CosineSimilarity computes the cosine similarity between two normalized vectors.

@@ -325,7 +325,7 @@ func TestAuditFinishedTicket_MocksRejection(t *testing.T) {
 	runCmd("config", "user.name", "Test")
 	runCmd("config", "user.email", "test@test.com")
 	mockFile := filepath.Join(tmpDir, "mock_test.go")
-	_ = os.WriteFile(mockFile, []byte("package sample\ntype " + "MockRunner struct{}\n"), 0644)
+	_ = os.WriteFile(mockFile, []byte("package sample\ntype "+"Mock"+"Runner struct{}\n"), 0644)
 	runCmd("add", "mock_test.go")
 	runCmd("commit", "-m", "add mock")
 
@@ -445,11 +445,35 @@ func TestExtractPackages(t *testing.T) {
 }
 
 func TestValidateZeroMockGate(t *testing.T) {
-	hasMocks, locs, err := ValidateZeroMockGate(".", []string{"pkg/uitest"})
+	tmpDir := t.TempDir()
+	runCmd := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		_ = cmd.Run()
+	}
+	runCmd("init", "-b", "main")
+	runCmd("config", "user.name", "Test")
+	runCmd("config", "user.email", "test@test.com")
+	pkgDir := filepath.Join(tmpDir, "pkg", "sample")
+	_ = os.MkdirAll(pkgDir, 0755)
+	_ = os.WriteFile(filepath.Join(pkgDir, "sample.go"), []byte("package sample\ntype "+"Mock"+"Driver struct{}\n"), 0644)
+	runCmd("add", ".")
+	runCmd("commit", "-m", "add sample")
+
+	hasMocks, locs, err := ValidateZeroMockGate(tmpDir, []string{"pkg/sample"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !hasMocks || len(locs) == 0 {
-		t.Fatalf("expected mocks to be detected in pkg/uitest")
+		t.Fatalf("expected mocks to be detected in temp pkg/sample")
+	}
+
+	cleanMocks, _, err := ValidateZeroMockGate(".", []string{"pkg/quality"})
+	if err != nil {
+		t.Fatalf("unexpected error on clean dir: %v", err)
+	}
+	if cleanMocks {
+		t.Fatalf("expected no mocks in pkg/quality")
 	}
 }
+

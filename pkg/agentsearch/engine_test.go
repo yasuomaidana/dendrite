@@ -2,10 +2,14 @@ package agentsearch
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -210,10 +214,53 @@ func TestScorerWithLedgerAndLeiden(t *testing.T) {
 	}
 }
 
+func computeDeterministicVector(text string, dim int) []float32 {
+	vec := make([]float32, dim)
+	words := strings.Fields(strings.ToLower(text))
+	for _, w := range words {
+		hash := sha256.Sum256([]byte(w))
+		for j := 0; j < dim; j++ {
+			byteIdx := (j * 4) % (len(hash) - 4)
+			val := binary.BigEndian.Uint32(hash[byteIdx : byteIdx+4])
+			flt := (float32(val%10000) / 5000.0) - 1.0
+			vec[j] += flt
+		}
+	}
+	var sum float64
+	for _, v := range vec {
+		sum += float64(v * v)
+	}
+	norm := float32(math.Sqrt(sum))
+	if norm == 0 {
+		return vec
+	}
+	res := make([]float32, len(vec))
+	for i, v := range vec {
+		res[i] = v / norm
+	}
+	return res
+}
+
 func TestSearchEngineEndToEnd(t *testing.T) {
-	mockClient := NewMockEmbeddingClient(32)
+	teiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Inputs []string `json:"inputs"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		vecs := make([][]float32, len(payload.Inputs))
+		for i, text := range payload.Inputs {
+			vecs[i] = computeDeterministicVector(text, 32)
+		}
+		_ = json.NewEncoder(w).Encode(vecs)
+	}))
+	defer teiServer.Close()
+
+	teiClient := NewTEIEmbeddingClient(teiServer.URL, teiServer.Client())
 	ledger := agent.NewSessionLedger(nil, "")
-	engine := NewSearchEngine(mockClient, ledger, nil)
+	engine := NewSearchEngine(teiClient, ledger, nil)
 
 	ctx := context.Background()
 
@@ -294,3 +341,4 @@ func (b *brokenEmbedClient) Embed(ctx context.Context, texts []string) ([][]floa
 	return nil, errors.New("simulated embedding endpoint timeout/offline")
 }
 func (b *brokenEmbedClient) Dimension() int { return 32 }
+

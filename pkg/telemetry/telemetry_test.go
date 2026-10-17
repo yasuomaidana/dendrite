@@ -2,27 +2,99 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 )
 
-func TestMockThermalSensor(t *testing.T) {
-	sensor := NewMockThermalSensor(42.0)
+type fixedSensor struct {
+	mu   sync.RWMutex
+	temp float64
+	err  error
+}
+
+func newFixedSensor(temp float64) *fixedSensor {
+	return &fixedSensor{temp: temp}
+}
+
+func (s *fixedSensor) SetTemperature(t float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.temp = t
+}
+
+func (s *fixedSensor) GetSoCTemperature(_ context.Context) (float64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.temp, s.err
+}
+
+func TestHostThermalSensor(t *testing.T) {
 	ctx := context.Background()
 
-	temp, err := sensor.GetSoCTemperature(ctx)
-	if err != nil || temp != 42.0 {
-		t.Fatalf("expected 42.0, got %v, err: %v", temp, err)
-	}
+	t.Run("reads Linux sysfs millidegrees", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		zoneDir := filepath.Join(tmpDir, "thermal_zone0")
+		_ = os.MkdirAll(zoneDir, 0755)
+		_ = os.WriteFile(filepath.Join(zoneDir, "temp"), []byte("54200\n"), 0644)
 
-	sensor.SetTemperature(81.5)
-	temp, _ = sensor.GetSoCTemperature(ctx)
-	if temp != 81.5 {
-		t.Errorf("expected 81.5 after SetTemperature, got %v", temp)
-	}
+		sensor := &HostThermalSensor{
+			SysfsGlob: filepath.Join(tmpDir, "thermal_zone*", "temp"),
+		}
+		temp, err := sensor.GetSoCTemperature(ctx)
+		if err != nil || temp != 54.2 {
+			t.Fatalf("expected 54.2, got %v, err: %v", temp, err)
+		}
+	})
+
+	t.Run("reads powermetrics output via temp-dir executable", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		pmBin := filepath.Join(tmpDir, "powermetrics")
+		script := "#!/bin/sh\necho \"CPU die temperature: 63.50 C\"\n"
+		if err := os.WriteFile(pmBin, []byte(script), 0755); err != nil {
+			t.Fatalf("failed to write executable: %v", err)
+		}
+
+		sensor := &HostThermalSensor{
+			SysfsGlob: filepath.Join(tmpDir, "nonexistent*"),
+			CommandFunc: func(ctx context.Context, name string, arg ...string) *exec.Cmd {
+				return exec.CommandContext(ctx, pmBin, arg...)
+			},
+		}
+		temp, err := sensor.GetSoCTemperature(ctx)
+		if err != nil || temp != 63.5 {
+			t.Fatalf("expected 63.5, got %v, err: %v", temp, err)
+		}
+	})
+
+	t.Run("returns ErrThermalSensorUnavailable when powermetrics fails", func(t *testing.T) {
+		sensor := NewHostThermalSensor()
+		sensor.SysfsGlob = "/nonexistent/sysfs/*"
+		sensor.CommandFunc = func(ctx context.Context, name string, arg ...string) *exec.Cmd {
+			return exec.CommandContext(ctx, "false")
+		}
+		_, err := sensor.GetSoCTemperature(ctx)
+		if !errors.Is(err, ErrThermalSensorUnavailable) {
+			t.Fatalf("expected ErrThermalSensorUnavailable, got: %v", err)
+		}
+	})
+
+	t.Run("returns ErrThermalSensorUnavailable when powermetrics output has no temperature", func(t *testing.T) {
+		sensor := &HostThermalSensor{
+			SysfsGlob: "/nonexistent/sysfs/*",
+			CommandFunc: func(ctx context.Context, name string, arg ...string) *exec.Cmd {
+				return exec.CommandContext(ctx, "echo", "no temperature info")
+			},
+		}
+		_, err := sensor.GetSoCTemperature(ctx)
+		if !errors.Is(err, ErrThermalSensorUnavailable) {
+			t.Fatalf("expected ErrThermalSensorUnavailable, got: %v", err)
+		}
+	})
 }
 
 func TestParsePowermetricsOutput(t *testing.T) {
@@ -103,7 +175,7 @@ func TestStaticNodePinger(t *testing.T) {
 
 func TestDaemon_ThermalAlertThresholds(t *testing.T) {
 	ctx := context.Background()
-	sensor := NewMockThermalSensor(45.0)
+	sensor := newFixedSensor(45.0)
 
 	daemon := NewDaemon(DaemonConfig{
 		WarningTempC:  80.0,
@@ -135,9 +207,10 @@ func TestDaemon_StartAndStop(t *testing.T) {
 	var mu sync.Mutex
 	var collected []TelemetryReport
 
+	sensor := newFixedSensor(48.5)
 	daemon := NewDaemon(DaemonConfig{
 		Interval: 20 * time.Millisecond,
-	}, nil, nil, nil, func(r TelemetryReport) {
+	}, sensor, nil, nil, func(r TelemetryReport) {
 		mu.Lock()
 		defer mu.Unlock()
 		collected = append(collected, r)

@@ -4,12 +4,60 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 )
+
+type scriptedExecutor struct {
+	ExecuteFunc     func(ctx context.Context, host string, port int, user string, keyPath string, cmd string) (string, error)
+	StreamFileFunc  func(ctx context.Context, host string, port int, user string, keyPath string, localPath string, remotePath string) error
+	ProbeHealthFunc func(ctx context.Context, url string, timeout time.Duration) (bool, error)
+	ExecutedCmds    []string
+	StreamedFiles   []string
+}
+
+func newScriptedExecutor() *scriptedExecutor {
+	return &scriptedExecutor{
+		ExecutedCmds:  make([]string, 0),
+		StreamedFiles: make([]string, 0),
+	}
+}
+
+func (s *scriptedExecutor) Execute(ctx context.Context, host string, port int, user string, keyPath string, cmd string) (string, error) {
+	s.ExecutedCmds = append(s.ExecutedCmds, cmd)
+	if s.ExecuteFunc != nil {
+		return s.ExecuteFunc(ctx, host, port, user, keyPath, cmd)
+	}
+	if strings.Contains(cmd, "uname") {
+		return "Linux\nx86_64\ndebian-server\n", nil
+	}
+	if strings.Contains(cmd, "cat /etc/os-release") {
+		return "ID=debian\nVERSION_ID=12\n", nil
+	}
+	if strings.Contains(cmd, "docker --version") {
+		return "Docker version 27.0.3, build 7d4bed1\n", nil
+	}
+	return "ok\n", nil
+}
+
+func (s *scriptedExecutor) StreamFile(ctx context.Context, host string, port int, user string, keyPath string, localPath string, remotePath string) error {
+	s.StreamedFiles = append(s.StreamedFiles, fmt.Sprintf("%s -> %s", localPath, remotePath))
+	if s.StreamFileFunc != nil {
+		return s.StreamFileFunc(ctx, host, port, user, keyPath, localPath, remotePath)
+	}
+	return nil
+}
+
+func (s *scriptedExecutor) ProbeHealth(ctx context.Context, url string, timeout time.Duration) (bool, error) {
+	if s.ProbeHealthFunc != nil {
+		return s.ProbeHealthFunc(ctx, url, timeout)
+	}
+	return true, nil
+}
 
 func TestEvaluateDebianServer_4GB_1TB(t *testing.T) {
 	plan := EvaluateDebianServer(4096, 1000)
@@ -58,8 +106,8 @@ func TestEvaluateDebianServer_4GB_1TB(t *testing.T) {
 
 func TestMigrate_HappyPath(t *testing.T) {
 	ctx := context.Background()
-	mock := NewMockRemoteExecutor()
-	migrator := NewMigrator(mock, nil)
+	exec := newScriptedExecutor()
+	migrator := NewMigrator(exec, nil)
 
 	req := MigrationRequest{
 		Services:    []string{"plane"},
@@ -94,8 +142,8 @@ func TestMigrate_HappyPath(t *testing.T) {
 
 func TestMigrate_DryRun(t *testing.T) {
 	ctx := context.Background()
-	mock := NewMockRemoteExecutor()
-	migrator := NewMigrator(mock, nil)
+	exec := newScriptedExecutor()
+	migrator := NewMigrator(exec, nil)
 
 	req := MigrationRequest{
 		Services:    []string{"plane", "litellm"},
@@ -113,8 +161,8 @@ func TestMigrate_DryRun(t *testing.T) {
 		t.Errorf("expected dry-run to succeed")
 	}
 
-	if len(mock.ExecutedCmds) > 0 {
-		t.Errorf("expected zero remote commands in dry run, got %d", len(mock.ExecutedCmds))
+	if len(exec.ExecutedCmds) > 0 {
+		t.Errorf("expected zero remote commands in dry run, got %d", len(exec.ExecutedCmds))
 	}
 
 	if ep, ok := res.UpdatedEndpoints["litellm"]; !ok || ep != "http://debian-server:4000" {
@@ -124,8 +172,8 @@ func TestMigrate_DryRun(t *testing.T) {
 
 func TestMigrate_InteractiveAuthorization(t *testing.T) {
 	ctx := context.Background()
-	mock := NewMockRemoteExecutor()
-	migrator := NewMigrator(mock, nil)
+	exec := newScriptedExecutor()
+	migrator := NewMigrator(exec, nil)
 
 	// Case 1: Non-interactive without force -> Error
 	reqNoIn := MigrationRequest{
@@ -174,13 +222,13 @@ func TestMigrate_InteractiveAuthorization(t *testing.T) {
 
 func TestMigrate_HealthCheckFailureAndRollback(t *testing.T) {
 	ctx := context.Background()
-	mock := NewMockRemoteExecutor()
+	exec := newScriptedExecutor()
 	// Simulate probe failure
-	mock.ProbeHealthFunc = func(ctx context.Context, url string, timeout time.Duration) (bool, error) {
+	exec.ProbeHealthFunc = func(ctx context.Context, url string, timeout time.Duration) (bool, error) {
 		return false, errors.New("connection refused on port 8090")
 	}
 
-	migrator := NewMigrator(mock, nil)
+	migrator := NewMigrator(exec, nil)
 	req := MigrationRequest{
 		Services:    []string{"plane"},
 		TargetHost:  "deployer@debian-server",
@@ -199,7 +247,7 @@ func TestMigrate_HealthCheckFailureAndRollback(t *testing.T) {
 
 	// Verify rollback docker compose down was executed on remote
 	var foundRollback bool
-	for _, cmd := range mock.ExecutedCmds {
+	for _, cmd := range exec.ExecutedCmds {
 		if strings.Contains(cmd, "docker compose") && strings.Contains(cmd, "down") {
 			foundRollback = true
 			break
@@ -212,8 +260,8 @@ func TestMigrate_HealthCheckFailureAndRollback(t *testing.T) {
 
 func TestMigrate_DebianAlias(t *testing.T) {
 	ctx := context.Background()
-	mock := NewMockRemoteExecutor()
-	migrator := NewMigrator(mock, nil)
+	exec := newScriptedExecutor()
+	migrator := NewMigrator(exec, nil)
 
 	req := MigrationRequest{
 		Services:    []string{"debian"},
@@ -235,10 +283,10 @@ func TestMigrate_DebianAlias(t *testing.T) {
 
 func TestMigrate_CapacityAndOSValidation(t *testing.T) {
 	ctx := context.Background()
-	mock := NewMockRemoteExecutor()
+	exec := newScriptedExecutor()
 
 	// Case 1: Insufficient RAM
-	migrator := NewMigrator(mock, nil)
+	migrator := NewMigrator(exec, nil)
 	reqRAM := MigrationRequest{
 		Services:    []string{"plane"}, // requires 1536 MB
 		TargetHost:  "deployer@debian-server",
@@ -251,14 +299,14 @@ func TestMigrate_CapacityAndOSValidation(t *testing.T) {
 	}
 
 	// Case 2: Non-Linux OS response
-	mockDarwin := NewMockRemoteExecutor()
-	mockDarwin.ExecuteFunc = func(ctx context.Context, host string, port int, user string, keyPath string, cmd string) (string, error) {
+	execDarwin := newScriptedExecutor()
+	execDarwin.ExecuteFunc = func(ctx context.Context, host string, port int, user string, keyPath string, cmd string) (string, error) {
 		if strings.Contains(cmd, "uname") {
 			return "Darwin\narm64\n", nil
 		}
 		return "ok", nil
 	}
-	migratorDarwin := NewMigrator(mockDarwin, nil)
+	migratorDarwin := NewMigrator(execDarwin, nil)
 	reqOS := MigrationRequest{
 		Services:    []string{"plane"},
 		TargetHost:  "macbook-remote",
@@ -272,8 +320,8 @@ func TestMigrate_CapacityAndOSValidation(t *testing.T) {
 
 func TestMigrate_ValidationErrors(t *testing.T) {
 	ctx := context.Background()
-	mock := NewMockRemoteExecutor()
-	migrator := NewMigrator(mock, nil)
+	exec := newScriptedExecutor()
+	migrator := NewMigrator(exec, nil)
 
 	// Empty target host
 	_, err := migrator.Migrate(ctx, MigrationRequest{
@@ -374,8 +422,8 @@ func TestExecCommand(t *testing.T) {
 
 func TestMigrate_PruneLocal(t *testing.T) {
 	ctx := context.Background()
-	mock := NewMockRemoteExecutor()
-	migrator := NewMigrator(mock, nil)
+	exec := newScriptedExecutor()
+	migrator := NewMigrator(exec, nil)
 
 	req := MigrationRequest{
 		Services:    []string{"plane"},
@@ -394,19 +442,19 @@ func TestMigrate_PruneLocal(t *testing.T) {
 	}
 }
 
-func TestMockRemoteExecutor_StreamAndExecute(t *testing.T) {
+func TestScriptedExecutor_StreamAndExecute(t *testing.T) {
 	ctx := context.Background()
-	mock := NewMockRemoteExecutor()
+	exec := newScriptedExecutor()
 
-	err := mock.StreamFile(ctx, "host", 22, "user", "", "local.yaml", "remote.yaml")
+	err := exec.StreamFile(ctx, "host", 22, "user", "", "local.yaml", "remote.yaml")
 	if err != nil {
 		t.Fatalf("unexpected stream error: %v", err)
 	}
-	if len(mock.StreamedFiles) != 1 {
-		t.Errorf("expected 1 streamed file, got %d", len(mock.StreamedFiles))
+	if len(exec.StreamedFiles) != 1 {
+		t.Errorf("expected 1 streamed file, got %d", len(exec.StreamedFiles))
 	}
 
-	out, err := mock.Execute(ctx, "host", 22, "user", "", "docker --version")
+	out, err := exec.Execute(ctx, "host", 22, "user", "", "docker --version")
 	if err != nil || !strings.Contains(out, "Docker") {
 		t.Errorf("expected docker version output, got: %s", out)
 	}
@@ -433,8 +481,8 @@ func TestMigrate_FailureBranches(t *testing.T) {
 	ctx := context.Background()
 
 	// Data sync error
-	mockSyncErr := NewMockRemoteExecutor()
-	mockSyncErr.ExecuteFunc = func(ctx context.Context, host string, port int, user string, keyPath string, cmd string) (string, error) {
+	execSyncErr := newScriptedExecutor()
+	execSyncErr.ExecuteFunc = func(ctx context.Context, host string, port int, user string, keyPath string, cmd string) (string, error) {
 		if strings.Contains(cmd, "mkdir") {
 			return "", errors.New("read-only filesystem")
 		}
@@ -443,7 +491,7 @@ func TestMigrate_FailureBranches(t *testing.T) {
 		}
 		return "ok", nil
 	}
-	mSync := NewMigrator(mockSyncErr, nil)
+	mSync := NewMigrator(execSyncErr, nil)
 	_, err := mSync.Migrate(ctx, MigrationRequest{
 		Services:    []string{"plane"},
 		TargetHost:  "deployer@debian-server",
@@ -454,8 +502,8 @@ func TestMigrate_FailureBranches(t *testing.T) {
 	}
 
 	// Remote deploy error
-	mockDeployErr := NewMockRemoteExecutor()
-	mockDeployErr.ExecuteFunc = func(ctx context.Context, host string, port int, user string, keyPath string, cmd string) (string, error) {
+	execDeployErr := newScriptedExecutor()
+	execDeployErr.ExecuteFunc = func(ctx context.Context, host string, port int, user string, keyPath string, cmd string) (string, error) {
 		if strings.Contains(cmd, "docker compose") && strings.Contains(cmd, "up") {
 			return "", errors.New("daemon not running")
 		}
@@ -464,7 +512,7 @@ func TestMigrate_FailureBranches(t *testing.T) {
 		}
 		return "ok", nil
 	}
-	mDeploy := NewMigrator(mockDeployErr, nil)
+	mDeploy := NewMigrator(execDeployErr, nil)
 	_, err = mDeploy.Migrate(ctx, MigrationRequest{
 		Services:    []string{"plane"},
 		TargetHost:  "deployer@debian-server",

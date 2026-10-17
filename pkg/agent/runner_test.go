@@ -1,10 +1,15 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestValidateConfig(t *testing.T) {
@@ -490,11 +495,38 @@ func TestFormatCommitMessage(t *testing.T) {
 	})
 }
 
-func TestMockRunner(t *testing.T) {
+type scriptedRunner struct {
+	executeFunc func(ctx context.Context, cfg AgentConfig) (*SessionSummary, error)
+}
+
+func (s *scriptedRunner) Execute(ctx context.Context, cfg AgentConfig) (*SessionSummary, error) {
+	if s.executeFunc != nil {
+		return s.executeFunc(ctx, cfg)
+	}
+	if err := ValidateConfig(cfg); err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	commitMsg := FormatCommitMessage(cfg.TicketID, cfg.Type, "Automated change via agent")
+	return &SessionSummary{
+		SessionID:        fmt.Sprintf("sess-%d", now.UnixNano()),
+		AgentType:        cfg.Type,
+		TicketID:         cfg.TicketID,
+		StartTime:        now,
+		EndTime:          now.Add(2 * time.Second),
+		Duration:         2 * time.Second,
+		TokensConsumed:   1250,
+		EstimatedCostUSD: 0.0025,
+		CommitsGenerated: []string{commitMsg},
+		Status:           "completed",
+	}, nil
+}
+
+func TestScriptedRunner(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("default mock execution", func(t *testing.T) {
-		runner := &MockRunner{}
+	t.Run("default scripted execution", func(t *testing.T) {
+		runner := &scriptedRunner{}
 		cfg := AgentConfig{
 			Type:           AgentAider,
 			LiteLLMBaseURL: "http://localhost:4000/v1",
@@ -522,8 +554,8 @@ func TestMockRunner(t *testing.T) {
 		}
 	})
 
-	t.Run("mock execution with agy", func(t *testing.T) {
-		runner := &MockRunner{}
+	t.Run("scripted execution with agy", func(t *testing.T) {
+		runner := &scriptedRunner{}
 		cfg := AgentConfig{
 			Type:           AgentAGY,
 			LiteLLMBaseURL: "http://localhost:4000/v1",
@@ -545,8 +577,8 @@ func TestMockRunner(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid config in mock execution", func(t *testing.T) {
-		runner := &MockRunner{}
+	t.Run("invalid config in scripted execution", func(t *testing.T) {
+		runner := &scriptedRunner{}
 		_, err := runner.Execute(ctx, AgentConfig{})
 		if err == nil {
 			t.Fatal("expected error, got nil")
@@ -555,8 +587,8 @@ func TestMockRunner(t *testing.T) {
 
 	t.Run("custom execute func", func(t *testing.T) {
 		expectedErr := errors.New("custom failure")
-		runner := &MockRunner{
-			ExecuteFunc: func(ctx context.Context, cfg AgentConfig) (*SessionSummary, error) {
+		runner := &scriptedRunner{
+			executeFunc: func(ctx context.Context, cfg AgentConfig) (*SessionSummary, error) {
 				return nil, expectedErr
 			},
 		}
@@ -570,6 +602,21 @@ func TestMockRunner(t *testing.T) {
 
 func TestHostRunner(t *testing.T) {
 	ctx := context.Background()
+
+	t.Run("NewHostRunner constructor", func(t *testing.T) {
+		hr := NewHostRunner(true)
+		if !hr.Interactive || hr.LookPath == nil || hr.CommandFunc == nil {
+			t.Fatalf("unexpected NewHostRunner fields: %+v", hr)
+		}
+	})
+
+	t.Run("invalid config returns error", func(t *testing.T) {
+		runner := NewHostRunner(false)
+		_, err := runner.Execute(ctx, AgentConfig{})
+		if err == nil {
+			t.Fatal("expected error for invalid config")
+		}
+	})
 
 	t.Run("executable not found in PATH returns actionable error", func(t *testing.T) {
 		runner := &HostRunner{
@@ -589,20 +636,30 @@ func TestHostRunner(t *testing.T) {
 		}
 	})
 
-	t.Run("successful host execution with mocked command", func(t *testing.T) {
+	t.Run("successful host execution with temp-dir executable", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		binPath := filepath.Join(tmpDir, "agy")
+		script := "#!/bin/sh\necho \"executed agy\"\nexit 0\n"
+		if err := os.WriteFile(binPath, []byte(script), 0755); err != nil {
+			t.Fatalf("failed to write executable: %v", err)
+		}
+
+		var stdoutBuf, stderrBuf bytes.Buffer
 		runner := &HostRunner{
+			Interactive: false,
+			Stdout:      &stdoutBuf,
+			Stderr:      &stderrBuf,
+			Stdin:       bytes.NewBufferString(""),
 			LookPath: func(file string) (string, error) {
-				return "/usr/bin/echo", nil
-			},
-			CommandFunc: func(ctx context.Context, name string, arg ...string) *exec.Cmd {
-				return exec.CommandContext(ctx, "echo", "mock-run")
+				return binPath, nil
 			},
 		}
 		cfg := AgentConfig{
 			Type:            AgentAGY,
 			LiteLLMBaseURL:  "http://localhost:4000/v1",
 			VirtualAPIKey:   "sk-test",
-			WorkspaceDir:    "/tmp",
+			Model:           "local-qwen-coder",
+			WorkspaceDir:    tmpDir,
 			TaskDescription: "test task",
 			TicketID:        "DEN-024",
 		}
@@ -613,5 +670,65 @@ func TestHostRunner(t *testing.T) {
 		if summary == nil || summary.Status != "completed" {
 			t.Fatalf("expected completed status, got %v", summary)
 		}
+		if summary.EstimatedCostUSD != 0.0 {
+			t.Errorf("expected 0 cost for local-qwen-coder, got %f", summary.EstimatedCostUSD)
+		}
+	})
+
+	t.Run("interactive host execution and failed command", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		var stdoutBuf, stderrBuf bytes.Buffer
+		runner := &HostRunner{
+			Interactive: true,
+			Stdout:      &stdoutBuf,
+			Stderr:      &stderrBuf,
+			Stdin:       bytes.NewBufferString(""),
+			LookPath: func(file string) (string, error) {
+				return "/usr/bin/false", nil
+			},
+			CommandFunc: func(ctx context.Context, name string, arg ...string) *exec.Cmd {
+				return exec.CommandContext(ctx, "false")
+			},
+		}
+		cfg := AgentConfig{
+			Type:           AgentAider,
+			LiteLLMBaseURL: "http://localhost:4000/v1",
+			VirtualAPIKey:  "sk-test",
+			WorkspaceDir:   tmpDir,
+		}
+		summary, err := runner.Execute(ctx, cfg)
+		if err == nil {
+			t.Fatal("expected error from false command")
+		}
+		if summary == nil || summary.Status != "failed" {
+			t.Fatalf("expected failed status, got %+v", summary)
+		}
+	})
+
+	t.Run("curfew interrupted context cancellation", func(t *testing.T) {
+		cctx, cancel := context.WithCancel(ctx)
+		cancel()
+		runner := &HostRunner{
+			LookPath: func(file string) (string, error) {
+				return "/bin/sleep", nil
+			},
+			CommandFunc: func(ctx context.Context, name string, arg ...string) *exec.Cmd {
+				return exec.CommandContext(ctx, "sleep", "5")
+			},
+		}
+		cfg := AgentConfig{
+			Type:           AgentAider,
+			LiteLLMBaseURL: "http://localhost:4000/v1",
+			VirtualAPIKey:  "sk-test",
+			WorkspaceDir:   t.TempDir(),
+		}
+		summary, err := runner.Execute(cctx, cfg)
+		if err == nil {
+			t.Fatal("expected context canceled error")
+		}
+		if summary == nil || summary.Status != "curfew_interrupted" {
+			t.Fatalf("expected curfew_interrupted status, got %+v", summary)
+		}
 	})
 }
+

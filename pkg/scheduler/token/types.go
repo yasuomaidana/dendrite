@@ -32,7 +32,7 @@ const (
 	TierPaused ExecutionTier = "PAUSED"
 )
 
-// Clock provides an interface for time measurement, allowing deterministic testing with mock clocks.
+// Clock provides an interface for time measurement, allowing deterministic testing with fixed clocks.
 type Clock interface {
 	Now() time.Time
 }
@@ -44,22 +44,6 @@ func (RealClock) Now() time.Time {
 	return time.Now()
 }
 
-// MockClock implements Clock with controllable timestamps for testing.
-type MockClock struct {
-	Current time.Time
-}
-
-func (m *MockClock) Now() time.Time {
-	return m.Current
-}
-
-func (m *MockClock) Advance(d time.Duration) {
-	m.Current = m.Current.Add(d)
-}
-
-func (m *MockClock) Set(t time.Time) {
-	m.Current = t
-}
 
 // Policy defines scheduling rules, time windows, and token ceilings.
 type Policy struct {

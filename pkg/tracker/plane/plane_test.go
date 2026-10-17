@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -780,6 +782,24 @@ func TestClient_CreatePlaneIssue_EmptyContext(t *testing.T) {
 }
 
 func TestClient_UpdateStatus_ZeroMockRejection(t *testing.T) {
+	// Hermetic fixture: a throwaway git repository whose pkg/uitest ships a production mock type.
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "pkg", "uitest"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src := "package uitest\n\ntype " + "Mock" + "UIDriver struct{}\n"
+	if err := os.WriteFile(filepath.Join(repo, "pkg", "uitest", "driver.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "."}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	t.Chdir(repo)
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/api/v1/workspaces/ws1/projects/p1/states/" {
