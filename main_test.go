@@ -63,6 +63,8 @@ func TestDoctorCommand(t *testing.T) {
 }
 
 func TestEnvCommands(t *testing.T) {
+	// Env/dev commands render stacks/ and status files relative to the CWD; never touch the repository.
+	t.Chdir(t.TempDir())
 	t.Run("env doctor", func(t *testing.T) {
 		_, err := executeCommand("env", "doctor")
 		if err != nil {
@@ -134,6 +136,8 @@ func (f *failingDetector) Detect(ctx context.Context) (*env.HostInfo, error) {
 }
 
 func TestDevCommands(t *testing.T) {
+	// Env/dev commands render stacks/ and status files relative to the CWD; never touch the repository.
+	t.Chdir(t.TempDir())
 	t.Run("dev ollama default", func(t *testing.T) {
 		_, err := executeCommand("dev", "ollama")
 		if err != nil {
@@ -357,6 +361,8 @@ func TestJetBrainsCommands(t *testing.T) {
 }
 
 func TestRunMain(t *testing.T) {
+	// Env/dev commands render stacks/ and status files relative to the CWD; never touch the repository.
+	t.Chdir(t.TempDir())
 	err := runMain(context.Background(), []string{"version"})
 	if err != nil {
 		t.Errorf("runMain version failed: %v", err)

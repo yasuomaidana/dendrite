@@ -103,16 +103,27 @@ func (r *Replicator) ExecutePlan(ctx context.Context, plan *ReplicationPlan, dry
 	return res, nil
 }
 
+// writeStackFileIfAbsent writes a generated stack file only when it does not exist yet,
+// so user-maintained compose files (keys, mounts, extra services) are never reverted.
+func writeStackFileIfAbsent(outPath, content string) error {
+	if _, err := os.Stat(outPath); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(outPath, []byte(content), 0644)
+}
+
 func (r *Replicator) handleRenderAction(action PlanAction) (string, error) {
 	switch action.Target {
 	case TargetLinear:
 		cfg := DefaultLinearConfig()
 		yamlContent := GenerateLinearCompose(cfg)
 		outPath := filepath.Join("stacks", "compose.linear.yaml")
-		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(outPath, []byte(yamlContent), 0644); err != nil {
+		if err := writeStackFileIfAbsent(outPath, yamlContent); err != nil {
 			return "", err
 		}
 		return outPath, nil
@@ -121,10 +132,7 @@ func (r *Replicator) handleRenderAction(action PlanAction) (string, error) {
 		cfg := DefaultPlaneConfig()
 		yamlContent := GeneratePlaneCompose(cfg)
 		outPath := filepath.Join("stacks", "compose.plane.yaml")
-		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(outPath, []byte(yamlContent), 0644); err != nil {
+		if err := writeStackFileIfAbsent(outPath, yamlContent); err != nil {
 			return "", err
 		}
 		proxyConfPath := filepath.Join(filepath.Dir(outPath), "plane_proxy.conf")
@@ -137,10 +145,7 @@ func (r *Replicator) handleRenderAction(action PlanAction) (string, error) {
 		cfg := DefaultPenpotConfig()
 		yamlContent := GeneratePenpotCompose(cfg)
 		outPath := filepath.Join("stacks", "compose.penpot.yaml")
-		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(outPath, []byte(yamlContent), 0644); err != nil {
+		if err := writeStackFileIfAbsent(outPath, yamlContent); err != nil {
 			return "", err
 		}
 		return outPath, nil
@@ -148,10 +153,7 @@ func (r *Replicator) handleRenderAction(action PlanAction) (string, error) {
 	case TargetLiteLLM, TargetPostgres, TargetRedis:
 		yamlContent := GenerateControlCompose()
 		outPath := filepath.Join("stacks", "compose.control.yaml")
-		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
-			return "", err
-		}
-		if err := os.WriteFile(outPath, []byte(yamlContent), 0644); err != nil {
+		if err := writeStackFileIfAbsent(outPath, yamlContent); err != nil {
 			return "", err
 		}
 		return outPath, nil
@@ -253,6 +255,8 @@ func (r *Replicator) AuditComponents(ctx context.Context) []ComponentStatus {
 }
 
 // GenerateControlCompose returns standard docker compose YAML for the control plane.
+// GenerateControlCompose returns the control-plane stack (Postgres, Redis, LiteLLM).
+// It must stay identical to stacks/compose.control.yaml (guarded by TestGenerateControlComposeMatchesCommittedStack).
 func GenerateControlCompose() string {
 	return `version: "3.8"
 
@@ -261,6 +265,7 @@ networks:
     driver: bridge
 
 volumes:
+  litellm-copilot-auth:
   dendrite-postgres-data:
   dendrite-redis-data:
 
@@ -270,17 +275,17 @@ services:
     container_name: dendrite-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: dendrite
-      POSTGRES_USER: dendrite
-      POSTGRES_PASSWORD: dendrite_password
+      POSTGRES_DB: ${POSTGRES_DB:-dendrite}
+      POSTGRES_USER: ${POSTGRES_USER:-dendrite}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dendrite_password}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - dendrite-postgres-data:/var/lib/postgresql/data
     networks:
       - dendrite-mesh
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dendrite -d dendrite"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dendrite} -d ${POSTGRES_DB:-dendrite}"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -289,8 +294,9 @@ services:
     image: redis:7-alpine
     container_name: dendrite-redis
     restart: unless-stopped
+    command: redis-server --appendonly yes
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - dendrite-redis-data:/data
     networks:
@@ -305,22 +311,26 @@ services:
     image: ghcr.io/berriai/litellm:main-latest
     container_name: dendrite-litellm
     restart: unless-stopped
+    command: ["--config", "/etc/litellm/config.yaml", "--port", "${LITELLM_PORT:-4000}"]
     ports:
-      - "4000:4000"
+      - "${LITELLM_PORT:-4000}:4000"
     environment:
-      DATABASE_URL: "postgresql://dendrite:dendrite_password@postgres:5432/dendrite"
-      STORE_MODEL_IN_DB: "True"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-dendrite}:${POSTGRES_PASSWORD:-dendrite_password}@postgres:5432/${POSTGRES_DB:-dendrite}"
+      STORE_MODEL_IN_DB: "${STORE_MODEL_IN_DB:-True}"
+      # Generated by 'dendrite env secrets ensure' (DEN-902); compose refuses to start without it.
+      LITELLM_MASTER_KEY: "${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY is unset - run 'dendrite env secrets ensure'}"
+      # Encrypts credentials stored in Postgres; must stay stable across master-key rotations.
+      LITELLM_SALT_KEY: "${LITELLM_SALT_KEY:?LITELLM_SALT_KEY is unset - run 'dendrite env secrets ensure'}"
+    volumes:
+      - ./litellm_config.yaml:/etc/litellm/config.yaml
+      # GitHub Copilot OAuth token from the one-time device login (dendrite gateway copilot-login)
+      - litellm-copilot-auth:/root/.config/litellm/github_copilot
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - dendrite-mesh
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/health/readiness"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 `
 }
