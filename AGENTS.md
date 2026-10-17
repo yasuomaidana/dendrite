@@ -14,3 +14,7 @@ To synchronize agent rules, skills, and enforce CI/CD tooling defaults, execute:
 ```bash
 dendrite env prepare
 ```
+
+## Commit & VCS Guidance
+- `dendrite commit` pushes the new commit to the configured remote (origin preferred) after every successful commit; use `--no-push` or `DENDRITE_COMMIT_PUSH=false` to opt out; it never force-pushes and refuses to push main/master.
+

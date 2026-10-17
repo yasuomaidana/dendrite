@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"Dendrite/pkg/devtool"
@@ -40,6 +41,8 @@ func handleCommitCommand(ctx context.Context, args []string) {
 			stageAllSet = true
 		case "--amend":
 			opts.Amend = true
+		case "--no-push":
+			opts.NoPush = true
 		case "--smart":
 			opts.Smart = true
 			opts.NoSmart = false
@@ -63,6 +66,10 @@ func handleCommitCommand(ctx context.Context, args []string) {
 			printCommitUsage()
 			return
 		}
+	}
+
+	if strings.EqualFold(os.Getenv("DENDRITE_COMMIT_PUSH"), "false") {
+		opts.NoPush = true
 	}
 
 	// If user did not specify files or --all, and nothing is staged yet, default to staging all
@@ -92,6 +99,7 @@ func handleCommitCommand(ctx context.Context, args []string) {
 	res, err := devtool.ExecuteCommit(ctx, opts)
 	if err != nil {
 		fmt.Printf("[-] Commit failed: %v\n", err)
+		os.Exit(1)
 		return
 	}
 
@@ -109,6 +117,9 @@ func handleCommitCommand(ctx context.Context, args []string) {
 			fmt.Printf("      * %s\n", f)
 		}
 		fmt.Printf("    - Model Engine:     %s (Cost: $%.2f)\n", res.ModelUsed, res.CostUSD)
+		if res.PushSkipped {
+			fmt.Printf("    - Remote Push:      Skipped (%s)\n", res.PushReason)
+		}
 		return
 	}
 
@@ -125,6 +136,16 @@ func handleCommitCommand(ctx context.Context, args []string) {
 		fmt.Printf("      * %s\n", f)
 	}
 	fmt.Printf("    - Model Provenance: %s (Cost: $%.2f)\n", res.ModelUsed, res.CostUSD)
+	if res.Pushed {
+		fmt.Println("    - Remote Push:      Pushed to remote")
+	} else if res.PushSkipped {
+		fmt.Printf("    - Remote Push:      Skipped (%s)\n", res.PushReason)
+	}
+
+	if res.PushError != nil {
+		fmt.Printf("[-] Git push failed: %v\n", res.PushError)
+		os.Exit(1)
+	}
 }
 
 func printCommitUsage() {
@@ -135,6 +156,7 @@ func printCommitUsage() {
 	fmt.Println("  --files, -f <f1,f2>   Comma-separated files to stage (defaults to git add -A)")
 	fmt.Println("  --all, -a             Stage all modified and untracked files (default true)")
 	fmt.Println("  --amend               Amend previous commit instead of creating a new commit")
+	fmt.Println("  --no-push             Disable pushing commit to remote")
 	fmt.Println("  --smart / --no-smart  Enable/disable smart ticket auto-detection (default enabled)")
 	fmt.Println("  --model <model>       Target local model for message synthesis (default qwen3.8:27b)")
 	fmt.Println("  --local / --no-local  Enable/disable local model delegation (default enabled)")

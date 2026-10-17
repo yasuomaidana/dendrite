@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"Dendrite/pkg/tracker/plane"
 	"Dendrite/pkg/quality"
+	"Dendrite/pkg/tracker/plane"
 )
 
 // CommitOptions defines the parameters for an autonomous Git commit.
@@ -28,6 +28,7 @@ type CommitOptions struct {
 	Model            string           `json:"model,omitempty"`
 	DryRun           bool             `json:"dry_run,omitempty"`
 	Amend            bool             `json:"amend,omitempty"`
+	NoPush           bool             `json:"no_push,omitempty"`
 	NoSmart          bool             `json:"no_smart,omitempty"`
 	Smart            bool             `json:"smart"`
 	SmartTicket      *SmartTicketInfo `json:"smart_ticket,omitempty"`
@@ -50,6 +51,10 @@ type CommitResult struct {
 	DryRun      bool             `json:"dry_run,omitempty"`
 	SmartTicket *SmartTicketInfo `json:"smart_ticket,omitempty"`
 	SmartSource string           `json:"smart_source,omitempty"`
+	Pushed      bool             `json:"pushed,omitempty"`
+	PushSkipped bool             `json:"push_skipped,omitempty"`
+	PushReason  string           `json:"push_reason,omitempty"`
+	PushError   error            `json:"push_error,omitempty"`
 }
 
 // SmartTicketInfo represents ticket intelligence resolved automatically.
@@ -751,7 +756,7 @@ func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, erro
 	}
 
 	if opts.DryRun {
-		return &CommitResult{
+		res := &CommitResult{
 			CommitSHA:   "dry-run-preview-sha",
 			Message:     commitMsg,
 			Files:       stagedFiles,
@@ -761,7 +766,9 @@ func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, erro
 			DryRun:      true,
 			SmartTicket: smartTicket,
 			SmartSource: smartSource,
-		}, nil
+		}
+		_ = pushAfterCommit(ctx, opts, res, runGit)
+		return res, nil
 	}
 
 	// 5. Execute git commit
@@ -780,7 +787,7 @@ func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, erro
 		sha = "unknown-sha"
 	}
 
-	return &CommitResult{
+	res := &CommitResult{
 		CommitSHA:   sha,
 		Message:     commitMsg,
 		Files:       stagedFiles,
@@ -790,7 +797,94 @@ func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, erro
 		DryRun:      false,
 		SmartTicket: smartTicket,
 		SmartSource: smartSource,
-	}, nil
+	}
+
+	_ = pushAfterCommit(ctx, opts, res, runGit)
+
+	return res, nil
+}
+
+func pushAfterCommit(ctx context.Context, opts CommitOptions, res *CommitResult, runGit func(args ...string) (string, error)) error {
+	if opts.DryRun || res.DryRun {
+		res.PushSkipped = true
+		res.PushReason = "dry-run mode"
+		return nil
+	}
+
+	if opts.NoPush {
+		res.PushSkipped = true
+		res.PushReason = "--no-push flag specified"
+		return nil
+	}
+
+	if strings.EqualFold(os.Getenv("DENDRITE_COMMIT_PUSH"), "false") {
+		res.PushSkipped = true
+		res.PushReason = "DENDRITE_COMMIT_PUSH=false"
+		return nil
+	}
+
+	remotesOut, err := runGit("remote")
+	if err != nil {
+		res.PushSkipped = true
+		res.PushReason = "no remote configured"
+		return nil
+	}
+
+	var remotes []string
+	for _, r := range strings.Split(remotesOut, "\n") {
+		r = strings.TrimSpace(r)
+		if r != "" {
+			remotes = append(remotes, r)
+		}
+	}
+	if len(remotes) == 0 {
+		res.PushSkipped = true
+		res.PushReason = "no remote configured"
+		return nil
+	}
+
+	branch, _ := runGit("rev-parse", "--abbrev-ref", "HEAD")
+	branch = strings.TrimSpace(branch)
+
+	if branch == "main" || branch == "master" {
+		refuseErr := fmt.Errorf("pushing %s directly is refused (branch guard)", branch)
+		res.PushSkipped = true
+		res.PushReason = refuseErr.Error()
+		res.PushError = refuseErr
+		return refuseErr
+	}
+
+	targetRemote := ""
+	for _, r := range remotes {
+		if r == "origin" {
+			targetRemote = "origin"
+			break
+		}
+	}
+	if targetRemote == "" {
+		targetRemote = remotes[0]
+	}
+
+	hasUpstream := false
+	if _, uErr := runGit("rev-parse", "--abbrev-ref", "@{u}"); uErr == nil {
+		hasUpstream = true
+	}
+
+	var pushErr error
+	if hasUpstream {
+		_, pushErr = runGit("push")
+	} else {
+		_, pushErr = runGit("push", "-u", targetRemote, branch)
+	}
+
+	if pushErr != nil {
+		res.PushError = pushErr
+		res.Pushed = false
+		return pushErr
+	}
+
+	res.Pushed = true
+	return nil
 }
 
 func truncateString(s string, maxLen int) string {

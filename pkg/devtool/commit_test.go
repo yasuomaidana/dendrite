@@ -3,6 +3,7 @@ package devtool
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -484,5 +485,429 @@ func TestExecuteCommit_SmartStrategyAndAmend(t *testing.T) {
 	}
 	if !strings.Contains(resAmend.Message, "amended commit message") {
 		t.Errorf("expected amended commit message, got: %s", resAmend.Message)
+	}
+}
+
+func setupCommitRepoWithRemote(t *testing.T, branch string) (repoDir, bareDir string) {
+	t.Helper()
+	tmp := t.TempDir()
+	bareDir = filepath.Join(tmp, "remote.git")
+	repoDir = filepath.Join(tmp, "local")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.MkdirAll(bareDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	cmdBare := exec.Command("git", "init", "--bare", "-b", branch)
+	cmdBare.Dir = bareDir
+	if out, err := cmdBare.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare failed: %v, out: %s", err, string(out))
+	}
+
+	cmdInit := exec.Command("git", "init", "-b", branch)
+	cmdInit.Dir = repoDir
+	if out, err := cmdInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v, out: %s", err, string(out))
+	}
+
+	_ = exec.Command("git", "-C", repoDir, "config", "user.name", "Test Agent").Run()
+	_ = exec.Command("git", "-C", repoDir, "config", "user.email", "agent@dendrite.ai").Run()
+	_ = exec.Command("git", "-C", repoDir, "remote", "add", "origin", bareDir).Run()
+
+	return repoDir, bareDir
+}
+
+func setupCommitRepoWithNamedRemote(t *testing.T, branch, remoteName string) (repoDir, bareDir string) {
+	t.Helper()
+	tmp := t.TempDir()
+	bareDir = filepath.Join(tmp, "remote.git")
+	repoDir = filepath.Join(tmp, "local")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.MkdirAll(bareDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	cmdBare := exec.Command("git", "init", "--bare", "-b", branch)
+	cmdBare.Dir = bareDir
+	if out, err := cmdBare.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare failed: %v, out: %s", err, string(out))
+	}
+
+	cmdInit := exec.Command("git", "init", "-b", branch)
+	cmdInit.Dir = repoDir
+	if out, err := cmdInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v, out: %s", err, string(out))
+	}
+
+	_ = exec.Command("git", "-C", repoDir, "config", "user.name", "Test Agent").Run()
+	_ = exec.Command("git", "-C", repoDir, "config", "user.email", "agent@dendrite.ai").Run()
+	_ = exec.Command("git", "-C", repoDir, "remote", "add", remoteName, bareDir).Run()
+
+	return repoDir, bareDir
+}
+
+func TestExecuteCommit_Push_AC1_NoUpstreamAndExistingUpstream(t *testing.T) {
+	ctx := context.Background()
+	repoDir, _ := setupCommitRepoWithRemote(t, "develop")
+
+	// 1. Initial commit (no upstream exists yet -> pushes with -u origin develop)
+	f1 := filepath.Join(repoDir, "file1.txt")
+	if err := os.WriteFile(f1, []byte("content 1"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := ExecuteCommit(ctx, CommitOptions{
+		RepoDir:       repoDir,
+		Message:       "feat: initial commit with push",
+		StageAll:      true,
+		UseLocalModel: false,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteCommit failed: %v", err)
+	}
+	if !res.Pushed {
+		t.Errorf("expected res.Pushed to be true")
+	}
+	if res.PushError != nil {
+		t.Errorf("unexpected PushError: %v", res.PushError)
+	}
+
+	// Verify AC-1: test with a bare repo in t.TempDir() as remote; git rev-parse <remote>/<branch> equals HEAD
+	revRemote, err := exec.Command("git", "-C", repoDir, "rev-parse", "origin/develop").Output()
+	if err != nil {
+		t.Fatalf("git rev-parse origin/develop failed: %v", err)
+	}
+	revHead, err := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("git rev-parse HEAD failed: %v", err)
+	}
+	if strings.TrimSpace(string(revRemote)) != strings.TrimSpace(string(revHead)) {
+		t.Errorf("origin/develop (%s) != HEAD (%s)", strings.TrimSpace(string(revRemote)), strings.TrimSpace(string(revHead)))
+	}
+	if strings.TrimSpace(string(revHead)) != res.CommitSHA {
+		t.Errorf("HEAD (%s) != res.CommitSHA (%s)", strings.TrimSpace(string(revHead)), res.CommitSHA)
+	}
+
+	// 2. Second commit (upstream now exists -> pushes with git push)
+	f2 := filepath.Join(repoDir, "file2.txt")
+	if err := os.WriteFile(f2, []byte("content 2"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	res2, err := ExecuteCommit(ctx, CommitOptions{
+		RepoDir:       repoDir,
+		Message:       "feat: second commit with existing upstream",
+		StageAll:      true,
+		UseLocalModel: false,
+	})
+	if err != nil {
+		t.Fatalf("second ExecuteCommit failed: %v", err)
+	}
+	if !res2.Pushed {
+		t.Errorf("expected res2.Pushed to be true")
+	}
+	if res2.PushError != nil {
+		t.Errorf("unexpected PushError: %v", res2.PushError)
+	}
+
+	revRemote2, _ := exec.Command("git", "-C", repoDir, "rev-parse", "origin/develop").Output()
+	revHead2, _ := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD").Output()
+	if strings.TrimSpace(string(revRemote2)) != strings.TrimSpace(string(revHead2)) {
+		t.Errorf("origin/develop (%s) != HEAD (%s)", strings.TrimSpace(string(revRemote2)), strings.TrimSpace(string(revHead2)))
+	}
+}
+
+func TestExecuteCommit_Push_AC1_NonOriginRemote(t *testing.T) {
+	ctx := context.Background()
+	repoDir, _ := setupCommitRepoWithNamedRemote(t, "feat-custom", "backup")
+
+	f := filepath.Join(repoDir, "file.txt")
+	if err := os.WriteFile(f, []byte("custom content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := ExecuteCommit(ctx, CommitOptions{
+		RepoDir:       repoDir,
+		Message:       "feat: commit to non-origin remote",
+		StageAll:      true,
+		UseLocalModel: false,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteCommit failed: %v", err)
+	}
+	if !res.Pushed {
+		t.Errorf("expected res.Pushed to be true")
+	}
+	if res.PushError != nil {
+		t.Errorf("unexpected PushError: %v", res.PushError)
+	}
+
+	revRemote, err := exec.Command("git", "-C", repoDir, "rev-parse", "backup/feat-custom").Output()
+	if err != nil {
+		t.Fatalf("git rev-parse backup/feat-custom failed: %v", err)
+	}
+	revHead, _ := exec.Command("git", "-C", repoDir, "rev-parse", "HEAD").Output()
+	if strings.TrimSpace(string(revRemote)) != strings.TrimSpace(string(revHead)) {
+		t.Errorf("backup/feat-custom != HEAD")
+	}
+}
+
+func TestExecuteCommit_Push_AC2_NoRemote_DryRun_NoPush_EnvDisabled(t *testing.T) {
+	ctx := context.Background()
+
+	// Subtest 1: No remote configured
+	t.Run("NoRemote", func(t *testing.T) {
+		tempDir := t.TempDir()
+		_ = exec.Command("git", "init", "-b", "develop", tempDir).Run()
+		_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Agent").Run()
+		_ = exec.Command("git", "-C", tempDir, "config", "user.email", "agent@dendrite.ai").Run()
+		_ = os.WriteFile(filepath.Join(tempDir, "f.txt"), []byte("data"), 0644)
+
+		res, err := ExecuteCommit(ctx, CommitOptions{
+			RepoDir:       tempDir,
+			Message:       "feat: commit without remote",
+			StageAll:      true,
+			UseLocalModel: false,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Pushed {
+			t.Errorf("expected Pushed to be false")
+		}
+		if !res.PushSkipped {
+			t.Errorf("expected PushSkipped to be true")
+		}
+		if res.PushReason != "no remote configured" {
+			t.Errorf("expected PushReason 'no remote configured', got %q", res.PushReason)
+		}
+		if res.PushError != nil {
+			t.Errorf("expected PushError to be nil, got: %v", res.PushError)
+		}
+	})
+
+	// Subtest 2: DryRun
+	t.Run("DryRun", func(t *testing.T) {
+		repoDir, _ := setupCommitRepoWithRemote(t, "develop")
+		_ = os.WriteFile(filepath.Join(repoDir, "f.txt"), []byte("dry run"), 0644)
+
+		res, err := ExecuteCommit(ctx, CommitOptions{
+			RepoDir:       repoDir,
+			Message:       "feat: dry run commit",
+			StageAll:      true,
+			DryRun:        true,
+			UseLocalModel: false,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Pushed {
+			t.Errorf("expected Pushed to be false")
+		}
+		if !res.PushSkipped {
+			t.Errorf("expected PushSkipped to be true")
+		}
+		if res.PushReason != "dry-run mode" {
+			t.Errorf("expected PushReason 'dry-run mode', got %q", res.PushReason)
+		}
+	})
+
+	// Subtest 3: NoPush flag
+	t.Run("NoPush", func(t *testing.T) {
+		repoDir, _ := setupCommitRepoWithRemote(t, "develop")
+		_ = os.WriteFile(filepath.Join(repoDir, "f.txt"), []byte("no push content"), 0644)
+
+		res, err := ExecuteCommit(ctx, CommitOptions{
+			RepoDir:       repoDir,
+			Message:       "feat: commit with no-push",
+			StageAll:      true,
+			NoPush:        true,
+			UseLocalModel: false,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Pushed {
+			t.Errorf("expected Pushed to be false")
+		}
+		if !res.PushSkipped {
+			t.Errorf("expected PushSkipped to be true")
+		}
+		if res.PushReason != "--no-push flag specified" {
+			t.Errorf("expected PushReason '--no-push flag specified', got %q", res.PushReason)
+		}
+		if res.PushError != nil {
+			t.Errorf("expected PushError to be nil")
+		}
+		out, _ := exec.Command("git", "-C", repoDir, "rev-parse", "origin/develop").CombinedOutput()
+		if !strings.Contains(string(out), "unknown revision") && !strings.Contains(string(out), "fatal:") {
+			t.Errorf("remote tracking branch should not exist yet")
+		}
+	})
+
+	// Subtest 4: DENDRITE_COMMIT_PUSH=false
+	t.Run("EnvDisabled", func(t *testing.T) {
+		t.Setenv("DENDRITE_COMMIT_PUSH", "false")
+		repoDir, _ := setupCommitRepoWithRemote(t, "develop")
+		_ = os.WriteFile(filepath.Join(repoDir, "f.txt"), []byte("env disabled content"), 0644)
+
+		res, err := ExecuteCommit(ctx, CommitOptions{
+			RepoDir:       repoDir,
+			Message:       "feat: commit with env push disabled",
+			StageAll:      true,
+			UseLocalModel: false,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Pushed {
+			t.Errorf("expected Pushed to be false")
+		}
+		if !res.PushSkipped {
+			t.Errorf("expected PushSkipped to be true")
+		}
+		if res.PushReason != "DENDRITE_COMMIT_PUSH=false" {
+			t.Errorf("expected PushReason 'DENDRITE_COMMIT_PUSH=false', got %q", res.PushReason)
+		}
+		if res.PushError != nil {
+			t.Errorf("expected PushError to be nil")
+		}
+	})
+}
+
+func TestExecuteCommit_Push_AC3_RejectedPushAfterAmend(t *testing.T) {
+	ctx := context.Background()
+	repoDir, _ := setupCommitRepoWithRemote(t, "develop")
+
+	f := filepath.Join(repoDir, "f.txt")
+	_ = os.WriteFile(f, []byte("initial"), 0644)
+
+	res1, err := ExecuteCommit(ctx, CommitOptions{
+		RepoDir:       repoDir,
+		Message:       "feat: initial push",
+		StageAll:      true,
+		UseLocalModel: false,
+	})
+	if err != nil || !res1.Pushed {
+		t.Fatalf("initial commit and push failed: %v", err)
+	}
+
+	// Amend the commit locally and attempt commit again without force
+	_ = os.WriteFile(f, []byte("amended content"), 0644)
+	resAmend, err := ExecuteCommit(ctx, CommitOptions{
+		RepoDir:       repoDir,
+		Message:       "feat: amended push without force",
+		StageAll:      true,
+		Amend:         true,
+		UseLocalModel: false,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteCommit should return nil err even on push rejection, got: %v", err)
+	}
+
+	// Local commit kept
+	if resAmend.CommitSHA == "" || resAmend.CommitSHA == "unknown-sha" {
+		t.Errorf("expected valid local commit sha kept, got %s", resAmend.CommitSHA)
+	}
+	if resAmend.CommitSHA == res1.CommitSHA {
+		t.Errorf("expected new commit sha after amend")
+	}
+
+	// Push rejected without force
+	if resAmend.Pushed {
+		t.Errorf("expected Pushed to be false on rejected non-fast-forward push")
+	}
+	if resAmend.PushError == nil {
+		t.Fatalf("expected PushError to be set on rejected push")
+	}
+	errStr := resAmend.PushError.Error()
+	if !strings.Contains(errStr, "rejected") && !strings.Contains(errStr, "non-fast-forward") && !strings.Contains(errStr, "failed") {
+		t.Errorf("unexpected PushError message: %s", errStr)
+	}
+}
+
+func TestExecuteCommit_Push_AC4_RefuseMainAndMaster(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("RefuseMain", func(t *testing.T) {
+		repoDir, _ := setupCommitRepoWithRemote(t, "main")
+		_ = os.WriteFile(filepath.Join(repoDir, "f.txt"), []byte("main content"), 0644)
+
+		res, err := ExecuteCommit(ctx, CommitOptions{
+			RepoDir:       repoDir,
+			Message:       "feat: commit on main",
+			StageAll:      true,
+			UseLocalModel: false,
+		})
+		if err != nil {
+			t.Fatalf("ExecuteCommit should succeed locally: %v", err)
+		}
+		if res.Pushed {
+			t.Errorf("expected Pushed to be false on main")
+		}
+		if res.PushError == nil {
+			t.Fatalf("expected PushError when pushing main is refused")
+		}
+		if !strings.Contains(res.PushError.Error(), "pushing main directly is refused") {
+			t.Errorf("expected refusal error for main, got: %v", res.PushError)
+		}
+		if !res.PushSkipped {
+			t.Errorf("expected PushSkipped to be true")
+		}
+	})
+
+	t.Run("RefuseMaster", func(t *testing.T) {
+		repoDir, _ := setupCommitRepoWithRemote(t, "master")
+		_ = os.WriteFile(filepath.Join(repoDir, "f.txt"), []byte("master content"), 0644)
+
+		res, err := ExecuteCommit(ctx, CommitOptions{
+			RepoDir:       repoDir,
+			Message:       "feat: commit on master",
+			StageAll:      true,
+			UseLocalModel: false,
+		})
+		if err != nil {
+			t.Fatalf("ExecuteCommit should succeed locally: %v", err)
+		}
+		if res.Pushed {
+			t.Errorf("expected Pushed to be false on master")
+		}
+		if res.PushError == nil {
+			t.Fatalf("expected PushError when pushing master is refused")
+		}
+		if !strings.Contains(res.PushError.Error(), "pushing master directly is refused") {
+			t.Errorf("expected refusal error for master, got: %v", res.PushError)
+		}
+		if !res.PushSkipped {
+			t.Errorf("expected PushSkipped to be true")
+		}
+	})
+}
+
+func TestPushAfterCommit_RemoteCommandError(t *testing.T) {
+	ctx := context.Background()
+	res := &CommitResult{}
+	opts := CommitOptions{RepoDir: t.TempDir()}
+
+	runGit := func(args ...string) (string, error) {
+		cmd := exec.CommandContext(ctx, "git", args...)
+		cmd.Dir = opts.RepoDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("git %s failed: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		}
+		return strings.TrimSpace(string(out)), nil
+	}
+
+	err := pushAfterCommit(ctx, opts, res, runGit)
+	if err != nil {
+		t.Fatalf("expected nil err on remote error fallback: %v", err)
+	}
+	if !res.PushSkipped || res.PushReason != "no remote configured" {
+		t.Errorf("expected push skipped with 'no remote configured', got %+v", res)
 	}
 }
