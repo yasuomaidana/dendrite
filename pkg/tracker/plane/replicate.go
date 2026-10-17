@@ -3,23 +3,26 @@ package plane
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/quality"
+	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/dag"
 )
 
 var (
-	devTicketLineRegex        = regexp.MustCompile(`^-\s+\[([ xX])\]\s+\*\*([A-Za-z0-9-]+)\*\*:\s+(.*?)(?:\s+\(` + "`" + `([^` + "`" + `]+)` + "`" + `\))?(?:\s+\*\(([A-Z_ ]+)\)\*)?$`)
-	milestoneHdrRegex         = regexp.MustCompile(`^###\s+(Milestone\s+\d+:.*?)(?:\s+\(([^)]+)\))?$`)
-	ticketIdPrefixRegex       = regexp.MustCompile(`\[?(DEN-\d+)\]?`)
-	complexityTableRowRegex   = regexp.MustCompile(`\|\s*(?:\*\*\d+\*\*|\d+)\s*\|\s*\*?\*?([A-Za-z0-9-]+)\*?\*?\s*\|\s*([^|]+)\|\s*([^|]+)\|\s*(\d+)\s*SP\s*\|\s*([0-9.]+)\s*/\s*10`)
+	devTicketLineRegex      = regexp.MustCompile(`^-\s+\[([ xX])\]\s+\*\*([A-Za-z0-9-]+)\*\*:\s+(.*?)(?:\s+\(([^)]+)\))?(?:\s+(?:\[|\*\()(?:State:\s*)?([A-Za-z0-9_ ]+?)(?:[|,]?\s*Priority:\s*([A-Za-z0-9_ ]+?))?(?:\]|\)\*))?$`)
+	milestoneHdrRegex       = regexp.MustCompile(`^###\s+(Milestone\s+\d+:.*?)(?:\s+\(([^)]+)\))?$`)
+	ticketIdPrefixRegex     = regexp.MustCompile(`\[?([A-Za-z0-9]+-\d+)\]?`)
+	complexityTableRowRegex = regexp.MustCompile(`\|\s*(?:\*\*\d+\*\*|\d+)\s*\|\s*\*?\*?([A-Za-z0-9-]+)\*?\*?\s*\|\s*([^|]+)\|\s*([^|]+)\|\s*(\d+)\s*SP\s*\|\s*([0-9.]+)\s*/\s*10`)
 )
 
 // ParsedDevTicket encapsulates all extracted metadata for a ticket from DEV_STATUS.md.
@@ -32,6 +35,9 @@ type ticketItem struct {
 	stateName  string
 	sequenceID int
 	targetPkg  string
+	priority   string
+	milestone  string
+	project    string
 }
 
 type ParsedDevTicket struct {
@@ -54,6 +60,7 @@ type DevStatusData struct {
 	ActiveMilestone string
 	CurrentFocus    string
 	LastUpdated     string
+	Summary         string
 	Tickets         []ParsedDevTicket
 	Milestones      []string
 }
@@ -90,6 +97,10 @@ func ParseDevStatus(content string) (*DevStatusData, error) {
 			data.LastUpdated = strings.TrimSpace(strings.TrimPrefix(line, "- **Last Updated**:"))
 			continue
 		}
+		if strings.HasPrefix(line, "- **Summary**:") {
+			data.Summary = strings.TrimSpace(strings.TrimPrefix(line, "- **Summary**:"))
+			continue
+		}
 
 		if tblMatches := complexityTableRowRegex.FindStringSubmatch(line); len(tblMatches) > 5 {
 			tID := tblMatches[1]
@@ -118,19 +129,25 @@ func ParseDevStatus(content string) (*DevStatusData, error) {
 			id := tMatches[2]
 			title := tMatches[3]
 			pkg := ""
-			if len(tMatches) > 4 {
-				pkg = tMatches[4]
+			if len(tMatches) > 4 && tMatches[4] != "" {
+				pkg = strings.Trim(strings.TrimSpace(tMatches[4]), "`")
 			}
 			customStatus := ""
-			if len(tMatches) > 5 {
-				customStatus = tMatches[5]
+			if len(tMatches) > 5 && tMatches[5] != "" {
+				customStatus = strings.TrimSpace(tMatches[5])
 			}
 
+			// "[State: To Verify, Priority: High]" -> "To Verify"
+			stateToken, _, _ := strings.Cut(customStatus, ",")
+			stateToken = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(stateToken), "State:"))
 			st := tracker.StatusTodo
+			if parsed, err := tracker.ParseStatus(stateToken); err == nil {
+				st = parsed
+			} else if strings.Contains(data.CurrentFocus, id) {
+				st = tracker.StatusInProgress
+			}
 			if isDone {
 				st = tracker.StatusDone
-			} else if customStatus == "IN PROGRESS" || strings.Contains(data.CurrentFocus, id) {
-				st = tracker.StatusInProgress
 			}
 
 			num := extractTicketNumber(id)
@@ -388,8 +405,13 @@ func PushStatusToPlane(ctx context.Context, client *Client, mdContent string) (*
 		switch t.Status {
 		case tracker.StatusDone:
 			report.CompletedTickets++
+			report.DoneTickets++
+		case tracker.StatusInReview:
+			report.ToVerifyTickets++
 		case tracker.StatusInProgress:
 			report.InProgressTickets++
+		case tracker.StatusBacklog:
+			report.BacklogTickets++
 		default:
 			report.TodoTickets++
 		}
@@ -514,11 +536,235 @@ func PushStatusToPlane(ctx context.Context, client *Client, mdContent string) (*
 	return report, nil
 }
 
-// ReplicateStatusFromPlane recreates DEV_STATUS.md directly from Plane service state.
-func ReplicateStatusFromPlane(ctx context.Context, client *Client) (string, *StatusReplicationReport, error) {
+// ListPlaneIssuesForProject queries all issues for a specific project across all pages.
+func (c *Client) ListPlaneIssuesForProject(ctx context.Context, projectID string) ([]PlaneIssue, error) {
+	if projectID == "" {
+		projectID = c.projectID
+	}
+	var allIssues []PlaneIssue
+	cursor := ""
+
+	for {
+		endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/", c.workspaceSlug, projectID)
+		if cursor != "" {
+			endpoint = fmt.Sprintf("%s?cursor=%s", endpoint, cursor)
+		}
+		req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			resp.Body.Close()
+			return nil, ErrUnauthorized
+		}
+		if resp.StatusCode >= 400 {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to list plane issues for project %s: status %d", projectID, resp.StatusCode)
+		}
+
+		bodyBytes, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+
+		var paginated struct {
+			NextPageResults bool         `json:"next_page_results"`
+			NextCursor      string       `json:"next_cursor"`
+			Results         []PlaneIssue `json:"results"`
+		}
+		if err := json.Unmarshal(bodyBytes, &paginated); err == nil && len(paginated.Results) > 0 {
+			allIssues = append(allIssues, paginated.Results...)
+			if !paginated.NextPageResults || paginated.NextCursor == "" {
+				break
+			}
+			cursor = paginated.NextCursor
+			continue
+		}
+
+		var directList []PlaneIssue
+		if err := json.Unmarshal(bodyBytes, &directList); err == nil {
+			allIssues = append(allIssues, directList...)
+		}
+		break
+	}
+
+	return allIssues, nil
+}
+
+// ListStatesForProject queries all states configured for a specific project.
+func (c *Client) ListStatesForProject(ctx context.Context, projectID string) ([]PlaneState, error) {
+	if projectID == "" {
+		projectID = c.projectID
+	}
+	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/states/", c.workspaceSlug, projectID)
+	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, ErrUnauthorized
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("failed to list plane states for project %s: status %d", projectID, resp.StatusCode)
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var paginated struct {
+		Results []PlaneState `json:"results"`
+	}
+	if err := json.Unmarshal(bodyBytes, &paginated); err == nil && len(paginated.Results) > 0 {
+		return paginated.Results, nil
+	}
+
+	var directList []PlaneState
+	if err := json.Unmarshal(bodyBytes, &directList); err == nil {
+		return directList, nil
+	}
+
+	return paginated.Results, nil
+}
+
+func resolvePlaneState(group, name string) tracker.Status {
+	g := strings.ToLower(group)
+	n := strings.ToLower(name)
+	switch {
+	case g == "completed" || strings.Contains(n, "done"):
+		return tracker.StatusDone
+	case strings.Contains(n, "review") || strings.Contains(n, "verif"):
+		return tracker.StatusInReview
+	case g == "started" || strings.Contains(n, "progress") || strings.Contains(n, "active"):
+		return tracker.StatusInProgress
+	case strings.Contains(n, "backlog") || g == "backlog":
+		return tracker.StatusBacklog
+	case g == "unstarted" || strings.Contains(n, "todo") || strings.Contains(n, "to do"):
+		return tracker.StatusTodo
+	default:
+		return tracker.StatusBacklog
+	}
+}
+
+func formatStatusName(st tracker.Status) string {
+	switch st {
+	case tracker.StatusDone:
+		return "Done"
+	case tracker.StatusInReview:
+		return "To Verify"
+	case tracker.StatusInProgress:
+		return "In Progress"
+	case tracker.StatusTodo:
+		return "To Do"
+	case tracker.StatusBacklog:
+		return "Backlog"
+	default:
+		return "Backlog"
+	}
+}
+
+func normalizePriority(prio string) string {
+	p := strings.ToLower(strings.TrimSpace(prio))
+	switch p {
+	case "urgent":
+		return "Urgent"
+	case "high":
+		return "High"
+	case "medium":
+		return "Medium"
+	case "low":
+		return "Low"
+	default:
+		return "Medium"
+	}
+}
+
+var knownMilestoneDescriptions = map[int]string{
+	1:  "Milestone 1: Core Foundation, Developer Tools & Ollama Engine",
+	11: "Milestone 11: Multi-Agent Topology & Distributed Mesh Routing (FEAT-015)",
+	13: "Milestone 13: Topology Placement Advisor & Cloud-Burst Engine (FEAT-017)",
+	14: "Milestone 14: Real-Time Telemetry Exporter & Distributed Trace Dashboard (FEAT-018)",
+	15: "Milestone 15: Elastic Node Discovery & Dynamic Mesh Interconnect (FEAT-019)",
+	16: "Milestone 16: Pluggable Multi-Provider Inference Engines (FEAT-020)",
+	17: "Milestone 17: Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)",
+	18: "Milestone 18: Agent Search, Capability Discovery & Semantic Routing Engine (FEAT-022)",
+	19: "Milestone 19: Developer Test Automation, Self-Healing Harness & UI Integration Suite (FEAT-023)",
+	20: "Milestone 20: Open-Source REA Showcase Pipeline & Cleanroom Parity Verification Suite (FEAT-024)",
+	21: "Milestone 21: Model Context Protocol (MCP) Server & Tool Registry Bridge (FEAT-025)",
+	22: "Milestone 22: Distributed Codebase Ecosystem, Modular REA & Cross-Project Interoperability Coordinator (FEAT-026)",
+}
+
+var defaultTicketMilestones = map[string]string{
+	"DEN-001": "Milestone 1: Core Foundation, Developer Tools & Ollama Engine",
+	"DEN-030": "Milestone 11: Multi-Agent Topology & Distributed Mesh Routing (FEAT-015)",
+	"DEN-032": "Milestone 13: Topology Placement Advisor & Cloud-Burst Engine (FEAT-017)",
+	"DEN-033": "Milestone 14: Real-Time Telemetry Exporter & Distributed Trace Dashboard (FEAT-018)",
+	"DEN-034": "Milestone 15: Elastic Node Discovery & Dynamic Mesh Interconnect (FEAT-019)",
+	"DEN-035": "Milestone 16: Pluggable Multi-Provider Inference Engines (FEAT-020)",
+	"DEN-036": "Milestone 17: Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)",
+	"DEN-037": "Milestone 18: Agent Search, Capability Discovery & Semantic Routing Engine (FEAT-022)",
+	"DEN-038": "Milestone 19: Developer Test Automation, Self-Healing Harness & UI Integration Suite (FEAT-023)",
+	"DEN-039": "Milestone 20: Open-Source REA Showcase Pipeline & Cleanroom Parity Verification Suite (FEAT-024)",
+	"DEN-040": "Milestone 21: Model Context Protocol (MCP) Server & Tool Registry Bridge (FEAT-025)",
+	"DEN-041": "Milestone 22: Distributed Codebase Ecosystem, Modular REA & Cross-Project Interoperability Coordinator (FEAT-026)",
+	"DEN-042": "Milestone 22: Distributed Codebase Ecosystem, Modular REA & Cross-Project Interoperability Coordinator (FEAT-026)",
+	"DEN-043": "Milestone 22: Distributed Codebase Ecosystem, Modular REA & Cross-Project Interoperability Coordinator (FEAT-026)",
+	"DEN-044": "Milestone 22: Distributed Codebase Ecosystem, Modular REA & Cross-Project Interoperability Coordinator (FEAT-026)",
+	"DEN-045": "Milestone 22: Distributed Codebase Ecosystem, Modular REA & Cross-Project Interoperability Coordinator (FEAT-026)",
+	"DEN-046": "Milestone 22: Distributed Codebase Ecosystem, Modular REA & Cross-Project Interoperability Coordinator (FEAT-026)",
+}
+
+func normalizeMilestoneName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "General"
+	}
+	num := extractMilestoneNumber(name)
+	if full, ok := knownMilestoneDescriptions[num]; ok {
+		if len(name) < len(full) && !strings.Contains(name, ":") {
+			return full
+		}
+	}
+	return name
+}
+
+func extractMilestone(content string) string {
+	mRegex := regexp.MustCompile(`(?:<strong>)?Milestone:?(?:</strong>)?\s*` + "`?" + `([^` + "`" + `\n<]+)`)
+	m := mRegex.FindStringSubmatch(content)
+	if len(m) > 1 {
+		return strings.TrimSpace(m[1])
+	}
+	return ""
+}
+
+func extractProjectIdentifier(ticketID string) string {
+	parts := strings.Split(ticketID, "-")
+	if len(parts) >= 2 {
+		return strings.ToUpper(parts[0])
+	}
+	return "DEN"
+}
+
+// PullStatusFromPlane recreates DEV_STATUS.md directly from Plane service state.
+func PullStatusFromPlane(ctx context.Context, client *Client) (string, *StatusReplicationReport, error) {
 	start := time.Now()
 
-	issues, err := client.ListPlaneIssues(ctx)
+	mainIssues, err := client.ListPlaneIssues(ctx)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to query issues from plane: %w", err)
 	}
@@ -530,32 +776,93 @@ func ReplicateStatusFromPlane(ctx context.Context, client *Client) (string, *Sta
 
 	stateNameLookup := make(map[string]tracker.Status)
 	for _, s := range states {
-		stateNameLookup[s.ID] = mapPlaneState(s.Group, s.Name)
+		stateNameLookup[s.ID] = resolvePlaneState(s.Group, s.Name)
 	}
 
-	var ticketItems []ticketItem
+	moduleNameLookup := make(map[string]string)
+	moduleIssuesMap := make(map[string]string)
+	for _, mod := range modules {
+		moduleNameLookup[mod.ID] = mod.Name
+		mIssues, err := client.ListModuleIssues(ctx, mod.ID)
+		if err == nil {
+			for _, mi := range mIssues {
+				moduleIssuesMap[mi.ID] = mod.Name
+			}
+		}
+	}
+
+	// Discover any other projects in Plane workspace (e.g. DCORE, DRAG, DGIT, DMCP)
+	allProjects, projErr := client.ListProjects(ctx)
+	otherProjectsMap := make(map[string]PlaneProject)
+	var otherProjectNames []string
+	if projErr == nil {
+		for _, p := range allProjects {
+			ident := strings.ToUpper(strings.TrimSpace(p.Identifier))
+			if p.ID != client.projectID && ident != "DEN" && ident != "" {
+				otherProjectsMap[ident] = p
+				otherProjectNames = append(otherProjectNames, ident)
+			}
+		}
+		sort.Strings(otherProjectNames)
+	}
+
+	type projectIssuePair struct {
+		projIdent string
+		issue     PlaneIssue
+	}
+	var otherProjectIssues []projectIssuePair
+
+	for _, ident := range otherProjectNames {
+		p := otherProjectsMap[ident]
+		pIssues, err := client.ListPlaneIssuesForProject(ctx, p.ID)
+		if err == nil {
+			for _, pi := range pIssues {
+				otherProjectIssues = append(otherProjectIssues, projectIssuePair{
+					projIdent: ident,
+					issue:     pi,
+				})
+			}
+		}
+	}
+
+	var allTicketItems []ticketItem
 	report := &StatusReplicationReport{
-		TotalTickets: len(issues),
-		ModulesCount: len(modules),
+		ModulesCount:  len(modules),
+		OtherProjects: otherProjectNames,
 	}
+	seenIDs := make(map[string]bool)
 
-	for _, iss := range issues {
+	processIssue := func(iss PlaneIssue, defaultProj string) {
+		if iss.ID != "" && seenIDs[iss.ID] {
+			return
+		}
+		if iss.ID != "" {
+			seenIDs[iss.ID] = true
+		}
+
 		st := stateNameLookup[iss.State]
 		if st == "" {
-			st = mapPlaneState(iss.StateDetail.Group, iss.StateDetail.Name)
+			st = resolvePlaneState(iss.StateDetail.Group, iss.StateDetail.Name)
 		}
 
 		switch st {
 		case tracker.StatusDone:
 			report.CompletedTickets++
+			report.DoneTickets++
+		case tracker.StatusInReview:
+			report.ToVerifyTickets++
 		case tracker.StatusInProgress:
 			report.InProgressTickets++
-		default:
+		case tracker.StatusTodo:
 			report.TodoTickets++
+		case tracker.StatusBacklog:
+			report.BacklogTickets++
+		default:
+			report.BacklogTickets++
 		}
 
 		rawName := iss.Name
-		id := fmt.Sprintf("DEN-%03d", iss.SequenceID)
+		id := fmt.Sprintf("%s-%03d", defaultProj, iss.SequenceID)
 		title := rawName
 		m := ticketIdPrefixRegex.FindStringSubmatch(rawName)
 		if len(m) > 1 {
@@ -565,9 +872,31 @@ func ReplicateStatusFromPlane(ctx context.Context, client *Client) (string, *Sta
 			title = strings.TrimSpace(title)
 		}
 
-		targetPkg := extractTargetPackage(iss.DescriptionHTML + " " + iss.DescriptionStripped)
+		proj := extractProjectIdentifier(id)
+		if proj == "" || (proj == "DEN" && defaultProj != "DEN" && defaultProj != "") {
+			proj = defaultProj
+		}
 
-		ticketItems = append(ticketItems, ticketItem{
+		targetPkg := extractTargetPackage(iss.DescriptionHTML + " " + iss.DescriptionStripped)
+		priority := normalizePriority(iss.Priority)
+
+		milestone := ""
+		if len(iss.ModuleIDs) > 0 && moduleNameLookup[iss.ModuleIDs[0]] != "" {
+			milestone = moduleNameLookup[iss.ModuleIDs[0]]
+		} else if moduleIssuesMap[iss.ID] != "" {
+			milestone = moduleIssuesMap[iss.ID]
+		} else if em := extractMilestone(iss.DescriptionHTML + " " + iss.DescriptionStripped); em != "" {
+			milestone = em
+		} else if dm, ok := defaultTicketMilestones[id]; ok {
+			milestone = dm
+		}
+
+		if milestone == "" && proj == "DEN" {
+			milestone = "General"
+		}
+		milestone = normalizeMilestoneName(milestone)
+
+		allTicketItems = append(allTicketItems, ticketItem{
 			id:         id,
 			num:        extractTicketNumber(id),
 			title:      title,
@@ -575,26 +904,34 @@ func ReplicateStatusFromPlane(ctx context.Context, client *Client) (string, *Sta
 			desc:       iss.DescriptionStripped,
 			sequenceID: iss.SequenceID,
 			targetPkg:  targetPkg,
+			priority:   priority,
+			milestone:  milestone,
+			project:    proj,
 		})
 	}
 
-	sort.Slice(ticketItems, func(i, j int) bool {
-		return ticketItems[i].num < ticketItems[j].num
-	})
+	for _, iss := range mainIssues {
+		processIssue(iss, "DEN")
+	}
 
+	for _, pair := range otherProjectIssues {
+		processIssue(pair.issue, pair.projIdent)
+	}
+
+	report.TotalTickets = len(allTicketItems)
 	if report.TotalTickets > 0 {
 		report.OverallProgress = float64(report.CompletedTickets) / float64(report.TotalTickets) * 100.0
 	}
 
 	var currentFocus string
-	for _, item := range ticketItems {
+	for _, item := range allTicketItems {
 		if item.status == tracker.StatusInProgress {
 			currentFocus = fmt.Sprintf("`%s: %s`", item.id, item.title)
 			break
 		}
 	}
 	if currentFocus == "" {
-		for _, item := range ticketItems {
+		for _, item := range allTicketItems {
 			if item.status == tracker.StatusTodo {
 				currentFocus = fmt.Sprintf("`%s: %s`", item.id, item.title)
 				break
@@ -604,10 +941,15 @@ func ReplicateStatusFromPlane(ctx context.Context, client *Client) (string, *Sta
 	report.CurrentFocus = currentFocus
 	report.ActiveMilestone = "Milestone 17 — Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)"
 
-	rendered := renderDevStatusMarkdown(ticketItems, report)
+	rendered := renderDevStatusMarkdown(allTicketItems, report)
 	report.Duration = time.Since(start)
 
 	return rendered, report, nil
+}
+
+// ReplicateStatusFromPlane recreates DEV_STATUS.md directly from Plane service state.
+func ReplicateStatusFromPlane(ctx context.Context, client *Client) (string, *StatusReplicationReport, error) {
+	return PullStatusFromPlane(ctx, client)
 }
 
 func renderDevStatusMarkdown(items []ticketItem, report *StatusReplicationReport) string {
@@ -622,6 +964,8 @@ func renderDevStatusMarkdown(items []ticketItem, report *StatusReplicationReport
 	sb.WriteString(fmt.Sprintf("- **Active Milestone**: %s\n", report.ActiveMilestone))
 	sb.WriteString(fmt.Sprintf("- **Current Focus**: %s\n", report.CurrentFocus))
 	sb.WriteString(fmt.Sprintf("- **Last Updated**: %s\n", time.Now().Format("2006-01-02")))
+	sb.WriteString(fmt.Sprintf("- **Summary**: Backlog: %d | To Do: %d | In Progress: %d | To Verify: %d | Done: %d (Total: %d)\n",
+		report.BacklogTickets, report.TodoTickets, report.InProgressTickets, report.ToVerifyTickets, report.DoneTickets, report.TotalTickets))
 	sb.WriteString(fmt.Sprintf("- **Overall Progress**: %d / %d Tickets Completed (%.1f%%)\n\n",
 		report.CompletedTickets, report.TotalTickets, report.OverallProgress))
 	sb.WriteString("---\n\n")
@@ -637,100 +981,154 @@ func renderDevStatusMarkdown(items []ticketItem, report *StatusReplicationReport
 	sb.WriteString("|      **4**      | **DEN-034** | Milestone 15 | FEAT-019   |     8 SP     |     6.0 / 10     | `infra/modules/azure-burst`, `pkg/orchestrator/azure`        |   **COMPLETED [x]**   |\n")
 	sb.WriteString("|      **5**      | **DEN-035** | Milestone 16 | FEAT-020   |     8 SP     |     7.0 / 10     | `pkg/inference`, `pkg/gateway`                               |   **COMPLETED [x]**   |\n")
 
+	itemByID := make(map[string]ticketItem)
 	for _, it := range items {
-		if it.id == "DEN-036" {
-			statusCol := "**CURRENT FOCUS [ ]**"
-			if it.status == tracker.StatusDone {
-				statusCol = "**COMPLETED [x]**"
-			}
-			sb.WriteString(fmt.Sprintf("|      **6**      | **DEN-036** | Milestone 17 | FEAT-021   |     8 SP     |     7.5 / 10     | `pkg/perf`, `cmd/dendrite`, `tests/perf`                     | %s |\n", statusCol))
-		} else if it.id == "DEN-039" {
-			statusCol := "**QUEUED [ ]**"
-			if it.status == tracker.StatusDone {
-				statusCol = "**COMPLETED [x]**"
-			}
-			sb.WriteString(fmt.Sprintf("|      **7**      | **DEN-039** | Milestone 20 | FEAT-024   |     8 SP     |     8.0 / 10     | `pkg/rea`, `pkg/ai/import`, `tests/showcase`, `cmd/dendrite` |    %s     |\n", statusCol))
-		} else if it.id == "DEN-037" {
-			statusCol := "**QUEUED [ ]**"
-			if it.status == tracker.StatusDone {
-				statusCol = "**COMPLETED [x]**"
-			}
-			sb.WriteString(fmt.Sprintf("|      **8**      | **DEN-037** | Milestone 18 | FEAT-022   |    13 SP     |     8.5 / 10     | `pkg/agentsearch`, `cmd/dendrite`                            |    %s     |\n", statusCol))
-		} else if it.id == "DEN-038" {
-			statusCol := "**QUEUED [ ]**"
-			if it.status == tracker.StatusDone {
-				statusCol = "**COMPLETED [x]**"
-			}
-			sb.WriteString(fmt.Sprintf("|      **9**      | **DEN-038** | Milestone 19 | FEAT-023   |    13 SP     |     9.0 / 10     | `pkg/testgen`, `pkg/uitest`, `cmd/dendrite`                  |    %s     |\n", statusCol))
+		itemByID[it.id] = it
+	}
+
+	if it, ok := itemByID["DEN-036"]; ok {
+		statusCol := "**CURRENT FOCUS [ ]**"
+		if it.status == tracker.StatusDone {
+			statusCol = "**COMPLETED [x]**"
+		}
+		sb.WriteString(fmt.Sprintf("|      **6**      | **DEN-036** | Milestone 17 | FEAT-021   |     8 SP     |     7.5 / 10     | `pkg/perf`, `cmd/dendrite`, `tests/perf`                     | %s |\n", statusCol))
+	}
+	if it, ok := itemByID["DEN-037"]; ok {
+		statusCol := "**QUEUED [ ]**"
+		if it.status == tracker.StatusDone {
+			statusCol = "**COMPLETED [x]**"
+		}
+		sb.WriteString(fmt.Sprintf("|      **8**      | **DEN-037** | Milestone 18 | FEAT-022   |    13 SP     |     8.5 / 10     | `pkg/agentsearch`, `cmd/dendrite`                            |    %s     |\n", statusCol))
+	}
+	if it, ok := itemByID["DEN-038"]; ok {
+		statusCol := "**QUEUED [ ]**"
+		if it.status == tracker.StatusDone {
+			statusCol = "**COMPLETED [x]**"
+		}
+		sb.WriteString(fmt.Sprintf("|      **9**      | **DEN-038** | Milestone 19 | FEAT-023   |    13 SP     |     9.0 / 10     | `pkg/testgen`, `pkg/uitest`, `cmd/dendrite`                  |    %s     |\n", statusCol))
+	}
+	if it, ok := itemByID["DEN-039"]; ok {
+		statusCol := "**QUEUED [ ]**"
+		if it.status == tracker.StatusDone {
+			statusCol = "**COMPLETED [x]**"
+		}
+		sb.WriteString(fmt.Sprintf("|      **7**      | **DEN-039** | Milestone 20 | FEAT-024   |     8 SP     |     8.0 / 10     | `pkg/rea`, `pkg/ai/import`, `tests/showcase`, `cmd/dendrite` |    %s     |\n", statusCol))
+	}
+
+	sb.WriteString("\n---\n\n")
+	sb.WriteString("## Milestone Execution Pipeline\n\n")
+
+	mainItems := make([]ticketItem, 0)
+	otherProjectItems := make(map[string][]ticketItem)
+
+	if report != nil && len(report.OtherProjects) > 0 {
+		for _, op := range report.OtherProjects {
+			otherProjectItems[op] = make([]ticketItem, 0)
 		}
 	}
-	sb.WriteString("\n---\n\n")
 
-	sb.WriteString("## Milestone Execution Pipeline\n\n")
-	itemLookup := make(map[string]struct {
-		id         string
-		num        int
-		title      string
-		status     tracker.Status
-		desc       string
-		stateName  string
-		sequenceID int
-		targetPkg  string
-	})
 	for _, it := range items {
-		itemLookup[it.id] = it
+		proj := strings.ToUpper(strings.TrimSpace(it.project))
+		if proj == "" || proj == "DEN" {
+			mainItems = append(mainItems, it)
+		} else {
+			otherProjectItems[proj] = append(otherProjectItems[proj], it)
+		}
 	}
 
-	milestoneDefinitions := []struct {
-		milestone string
-		ticketIDs []string
-	}{
-		{
-			milestone: "Milestone 16: Pluggable Multi-Provider Inference Engines (FEAT-020)",
-			ticketIDs: []string{"DEN-035"},
-		},
-		{
-			milestone: "Milestone 17: Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)",
-			ticketIDs: []string{"DEN-036"},
-		},
-		{
-			milestone: "Milestone 18: Agent Search, Capability Discovery & Semantic Routing Engine (FEAT-022)",
-			ticketIDs: []string{"DEN-037"},
-		},
-		{
-			milestone: "Milestone 19: Developer Test Automation, Self-Healing Harness & UI Integration Suite (FEAT-023)",
-			ticketIDs: []string{"DEN-038"},
-		},
-		{
-			milestone: "Milestone 20: Open-Source REA Showcase Pipeline & Cleanroom Parity Verification Suite (FEAT-024)",
-			ticketIDs: []string{"DEN-039"},
-		},
-		{
-			milestone: "Milestone 21: Model Context Protocol (MCP) Server & Tool Registry Bridge (FEAT-025)",
-			ticketIDs: []string{"DEN-040"},
-		},
-		{
-			milestone: "Milestone 22: Distributed Codebase Ecosystem, Modular REA & Cross-Project Interoperability Coordinator (FEAT-026)",
-			ticketIDs: []string{"DEN-041", "DEN-042", "DEN-043", "DEN-044", "DEN-045", "DEN-046"},
-		},
+	milestoneMap := make(map[string][]ticketItem)
+	for _, it := range mainItems {
+		ms := strings.TrimSpace(it.milestone)
+		if ms == "" {
+			ms = "General"
+		}
+		milestoneMap[ms] = append(milestoneMap[ms], it)
 	}
 
-	for _, m := range milestoneDefinitions {
-		sb.WriteString(fmt.Sprintf("### %s\n\n", m.milestone))
-		for _, tID := range m.ticketIDs {
-			if it, ok := itemLookup[tID]; ok {
-				check := " "
-				if it.status == tracker.StatusDone {
-					check = "x"
-				}
-				suffix := ""
-				if it.targetPkg != "" {
-					suffix = fmt.Sprintf(" (`%s`)", it.targetPkg)
-				}
-				sb.WriteString(fmt.Sprintf("- [%s] **%s**: %s%s\n", check, it.id, it.title, suffix))
+	var milestoneKeys []string
+	for k := range milestoneMap {
+		milestoneKeys = append(milestoneKeys, k)
+	}
+
+	sort.Slice(milestoneKeys, func(i, j int) bool {
+		numI := extractMilestoneNumber(milestoneKeys[i])
+		numJ := extractMilestoneNumber(milestoneKeys[j])
+		if numI != numJ {
+			return numI < numJ
+		}
+		return milestoneKeys[i] < milestoneKeys[j]
+	})
+
+	for _, mKey := range milestoneKeys {
+		mTickets := milestoneMap[mKey]
+		sort.Slice(mTickets, func(i, j int) bool {
+			if mTickets[i].num != mTickets[j].num {
+				return mTickets[i].num < mTickets[j].num
 			}
+			return mTickets[i].id < mTickets[j].id
+		})
+
+		sb.WriteString(fmt.Sprintf("### %s\n\n", mKey))
+		for _, it := range mTickets {
+			check := " "
+			if it.status == tracker.StatusDone {
+				check = "x"
+			}
+			suffix := ""
+			if it.targetPkg != "" {
+				suffix = fmt.Sprintf(" (`%s`)", it.targetPkg)
+			}
+			prio := it.priority
+			if prio == "" {
+				prio = "Medium"
+			}
+			sb.WriteString(fmt.Sprintf("- [%s] **%s**: %s%s [State: %s, Priority: %s]\n",
+				check, it.id, it.title, suffix, formatStatusName(it.status), prio))
 		}
 		sb.WriteString("\n")
+	}
+
+	if len(otherProjectItems) > 0 {
+		sb.WriteString("---\n\n## Other Plane Projects\n\n")
+
+		var otherProjKeys []string
+		for k := range otherProjectItems {
+			otherProjKeys = append(otherProjKeys, k)
+		}
+		sort.Strings(otherProjKeys)
+
+		for _, pKey := range otherProjKeys {
+			pTickets := otherProjectItems[pKey]
+			sort.Slice(pTickets, func(i, j int) bool {
+				if pTickets[i].num != pTickets[j].num {
+					return pTickets[i].num < pTickets[j].num
+				}
+				return pTickets[i].id < pTickets[j].id
+			})
+
+			sb.WriteString(fmt.Sprintf("### %s\n\n", pKey))
+			if len(pTickets) == 0 {
+				sb.WriteString("*(No active tickets)*\n\n")
+			} else {
+				for _, it := range pTickets {
+					check := " "
+					if it.status == tracker.StatusDone {
+						check = "x"
+					}
+					suffix := ""
+					if it.targetPkg != "" {
+						suffix = fmt.Sprintf(" (`%s`)", it.targetPkg)
+					}
+					prio := it.priority
+					if prio == "" {
+						prio = "Medium"
+					}
+					sb.WriteString(fmt.Sprintf("- [%s] **%s**: %s%s [State: %s, Priority: %s]\n",
+						check, it.id, it.title, suffix, formatStatusName(it.status), prio))
+				}
+				sb.WriteString("\n")
+			}
+		}
 	}
 
 	return sb.String()
@@ -784,10 +1182,17 @@ func buildDevStatusPageHTML(data *DevStatusData) string {
 		for _, t := range data.Tickets {
 			if t.Milestone == m {
 				stBadge := "[TODO]"
-				if t.Status == tracker.StatusDone {
+				switch t.Status {
+				case tracker.StatusDone:
 					stBadge = "[DONE]"
-				} else if t.Status == tracker.StatusInProgress {
+				case tracker.StatusInProgress:
 					stBadge = "[IN PROGRESS]"
+				case tracker.StatusInReview:
+					stBadge = "[TO VERIFY]"
+				case tracker.StatusBacklog:
+					stBadge = "[BACKLOG]"
+				default:
+					stBadge = "[TODO]"
 				}
 				sb.WriteString(fmt.Sprintf("<li><strong>%s</strong> %s: %s</li>", stBadge, t.ID, t.Title))
 			}

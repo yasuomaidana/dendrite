@@ -99,6 +99,7 @@ func TestExtractMilestoneNumber(t *testing.T) {
 		{"Milestone 1: Core", 1},
 		{"Milestone 39: CI/CD", 39},
 		{"No milestone prefix", 999},
+		{"QA-M3: Smart Commit", 3},
 	}
 
 	for _, c := range cases {

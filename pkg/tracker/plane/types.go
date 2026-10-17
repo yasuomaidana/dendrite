@@ -203,6 +203,9 @@ type StatusReplicationReport struct {
 	CompletedTickets  int           `json:"completed_tickets"`
 	InProgressTickets int           `json:"in_progress_tickets"`
 	TodoTickets       int           `json:"todo_tickets"`
+	BacklogTickets    int           `json:"backlog_tickets"`
+	ToVerifyTickets   int           `json:"to_verify_tickets"`
+	DoneTickets       int           `json:"done_tickets"`
 	OverallProgress   float64       `json:"overall_progress_percent"`
 	ActiveMilestone   string        `json:"active_milestone"`
 	CurrentFocus      string        `json:"current_focus"`
@@ -210,4 +213,5 @@ type StatusReplicationReport struct {
 	PagesCount        int           `json:"pages_count"`
 	RelationsCount    int           `json:"relations_count,omitempty"`
 	Duration          time.Duration `json:"duration"`
+	OtherProjects     []string      `json:"other_projects,omitempty"`
 }

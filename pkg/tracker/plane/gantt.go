@@ -11,7 +11,8 @@ import (
 )
 
 var (
-	milestoneNumRegex = regexp.MustCompile(`(?i)Milestone\s+(\d+)`)
+	// Matches "Milestone 18: ..." as well as short module names such as "M19" or "QA-M3: ...".
+	milestoneNumRegex = regexp.MustCompile(`(?i)(?:Milestone\s*|\bM)(\d+)`)
 	ticketDenRegex    = regexp.MustCompile(`\[(?:DEN|DEND)-(\d+)\]`)
 )
 
