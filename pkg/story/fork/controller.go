@@ -1,6 +1,7 @@
 package fork
 
 import (
+	"Dendrite/pkg/statedir"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -40,6 +41,7 @@ func NewForkController(
 	if worktreesBaseDir == "" {
 		worktreesBaseDir = ".dendrite/worktrees"
 	}
+	worktreesBaseDir = statedir.Resolve(worktreesBaseDir)
 	if executor == nil {
 		executor = NewOSGitExecutor()
 	}
