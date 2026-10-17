@@ -134,6 +134,7 @@ type SpawnResult struct {
 	ProjectName    string `json:"project_name"`
 	ProjectPath    string `json:"project_path"`
 	PlaneProjectID string `json:"plane_project_id,omitempty"`
+	PlaneError     string `json:"plane_error,omitempty"`
 	GitInitialized bool   `json:"git_initialized"`
 	Status         string `json:"status"`
 }

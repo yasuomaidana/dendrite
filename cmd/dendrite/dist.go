@@ -161,7 +161,7 @@ func handleDistCommand(ctx context.Context, action string, args []string) {
 
 	case "spawn":
 		if len(args) < 2 {
-			fmt.Println("[-] Usage: dendrite dist spawn <project_name> <target_dir> [language] [--satellite] [--no-plane]")
+			fmt.Println("[-] Usage: dendrite dist spawn <project_name> <target_dir> [language] [--satellite] [--no-plane] [--identifier <PLANE_ID>] [--desc <text>]")
 			return
 		}
 		pName := args[0]
@@ -173,12 +173,24 @@ func handleDistCommand(ctx context.Context, action string, args []string) {
 
 		isSat := false
 		createPlane := true
-		for _, a := range args {
-			if a == "--satellite" {
+		identifier := ""
+		description := fmt.Sprintf("Autonomous project %s generated via Dendrite", pName)
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--satellite":
 				isSat = true
-			}
-			if a == "--no-plane" {
+			case "--no-plane":
 				createPlane = false
+			case "--identifier", "--id":
+				if i+1 < len(args) {
+					identifier = strings.ToUpper(args[i+1])
+					i++
+				}
+			case "--desc":
+				if i+1 < len(args) {
+					description = args[i+1]
+					i++
+				}
 			}
 		}
 
@@ -196,7 +208,8 @@ func handleDistCommand(ctx context.Context, action string, args []string) {
 			IsSatellite:        isSat,
 			CreatePlaneProject: createPlane && planeClient != nil,
 			InitGit:            true,
-			Description:        fmt.Sprintf("Autonomous project %s generated via Dendrite", pName),
+			Identifier:         identifier,
+			Description:        description,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[-] Spawning project failed: %v\n", err)
@@ -208,6 +221,10 @@ func handleDistCommand(ctx context.Context, action string, args []string) {
 		fmt.Printf("    Git Initialized: %t\n", res.GitInitialized)
 		if res.PlaneProjectID != "" {
 			fmt.Printf("    Plane Project:   %s\n", res.PlaneProjectID)
+		}
+		if res.PlaneError != "" {
+			fmt.Fprintf(os.Stderr, "[-] Plane project was not created: %s\n", res.PlaneError)
+			os.Exit(ExitError)
 		}
 
 	default:

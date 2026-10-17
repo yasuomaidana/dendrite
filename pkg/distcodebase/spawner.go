@@ -77,6 +77,7 @@ func (s *ProjectSpawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnRes
 
 	// 4. Create in Plane v2 if requested
 	planeID := ""
+	planeErr := ""
 	if req.CreatePlaneProject && s.planeClient != nil {
 		ident := req.Identifier
 		if ident == "" {
@@ -91,7 +92,9 @@ func (s *ProjectSpawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnRes
 		}
 
 		proj, err := s.planeClient.CreateProject(ctx, req.ProjectName, ident, desc)
-		if err == nil && proj != nil {
+		if err != nil {
+			planeErr = fmt.Sprintf("identifier %s: %v", ident, err)
+		} else if proj != nil {
 			planeID = proj.ID
 		}
 	}
@@ -100,6 +103,7 @@ func (s *ProjectSpawner) Spawn(ctx context.Context, req SpawnRequest) (*SpawnRes
 		ProjectName:    req.ProjectName,
 		ProjectPath:    cleanDir,
 		PlaneProjectID: planeID,
+		PlaneError:     planeErr,
 		GitInitialized: gitInitSuccess,
 		Status:         "created_and_initialized",
 	}, nil
