@@ -3,9 +3,17 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"Dendrite/pkg/quality"
+	"Dendrite/pkg/quality/coverage"
 	"Dendrite/pkg/tracker/github"
+)
+
+var (
+	osExit      = os.Exit
+	runCoverage = coverage.Run
 )
 
 func handleQualityCommand(ctx context.Context, args []string) {
@@ -15,6 +23,8 @@ func handleQualityCommand(ctx context.Context, args []string) {
 	}
 
 	switch args[0] {
+	case "coverage":
+		handleQualityCoverage(ctx, args[1:])
 	case "audit":
 		pkgPath := "pkg/vcs"
 		if len(args) > 1 {
@@ -83,9 +93,62 @@ func handleQualityCommand(ctx context.Context, args []string) {
 	}
 }
 
+func handleQualityCoverage(ctx context.Context, args []string) {
+	ratchet := false
+	update := false
+	baselinePath := ".dendrite/coverage_baseline.json"
+	var targetPackages []string
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--ratchet":
+			ratchet = true
+		case "--update":
+			update = true
+		case "--baseline":
+			if i+1 < len(args) {
+				baselinePath = args[i+1]
+				i++
+			}
+		case "--help", "-h":
+			printCoverageUsage()
+			return
+		default:
+			if !strings.HasPrefix(args[i], "-") {
+				targetPackages = append(targetPackages, args[i])
+			}
+		}
+	}
+
+	res, err := runCoverage(ctx, coverage.Options{
+		BaselinePath: baselinePath,
+		Ratchet:      ratchet,
+		Update:       update,
+		Packages:     targetPackages,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[-] Coverage error: %v\n", err)
+		osExit(1)
+		return
+	}
+	if !res.Passed {
+		osExit(1)
+		return
+	}
+}
+
 func printQualityUsage() {
-	fmt.Println("Usage: dendrite quality <audit|hitl-sync> [args...]")
+	fmt.Println("Usage: dendrite quality <audit|hitl-sync|coverage> [args...]")
 	fmt.Println("\nCommands:")
 	fmt.Println("  audit [package]    Run anti-mock scan and 100% coverage profiler on package")
 	fmt.Println("  hitl-sync          Poll GitHub issues for closed approvals (DONE) or new feedback")
+	fmt.Println("  coverage [flags]   Per-package coverage ratchet and baseline management (--ratchet, --update)")
+}
+
+func printCoverageUsage() {
+	fmt.Println("Usage: dendrite quality coverage [--ratchet] [--update] [--baseline <path>] [packages...]")
+	fmt.Println("\nFlags:")
+	fmt.Println("  --ratchet           Fail (exit 1) if any package drops below its baseline")
+	fmt.Println("  --update            Automatically raise baseline with improvements and initialize new packages at 100%")
+	fmt.Println("  --baseline <path>   Path to coverage baseline JSON file (default .dendrite/coverage_baseline.json)")
 }

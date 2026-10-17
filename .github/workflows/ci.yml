@@ -8,7 +8,7 @@ on:
 
 jobs:
   verify:
-    name: Test & Coverage Gate (>= 85%)
+    name: Test, Coverage Ratchet & Docs Gate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -20,14 +20,18 @@ jobs:
           go-version: '1.25'
           cache: true
 
-      - name: Run Tests with Coverage
+      - name: Run Tests (race detector)
         run: |
-          go test -v -race -coverprofile=coverage.out -covermode=atomic ./pkg/...
-      - name: Verify Coverage Threshold (>= 85%)
+          go test -race ./...
+
+      - name: Coverage Ratchet (no package may drop; goal 100%)
         run: |
-          total=$(go tool cover -func=coverage.out | grep 'total:' | awk '{print $3}' | sed 's/%//')
-          echo "Total Statement Coverage: ${total}%"
-          awk -v cov="$total" 'BEGIN { if (cov < 85.0) { print "[-] Statement coverage " cov "% is below required 85.0%"; exit 1 } else { print "[✓] Coverage gate passed: " cov "%"; exit 0 } }'
+          # Fails when any package falls below .dendrite/coverage_baseline.json or a new package starts below 100%.
+          go run ./cmd/dendrite quality coverage --ratchet
+
+      - name: Verify Documentation Reference Audit (--strict)
+        run: |
+          go run ./cmd/dendrite docs audit --strict
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
