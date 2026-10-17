@@ -2,11 +2,15 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
 )
+
+// ErrUnknownCommand is returned when a requested CLI command is not registered.
+var ErrUnknownCommand = errors.New("unknown command")
 
 // CommandHandler represents the execution logic of a CLI command.
 type CommandHandler func(ctx context.Context, args []string) error
@@ -79,7 +83,7 @@ func (r *Registry) Lookup(name string) (*Command, bool) {
 // Execute resolves and executes a command matching the provided arguments.
 func (r *Registry) Execute(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("no command specified")
+		return fmt.Errorf("%w: no command specified", ErrUnknownCommand)
 	}
 
 	name := args[0]
@@ -87,9 +91,9 @@ func (r *Registry) Execute(ctx context.Context, args []string) error {
 	if !ok {
 		suggestions := r.Suggest(name)
 		if len(suggestions) > 0 {
-			return fmt.Errorf("unknown command '%s'. Did you mean: %s?", name, strings.Join(suggestions, ", "))
+			return fmt.Errorf("%w '%s'. Did you mean: %s?", ErrUnknownCommand, name, strings.Join(suggestions, ", "))
 		}
-		return fmt.Errorf("unknown command '%s'", name)
+		return fmt.Errorf("%w '%s'", ErrUnknownCommand, name)
 	}
 
 	if cmd.Run == nil {

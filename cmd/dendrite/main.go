@@ -47,6 +47,7 @@ func main() {
 	err := reg.Execute(ctx, os.Args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[-] %v\n", err)
+		os.Exit(exitCodeFor(err))
 	}
 }
 
