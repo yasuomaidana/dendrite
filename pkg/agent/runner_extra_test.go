@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestNewHostRunner_Constructors(t *testing.T) {
@@ -191,14 +194,32 @@ func TestHostRunner_ExecutionPaths(t *testing.T) {
 	})
 
 	t.Run("Nil LookPath and CommandFunc fall back to exec defaults", func(t *testing.T) {
+		tempDir := t.TempDir()
+		dummyBin := filepath.Join(tempDir, "aider")
+		scriptContent := "#!/bin/sh\nexit 0\n"
+		if err := os.WriteFile(dummyBin, []byte(scriptContent), 0755); err != nil {
+			t.Fatalf("failed to write dummy script: %v", err)
+		}
+
+		t.Setenv("PATH", tempDir)
+
+		ctxDeadline, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
 		runner := &HostRunner{}
 		cfg := AgentConfig{
 			Type:           AgentAider,
 			LiteLLMBaseURL: "http://localhost:4000/v1",
 			VirtualAPIKey:  "sk-test",
-			WorkspaceDir:   "/tmp",
+			WorkspaceDir:   tempDir,
 		}
-		_, _ = runner.Execute(ctx, cfg)
+		summary, err := runner.Execute(ctxDeadline, cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if summary == nil || summary.Status != "completed" {
+			t.Errorf("expected completed status, got %+v", summary)
+		}
 	})
 
 	t.Run("Invalid config returns error", func(t *testing.T) {
@@ -213,13 +234,13 @@ func TestHostRunner_ExecutionPaths(t *testing.T) {
 func TestBuildAgentCommand_ExtraBranches(t *testing.T) {
 	t.Run("aider with task description without ticket and map tokens", func(t *testing.T) {
 		cfg := AgentConfig{
-			Type:           AgentAider,
-			LiteLLMBaseURL: "http://localhost:4000/v1",
-			VirtualAPIKey:  "sk-test",
-			WorkspaceDir:   "/workspace",
-			MapTokens:      2048,
+			Type:            AgentAider,
+			LiteLLMBaseURL:  "http://localhost:4000/v1",
+			VirtualAPIKey:   "sk-test",
+			WorkspaceDir:    "/workspace",
+			MapTokens:       2048,
 			TaskDescription: "Task without ticket",
-			ExtraArgs:      []string{"--dry-run"},
+			ExtraArgs:       []string{"--dry-run"},
 		}
 		cmd, err := BuildAgentCommand(cfg)
 		if err != nil {

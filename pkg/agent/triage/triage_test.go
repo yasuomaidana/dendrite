@@ -2,9 +2,9 @@ package triage
 
 import (
 	"context"
-	"os"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +12,36 @@ import (
 	"Dendrite/pkg/inference"
 	"Dendrite/pkg/ollama"
 )
+
+func TestMain(m *testing.M) {
+	tsOllama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/tags" {
+			w.Write([]byte(`{"models":[{"name":"local-qwen-coder","model":"local-qwen-coder"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	}))
+
+	tsOxillama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/models" {
+			w.Write([]byte(`{"data":[{"id":"oxillama-rust-qwen7b"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	}))
+
+	os.Setenv("DENDRITE_OXILLAMA_ENDPOINT", tsOxillama.URL)
+	os.Setenv("DENDRITE_OLLAMA_ENDPOINT", tsOllama.URL)
+
+	code := m.Run()
+	tsOllama.Close()
+	tsOxillama.Close()
+	os.Exit(code)
+}
 
 func TestClassifyTaskComplexity(t *testing.T) {
 	tests := []struct {
@@ -102,8 +132,8 @@ func TestTriageChoreWithLocalCompute(t *testing.T) {
 	if res.Tier != TierLocal {
 		t.Errorf("expected tier 'local', got %s", res.Tier)
 	}
-	if res.AssignedModel != "local-qwen-coder" && res.AssignedModel != "qwen3.8:27b" {
-		t.Errorf("expected local model 'local-qwen-coder' or 'qwen3.8:27b', got %s", res.AssignedModel)
+	if res.AssignedModel != "local-qwen-coder" {
+		t.Errorf("expected local model 'local-qwen-coder', got %s", res.AssignedModel)
 	}
 	if res.EstimatedCostUSD != 0.0 {
 		t.Errorf("expected $0.00 cost for local chore, got %f", res.EstimatedCostUSD)
@@ -426,15 +456,7 @@ func TestTriageMultiEngineSupport(t *testing.T) {
 			if res.Tier != TierLocal {
 				t.Errorf("expected tier local, got %s", res.Tier)
 			}
-			if tt.targetEngine == EngineOllama {
-				if res.AssignedModel != "local-qwen-coder" && res.AssignedModel != "hermes3:8b" {
-					t.Errorf("expected model %s or live model, got %s", tt.expectedModel, res.AssignedModel)
-				}
-			} else if tt.targetEngine == EngineOxiLLaMa {
-				if res.AssignedModel != "oxillama-rust-qwen7b" && res.AssignedModel != "qwen3.8:27b" {
-					t.Errorf("expected model %s or qwen3.8:27b, got %s", tt.expectedModel, res.AssignedModel)
-				}
-			} else if res.AssignedModel != tt.expectedModel {
+			if res.AssignedModel != tt.expectedModel {
 				t.Errorf("expected model %s, got %s", tt.expectedModel, res.AssignedModel)
 			}
 			if !strings.Contains(res.LocalEngineName, tt.expectedEngine) {
@@ -516,7 +538,7 @@ func TestTriageDeclarativeOrchestrator(t *testing.T) {
 }
 
 func TestTriage_OxiLLaMaPrecedenceOverLessSmartOllamaModel(t *testing.T) {
-	// Mock Ollama server that returns only a small, less-smart model (llama3.2:3b)
+	// Ollama test server that returns only a small, less-smart model (llama3.2:3b)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/tags" {
 			w.Header().Set("Content-Type", "application/json")
@@ -527,9 +549,24 @@ func TestTriage_OxiLLaMaPrecedenceOverLessSmartOllamaModel(t *testing.T) {
 	}))
 	defer ts.Close()
 
+	tsOxillama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"data":[{"id":"oxillama-rust-qwen7b"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer tsOxillama.Close()
+
 	ollamaClient := ollama.NewClient(ollama.WithBaseURL(ts.URL))
 
 	engine := NewEngine(ollamaClient)
+	engine.OxiLLaMaEngine = inference.NewOxiLLaMaEngine(inference.EngineConfig{
+		ID:       "oxillama-rust",
+		Type:     inference.EngineOxiLLaMa,
+		Endpoint: tsOxillama.URL,
+	}, tsOxillama.Client())
 
 	req := TriageRequest{
 		Prompt: "Fix formatting and add docstrings for this struct",
@@ -540,13 +577,13 @@ func TestTriage_OxiLLaMaPrecedenceOverLessSmartOllamaModel(t *testing.T) {
 		t.Fatalf("unexpected triage error: %v", err)
 	}
 
-	// Because Ollama only has llama3.2:3b (score 38) and OxiLLaMa has 7b (score 65),
+	// Because Ollama only has llama3.2:3b (score 38) and OxiLLaMa has 7b (score 60),
 	// smarter local model rule gives precedence to OxiLLaMa!
 	if res.AssignedEngine != EngineOxiLLaMa {
 		t.Errorf("expected EngineOxiLLaMa to take precedence over less-smart Ollama model, got %s", res.AssignedEngine)
 	}
-	if res.AssignedModel != "oxillama-rust-qwen7b" && res.AssignedModel != "qwen3.8:27b" {
-		t.Errorf("expected assigned model 'oxillama-rust-qwen7b' or 'qwen3.8:27b', got %s", res.AssignedModel)
+	if res.AssignedModel != "oxillama-rust-qwen7b" {
+		t.Errorf("expected assigned model 'oxillama-rust-qwen7b', got %s", res.AssignedModel)
 	}
 	if !strings.Contains(res.Reason, "OxiLLaMa") {
 		t.Errorf("expected reason to document OxiLLaMa precedence, got: %s", res.Reason)

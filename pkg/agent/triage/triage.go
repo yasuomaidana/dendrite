@@ -16,7 +16,9 @@ import (
 // Engine orchestrates local agent triage, hardware probing, skill matching, and token optimization.
 type Engine struct {
 	OllamaClient         *ollama.Client
+	OllamaEndpoint       string
 	OxiLLaMaEngine       inference.InferenceEngine
+	OxiLLaMaEndpoint     string
 	RAGIndexer           *rag.Indexer
 	SkillMatchers        []SkillMatcher
 	LocalModelName       string
@@ -28,11 +30,18 @@ type Engine struct {
 
 // NewEngine constructs a default Triage Engine.
 func NewEngine(ollamaClient *ollama.Client) *Engine {
+	ollamaEndpoint := os.Getenv("DENDRITE_OLLAMA_ENDPOINT")
 	if ollamaClient == nil {
-		ollamaClient = ollama.NewClient()
+		if ollamaEndpoint != "" {
+			ollamaClient = ollama.NewClient(ollama.WithBaseURL(ollamaEndpoint))
+		} else {
+			ollamaClient = ollama.NewClient()
+		}
 	}
 	return &Engine{
 		OllamaClient:      ollamaClient,
+		OllamaEndpoint:    ollamaEndpoint,
+		OxiLLaMaEndpoint:  os.Getenv("DENDRITE_OXILLAMA_ENDPOINT"),
 		RAGIndexer:        rag.NewIndexer(),
 		SkillMatchers:     DefaultSkillMatchers(),
 		LocalModelName:    "local-qwen-coder",
@@ -65,7 +74,10 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 
 	oxEng := e.OxiLLaMaEngine
 	if oxEng == nil {
-		oxEndpoint := os.Getenv("DENDRITE_OXILLAMA_ENDPOINT")
+		oxEndpoint := e.OxiLLaMaEndpoint
+		if oxEndpoint == "" {
+			oxEndpoint = os.Getenv("DENDRITE_OXILLAMA_ENDPOINT")
+		}
 		if oxEndpoint == "" {
 			oxEndpoint = "http://127.0.0.1:8080"
 		}
@@ -100,9 +112,19 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 	}
 
 	// Probe Ollama live
-	if e.OllamaClient != nil {
+	olClient := e.OllamaClient
+	if olClient == nil {
+		ep := e.OllamaEndpoint
+		if ep == "" {
+			ep = os.Getenv("DENDRITE_OLLAMA_ENDPOINT")
+		}
+		if ep != "" {
+			olClient = ollama.NewClient(ollama.WithBaseURL(ep))
+		}
+	}
+	if olClient != nil {
 		probeCtxOl, cancelOl := context.WithTimeout(ctx, 1500*time.Millisecond)
-		ollamaModels, oErr := e.OllamaClient.ListModels(probeCtxOl)
+		ollamaModels, oErr := olClient.ListModels(probeCtxOl)
 		cancelOl()
 		if oErr == nil && len(ollamaModels) > 0 {
 			for _, m := range ollamaModels {
@@ -136,10 +158,10 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 		localEngineName = "Ollama (JetBrains Validated)"
 		if e.MockComputeAvailable != nil {
 			localAvailable = *e.MockComputeAvailable
-		} else if e.OllamaClient != nil {
+		} else if olClient != nil {
 			probeCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
 			defer cancel()
-			models, err := e.OllamaClient.ListModels(probeCtx)
+			models, err := olClient.ListModels(probeCtx)
 			if err == nil {
 				for _, m := range models {
 					if strings.Contains(m.Name, "qwen") || strings.Contains(m.Name, "llama3") {
@@ -188,10 +210,10 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 		localEngineName = "Ollama Metal GPU"
 		if e.MockComputeAvailable != nil {
 			localAvailable = *e.MockComputeAvailable
-		} else if e.OllamaClient != nil {
+		} else if olClient != nil {
 			probeCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
 			defer cancel()
-			h, err := e.OllamaClient.CheckHealth(probeCtx)
+			h, err := olClient.CheckHealth(probeCtx)
 			if err == nil && h.Reachable {
 				localAvailable = true
 			}
