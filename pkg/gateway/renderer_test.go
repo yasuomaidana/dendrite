@@ -255,3 +255,36 @@ func TestDefaultLiteLLMConfig_OxiLLaMaRoutingWhenPresent(t *testing.T) {
 		t.Errorf("missing local-qwen3 models in rendered config")
 	}
 }
+
+func TestValidate_RejectsMultiModelFallbackEntries(t *testing.T) {
+	base := func() *gateway.LiteLLMConfig {
+		cfg := gateway.DefaultLiteLLMConfig("http://localhost:11434")
+		cfg.RouterSettings = &gateway.RouterSettings{}
+		return cfg
+	}
+
+	cfg := base()
+	cfg.RouterSettings.Fallbacks = []map[string][]string{{"a": {"x"}, "b": {"y"}}}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "router_settings.fallbacks[0]") {
+		t.Fatalf("expected fallbacks validation error, got %v", err)
+	}
+
+	cfg = base()
+	cfg.RouterSettings.ContextWindowFallbacks = []map[string]string{{"a": "x", "b": "y"}}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "context_window_fallbacks[0]") {
+		t.Fatalf("expected context window fallbacks validation error, got %v", err)
+	}
+
+	cfg = base()
+	cfg.RouterSettings.Fallbacks = []map[string][]string{{"a": {"x"}}, {"b": {"y"}}}
+	cfg.RouterSettings.ContextWindowFallbacks = []map[string]string{{"a": "x"}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("single-model entries must validate, got %v", err)
+	}
+}
+
+func TestGeneratedConfigsUseSingleModelFallbackEntries(t *testing.T) {
+	if err := gateway.DefaultLiteLLMConfig("http://localhost:11434").Validate(); err != nil {
+		t.Fatalf("default config: %v", err)
+	}
+}

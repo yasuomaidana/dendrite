@@ -534,12 +534,11 @@ func (u *RoutingTableUpdater) buildDynamicConfig(
 	routerSettings := &RouterSettings{
 		RoutingStrategy: "usage-based-routing",
 		Timeout:         120,
+		// LiteLLM requires one model per fallback entry.
 		Fallbacks: []map[string][]string{
-			{
-				opts.PrimaryCloudModel: proFallbacks,
-				opts.BackupCloudModel:  sonnetFallbacks,
-				opts.FastCloudModel:    flashFallbacks,
-			},
+			{opts.PrimaryCloudModel: proFallbacks},
+			{opts.BackupCloudModel: sonnetFallbacks},
+			{opts.FastCloudModel: flashFallbacks},
 		},
 		ContextWindowFallbacks: []map[string]string{
 			{"local-qwen-coder": opts.PrimaryCloudModel},

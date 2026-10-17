@@ -195,12 +195,11 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 	routerSettings := &RouterSettings{
 		RoutingStrategy: "usage-based-routing",
 		Timeout:         120,
+		// LiteLLM requires one model per fallback entry.
 		Fallbacks: []map[string][]string{
-			{
-				"gemini-2.5-pro":   {"copilot-sonnet", "gemini-2.5-flash", "local-qwen3-27b", "local-qwen-coder"},
-				"copilot-sonnet":   {"gemini-2.5-flash", "local-qwen3-27b", "local-qwen-coder"},
-				"gemini-2.5-flash": {"local-qwen3-27b", "local-qwen-coder"},
-			},
+			{"gemini-2.5-pro": {"copilot-sonnet", "gemini-2.5-flash", "local-qwen3-27b", "local-qwen-coder"}},
+			{"copilot-sonnet": {"gemini-2.5-flash", "local-qwen3-27b", "local-qwen-coder"}},
+			{"gemini-2.5-flash": {"local-qwen3-27b", "local-qwen-coder"}},
 		},
 		ContextWindowFallbacks: []map[string]string{
 			{"local-qwen-coder": "gemini-2.5-pro"},
@@ -363,10 +362,8 @@ func MultiEngineLiteLLMConfig(engines []inference.InferenceEngine) *LiteLLMConfi
 		})
 		cascadeList := append([]string{"copilot-sonnet", "gemini-2.5-flash"}, engineFallbackNames...)
 		cfg.RouterSettings.Fallbacks = []map[string][]string{
-			{
-				"gemini-2.5-pro": cascadeList,
-				"copilot-sonnet": engineFallbackNames,
-			},
+			{"gemini-2.5-pro": cascadeList},
+			{"copilot-sonnet": engineFallbackNames},
 		}
 	}
 
@@ -426,6 +423,25 @@ func (c *LiteLLMConfig) Validate() error {
 				Field:   fmt.Sprintf("model_list[%d].litellm_params.model", i),
 				Message: "upstream provider model cannot be empty",
 				Err:     ErrMissingProvider,
+			}
+		}
+	}
+
+	if c.RouterSettings != nil {
+		for i, fb := range c.RouterSettings.Fallbacks {
+			if len(fb) != 1 {
+				return &GatewayValidationError{
+					Field:   fmt.Sprintf("router_settings.fallbacks[%d]", i),
+					Message: fmt.Sprintf("each fallback entry must map exactly one model, got %d", len(fb)),
+				}
+			}
+		}
+		for i, fb := range c.RouterSettings.ContextWindowFallbacks {
+			if len(fb) != 1 {
+				return &GatewayValidationError{
+					Field:   fmt.Sprintf("router_settings.context_window_fallbacks[%d]", i),
+					Message: fmt.Sprintf("each fallback entry must map exactly one model, got %d", len(fb)),
+				}
 			}
 		}
 	}
