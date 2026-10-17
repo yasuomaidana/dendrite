@@ -437,6 +437,16 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 					desc = args[i+1]
 					i++
 				}
+			case "--desc-file", "-f":
+				if i+1 < len(args) {
+					data, err := os.ReadFile(args[i+1])
+					if err != nil {
+						fmt.Printf("[-] Failed to read description file: %v\n", err)
+						return
+					}
+					desc = string(data)
+					i++
+				}
 			case "--milestone", "-m":
 				if i+1 < len(args) {
 					milestone = args[i+1]
@@ -469,7 +479,7 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 		}
 
 		if strings.TrimSpace(name) == "" || plane.IsEmptyContext(desc) {
-			fmt.Println("Usage: dendrite plane create --name \"[DEN-XXX] Title\" --desc \"Acceptance criteria and context\" [--milestone \"M1\"] [--priority high] [--estimate 5] [--blocked-by \"DEN-001,DEN-002\"]")
+			fmt.Println("Usage: dendrite plane create --name \"[DEN-XXX] Title\" (--desc \"markdown\" | --desc-file spec.md) [--milestone \"M1\"] [--priority high] [--estimate 5] [--blocked-by \"DEN-001,DEN-002\"]")
 			if strings.TrimSpace(name) != "" && plane.IsEmptyContext(desc) {
 				fmt.Println("[-] Error: ticket context/description is mandatory and cannot be empty. In theory and practice, empty tickets are forbidden. Provide --desc or --context with acceptance criteria and goal.")
 			}
@@ -520,7 +530,7 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 			}
 		}
 
-		descHTML := fmt.Sprintf("<div><p>%s</p></div>", desc)
+		descHTML := plane.MarkdownToHTML(desc)
 		created, err := client.CreatePlaneIssueWithDetails(ctx, plane.CreateIssueRequest{
 			Name:            name,
 			DescriptionHTML: descHTML,
@@ -616,6 +626,70 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 			}
 			fmt.Printf("    [%s | %s] #%d: %s%s\n", st, strings.ToUpper(prio), iss.SequenceID, iss.Name, dateSpan)
 		}
+
+	case "update", "issue-update":
+		var ticketID, name, desc string
+		for i := 0; i < len(args); i++ {
+			switch args[i] {
+			case "--ticket", "-t":
+				if i+1 < len(args) {
+					ticketID = args[i+1]
+					i++
+				}
+			case "--name", "-n":
+				if i+1 < len(args) {
+					name = args[i+1]
+					i++
+				}
+			case "--desc", "-d":
+				if i+1 < len(args) {
+					desc = args[i+1]
+					i++
+				}
+			case "--desc-file", "-f":
+				if i+1 < len(args) {
+					data, err := os.ReadFile(args[i+1])
+					if err != nil {
+						fmt.Printf("[-] Failed to read description file: %v\n", err)
+						return
+					}
+					desc = string(data)
+					i++
+				}
+			}
+		}
+		if ticketID == "" || (name == "" && plane.IsEmptyContext(desc)) {
+			fmt.Println("Usage: dendrite plane update --ticket <DEN-XXX> [--name \"[DEN-XXX] Title\"] (--desc \"markdown\" | --desc-file spec.md)")
+			return
+		}
+
+		issues, err := client.ListPlaneIssues(ctx)
+		if err != nil {
+			fmt.Printf("[-] Failed to list Plane issues: %v\n", err)
+			return
+		}
+		var target *plane.PlaneIssue
+		for idx := range issues {
+			if strings.Contains(issues[idx].Name, "["+ticketID+"]") {
+				target = &issues[idx]
+				break
+			}
+		}
+		if target == nil {
+			fmt.Printf("[-] Ticket %s not found in Plane\n", ticketID)
+			return
+		}
+
+		req := plane.UpdateIssueRequest{Name: name}
+		if !plane.IsEmptyContext(desc) {
+			req.DescriptionHTML = plane.MarkdownToHTML(desc)
+		}
+		updated, err := client.UpdatePlaneIssueWithDetails(ctx, target.ID, req)
+		if err != nil {
+			fmt.Printf("[-] Failed to update issue in Plane: %v\n", err)
+			return
+		}
+		fmt.Printf("[✓] Updated ticket %s (#%d): %s\n", ticketID, updated.SequenceID, updated.Name)
 
 	case "modules":
 		modules, err := client.ListModules(ctx)
