@@ -531,6 +531,10 @@ func runSynapseCommand(ctx context.Context, args []string, out io.Writer) error 
 		return runSynapseIDESync(ctx, subArgs, out)
 	case "set-source":
 		return runSynapseSetSource(ctx, subArgs, out)
+	case "status":
+		return runSynapseSyncCommand(ctx, subArgs, out, false)
+	case "sync":
+		return runSynapseSyncCommand(ctx, subArgs, out, true)
 	default:
 		return fmt.Errorf("unknown synapse action %q", action)
 	}
@@ -556,6 +560,8 @@ func printSynapseUsage(out io.Writer) {
 	fmt.Fprintln(out, "  move <alias|project-id> <new-path> [--json]")
 	fmt.Fprintln(out, "  ide-sync <id> [--binary path]")
 	fmt.Fprintln(out, "  set-source <id> <alias> local|remote [--ref branch|tag|sha] [--remote url] [--module path]")
+	fmt.Fprintln(out, "  status <id> [--no-fetch] [--json]")
+	fmt.Fprintln(out, "  sync <id> [--autostash] [--rebase] [--merge alias=branch]... [--no-link] [--no-fetch] [--json]")
 	fmt.Fprintln(out, "  (scoped MCP server: dendrite mcp serve --synapse <id>)")
 }
 
