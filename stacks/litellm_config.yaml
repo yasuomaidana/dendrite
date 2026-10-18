@@ -14,7 +14,7 @@ model_list:
         base_model: gemini/gemini-2.5-pro
     - model_name: copilot-sonnet
       litellm_params:
-        model: github_copilot/claude-sonnet-4.5
+        model: github_copilot/claude-sonnet-4.6
         api_key: os.environ/COPILOT_API_KEY
         max_tokens: 8192
         drop_params: true
@@ -28,7 +28,7 @@ model_list:
         output_cost_per_token: 1.5e-05
         max_input_tokens: 200000
         max_output_tokens: 8192
-        base_model: claude-sonnet-4.5
+        base_model: claude-sonnet-4.6
     - model_name: gemini-2.5-flash
       litellm_params:
         model: gemini/gemini-2.5-flash
@@ -42,41 +42,9 @@ model_list:
         max_input_tokens: 1048576
         max_output_tokens: 8192
         base_model: gemini/gemini-2.5-flash
-    - model_name: local-qwen3-27b
-      litellm_params:
-        model: openai/qwen3.8:27b
-        api_key: EMPTY
-        api_base: http://host.docker.internal:8080/v1
-        custom_llm_provider: openai
-        max_tokens: 8192
-      model_info:
-        id: local-qwen3-27b
-        mode: chat
-        input_cost_per_token: 0
-        output_cost_per_token: 0
-        max_input_tokens: 32768
-        max_output_tokens: 8192
-        base_model: qwen3.8:27b
-        skip_budget_checks: true
-    - model_name: local-qwen3.8-27b
-      litellm_params:
-        model: openai/qwen3.8:27b
-        api_key: EMPTY
-        api_base: http://host.docker.internal:8080/v1
-        custom_llm_provider: openai
-        max_tokens: 4096
-      model_info:
-        id: local-qwen3.8-27b
-        mode: chat
-        input_cost_per_token: 0
-        output_cost_per_token: 0
-        max_input_tokens: 32768
-        max_output_tokens: 4096
-        base_model: qwen3.8:27b
-        skip_budget_checks: true
     - model_name: local-qwen3-9b
       litellm_params:
-        model: openai/qwen3.5:9b
+        model: openai/qwen3-8b-q4_k_m
         api_key: EMPTY
         api_base: http://host.docker.internal:8080/v1
         custom_llm_provider: openai
@@ -88,23 +56,23 @@ model_list:
         output_cost_per_token: 0
         max_input_tokens: 32768
         max_output_tokens: 4096
-        base_model: qwen3.5:9b
+        base_model: qwen3-8b-q4_k_m
         skip_budget_checks: true
-    - model_name: local-qwen3.5-9b
+    - model_name: local-qwen3-8b-q4_k_m
       litellm_params:
-        model: openai/qwen3.5:9b
+        model: openai/qwen3-8b-q4_k_m
         api_key: EMPTY
         api_base: http://host.docker.internal:8080/v1
         custom_llm_provider: openai
         max_tokens: 4096
       model_info:
-        id: local-qwen3.5-9b
+        id: local-qwen3-8b-q4_k_m
         mode: chat
         input_cost_per_token: 0
         output_cost_per_token: 0
         max_input_tokens: 32768
         max_output_tokens: 4096
-        base_model: qwen3.5:9b
+        base_model: qwen3-8b-q4_k_m
         skip_budget_checks: true
     - model_name: local-hermes3-8b
       litellm_params:
@@ -165,6 +133,22 @@ model_list:
         max_input_tokens: 32768
         max_output_tokens: 4096
         base_model: llama3.2:latest
+        skip_budget_checks: true
+    - model_name: local-qwen3-27b
+      litellm_params:
+        model: openai/qwen3.8:27b
+        api_key: EMPTY
+        api_base: http://host.docker.internal:8080/v1
+        custom_llm_provider: openai
+        max_tokens: 8192
+      model_info:
+        id: local-qwen3-27b
+        mode: chat
+        input_cost_per_token: 0
+        output_cost_per_token: 0
+        max_input_tokens: 32768
+        max_output_tokens: 8192
+        base_model: qwen3.8:27b
         skip_budget_checks: true
     - model_name: local-qwen-coder
       litellm_params:
@@ -262,44 +246,41 @@ model_list:
         skip_budget_checks: true
 router_settings:
     fallbacks:
-        - copilot-sonnet:
-            - gemini-2.5-flash
-            - local-qwen3-27b
-            - local-qwen3.8-27b
-            - local-qwen3-9b
-            - local-qwen3.5-9b
-            - local-hermes3-8b
-            - local-qwen-coder
-            - local-coder
-            - hf-deepseek
-            - local-nomic-embed-text-latest
-            - local-tinyllama-latest
-            - oxillama-rust
-            - llamacpp-local
-            - vllm-cluster
-            - local-llama3.2-latest
-          gemini-2.5-flash:
-            - local-qwen3-27b
-            - local-qwen3.8-27b
-            - local-qwen3-9b
-            - local-qwen3.5-9b
-            - local-hermes3-8b
-            - local-qwen-coder
-            - local-coder
-            - hf-deepseek
-            - local-nomic-embed-text-latest
-            - local-tinyllama-latest
-            - oxillama-rust
-            - llamacpp-local
-            - vllm-cluster
-            - local-llama3.2-latest
-          gemini-2.5-pro:
+        - gemini-2.5-pro:
             - copilot-sonnet
             - gemini-2.5-flash
             - local-qwen3-27b
-            - local-qwen3.8-27b
             - local-qwen3-9b
-            - local-qwen3.5-9b
+            - local-qwen3-8b-q4_k_m
+            - local-hermes3-8b
+            - local-qwen-coder
+            - local-coder
+            - hf-deepseek
+            - local-nomic-embed-text-latest
+            - local-tinyllama-latest
+            - oxillama-rust
+            - llamacpp-local
+            - vllm-cluster
+            - local-llama3.2-latest
+        - copilot-sonnet:
+            - gemini-2.5-flash
+            - local-qwen3-27b
+            - local-qwen3-9b
+            - local-qwen3-8b-q4_k_m
+            - local-hermes3-8b
+            - local-qwen-coder
+            - local-coder
+            - hf-deepseek
+            - local-nomic-embed-text-latest
+            - local-tinyllama-latest
+            - oxillama-rust
+            - llamacpp-local
+            - vllm-cluster
+            - local-llama3.2-latest
+        - gemini-2.5-flash:
+            - local-qwen3-27b
+            - local-qwen3-9b
+            - local-qwen3-8b-q4_k_m
             - local-hermes3-8b
             - local-qwen-coder
             - local-coder
@@ -315,8 +296,19 @@ router_settings:
         - local-qwen3-27b: gemini-2.5-pro
         - local-qwen3-9b: gemini-2.5-pro
         - gemini-2.5-flash: gemini-2.5-pro
+        - local-qwen3-8b-q4_k_m: gemini-2.5-pro
+        - local-hermes3-8b: gemini-2.5-pro
+        - local-coder: gemini-2.5-pro
+        - hf-deepseek: gemini-2.5-pro
+        - local-nomic-embed-text-latest: gemini-2.5-pro
+        - local-tinyllama-latest: gemini-2.5-pro
+        - oxillama-rust: gemini-2.5-pro
+        - llamacpp-local: gemini-2.5-pro
+        - vllm-cluster: gemini-2.5-pro
+        - local-llama3.2-latest: gemini-2.5-pro
     routing_strategy: usage-based-routing
     timeout: 120
+    enable_pre_call_checks: true
 general_settings:
     master_key: os.environ/LITELLM_MASTER_KEY
     database_url: os.environ/DATABASE_URL

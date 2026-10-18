@@ -49,6 +49,28 @@ type RouterSettings struct {
 	ContextWindowFallbacks []map[string]string   `yaml:"context_window_fallbacks,omitempty" json:"context_window_fallbacks,omitempty"`
 	RoutingStrategy        string                `yaml:"routing_strategy,omitempty" json:"routing_strategy,omitempty"`
 	Timeout                int                   `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+	// EnablePreCallChecks makes LiteLLM check the context window before calling a deployment (DEN-945).
+	EnablePreCallChecks bool `yaml:"enable_pre_call_checks,omitempty" json:"enable_pre_call_checks,omitempty"`
+}
+
+// addContextWindowFallbacks appends one single-key context-window fallback to target for every
+// model that does not have one yet, so oversized prompts are re-routed instead of failing.
+func addContextWindowFallbacks(rs *RouterSettings, models []string, target string) {
+	for _, name := range models {
+		if name == target || hasContextWindowFallback(rs.ContextWindowFallbacks, name) {
+			continue
+		}
+		rs.ContextWindowFallbacks = append(rs.ContextWindowFallbacks, map[string]string{name: target})
+	}
+}
+
+func hasContextWindowFallback(entries []map[string]string, model string) bool {
+	for _, entry := range entries {
+		if _, ok := entry[model]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // GeneralSettings configures LiteLLM proxy authentication, storage, and telemetry.

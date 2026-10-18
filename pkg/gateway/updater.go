@@ -532,8 +532,9 @@ func (u *RoutingTableUpdater) buildDynamicConfig(
 	flashFallbacks := append([]string(nil), fallbackModelNames...)
 
 	routerSettings := &RouterSettings{
-		RoutingStrategy: "usage-based-routing",
-		Timeout:         120,
+		RoutingStrategy:     "usage-based-routing",
+		Timeout:             120,
+		EnablePreCallChecks: true,
 		// LiteLLM requires one model per fallback entry.
 		Fallbacks: []map[string][]string{
 			{opts.PrimaryCloudModel: proFallbacks},
@@ -547,6 +548,8 @@ func (u *RoutingTableUpdater) buildDynamicConfig(
 			{opts.FastCloudModel: opts.PrimaryCloudModel},
 		},
 	}
+
+	addContextWindowFallbacks(routerSettings, fallbackModelNames, opts.PrimaryCloudModel)
 
 	generalSettings := &GeneralSettings{
 		MasterKey:   "os.environ/LITELLM_MASTER_KEY",

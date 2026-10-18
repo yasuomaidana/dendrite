@@ -193,8 +193,9 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 	}
 
 	routerSettings := &RouterSettings{
-		RoutingStrategy: "usage-based-routing",
-		Timeout:         120,
+		RoutingStrategy:     "usage-based-routing",
+		Timeout:             120,
+		EnablePreCallChecks: true,
 		// LiteLLM requires one model per fallback entry.
 		Fallbacks: []map[string][]string{
 			{"gemini-2.5-pro": {"copilot-sonnet", "gemini-2.5-flash", "local-qwen3-27b", "local-qwen-coder"}},
