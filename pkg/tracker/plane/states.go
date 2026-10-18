@@ -2,6 +2,7 @@ package plane
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -138,8 +139,16 @@ func (c *Client) ReconcileStates(ctx context.Context, projectID string, dryRun b
 				"color":    spec.Color,
 				"sequence": spec.Sequence,
 			}
-			if err := c.sendState(ctx, http.MethodPost, endpoint, body); err != nil {
+			created, err := c.sendState(ctx, http.MethodPost, endpoint, body)
+			if err != nil {
 				return report, fmt.Errorf("create state %q: %w", spec.Name, err)
+			}
+			// Plane ignores "sequence" on create and appends the state last; move it into place.
+			if created.ID != "" && created.Sequence != spec.Sequence {
+				fix := map[string]interface{}{"sequence": spec.Sequence}
+				if _, err := c.sendState(ctx, http.MethodPatch, endpoint+created.ID+"/", fix); err != nil {
+					return report, fmt.Errorf("order state %q: %w", spec.Name, err)
+				}
 			}
 			continue
 		}
@@ -173,30 +182,33 @@ func (c *Client) ReconcileStates(ctx context.Context, projectID string, dryRun b
 		if dryRun {
 			continue
 		}
-		if err := c.sendState(ctx, http.MethodPatch, endpoint+cur.ID+"/", body); err != nil {
+		if _, err := c.sendState(ctx, http.MethodPatch, endpoint+cur.ID+"/", body); err != nil {
 			return report, fmt.Errorf("update state %q: %w", spec.Name, err)
 		}
 	}
 	return report, nil
 }
 
-func (c *Client) sendState(ctx context.Context, method, endpoint string, body map[string]interface{}) error {
+// sendState writes a state and returns Plane's stored copy (zero value when the body is not a state).
+func (c *Client) sendState(ctx context.Context, method, endpoint string, body map[string]interface{}) (PlaneState, error) {
+	var stored PlaneState
 	req, err := c.newRequest(ctx, method, endpoint, body)
 	if err != nil {
-		return err
+		return stored, err
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return stored, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return ErrUnauthorized
+		return stored, ErrUnauthorized
 	}
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("plane state %s failed: status %d", method, resp.StatusCode)
+		return stored, fmt.Errorf("plane state %s failed: status %d", method, resp.StatusCode)
 	}
-	return nil
+	_ = json.NewDecoder(resp.Body).Decode(&stored)
+	return stored, nil
 }
 
 // ResolveProject finds a project by UUID or (case-insensitive) identifier such as "DGIT".

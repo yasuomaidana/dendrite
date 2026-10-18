@@ -39,14 +39,23 @@ func (b *stateBoard) handler(t *testing.T) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"results": b.states})
 		case r.Method == http.MethodPost:
 			b.writes = append(b.writes, "POST "+body["name"].(string))
-			b.states = append(b.states, PlaneState{
+			// Like Plane, ignore the requested sequence and append after the last state.
+			last := 0.0
+			for _, s := range b.states {
+				if s.Sequence > last {
+					last = s.Sequence
+				}
+			}
+			created := PlaneState{
 				ID:       "new-" + body["name"].(string),
 				Name:     body["name"].(string),
 				Group:    body["group"].(string),
 				Color:    body["color"].(string),
-				Sequence: body["sequence"].(float64),
-			})
+				Sequence: last + 15000,
+			}
+			b.states = append(b.states, created)
 			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(created)
 		case r.Method == http.MethodPatch && len(parts) == 3:
 			b.writes = append(b.writes, "PATCH "+parts[2])
 			for i := range b.states {
