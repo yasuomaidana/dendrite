@@ -86,7 +86,11 @@ type PlaneIssue struct {
 	CreatedAt           time.Time        `json:"created_at"`
 	UpdatedAt           time.Time        `json:"updated_at"`
 	CompletedAt         *time.Time       `json:"completed_at,omitempty"`
+	ArchivedAt          *time.Time       `json:"archived_at,omitempty"`
 	ModuleIDs           []string         `json:"module_ids,omitempty"`
+	ExternalID          string           `json:"external_id,omitempty"`
+	ExternalSource      string           `json:"external_source,omitempty"`
+	Labels              []string         `json:"labels,omitempty"`
 }
 
 // PlaneModule represents a milestone / module in Plane.
@@ -133,6 +137,9 @@ type CreateIssueRequest struct {
 	Parent          *string  `json:"parent,omitempty"`
 	ModuleID        string   `json:"module_id,omitempty"`
 	BlockedBy       []string `json:"blocked_by,omitempty"`
+	ExternalID      string   `json:"external_id,omitempty"`
+	ExternalSource  string   `json:"external_source,omitempty"`
+	Labels          []string `json:"labels,omitempty"`
 }
 
 // UpdateIssueRequest defines inputs for modifying an issue in Plane.

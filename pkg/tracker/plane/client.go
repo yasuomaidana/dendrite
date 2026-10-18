@@ -442,6 +442,15 @@ func (c *Client) CreatePlaneIssueWithDetails(ctx context.Context, req CreateIssu
 	if req.Parent != nil {
 		body["parent"] = *req.Parent
 	}
+	if req.ExternalID != "" {
+		body["external_id"] = req.ExternalID
+	}
+	if req.ExternalSource != "" {
+		body["external_source"] = req.ExternalSource
+	}
+	if len(req.Labels) > 0 {
+		body["labels"] = req.Labels
+	}
 
 	httpReq, err := c.newRequest(ctx, http.MethodPost, endpoint, body)
 	if err != nil {
