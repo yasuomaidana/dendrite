@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/quality"
+	"Dendrite/pkg/sidecar"
 	"Dendrite/pkg/tracker/plane"
 )
 
@@ -512,18 +513,9 @@ Git Diff Content (truncated):
 			}
 		}
 
-		// Fallback to OxiLLaMa CLI
-		oxillamaPath := os.Getenv("DENDRITE_OXILLAMA_BIN")
-		if oxillamaPath == "" {
-			oxillamaPath, _ = exec.LookPath("oxillama")
-		}
-		if oxillamaPath == "" {
-			home, _ := os.UserHomeDir()
-			candidate := filepath.Join(home, ".cargo", "bin", "oxillama")
-			if _, err := os.Stat(candidate); err == nil {
-				oxillamaPath = candidate
-			}
-		}
+		// Fallback to OxiLLaMa CLI ($DENDRITE_OXILLAMA_BIN, synapse member builds,
+		// $DENDRITE_HOME/bin, PATH, ~/.cargo/bin)
+		oxillamaPath, _ := sidecar.DefaultLocator().Locate("oxillama")
 		if oxillamaPath != "" {
 			modelBaseDir := os.Getenv("DENDRITE_OXILLAMA_MODELS_DIR")
 			if modelBaseDir == "" {
