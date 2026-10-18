@@ -99,6 +99,9 @@ func Marshal(s *Synapse) ([]byte, error) {
 		fmt.Fprintf(&buf, "alias = %s\n", quoteString(m.Alias))
 		fmt.Fprintf(&buf, "role = %s\n", quoteString(string(m.Role)))
 		fmt.Fprintf(&buf, "path_hint = %s\n", quoteString(m.PathHint))
+		if m.PlaneProject != "" {
+			fmt.Fprintf(&buf, "plane_project = %s\n", quoteString(m.PlaneProject))
+		}
 	}
 
 	// [[contracts]] and [[contracts.consumers]]
@@ -433,6 +436,8 @@ func Unmarshal(data []byte) (*Synapse, error) {
 				m.Role = Role(val)
 			case "path_hint":
 				m.PathHint = val
+			case "plane_project":
+				m.PlaneProject = val
 			default:
 				return nil, fmt.Errorf("line %d: unknown key %q in [[members]]", lineNum, key)
 			}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -22,6 +23,7 @@ type memberJSON struct {
 	Role      string `json:"role"`
 	PathHint  string `json:"path_hint"`
 	Status    string `json:"status"`
+	Plane     string `json:"plane_project,omitempty"`
 }
 
 type synapseListJSON struct {
@@ -98,6 +100,21 @@ func parseMemberSpec(spec string) (dir string, alias string, role synapse.Role, 
 	}
 
 	return absDir, alias, role, nil
+}
+
+var planeIdentRegex = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]{0,11}$`)
+
+// splitPlaneSuffix strips a trailing "@IDENT" Plane project identifier from a member spec.
+func splitPlaneSuffix(spec string) (rest string, planeProject string) {
+	at := strings.LastIndex(spec, "@")
+	if at < 0 {
+		return spec, ""
+	}
+	ident := strings.TrimSpace(spec[at+1:])
+	if !planeIdentRegex.MatchString(ident) {
+		return spec, ""
+	}
+	return spec[:at], strings.ToUpper(ident)
 }
 
 // parseContractSpec parses a contract descriptor of the form:
@@ -245,6 +262,7 @@ func runSynapseCreate(ctx context.Context, subArgs []string, out io.Writer) erro
 		if spec == "" {
 			continue
 		}
+		spec, planeProject := splitPlaneSuffix(spec)
 		absDir, alias, role, err := parseMemberSpec(spec)
 		if err != nil {
 			return err
@@ -254,10 +272,11 @@ func runSynapseCreate(ctx context.Context, subArgs []string, out io.Writer) erro
 			return fmt.Errorf("register project %s: %w", absDir, err)
 		}
 		members = append(members, synapse.Member{
-			ProjectID: entry.ID,
-			Alias:     alias,
-			Role:      role,
-			PathHint:  absDir,
+			ProjectID:    entry.ID,
+			Alias:        alias,
+			Role:         role,
+			PathHint:     absDir,
+			PlaneProject: planeProject,
 		})
 	}
 
@@ -350,6 +369,7 @@ func runSynapseList(ctx context.Context, subArgs []string, out io.Writer) error 
 					Role:      string(m.Role),
 					PathHint:  m.PathHint,
 					Status:    string(synapse.StatusOf(m)),
+					Plane:     m.PlaneProject,
 				})
 			}
 			listJSON = append(listJSON, synapseListJSON{
@@ -426,6 +446,7 @@ func runSynapseInspect(ctx context.Context, subArgs []string, out io.Writer) err
 				Role:      string(m.Role),
 				PathHint:  m.PathHint,
 				Status:    string(synapse.StatusOf(m)),
+				Plane:     m.PlaneProject,
 			})
 		}
 		contracts := s.Contracts
@@ -464,7 +485,11 @@ func runSynapseInspect(ctx context.Context, subArgs []string, out io.Writer) err
 	fmt.Fprintf(out, "    Members (%d):\n", len(s.Members))
 	for _, m := range s.Members {
 		status := synapse.StatusOf(m)
-		fmt.Fprintf(out, "      * %-15s [%s] (%s) -> %s\n", m.Alias, m.Role, status, m.PathHint)
+		if m.PlaneProject != "" {
+			fmt.Fprintf(out, "      * %-15s [%s] (%s) -> %s  plane=%s\n", m.Alias, m.Role, status, m.PathHint, m.PlaneProject)
+		} else {
+			fmt.Fprintf(out, "      * %-15s [%s] (%s) -> %s\n", m.Alias, m.Role, status, m.PathHint)
+		}
 	}
 	if len(s.Contracts) > 0 {
 		fmt.Fprintf(out, "    Contracts (%d):\n", len(s.Contracts))
@@ -494,6 +519,46 @@ func runSynapseInspect(ctx context.Context, subArgs []string, out io.Writer) err
 	return nil
 }
 
+// runSynapseSetPlane binds (or with "-" clears) the Plane project identifier of one member.
+func runSynapseSetPlane(_ context.Context, subArgs []string, out io.Writer) error {
+	if len(subArgs) != 3 {
+		return errors.New("usage: dendrite synapse set-plane <id> <alias> <PLANE-IDENT|->")
+	}
+	id, alias, ident := subArgs[0], subArgs[1], strings.TrimSpace(subArgs[2])
+	if ident == "-" {
+		ident = ""
+	} else if !planeIdentRegex.MatchString(ident) {
+		return fmt.Errorf("invalid Plane project identifier %q", ident)
+	}
+	st, err := synapse.DefaultStore()
+	if err != nil {
+		return err
+	}
+	syn, err := st.Load(id)
+	if err != nil {
+		return err
+	}
+	found := false
+	for i := range syn.Members {
+		if syn.Members[i].Alias == alias || syn.Members[i].ProjectID == alias {
+			syn.Members[i].PlaneProject = strings.ToUpper(ident)
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("synapse %q has no member %q", id, alias)
+	}
+	if err := st.Save(syn); err != nil {
+		return err
+	}
+	if ident == "" {
+		fmt.Fprintf(out, "[✓] Cleared Plane project for %s in synapse %s\n", alias, id)
+	} else {
+		fmt.Fprintf(out, "[✓] Bound %s in synapse %s to Plane project %s\n", alias, id, strings.ToUpper(ident))
+	}
+	return nil
+}
+
 // runSynapseCommand executes a synapse subcommand writing human/JSON output to out; returns an error instead of exiting.
 func runSynapseCommand(ctx context.Context, args []string, out io.Writer) error {
 	if len(args) == 0 {
@@ -518,6 +583,8 @@ func runSynapseCommand(ctx context.Context, args []string, out io.Writer) error 
 		return runSynapseMove(ctx, subArgs, out)
 	case "ide-sync":
 		return runSynapseIDESync(ctx, subArgs, out)
+	case "set-plane":
+		return runSynapseSetPlane(ctx, subArgs, out)
 	default:
 		return fmt.Errorf("unknown synapse action %q", action)
 	}
@@ -535,7 +602,8 @@ func handleSynapseCommand(ctx context.Context, args []string) {
 func printSynapseUsage(out io.Writer) {
 	fmt.Fprintln(out, "Usage: dendrite synapse <action> [flags...]")
 	fmt.Fprintln(out, "\nAvailable Subcommands:")
-	fmt.Fprintln(out, "  create <id> --members <dir>[=alias][:role],... [flags...]")
+	fmt.Fprintln(out, "  create <id> --members <dir>[=alias][:role][@PLANE],... [flags...]")
+	fmt.Fprintln(out, "  set-plane <id> <alias> <PLANE-IDENT|->")
 	fmt.Fprintln(out, "  list [--json]")
 	fmt.Fprintln(out, "  inspect <id> [--json]")
 	fmt.Fprintln(out, "  heal [--auto] [--roots dir,...] [--depth N] [--json]")

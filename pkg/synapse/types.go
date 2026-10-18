@@ -71,6 +71,8 @@ type Member struct {
 	Alias     string `toml:"alias" json:"alias"`
 	Role      Role   `toml:"role" json:"role"`
 	PathHint  string `toml:"path_hint" json:"path_hint,omitempty"`
+	// PlaneProject is the Plane project identifier (e.g. "DGIT") tracking this member\'s tickets.
+	PlaneProject string `toml:"plane_project" json:"plane_project,omitempty"`
 }
 
 // Consumer specifies a consuming repository alias and the relative file path where the contract is consumed.
