@@ -49,7 +49,7 @@ One file per lore command: `cmd/dendrite/<plain>.go` exports `new<Plain>Cmd() *c
   - Wrap invocation mistakes found after parsing with `usageErrorf(...)`.
   - Every other error exits 1, and `main.go` prints it once as `[-] <err>`.
 - **Help text:** every command sets `Short`. Parents and non-obvious leaves set `Example`, with one invocation per line using the lore name. `dendrite codex generate --reference` renders these into `docs/cli/<name>.md`, and `codex audit --strict` fails CI when the docs are stale.
-- **Tests** run the real tree through `runCLI(ctx, &buf, args...)` (`cmd/dendrite/root_test.go`). They check output and `exitCodeFor(err)`.
+- **Tests** run the real tree through `runCLI(ctx, &buf, args...)` (`cmd/dendrite/root_test.go`). They check output and `exitCodeFor(err)`. A command that is not wired into `newRootCmd()` yet is tested with `runWith(ctx, &buf, newXCmd(), "<name>", args...)`. This mounts the command on a bare root that has the global flags.
 
 ## Example: before and after
 

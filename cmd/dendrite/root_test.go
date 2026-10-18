@@ -21,6 +21,16 @@ func runCLI(ctx context.Context, out io.Writer, args ...string) error {
 	return root.ExecuteContext(ctx)
 }
 
+// runWith executes args against a bare root holding only cmd, so a command can be tested before it is wired into newRootCmd.
+func runWith(ctx context.Context, out io.Writer, cmd *cobra.Command, args ...string) error {
+	root := newBareRootCmd()
+	root.AddCommand(cmd)
+	root.SetOut(out)
+	root.SetErr(out)
+	root.SetArgs(args)
+	return root.ExecuteContext(ctx)
+}
+
 // runSynapseCommand runs `dendrite synapse <args...>`.
 func runSynapseCommand(ctx context.Context, args []string, out io.Writer) error {
 	return runCLI(ctx, out, append([]string{"synapse"}, args...)...)
@@ -112,6 +122,16 @@ func TestExitCodes(t *testing.T) {
 	}
 	if got := exitCodeFor(errors.New("boom")); got != ExitError {
 		t.Fatalf("runtime error exit code = %d; want %d", got, ExitError)
+	}
+}
+
+func TestRunWith_SingleCommand(t *testing.T) {
+	var buf bytes.Buffer
+	if err := runWith(context.Background(), &buf, newSessionCmd(), "handoff", "--help"); err != nil {
+		t.Fatalf("runWith: %v", err)
+	}
+	if !strings.Contains(buf.String(), "checkpoint") {
+		t.Fatalf("expected session help, got:\n%s", buf.String())
 	}
 }
 

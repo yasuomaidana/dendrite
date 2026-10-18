@@ -41,6 +41,19 @@ func groupTitle(id string) string {
 
 // newRootCmd builds the full dendrite command tree.
 func newRootCmd() *cobra.Command {
+	root := newBareRootCmd()
+	root.AddCommand(
+		newVersionCmd(),
+		newSynapseCmd(),
+		newSessionCmd(),
+		newBoutonCmd(),
+	)
+	root.AddCommand(legacyCommands()...)
+	return root
+}
+
+// newBareRootCmd builds the root command (groups, global flags, error handling) without subcommands.
+func newBareRootCmd() *cobra.Command {
 	cobra.EnableCaseInsensitive = true
 
 	root := &cobra.Command{
@@ -66,14 +79,6 @@ func newRootCmd() *cobra.Command {
 	})
 	bindGlobalFlags(root)
 	root.AddGroup(commandGroups...)
-
-	root.AddCommand(
-		newVersionCmd(),
-		newSynapseCmd(),
-		newSessionCmd(),
-		newBoutonCmd(),
-	)
-	root.AddCommand(legacyCommands()...)
 	return root
 }
 
