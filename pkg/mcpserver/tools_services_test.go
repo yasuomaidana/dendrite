@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -274,7 +275,34 @@ func TestTools_PlaneDAG(t *testing.T) {
 	}
 }
 
+// chdirToScratchRepo runs the rest of the test inside a throwaway git checkout (on a
+// feature branch, with an origin) so tools that act on "." (branch guard, audit,
+// remote sync) can never switch, rebase or commit in the real repository.
+func chdirToScratchRepo(t *testing.T) {
+	t.Helper()
+	root := t.TempDir()
+	origin, repo := filepath.Join(root, "origin.git"), filepath.Join(root, "repo")
+	git := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git(root, "init", "-q", "--bare", "-b", "develop", origin)
+	git(root, "clone", "-q", origin, repo)
+	git(repo, "checkout", "-q", "-b", "develop")
+	git(repo, "commit", "-q", "--allow-empty", "-m", "init")
+	git(repo, "push", "-q", "-u", "origin", "develop")
+	git(repo, "checkout", "-q", "-b", "feature/x")
+	t.Chdir(repo)
+}
+
 func TestTools_Audit(t *testing.T) {
+	chdirToScratchRepo(t)
 	srv := NewServer(ServerConfig{})
 	srv.RegisterDefaultTools(Dependencies{})
 
