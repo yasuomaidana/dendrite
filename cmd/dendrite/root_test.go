@@ -202,3 +202,12 @@ func TestSharedFlagHelpers(t *testing.T) {
 		}
 	}
 }
+
+func TestInvokeCmd(t *testing.T) {
+	if err := invokeCmd(context.Background(), newSessionCmd(), "--help"); err != nil {
+		t.Fatalf("invokeCmd help: %v", err)
+	}
+	if err := invokeCmd(context.Background(), newSessionCmd(), "bogus"); !isUsageError(err) {
+		t.Fatalf("invokeCmd bogus = %v; want usage error", err)
+	}
+}

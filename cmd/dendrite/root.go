@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -204,4 +206,18 @@ func extractGlobalFlags(args []string) []string {
 		*p = value
 	}
 	return out
+}
+
+// invokeCmd runs cmd with args on a bare root, printing any error.
+// Migrated groups use it to keep their old handle* entry points working for legacy callers
+// in other files; the shims are deleted once nothing calls them (DEN-1032).
+func invokeCmd(ctx context.Context, cmd *cobra.Command, args ...string) error {
+	root := newBareRootCmd()
+	root.AddCommand(cmd)
+	root.SetArgs(append([]string{cmd.Name()}, args...))
+	err := root.ExecuteContext(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[-] %v\n", err)
+	}
+	return err
 }
