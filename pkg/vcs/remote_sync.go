@@ -52,6 +52,16 @@ func (w *RemoteSyncWatcher) FetchAndDetect(ctx context.Context, branch string) (
 		}
 	}
 
+	// CurrentBranch reports "HEAD" on a detached checkout; origin/HEAD is the remote's
+	// default branch, not this checkout's, so there is nothing to compare or pull.
+	if branch == "HEAD" {
+		return &RemoteSyncStatus{
+			Branch:   branch,
+			SyncedAt: time.Now(),
+			Details:  "Detached HEAD: check out a branch to sync with its remote",
+		}, nil
+	}
+
 	// 1. Fetch remote tracking state
 	_, _ = w.Guard.runGit(ctx, "fetch", "--all", "--prune")
 
@@ -93,6 +103,9 @@ func (w *RemoteSyncWatcher) SyncRemoteFixes(ctx context.Context, branch string) 
 		return nil, err
 	}
 
+	if status.Branch == "HEAD" {
+		return status, nil
+	}
 	if status.Behind == 0 {
 		status.Details = "Local workspace is already up to date with remote"
 		return status, nil
