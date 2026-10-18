@@ -307,7 +307,7 @@ func buildRegistry() *cli.Registry {
 
 	reg.Register(&cli.Command{
 		Name:        "dist",
-		Aliases:     []string{"distcodebase", "distributed", "neural-mesh", "syn-mesh"},
+		Aliases:     []string{"distcodebase", "distributed", "neural-mesh"},
 		Category:    "Axon & Myelin Sheath",
 		Description: "Distributed codebase spawner, modular REA, and repo coordinator",
 		Run: func(ctx context.Context, args []string) error {
