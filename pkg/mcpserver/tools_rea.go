@@ -9,7 +9,7 @@ import (
 	"Dendrite/pkg/rea/showcase"
 )
 
-func (s *Server) registerREATools(deps Dependencies) {
+func registerREATools(s *Server, deps Dependencies) {
 	// 21. dendrite_rea_showcase
 	s.RegisterTool(Tool{
 		Name:        "dendrite_rea_showcase",

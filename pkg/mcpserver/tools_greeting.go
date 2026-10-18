@@ -8,7 +8,7 @@ import (
 	"Dendrite/pkg/personalcontext/greeting"
 )
 
-func (s *Server) registerGreetingTools(deps Dependencies) {
+func registerGreetingTools(s *Server, deps Dependencies) {
 	// dendrite_pcontext_greeting_generate
 	s.RegisterTool(Tool{
 		Name:        "dendrite_pcontext_greeting_generate",

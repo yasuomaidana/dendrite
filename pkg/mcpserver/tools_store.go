@@ -14,7 +14,7 @@ var defaultMCPStoreInspector = status.NewStoreInspector(defaultMCPStore)
 
 var defaultMCPStore, _ = segmented.NewSegmentedStore("")
 
-func (s *Server) registerStoreTools(deps Dependencies) {
+func registerStoreTools(s *Server, deps Dependencies) {
 	if defaultMCPStore == nil {
 		return
 	}

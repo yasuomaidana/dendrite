@@ -17,7 +17,6 @@ Axon & Myelin Sheath
 - `distcodebase`
 - `distributed`
 - `neural-mesh`
-- `syn-mesh`
 
 ## Subcommands
 

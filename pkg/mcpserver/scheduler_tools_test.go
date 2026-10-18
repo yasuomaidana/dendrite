@@ -8,7 +8,7 @@ import (
 
 func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// Verify tool registration
 	registered := make(map[string]bool)
@@ -33,7 +33,7 @@ func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. Test dendrite_analyze_policy query
-	policyHandler := srv.handlers["dendrite_analyze_policy"]
+	policyHandler, _ := srv.Handler("dendrite_analyze_policy")
 	res, err := policyHandler(ctx, map[string]interface{}{})
 	if err != nil {
 		t.Fatalf("policyHandler query failed: %v", err)
@@ -59,7 +59,7 @@ func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
 	}
 
 	// 3. Test dendrite_analyze_status
-	statusHandler := srv.handlers["dendrite_analyze_status"]
+	statusHandler, _ := srv.Handler("dendrite_analyze_status")
 	resStatus, err := statusHandler(ctx, map[string]interface{}{
 		"remaining_quota": 0.85,
 	})
@@ -71,7 +71,7 @@ func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
 	}
 
 	// 4. Test dendrite_analyze_trigger
-	triggerHandler := srv.handlers["dendrite_analyze_trigger"]
+	triggerHandler, _ := srv.Handler("dendrite_analyze_trigger")
 	resTrigger, err := triggerHandler(ctx, map[string]interface{}{
 		"chunk_id": "pkg/store/store.go",
 	})
@@ -107,7 +107,7 @@ func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
 	}
 
 	// 7. Test dendrite_analyze_switch
-	switchHandler := srv.handlers["dendrite_analyze_switch"]
+	switchHandler, _ := srv.Handler("dendrite_analyze_switch")
 	resSwitch, err := switchHandler(ctx, map[string]interface{}{
 		"allow_zero": true,
 		"mode":       "always",
@@ -120,7 +120,7 @@ func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
 	}
 
 	// 8. Test dendrite_tokens_status
-	tokensHandler := srv.handlers["dendrite_tokens_status"]
+	tokensHandler, _ := srv.Handler("dendrite_tokens_status")
 	resTokens, err := tokensHandler(ctx, map[string]interface{}{
 		"model": "gemini-3.8-flash-high",
 	})

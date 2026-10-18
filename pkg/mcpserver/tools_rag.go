@@ -9,7 +9,7 @@ import (
 	"Dendrite/pkg/rag"
 )
 
-func (s *Server) registerRAGTools(deps Dependencies) {
+func registerRAGTools(s *Server, deps Dependencies) {
 	// 46. dendrite_rag_ask
 	s.RegisterTool(Tool{
 		Name:        "dendrite_rag_ask",

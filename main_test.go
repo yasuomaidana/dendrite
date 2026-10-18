@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/env"
-	"Dendrite/pkg/jetbrains"
+	"github.com/yasuomaidana/dendrite-mcp-hub/pkg/jetbrains"
 )
 
 func executeCommand(args ...string) (string, error) {

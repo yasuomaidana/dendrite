@@ -54,7 +54,7 @@ func quoteString(s string) string {
 //   - Root properties (id, name, state, created_at, updated_at) emitted first
 //   - Timestamps formatted as RFC3339 UTC
 //   - Parity command keys sorted lexicographically; bare keys when matching [A-Za-z0-9_-]+ else quoted
-//   - Empty sections omitted
+//   - Empty sections and empty optional member keys (source, remote, ref, module, locked_*) omitted
 func Marshal(s *Synapse) ([]byte, error) {
 	if s == nil {
 		return nil, errors.New("synapse is nil")
@@ -99,6 +99,20 @@ func Marshal(s *Synapse) ([]byte, error) {
 		fmt.Fprintf(&buf, "alias = %s\n", quoteString(m.Alias))
 		fmt.Fprintf(&buf, "role = %s\n", quoteString(string(m.Role)))
 		fmt.Fprintf(&buf, "path_hint = %s\n", quoteString(m.PathHint))
+		for _, kv := range [][2]string{
+			{"source", string(m.Source)},
+			{"remote", m.Remote},
+			{"ref", m.Ref},
+			{"module", m.Module},
+			{"locked_sha", m.LockedSHA},
+		} {
+			if kv[1] != "" {
+				fmt.Fprintf(&buf, "%s = %s\n", kv[0], quoteString(kv[1]))
+			}
+		}
+		if !m.LockedAt.IsZero() {
+			fmt.Fprintf(&buf, "locked_at = %s\n", quoteString(m.LockedAt.UTC().Format(time.RFC3339)))
+		}
 	}
 
 	// [[contracts]] and [[contracts.consumers]]
@@ -259,7 +273,7 @@ func parseValue(rawVal string, key string) (string, error) {
 		return v, nil
 	}
 	// For timestamps, allow bare RFC3339 timestamps if valid
-	if key == "created_at" || key == "updated_at" {
+	if key == "created_at" || key == "updated_at" || key == "locked_at" {
 		if _, err := time.Parse(time.RFC3339, rawVal); err == nil {
 			return rawVal, nil
 		}
@@ -433,6 +447,22 @@ func Unmarshal(data []byte) (*Synapse, error) {
 				m.Role = Role(val)
 			case "path_hint":
 				m.PathHint = val
+			case "source":
+				m.Source = Source(val)
+			case "remote":
+				m.Remote = val
+			case "ref":
+				m.Ref = val
+			case "module":
+				m.Module = val
+			case "locked_sha":
+				m.LockedSHA = val
+			case "locked_at":
+				t, err := time.Parse(time.RFC3339, val)
+				if err != nil {
+					return nil, fmt.Errorf("line %d: invalid locked_at timestamp %q: %w", lineNum, val, err)
+				}
+				m.LockedAt = t
 			default:
 				return nil, fmt.Errorf("line %d: unknown key %q in [[members]]", lineNum, key)
 			}

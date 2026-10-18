@@ -12,9 +12,9 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"Dendrite/pkg/jetbrains"
 	"Dendrite/pkg/projectid"
 	"Dendrite/pkg/synapse"
+	"Dendrite/pkg/synapseide"
 )
 
 // loadDefaultIndex opens the global project index (~/.dendrite/projects.json or $DENDRITE_HOME).
@@ -242,11 +242,11 @@ func runSynapseIDESync(ctx context.Context, subArgs []string, out io.Writer) err
 	if err != nil {
 		return fmt.Errorf("synapse %q: %w", id, err)
 	}
-	written, skipped, err := jetbrains.SyncSynapseIDE(s, binary)
+	written, skipped, err := synapseide.SyncSynapseIDE(s, binary)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "[✓] Registered MCP server %s and IDE scope %s\n", jetbrains.SynapseServerName(id), jetbrains.SynapseScopeName(id))
+	fmt.Fprintf(out, "[✓] Registered MCP server %s and IDE scope %s\n", synapseide.SynapseServerName(id), synapseide.SynapseScopeName(id))
 	for _, f := range written {
 		fmt.Fprintf(out, "    + %s\n", f)
 	}

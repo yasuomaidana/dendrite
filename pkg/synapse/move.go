@@ -68,7 +68,7 @@ func Move(st *Store, ref, newPath string, opts MoveOptions) (MoveResult, error) 
 		return MoveResult{}, fmt.Errorf("destination %s is inside source %s", absNew, absOld)
 	}
 
-	snap := takeSnapshot(st, opts.Index)
+	snap := takeSnapshot(st, opts.Index, poolFileCandidates(syns, opts.Index))
 
 	parent := filepath.Dir(absNew)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
@@ -224,18 +224,27 @@ func copyFileOrSymlink(src, dst string, info fs.FileInfo) error {
 	return os.Chmod(dst, info.Mode().Perm())
 }
 
-// snapshot stores in-memory snapshots of manifests and index prior to relocation.
+// snapshot stores in-memory snapshots of manifests, index and pool files prior to relocation.
 type snapshot struct {
-	manifests    map[string][]byte
+	manifests map[string][]byte
+	// pools holds pool.json contents keyed by their pre-move path; files inside the
+	// moved project are restored after the directory itself is moved back.
+	pools        map[string][]byte
 	indexPath    string
 	indexBytes   []byte
 	indexExisted bool
 }
 
-// takeSnapshot reads all store manifests and the index file into memory.
-func takeSnapshot(st *Store, ix *projectid.Index) *snapshot {
+// takeSnapshot reads all store manifests, the index file and poolFiles into memory.
+func takeSnapshot(st *Store, ix *projectid.Index, poolFiles []string) *snapshot {
 	snap := &snapshot{
 		manifests: make(map[string][]byte),
+		pools:     make(map[string][]byte),
+	}
+	for _, f := range poolFiles {
+		if data, err := os.ReadFile(f); err == nil {
+			snap.pools[f] = data
+		}
 	}
 	entries, err := os.ReadDir(st.Dir())
 	if err == nil {
@@ -263,7 +272,7 @@ func takeSnapshot(st *Store, ix *projectid.Index) *snapshot {
 	return snap
 }
 
-// rollback restores the directory to oldPath and manifests and index to their snapshotted state.
+// rollback restores the directory to oldPath and manifests, index and pool files to their snapshotted state.
 func (snap *snapshot) rollback(st *Store, ix *projectid.Index, oldPath, newPath string, crossDevice bool) {
 	if crossDevice {
 		if err := copyTree(newPath, oldPath); err == nil {
@@ -285,6 +294,14 @@ func (snap *snapshot) rollback(st *Store, ix *projectid.Index, oldPath, newPath 
 		}
 	}
 	for path, data := range snap.manifests {
+		current, err := os.ReadFile(path)
+		if err == nil && bytes.Equal(current, data) {
+			continue
+		}
+		_ = fsutil.WriteFileAtomic(path, data)
+	}
+
+	for path, data := range snap.pools {
 		current, err := os.ReadFile(path)
 		if err == nil && bytes.Equal(current, data) {
 			continue

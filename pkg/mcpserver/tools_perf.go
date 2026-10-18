@@ -12,7 +12,7 @@ import (
 	"Dendrite/pkg/telemetry"
 )
 
-func (s *Server) registerPerfTools(deps Dependencies) {
+func registerPerfTools(s *Server, deps Dependencies) {
 	// 20. dendrite_bench_run
 	s.RegisterTool(Tool{
 		Name:        "dendrite_bench_run",

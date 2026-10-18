@@ -14,13 +14,13 @@ import (
 	"Dendrite/pkg/env"
 	"Dendrite/pkg/gateway"
 	"Dendrite/pkg/inference"
-	"Dendrite/pkg/jetbrains"
 	"Dendrite/pkg/ollama"
 	"Dendrite/pkg/telemetry"
 	"Dendrite/pkg/topology"
 	"Dendrite/pkg/topology/advisor"
 	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/plane"
+	"github.com/yasuomaidana/dendrite-mcp-hub/pkg/jetbrains"
 )
 
 // Dependencies holds external resources required for tool execution.
@@ -31,7 +31,7 @@ type Dependencies struct {
 }
 
 // RegisterDefaultTools registers the standard suite of Dendrite MCP tools.
-func (s *Server) RegisterDefaultTools(deps Dependencies) {
+func RegisterDefaultTools(s *Server, deps Dependencies) {
 	if deps.DevStatus == "" {
 		deps.DevStatus = "DEV_STATUS.md"
 	}
@@ -821,48 +821,48 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 	})
 
 	// 16-19: Distributed Codebase & Interoperability Tools
-	s.registerDistCodebaseTools(deps)
+	registerDistCodebaseTools(s, deps)
 
 	// 20: Performance Testing, Benchmarking & Gateway Load Tools
-	s.registerPerfTools(deps)
+	registerPerfTools(s, deps)
 
 	// 21: Open-Source REA Showcases & Cleanroom Parity Verification Tools
-	s.registerREATools(deps)
+	registerREATools(s, deps)
 
 	// 22: Docusaurus Documentation & Project Sharing Tools
-	s.registerDocusaurusTools(deps)
+	registerDocusaurusTools(s, deps)
 
 	// 23: Local Agent Triage, Token Efficiency & Prompt Router
-	s.registerTriageTools(deps)
+	registerTriageTools(s, deps)
 
 	// 24: Hybrid Agent Search, TEI Embeddings & Semantic Routing Engine
-	s.registerAgentSearchTools(deps)
+	registerAgentSearchTools(s, deps)
 
 	// 25: Automated Test Synthesizer, Self-Healing Loop & Web UI Test Harness
-	s.registerTestGenTools(deps)
+	registerTestGenTools(s, deps)
 
 	// 26-28: Autonomous Pool DAG Synchronization & Multi-Directory Project Tools
-	s.registerPoolTools(deps)
+	registerPoolTools(s, deps)
 
 	// 29-31: Universal Intent Slicing & Query Engine Tools
-	s.registerQueryTools(deps)
+	registerQueryTools(s, deps)
 
 	// 38-40: Persistent Segmented Store & Chunk Checkpointing Tools
-	s.registerStoreTools(deps)
+	registerStoreTools(s, deps)
 
 	// 41-43: Token-Aware Hybrid Scheduler & Quota Governance Tools
-	s.registerSchedulerTools(deps)
+	registerSchedulerTools(s, deps)
 
 	// 45: Quad-IDE Cross-Language Schema & Contract Drift Tools
-	s.registerContractTools(deps)
+	registerContractTools(s, deps)
 
 	// 47-50: Speculative Git Worktree Branching & Differential Benchmark Tools
-	s.registerStoryForkTools(deps)
+	registerStoryForkTools(s, deps)
 	// Ticket-Milestone DAG Linker, Smart Prioritization & Plane Gantt Tools
-	s.registerPlaneDAGTools(deps)
+	registerPlaneDAGTools(s, deps)
 
 	// 55-57: Git Guardrails, Speculative Stacked Branches & Vendor Audit Tools
-	s.registerAuditTools(deps)
+	registerAuditTools(s, deps)
 
 	// 46. dendrite_commit
 	s.RegisterTool(Tool{
@@ -953,17 +953,17 @@ func (s *Server) RegisterDefaultTools(deps Dependencies) {
 	})
 
 	// Model Migration Tools
-	s.registerInferenceTools(deps)
+	registerInferenceTools(s, deps)
 	// UI & Penpot Tools
-	s.registerPenpotTools(deps)
+	registerPenpotTools(s, deps)
 	// Service Migration & Node Mobility Tools
-	s.registerMigrateTools(deps)
+	registerMigrateTools(s, deps)
 	// Personal Context Greeting Tools
-	s.registerGreetingTools(deps)
+	registerGreetingTools(s, deps)
 	// Project Environment Preparation & CI/CD Tools
-	s.registerEnvPrepareTools(deps)
+	registerEnvPrepareTools(s, deps)
 	// Canvas Interactive Writing & Penpot Creative Bridge Tools
-	s.registerCanvasTools(deps)
+	registerCanvasTools(s, deps)
 	// Project RAG & AST Retrieval Tools
-	s.registerRAGTools(deps)
+	registerRAGTools(s, deps)
 }

@@ -147,7 +147,7 @@ Dendrite supports **dual nomenclature**: developers may invoke commands using st
 | **Axon & Myelin Sheath**<br/>*(Saltatory Conduction, Shielding & Latency)* | `topology [advisor]` | `axonal-pathway` | `axon` / `top` | Dynamic multi-node service placement and hardware router | `Active [x]` |
 | | `move <svc> to --ssh` | `axonal-translocation`| `translocate` / `mv` | Zero-credential interactive service migration across SSH nodes | `Active [x]` |
 | | `sync-remote` / `github-sync`| `saltatory-sync` | `salt-sync` / `gsync`| Bidirectional git/issue sync with commit reconciliation | `Active [x]` |
-| | `dist <spawn\|interop>` | `neural-mesh` [3] | `syn-mesh` / `dist` | Distributed codebase spawner and cross-project coordinator | `Active [x]` |
+| | `dist <spawn\|interop>` | `neural-mesh` [3] | `dist` | Distributed codebase spawner and cross-project coordinator | `Active [x]` |
 | | `bench <inference\|gateway>` | `conduction-velocity` [2]| `velocity` / `bnch` | TTFT, TPS, and load resilience stress-test benchmarking | `Active [x]` |
 | **Glial Regulation & Pruning**<br/>*(Immune Surveillance & Cleanup)* | `audit-changes` | `microglial-prune` [4] | `prune` / `prn` | Microglial vendor branch audit, conflict detection, and rebase | `Active [x]` |
 | | `quality <audit\|hitl-sync>` | `homeostatic-audit` | `allostasis` / `qlty` | Anti-mock scan, 100% coverage profiler, and HITL synchronization | `Active [x]` |
@@ -273,6 +273,8 @@ Verify binary execution:
 ```bash
 ./bin/dendrite version
 ```
+
+Keep it current with `dendrite update --dev` from the checkout: it fast-forwards the sibling repositories linked through a synapse, rebuilds their binaries and swaps in a rebuilt `dendrite` with a backup and smoke test. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ### First Steps: Environment Preparation & Synchronization
 

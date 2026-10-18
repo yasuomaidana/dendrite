@@ -9,7 +9,7 @@ import (
 	"Dendrite/pkg/ui/penpot"
 )
 
-func (s *Server) registerPenpotTools(deps Dependencies) {
+func registerPenpotTools(s *Server, deps Dependencies) {
 	// dendrite_ui_penpot_sync
 	s.RegisterTool(Tool{
 		Name:        "dendrite_ui_penpot_sync",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -82,5 +83,20 @@ func TestRemoteSyncWatcher_SyncRemoteFixes_RealGit(t *testing.T) {
 	}
 	if len(status.ReconciledTickets) != 1 || status.ReconciledTickets[0] != "DEN-703" {
 		t.Fatalf("expected reconciled ticket DEN-703, got %v", status.ReconciledTickets)
+	}
+}
+
+func TestRemoteSyncWatcher_DetachedHeadIsNotPulled(t *testing.T) {
+	repoDir, _ := setupRealRepo(t)
+	ctx := context.Background()
+	runGitCmd(t, repoDir, "checkout", "--detach")
+
+	watcher := NewRemoteSyncWatcher(NewGitGuard(repoDir, ModeStandard), nil)
+	status, err := watcher.SyncRemoteFixes(ctx, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status.Branch != "HEAD" || status.Updated || !strings.Contains(status.Details, "Detached HEAD") {
+		t.Fatalf("status = %+v", status)
 	}
 }

@@ -1,15 +1,42 @@
 package switcher
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 )
+
+// goModuleVersion matches a Go module version usable in go.mod (semver or pseudo-version).
+var goModuleVersion = regexp.MustCompile(`^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+incompatible)?$`)
+
+// goGet resolves dep@ref (a branch, tag or commit) into a go.mod requirement. A branch
+// name is not a valid go.mod version, so only the go command can pin it (to a
+// pseudo-version). It is a variable so tests can run without network access.
+var goGet = func(dir, depAtRef string) error {
+	cmd := exec.Command("go", "get", depAtRef)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("go get %s: %w: %s", depAtRef, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// goModulePath turns a fork URL (https://github.com/o/r.git) into a module path (github.com/o/r).
+func goModulePath(url string) string {
+	for _, p := range []string{"https://", "http://", "ssh://", "git@"} {
+		url = strings.TrimPrefix(url, p)
+	}
+	url = strings.Replace(url, ":", "/", 1)
+	return strings.TrimSuffix(url, ".git")
+}
 
 // DependencySwitcher executes transactional mode transitions and updates IDE scopes.
 type DependencySwitcher struct{}
@@ -201,6 +228,7 @@ func mutateGoMod(path string, req SwitchRequest) (DependencyMode, error) {
 	}
 
 	// Inject new mode directive
+	var branchRef string
 	switch req.Mode {
 	case ModePublished:
 		// Pin required version if version provided
@@ -208,22 +236,34 @@ func mutateGoMod(path string, req SwitchRequest) (DependencyMode, error) {
 			newLines = setGoRequire(newLines, req.DependencyName, req.Version)
 		}
 	case ModeBranch:
-		branchRef := req.BranchName
+		branchRef = req.BranchName
 		if req.CommitSHA != "" {
 			branchRef = req.CommitSHA
 		}
-		newLines = setGoRequire(newLines, req.DependencyName, branchRef)
+		if goModuleVersion.MatchString(branchRef) {
+			newLines = setGoRequire(newLines, req.DependencyName, branchRef)
+			branchRef = ""
+		}
 	case ModeLocal:
 		newLines = append(newLines, fmt.Sprintf("replace %s => %s", req.DependencyName, req.LocalPath))
 	case ModeFork:
-		target := req.ForkURL
-		if req.ForkBranch != "" {
-			target = fmt.Sprintf("%s %s", req.ForkURL, req.ForkBranch)
+		// A replacement module needs a version; a branch must first be resolved to a
+		// pseudo-version (e.g. with `go list -m <fork>@<branch>`).
+		if !goModuleVersion.MatchString(req.ForkBranch) {
+			return "", fmt.Errorf("go fork replace needs a module version (vX.Y.Z or pseudo-version), got %q", req.ForkBranch)
 		}
-		newLines = append(newLines, fmt.Sprintf("replace %s => %s", req.DependencyName, target))
+		newLines = append(newLines, fmt.Sprintf("replace %s => %s %s", req.DependencyName, goModulePath(req.ForkURL), req.ForkBranch))
 	}
 
-	return prevMode, os.WriteFile(path, []byte(strings.Join(newLines, "\n")), 0644)
+	if err := os.WriteFile(path, []byte(strings.Join(newLines, "\n")), 0644); err != nil {
+		return "", err
+	}
+	if branchRef != "" {
+		if err := goGet(filepath.Dir(path), req.DependencyName+"@"+branchRef); err != nil {
+			return "", err
+		}
+	}
+	return prevMode, nil
 }
 
 func setGoRequire(lines []string, dep, version string) []string {
@@ -250,7 +290,11 @@ func updateGoWork(goWorkPath, projectDir, localPath string) error {
 		data, _ := os.ReadFile(goWorkPath)
 		lines = strings.Split(string(data), "\n")
 	} else {
-		lines = []string{"go 1.24", "", "use ("}
+		goVersion := goDirective(filepath.Join(projectDir, "go.mod"))
+		if goVersion == "" {
+			goVersion = "1.24"
+		}
+		lines = []string{"go " + goVersion, "", "use ("}
 	}
 
 	useEntry := fmt.Sprintf("\t%s", localPath)
@@ -294,10 +338,11 @@ func mutateCargoToml(path string, req SwitchRequest) (DependencyMode, error) {
 	case ModePublished:
 		depReplacement = fmt.Sprintf(`%s = "%s"`, req.DependencyName, req.Version)
 	case ModeBranch:
-		depReplacement = fmt.Sprintf(`%s = { git = "%s", branch = "%s" }`, req.DependencyName, req.ForkURL, req.BranchName)
+		// Cargo only accepts `branch` on a git dependency.
 		if req.ForkURL == "" {
-			depReplacement = fmt.Sprintf(`%s = { version = "*", branch = "%s" }`, req.DependencyName, req.BranchName)
+			return "", errors.New("cargo branch mode needs the git repository URL (ForkURL)")
 		}
+		depReplacement = fmt.Sprintf(`%s = { git = "%s", branch = "%s" }`, req.DependencyName, req.ForkURL, req.BranchName)
 	case ModeLocal:
 		depReplacement = fmt.Sprintf(`%s = { path = "%s" }`, req.DependencyName, req.LocalPath)
 	case ModeFork:
@@ -353,7 +398,10 @@ func mutatePackageJSON(path string, req SwitchRequest) (DependencyMode, error) {
 		if req.CommitSHA != "" {
 			target = req.CommitSHA
 		}
-		deps[req.DependencyName] = fmt.Sprintf("git+https://github.com/org/%s.git#%s", req.DependencyName, target)
+		if req.ForkURL == "" {
+			return "", errors.New("npm branch mode needs the git repository URL (ForkURL)")
+		}
+		deps[req.DependencyName] = fmt.Sprintf("git+%s#%s", strings.TrimPrefix(req.ForkURL, "git+"), target)
 	case ModeLocal:
 		deps[req.DependencyName] = fmt.Sprintf("link:%s", req.LocalPath)
 	case ModeFork:
@@ -429,4 +477,20 @@ func syncJetBrainsScope(scopeFile, depName, localPath string) error {
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
+}
+
+// goDirective returns the version on the `go` line of a go.mod, or "".
+func goDirective(goMod string) string {
+	f, err := os.Open(goMod)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		if fields := strings.Fields(sc.Text()); len(fields) == 2 && fields[0] == "go" {
+			return fields[1]
+		}
+	}
+	return ""
 }

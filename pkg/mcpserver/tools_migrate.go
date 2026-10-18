@@ -10,7 +10,7 @@ import (
 	"Dendrite/pkg/node/migrate"
 )
 
-func (s *Server) registerMigrateTools(deps Dependencies) {
+func registerMigrateTools(s *Server, deps Dependencies) {
 	// dendrite_service_move
 	s.RegisterTool(Tool{
 		Name:        "dendrite_service_move",

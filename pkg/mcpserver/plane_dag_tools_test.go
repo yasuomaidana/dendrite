@@ -73,7 +73,7 @@ func TestMCP_PlaneDAGTools(t *testing.T) {
 		Name:    "Dendrite Test Server",
 		Version: "1.0.0",
 	})
-	mcpServer.RegisterDefaultTools(Dependencies{
+	RegisterDefaultTools(mcpServer, Dependencies{
 		PlaneClient: planeClient,
 		DevStatus:   "DEV_STATUS.md",
 	})
@@ -203,7 +203,7 @@ func TestMCP_SmartSelect_LocalFallback(t *testing.T) {
 	defer os.Remove(tmpFile)
 
 	mcpServer := NewServer(ServerConfig{})
-	mcpServer.RegisterDefaultTools(Dependencies{
+	RegisterDefaultTools(mcpServer, Dependencies{
 		PlaneClient: nil, // force fallback
 		DevStatus:   tmpFile,
 	})

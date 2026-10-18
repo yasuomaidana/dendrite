@@ -9,11 +9,11 @@ import (
 	"Dendrite/pkg/env/bootstrap"
 )
 
-func (s *Server) registerEnvBootstrapTools(deps Dependencies) {
-	s.registerEnvPrepareTools(deps)
+func registerEnvBootstrapTools(s *Server, deps Dependencies) {
+	registerEnvPrepareTools(s, deps)
 }
 
-func (s *Server) registerEnvPrepareTools(deps Dependencies) {
+func registerEnvPrepareTools(s *Server, deps Dependencies) {
 	// dendrite_env_prepare
 	s.RegisterTool(Tool{
 		Name:        "dendrite_env_prepare",

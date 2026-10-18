@@ -9,7 +9,7 @@ import (
 	"Dendrite/pkg/docusaurus"
 )
 
-func (s *Server) registerDocusaurusTools(deps Dependencies) {
+func registerDocusaurusTools(s *Server, deps Dependencies) {
 	svc := docusaurus.NewService()
 
 	// dendrite_docusaurus_generate

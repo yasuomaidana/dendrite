@@ -326,6 +326,7 @@ func TestScanSkipsVendoredAndDeepDirs(t *testing.T) {
 func TestSearchRootsDefaultsAndDedup(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv(EnvSearchRoots, "")
 	gl := filepath.Join(home, "GoLandProjects")
 	if err := os.MkdirAll(gl, 0o755); err != nil {
 		t.Fatal(err)
@@ -534,5 +535,112 @@ func TestHealSharedMemberAndUnindexedProject(t *testing.T) {
 	}
 	if got, ok := fresh.Lookup(coreID); !ok || got.Path != dst || got.Name != "core" {
 		t.Fatalf("fresh index entry = %+v, %v", got, ok)
+	}
+}
+
+func TestSearchRootsEnvOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	rr := filepath.Join(home, "RustRoverProjects")
+	custom := filepath.Join(home, "work")
+	for _, d := range []string{rr, custom, filepath.Join(home, "GoLandProjects")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv(EnvSearchRoots, "~/work"+string(os.PathListSeparator)+rr)
+	roots := searchRoots(Member{}, HealOptions{})
+	if len(roots) != 2 || roots[0] != custom || roots[1] != rr {
+		t.Fatalf("roots = %v, want [%s %s] (GoLandProjects replaced by override)", roots, custom, rr)
+	}
+}
+
+// worktreeOf turns dir into a linked worktree checkout carrying the same project id as main.
+func worktreeOf(t *testing.T, main, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, ".dendrite"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	id, err := projectid.Read(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeProjectID(dir, id); err != nil {
+		t.Fatal(err)
+	}
+	gitdir := "gitdir: " + filepath.Join(main, ".git", "worktrees", filepath.Base(dir)) + "\n"
+	if err := os.WriteFile(filepath.Join(dir, ".git"), []byte(gitdir), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLocatePrefersMainCheckoutOverWorktree(t *testing.T) {
+	e := newHealEnv(t)
+	dir, id := e.project("a/proj")
+	gitInit(t, dir, "https://example.com/proj.git")
+	// The worktree sorts before the main checkout so a first-hit scan would pick it.
+	worktreeOf(t, dir, filepath.Join(e.root, "a", "0-proj-feature"))
+
+	moved := filepath.Join(e.root, "b", "proj")
+	move(t, dir, moved)
+	loc := Locate(Member{ProjectID: id, Alias: "proj", PathHint: dir}, e.opts(false))
+	if loc.Path != moved || loc.Match != MatchID {
+		t.Fatalf("Locate = %+v, want main checkout %s", loc, moved)
+	}
+}
+
+func TestLocateFallsBackToSoleWorktree(t *testing.T) {
+	e := newHealEnv(t)
+	dir, id := e.project("a/proj")
+	wt := filepath.Join(e.root, "c", "proj-wt")
+	worktreeOf(t, dir, wt)
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	loc := Locate(Member{ProjectID: id, Alias: "proj", PathHint: dir}, e.opts(false))
+	if loc.Path != wt {
+		t.Fatalf("Locate = %+v, want worktree %s", loc, wt)
+	}
+}
+
+func TestLocateDuplicateIDIsAmbiguous(t *testing.T) {
+	e := newHealEnv(t)
+	dir, id := e.project("a/proj")
+	clone := filepath.Join(e.root, "b", "proj")
+	if err := os.MkdirAll(clone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeProjectID(clone, id); err != nil {
+		t.Fatal(err)
+	}
+	moved := filepath.Join(e.root, "c", "proj")
+	move(t, dir, moved)
+
+	other, otherID := e.project("other")
+	m := Member{ProjectID: id, Alias: "proj", Role: RolePeer, PathHint: dir}
+	e.synapse("dup", m, Member{ProjectID: otherID, Alias: "other", Role: RolePeer, PathHint: other})
+	loc := Locate(m, e.opts(false))
+	if loc.Path != "" || len(loc.Candidates) != 2 || loc.Match != MatchID {
+		t.Fatalf("Locate = %+v, want two id candidates", loc)
+	}
+	rows, err := Heal(e.store, e.opts(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := rowFor(t, rows, "proj"); r.Status != StatusAmbiguous || r.Applied {
+		t.Fatalf("row = %+v, want unapplied AMBIGUOUS", r)
+	}
+}
+
+func TestIsLinkedWorktree(t *testing.T) {
+	dir := t.TempDir()
+	if isLinkedWorktree(dir) {
+		t.Fatal("dir without .git reported as worktree")
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: /x/.git/modules/sub\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if isLinkedWorktree(dir) {
+		t.Fatal("submodule gitdir reported as worktree")
 	}
 }

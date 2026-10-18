@@ -9,7 +9,7 @@ import (
 
 func TestTools_DistCodebase(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// 1. dendrite_dist_sources: query matching
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_dist_sources", "arguments": {"query": "wgpu", "language": "rust"}}}`

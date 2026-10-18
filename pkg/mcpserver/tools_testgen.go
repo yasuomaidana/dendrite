@@ -8,7 +8,7 @@ import (
 	"Dendrite/pkg/testgen"
 )
 
-func (s *Server) registerTestGenTools(deps Dependencies) {
+func registerTestGenTools(s *Server, deps Dependencies) {
 	// 25. dendrite_test_auto
 	s.RegisterTool(Tool{
 		Name:        "dendrite_test_auto",

@@ -8,7 +8,7 @@ import (
 	"Dendrite/pkg/agentsearch"
 )
 
-func (s *Server) registerAgentSearchTools(deps Dependencies) {
+func registerAgentSearchTools(s *Server, deps Dependencies) {
 	// 24. dendrite_agent_search
 	s.RegisterTool(Tool{
 		Name:        "dendrite_agent_search",

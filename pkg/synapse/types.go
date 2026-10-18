@@ -65,13 +65,38 @@ var (
 	}
 )
 
+// Source selects where a member's code is consumed from in develop mode.
+type Source string
+
+const (
+	// SourceLocal links the member's checkout at PathHint (go.work use, cargo path patch).
+	// The empty Source means SourceLocal.
+	SourceLocal Source = "local"
+	// SourceRemote consumes the member from Remote at Ref (go require/replace, cargo git patch).
+	SourceRemote Source = "remote"
+)
+
 // Member models a repository participating in a Synapse cross-project link.
 type Member struct {
 	ProjectID string `toml:"project_id" json:"project_id"`
 	Alias     string `toml:"alias" json:"alias"`
 	Role      Role   `toml:"role" json:"role"`
 	PathHint  string `toml:"path_hint" json:"path_hint,omitempty"`
+	// Source is local (default) or remote.
+	Source Source `toml:"source" json:"source,omitempty"`
+	// Remote is the git URL consumed when Source is remote, and fetched by sync.
+	Remote string `toml:"remote" json:"remote,omitempty"`
+	// Ref is the branch, tag or commit to track; empty follows the checkout's current branch upstream.
+	Ref string `toml:"ref" json:"ref,omitempty"`
+	// Module is the Go module path or Cargo crate name consumers link against.
+	Module string `toml:"module" json:"module,omitempty"`
+	// LockedSHA and LockedAt record the commit Ref resolved to at the last sync.
+	LockedSHA string    `toml:"locked_sha" json:"locked_sha,omitempty"`
+	LockedAt  time.Time `toml:"locked_at" json:"locked_at,omitempty"`
 }
+
+// IsRemote reports whether the member is consumed from its remote rather than its local checkout.
+func (m Member) IsRemote() bool { return m.Source == SourceRemote }
 
 // Consumer specifies a consuming repository alias and the relative file path where the contract is consumed.
 type Consumer struct {
@@ -177,6 +202,7 @@ func (s *Synapse) Transition(to State) error {
 //   - member aliases are non-empty and unique
 //   - member project IDs are non-empty and unique
 //   - member roles are valid (producer, consumer, peer)
+//   - member sources are local, remote or empty; remote members carry a remote URL
 //   - contracts have valid kind (proto, openapi, jsonschema, go, rust, ts, pydantic, ffi, migrations)
 //   - contracts' producer and consumer aliases must be registered member aliases
 //   - sync strategy is valid or empty (go.work, cargo-patch, pnpm-workspace, none, "")
@@ -218,6 +244,16 @@ func (s *Synapse) Validate() error {
 		case RoleProducer, RoleConsumer, RolePeer:
 		default:
 			return fmt.Errorf("member %q: invalid role %q", m.Alias, m.Role)
+		}
+
+		switch m.Source {
+		case "", SourceLocal:
+		case SourceRemote:
+			if m.Remote == "" {
+				return fmt.Errorf("member %q: source remote requires a remote URL", m.Alias)
+			}
+		default:
+			return fmt.Errorf("member %q: invalid source %q (want local or remote)", m.Alias, m.Source)
 		}
 	}
 

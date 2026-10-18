@@ -595,7 +595,7 @@ func TestMoveEdgeCasesForCoverage(t *testing.T) {
 	})
 
 	t.Run("rollback restores changed manifest and removes untracked manifest", func(t *testing.T) {
-		snap := takeSnapshot(e.store, e.index)
+		snap := takeSnapshot(e.store, e.index, nil)
 		manifestPath := filepath.Join(e.store.Dir(), "s.toml")
 		_ = os.WriteFile(manifestPath, []byte("corrupted"), 0o644)
 		extraManifest := filepath.Join(e.store.Dir(), "extra.toml")
@@ -671,7 +671,7 @@ func TestRollbackIgnoresNonManifestEntries(t *testing.T) {
 	aDir, aID := e.project("a")
 	bDir, bID := e.project("b")
 	e.synapse("ab", Member{ProjectID: aID, Alias: "a", Role: RolePeer, PathHint: aDir}, Member{ProjectID: bID, Alias: "b", Role: RolePeer, PathHint: bDir})
-	snap := takeSnapshot(e.store, nil)
+	snap := takeSnapshot(e.store, nil, nil)
 
 	notes := filepath.Join(e.store.Dir(), "README.md")
 	sub := filepath.Join(e.store.Dir(), "archive.toml")
@@ -690,5 +690,43 @@ func TestRollbackIgnoresNonManifestEntries(t *testing.T) {
 		if _, err := os.Stat(p); err != nil {
 			t.Fatalf("%s should survive rollback: %v", p, err)
 		}
+	}
+}
+
+func TestMoveRollbackRestoresRewrittenPoolFiles(t *testing.T) {
+	e := newHealEnv(t)
+	dir, id := e.project("proj")
+	peerDir, peerID := e.project("peer")
+	e.synapse("syn",
+		Member{ProjectID: id, Alias: "proj", Role: RolePeer, PathHint: dir},
+		Member{ProjectID: peerID, Alias: "peer", Role: RolePeer, PathHint: peerDir},
+	)
+
+	writePool := func(root, content string) string {
+		t.Helper()
+		p := filepath.Join(root, filepath.FromSlash(dag.DefaultPoolConfigFile))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	// The peer's pool references proj and is rebound first; the malformed pool
+	// inside proj (rebound after the move, under its new path) then fails.
+	peerPool := writePool(peerDir, `{"version":"1.0.0","projects":[{"name":"proj","path":"`+dir+`"}]}`)
+	writePool(dir, "{")
+	before, _ := os.ReadFile(peerPool)
+
+	_, err := Move(e.store, "proj", filepath.Join(e.root, "zz-moved"), MoveOptions{Index: e.index})
+	if err == nil || !strings.Contains(err.Error(), "rolled back") {
+		t.Fatalf("expected rolled back error, got: %v", err)
+	}
+	if after, _ := os.ReadFile(peerPool); !bytes.Equal(before, after) {
+		t.Fatalf("peer pool.json not restored:\nbefore: %s\nafter:  %s", before, after)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("directory should be back at old path: %v", err)
 	}
 }

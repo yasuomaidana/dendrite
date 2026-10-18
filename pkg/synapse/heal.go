@@ -19,6 +19,13 @@ const StatusAmbiguous MemberStatus = "AMBIGUOUS"
 // DefaultHealDepth bounds how deep Locate descends below each search root.
 const DefaultHealDepth = 4
 
+// EnvSearchRoots overrides the default project folders scanned under the user's
+// home directory with an OS path-list (e.g. "~/GoLandProjects:~/RustRoverProjects").
+const EnvSearchRoots = "DENDRITE_SEARCH_ROOTS"
+
+// defaultRootDirs are the IDE project folders under the home directory scanned by default.
+var defaultRootDirs = []string{"GoLandProjects", "RustRoverProjects", "WebstormProjects", "PycharmProjects", "IdeaProjects", "src", "code"}
+
 // MatchKind records which evidence tied a member to a discovered directory.
 type MatchKind string
 
@@ -73,6 +80,45 @@ type HealRow struct {
 type candidate struct {
 	path string
 	id   string
+	// worktree marks a linked git worktree, which carries the same committed
+	// project.id as its main checkout and is never preferred over it.
+	worktree bool
+}
+
+// isLinkedWorktree reports whether dir is a linked git worktree: its .git entry
+// is a file pointing into another repository's worktrees/ directory.
+func isLinkedWorktree(dir string) bool {
+	data, err := os.ReadFile(filepath.Join(dir, ".git"))
+	if err != nil {
+		return false
+	}
+	line := strings.TrimSpace(string(data))
+	return strings.HasPrefix(line, "gitdir:") && strings.Contains(filepath.ToSlash(line), "/worktrees/")
+}
+
+// defaultRoots returns the home-relative project folders, or the
+// DENDRITE_SEARCH_ROOTS override when set.
+func defaultRoots() []string {
+	if env := os.Getenv(EnvSearchRoots); env != "" {
+		var out []string
+		home, _ := os.UserHomeDir()
+		for _, r := range filepath.SplitList(env) {
+			if r == "~" || strings.HasPrefix(r, "~/") {
+				r = filepath.Join(home, strings.TrimPrefix(r, "~"))
+			}
+			out = append(out, r)
+		}
+		return out
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(defaultRootDirs))
+	for _, d := range defaultRootDirs {
+		out = append(out, filepath.Join(home, d))
+	}
+	return out
 }
 
 // searchRoots returns the ordered, de-duplicated directories to scan for member m.
@@ -85,11 +131,7 @@ func searchRoots(m Member, opts HealOptions, extra ...string) []string {
 	}
 	roots = append(roots, opts.Roots...)
 	if !opts.NoDefaultRoots {
-		if home, err := os.UserHomeDir(); err == nil {
-			for _, d := range []string{"GoLandProjects", "RustRoverProjects", "WebstormProjects", "PycharmProjects", "IdeaProjects", "src", "code"} {
-				roots = append(roots, filepath.Join(home, d))
-			}
-		}
+		roots = append(roots, defaultRoots()...)
 	}
 
 	seen := map[string]bool{}
@@ -138,7 +180,7 @@ func scan(roots []string, maxDepth int) []candidate {
 			_, gitErr := os.Stat(filepath.Join(path, ".git"))
 			if idErr == nil || gitErr == nil {
 				seen[path] = true
-				out = append(out, candidate{path: path, id: id})
+				out = append(out, candidate{path: path, id: id, worktree: isLinkedWorktree(path)})
 			}
 			return nil
 		})
@@ -155,10 +197,8 @@ func Locate(m Member, opts HealOptions, hints ...string) Location {
 	}
 	cands := scan(searchRoots(m, opts, hints...), opts.MaxDepth)
 
-	for _, c := range cands {
-		if c.id == m.ProjectID {
-			return Location{Path: c.path, Match: MatchID}
-		}
+	if loc, ok := locateByID(cands, m.ProjectID); ok {
+		return loc
 	}
 
 	var remote, name string
@@ -170,8 +210,9 @@ func Locate(m Member, opts HealOptions, hints ...string) Location {
 	if remote != "" {
 		var hits []string
 		for _, c := range cands {
-			// A directory that already carries a different identity is another project.
-			if c.id != "" {
+			// A directory that already carries a different identity is another project,
+			// and a linked worktree is a second checkout of one that was already scanned.
+			if c.id != "" || c.worktree {
 				continue
 			}
 			if projectid.NormalizeRemote(projectid.GitRemote(c.path)) == remote {
@@ -202,6 +243,35 @@ func Locate(m Member, opts HealOptions, hints ...string) Location {
 		return Location{Match: MatchName, Candidates: hits}
 	}
 	return Location{}
+}
+
+// locateByID resolves id against the scanned candidates. Main checkouts win over
+// linked worktrees; several main checkouts carrying the same committed id (e.g.
+// two clones) are ambiguous and reported as candidates rather than guessed.
+func locateByID(cands []candidate, id string) (Location, bool) {
+	var mains, worktrees []string
+	for _, c := range cands {
+		if c.id != id {
+			continue
+		}
+		if c.worktree {
+			worktrees = append(worktrees, c.path)
+		} else {
+			mains = append(mains, c.path)
+		}
+	}
+	hits := mains
+	if len(hits) == 0 {
+		hits = worktrees
+	}
+	switch len(hits) {
+	case 0:
+		return Location{}, false
+	case 1:
+		return Location{Path: hits[0], Match: MatchID}, true
+	}
+	sort.Strings(hits)
+	return Location{Match: MatchID, Candidates: hits}, true
 }
 
 // Heal checks every member of every synapse in st, locates moved members and,

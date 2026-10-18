@@ -179,7 +179,7 @@ func createTestGitRepo(t *testing.T) string {
 
 func TestTools_DendriteEnvStatus(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	callReq := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_env_status", "arguments": {}}}`
 	resp := srv.HandleRequest(context.Background(), []byte(callReq))
@@ -199,7 +199,7 @@ func TestTools_DendriteTicketList(t *testing.T) {
 	}
 
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{
+	RegisterDefaultTools(srv, Dependencies{
 		DevStatus:   devStatusFile,
 		PlaneClient: planeClient,
 	})
@@ -221,7 +221,7 @@ func TestTools_DendriteTicketList(t *testing.T) {
 
 	// 3. Markdown missing and Plane client nil / error
 	srvNoPlane := NewServer(ServerConfig{})
-	srvNoPlane.RegisterDefaultTools(Dependencies{DevStatus: missingFile})
+	RegisterDefaultTools(srvNoPlane, Dependencies{DevStatus: missingFile})
 	t.Setenv("PLANE_BASE_URL", "http://127.0.0.1:0")
 	req3 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_ticket_list", "arguments": {"file": "` + missingFile + `"}}}`
 	resp3 := srvNoPlane.HandleRequest(context.Background(), []byte(req3))
@@ -245,7 +245,7 @@ func TestTools_DendriteTicketUpdate(t *testing.T) {
 	}
 
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{
+	RegisterDefaultTools(srv, Dependencies{
 		DevStatus:   devStatusFile,
 		PlaneClient: planeClient,
 	})
@@ -281,7 +281,7 @@ func TestTools_DendriteTicketUpdate(t *testing.T) {
 
 	// Both fail
 	srvNoPlane := NewServer(ServerConfig{})
-	srvNoPlane.RegisterDefaultTools(Dependencies{DevStatus: missingFile})
+	RegisterDefaultTools(srvNoPlane, Dependencies{DevStatus: missingFile})
 	t.Setenv("PLANE_BASE_URL", "http://127.0.0.1:0")
 	req5 := `{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "dendrite_ticket_update", "arguments": {"ticket_id": "DEN-999", "status": "DONE", "file": "` + missingFile + `"}}}`
 	resp5 := srvNoPlane.HandleRequest(context.Background(), []byte(req5))
@@ -293,7 +293,7 @@ func TestTools_DendriteTicketUpdate(t *testing.T) {
 func TestTools_DendritePlaneIssues(t *testing.T) {
 	_, planeClient := createTestPlaneServer(t)
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{PlaneClient: planeClient})
+	RegisterDefaultTools(srv, Dependencies{PlaneClient: planeClient})
 
 	// Success
 	req := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_plane_issues", "arguments": {}}}`
@@ -315,7 +315,7 @@ func TestTools_DendritePlaneIssues(t *testing.T) {
 	}, badServer.Client())
 
 	srvBad := NewServer(ServerConfig{})
-	srvBad.RegisterDefaultTools(Dependencies{PlaneClient: badClient})
+	RegisterDefaultTools(srvBad, Dependencies{PlaneClient: badClient})
 	respBad := srvBad.HandleRequest(context.Background(), []byte(req))
 	if res, ok := respBad.Result.(CallToolResult); !ok || !res.IsError {
 		t.Fatalf("expected error from dendrite_plane_issues with 500 server, got: %#v", respBad)
@@ -325,7 +325,7 @@ func TestTools_DendritePlaneIssues(t *testing.T) {
 func TestTools_DendriteOllamaProbe(t *testing.T) {
 	ollamaSrv := createTestOllamaServer(t)
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{OllamaURL: ollamaSrv.URL})
+	RegisterDefaultTools(srv, Dependencies{OllamaURL: ollamaSrv.URL})
 
 	// 1. Success with custom URL
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_ollama_probe", "arguments": {"url": "` + ollamaSrv.URL + `"}}}`
@@ -351,7 +351,7 @@ func TestTools_DendriteOllamaProbe(t *testing.T) {
 
 func TestTools_DendriteTopologyAdvisor(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// 1. With nodes string containing '='
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_topology_advisor", "arguments": {"nodes": "local=localhost"}}}`
@@ -377,7 +377,7 @@ func TestTools_DendriteTopologyAdvisor(t *testing.T) {
 
 func TestTools_DendriteGatewayRender(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// Valid scenarios
 	for _, sc := range []string{"local-hybrid", "cloud-burst", "full-local"} {
@@ -398,7 +398,7 @@ func TestTools_DendriteGatewayRender(t *testing.T) {
 
 func TestTools_DendriteGatewayUpdate(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	tmpDir := t.TempDir()
 	cfgPath := filepath.Join(tmpDir, "litellm_config.yaml")
@@ -420,7 +420,7 @@ func TestTools_DendriteGatewayUpdate(t *testing.T) {
 
 func TestTools_DendriteAgentRun(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// 1. Invalid agent type
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_agent_run", "arguments": {"agent_type": "invalid_agent", "task": "test"}}}`
@@ -442,7 +442,7 @@ func TestTools_DendriteAgentRun(t *testing.T) {
 
 func TestTools_DendriteTelemetryAndInference(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// dendrite_telemetry
 	tReq := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_telemetry", "arguments": {}}}`
@@ -487,7 +487,7 @@ func TestTools_DendritePlaneReplicateAndPush(t *testing.T) {
 	devStatusFile := filepath.Join(tmpDir, "DEV_STATUS.md")
 
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{PlaneClient: planeClient})
+	RegisterDefaultTools(srv, Dependencies{PlaneClient: planeClient})
 
 	// 1. dendrite_plane_replicate (dry_run: true)
 	repReq1 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_plane_replicate", "arguments": {"file": "%s", "dry_run": true}}}`, devStatusFile)
@@ -535,7 +535,7 @@ func TestTools_DendritePlaneReplicateAndPush(t *testing.T) {
 
 func TestTools_DendriteJetbrainsSetup(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	tmpDir := t.TempDir()
 
@@ -559,7 +559,7 @@ func TestTools_DendriteCommit(t *testing.T) {
 	t.Chdir(repoDir)
 
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// Modify a file so there is a diff
 	_ = os.WriteFile(filepath.Join(repoDir, "README.md"), []byte("# Test Repo Modified\n"), 0644)

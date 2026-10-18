@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"Dendrite/pkg/polyglot/contract"
+	"github.com/yasuomaidana/dendrite-mcp-hub/pkg/polyglot/contract"
 )
 
 var defaultContractMonitor = contract.NewContractMonitor(nil)
 
-func (s *Server) registerContractTools(deps Dependencies) {
+func registerContractTools(s *Server, deps Dependencies) {
 	// 45. dendrite_contract_drift_check
 	s.RegisterTool(Tool{
 		Name:        "dendrite_contract_drift_check",

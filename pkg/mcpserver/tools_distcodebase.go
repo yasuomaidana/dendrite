@@ -13,7 +13,7 @@ import (
 var globalDistRegistry = distcodebase.NewDefaultRegistry()
 var globalInteropCoordinator = distcodebase.NewInteropCoordinator(globalDistRegistry)
 
-func (s *Server) registerDistCodebaseTools(deps Dependencies) {
+func registerDistCodebaseTools(s *Server, deps Dependencies) {
 	// 16. dendrite_dist_sources
 	s.RegisterTool(Tool{
 		Name:        "dendrite_dist_sources",

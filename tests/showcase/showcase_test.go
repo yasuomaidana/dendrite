@@ -166,7 +166,7 @@ func TestShowcase_CLIIntegration(t *testing.T) {
 
 func TestShowcase_MCPServerProtocol(t *testing.T) {
 	srv := mcpserver.NewServer(mcpserver.ServerConfig{})
-	srv.RegisterDefaultTools(mcpserver.Dependencies{DevStatus: "../../DEV_STATUS.md"})
+	mcpserver.RegisterDefaultTools(srv, mcpserver.Dependencies{DevStatus: "../../DEV_STATUS.md"})
 
 	ctx := context.Background()
 

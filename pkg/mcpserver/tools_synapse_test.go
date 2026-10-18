@@ -177,3 +177,40 @@ func TestJSONResultUnmarshalableValue(t *testing.T) {
 		t.Fatal("expected marshal error for a channel value")
 	}
 }
+
+func TestSynapseSyncStatus(t *testing.T) {
+	st, dirs := synapseFixture(t)
+	s, err := NewSynapseServer(SynapseScope{Store: st, ID: "web-api"}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(args map[string]interface{}) CallToolResult {
+		resp := rpc(t, s, "tools/call", CallToolParams{Name: "synapse_sync_status", Arguments: args})
+		var res CallToolResult
+		if err := json.Unmarshal([]byte(mustJSON(t, resp.Result)), &res); err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+
+	// Fixture members are plain directories, not git checkouts: each reports an error.
+	res := call(map[string]interface{}{"fetch": true})
+	var rep synapse.SyncReport
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &rep); err != nil {
+		t.Fatalf("not a sync report: %v\n%s", err, res.Content[0].Text)
+	}
+	if rep.Synapse != "web-api" || len(rep.Members) != len(dirs) || rep.Members[0].Error == "" {
+		t.Fatalf("report = %+v", rep)
+	}
+	// Read-only: the manifest on disk is unchanged.
+	if syn, _ := st.Load("web-api"); syn.State != synapse.StateActive {
+		t.Fatalf("manifest state changed to %s", syn.State)
+	}
+
+	if err := st.Delete("web-api"); err != nil {
+		t.Fatal(err)
+	}
+	if res := call(map[string]interface{}{}); !res.IsError {
+		t.Fatal("expected isError after manifest deletion")
+	}
+}

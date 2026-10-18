@@ -33,7 +33,7 @@ func NewSynapseServer(sc SynapseScope, version string) (*Server, error) {
 		Name:    "Dendrite Synapse MCP Server: " + syn.ID,
 		Version: version,
 	})
-	s.registerSynapseTools(sc)
+	registerSynapseTools(s, sc)
 	return s, nil
 }
 
@@ -76,7 +76,7 @@ func errorResult(format string, a ...interface{}) *CallToolResult {
 	return &CallToolResult{IsError: true, Content: []ContentItem{{Type: "text", Text: fmt.Sprintf(format, a...)}}}
 }
 
-func (s *Server) registerSynapseTools(sc SynapseScope) {
+func registerSynapseTools(s *Server, sc SynapseScope) {
 	s.RegisterTool(Tool{
 		Name:        "synapse_info",
 		Description: "Describes this synapse: members, roles, contracts, sync strategy and per-member path health",
@@ -103,5 +103,22 @@ func (s *Server) registerSynapseTools(sc SynapseScope) {
 			"sync":      syn.Sync,
 			"parity":    syn.Parity,
 		})
+	})
+
+	s.RegisterTool(Tool{
+		Name: "synapse_sync_status",
+		Description: "Reports where every member of this synapse stands against its tracked ref: source (local/remote), " +
+			"locked commit, ahead/behind, dirty files, remote branches with changes the checkout lacks, and drift. " +
+			"Read-only: never pulls, links or rewrites the manifest (use `dendrite synapse sync` for that)",
+		InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{
+			"fetch": map[string]interface{}{"type": "boolean", "description": "Fetch remotes and resolve remote refs first (network); default false"},
+		}},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		syn, err := sc.load()
+		if err != nil {
+			return errorResult("loading synapse: %v", err), nil
+		}
+		fetch, _ := args["fetch"].(bool)
+		return jsonResult(synapse.SyncSynapse(ctx, syn, synapse.SyncOptions{NoFetch: !fetch}))
 	})
 }

@@ -10,7 +10,7 @@ import (
 
 func TestDocusaurusTools_RegistrationAndExecution(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{DevStatus: "../../DEV_STATUS.md"})
+	RegisterDefaultTools(srv, Dependencies{DevStatus: "../../DEV_STATUS.md"})
 
 	expectedTools := []string{
 		"dendrite_docusaurus_generate",
@@ -50,7 +50,7 @@ func TestDocusaurusTools_RegistrationAndExecution(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(tempSrc, "FEAT-100-test.md"), []byte("# FEAT-100\n## Acceptance Criteria\n- [x] pass\n"), 0644)
 
 	// 1. Test dendrite_docusaurus_generate
-	genHandler := srv.handlers["dendrite_docusaurus_generate"]
+	genHandler, _ := srv.Handler("dendrite_docusaurus_generate")
 	resGen, err := genHandler(ctx, map[string]interface{}{
 		"docs_dir":     tempSrc,
 		"target_dir":   tempDest,
@@ -66,7 +66,7 @@ func TestDocusaurusTools_RegistrationAndExecution(t *testing.T) {
 	}
 
 	// 2. Test dendrite_docusaurus_share
-	shareHandler := srv.handlers["dendrite_docusaurus_share"]
+	shareHandler, _ := srv.Handler("dendrite_docusaurus_share")
 	resShare, err := shareHandler(ctx, map[string]interface{}{
 		"site_dir": tempDest,
 	})
@@ -78,7 +78,7 @@ func TestDocusaurusTools_RegistrationAndExecution(t *testing.T) {
 	}
 
 	// 3. Test dendrite_docusaurus_audit
-	auditHandler := srv.handlers["dendrite_docusaurus_audit"]
+	auditHandler, _ := srv.Handler("dendrite_docusaurus_audit")
 	resAudit, err := auditHandler(ctx, map[string]interface{}{
 		"project_root": tempSrc,
 		"docs_dir":     tempSrc,

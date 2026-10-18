@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"Dendrite/pkg/projectid"
 	"Dendrite/pkg/synapse"
@@ -22,6 +23,11 @@ type memberJSON struct {
 	Role      string `json:"role"`
 	PathHint  string `json:"path_hint"`
 	Status    string `json:"status"`
+	Source    string `json:"source,omitempty"`
+	Remote    string `json:"remote,omitempty"`
+	Ref       string `json:"ref,omitempty"`
+	Module    string `json:"module,omitempty"`
+	LockedSHA string `json:"locked_sha,omitempty"`
 }
 
 type synapseListJSON struct {
@@ -426,6 +432,11 @@ func runSynapseInspect(ctx context.Context, subArgs []string, out io.Writer) err
 				Role:      string(m.Role),
 				PathHint:  m.PathHint,
 				Status:    string(synapse.StatusOf(m)),
+				Source:    string(m.Source),
+				Remote:    m.Remote,
+				Ref:       m.Ref,
+				Module:    m.Module,
+				LockedSHA: m.LockedSHA,
 			})
 		}
 		contracts := s.Contracts
@@ -464,7 +475,7 @@ func runSynapseInspect(ctx context.Context, subArgs []string, out io.Writer) err
 	fmt.Fprintf(out, "    Members (%d):\n", len(s.Members))
 	for _, m := range s.Members {
 		status := synapse.StatusOf(m)
-		fmt.Fprintf(out, "      * %-15s [%s] (%s) -> %s\n", m.Alias, m.Role, status, m.PathHint)
+		fmt.Fprintf(out, "      * %-15s [%s] (%s) -> %s%s\n", m.Alias, m.Role, status, m.PathHint, describeSource(m))
 	}
 	if len(s.Contracts) > 0 {
 		fmt.Fprintf(out, "    Contracts (%d):\n", len(s.Contracts))
@@ -518,6 +529,12 @@ func runSynapseCommand(ctx context.Context, args []string, out io.Writer) error 
 		return runSynapseMove(ctx, subArgs, out)
 	case "ide-sync":
 		return runSynapseIDESync(ctx, subArgs, out)
+	case "set-source":
+		return runSynapseSetSource(ctx, subArgs, out)
+	case "status":
+		return runSynapseSyncCommand(ctx, subArgs, out, false)
+	case "sync":
+		return runSynapseSyncCommand(ctx, subArgs, out, true)
 	default:
 		return fmt.Errorf("unknown synapse action %q", action)
 	}
@@ -542,5 +559,124 @@ func printSynapseUsage(out io.Writer) {
 	fmt.Fprintln(out, "  locate <alias|project-id> [hint-dir...] [--json]")
 	fmt.Fprintln(out, "  move <alias|project-id> <new-path> [--json]")
 	fmt.Fprintln(out, "  ide-sync <id> [--binary path]")
+	fmt.Fprintln(out, "  set-source <id> <alias> local|remote [--ref branch|tag|sha] [--remote url] [--module path]")
+	fmt.Fprintln(out, "  status <id> [--no-fetch] [--json]")
+	fmt.Fprintln(out, "  sync <id> [--autostash] [--rebase] [--merge alias=branch]... [--no-link] [--no-fetch] [--json]")
 	fmt.Fprintln(out, "  (scoped MCP server: dendrite mcp serve --synapse <id>)")
+}
+
+// describeSource renders a member's develop-mode source for the inspect listing,
+// e.g. " {remote develop @abc1234}"; local members tracking their current branch render as "".
+func describeSource(m synapse.Member) string {
+	var parts []string
+	if m.IsRemote() {
+		parts = append(parts, "remote")
+	}
+	if m.Ref != "" {
+		parts = append(parts, m.Ref)
+	}
+	if m.LockedSHA != "" {
+		sha := m.LockedSHA
+		if len(sha) > 7 {
+			sha = sha[:7]
+		}
+		parts = append(parts, "@"+sha)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " {" + strings.Join(parts, " ") + "}"
+}
+
+// runSynapseSetSource switches a member between its local checkout and its remote
+// for develop mode, optionally pinning the ref to track. The lock is cleared
+// whenever source or ref change so the next sync re-resolves it.
+func runSynapseSetSource(ctx context.Context, subArgs []string, out io.Writer) error {
+	var positional []string
+	var ref, remote, module *string
+	for i := 0; i < len(subArgs); i++ {
+		arg := subArgs[i]
+		var target **string
+		name := arg
+		if eq := strings.Index(arg, "="); eq >= 0 && strings.HasPrefix(arg, "--") {
+			name = arg[:eq]
+		}
+		switch name {
+		case "--ref":
+			target = &ref
+		case "--remote":
+			target = &remote
+		case "--module":
+			target = &module
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return fmt.Errorf("unknown flag: %s", arg)
+			}
+			positional = append(positional, arg)
+			continue
+		}
+		var val string
+		if eq := strings.Index(arg, "="); eq >= 0 {
+			val = arg[eq+1:]
+		} else {
+			if i+1 >= len(subArgs) {
+				return fmt.Errorf("%s requires a value", name)
+			}
+			i++
+			val = subArgs[i]
+		}
+		*target = &val
+	}
+	if len(positional) != 3 {
+		return errors.New("usage: dendrite synapse set-source <id> <alias> local|remote [--ref X] [--remote url] [--module path]")
+	}
+	id, alias, source := positional[0], positional[1], synapse.Source(positional[2])
+	if source != synapse.SourceLocal && source != synapse.SourceRemote {
+		return fmt.Errorf("invalid source %q (want local or remote)", source)
+	}
+
+	st, err := synapse.DefaultStore()
+	if err != nil {
+		return err
+	}
+	s, err := st.Load(id)
+	if err != nil {
+		return fmt.Errorf("synapse %q: %w", id, err)
+	}
+	m, ok := s.Member(alias)
+	if !ok {
+		return fmt.Errorf("synapse %q has no member %q", id, alias)
+	}
+
+	before := *m
+	if remote != nil {
+		m.Remote = *remote
+	}
+	if m.Remote == "" && m.PathHint != "" {
+		// Keep the fetchable URL as configured; NormalizeRemote is only for identity matching.
+		m.Remote = projectid.GitRemote(m.PathHint)
+	}
+	if ref != nil {
+		m.Ref = *ref
+	}
+	if module != nil {
+		m.Module = *module
+	}
+	m.Source = source
+	if source == synapse.SourceLocal {
+		if _, err := synapse.Resolve(*m); err != nil {
+			return fmt.Errorf("member %q has no local checkout at %q: run 'dendrite synapse heal' first: %w", alias, m.PathHint, err)
+		}
+	}
+	if m.Source != before.Source || m.Ref != before.Ref || m.Remote != before.Remote {
+		m.LockedSHA, m.LockedAt = "", time.Time{}
+	}
+	if err := s.Validate(); err != nil {
+		return err
+	}
+	if err := st.Save(s); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "[+] %s/%s now consumed from %s%s\n", s.ID, m.Alias, m.Source, describeSource(*m))
+	return nil
 }
