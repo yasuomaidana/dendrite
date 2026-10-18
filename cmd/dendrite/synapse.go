@@ -510,6 +510,12 @@ func runSynapseCommand(ctx context.Context, args []string, out io.Writer) error 
 		return runSynapseList(ctx, subArgs, out)
 	case "inspect":
 		return runSynapseInspect(ctx, subArgs, out)
+	case "heal":
+		return runSynapseHeal(ctx, subArgs, out)
+	case "locate":
+		return runSynapseLocate(ctx, subArgs, out)
+	case "ide-sync":
+		return runSynapseIDESync(ctx, subArgs, out)
 	default:
 		return fmt.Errorf("unknown synapse action %q", action)
 	}
@@ -530,4 +536,8 @@ func printSynapseUsage(out io.Writer) {
 	fmt.Fprintln(out, "  create <id> --members <dir>[=alias][:role],... [flags...]")
 	fmt.Fprintln(out, "  list [--json]")
 	fmt.Fprintln(out, "  inspect <id> [--json]")
+	fmt.Fprintln(out, "  heal [--auto] [--roots dir,...] [--depth N] [--json]")
+	fmt.Fprintln(out, "  locate <alias|project-id> [hint-dir...] [--json]")
+	fmt.Fprintln(out, "  ide-sync <id> [--binary path]")
+	fmt.Fprintln(out, "  (scoped MCP server: dendrite mcp serve --synapse <id>)")
 }
