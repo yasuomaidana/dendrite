@@ -1,7 +1,6 @@
 package jetbrains
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -142,25 +141,7 @@ func SetupJetBrainsToolset(opts SetupOptions) (*SetupResult, error) {
 }
 
 func configureMCPFile(targetPath, binaryPath, projectDir string, res *SetupResult) error {
-	dir := filepath.Dir(targetPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-
-	config := MCPConfig{
-		MCPServers: make(map[string]MCPServerEntry),
-	}
-
-	existed := false
-	if data, err := os.ReadFile(targetPath); err == nil && len(strings.TrimSpace(string(data))) > 0 {
-		existed = true
-		_ = json.Unmarshal(data, &config)
-		if config.MCPServers == nil {
-			config.MCPServers = make(map[string]MCPServerEntry)
-		}
-	}
-
-	config.MCPServers["dendrite"] = MCPServerEntry{
+	entry := MCPServerEntry{
 		Command: binaryPath,
 		Args:    []string{"mcp", "serve"},
 		Env: map[string]string{
@@ -170,19 +151,15 @@ func configureMCPFile(targetPath, binaryPath, projectDir string, res *SetupResul
 		},
 	}
 
-	data, err := json.MarshalIndent(config, "", "  ")
+	created, err := UpsertMCPServer(targetPath, "dendrite", entry)
 	if err != nil {
 		return err
 	}
 
-	if err := os.WriteFile(targetPath, append(data, '\n'), 0644); err != nil {
-		return err
-	}
-
-	if existed {
-		res.FilesUpdated = append(res.FilesUpdated, targetPath)
-	} else {
+	if created {
 		res.FilesCreated = append(res.FilesCreated, targetPath)
+	} else {
+		res.FilesUpdated = append(res.FilesUpdated, targetPath)
 	}
 	return nil
 }

@@ -20,11 +20,11 @@ const (
 
 // Standard typed errors.
 var (
-	ErrCyclicDependency = errors.New("cyclic dependency hazard detected")
+	ErrCyclicDependency  = errors.New("cyclic dependency hazard detected")
 	ErrManifestMalformed = errors.New("manifest file malformed")
-	ErrProjectNotFound  = errors.New("project not found in pool")
-	ErrDuplicateProject = errors.New("project already registered in pool")
-	ErrEmptyPool        = errors.New("project pool is empty")
+	ErrProjectNotFound   = errors.New("project not found in pool")
+	ErrDuplicateProject  = errors.New("project already registered in pool")
+	ErrEmptyPool         = errors.New("project pool is empty")
 )
 
 // CyclicDependencyError represents a detected circular dependency with path trace.
@@ -42,6 +42,8 @@ func (e *CyclicDependencyError) Unwrap() error {
 
 // ProjectInfo describes a registered project member inside the pool.
 type ProjectInfo struct {
+	// ID is the persistent project identity from .dendrite/project.id.
+	ID           string      `json:"id,omitempty"`
 	Name         string      `json:"name"`
 	Path         string      `json:"path"`
 	Ecosystems   []Ecosystem `json:"ecosystems"`
@@ -65,11 +67,11 @@ type DependencyEdge struct {
 
 // DAGNode encapsulates a project node in the dependency graph.
 type DAGNode struct {
-	ID          string      `json:"id"`
-	Path        string      `json:"path"`
-	Ecosystems  []Ecosystem `json:"ecosystems"`
-	DependsOn   []string    `json:"depends_on"`   // Projects this node requires
-	DependedBy  []string    `json:"depended_by"`  // Projects that require this node
+	ID         string      `json:"id"`
+	Path       string      `json:"path"`
+	Ecosystems []Ecosystem `json:"ecosystems"`
+	DependsOn  []string    `json:"depends_on"`  // Projects this node requires
+	DependedBy []string    `json:"depended_by"` // Projects that require this node
 }
 
 // DAGResolution encapsulates the computed topological graph and analysis.
@@ -77,6 +79,6 @@ type DAGResolution struct {
 	Nodes            map[string]*DAGNode `json:"nodes"`
 	TopologicalOrder []string            `json:"topological_order"` // Dependencies first
 	Edges            []DependencyEdge    `json:"edges"`
-	LeafNodes        []string            `json:"leaf_nodes"`        // Foundational (DependsOn is empty)
-	RootNodes        []string            `json:"root_nodes"`        // Top-level (DependedBy is empty)
+	LeafNodes        []string            `json:"leaf_nodes"` // Foundational (DependsOn is empty)
+	RootNodes        []string            `json:"root_nodes"` // Top-level (DependedBy is empty)
 }

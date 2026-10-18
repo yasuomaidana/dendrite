@@ -291,6 +291,21 @@ func buildRegistry() *cli.Registry {
 	})
 
 	reg.Register(&cli.Command{
+		Name:        "synapse",
+		Aliases:     []string{"syn", "synapses"},
+		Category:    "Synaptic Cleft & Gating",
+		Description: "Typed cross-project links with scoped MCP servers and self-healing paths",
+		Run: func(ctx context.Context, args []string) error {
+			if len(args) < 1 {
+				printSynapseUsage(os.Stdout)
+				return nil
+			}
+			handleSynapseCommand(ctx, args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
 		Name:        "dist",
 		Aliases:     []string{"distcodebase", "distributed", "neural-mesh", "syn-mesh"},
 		Category:    "Axon & Myelin Sheath",

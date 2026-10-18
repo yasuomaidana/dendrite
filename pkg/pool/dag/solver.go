@@ -1,6 +1,7 @@
 package dag
 
 import (
+	"Dendrite/pkg/projectid"
 	"Dendrite/pkg/statedir"
 	"encoding/json"
 	"fmt"
@@ -119,6 +120,12 @@ func (pm *PoolManager) Add(dirs ...string) ([]ProjectInfo, error) {
 			return nil, fmt.Errorf("%w: name %s", ErrDuplicateProject, info.Name)
 		}
 
+		id, err := projectid.Ensure(info.Path)
+		if err != nil {
+			return nil, fmt.Errorf("minting project id for %s: %w", info.Path, err)
+		}
+		info.ID = id
+
 		existingPaths[info.Path] = true
 		existingNames[info.Name] = true
 		pm.config.Projects = append(pm.config.Projects, *info)
@@ -147,6 +154,23 @@ func (pm *PoolManager) Remove(nameOrPath string) error {
 
 	pm.config.Projects = append(pm.config.Projects[:idx], pm.config.Projects[idx+1:]...)
 	return nil
+}
+
+// RebindPath rewrites the path of every pool member located at oldPath to newPath
+// (used when a project directory is relocated) and returns the number of entries changed.
+func (pm *PoolManager) RebindPath(oldPath, newPath string) int {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	oldPath, newPath = filepath.Clean(oldPath), filepath.Clean(newPath)
+	n := 0
+	for i := range pm.config.Projects {
+		if filepath.Clean(pm.config.Projects[i].Path) == oldPath {
+			pm.config.Projects[i].Path = newPath
+			n++
+		}
+	}
+	return n
 }
 
 // List returns a copy of all registered project infos.
