@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"Dendrite/pkg/ollama"
@@ -101,5 +102,58 @@ func TestUpdateTicketInMarkdown(t *testing.T) {
 	err = UpdateTicketInMarkdown(ctx, "nonexistent.md", "DEN-001", tracker.StatusDone)
 	if err == nil {
 		t.Error("expected error for non-existent file, got nil")
+	}
+}
+
+func TestProbeOllama_ListModelsError(t *testing.T) {
+	reqCount := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqCount++
+		if reqCount == 1 {
+			// CheckHealth calls ListModels first -> return success
+			resp := ollama.ListModelsResponse{
+				Models: []ollama.ModelInfo{{Name: "qwen2.5-coder:14b"}},
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+		// Second call to ListModels in ProbeOllama fails
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	status, models, err := ProbeOllama(context.Background(), ts.URL)
+	if err == nil {
+		t.Fatalf("expected error on second ListModels call, got nil")
+	}
+	if status == nil || !status.Reachable {
+		t.Errorf("expected status to be reachable from initial CheckHealth")
+	}
+	if models != nil {
+		t.Errorf("expected models to be nil on ListModels error, got %v", models)
+	}
+}
+
+func TestUpdateTicketInMarkdown_SyncError(t *testing.T) {
+	tmpDir := t.TempDir()
+	mdPath := filepath.Join(tmpDir, "DEV_STATUS.md")
+	content := "# Status\n\n### Milestone 1\n- [ ] **DEN-001**: Task 1 (`pkg/test`) *(IN PROGRESS)*\n"
+	if err := os.WriteFile(mdPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write test md: %v", err)
+	}
+
+	// Make file read-only so LoadFromMarkdown succeeds but Sync write fails
+	if err := os.Chmod(mdPath, 0444); err != nil {
+		t.Fatalf("failed to chmod test md: %v", err)
+	}
+	defer os.Chmod(mdPath, 0644)
+
+	ctx := context.Background()
+	err := UpdateTicketInMarkdown(ctx, mdPath, "DEN-001", tracker.StatusDone)
+	if err == nil {
+		t.Fatalf("expected error when file is read-only during sync, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to sync markdown file") {
+		t.Errorf("expected failed to sync markdown file error, got: %v", err)
 	}
 }

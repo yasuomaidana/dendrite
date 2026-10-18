@@ -11,7 +11,19 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"Dendrite/pkg/tracker/plane"
 )
+
+func isolateEnvironment(t *testing.T) {
+	t.Helper()
+	t.Setenv("PLANE_BASE_URL", "http://127.0.0.1:59999")
+	t.Setenv("PLANE_API_KEY", "isolated-plane-key")
+	t.Setenv("PLANE_WORKSPACE_SLUG", "isolated-ws")
+	t.Setenv("PLANE_PROJECT_ID", "isolated-proj")
+	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", "http://127.0.0.1:59997")
+	t.Setenv("DENDRITE_COMMIT_PREFER_OXILLAMA", "false")
+}
 
 func TestFormatTicketCommit(t *testing.T) {
 	tests := []struct {
@@ -444,6 +456,7 @@ func TestResolveSmartTicket_FileCorrelationAndFallbacks(t *testing.T) {
 }
 
 func TestExecuteCommit_SmartStrategyAndAmend(t *testing.T) {
+	isolateEnvironment(t)
 	tempDir := t.TempDir()
 
 	_ = exec.Command("git", "-C", tempDir, "init").Run()
@@ -909,5 +922,955 @@ func TestPushAfterCommit_RemoteCommandError(t *testing.T) {
 	}
 	if !res.PushSkipped || res.PushReason != "no remote configured" {
 		t.Errorf("expected push skipped with 'no remote configured', got %+v", res)
+	}
+}
+
+func TestExtractTicketIDAndTitle(t *testing.T) {
+	tests := []struct {
+		name          string
+		expectedID    string
+		expectedTitle string
+	}{
+		{"[DEN-101] Fix bug in parser", "DEN-101", "Fix bug in parser"},
+		{"[DEND-202] Add graph node", "DEND-202", "Add graph node"},
+		{"DEN-303 Fix without brackets", "DEN-303", "Fix without brackets"},
+		{"No ticket in this title", "", "No ticket in this title"},
+	}
+
+	for _, tt := range tests {
+		id, title := extractTicketIDAndTitle(tt.name)
+		if id != tt.expectedID || title != tt.expectedTitle {
+			t.Errorf("extractTicketIDAndTitle(%q) = (%q, %q); want (%q, %q)", tt.name, id, title, tt.expectedID, tt.expectedTitle)
+		}
+	}
+}
+
+func TestInferScopeFromFiles(t *testing.T) {
+	tests := []struct {
+		files    []string
+		expected string
+	}{
+		{[]string{"pkg/devtool/foo.go"}, "devtool"},
+		{[]string{"pkg/devtool/commit.go"}, "devtool"},
+		{[]string{"pkg/gateway/proxy.go"}, "gateway"},
+		{[]string{"pkg/rag/search.go"}, "rag"},
+		{[]string{"cmd/dendrite/ask/ask.go"}, "rag"},
+		{[]string{"pkg/agent/triage/route.go"}, "triage"},
+		{[]string{"pkg/inference/engine.go"}, "inference"},
+		{[]string{"pkg/env/detector.go"}, "env"},
+		{[]string{"cmd/dendrite/main.go"}, "cli"},
+		{[]string{"docs/index.md"}, "docs"},
+		{[]string{"scripts/setup.sh"}, "scripts"},
+		{[]string{"unknown/file.go"}, "repo"},
+		{nil, "repo"},
+	}
+
+	for _, tt := range tests {
+		got := inferScopeFromFiles(tt.files)
+		if got != tt.expected {
+			t.Errorf("inferScopeFromFiles(%v) = %q; want %q", tt.files, got, tt.expected)
+		}
+	}
+}
+
+func TestInferTypeFromTitle(t *testing.T) {
+	tests := []struct {
+		title    string
+		expected string
+	}{
+		{"Fix login bug", "fix"},
+		{"Fixing memory leak", "fix"},
+		{"Doc update for readme", "docs"},
+		{"Guide for setup", "docs"},
+		{"Refactor auth middleware", "refactor"},
+		{"Test suite additions", "test"},
+		{"CI workflow update", "ci"},
+		{"Pipeline configuration", "ci"},
+		{"Implement new feature", "feat"},
+	}
+
+	for _, tt := range tests {
+		got := inferTypeFromTitle(tt.title)
+		if got != tt.expected {
+			t.Errorf("inferTypeFromTitle(%q) = %q; want %q", tt.title, got, tt.expected)
+		}
+	}
+}
+
+func TestIsCannedOrInvalidCommitMessage_AdditionalCases(t *testing.T) {
+	valid := []string{
+		"style: format code",
+		"build: update cargo",
+		"perf: optimize query",
+		"revert: rollback commit",
+		"[DEN-101] style: format code",
+		"[DEN-101] perf: improve speed",
+	}
+	for _, v := range valid {
+		if isCannedOrInvalidCommitMessage(v) {
+			t.Errorf("expected isCannedOrInvalidCommitMessage(%q) = false, got true", v)
+		}
+	}
+
+	invalid := []string{
+		"here's the commit message for you",
+		"here is the commit message",
+		"as an ai, here is the message",
+	}
+	for _, inv := range invalid {
+		if !isCannedOrInvalidCommitMessage(inv) {
+			t.Errorf("expected isCannedOrInvalidCommitMessage(%q) = true, got false", inv)
+		}
+	}
+}
+
+func TestSynthesizeDeterministicCommitMessage(t *testing.T) {
+	// 1. smart != nil with title, scope, type, and > 8 staged files
+	smart := &SmartTicketInfo{
+		ID:    "DEN-100",
+		Title: "[DEN-100] implement awesome feature",
+		Scope: "gateway",
+		Type:  "feat",
+	}
+	files10 := []string{"f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10"}
+	msg1 := synthesizeDeterministicCommitMessage("DEN-100", smart, "", files10)
+	if !strings.HasPrefix(msg1, "feat(gateway): implement awesome feature") {
+		t.Errorf("unexpected msg1: %s", msg1)
+	}
+	if !strings.Contains(msg1, "and 2 additional files") {
+		t.Errorf("expected additional files line in msg1: %s", msg1)
+	}
+
+	// 2. smart != nil without ID in title and empty scope/type
+	smartEmpty := &SmartTicketInfo{
+		Title: "plain title",
+	}
+	msgEmpty := synthesizeDeterministicCommitMessage("", smartEmpty, "", []string{"f1"})
+	if !strings.HasPrefix(msgEmpty, "feat(repo): plain title") {
+		t.Errorf("unexpected msgEmpty: %s", msgEmpty)
+	}
+
+	// 3. smart == nil with diffStat
+	msg2 := synthesizeDeterministicCommitMessage("", nil, "1 file changed, 10 insertions\n", nil)
+	if !strings.HasPrefix(msg2, "chore: update files (1 file changed, 10 insertions)") {
+		t.Errorf("unexpected msg2: %s", msg2)
+	}
+
+	// 4. smart == nil, no diffStat, but staged files present
+	msg3 := synthesizeDeterministicCommitMessage("", nil, "", []string{"pkg/devtool/commit.go"})
+	if !strings.HasPrefix(msg3, "feat(devtool): update devtool capabilities and synchronizations") {
+		t.Errorf("unexpected msg3: %s", msg3)
+	}
+
+	// 5. smart == nil, no diffStat, no staged files
+	msg4 := synthesizeDeterministicCommitMessage("", nil, "", nil)
+	if msg4 != "feat(repo): autonomous repository update" {
+		t.Errorf("unexpected msg4: %s", msg4)
+	}
+}
+
+func TestResolveSmartTicket_GitBranch(t *testing.T) {
+	isolateEnvironment(t)
+	tempDir := t.TempDir()
+	_ = exec.Command("git", "init", "-b", "heal/DEN-777-something", tempDir).Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.ai").Run()
+
+	initFile := filepath.Join(tempDir, "init.txt")
+	_ = os.WriteFile(initFile, []byte("init"), 0644)
+	_ = exec.Command("git", "-C", tempDir, "add", "init.txt").Run()
+	_ = exec.Command("git", "-C", tempDir, "commit", "-m", "initial commit").Run()
+
+	info, err := ResolveSmartTicket(context.Background(), tempDir, []string{"pkg/gateway/test.go"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.ID != "DEN-777" {
+		t.Errorf("expected DEN-777 from branch, got %s", info.ID)
+	}
+	if !strings.Contains(info.Source, "Git Branch") {
+		t.Errorf("expected Source to contain Git Branch, got %s", info.Source)
+	}
+
+	// Non-ticket branch falls through
+	_ = exec.Command("git", "-C", tempDir, "checkout", "-b", "feature-no-id").Run()
+	info2, err2 := ResolveSmartTicket(context.Background(), tempDir, []string{"pkg/gateway/test.go"})
+	if err2 != nil {
+		t.Fatalf("unexpected error: %v", err2)
+	}
+	if info2.ID != "" {
+		t.Errorf("expected empty ID for feature-no-id, got %s", info2.ID)
+	}
+}
+
+func TestResolveSmartTicket_PlaneCases(t *testing.T) {
+	isolateEnvironment(t)
+	var handler http.HandlerFunc
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if handler != nil {
+			handler(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ts.Close()
+
+	t.Setenv("PLANE_BASE_URL", ts.URL)
+	t.Setenv("PLANE_API_KEY", "custom_plane_key")
+	t.Setenv("PLANE_WORKSPACE_SLUG", "workspace")
+	t.Setenv("PLANE_PROJECT_ID", "project")
+
+	tempDir := t.TempDir()
+	_ = exec.Command("git", "init", "-b", "develop", tempDir).Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.ai").Run()
+	initFile := filepath.Join(tempDir, "init.txt")
+	_ = os.WriteFile(initFile, []byte("init"), 0644)
+	_ = exec.Command("git", "-C", tempDir, "add", "init.txt").Run()
+	_ = exec.Command("git", "-C", tempDir, "commit", "-m", "init").Run()
+
+	// Case 1: In Progress issue (includes item without ticket ID to cover continue)
+	t.Run("InProgress", func(t *testing.T) {
+		handler = func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"results": []map[string]interface{}{
+					{
+						"id":               "00000000-0000-0000-0000-000000000000",
+						"name":             "Issue without ticket id",
+						"state_slug":       "in-progress",
+						"description_html": "<p>no id</p>",
+					},
+					{
+						"id":               "11111111-1111-1111-1111-111111111111",
+						"name":             "[DEN-301] Fix something in progress",
+						"state":            "8e46611a-87ed-457f-8be0-3c238b37e6eb",
+						"state_slug":       "in-progress",
+						"description_html": "<p>some desc</p>",
+					},
+				},
+			})
+		}
+		info, err := ResolveSmartTicket(context.Background(), tempDir, []string{"file.txt"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if info.ID != "DEN-301" {
+			t.Errorf("expected DEN-301, got %s", info.ID)
+		}
+		if info.Source != "Plane v2 (In Progress)" {
+			t.Errorf("expected Plane v2 (In Progress), got %s", info.Source)
+		}
+	})
+
+	// Case 2: Matching staged files with score bonus for to-verify
+	t.Run("DiffCorrelation", func(t *testing.T) {
+		handler = func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"results": []map[string]interface{}{
+					{
+						"id":               "00000000-0000-0000-0000-000000000000",
+						"name":             "Issue without ticket id",
+						"state_slug":       "open",
+						"description_html": "<p>touching pkg/auth/handler.go</p>",
+					},
+					{
+						"id":               "22222222-2222-2222-2222-222222222222",
+						"name":             "[DEN-302] Update auth service",
+						"state":            "f36249b3-f67a-427a-ab8a-cf1693ebdada",
+						"state_slug":       "to-verify",
+						"description_html": "<p>touching pkg/auth/handler.go and models</p>",
+					},
+				},
+			})
+		}
+		info, err := ResolveSmartTicket(context.Background(), tempDir, []string{"pkg/auth/handler.go"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if info.ID != "DEN-302" {
+			t.Errorf("expected DEN-302, got %s", info.ID)
+		}
+		if !strings.Contains(info.Source, "Diff Correlation Score") {
+			t.Errorf("expected Diff Correlation Score in source, got %s", info.Source)
+		}
+	})
+
+	// Case 3: Recent To Verify when staged files don't correlate
+	t.Run("RecentToVerify", func(t *testing.T) {
+		handler = func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"results": []map[string]interface{}{
+					{
+						"id":               "33333333-3333-3333-3333-333333333333",
+						"name":             "[DEN-303] Unrelated issue in to-verify",
+						"state_slug":       "to-verify",
+						"description_html": "<p>something else</p>",
+					},
+				},
+			})
+		}
+		info, err := ResolveSmartTicket(context.Background(), tempDir, []string{"xyz/unmatched.txt"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if info.ID != "DEN-303" {
+			t.Errorf("expected DEN-303, got %s", info.ID)
+		}
+		if !strings.Contains(info.Source, "Plane v2") {
+			t.Errorf("expected Plane v2 in source, got %s", info.Source)
+		}
+	})
+}
+
+func TestFetchPlaneIssues_Errors(t *testing.T) {
+	isolateEnvironment(t)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/500") {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/badjson") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("not valid json"))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ts.Close()
+
+	ctx := context.Background()
+
+	// 1. Status 500
+	t.Setenv("PLANE_BASE_URL", ts.URL+"/500")
+	pClient, _ := plane.NewClientFromEnv()
+	_, err := fetchPlaneIssues(ctx, pClient)
+	if err == nil || !strings.Contains(err.Error(), "plane api status 500") {
+		t.Errorf("expected plane api status 500, got: %v", err)
+	}
+
+	// 2. Bad JSON
+	t.Setenv("PLANE_BASE_URL", ts.URL+"/badjson")
+	pClient2, _ := plane.NewClientFromEnv()
+	_, err2 := fetchPlaneIssues(ctx, pClient2)
+	if err2 == nil {
+		t.Errorf("expected decode error on bad JSON")
+	}
+
+	// 3. Invalid URL (http.NewRequest error)
+	t.Setenv("PLANE_BASE_URL", "://bad url")
+	pClient3, _ := plane.NewClientFromEnv()
+	_, err3 := fetchPlaneIssues(ctx, pClient3)
+	if err3 == nil {
+		t.Errorf("expected request creation error on bad URL")
+	}
+
+	// 4. Empty API Key fallback (line 260) & connection error (line 268)
+	t.Setenv("PLANE_BASE_URL", "http://127.0.0.1:59999")
+	t.Setenv("PLANE_API_KEY", "")
+	pClient4, _ := plane.NewClientFromEnv()
+	_, err4 := fetchPlaneIssues(ctx, pClient4)
+	if err4 == nil {
+		t.Errorf("expected connection error on closed port")
+	}
+}
+
+func TestResolveSmartTicket_DevStatusDirMatch(t *testing.T) {
+	t.Setenv("PLANE_BASE_URL", "http://127.0.0.1:59999") // dead plane endpoint
+	tempDir := t.TempDir()
+
+	devStatusContent := "# Development Status\n\n- [ ] **DEN-414**: Gateway component updates (pkg/gateway)\n"
+	_ = os.WriteFile(filepath.Join(tempDir, "DEV_STATUS.md"), []byte(devStatusContent), 0644)
+
+	// Staged file has dir "pkg/gateway" which matches the title via dirLower
+	info, err := ResolveSmartTicket(context.Background(), tempDir, []string{"pkg/gateway/client.go"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.ID != "DEN-414" {
+		t.Errorf("expected DEN-414, got %s", info.ID)
+	}
+}
+
+func TestGenerateLocalCommitMessage_EdgeCases(t *testing.T) {
+	ctx := context.Background()
+
+	// 1. model == "" defaults to qwen3.8:27b, and ticket with title
+	smart := &SmartTicketInfo{
+		Title: "Test Smart Title",
+	}
+	msg, _, err := GenerateLocalCommitMessageWithContext(
+		ctx,
+		"diff stat",
+		"full diff",
+		"DEN-001",
+		smart,
+		"",                       // empty model -> defaults to qwen3.8:27b
+		"http://127.0.0.1:59999", // dead ollama
+		"http://127.0.0.1:59998", // dead litellm
+		"",
+		[]string{"pkg/devtool/devtool.go"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.HasPrefix(msg, "[DEN-001]") {
+		t.Errorf("expected [DEN-001] prefix, got: %s", msg)
+	}
+
+	// 2. oxModel without "qwen" (e.g. oxillama/deepseek) -> defaults to qwen3.8:27b
+	tsOx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/chat/completions" {
+			var body map[string]interface{}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body["model"] == "qwen3.8:27b" {
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"choices": []map[string]interface{}{
+						{"message": map[string]string{"content": "feat(core): fallback model resolution"}},
+					},
+				})
+				return
+			}
+		}
+		http.NotFound(w, r)
+	}))
+	defer tsOx.Close()
+
+	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", tsOx.URL)
+	t.Setenv("DENDRITE_COMMIT_PREFER_OXILLAMA", "true")
+
+	msg2, _, err2 := GenerateLocalCommitMessageWithContext(
+		ctx,
+		"diff",
+		"diff",
+		"DEN-002",
+		nil,
+		"oxillama/deepseek",
+		"",
+		"",
+		"",
+		nil,
+	)
+	if err2 != nil {
+		t.Fatalf("unexpected error: %v", err2)
+	}
+	if !strings.Contains(msg2, "feat(core): fallback model resolution") {
+		t.Errorf("expected synthesized message, got: %s", msg2)
+	}
+
+	// 3. OxiLLaMa HTTP canned response and 500 error fall through
+	tsOxFail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer tsOxFail.Close()
+
+	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", tsOxFail.URL)
+
+	// OxiLLaMa CLI script exits with error 1
+	tempDir := t.TempDir()
+	modelsDir := filepath.Join(tempDir, "models")
+	modelDir := filepath.Join(modelsDir, "qwen_testfail")
+	_ = os.MkdirAll(modelDir, 0755)
+
+	scriptFail := filepath.Join(tempDir, "oxillama")
+	_ = os.WriteFile(scriptFail, []byte("#!/bin/sh\nexit 1\n"), 0755)
+
+	t.Setenv("DENDRITE_OXILLAMA_BIN", scriptFail)
+	t.Setenv("DENDRITE_OXILLAMA_MODELS_DIR", modelsDir)
+
+	// Ollama server returns 500
+	tsOllamaFail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer tsOllamaFail.Close()
+
+	// LiteLLM server returns 500
+	tsLiteLLMFail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer tsLiteLLMFail.Close()
+
+	msg3, mUsed3, err3 := GenerateLocalCommitMessageWithContext(
+		ctx,
+		"diffstat",
+		"fulldiff",
+		"DEN-003",
+		nil,
+		"oxillama/qwen:testfail",
+		tsOllamaFail.URL,
+		tsLiteLLMFail.URL,
+		"",
+		nil,
+	)
+	if err3 != nil {
+		t.Fatalf("unexpected error on cascade fallback: %v", err3)
+	}
+	if mUsed3 != "deterministic-fallback" {
+		t.Errorf("expected deterministic-fallback, got: %s", mUsed3)
+	}
+	if !strings.HasPrefix(msg3, "[DEN-003]") {
+		t.Errorf("expected [DEN-003] prefix, got: %s", msg3)
+	}
+}
+
+func TestExecuteCommit_StagingBranches(t *testing.T) {
+	ctx := context.Background()
+
+	// 1. Pre-staged file without StageAll and without Files
+	t.Run("AlreadyStagedOnly", func(t *testing.T) {
+		tempDir := t.TempDir()
+		_ = exec.Command("git", "init", "-b", "develop", tempDir).Run()
+		_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+		_ = exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.ai").Run()
+
+		f1 := filepath.Join(tempDir, "staged.txt")
+		_ = os.WriteFile(f1, []byte("staged content"), 0644)
+		f2 := filepath.Join(tempDir, "unstaged.txt")
+		_ = os.WriteFile(f2, []byte("unstaged content"), 0644)
+
+		_ = exec.Command("git", "-C", tempDir, "add", "staged.txt").Run()
+
+		res, err := ExecuteCommit(ctx, CommitOptions{
+			RepoDir:       tempDir,
+			Message:       "feat: commit pre-staged only",
+			StageAll:      false,
+			NoPush:        true,
+			UseLocalModel: false,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(res.Files) != 1 || res.Files[0] != "staged.txt" {
+			t.Errorf("expected only staged.txt in commit, got %v", res.Files)
+		}
+	})
+
+	// 2. Files slice with empty string entry
+	t.Run("FilesSliceEmptyString", func(t *testing.T) {
+		tempDir := t.TempDir()
+		_ = exec.Command("git", "init", "-b", "develop", tempDir).Run()
+		_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+		_ = exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.ai").Run()
+
+		f := filepath.Join(tempDir, "valid.txt")
+		_ = os.WriteFile(f, []byte("hello"), 0644)
+
+		res, err := ExecuteCommit(ctx, CommitOptions{
+			RepoDir:       tempDir,
+			Message:       "feat: commit with empty file path entry",
+			Files:         []string{"", "   ", "valid.txt"},
+			NoPush:        true,
+			UseLocalModel: false,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(res.Files) != 1 || res.Files[0] != "valid.txt" {
+			t.Errorf("expected only valid.txt, got %v", res.Files)
+		}
+	})
+
+	// 3. StageAll failure (unreadable directory with chmod 0000)
+	t.Run("StageAllFailure", func(t *testing.T) {
+		tempDir := t.TempDir()
+		_ = exec.Command("git", "init", "-b", "develop", tempDir).Run()
+		_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+		_ = exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.ai").Run()
+
+		unreadableDir := filepath.Join(tempDir, "unreadable")
+		_ = os.MkdirAll(unreadableDir, 0755)
+		_ = os.WriteFile(filepath.Join(unreadableDir, "f.txt"), []byte("data"), 0644)
+		_ = os.Chmod(unreadableDir, 0000)
+		defer os.Chmod(unreadableDir, 0755)
+
+		_, err := ExecuteCommit(ctx, CommitOptions{
+			RepoDir:  tempDir,
+			StageAll: true,
+			NoPush:   true,
+		})
+		if err == nil {
+			t.Fatalf("expected error from git add -A with unreadable directory")
+		}
+	})
+
+	// 4. Default StageAll failure (when alreadyStaged == "" and !opts.Amend)
+	t.Run("DefaultStageAllFailure", func(t *testing.T) {
+		tempDir := t.TempDir()
+		_ = exec.Command("git", "init", "-b", "develop", tempDir).Run()
+		_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+		_ = exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.ai").Run()
+
+		unreadableDir := filepath.Join(tempDir, "unreadable_default")
+		_ = os.MkdirAll(unreadableDir, 0755)
+		_ = os.WriteFile(filepath.Join(unreadableDir, "f.txt"), []byte("data"), 0644)
+		_ = os.Chmod(unreadableDir, 0000)
+		defer os.Chmod(unreadableDir, 0755)
+
+		_, err := ExecuteCommit(ctx, CommitOptions{
+			RepoDir:  tempDir,
+			StageAll: false,
+			NoPush:   true,
+		})
+		if err == nil {
+			t.Fatalf("expected error from default git add -A with unreadable directory")
+		}
+	})
+
+	// 5. Amend with no new staged changes
+	t.Run("AmendNoNewChanges", func(t *testing.T) {
+		isolateEnvironment(t)
+		tempDir := t.TempDir()
+		_ = exec.Command("git", "init", "-b", "develop", tempDir).Run()
+		_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+		_ = exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.ai").Run()
+
+		f := filepath.Join(tempDir, "initial.txt")
+		_ = os.WriteFile(f, []byte("initial data"), 0644)
+		_ = exec.Command("git", "-C", tempDir, "add", "-A").Run()
+		_ = exec.Command("git", "-C", tempDir, "commit", "-m", "feat: initial commit").Run()
+
+		res, err := ExecuteCommit(ctx, CommitOptions{
+			RepoDir:       tempDir,
+			Message:       "feat: amend message without staged changes",
+			Amend:         true,
+			NoPush:        true,
+			NoSmart:       true,
+			UseLocalModel: false,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error amending: %v", err)
+		}
+		if len(res.Files) == 0 {
+			t.Errorf("expected files to be populated from diff-tree")
+		}
+		if res.Message != "feat: amend message without staged changes" {
+			t.Errorf("unexpected message: %s", res.Message)
+		}
+	})
+}
+
+func TestExecuteCommit_ZeroMockPolicyGate(t *testing.T) {
+	isolateEnvironment(t)
+	tempDir := t.TempDir()
+	_ = exec.Command("git", "init", "-b", "develop", tempDir).Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.ai").Run()
+
+	mockFile := filepath.Join(tempDir, "service.go")
+	bannedType := "type " + "Mock" + "Service struct{}"
+	_ = os.WriteFile(mockFile, []byte("package main\n\n"+bannedType+"\n"), 0644)
+
+	// 1. Attempt without AllowMocks -> rejected
+	_, err := ExecuteCommit(context.Background(), CommitOptions{
+		RepoDir:    tempDir,
+		Message:    "feat: add mock service",
+		StageAll:   true,
+		AllowMocks: false,
+		NoPush:     true,
+		NoSmart:    true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "zero-mock policy violation") {
+		t.Fatalf("expected zero-mock policy violation error, got: %v", err)
+	}
+
+	// 2. Attempt with AllowMocks: true -> accepted
+	res, err := ExecuteCommit(context.Background(), CommitOptions{
+		RepoDir:    tempDir,
+		Message:    "feat: emergency bypass mock gate",
+		StageAll:   true,
+		AllowMocks: true,
+		NoPush:     true,
+		NoSmart:    true,
+	})
+	if err != nil {
+		t.Fatalf("expected commit with AllowMocks: true to succeed, got: %v", err)
+	}
+	if res.CommitSHA == "" {
+		t.Errorf("expected valid commit sha")
+	}
+}
+
+func TestExecuteCommit_SmartTicketOptions(t *testing.T) {
+	isolateEnvironment(t)
+	tempDir := t.TempDir()
+	_ = exec.Command("git", "init", "-b", "develop", tempDir).Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.ai").Run()
+
+	f := filepath.Join(tempDir, "f.txt")
+	_ = os.WriteFile(f, []byte("data"), 0644)
+
+	// 1. Explicit SmartTicket option
+	smart := &SmartTicketInfo{
+		ID:     "DEN-555",
+		Title:  "Explicit smart ticket title",
+		Scope:  "cli",
+		Type:   "feat",
+		Source: "User Supplied",
+	}
+	res, err := ExecuteCommit(context.Background(), CommitOptions{
+		RepoDir:     tempDir,
+		TicketID:    "DEN-555",
+		StageAll:    true,
+		SmartTicket: smart,
+		NoSmart:     true,
+		NoPush:      true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.TicketID != "DEN-555" {
+		t.Errorf("expected DEN-555, got %s", res.TicketID)
+	}
+	if res.SmartSource != "User Supplied" {
+		t.Errorf("expected User Supplied, got %s", res.SmartSource)
+	}
+
+	// 2. NoSmart: true with TicketID == ""
+	f2 := filepath.Join(tempDir, "f2.txt")
+	_ = os.WriteFile(f2, []byte("data 2"), 0644)
+	res2, err2 := ExecuteCommit(context.Background(), CommitOptions{
+		RepoDir:  tempDir,
+		StageAll: true,
+		NoSmart:  true,
+		NoPush:   true,
+	})
+	if err2 != nil {
+		t.Fatalf("unexpected error: %v", err2)
+	}
+	if res2.TicketID != "" {
+		t.Errorf("expected empty ticket ID with NoSmart, got %s", res2.TicketID)
+	}
+}
+
+func TestExecuteCommit_PreCommitHookFailure(t *testing.T) {
+	isolateEnvironment(t)
+	tempDir := t.TempDir()
+	_ = exec.Command("git", "init", "-b", "develop", tempDir).Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.ai").Run()
+
+	hooksDir := filepath.Join(tempDir, ".git", "hooks")
+	_ = os.MkdirAll(hooksDir, 0755)
+	hookPath := filepath.Join(hooksDir, "pre-commit")
+	_ = os.WriteFile(hookPath, []byte("#!/bin/sh\nexit 1\n"), 0755)
+
+	f := filepath.Join(tempDir, "sample.txt")
+	_ = os.WriteFile(f, []byte("data"), 0644)
+
+	_, err := ExecuteCommit(context.Background(), CommitOptions{
+		RepoDir:  tempDir,
+		Message:  "feat: failing pre-commit hook",
+		StageAll: true,
+		NoPush:   true,
+		NoSmart:  true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "git commit failed") {
+		t.Fatalf("expected git commit failed error, got: %v", err)
+	}
+}
+
+func TestExecuteCommit_RevParseHeadFailure(t *testing.T) {
+	isolateEnvironment(t)
+	tempDir := t.TempDir()
+	_ = exec.Command("git", "init", "-b", "develop", tempDir).Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.ai").Run()
+
+	hooksDir := filepath.Join(tempDir, ".git", "hooks")
+	_ = os.MkdirAll(hooksDir, 0755)
+	hookPath := filepath.Join(hooksDir, "post-commit")
+	_ = os.WriteFile(hookPath, []byte("#!/bin/sh\nrm -f .git/refs/heads/*\n"), 0755)
+
+	f := filepath.Join(tempDir, "sample.txt")
+	_ = os.WriteFile(f, []byte("data"), 0644)
+
+	res, err := ExecuteCommit(context.Background(), CommitOptions{
+		RepoDir:  tempDir,
+		Message:  "feat: commit with broken rev-parse",
+		StageAll: true,
+		NoPush:   true,
+		NoSmart:  true,
+	})
+	if err != nil {
+		t.Fatalf("commit itself should succeed: %v", err)
+	}
+	if res.CommitSHA != "unknown-sha" {
+		t.Errorf("expected unknown-sha, got %s", res.CommitSHA)
+	}
+}
+
+func TestExecuteCommit_LocalModelFallback(t *testing.T) {
+	isolateEnvironment(t)
+	tempDir := t.TempDir()
+	_ = exec.Command("git", "init", "-b", "develop", tempDir).Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.ai").Run()
+
+	f := filepath.Join(tempDir, "f.txt")
+	_ = os.WriteFile(f, []byte("data for local model fallback"), 0644)
+
+	// Local model endpoints return 500
+	tsFail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer tsFail.Close()
+
+	res, err := ExecuteCommit(context.Background(), CommitOptions{
+		RepoDir:          tempDir,
+		StageAll:         true,
+		UseLocalModel:    true,
+		OllamaEndpoint:   tsFail.URL,
+		LiteLLMEndpoint:  tsFail.URL,
+		OxillamaEndpoint: tsFail.URL,
+		NoPush:           true,
+		NoSmart:          true,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteCommit with failing local model endpoints should fallback deterministically, got: %v", err)
+	}
+	if res.CommitSHA == "" || res.CommitSHA == "unknown-sha" {
+		t.Errorf("expected valid commit sha, got: %s", res.CommitSHA)
+	}
+	if !strings.HasPrefix(res.Message, "feat(repo):") && !strings.HasPrefix(res.Message, "chore:") {
+		t.Errorf("expected synthesized deterministic message, got: %s", res.Message)
+	}
+}
+
+func TestExecuteCommit_DiffCachedError(t *testing.T) {
+	isolateEnvironment(t)
+	tempDir := t.TempDir()
+	_ = exec.Command("git", "init", "-b", "develop", tempDir).Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.ai").Run()
+	f := filepath.Join(tempDir, "sample.txt")
+	_ = os.WriteFile(f, []byte("hello"), 0644)
+	_ = exec.Command("git", "-C", tempDir, "add", "sample.txt").Run()
+
+	// Corrupt index so git diff --cached --name-only fails
+	_ = os.WriteFile(filepath.Join(tempDir, ".git", "index"), []byte("corrupt-index-data"), 0644)
+
+	_, err := ExecuteCommit(context.Background(), CommitOptions{
+		RepoDir: tempDir,
+		NoPush:  true,
+		// Amend with nothing staged skips 'git add -A', so the corrupt index surfaces at the staged-files check.
+		Amend:   true,
+		NoSmart: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "failed to check staged files") {
+		t.Errorf("expected failed to check staged files error, got: %v", err)
+	}
+}
+
+func TestResolveSmartTicket_EdgeCases(t *testing.T) {
+	isolateEnvironment(t)
+	var handler http.HandlerFunc
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if handler != nil {
+			handler(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ts.Close()
+
+	t.Setenv("PLANE_BASE_URL", ts.URL)
+	t.Setenv("PLANE_API_KEY", "custom_plane_key")
+	t.Setenv("PLANE_WORKSPACE_SLUG", "workspace")
+	t.Setenv("PLANE_PROJECT_ID", "project")
+
+	tempDir := t.TempDir()
+	_ = exec.Command("git", "init", "-b", "develop", tempDir).Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.name", "Tester").Run()
+	_ = exec.Command("git", "-C", tempDir, "config", "user.email", "test@test.ai").Run()
+	initFile := filepath.Join(tempDir, "init.txt")
+	_ = os.WriteFile(initFile, []byte("init"), 0644)
+	_ = exec.Command("git", "-C", tempDir, "add", "init.txt").Run()
+	_ = exec.Command("git", "-C", tempDir, "commit", "-m", "init").Run()
+
+	// 1. Staged file base name match (base length > 4) and dir match
+	handler = func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": []map[string]interface{}{
+				{
+					"id":               "44444444-4444-4444-4444-444444444444",
+					"name":             "[DEN-404] Update custom controller",
+					"state_slug":       "open",
+					"description_html": "<p>touching controller.go and pkg/custom</p>",
+				},
+			},
+		})
+	}
+	info, err := ResolveSmartTicket(context.Background(), tempDir, []string{"pkg/custom/controller.go"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.ID != "DEN-404" {
+		t.Errorf("expected DEN-404, got %s", info.ID)
+	}
+
+	// 2. Empty repoDir branch check (repoDir == "")
+	t.Setenv("PLANE_BASE_URL", "http://127.0.0.1:59999")
+	infoEmptyRepo, errEmptyRepo := ResolveSmartTicket(context.Background(), "", []string{"file.txt"})
+	if errEmptyRepo != nil {
+		t.Fatalf("unexpected error with empty repoDir: %v", errEmptyRepo)
+	}
+	if infoEmptyRepo == nil {
+		t.Errorf("expected non-nil infoEmptyRepo")
+	}
+}
+
+func TestGenerateLocalCommitMessage_CannedResponses(t *testing.T) {
+	isolateEnvironment(t)
+	ctx := context.Background()
+
+	// OxiLLaMa returns canned response
+	tsOx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": "processed your request safely with zero cloud tokens consumed"}},
+			},
+		})
+	}))
+	defer tsOx.Close()
+
+	// Ollama returns canned response
+	tsOllama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"response": "As an AI, here is the commit message: feat(repo): update",
+		})
+	}))
+	defer tsOllama.Close()
+
+	// LiteLLM returns empty choices
+	tsLite := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{},
+		})
+	}))
+	defer tsLite.Close()
+
+	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", tsOx.URL)
+	t.Setenv("DENDRITE_COMMIT_PREFER_OXILLAMA", "true")
+
+	msg, modelUsed, err := GenerateLocalCommitMessageWithContext(
+		ctx,
+		"",
+		"",
+		"", // empty ticketID
+		nil,
+		"oxillama/qwen3.8:27b",
+		tsOllama.URL,
+		tsLite.URL,
+		"key",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if modelUsed != "deterministic-fallback" {
+		t.Errorf("expected deterministic-fallback, got %s", modelUsed)
+	}
+	if !strings.HasPrefix(msg, "feat(repo): autonomous repository update") {
+		t.Errorf("unexpected msg: %s", msg)
 	}
 }

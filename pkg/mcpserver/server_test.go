@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 )
@@ -199,5 +201,117 @@ func TestDefaultTools_Execution(t *testing.T) {
 	setupResp := srv.HandleRequest(context.Background(), []byte(setupReq))
 	if setupResp.Error != nil {
 		t.Fatalf("dendrite_jetbrains_setup error: %v", setupResp.Error)
+	}
+}
+
+func TestServer_ConfigDefaults(t *testing.T) {
+	// Empty config defaults
+	srv := NewServer(ServerConfig{})
+	if srv.info.Name != "Dendrite Control Plane MCP Server" {
+		t.Errorf("expected default name, got %q", srv.info.Name)
+	}
+	if srv.info.Version != "0.1.0-alpha" {
+		t.Errorf("expected default version, got %q", srv.info.Version)
+	}
+
+	// Custom config
+	srv2 := NewServer(ServerConfig{Name: "Custom", Version: "2.0.0"})
+	if srv2.info.Name != "Custom" || srv2.info.Version != "2.0.0" {
+		t.Errorf("expected custom config, got name=%q version=%q", srv2.info.Name, srv2.info.Version)
+	}
+}
+
+func TestServer_InvalidParams(t *testing.T) {
+	srv := NewServer(ServerConfig{})
+	srv.RegisterTool(Tool{Name: "tool1"}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		return &CallToolResult{}, nil
+	})
+
+	// tools/call with invalid params (not a JSON object)
+	req := `{"jsonrpc": "2.0", "id": 99, "method": "tools/call", "params": "not-an-object"}`
+	resp := srv.HandleRequest(context.Background(), []byte(req))
+	if resp == nil || resp.Error == nil || resp.Error.Code != ErrCodeInvalidParams {
+		t.Fatalf("expected ErrCodeInvalidParams, got: %v", resp)
+	}
+}
+
+func TestServer_ToolHandlerError(t *testing.T) {
+	srv := NewServer(ServerConfig{})
+	srv.RegisterTool(Tool{Name: "failing_tool"}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		return nil, errors.New("simulated tool failure")
+	})
+
+	req := `{"jsonrpc": "2.0", "id": 100, "method": "tools/call", "params": {"name": "failing_tool"}}`
+	resp := srv.HandleRequest(context.Background(), []byte(req))
+	if resp == nil {
+		t.Fatal("expected response")
+	}
+	res, ok := resp.Result.(CallToolResult)
+	if !ok || !res.IsError || len(res.Content) == 0 || !strings.Contains(res.Content[0].Text, "simulated tool failure") {
+		t.Fatalf("expected CallToolResult with error, got: %#v", resp.Result)
+	}
+}
+
+func TestServer_ServeStdio_Cancellation(t *testing.T) {
+	srv := NewServer(ServerConfig{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel context
+
+	in := strings.NewReader(`{"jsonrpc": "2.0", "id": 1, "method": "ping"}` + "\n")
+	out := &bytes.Buffer{}
+
+	err := srv.ServeStdio(ctx, in, out)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got: %v", err)
+	}
+}
+
+func TestServer_ServeStdio_EmptyLine(t *testing.T) {
+	srv := NewServer(ServerConfig{})
+	input := "\n\n" + `{"jsonrpc": "2.0", "id": 1, "method": "ping"}` + "\n\n"
+	in := strings.NewReader(input)
+	out := &bytes.Buffer{}
+
+	err := srv.ServeStdio(context.Background(), in, out)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 response line, got %d", len(lines))
+	}
+}
+
+func TestServer_ServeStdio_WriteError(t *testing.T) {
+	srv := NewServer(ServerConfig{})
+	in := strings.NewReader(`{"jsonrpc": "2.0", "id": 1, "method": "ping"}` + "\n")
+	pr, pw := io.Pipe()
+	_ = pr.Close()
+	_ = pw.Close() // closing pipe writer forces fmt.Fprintf(out, ...) to fail
+
+	err := srv.ServeStdio(context.Background(), in, pw)
+	if err == nil || !strings.Contains(err.Error(), "failed to write response") {
+		t.Fatalf("expected failed to write response error, got: %v", err)
+	}
+}
+
+func TestServer_ServeStdio_ScannerError(t *testing.T) {
+	srv := NewServer(ServerConfig{})
+	pr, pw := io.Pipe()
+	_ = pw.CloseWithError(errors.New("simulated pipe read error"))
+
+	out := &bytes.Buffer{}
+	err := srv.ServeStdio(context.Background(), pr, out)
+	if err == nil || !strings.Contains(err.Error(), "simulated pipe read error") {
+		t.Fatalf("expected simulated pipe read error, got: %v", err)
+	}
+}
+
+func TestServer_RegisterDefaultTools_EmptyDependencies(t *testing.T) {
+	srv := NewServer(ServerConfig{})
+	srv.RegisterDefaultTools(Dependencies{})
+	tools := srv.ListTools()
+	if len(tools) == 0 {
+		t.Fatal("expected registered tools with empty dependencies")
 	}
 }
