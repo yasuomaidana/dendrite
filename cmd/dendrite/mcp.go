@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"Dendrite/pkg/mcpserver"
 	"Dendrite/pkg/ollama"
+	"Dendrite/pkg/synapse"
 )
 
 // buildMCPServer constructs the live Dendrite Control Plane MCP server with registered default tools.
@@ -24,8 +26,49 @@ func buildMCPServer() *mcpserver.Server {
 	return srv
 }
 
+// buildSynapseMCPServer constructs a scoped MCP server exposing only the synapse_* tools of one synapse.
+func buildSynapseMCPServer(id string) (*mcpserver.Server, error) {
+	st, err := synapse.DefaultStore()
+	if err != nil {
+		return nil, err
+	}
+	return mcpserver.NewSynapseServer(mcpserver.SynapseScope{Store: st, ID: id}, version)
+}
+
+// extractSynapseFlag removes "--synapse <id>" / "--synapse=<id>" from args and returns the id.
+func extractSynapseFlag(args []string) (string, []string, error) {
+	var id string
+	rest := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--synapse":
+			if i+1 >= len(args) {
+				return "", nil, fmt.Errorf("--synapse requires a synapse id")
+			}
+			id = args[i+1]
+			i++
+		case strings.HasPrefix(args[i], "--synapse="):
+			id = strings.TrimPrefix(args[i], "--synapse=")
+		default:
+			rest = append(rest, args[i])
+		}
+	}
+	return id, rest, nil
+}
+
 func handleMCPCommand(ctx context.Context, action string, args []string) {
+	synapseID, args, err := extractSynapseFlag(args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[-] %v\n", err)
+		os.Exit(1)
+	}
 	srv := buildMCPServer()
+	if synapseID != "" {
+		if srv, err = buildSynapseMCPServer(synapseID); err != nil {
+			fmt.Fprintf(os.Stderr, "[-] %v\n", err)
+			os.Exit(1)
+		}
+	}
 
 	switch action {
 	case "serve", "stdio":
