@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -11,6 +13,8 @@ import (
 
 func handleCommitCommand(ctx context.Context, args []string) {
 	stageAllSet := false
+	withSynapse, assumeYes := false, false
+	synapseID := ""
 	opts := devtool.CommitOptions{
 		StageAll:      false,
 		UseLocalModel: true,
@@ -62,9 +66,18 @@ func handleCommitCommand(ctx context.Context, args []string) {
 			opts.DryRun = true
 		case "--allow-mocks", "--no-mock-gate":
 			opts.AllowMocks = true
+		case "--synapse":
+			withSynapse = true
+		case "--yes", "-y":
+			assumeYes = true
 		case "--help", "-h":
 			printCommitUsage()
 			return
+		default:
+			if strings.HasPrefix(args[i], "--synapse=") {
+				withSynapse = true
+				synapseID = strings.TrimPrefix(args[i], "--synapse=")
+			}
 		}
 	}
 
@@ -97,55 +110,87 @@ func handleCommitCommand(ctx context.Context, args []string) {
 	}
 
 	res, err := devtool.ExecuteCommit(ctx, opts)
-	if err != nil {
+	failed := false
+	switch {
+	case err == nil:
+		failed = printCommitResult(os.Stdout, res)
+	case withSynapse && errors.Is(err, devtool.ErrNothingToCommit):
+		fmt.Println("[i] Nothing to commit in the current project; checking synapse peers...")
+	default:
 		fmt.Printf("[-] Commit failed: %v\n", err)
 		os.Exit(1)
 		return
 	}
 
+	if withSynapse {
+		cwd, wdErr := os.Getwd()
+		if wdErr != nil {
+			fmt.Printf("[-] %v\n", wdErr)
+			os.Exit(1)
+		}
+		var confirm peerConfirm // nil: non-interactive without --yes, report only
+		switch {
+		case assumeYes:
+			confirm = func(string, int) bool { return true }
+		case stdinIsTerminal():
+			confirm = linePrompter(os.Stdin, os.Stdout)
+		}
+		if peerErr := commitSynapsePeers(ctx, os.Stdout, cwd, synapseID, opts, confirm); peerErr != nil {
+			fmt.Printf("[-] %v\n", peerErr)
+			failed = true
+		}
+	}
+	if failed {
+		os.Exit(1)
+	}
+}
+
+// printCommitResult renders a commit outcome and reports whether the push failed.
+func printCommitResult(out io.Writer, res *devtool.CommitResult) bool {
 	if res.DryRun {
-		fmt.Println("[✓] Dry run commit preview generated:")
+		fmt.Fprintln(out, "[✓] Dry run commit preview generated:")
 		if res.SmartTicket != nil && res.SmartTicket.ID != "" {
-			fmt.Printf("    - Smart Strategy:   Resolved [%s] via %s\n", res.SmartTicket.ID, res.SmartSource)
+			fmt.Fprintf(out, "    - Smart Strategy:   Resolved [%s] via %s\n", res.SmartTicket.ID, res.SmartSource)
 			if res.SmartTicket.Title != "" {
-				fmt.Printf("      * Title:          %s\n", res.SmartTicket.Title)
+				fmt.Fprintf(out, "      * Title:          %s\n", res.SmartTicket.Title)
 			}
 		}
-		fmt.Printf("    - Proposed Message:\n%s\n", indentText(res.Message, "      "))
-		fmt.Printf("    - Staged Files (%d):\n", len(res.Files))
+		fmt.Fprintf(out, "    - Proposed Message:\n%s\n", indentText(res.Message, "      "))
+		fmt.Fprintf(out, "    - Staged Files (%d):\n", len(res.Files))
 		for _, f := range res.Files {
-			fmt.Printf("      * %s\n", f)
+			fmt.Fprintf(out, "      * %s\n", f)
 		}
-		fmt.Printf("    - Model Engine:     %s (Cost: $%.2f)\n", res.ModelUsed, res.CostUSD)
+		fmt.Fprintf(out, "    - Model Engine:     %s (Cost: $%.2f)\n", res.ModelUsed, res.CostUSD)
 		if res.PushSkipped {
-			fmt.Printf("    - Remote Push:      Skipped (%s)\n", res.PushReason)
+			fmt.Fprintf(out, "    - Remote Push:      Skipped (%s)\n", res.PushReason)
 		}
-		return
+		return false
 	}
 
-	fmt.Printf("[✓] Commit applied successfully (%s)\n", res.CommitSHA[:min(8, len(res.CommitSHA))])
+	fmt.Fprintf(out, "[✓] Commit applied successfully (%s)\n", res.CommitSHA[:min(8, len(res.CommitSHA))])
 	if res.SmartTicket != nil && res.SmartTicket.ID != "" {
-		fmt.Printf("    - Smart Strategy:   Resolved [%s] via %s\n", res.SmartTicket.ID, res.SmartSource)
+		fmt.Fprintf(out, "    - Smart Strategy:   Resolved [%s] via %s\n", res.SmartTicket.ID, res.SmartSource)
 		if res.SmartTicket.Title != "" {
-			fmt.Printf("      * Title:          %s\n", res.SmartTicket.Title)
+			fmt.Fprintf(out, "      * Title:          %s\n", res.SmartTicket.Title)
 		}
 	}
-	fmt.Printf("    - Message:\n%s\n", indentText(res.Message, "      "))
-	fmt.Printf("    - Files Committed (%d):\n", len(res.Files))
+	fmt.Fprintf(out, "    - Message:\n%s\n", indentText(res.Message, "      "))
+	fmt.Fprintf(out, "    - Files Committed (%d):\n", len(res.Files))
 	for _, f := range res.Files {
-		fmt.Printf("      * %s\n", f)
+		fmt.Fprintf(out, "      * %s\n", f)
 	}
-	fmt.Printf("    - Model Provenance: %s (Cost: $%.2f)\n", res.ModelUsed, res.CostUSD)
+	fmt.Fprintf(out, "    - Model Provenance: %s (Cost: $%.2f)\n", res.ModelUsed, res.CostUSD)
 	if res.Pushed {
-		fmt.Println("    - Remote Push:      Pushed to remote")
+		fmt.Fprintln(out, "    - Remote Push:      Pushed to remote")
 	} else if res.PushSkipped {
-		fmt.Printf("    - Remote Push:      Skipped (%s)\n", res.PushReason)
+		fmt.Fprintf(out, "    - Remote Push:      Skipped (%s)\n", res.PushReason)
 	}
 
 	if res.PushError != nil {
-		fmt.Printf("[-] Git push failed: %v\n", res.PushError)
-		os.Exit(1)
+		fmt.Fprintf(out, "[-] Git push failed: %v\n", res.PushError)
+		return true
 	}
+	return false
 }
 
 func printCommitUsage() {
@@ -161,6 +206,8 @@ func printCommitUsage() {
 	fmt.Println("  --model <model>       Target local model for message synthesis (default qwen3.8:27b)")
 	fmt.Println("  --local / --no-local  Enable/disable local model delegation (default enabled)")
 	fmt.Println("  --dry-run             Preview staged diff and synthesized commit message without committing")
+	fmt.Println("  --synapse[=<id>]      Then check every synapse peer: offer to commit dirty peers, push peers ahead")
+	fmt.Println("  --yes, -y             With --synapse, commit every dirty peer without prompting")
 }
 
 func indentText(text, indent string) string {
