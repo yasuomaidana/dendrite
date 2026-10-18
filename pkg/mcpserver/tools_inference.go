@@ -9,7 +9,7 @@ import (
 	"Dendrite/pkg/inference"
 )
 
-func (s *Server) registerInferenceTools(deps Dependencies) {
+func registerInferenceTools(s *Server, deps Dependencies) {
 	// dendrite_inference_migrate_model
 	s.RegisterTool(Tool{
 		Name:        "dendrite_inference_migrate_model",

@@ -8,7 +8,7 @@ import (
 
 func TestREATools_RegistrationAndExecution(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{DevStatus: "../../DEV_STATUS.md"})
+	RegisterDefaultTools(srv, Dependencies{DevStatus: "../../DEV_STATUS.md"})
 
 	tools := srv.ListTools()
 	found := false
@@ -22,7 +22,7 @@ func TestREATools_RegistrationAndExecution(t *testing.T) {
 		t.Fatalf("expected dendrite_rea_showcase to be registered among tools")
 	}
 
-	handler, exists := srv.handlers["dendrite_rea_showcase"]
+	handler, exists := srv.Handler("dendrite_rea_showcase")
 	if !exists {
 		t.Fatalf("handler for dendrite_rea_showcase not found")
 	}

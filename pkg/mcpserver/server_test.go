@@ -117,7 +117,7 @@ func TestServer_UnknownToolAndErrors(t *testing.T) {
 
 func TestServer_ServeStdio(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{DevStatus: "../../DEV_STATUS.md"})
+	RegisterDefaultTools(srv, Dependencies{DevStatus: "../../DEV_STATUS.md"})
 
 	input := strings.Join([]string{
 		`{"jsonrpc": "2.0", "id": 1, "method": "initialize"}`,
@@ -153,7 +153,7 @@ func TestServer_ServeStdio(t *testing.T) {
 
 func TestDefaultTools_Execution(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{DevStatus: "../../DEV_STATUS.md"})
+	RegisterDefaultTools(srv, Dependencies{DevStatus: "../../DEV_STATUS.md"})
 
 	tools := srv.ListTools()
 	if len(tools) < 8 {
@@ -207,17 +207,17 @@ func TestDefaultTools_Execution(t *testing.T) {
 func TestServer_ConfigDefaults(t *testing.T) {
 	// Empty config defaults
 	srv := NewServer(ServerConfig{})
-	if srv.info.Name != "Dendrite Control Plane MCP Server" {
-		t.Errorf("expected default name, got %q", srv.info.Name)
+	if srv.Info().Name != "Dendrite Control Plane MCP Server" {
+		t.Errorf("expected default name, got %q", srv.Info().Name)
 	}
-	if srv.info.Version != "0.1.0-alpha" {
-		t.Errorf("expected default version, got %q", srv.info.Version)
+	if srv.Info().Version != "0.1.0-alpha" {
+		t.Errorf("expected default version, got %q", srv.Info().Version)
 	}
 
 	// Custom config
 	srv2 := NewServer(ServerConfig{Name: "Custom", Version: "2.0.0"})
-	if srv2.info.Name != "Custom" || srv2.info.Version != "2.0.0" {
-		t.Errorf("expected custom config, got name=%q version=%q", srv2.info.Name, srv2.info.Version)
+	if srv2.Info().Name != "Custom" || srv2.Info().Version != "2.0.0" {
+		t.Errorf("expected custom config, got name=%q version=%q", srv2.Info().Name, srv2.Info().Version)
 	}
 }
 
@@ -309,7 +309,7 @@ func TestServer_ServeStdio_ScannerError(t *testing.T) {
 
 func TestServer_RegisterDefaultTools_EmptyDependencies(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 	tools := srv.ListTools()
 	if len(tools) == 0 {
 		t.Fatal("expected registered tools with empty dependencies")

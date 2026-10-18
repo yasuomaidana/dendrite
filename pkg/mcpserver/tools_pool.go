@@ -15,7 +15,7 @@ var defaultMCPDAGSolver = dag.NewDAGSolver()
 var defaultMCPSwitcher = switcher.NewDependencySwitcher()
 var defaultMCPSplitter = split.NewProjectSplitter()
 
-func (s *Server) registerPoolTools(deps Dependencies) {
+func registerPoolTools(s *Server, deps Dependencies) {
 	// 26. dendrite_pool_resolve
 	s.RegisterTool(Tool{
 		Name:        "dendrite_pool_resolve",

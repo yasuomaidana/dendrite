@@ -10,7 +10,7 @@ import (
 
 func TestDistCodebaseMCPTools(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{DevStatus: "../../DEV_STATUS.md"})
+	RegisterDefaultTools(srv, Dependencies{DevStatus: "../../DEV_STATUS.md"})
 
 	ctx := context.Background()
 

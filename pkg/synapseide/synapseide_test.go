@@ -1,8 +1,9 @@
-package jetbrains
+package synapseide
 
 import (
 	"Dendrite/pkg/synapse"
 	"encoding/json"
+	"github.com/yasuomaidana/dendrite-mcp-hub/pkg/jetbrains"
 	"os"
 	"path/filepath"
 	"sort"
@@ -332,7 +333,7 @@ func TestSyncSynapseIDE_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read mcp1 file: %v", err)
 	}
-	var mcp1Cfg MCPConfig
+	var mcp1Cfg jetbrains.MCPConfig
 	if err := json.Unmarshal(mcp1Data, &mcp1Cfg); err != nil {
 		t.Fatalf("invalid json in mcp1: %v", err)
 	}
@@ -439,7 +440,7 @@ func TestSyncSynapseIDE_UpsertMCPError(t *testing.T) {
 	pid := "dpid_1234567890abcdef1234567890abcdef"
 	writeMemberProjectID(t, dir, pid)
 
-	// Create .ai/mcp/mcp.json as a directory so UpsertMCPServer fails
+	// Create .ai/mcp/mcp.json as a directory so jetbrains.UpsertMCPServer fails
 	conflictPath := filepath.Join(dir, ".ai", "mcp", "mcp.json")
 	if err := os.MkdirAll(conflictPath, 0755); err != nil {
 		t.Fatalf("failed to create conflict dir: %v", err)

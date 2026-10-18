@@ -9,7 +9,7 @@ import (
 
 func TestDendriteAgentSearchMCPTool(t *testing.T) {
 	srv := NewServer(ServerConfig{Name: "dendrite", Version: "1.0.0"})
-	srv.RegisterDefaultTools(Dependencies{
+	RegisterDefaultTools(srv, Dependencies{
 		DevStatus: "DEV_STATUS.md",
 		OllamaURL: "http://127.0.0.1:11434",
 	})

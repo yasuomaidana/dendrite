@@ -10,7 +10,7 @@ import (
 
 func TestContractTools_RegistrationAndExecution(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// Verify tool registration
 	registered := false
@@ -41,7 +41,7 @@ func TestContractTools_RegistrationAndExecution(t *testing.T) {
 	goFile := filepath.Join(codeDir, "user.go")
 	_ = os.WriteFile(goFile, []byte("package main\ntype User struct {\n\tID string `json:\"id\"`\n\tAge string `json:\"age\"`\n}\n"), 0644)
 
-	handler := srv.handlers["dendrite_contract_drift_check"]
+	handler, _ := srv.Handler("dendrite_contract_drift_check")
 	ctx := context.Background()
 
 	res, err := handler(ctx, map[string]interface{}{

@@ -11,7 +11,7 @@ import (
 
 func TestMCP_GreetingTools(t *testing.T) {
 	srv := NewServer(ServerConfig{Name: "dendrite", Version: "1.0.0"})
-	srv.RegisterDefaultTools(Dependencies{
+	RegisterDefaultTools(srv, Dependencies{
 		DevStatus: "DEV_STATUS.md",
 	})
 	ctx := context.Background()

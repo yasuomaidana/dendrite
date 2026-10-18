@@ -1,4 +1,4 @@
-package jetbrains
+package synapseide
 
 import (
 	"Dendrite/pkg/fsutil"
@@ -7,6 +7,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"github.com/yasuomaidana/dendrite-mcp-hub/pkg/jetbrains"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -60,16 +61,10 @@ func SynapseScopeXML(s *synapse.Synapse, alias string) (string, bool) {
 	}
 	pattern := strings.Join(parts, "||")
 
-	var patBuf bytes.Buffer
-	if err := xml.EscapeText(&patBuf, []byte(pattern)); err != nil {
-		return "", false
-	}
-
-	scopeName := SynapseScopeName(s.ID)
-	var nameBuf bytes.Buffer
-	if err := xml.EscapeText(&nameBuf, []byte(scopeName)); err != nil {
-		return "", false
-	}
+	// xml.EscapeText only fails when the writer does; a bytes.Buffer never does.
+	var patBuf, nameBuf bytes.Buffer
+	_ = xml.EscapeText(&patBuf, []byte(pattern))
+	_ = xml.EscapeText(&nameBuf, []byte(SynapseScopeName(s.ID)))
 
 	out := fmt.Sprintf("<component name=\"DependencyValidationManager\">\n  <scope name=\"%s\" pattern=\"%s\" />\n</component>\n", nameBuf.String(), patBuf.String())
 	return out, true
@@ -96,7 +91,7 @@ func SyncSynapseIDE(s *synapse.Synapse, binary string) (written []string, skippe
 	serverName := SynapseServerName(s.ID)
 	scopeFileName := SynapseScopeName(s.ID) + ".xml"
 
-	mcpEntry := MCPServerEntry{
+	mcpEntry := jetbrains.MCPServerEntry{
 		Command: binary,
 		Args:    []string{"mcp", "serve", "--synapse", s.ID},
 	}
@@ -117,7 +112,7 @@ func SyncSynapseIDE(s *synapse.Synapse, binary string) (written []string, skippe
 		}
 
 		mcpPath := filepath.Join(memberDir, ".ai", "mcp", "mcp.json")
-		if _, err := UpsertMCPServer(mcpPath, serverName, mcpEntry); err != nil {
+		if _, err := jetbrains.UpsertMCPServer(mcpPath, serverName, mcpEntry); err != nil {
 			return nil, nil, fmt.Errorf("failed to upsert mcp server for member %s: %w", m.Alias, err)
 		}
 		written = append(written, mcpPath)

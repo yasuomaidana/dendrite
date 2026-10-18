@@ -10,7 +10,7 @@ import (
 
 	"Dendrite/pkg/devtool"
 	"Dendrite/pkg/env"
-	"Dendrite/pkg/jetbrains"
+	"github.com/yasuomaidana/dendrite-mcp-hub/pkg/jetbrains"
 	"Dendrite/pkg/ollama"
 	"Dendrite/pkg/tracker"
 

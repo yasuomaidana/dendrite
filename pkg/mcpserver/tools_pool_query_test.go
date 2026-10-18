@@ -10,7 +10,7 @@ import (
 
 func TestTools_Pool(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	tmpDir := t.TempDir()
 
@@ -76,7 +76,7 @@ func TestTools_Query(t *testing.T) {
 	// The reuse audit records ADRs under docs/adr relative to the CWD; keep them out of the package dir.
 	t.Chdir(t.TempDir())
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	tmpDir := t.TempDir()
 

@@ -12,7 +12,7 @@ import (
 	"Dendrite/pkg/vcs"
 )
 
-func (s *Server) registerAuditTools(deps Dependencies) {
+func registerAuditTools(s *Server, deps Dependencies) {
 	// dendrite_audit_changes
 	s.RegisterTool(Tool{
 		Name:        "dendrite_audit_changes",

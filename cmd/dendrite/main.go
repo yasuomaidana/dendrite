@@ -18,7 +18,7 @@ import (
 	"Dendrite/pkg/docgen/reflect"
 	"Dendrite/pkg/env"
 	"Dendrite/pkg/env/bootstrap"
-	"Dendrite/pkg/jetbrains"
+	"github.com/yasuomaidana/dendrite-mcp-hub/pkg/jetbrains"
 	"Dendrite/pkg/ollama"
 	"Dendrite/pkg/personalcontext/greeting"
 	"Dendrite/pkg/server"

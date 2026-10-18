@@ -12,7 +12,7 @@ func TestMCP_MigrateTools(t *testing.T) {
 		Name:    "test-dendrite",
 		Version: "0.1.0",
 	})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	ctx := context.Background()
 

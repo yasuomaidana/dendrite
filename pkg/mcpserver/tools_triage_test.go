@@ -18,7 +18,7 @@ func TestDendriteLocalAgentTriageTool(t *testing.T) {
 	defer ts.Close()
 
 	srv := NewServer(ServerConfig{Name: "dendrite", Version: "1.0.0"})
-	srv.RegisterDefaultTools(Dependencies{
+	RegisterDefaultTools(srv, Dependencies{
 		DevStatus: "DEV_STATUS.md",
 		OllamaURL: ts.URL,
 	})

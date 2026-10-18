@@ -12,7 +12,7 @@ import (
 
 func TestTools_Perf(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// 1. dendrite_bench_run mode "stress"
 	stressReq := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_bench_run", "arguments": {"mode": "stress", "virtual_users": 2}}}`
@@ -39,7 +39,7 @@ func TestTools_Perf(t *testing.T) {
 
 func TestTools_REA(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	for _, format := range []string{"json", "markdown", "summary", "default"} {
 		req := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_rea_showcase", "arguments": {"target": "all", "format": %q}}}`, format)
@@ -52,7 +52,7 @@ func TestTools_REA(t *testing.T) {
 
 func TestTools_Docusaurus(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	tmpDir := t.TempDir()
 	docsDir := filepath.Join(tmpDir, "docs")
@@ -85,7 +85,7 @@ func TestTools_Docusaurus(t *testing.T) {
 
 func TestTools_Triage(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{OllamaURL: "http://127.0.0.1:11434"})
+	RegisterDefaultTools(srv, Dependencies{OllamaURL: "http://127.0.0.1:11434"})
 
 	// 1. Missing prompt (error)
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_local_agent_triage", "arguments": {}}}`
@@ -110,7 +110,7 @@ func TestTools_Triage(t *testing.T) {
 
 func TestTools_AgentSearch(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// 1. Missing query (error)
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_agent_search", "arguments": {}}}`
@@ -136,7 +136,7 @@ func TestTools_AgentSearch(t *testing.T) {
 
 func TestTools_TestGen(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// 1. Missing file parameter (error)
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_test_auto", "arguments": {}}}`

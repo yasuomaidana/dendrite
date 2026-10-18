@@ -9,7 +9,7 @@ import (
 	"Dendrite/pkg/ollama"
 )
 
-func (s *Server) registerTriageTools(deps Dependencies) {
+func registerTriageTools(s *Server, deps Dependencies) {
 	// 23. dendrite_local_agent_triage
 	s.RegisterTool(Tool{
 		Name:        "dendrite_local_agent_triage",

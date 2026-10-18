@@ -19,7 +19,7 @@ func buildMCPServer() *mcpserver.Server {
 		Name:    "Dendrite Control Plane MCP Server",
 		Version: version,
 	})
-	srv.RegisterDefaultTools(mcpserver.Dependencies{
+	mcpserver.RegisterDefaultTools(srv, mcpserver.Dependencies{
 		DevStatus: "DEV_STATUS.md",
 		OllamaURL: ollama.DefaultBaseURL,
 	})

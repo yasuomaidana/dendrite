@@ -368,3 +368,91 @@ func TestWriteIfChangedReportsErrors(t *testing.T) {
 		t.Fatalf("res = %+v", res)
 	}
 }
+
+func TestLinkerFilesystemFailures(t *testing.T) {
+	w := newSyncWorld(t)
+	hub, _, hubID := w.repo("hub", map[string]string{"go.mod": "module h\n"})
+	control, _, controlID := w.repo("control", map[string]string{"go.mod": "module c\n", "Cargo.toml": "[package]\n"})
+	docs, _, docsID := w.repo("docs", map[string]string{"README": "no manifest"})
+	members := []Member{
+		{ProjectID: controlID, Alias: "control", Role: RoleConsumer, PathHint: control},
+		{ProjectID: hubID, Alias: "hub", Role: RoleProducer, PathHint: hub, Remote: "https://x/hub", Module: "hub"},
+		{ProjectID: docsID, Alias: "docs", Role: RolePeer, PathHint: docs},
+	}
+	goSyn := &Synapse{ID: "g", Sync: Sync{Strategy: "go.work"}, Members: members}
+	readOnly := func(dir string) {
+		t.Helper()
+		if err := os.Chmod(dir, 0o555); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	}
+
+	// docs has no go.mod: it neither links nor gets a go.work. A go.mod without a go
+	// line yields a go.work without one.
+	res := Link(goSyn)
+	if len(res) != 1 || res[0].Alias != "control" || res[0].Action != LinkWritten {
+		t.Fatalf("go.work link = %+v", res)
+	}
+	if data, _ := os.ReadFile(filepath.Join(control, "go.work")); strings.Contains(string(data), "\ngo ") {
+		t.Fatalf("unexpected go directive:\n%s", data)
+	}
+
+	// Removing a stale generated go.work fails in a read-only checkout.
+	goSyn.Members[1].Source = SourceRemote
+	readOnly(control)
+	if res = Link(goSyn); res[0].Action != LinkSkipped {
+		t.Fatalf("read-only removal = %+v", res)
+	}
+	// Writing fails there too.
+	goSyn.Members[1].Source = SourceLocal
+	if err := os.Chmod(control, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(control, "go.work")); err != nil {
+		t.Fatal(err)
+	}
+	readOnly(control)
+	if res = Link(goSyn); res[0].Action != LinkSkipped {
+		t.Fatalf("read-only write = %+v", res)
+	}
+	if err := os.Chmod(control, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cargoSyn := &Synapse{ID: "c", Sync: Sync{Strategy: "cargo-patch"}, Members: members}
+	if err := os.WriteFile(filepath.Join(hub, "Cargo.toml"), []byte("[package]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cargoDir := filepath.Join(control, ".cargo")
+	// config.toml is a directory: unreadable.
+	if err := os.MkdirAll(filepath.Join(cargoDir, "config.toml"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if res = Link(cargoSyn); res[0].Action != LinkSkipped {
+		t.Fatalf("unreadable config = %+v", res)
+	}
+	if err := os.RemoveAll(cargoDir); err != nil {
+		t.Fatal(err)
+	}
+	if res = Link(cargoSyn); res[0].Action != LinkWritten {
+		t.Fatalf("cargo link = %+v", res)
+	}
+	// Dropping the only block would delete the file, which a read-only .cargo forbids.
+	cargoSyn.Members[1].Source = SourceRemote
+	readOnly(cargoDir)
+	if res = Link(cargoSyn); res[0].Action != LinkSkipped {
+		t.Fatalf("read-only cargo removal = %+v", res)
+	}
+}
+
+func TestDefaultRootsWithoutHome(t *testing.T) {
+	t.Setenv(EnvSearchRoots, "")
+	t.Setenv("HOME", "")
+	if roots := defaultRoots(); roots != nil {
+		t.Fatalf("roots = %v", roots)
+	}
+	if got := relOrAbs("relative", "/abs"); got != "/abs" {
+		t.Fatalf("relOrAbs fallback = %q", got)
+	}
+}

@@ -20,7 +20,7 @@ var defaultMCPFuser = fuse.NewArchitectureFuser()
 var defaultMCPReuseAuditor = reuse.NewAuditor(nil, nil, statedir.Resolve(".dendrite/pool.json"))
 var defaultMCPRefMgr = reuse.NewRefManager(".dendrite/refs.json")
 
-func (s *Server) registerQueryTools(deps Dependencies) {
+func registerQueryTools(s *Server, deps Dependencies) {
 	// 31. dendrite_query_slice
 	s.RegisterTool(Tool{
 		Name:        "dendrite_query_slice",

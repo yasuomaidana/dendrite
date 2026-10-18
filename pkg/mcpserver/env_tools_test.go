@@ -12,7 +12,7 @@ import (
 
 func TestMCP_EnvPrepareTools(t *testing.T) {
 	srv := NewServer(ServerConfig{Name: "dendrite", Version: "1.0.0"})
-	srv.RegisterDefaultTools(Dependencies{
+	RegisterDefaultTools(srv, Dependencies{
 		DevStatus: "DEV_STATUS.md",
 	})
 	ctx := context.Background()

@@ -11,7 +11,7 @@ func TestDendriteGatewayUpdate_Tool(t *testing.T) {
 		Name:    "Test MCP Server",
 		Version: "1.0.0",
 	})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	callReq := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_gateway_update", "arguments": {"dry_run": true, "file": "/tmp/litellm_test_mcp.yaml", "use_container_host": false}}}`
 	resp := srv.HandleRequest(context.Background(), []byte(callReq))

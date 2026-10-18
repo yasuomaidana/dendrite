@@ -14,7 +14,7 @@ import (
 var defaultMCPScheduler = token.NewTokenScheduler(nil, nil, "")
 var defaultMCPGovernor = governor.NewQuotaGovernor(governor.DefaultConfig(), defaultMCPStore, defaultMCPScheduler)
 
-func (s *Server) registerSchedulerTools(deps Dependencies) {
+func registerSchedulerTools(s *Server, deps Dependencies) {
 	// 41. dendrite_analyze_policy
 	s.RegisterTool(Tool{
 		Name:        "dendrite_analyze_policy",

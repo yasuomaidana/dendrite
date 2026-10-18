@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"Dendrite/pkg/polyglot/contract"
+	"github.com/yasuomaidana/dendrite-mcp-hub/pkg/polyglot/contract"
 	"Dendrite/pkg/store"
 	"Dendrite/pkg/story/fork"
 )

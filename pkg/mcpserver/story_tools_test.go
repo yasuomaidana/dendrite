@@ -7,7 +7,7 @@ import (
 
 func TestStoryForkTools_RegistrationAndExecution(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	expectedTools := []string{
 		"dendrite_story_fork",
@@ -30,25 +30,25 @@ func TestStoryForkTools_RegistrationAndExecution(t *testing.T) {
 	ctx := context.Background()
 
 	// Test validation errors on handler calls
-	forkHandler := srv.handlers["dendrite_story_fork"]
+	forkHandler, _ := srv.Handler("dendrite_story_fork")
 	_, err := forkHandler(ctx, map[string]interface{}{"story_id": ""})
 	if err == nil {
 		t.Error("expected error on missing story_id")
 	}
 
-	benchHandler := srv.handlers["dendrite_story_benchmark"]
+	benchHandler, _ := srv.Handler("dendrite_story_benchmark")
 	_, err = benchHandler(ctx, map[string]interface{}{"story_id": ""})
 	if err == nil {
 		t.Error("expected error on missing story_id")
 	}
 
-	resolveHandler := srv.handlers["dendrite_story_resolve"]
+	resolveHandler, _ := srv.Handler("dendrite_story_resolve")
 	_, err = resolveHandler(ctx, map[string]interface{}{"story_id": "", "winner": ""})
 	if err == nil {
 		t.Error("expected error on missing parameters")
 	}
 
-	abortHandler := srv.handlers["dendrite_story_abort"]
+	abortHandler, _ := srv.Handler("dendrite_story_abort")
 	_, err = abortHandler(ctx, map[string]interface{}{"story_id": ""})
 	if err == nil {
 		t.Error("expected error on missing story_id")

@@ -11,7 +11,7 @@ import (
 
 func TestTools_Store(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// 1. dendrite_store_status
 	stReq := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_store_status", "arguments": {"project": "proj-store"}}}`
@@ -64,7 +64,7 @@ func TestTools_Store(t *testing.T) {
 
 func TestTools_Scheduler(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// 1. dendrite_analyze_policy: sprint_before_reset invalid duration error
 	polReq1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_analyze_policy", "arguments": {"sprint_before_reset": "invalid-dur"}}}`
@@ -124,7 +124,7 @@ func TestTools_Scheduler(t *testing.T) {
 
 func TestTools_Contract(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// 1. Missing schema_dirs error
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_contract_drift_check", "arguments": {}}}`
@@ -148,7 +148,7 @@ func TestTools_Contract(t *testing.T) {
 
 func TestTools_Story(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// 1. dendrite_story_fork: missing story_id
 	fReq1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_story_fork", "arguments": {"variants": ["v1", "v2"]}}}`
@@ -195,7 +195,7 @@ func TestTools_PlaneDAG(t *testing.T) {
 	_ = os.WriteFile(devStatusFile, []byte(mdContent), 0644)
 
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{
+	RegisterDefaultTools(srv, Dependencies{
 		DevStatus:   devStatusFile,
 		PlaneClient: planeClient,
 	})
@@ -217,7 +217,7 @@ func TestTools_PlaneDAG(t *testing.T) {
 	// 3. Fallback to markdown file when planeClient is nil (Plane pinned to an unreachable address)
 	t.Setenv("PLANE_BASE_URL", "http://127.0.0.1:1")
 	srvFallback := NewServer(ServerConfig{})
-	srvFallback.RegisterDefaultTools(Dependencies{DevStatus: devStatusFile})
+	RegisterDefaultTools(srvFallback, Dependencies{DevStatus: devStatusFile})
 	selReq3 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_ticket_smart_select", "arguments": {"file": %q}}}`, devStatusFile)
 	selResp3 := srvFallback.HandleRequest(context.Background(), []byte(selReq3))
 	if selResp3 == nil || selResp3.Error != nil {
@@ -304,7 +304,7 @@ func chdirToScratchRepo(t *testing.T) {
 func TestTools_Audit(t *testing.T) {
 	chdirToScratchRepo(t)
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// 1. dendrite_vcs_guard (STANDARD and DEGRADED_BUDGET)
 	gReq1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_vcs_guard", "arguments": {"mode": "STANDARD"}}}`
@@ -364,7 +364,7 @@ func TestTools_Audit(t *testing.T) {
 
 func TestTools_InferenceAndPenpot(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// 1. dendrite_inference_migrate_model: missing model error
 	mReq1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_inference_migrate_model", "arguments": {}}}`
@@ -397,7 +397,7 @@ func TestTools_InferenceAndPenpot(t *testing.T) {
 
 func TestTools_MigrateGreetingEnv(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// 1. dendrite_service_move: missing target_host error
 	smReq1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_service_move", "arguments": {}}}`
@@ -438,7 +438,7 @@ func TestTools_MigrateGreetingEnv(t *testing.T) {
 
 func TestTools_CanvasAndRAG(t *testing.T) {
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// 1. dendrite_canvas_action_dispatch: missing action error
 	cReq1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_canvas_action_dispatch", "arguments": {"prompt": "write test"}}}`

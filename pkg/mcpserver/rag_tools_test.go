@@ -37,7 +37,7 @@ func (p *PromptEnhancer) Enhance(prompt string) string {
 	}
 
 	srv := NewServer(ServerConfig{Name: "dendrite", Version: "1.0.0"})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	// 1. Test dendrite_rag_retrieve tool
 	retrieveJSON := `{

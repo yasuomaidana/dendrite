@@ -10,7 +10,7 @@ import (
 	"Dendrite/pkg/tracker/plane"
 )
 
-func (s *Server) registerCanvasTools(deps Dependencies) {
+func registerCanvasTools(s *Server, deps Dependencies) {
 	// Initialize PenpotUIBridge with PlaneClient if available
 	bridge := canvas.NewPenpotUIBridge(deps.PlaneClient, "http://localhost:9000")
 	registry := canvas.NewDefaultRegistry(bridge)

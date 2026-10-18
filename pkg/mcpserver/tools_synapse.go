@@ -33,7 +33,7 @@ func NewSynapseServer(sc SynapseScope, version string) (*Server, error) {
 		Name:    "Dendrite Synapse MCP Server: " + syn.ID,
 		Version: version,
 	})
-	s.registerSynapseTools(sc)
+	registerSynapseTools(s, sc)
 	return s, nil
 }
 
@@ -76,7 +76,7 @@ func errorResult(format string, a ...interface{}) *CallToolResult {
 	return &CallToolResult{IsError: true, Content: []ContentItem{{Type: "text", Text: fmt.Sprintf(format, a...)}}}
 }
 
-func (s *Server) registerSynapseTools(sc SynapseScope) {
+func registerSynapseTools(s *Server, sc SynapseScope) {
 	s.RegisterTool(Tool{
 		Name:        "synapse_info",
 		Description: "Describes this synapse: members, roles, contracts, sync strategy and per-member path health",

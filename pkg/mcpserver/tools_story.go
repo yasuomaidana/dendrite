@@ -18,7 +18,7 @@ var defaultForkController = fork.NewForkController(
 	store.NewStore(".dendrite/store", "docs/adr"),
 )
 
-func (s *Server) registerStoryForkTools(deps Dependencies) {
+func registerStoryForkTools(s *Server, deps Dependencies) {
 	// 47. dendrite_story_fork
 	s.RegisterTool(Tool{
 		Name:        "dendrite_story_fork",

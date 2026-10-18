@@ -55,7 +55,7 @@ func TestMCP_CanvasTools(t *testing.T) {
 	deps := Dependencies{
 		PlaneClient: planeClient,
 	}
-	srv.registerCanvasTools(deps)
+	registerCanvasTools(srv, deps)
 
 	// 1. Test dendrite_canvas_action_dispatch (WRITE_PLAN)
 	t.Run("Dispatch_WritePlan", func(t *testing.T) {

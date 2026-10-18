@@ -16,7 +16,7 @@ import (
 
 var ticketNumRegex = regexp.MustCompile(`\[?(DEN-\d+)\]?`)
 
-func (s *Server) registerPlaneDAGTools(deps Dependencies) {
+func registerPlaneDAGTools(s *Server, deps Dependencies) {
 	handleSmartSelect := func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		ticketID, _ := args["ticket_id"].(string)
 		milestoneFilter, _ := args["milestone"].(string)
