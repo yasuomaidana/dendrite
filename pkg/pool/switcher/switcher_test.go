@@ -55,7 +55,11 @@ require (
 		t.Errorf("invalid scope XML: %s", string(scopeContent))
 	}
 
-	// 2. Switch to Branch mode
+	// 2. Switch to Branch mode: a branch is not a go.mod version, so it is pinned via `go get`.
+	var gotGet string
+	origGoGet := goGet
+	goGet = func(dir, depAtRef string) error { gotGet = depAtRef; return nil }
+	defer func() { goGet = origGoGet }()
 	branchRes, err := sw.Switch(ctx, SwitchRequest{
 		TargetProjectDir: tempDir,
 		DependencyName:   "github.com/test/dep-lib",
@@ -72,14 +76,35 @@ require (
 	if strings.Contains(string(content), "replace github.com/test/dep-lib =>") {
 		t.Errorf("replace directive should have been stripped in branch mode")
 	}
+	if gotGet != "github.com/test/dep-lib@feat/stream-v2" {
+		t.Errorf("go get = %q", gotGet)
+	}
 
-	// 3. Switch to Fork mode
+	// A version-shaped ref is written directly; a failing go get rolls back.
+	if _, err := sw.Switch(ctx, SwitchRequest{TargetProjectDir: tempDir, DependencyName: "github.com/test/dep-lib", Mode: ModeBranch, BranchName: "v1.3.0"}); err != nil {
+		t.Fatalf("switch to version ref failed: %v", err)
+	}
+	if content, _ = os.ReadFile(filepath.Join(tempDir, "go.mod")); !strings.Contains(string(content), "github.com/test/dep-lib v1.3.0") {
+		t.Errorf("expected pinned require: %s", content)
+	}
+	goGet = func(dir, depAtRef string) error { return errors.New("offline") }
+	if _, err := sw.Switch(ctx, SwitchRequest{TargetProjectDir: tempDir, DependencyName: "github.com/test/dep-lib", Mode: ModeBranch, BranchName: "main"}); err == nil {
+		t.Fatal("expected go get failure to fail the switch")
+	}
+	if after, _ := os.ReadFile(filepath.Join(tempDir, "go.mod")); string(after) != string(content) {
+		t.Errorf("go.mod not rolled back after go get failure")
+	}
+
+	// 3. Switch to Fork mode: a branch is rejected, a module version is required.
+	if _, err := sw.Switch(ctx, SwitchRequest{TargetProjectDir: tempDir, DependencyName: "github.com/test/dep-lib", Mode: ModeFork, ForkURL: "github.com/myfork/dep-lib", ForkBranch: "fix-patch"}); err == nil {
+		t.Fatal("expected fork with a branch name to be rejected")
+	}
 	forkRes, err := sw.Switch(ctx, SwitchRequest{
 		TargetProjectDir: tempDir,
 		DependencyName:   "github.com/test/dep-lib",
 		Mode:             ModeFork,
-		ForkURL:          "github.com/myfork/dep-lib",
-		ForkBranch:       "fix-patch",
+		ForkURL:          "https://github.com/myfork/dep-lib.git",
+		ForkBranch:       "v0.0.0-20261018000000-abcdef123456",
 	})
 	if err != nil {
 		t.Fatalf("switch to fork failed: %v", err)
@@ -88,7 +113,7 @@ require (
 		t.Errorf("expected ModeFork, got %s", forkRes.NewMode)
 	}
 	content, _ = os.ReadFile(filepath.Join(tempDir, "go.mod"))
-	if !strings.Contains(string(content), "replace github.com/test/dep-lib => github.com/myfork/dep-lib fix-patch") {
+	if !strings.Contains(string(content), "replace github.com/test/dep-lib => github.com/myfork/dep-lib v0.0.0-20261018000000-abcdef123456") {
 		t.Errorf("expected fork replace directive: %s", string(content))
 	}
 
@@ -217,11 +242,21 @@ func TestSwitcher_PackageJSONTransitions(t *testing.T) {
 		Mode:             ModeBranch,
 		BranchName:       "develop",
 	})
+	if err == nil {
+		t.Fatal("expected npm branch mode without a repository URL to fail")
+	}
+	_, err = sw.Switch(ctx, SwitchRequest{
+		TargetProjectDir: tempDir,
+		DependencyName:   "shared-ui",
+		Mode:             ModeBranch,
+		BranchName:       "develop",
+		ForkURL:          "https://github.com/o/shared-ui.git",
+	})
 	if err != nil {
 		t.Fatalf("switch to branch ts failed: %v", err)
 	}
 	content, _ = os.ReadFile(filepath.Join(tempDir, "package.json"))
-	if !strings.Contains(string(content), `#develop`) {
+	if !strings.Contains(string(content), `"git+https://github.com/o/shared-ui.git#develop"`) {
 		t.Errorf("expected branch git url in package.json: %s", string(content))
 	}
 }
@@ -408,15 +443,28 @@ version = "0.1.0"
 	sw := NewDependencySwitcher()
 	ctx := context.Background()
 
-	// Branch with empty fork URL
+	// Branch with empty fork URL is not a valid cargo dependency.
 	_, err := sw.Switch(ctx, SwitchRequest{
 		TargetProjectDir: tempDir,
 		DependencyName:   "serde_json",
 		Mode:             ModeBranch,
 		BranchName:       "master",
 	})
+	if err == nil {
+		t.Fatal("expected cargo branch mode without a git URL to fail")
+	}
+	_, err = sw.Switch(ctx, SwitchRequest{
+		TargetProjectDir: tempDir,
+		DependencyName:   "serde_json",
+		Mode:             ModeBranch,
+		BranchName:       "master",
+		ForkURL:          "https://github.com/serde-rs/json",
+	})
 	if err != nil {
 		t.Fatalf("cargo branch append failed: %v", err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(tempDir, "Cargo.toml")); !strings.Contains(string(data), `serde_json = { git = "https://github.com/serde-rs/json", branch = "master" }`) {
+		t.Errorf("Cargo.toml = %s", data)
 	}
 }
 
@@ -463,5 +511,38 @@ func TestSwitcher_TypestateValidationFailures(t *testing.T) {
 	f := ForkState{}
 	if err := f.Validate(); err == nil {
 		t.Error("expected error for empty fork url")
+	}
+}
+
+func TestSwitcher_GoWorkUsesModuleGoVersion(t *testing.T) {
+	tempDir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte("module testmod\n\ngo 1.25\n"), 0644)
+	if _, err := NewDependencySwitcher().Switch(context.Background(), SwitchRequest{
+		TargetProjectDir: tempDir, DependencyName: "github.com/foo/bar", Mode: ModeLocal, LocalPath: "../bar",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(tempDir, "go.work"))
+	if !strings.HasPrefix(string(data), "go 1.25\n") {
+		t.Fatalf("go.work = %q", data)
+	}
+	if goDirective(filepath.Join(tempDir, "missing.mod")) != "" {
+		t.Fatal("goDirective on missing file")
+	}
+}
+
+func TestGoModulePathAndGoGet(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://github.com/o/r.git": "github.com/o/r",
+		"git@github.com:o/r.git":     "github.com/o/r",
+		"github.com/o/r":             "github.com/o/r",
+	} {
+		if got := goModulePath(in); got != want {
+			t.Errorf("goModulePath(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// The real go get fails outside a module with a clear error.
+	if err := goGet(t.TempDir(), "example.invalid/nope@main"); err == nil || !strings.Contains(err.Error(), "go get") {
+		t.Fatalf("goGet err = %v", err)
 	}
 }
