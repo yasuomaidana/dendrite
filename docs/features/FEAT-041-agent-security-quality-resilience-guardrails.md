@@ -25,7 +25,7 @@ As an enterprise engineering director and security auditor, I need Dendrite to e
 1. **Pre-Commit Secret Interception (Epic 8)**: Intercept every `git commit` in Levels 2–5 and abort if sensitive keys or high-entropy tokens are detected in the diff.
 2. **Pre-PR / Pre-Merge Test & Lint Gate (Epic 9)**: Block `gh pr create` and `gh pr merge` unless the project verification suite passes with exit code `0`.
 3. **Hybrid Quota Failover (Epic 10)**: Seamlessly checkpoint and fail over from cloud Copilot to local Ollama on HTTP 429 or network disconnect.
-4. **Git Worktree Isolation & Rollback (Epic 11)**: Mount isolated worktrees (`.dendrite/worktrees/<story-id>`) for Level 2–5 agents and safely abort and roll back failed merges.
+4. **Git Worktree Isolation & Rollback (Epic 11)**: Mount isolated worktrees (`dendrite-work/<repo>-<story-id>`, created by `dendrite work new`) for Level 2–5 agents and safely abort and roll back failed merges.
 5. **Immutable Agent Audit Log (Epic 12)**: Persist an append-only cryptographic event trace in Turso queryable via `dendrite audit --story <id>`.
 
 ```mermaid
@@ -40,7 +40,7 @@ flowchart TD
     TG -->|Tests Fail (exit != 0)| BlockPR["Block PR / Merge<br/>Agent self-heals or requests human review"]
     TG -->|Tests Pass (exit == 0)| WT{"Epic 11: Worktree Mount"}
 
-    WT --> IsoTree["Execute in isolated worktree:<br/>.dendrite/worktrees/<story-id>"]
+    WT --> IsoTree["Execute in isolated worktree:<br/>dendrite-work/<repo>-<story-id>"]
     IsoTree --> Fallback{"Epic 10: Provider Failover"}
 
     Fallback -->|Copilot HTTP 429 / Offline| OllamaNative["Checkpoint & Route to Local Ollama"]
@@ -71,7 +71,7 @@ Bridges cloud Copilot and local Ollama Metal:
 - Automatically switches active inference provider to `ollama:<default_model>` (`127.0.0.1:11434`) and resumes the story on the local branch without losing prompt context.
 
 ### 2.4 Epic 11: Ephemeral Git Worktree Isolation & Merge Safe-Stop
-- **Worktree Isolation**: `git worktree add .dendrite/worktrees/<story-id> -b agent/<story-id>` keeps the developer's main IDE working tree untouched while agents run tests and modify code.
+- **Worktree Isolation**: `dendrite work new <story-id>` (a `git worktree add` into `dendrite-work/<repo>-<story-id>` on branch `agent/<story-id>`) keeps the developer's main IDE working tree untouched while agents run tests and modify code.
 - **Deterministic Merge Safe-Stop**: If `git merge` encounters conflicts during branch consolidation (Level 4/5) and automated 3-way AST resolution fails tests:
   $$\text{Invoke } \texttt{git merge --abort} \implies \text{Restore pre-merge ref from Turso} \implies \text{Flag for human review}$$
 
@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS agent_audit_log (
 ### Scenario 11A: Ephemeral Worktree Execution (`dendrite agent --worktree`)
 - **Given** the developer has uncommitted local edits in their main working directory
 - **When** an autonomous agent starts a Level 2–5 task
-- **Then** Dendrite mounts an isolated git worktree under `.dendrite/worktrees/<story-id>` so the agent can branch, build, and test without touching the developer's active IDE workspace.
+- **Then** Dendrite mounts an isolated git worktree under `dendrite-work/<repo>-<story-id>` so the agent can branch, build, and test without touching the developer's active IDE workspace.
 
 ### Scenario 11B: Merge Conflict Safe-Stop & Checkpoint Rollback
 - **Given** an agent in Level 3, 4, or 5 encounters a non-trivial merge conflict during branch consolidation
@@ -132,6 +132,6 @@ CREATE TABLE IF NOT EXISTS agent_audit_log (
 - [ ] **AC-1 (Pre-Commit Secret Guardrail)**: Scans staged diffs for high-entropy tokens and known keys, blocking commits and stripping credentials from LLM prompt buffers.
 - [ ] **AC-2 (Pre-PR/Merge Quality Gate)**: Verifies build, lint, and test suites with exit code `0` before permitting PR creation or merges.
 - [ ] **AC-3 (Mid-Task Provider Failover)**: Checkpoints state and fails over transparently from cloud Copilot to local Ollama on HTTP 429 or disconnect.
-- [ ] **AC-4 (Worktree Isolation & Safe Rollback)**: Runs tasks in `.dendrite/worktrees/<id>` and executes `git merge --abort` with Turso state rollback on conflict failures.
+- [ ] **AC-4 (Worktree Isolation & Safe Rollback)**: Runs tasks in `dendrite-work/<repo>-<id>` and executes `git merge --abort` with Turso state rollback on conflict failures.
 - [ ] **AC-5 (Immutable Audit Ledger)**: Implements `dendrite audit --story <id>` querying append-only cryptographic event traces in Turso.
 - [ ] **AC-6 (DoD & Complexity Thresholds)**: Validated via Testcontainers integration suites; cyclomatic complexity $\le 15$; cognitive complexity $\le 20$; test coverage $\ge 85\%$.

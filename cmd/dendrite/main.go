@@ -611,6 +611,16 @@ func buildRegistry() *cli.Registry {
 		},
 	})
 
+	reg.Register(&cli.Command{
+		Name:        "work",
+		Aliases:     []string{"workcopy", "wc"},
+		Category:    "Synaptic Cleft & Gating",
+		Description: "Manage model-owned working copies in dendrite-work/ (create, list, remove, auto-clean merged)",
+		Run: func(ctx context.Context, args []string) error {
+			return handleWorkCommand(ctx, args)
+		},
+	})
+
 	return reg
 }
 
@@ -638,6 +648,7 @@ func printUsage() {
 	fmt.Println("  agent run <tool> [flags]   Launch an autonomous coding agent (aider, openhands, opencode, agy, copilot)")
 	fmt.Println("  agent session [list]       View agent execution history and commits")
 	fmt.Println("  commit [flags]             Autonomous Git commit with local model message generation")
+	fmt.Println("  work <new|list|done|gc>    Model-owned working copies in dendrite-work/ (auto-removed once merged)")
 	fmt.Println("  audit-changes [flags]      Topological vendor audit and rebase engine for local/* branches")
 	fmt.Println("  vcs <guard|check|status>   Enforce Git branch guardrails (prohibit main, develop default)")
 	fmt.Println("  github-sync [flags]        Synchronize prioritized tickets and DAG dependencies to GitHub Issues")

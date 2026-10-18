@@ -222,7 +222,7 @@ func handleAgentJobsCommand(ctx context.Context, args []string) error {
 func printAgentJobsUsage() {
 	fmt.Println("Usage: dendrite agent jobs <submit|list|show|tail|wait|retry|cancel|daemon|run> [flags...]")
 	fmt.Println("\nSubcommands:")
-	fmt.Println("  submit   --ticket <T> --agent <A> --model <M> --scope <S> --prompt-file <P> [--worktree <W>] [--complexity <C>]")
+	fmt.Println("  submit   --ticket <T> --agent <A> --model <M> --scope <S> --prompt-file <P> [--worktree <W> | --isolate] [--complexity <C>]")
 	fmt.Println("  list     [--json]")
 	fmt.Println("  show     <id>")
 	fmt.Println("  tail     <id>")
@@ -242,6 +242,7 @@ func handleAgentJobsSubmit(ctx context.Context, args []string) error {
 		promptFile string
 		promptText string
 		worktree   string
+		isolate    bool
 		complexity = 1
 	)
 
@@ -287,6 +288,8 @@ func handleAgentJobsSubmit(ctx context.Context, args []string) error {
 				worktree = args[i+1]
 				i++
 			}
+		case "--isolate":
+			isolate = true
 		case "--complexity":
 			if i+1 < len(args) {
 				if c, err := strconv.Atoi(args[i+1]); err == nil {
@@ -313,6 +316,7 @@ func handleAgentJobsSubmit(ctx context.Context, args []string) error {
 		PromptFile: promptFile,
 		Prompt:     promptText,
 		Complexity: complexity,
+		Isolate:    isolate,
 	}
 
 	id, err := agentjobs.Submit(spec)

@@ -43,6 +43,12 @@ func DefaultSkillMatchers() []SkillMatcher {
 			Keywords:    []string{"compliance", "enterprise", "governance", "audit", "security review", "rbac", "soc2"},
 			Guideline:   "Adhere to zero-ingress container network policies, ephemeral scratch volumes, and auditable git commit provenance.",
 		},
+		{
+			Name:        "dendrite-workflow",
+			Description: "Dendrite-first workflow for every model: session resume/checkpoint, dendrite-work/ working copies, dendrite commit, and delegation through Dendrite.",
+			Keywords:    []string{"worktree", "clone", "working copy", "dendrite-work", "isolate", "checkpoint", "session resume", "delegate", "antigravity", "agy"},
+			Guideline:   "Create isolated checkouts only with `dendrite work new <ticket>` (never hand-made clones or sibling worktrees), commit with `dendrite commit`, delegate to other models with `dendrite agent jobs submit --isolate`, and route LLM calls through the LiteLLM gateway.",
+		},
 	}
 }
 

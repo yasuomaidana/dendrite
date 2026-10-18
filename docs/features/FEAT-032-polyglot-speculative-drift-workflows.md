@@ -50,7 +50,7 @@ flowchart TD
 ## 2. Technical Architecture & Idiomatic Design Patterns
 
 ### 2.1 Git Worktree Isolation & RAII Cleanup
-Speculative branching creates isolated Git worktrees under `.dendrite/worktrees/`. A RAII lifecycle controller ensures worktrees and temporary branches are safely pruned upon resolution or cancellation.
+Speculative branching creates isolated Git worktrees under `dendrite-work/<repo>-stories/<story>/<variant>` (next to the main checkout; `.dendrite/worktrees/` is only the fallback outside a git repository). A RAII lifecycle controller ensures worktrees and temporary branches are safely pruned upon resolution or cancellation.
 
 ### 2.2 Sliced Upstream AST Commit Reconciliation
 For projects created via repository feature slicing (Case 10):

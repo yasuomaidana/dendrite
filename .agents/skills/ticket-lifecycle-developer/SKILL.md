@@ -175,7 +175,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   47. `dendrite_tokens_status`: Inspect remaining tokens across the 24h Day Window and 7d Week Window, evaluate safety reserve floor hold, and confirm Google Antigravity (AGY) connectivity and availability.
       - *Example*: `./bin/dendrite mcp call dendrite_tokens_status '{"model":"gemini-3.8-flash-high","probe":true}'`
 
-  48. `dendrite_story_fork`: Fork a story into isolated Git worktrees and branches for competing implementation variants (`.dendrite/worktrees/<story>/<variant>`).
+  48. `dendrite_story_fork`: Fork a story into isolated Git worktrees and branches for competing implementation variants (`dendrite-work/<repo>-stories/<story>/<variant>`, next to the main checkout).
       - *Example*: `./bin/dendrite mcp call dendrite_story_fork '{"story_id":"DEN-064","variants":["astar-bitvec","bidirectional-dijkstra"]}'`
 
   49. `dendrite_story_benchmark`: Run comparative differential performance benchmarks (TTFT, TPS, memory, CPU) across variant worktrees.
@@ -240,7 +240,9 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
       - *Example*: `./bin/dendrite mcp call dendrite_canvas_penpot_bridge '{"subaction":"relate","ticket_id":"DEN-807","feature_name":"Canvas Workspace"}'`
 
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
-- `dendrite session <checkpoint|resume> [--worktree <dir>] [--decision <desc>] [--next <ticket>] [--note <notes>] [--json]`: Session checkpoint and resume protocol for multi-agent coordination.
+- `dendrite session <checkpoint|resume> [--worktree <dir>] [--decision <desc>] [--next <ticket>] [--note <notes>] [--json]`: Session checkpoint and resume protocol for multi-agent coordination; both also delete merged, clean working copies in `dendrite-work/`.
+- `dendrite work <new|list|done|gc|adopt> [flags]`: Model-owned working copies. Use `dendrite work new <ticket>` for every isolated checkout (never a hand-made `git clone` / `git worktree add ../<dir>`); copies live in `dendrite-work/` and are removed once merged and clean. See the `dendrite-workflow` skill.
+- `dendrite agent jobs submit ... --isolate`: Delegate a ticket to Antigravity (AGY) or another model inside its own `dendrite-work/` copy.
 - `dendrite canvas <actions|dispatch|relate|sync|update-state|list> [flags]`: Interactive writing canvas, Penpot UI creative action bridge, and bidirectional project state synchronization.
 - `dendrite env <prepare|sync|update> [--path <dir>] [--tool <name>] [--no-cicd] [--no-skills] [--dry-run] [--json]`: Prepares environment, synchronizes agent rules and skills, and enforces CI/CD with GitHub Copilot as default (alias: `dendrite project <prepare|sync|update>`).
 - `dendrite greeting [--topic <t>] [--milestone <m>] [--event <e>] [--days <d>] [--options <a,b>] [--challenge <c>] [--stress] [--hobby] [--suppress <g1,g2>] [--json]`: Dynamic 10-Style Greeting Matrix resolution with strict cliché suppression.

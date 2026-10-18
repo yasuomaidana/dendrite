@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"Dendrite/pkg/workcopy"
 )
 
 // StandardPreamble contains the mandatory rules every headless agent job must follow.
@@ -24,7 +26,8 @@ Rules you MUST strictly follow:
 1. Do NOT run shell commands (auto-denied in this headless session).
 2. Do NOT launch subagents (delegated work is lost when you stop).
 3. Edit ONLY files inside the declared scope for this ticket.
-4. Zero-mock policy: never introduce New` + `Mock, "type ` + `Mock", "type ` + `Fake", go` + `mock, testify/` + `mock, or t.Skip` + `(. Use real fixtures.`
+4. Zero-mock policy: never introduce New` + `Mock, "type ` + `Mock", "type ` + `Fake", go` + `mock, testify/` + `mock, or t.Skip` + `(. Use real fixtures.
+5. Work ONLY inside the provided working directory. Never create clones or worktrees yourself; Dendrite provisions them in dendrite-work/.`
 
 // SubmitSpec specifies the attributes required to submit a new agent job.
 type SubmitSpec struct {
@@ -36,6 +39,9 @@ type SubmitSpec struct {
 	PromptFile string
 	Prompt     string
 	Complexity int
+	// Isolate runs the job in its own dendrite-work/ working copy (named after
+	// the ticket) when Worktree is empty, instead of the current checkout.
+	Isolate bool
 }
 
 // Dispatcher coordinates job dispatching, process monitoring, scope checking, and retry policies.
@@ -52,6 +58,8 @@ type Dispatcher struct {
 	LiteLLMKey       string
 	OxillamaEndpoint string
 	HTTPClient       *http.Client
+	// RepoDir is the repository isolated working copies are created from (default ".").
+	RepoDir string
 }
 
 // DefaultDispatcher is the shared default dispatcher.
@@ -108,6 +116,13 @@ func (d *Dispatcher) Submit(spec SubmitSpec) (string, error) {
 		} else {
 			spec.Model = "default"
 		}
+	}
+	if spec.Worktree == "" && spec.Isolate {
+		wt, err := d.isolatedWorktree(spec.Ticket)
+		if err != nil {
+			return "", err
+		}
+		spec.Worktree = wt
 	}
 	if spec.Worktree == "" {
 		wt, err := os.Getwd()
@@ -176,6 +191,21 @@ func (d *Dispatcher) Submit(spec SubmitSpec) (string, error) {
 	_ = d.Ledger.Save(created)
 
 	return created.ID, nil
+}
+
+// isolatedWorktree returns the dendrite-work/ copy for ticket, creating it on first use
+// so retries and follow-up jobs on the same ticket share one working copy.
+func (d *Dispatcher) isolatedWorktree(ticket string) (string, error) {
+	ctx := context.Background()
+	m := workcopy.New(d.RepoDir)
+	if c, err := m.Resolve(ctx, ticket); err == nil {
+		return c.Path, nil
+	}
+	path, err := m.Create(ctx, ticket, "", "")
+	if err != nil {
+		return "", fmt.Errorf("agentjobs: failed to create isolated working copy: %w", err)
+	}
+	return path, nil
 }
 
 // RunJob executes the job, inspects outcome signatures, enforces scope boundaries, and handles retries.

@@ -2,6 +2,7 @@ package fork
 
 import (
 	"Dendrite/pkg/statedir"
+	"Dendrite/pkg/workcopy"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -39,7 +40,8 @@ func NewForkController(
 		repoDir = "."
 	}
 	if worktreesBaseDir == "" {
-		worktreesBaseDir = ".dendrite/worktrees"
+		// Variants are model-owned working copies: they live in dendrite-work/.
+		worktreesBaseDir = workcopy.StoriesDirFor(repoDir, ".dendrite/worktrees")
 	}
 	worktreesBaseDir = statedir.Resolve(worktreesBaseDir)
 	if executor == nil {

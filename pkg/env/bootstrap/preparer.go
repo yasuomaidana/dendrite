@@ -302,9 +302,39 @@ Reference criteria for domain isolation, SOLID principles, zero placeholders, an
 		}
 	}
 
-	// Discover existing skills in .gemini/skills or .agents/skills
+	// 4. Managed dendrite-workflow skill: identical in every agent family's skill dir.
+	workflowSkill := renderDendriteWorkflowSkill()
+	for _, dir := range skillDirs {
+		target := filepath.Join(root, filepath.FromSlash(dir), DendriteWorkflowSkill, "SKILL.md")
+		c, u, err := writeOrUpdateFile(target, workflowSkill, dryRun)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		rel, _ := filepath.Rel(root, target)
+		if c {
+			created = append(created, rel)
+		} else if u {
+			updated = append(updated, rel)
+		}
+	}
+
+	// 5. Per-agent entry files importing AGENTS.md, only when missing.
+	for _, name := range pointerFiles {
+		target := filepath.Join(root, name)
+		if fileExists(target) {
+			continue
+		}
+		if c, _, err := writeOrUpdateFile(target, pointerFileContent, dryRun); err != nil {
+			return nil, nil, nil, err
+		} else if c {
+			created = append(created, name)
+		}
+	}
+
+	// Discover existing skills in every agent family's skill dir
 	skillSet := make(map[string]bool)
-	for _, dir := range []string{filepath.Join(root, ".gemini", "skills"), filepath.Join(root, ".agents", "skills")} {
+	for _, dir := range skillDirs {
+		dir = filepath.Join(root, filepath.FromSlash(dir))
 		entries, err := os.ReadDir(dir)
 		if err == nil {
 			for _, e := range entries {
@@ -489,7 +519,10 @@ func renderAgentRules(fp ProjectFingerprint) string {
 	sb.WriteString("  - **JavaScript / TypeScript**: `bun test`, `bun run build` (zero npm)\n")
 	sb.WriteString("  - **Python**: `uv run`, `uv pip` (zero legacy pip)\n")
 	sb.WriteString("- Statement coverage threshold: **>= 85.0%**.\n")
-	sb.WriteString("- Anti-mock policy: genuine structs and Testcontainers only.\n")
+	sb.WriteString("- Anti-mock policy: genuine structs and Testcontainers only.\n\n")
+
+	sb.WriteString("## Dendrite-First Workflow (every model and session)\n")
+	writeNumberedRules(&sb)
 
 	return sb.String()
 }
@@ -508,6 +541,23 @@ func renderAgentsOverview(fp ProjectFingerprint) string {
 	sb.WriteString("To synchronize agent rules, skills, and enforce CI/CD tooling defaults, execute:\n")
 	sb.WriteString("```bash\n")
 	sb.WriteString("dendrite env prepare\n")
+	sb.WriteString("```\n\n")
+
+	sb.WriteString("## Dendrite-First Workflow (all models: Claude, Antigravity/AGY, Gemini, Copilot, humans)\n")
+	writeNumberedRules(&sb)
+	sb.WriteString(fmt.Sprintf("\nSee the `%s` skill for commands and cleanup rules.\n\n", DendriteWorkflowSkill))
+
+	sb.WriteString("## Commit & VCS Guidance\n")
+	sb.WriteString("- `dendrite commit` pushes the new commit to the configured remote (origin preferred) after every successful commit; use `--no-push` or `DENDRITE_COMMIT_PUSH=false` to opt out; it never force-pushes and refuses to push main/master.\n\n")
+
+	sb.WriteString("## Session Start & Handoff\n")
+	sb.WriteString("Every new session (Claude, AGY, or human) starts with:\n")
+	sb.WriteString("```bash\n")
+	sb.WriteString("dendrite session resume\n")
+	sb.WriteString("```\n")
+	sb.WriteString("Orchestrators run `dendrite session checkpoint` after each finished ticket and before long waits:\n")
+	sb.WriteString("```bash\n")
+	sb.WriteString("dendrite session checkpoint [--worktree dir] [--decision \"...\"]... [--next \"DEN-XXX\"]... [--note \"...\"]\n")
 	sb.WriteString("```\n")
 
 	return sb.String()

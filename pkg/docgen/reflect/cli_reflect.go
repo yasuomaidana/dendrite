@@ -236,6 +236,28 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 				"dendrite agent session list",
 			},
 		},
+		"work": {
+			Subcommands: []SubcommandDoc{
+				{Name: "new", Description: "Create an isolated working copy in dendrite-work/ on branch agent/<name>"},
+				{Name: "list", Description: "List working copies with dirty, unpushed, merged and upstream-gone status"},
+				{Name: "done", Description: "Remove one copy (refuses uncommitted or unpushed work without --force)"},
+				{Name: "gc", Description: "Remove copies that are merged (or whose upstream is gone) and clean"},
+				{Name: "adopt", Description: "Move this repository's worktrees that live outside dendrite-work/ into it"},
+			},
+			Flags: []FlagDoc{
+				{Name: "--branch", Description: "Branch for a new copy (default agent/<name>)"},
+				{Name: "--base", Description: "Commit-ish a new copy starts from (default HEAD)"},
+				{Name: "--force", Description: "Remove a copy even with unsaved work, deleting its branch"},
+				{Name: "--dry-run", Description: "Report what gc or adopt would do without changing anything"},
+				{Name: "--json", Description: "Output the copy list as JSON"},
+			},
+			Examples: []string{
+				"dendrite work new DEN-123",
+				"dendrite work list",
+				"dendrite work gc --dry-run",
+				"dendrite work adopt --dry-run",
+			},
+		},
 		"project": {
 			Subcommands: []SubcommandDoc{
 				{Name: "add", Description: "Register a new workspace and prepare isolated state"},

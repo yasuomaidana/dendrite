@@ -104,6 +104,7 @@ func runSessionCheckpoint(ctx context.Context, args []string, out io.Writer) err
 	if *asJSON {
 		data, _ := json.MarshalIndent(cp, "", "  ")
 		fmt.Fprintln(out, string(data))
+		autoCleanWorkCopies(ctx, io.Discard)
 		return nil
 	}
 
@@ -125,6 +126,7 @@ func runSessionCheckpoint(ctx context.Context, args []string, out io.Writer) err
 		fmt.Fprintf(out, "    - Next:                 %s\n", strings.Join(cp.Next, ", "))
 	}
 
+	autoCleanWorkCopies(ctx, out)
 	return nil
 }
 
@@ -156,6 +158,7 @@ func runSessionResume(ctx context.Context, args []string, out io.Writer) error {
 			return fmt.Errorf("marshal resume report: %w", err)
 		}
 		fmt.Fprintln(out, string(data))
+		autoCleanWorkCopies(ctx, io.Discard)
 		return nil
 	}
 
@@ -165,5 +168,6 @@ func runSessionResume(ctx context.Context, args []string, out io.Writer) error {
 	}
 
 	fmt.Fprint(out, text)
+	autoCleanWorkCopies(ctx, out)
 	return nil
 }

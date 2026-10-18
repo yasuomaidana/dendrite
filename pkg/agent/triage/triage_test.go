@@ -114,6 +114,16 @@ func TestSkillMatching(t *testing.T) {
 	}
 }
 
+func TestSkillMatching_DendriteWorkflow(t *testing.T) {
+	matched := MatchSkills("Create a worktree and delegate the refactor to Antigravity", nil)
+	for _, m := range matched {
+		if m.Name == "dendrite-workflow" {
+			return
+		}
+	}
+	t.Errorf("expected skill 'dendrite-workflow' to be matched, got %+v", matched)
+}
+
 func TestTriageChoreWithLocalCompute(t *testing.T) {
 	engine := NewEngine(nil)
 	computeTrue := true
