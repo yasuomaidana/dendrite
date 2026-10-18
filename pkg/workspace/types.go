@@ -29,6 +29,7 @@ var (
 type ProjectEntry struct {
 	Name            string    `yaml:"name" json:"name"`
 	Path            string    `yaml:"path" json:"path"`
+	ID              string    `yaml:"id,omitempty" json:"id,omitempty"`
 	State           State     `yaml:"state" json:"state"`
 	DataDir         string    `yaml:"data_dir" json:"data_dir"`
 	GraphDBPath     string    `yaml:"graph_db_path" json:"graph_db_path"`

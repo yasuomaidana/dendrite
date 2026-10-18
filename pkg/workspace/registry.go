@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"Dendrite/pkg/projectid"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -116,6 +117,11 @@ func (r *Registry) AddProject(name, projectPath string) (*ProjectEntry, error) {
 		return nil, ErrProjectAlreadyExists
 	}
 
+	projectID, err := projectid.Ensure(cleanPath)
+	if err != nil {
+		return nil, fmt.Errorf("minting project id: %w", err)
+	}
+
 	dataDir := filepath.Join(r.baseDataDir, cleanName)
 	scratchDir := filepath.Join(dataDir, "scratch")
 	graphDBPath := filepath.Join(dataDir, "graphify.db")
@@ -139,6 +145,7 @@ func (r *Registry) AddProject(name, projectPath string) (*ProjectEntry, error) {
 	entry := ProjectEntry{
 		Name:            cleanName,
 		Path:            cleanPath,
+		ID:              projectID,
 		State:           StateRegistered,
 		DataDir:         dataDir,
 		GraphDBPath:     graphDBPath,
