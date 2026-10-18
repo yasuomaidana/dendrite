@@ -1,6 +1,7 @@
 package projectid
 
 import (
+	"Dendrite/pkg/fsutil"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -85,7 +86,7 @@ func (ix *Index) Save() error {
 
 	// Entries hold only strings and times, so marshaling cannot fail.
 	data, _ := json.MarshalIndent(ix, "", "  ")
-	return writeFileAtomic(ix.path, append(data, '\n'))
+	return fsutil.WriteFileAtomic(ix.path, append(data, '\n'))
 }
 
 // Upsert adds or updates an entry keyed by its ID.

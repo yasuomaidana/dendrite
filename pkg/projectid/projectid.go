@@ -1,6 +1,7 @@
 package projectid
 
 import (
+	"Dendrite/pkg/fsutil"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
@@ -85,7 +86,7 @@ func Ensure(dir string) (string, error) {
 	h.Write(nanoBuf[:])
 	newID := Prefix + hex.EncodeToString(h.Sum(nil))[:32]
 
-	if err := writeFileAtomic(Path(dir), []byte(newID+"\n")); err != nil {
+	if err := fsutil.WriteFileAtomic(Path(dir), []byte(newID+"\n")); err != nil {
 		return "", fmt.Errorf("projectid: write %s: %w", Path(dir), err)
 	}
 	return newID, nil

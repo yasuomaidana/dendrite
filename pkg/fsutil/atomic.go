@@ -1,4 +1,5 @@
-package projectid
+// Package fsutil holds small filesystem helpers shared across Dendrite packages.
+package fsutil
 
 import (
 	"fmt"
@@ -7,9 +8,9 @@ import (
 	"time"
 )
 
-// writeFileAtomic writes data to path via a sibling temp file and rename, so readers
+// WriteFileAtomic writes data to path via a sibling temp file and rename, so readers
 // never observe a partially written file. The parent directory is created if needed.
-func writeFileAtomic(path string, data []byte) error {
+func WriteFileAtomic(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
