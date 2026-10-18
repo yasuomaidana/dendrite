@@ -373,6 +373,19 @@ func TestPlaneCommand_States(t *testing.T) {
 			return
 		}
 
+		if r.Method == http.MethodPatch && strings.Contains(r.URL.Path, "/states/") {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/projects/") {
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"results": []map[string]interface{}{{"id": "proj-dgit-uuid", "identifier": "DGIT"}},
+			})
+			return
+		}
+
 		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/states/") {
 			postCount++
 			var body map[string]interface{}
@@ -402,9 +415,9 @@ func TestPlaneCommand_States(t *testing.T) {
 		mu.Unlock()
 		t.Errorf("expected project proj-custom-uuid, got: %s", requestedProjectID)
 	}
-	if postCount != 1 {
+	if postCount != 4 {
 		mu.Unlock()
-		t.Fatalf("expected 1 POST to create 'To Verify', got %d", postCount)
+		t.Fatalf("expected 4 POSTs (In Progress, To Verify, Done, Cancelled), got %d", postCount)
 	}
 	mu.Unlock()
 
@@ -426,13 +439,25 @@ func TestPlaneCommand_States(t *testing.T) {
 	}
 	mu.Unlock()
 
-	// 3. Bad inputs
+	// 3. reconcile by identifier, dry run and --all
+	handlePlaneCommand(ctx, "states", []string{"reconcile", "--project", "DGIT", "--dry-run"})
+	mu.Lock()
+	if requestedProjectID != "proj-dgit-uuid" {
+		t.Errorf("expected DGIT resolved to proj-dgit-uuid, got: %s", requestedProjectID)
+	}
+	if postCount != 0 {
+		t.Errorf("dry run must not POST, got %d", postCount)
+	}
+	mu.Unlock()
+	handlePlaneCommand(ctx, "states", []string{"reconcile", "--all"})
+
+	// 4. Bad inputs
 	handlePlaneCommand(ctx, "states", []string{})
 	handlePlaneCommand(ctx, "states", []string{"invalid-subcommand"})
 	handlePlaneCommand(ctx, "states", []string{"ensure", "--project"})
 	handlePlaneCommand(ctx, "states", []string{"ensure", "--invalid-flag"})
 
-	// 4. Server error
+	// 5. Server error
 	errServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -440,6 +465,7 @@ func TestPlaneCommand_States(t *testing.T) {
 
 	t.Setenv("PLANE_BASE_URL", errServer.URL)
 	handlePlaneCommand(ctx, "states", []string{"ensure"})
+	handlePlaneCommand(ctx, "states", []string{"reconcile", "--all"})
 }
 
 func TestPlaneCommand_DefaultAndFallback(t *testing.T) {

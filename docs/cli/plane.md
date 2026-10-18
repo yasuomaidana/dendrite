@@ -30,6 +30,7 @@ Soma & Axon Hillock
 | `create` | Create a new ticket placed on Plane Gantt development plan |
 | `doc` | Synchronize documentation pages between Plane and local repository |
 | `issues` | List open issues and milestones from Plane |
+| `states` | Reconcile workflow states (names, colors, order) onto the canonical set |
 
 ## Flags
 

@@ -65,6 +65,7 @@ type PlaneState struct {
 	ID       string  `json:"id"`
 	Name     string  `json:"name"`
 	Group    string  `json:"group"`
+	Color    string  `json:"color"`
 	Slug     string  `json:"slug"`
 	Sequence float64 `json:"sequence"`
 }
