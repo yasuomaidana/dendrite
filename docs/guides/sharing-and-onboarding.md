@@ -52,27 +52,25 @@ flowchart TD
 
 ---
 
-## 3. Fast Installation & Bootstrap via GitHub
+## 3. Installation & Updates
 
-### Option A: GitHub Release Automated Installer
+### Option A: Build from source (current path)
+No release binaries are published yet, so build from a clone:
 ```bash
-curl -sSL https://raw.githubusercontent.com/dendrite-dev/dendrite/main/scripts/install.sh | bash
-```
-This script queries the latest GitHub Release from `github.com/dendrite-dev/dendrite/releases`, detects the host platform (`darwin-arm64` or `linux-amd64`), downloads the pre-built binary to `/usr/local/bin/dendrite`, and verifies sha256 checksums.
-
-### Option B: GitHub CLI (`gh`) Release Download
-```bash
-gh release download --repo dendrite-dev/dendrite --pattern "*darwin_arm64.tar.gz"
-tar -xzf dendrite_*_darwin_arm64.tar.gz
-sudo mv dendrite /usr/local/bin/
-```
-
-### Option C: Build from Source via GitHub Clone
-```bash
-git clone https://github.com/dendrite-dev/dendrite.git
+git clone https://github.com/yasuomaidana/dendrite.git
 cd dendrite
-go build -o /usr/local/bin/dendrite ./cmd/dendrite
+go install ./cmd/dendrite        # installs to $GOBIN or $GOPATH/bin
+dendrite version
 ```
+
+### Option B: Update an existing install
+```bash
+dendrite update --dev            # inside the checkout: sync synapse siblings, rebuild them and dendrite
+dendrite update                  # once releases exist: download, verify SHA-256, swap with rollback
+```
+Release assets are expected as `dendrite_<os>_<arch>` plus `dendrite_<os>_<arch>.sha256` on `github.com/yasuomaidana/dendrite/releases`. Until a release workflow publishes them, `dendrite update` reports that none exists and points to `--dev`.
+
+See [DEVELOPMENT.md](../DEVELOPMENT.md) for working across the sibling repositories (local vs. remote sources).
 
 ---
 

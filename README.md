@@ -274,6 +274,8 @@ Verify binary execution:
 ./bin/dendrite version
 ```
 
+Keep it current with `dendrite update --dev` from the checkout: it fast-forwards the sibling repositories linked through a synapse, rebuilds their binaries and swaps in a rebuilt `dendrite` with a backup and smoke test. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
 ### First Steps: Environment Preparation & Synchronization
 
 Initialize your workspace and synchronize agent rules, skills, and CI/CD tools:

@@ -62,8 +62,22 @@ func buildRegistry() *cli.Registry {
 		Category:    "Cortex & Sensory Integration",
 		Description: "Print Dendrite CLI version",
 		Run: func(ctx context.Context, args []string) error {
+			if rev := buildRevision(); rev != "" {
+				fmt.Printf("Dendrite CLI v%s (%s)\n", version, rev)
+				return nil
+			}
 			fmt.Printf("Dendrite CLI v%s\n", version)
 			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
+		Name:        "update",
+		Aliases:     []string{"upgrade", "self-update"},
+		Category:    "Cortex & Sensory Integration",
+		Description: "Update dendrite from a release, or rebuild it and its synapse siblings from local sources (--dev)",
+		Run: func(ctx context.Context, args []string) error {
+			return runUpdateCommand(ctx, args, os.Stdout)
 		},
 	})
 
@@ -830,6 +844,9 @@ func handleEnvCommand(ctx context.Context, action string, args []string) {
 
 	switch action {
 	case "prepare", "sync", "update":
+		if action == "update" {
+			fmt.Fprintln(os.Stderr, "[i] 'update' here is an alias of 'prepare' (re-scaffolds this project); to update the dendrite binary and its sibling repos run 'dendrite update'")
+		}
 		handleEnvPrepareCommand(ctx, args)
 		return
 	case "docusaurus", "site":
@@ -1018,6 +1035,9 @@ func handleProjectCommand(ctx context.Context, action string, args []string) {
 
 	switch action {
 	case "prepare", "sync", "update":
+		if action == "update" {
+			fmt.Fprintln(os.Stderr, "[i] 'update' here is an alias of 'prepare' (re-scaffolds this project); to update the dendrite binary and its sibling repos run 'dendrite update'")
+		}
 		handleEnvPrepareCommand(ctx, args)
 		return
 	case "docusaurus", "site":
