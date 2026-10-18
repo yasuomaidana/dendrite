@@ -2,22 +2,35 @@ package reflect
 
 import (
 	"context"
+	"github.com/spf13/cobra"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"Dendrite/pkg/cli"
 	"Dendrite/pkg/mcpserver"
 )
 
-func TestIntrospectCLIRegistry_NilAndEmpty(t *testing.T) {
-	if docs := IntrospectCLIRegistry(nil); docs != nil {
-		t.Fatalf("expected nil docs for nil registry, got: %v", docs)
+// testRoot builds a root command with one "core" help group.
+func testRoot() *cobra.Command {
+	root := &cobra.Command{Use: "dendrite", Short: "Test root"}
+	root.AddGroup(&cobra.Group{ID: "core", Title: "Core:"})
+	root.PersistentFlags().Bool("json", false, "Emit JSON")
+	return root
+}
+
+// testCmd builds a runnable command in the core group.
+func testCmd(name, short string) *cobra.Command {
+	return &cobra.Command{Use: name, Short: short, GroupID: "core", Run: func(*cobra.Command, []string) {}}
+}
+
+func TestIntrospectCLITree_NilAndEmpty(t *testing.T) {
+	if docs := IntrospectCLITree(nil); docs != nil {
+		t.Fatalf("expected nil docs for nil root, got: %v", docs)
 	}
 
-	reg := cli.NewRegistry()
-	docs := IntrospectCLIRegistry(reg)
+	reg := testRoot()
+	docs := IntrospectCLITree(reg)
 	if len(docs) != 0 {
 		t.Fatalf("expected 0 docs for empty registry, got: %d", len(docs))
 	}
@@ -31,36 +44,42 @@ func TestIntrospectCLICommand_Nil(t *testing.T) {
 }
 
 func TestIntrospectCLICommand_WithSubcommands(t *testing.T) {
-	cmd := &cli.Command{
-		Name:        "custom",
-		Category:    "Test Category",
-		Description: "A custom test command",
-		Aliases:     []string{"cst", "test-c"},
-		Subcommands: map[string]*cli.Command{
-			"beta": {
-				Name:        "beta",
-				Description: "Beta subcommand",
-				Usage:       "dendrite custom beta",
-			},
-			"alpha": {
-				Name:        "alpha",
-				Description: "Alpha subcommand",
-				Usage:       "dendrite custom alpha",
-			},
-		},
-	}
+	root := testRoot()
+	cmd := testCmd("custom", "A custom test command")
+	cmd.Aliases = []string{"cst", "test-c"}
+	beta := testCmd("beta", "Beta subcommand")
+	beta.GroupID = ""
+	beta.Flags().StringP("ticket", "t", "DEN-1", "Ticket id")
+	beta.Example = "dendrite custom beta -t DEN-2"
+	alpha := testCmd("alpha", "Alpha subcommand")
+	alpha.GroupID = ""
+	nested := &cobra.Command{Use: "deep <id>", Short: "Nested", Run: func(*cobra.Command, []string) {}}
+	alpha.AddCommand(nested)
+	cmd.AddCommand(beta, alpha)
+	root.AddCommand(cmd)
 
 	doc := IntrospectCLICommand(cmd)
 	if doc.Name != "custom" {
 		t.Errorf("expected name 'custom', got: %s", doc.Name)
 	}
-	if len(doc.Subcommands) != 2 {
-		t.Fatalf("expected 2 subcommands, got: %d", len(doc.Subcommands))
+	if len(doc.Subcommands) != 3 {
+		t.Fatalf("expected 3 subcommands, got: %d", len(doc.Subcommands))
 	}
-	// Verify sorted order
-	if doc.Subcommands[0].Name != "alpha" || doc.Subcommands[1].Name != "beta" {
-		t.Errorf("expected sorted subcommands [alpha, beta], got: [%s, %s]",
-			doc.Subcommands[0].Name, doc.Subcommands[1].Name)
+	// Verify sorted, depth-first order with nested paths
+	if doc.Subcommands[0].Name != "alpha" || doc.Subcommands[1].Name != "alpha deep" || doc.Subcommands[2].Name != "beta" {
+		t.Errorf("expected [alpha, alpha deep, beta], got: %v", doc.Subcommands)
+	}
+	if doc.Category != "Core" {
+		t.Errorf("expected category Core, got %q", doc.Category)
+	}
+	if f := doc.Subcommands[2].Flags; len(f) != 1 || f[0].Name != "--ticket, -t" || f[0].Default != "DEN-1" {
+		t.Errorf("unexpected beta flags: %v", f)
+	}
+	md := RenderCLICommandMarkdown(doc)
+	for _, want := range []string{"## Subcommand Reference", "### `dendrite custom beta`", "dendrite custom beta -t DEN-2", "`--ticket, -t`"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("rendered markdown missing %q:\n%s", want, md)
+		}
 	}
 	if len(doc.Examples) == 0 || doc.Examples[0] != "dendrite custom" {
 		t.Errorf("expected default example 'dendrite custom', got: %v", doc.Examples)
@@ -353,17 +372,9 @@ func TestRenderMCPToolMarkdown(t *testing.T) {
 func TestGenerateReferenceDocs_SuccessAndAuditPass(t *testing.T) {
 	tempDocs := filepath.Join(t.TempDir(), "docs")
 
-	reg := cli.NewRegistry()
-	reg.Register(&cli.Command{
-		Name:        "alpha",
-		Category:    "Core",
-		Description: "Alpha command",
-	})
-	reg.Register(&cli.Command{
-		Name:        "beta",
-		Category:    "Core",
-		Description: "Beta command",
-	})
+	reg := testRoot()
+	reg.AddCommand(testCmd("alpha", "Alpha command"))
+	reg.AddCommand(testCmd("beta", "Beta command"))
 
 	srv := mcpserver.NewServer(mcpserver.ServerConfig{Name: "Srv"})
 	srv.RegisterTool(mcpserver.Tool{
@@ -380,8 +391,8 @@ func TestGenerateReferenceDocs_SuccessAndAuditPass(t *testing.T) {
 		t.Fatalf("GenerateReferenceDocs failed: %v", err)
 	}
 
-	if res.TotalWritten != 3 {
-		t.Fatalf("expected 3 files written (2 CLI + 1 MCP), got: %d", res.TotalWritten)
+	if res.TotalWritten != 4 {
+		t.Fatalf("expected 4 files written (root + 2 CLI + 1 MCP), got: %d", res.TotalWritten)
 	}
 
 	// Verify files exist on disk
@@ -413,8 +424,8 @@ func TestGenerateReferenceDocs_SuccessAndAuditPass(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second GenerateReferenceDocs failed: %v", err)
 	}
-	if res2.TotalWritten != 3 {
-		t.Errorf("expected 3 files written on second run")
+	if res2.TotalWritten != 4 {
+		t.Errorf("expected 4 files written on second run")
 	}
 	alphaContent2, _ := os.ReadFile(alphaPath)
 	if string(alphaContent1) != string(alphaContent2) {
@@ -426,20 +437,20 @@ func TestGenerateReferenceDocs_DefaultsAndNilServer(t *testing.T) {
 	// Nil registry returns error
 	_, err := GenerateReferenceDocs("", nil, nil)
 	if err == nil {
-		t.Fatalf("expected error for nil registry")
+		t.Fatalf("expected error for nil root")
 	}
 
 	// Nil server generates only CLI docs into temp directory
 	tempDir := t.TempDir()
-	reg := cli.NewRegistry()
-	reg.Register(&cli.Command{Name: "ping", Description: "Ping command"})
+	reg := testRoot()
+	reg.AddCommand(testCmd("ping", "Ping command"))
 
 	res, err := GenerateReferenceDocs(tempDir, reg, nil)
 	if err != nil {
 		t.Fatalf("GenerateReferenceDocs failed with nil server: %v", err)
 	}
-	if res.TotalWritten != 1 || len(res.MCPFilesWritten) != 0 {
-		t.Errorf("expected exactly 1 CLI doc and 0 MCP docs, got: %d", res.TotalWritten)
+	if res.TotalWritten != 2 || len(res.MCPFilesWritten) != 0 {
+		t.Errorf("expected exactly 2 CLI docs (root + ping) and 0 MCP docs, got: %d", res.TotalWritten)
 	}
 }
 
@@ -450,7 +461,7 @@ func TestGenerateReferenceDocs_DirCreationError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reg := cli.NewRegistry()
+	reg := testRoot()
 	_, err := GenerateReferenceDocs(tempFile, reg, nil)
 	if err == nil {
 		t.Errorf("expected error when target docs path is blocked by file")
@@ -461,14 +472,14 @@ func TestAuditReferenceDocs_ValidationAndMissingAndStale(t *testing.T) {
 	// Nil registry
 	_, err := AuditReferenceDocs("", nil, nil)
 	if err == nil {
-		t.Fatalf("expected error when registry is nil")
+		t.Fatalf("expected error when root is nil")
 	}
 
 	tempDocs := filepath.Join(t.TempDir(), "docs")
 
-	reg := cli.NewRegistry()
-	reg.Register(&cli.Command{Name: "cmd1", Description: "Command 1"})
-	reg.Register(&cli.Command{Name: "cmd2", Description: "Command 2"})
+	reg := testRoot()
+	reg.AddCommand(testCmd("cmd1", "Command 1"))
+	reg.AddCommand(testCmd("cmd2", "Command 2"))
 
 	srv := mcpserver.NewServer(mcpserver.ServerConfig{Name: "Srv"})
 	srv.RegisterTool(mcpserver.Tool{
@@ -494,8 +505,8 @@ func TestAuditReferenceDocs_ValidationAndMissingAndStale(t *testing.T) {
 	if rep.Passed {
 		t.Errorf("expected audit to fail when files are missing")
 	}
-	if rep.MissingCount != 4 {
-		t.Errorf("expected 4 missing files (2 CLI + 2 MCP), got: %d", rep.MissingCount)
+	if rep.MissingCount != 5 {
+		t.Errorf("expected 5 missing files (root + 2 CLI + 2 MCP), got: %d", rep.MissingCount)
 	}
 
 	// Case 2: Generate all files properly
@@ -536,14 +547,14 @@ func TestAuditReferenceDocs_ValidationAndMissingAndStale(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AuditReferenceDocs failed with nil srv: %v", err)
 	}
-	if rep4.TotalChecked != 2 {
-		t.Errorf("expected 2 CLI items checked, got: %d", rep4.TotalChecked)
+	if rep4.TotalChecked != 3 {
+		t.Errorf("expected 3 CLI items checked, got: %d", rep4.TotalChecked)
 	}
 }
 
 func TestGenerateReferenceDocs_FilesystemErrors(t *testing.T) {
-	reg := cli.NewRegistry()
-	reg.Register(&cli.Command{Name: "alpha", Category: "Core", Description: "Alpha command"})
+	reg := testRoot()
+	reg.AddCommand(testCmd("alpha", "Alpha command"))
 	srv := mcpserver.NewServer(mcpserver.ServerConfig{Name: "Srv"})
 	srv.RegisterTool(mcpserver.Tool{
 		Name:        "mcp_one",
@@ -584,5 +595,75 @@ func TestRenderMCPToolMarkdown_UnmarshalableSchemaFallsBack(t *testing.T) {
 	})
 	if !strings.Contains(out, "\"properties\": {}") {
 		t.Fatalf("expected empty-object schema fallback, got:\n%s", out)
+	}
+}
+
+func TestIntrospectCLIRoot_GlobalFlagsAndGroups(t *testing.T) {
+	if doc := IntrospectCLIRoot(nil); doc.Name != "" {
+		t.Fatalf("expected empty doc for nil root")
+	}
+	root := testRoot()
+	root.AddCommand(testCmd("alpha", "Alpha command"))
+	other := testCmd("loose", "No group")
+	other.GroupID = ""
+	root.AddCommand(other)
+	doc := IntrospectCLIRoot(root)
+	if len(doc.GlobalFlags) != 1 || doc.GlobalFlags[0].Name != "--json" {
+		t.Fatalf("unexpected global flags: %v", doc.GlobalFlags)
+	}
+	if len(doc.Groups) != 2 || doc.Groups[0].Title != "Core" || doc.Groups[1].Title != "Other" {
+		t.Fatalf("unexpected groups: %v", doc.Groups)
+	}
+	md := RenderCLIRootMarkdown(doc)
+	for _, want := range []string{"## Global Flags", "`--json`", "### Core", "[`alpha`](alpha.md)"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("root markdown missing %q:\n%s", want, md)
+		}
+	}
+}
+
+func TestEnrichCommandDoc_MatchesAlias(t *testing.T) {
+	doc := CLICommandDoc{Name: "chronos", Aliases: []string{"plane"}}
+	enrichCommandDoc(&doc)
+	if len(doc.Subcommands) == 0 {
+		t.Fatalf("expected catalog subcommands via the plane alias")
+	}
+}
+
+func TestIntrospectCLICommand_EdgeCases(t *testing.T) {
+	root := testRoot()
+	cmd := testCmd("edge", "Edge command")
+	cmd.Aliases = []string{"plane", "chronos-tracker"}
+	cmd.Flags().String("secret", "", "Hidden flag")
+	if err := cmd.Flags().MarkHidden("secret"); err != nil {
+		t.Fatal(err)
+	}
+	sub := &cobra.Command{Use: "list", Aliases: []string{"ls"}, Short: "List", Run: func(*cobra.Command, []string) {}}
+	hidden := &cobra.Command{Use: "internal", Hidden: true, Run: func(*cobra.Command, []string) {}}
+	cmd.AddCommand(sub, hidden)
+	stray := testCmd("stray", "Unknown group")
+	stray.GroupID = "missing"
+	root.AddCommand(cmd)
+
+	doc := IntrospectCLICommand(cmd)
+	if len(doc.Subcommands) != 1 || doc.Subcommands[0].Name != "list" {
+		t.Fatalf("hidden subcommand should be skipped: %v", doc.Subcommands)
+	}
+	if len(doc.Flags) != 0 {
+		t.Fatalf("hidden flag should be skipped: %v", doc.Flags)
+	}
+	if md := RenderCLICommandMarkdown(doc); !strings.Contains(md, "Aliases: `ls`") {
+		t.Errorf("subcommand aliases not rendered:\n%s", md)
+	}
+	if got := categoryOf(stray); got != "" {
+		t.Errorf("command without parent should have no category, got %q", got)
+	}
+	root.AddGroup(&cobra.Group{ID: "other", Title: "Other:"})
+	root.AddCommand(stray)
+	if got := categoryOf(stray); got != "" {
+		t.Errorf("unknown group should have no category, got %q", got)
+	}
+	if got := formatAliases([]string{"a", "b"}); got != "`a`, `b`" {
+		t.Errorf("formatAliases = %q", got)
 	}
 }

@@ -14,8 +14,7 @@ Cortex & Sensory Integration
 
 ## Aliases
 
-- `--version`
-- `-v`
+None
 
 ## Subcommands
 

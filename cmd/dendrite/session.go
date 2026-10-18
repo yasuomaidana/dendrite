@@ -3,90 +3,79 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
-	"os"
 	"strings"
+
+	"github.com/spf13/cobra"
 
 	"Dendrite/pkg/agentjobs"
 	"Dendrite/pkg/statedir"
 )
 
-type stringFlagSlice []string
-
-func (s *stringFlagSlice) String() string {
-	return strings.Join(*s, ", ")
+// newSessionCmd builds `dendrite session`: orchestrator checkpoint and resume.
+func newSessionCmd() *cobra.Command {
+	cmd := newGroupCmd("session", "Session checkpoint and resume for multi-agent coordination", "cleft", "handoff")
+	cmd.Example = "dendrite session resume\ndendrite session checkpoint --next DEN-123 --note \"waiting on review\""
+	cmd.AddCommand(newSessionCheckpointCmd(), newSessionResumeCmd())
+	return cmd
 }
 
-func (s *stringFlagSlice) Set(val string) error {
-	*s = append(*s, val)
-	return nil
+// sessionCheckpointOptions holds the flags of `session checkpoint`.
+type sessionCheckpointOptions struct {
+	Worktree  string
+	Path      string
+	Decisions []string
+	Next      []string
+	Notes     []string
 }
 
-func handleSessionCommand(ctx context.Context, args []string) error {
-	return runSessionCommand(ctx, args, os.Stdout)
-}
-
-func runSessionCommand(ctx context.Context, args []string, out io.Writer) error {
-	if len(args) < 1 {
-		printSessionUsage(out)
-		return nil
+func newSessionCheckpointCmd() *cobra.Command {
+	var o sessionCheckpointOptions
+	cmd := &cobra.Command{
+		Use:     "checkpoint",
+		Short:   "Record session state into .dendrite/session/handoff.md",
+		Args:    noArgs,
+		Example: "dendrite session checkpoint --worktree ../wt --decision \"keep X\" --next DEN-123 --note \"blocked on CI\"",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSessionCheckpoint(cmd.Context(), o, cmd.OutOrStdout())
+		},
 	}
-
-	switch args[0] {
-	case "checkpoint":
-		return runSessionCheckpoint(ctx, args[1:], out)
-	case "resume":
-		return runSessionResume(ctx, args[1:], out)
-	case "help", "--help", "-h":
-		printSessionUsage(out)
-		return nil
-	default:
-		return fmt.Errorf("unknown session command %q. Usage: dendrite session <checkpoint|resume> [flags...]", args[0])
-	}
+	f := cmd.Flags()
+	f.StringVar(&o.Worktree, "worktree", "", "Worktree directory")
+	f.StringVar(&o.Path, "path", "", "Destination handoff file path")
+	f.StringArrayVar(&o.Decisions, "decision", nil, "Pending decision (repeatable)")
+	f.StringArrayVar(&o.Next, "next", nil, "Next ticket or task (repeatable)")
+	f.StringArrayVar(&o.Notes, "note", nil, "Session note (repeatable)")
+	return cmd
 }
 
-func printSessionUsage(out io.Writer) {
-	fmt.Fprintln(out, "Usage: dendrite session <checkpoint|resume> [flags...]")
-	fmt.Fprintln(out, "\nCommands:")
-	fmt.Fprintln(out, "  checkpoint [--worktree dir] [--decision \"...\"]... [--next \"DEN-XXX\"]... [--note \"...\"]")
-	fmt.Fprintln(out, "             Record session state into .dendrite/session/handoff.md")
-	fmt.Fprintln(out, "  resume [--json] [--path file]")
-	fmt.Fprintln(out, "             Resume session from handoff checkpoint and report job status deltas")
+func newSessionResumeCmd() *cobra.Command {
+	var path string
+	cmd := &cobra.Command{
+		Use:     "resume",
+		Short:   "Resume from the handoff checkpoint and report job status deltas",
+		Args:    noArgs,
+		Example: "dendrite session resume\ndendrite session resume --json --path handoff.md",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSessionResume(cmd.Context(), path, globals.JSON, cmd.OutOrStdout())
+		},
+	}
+	cmd.Flags().StringVar(&path, "path", "", "Handoff file path")
+	return cmd
 }
 
-func runSessionCheckpoint(ctx context.Context, args []string, out io.Writer) error {
-	fs := flag.NewFlagSet("session-checkpoint", flag.ContinueOnError)
-	fs.SetOutput(out)
-
-	var decisions stringFlagSlice
-	var nextList stringFlagSlice
-	var noteList stringFlagSlice
-
-	worktree := fs.String("worktree", "", "Worktree directory")
-	pathFlag := fs.String("path", "", "Destination handoff file path")
-	asJSON := fs.Bool("json", false, "Output checkpoint in JSON format")
-
-	fs.Var(&decisions, "decision", "Pending decision (repeatable)")
-	fs.Var(&decisions, "decisions", "Pending decisions (repeatable)")
-	fs.Var(&nextList, "next", "Next ticket or task (repeatable)")
-	fs.Var(&noteList, "note", "Session note (repeatable)")
-	fs.Var(&noteList, "notes", "Session notes (repeatable)")
-
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
+func runSessionCheckpoint(ctx context.Context, o sessionCheckpointOptions, out io.Writer) error {
+	noteList := o.Notes
 	combinedNotes := strings.Join(noteList, "\n")
 	if len(noteList) > 1 {
 		combinedNotes = "- " + strings.Join(noteList, "\n- ")
 	}
 
 	opts := agentjobs.CheckpointOptions{
-		Worktree:         *worktree,
-		PendingDecisions: decisions,
-		Next:             nextList,
+		Worktree:         o.Worktree,
+		PendingDecisions: o.Decisions,
+		Next:             o.Next,
 		Notes:            combinedNotes,
 	}
 
@@ -96,12 +85,12 @@ func runSessionCheckpoint(ctx context.Context, args []string, out io.Writer) err
 		return fmt.Errorf("checkpoint failed: %w", err)
 	}
 
-	destPath := *pathFlag
+	destPath := o.Path
 	if err := agentjobs.WriteCheckpoint(destPath, cp); err != nil {
 		return fmt.Errorf("write checkpoint failed: %w", err)
 	}
 
-	if *asJSON {
+	if globals.JSON {
 		data, _ := json.MarshalIndent(cp, "", "  ")
 		fmt.Fprintln(out, string(data))
 		autoCleanWorkCopies(ctx, io.Discard)
@@ -130,25 +119,9 @@ func runSessionCheckpoint(ctx context.Context, args []string, out io.Writer) err
 	return nil
 }
 
-func runSessionResume(ctx context.Context, args []string, out io.Writer) error {
-	fs := flag.NewFlagSet("session-resume", flag.ContinueOnError)
-	fs.SetOutput(out)
-
-	asJSON := fs.Bool("json", false, "Output handoff state and delta in JSON format")
-	pathFlag := fs.String("path", "", "Handoff file path")
-	fileFlag := fs.String("file", "", "Handoff file path")
-
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
-	targetPath := *pathFlag
-	if targetPath == "" {
-		targetPath = *fileFlag
-	}
-
+func runSessionResume(ctx context.Context, targetPath string, asJSON bool, out io.Writer) error {
 	ledger := agentjobs.NewLedger("")
-	if *asJSON {
+	if asJSON {
 		report, err := agentjobs.ResumeState(targetPath, ledger)
 		if err != nil {
 			return fmt.Errorf("resume failed: %w", err)

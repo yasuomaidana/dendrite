@@ -107,7 +107,7 @@ func handleDocusaurusGenerate(ctx context.Context, svc docusaurus.Service, args 
 	}
 
 	if isReference {
-		reg := buildRegistry()
+		reg := newRootCmd()
 		srv := buildMCPServer()
 		fmt.Printf("[+] Generating reference documentation into '%s'...\n", docsDir)
 		res, err := reflect.GenerateReferenceDocs(docsDir, reg, srv)
@@ -216,7 +216,7 @@ func handleDocusaurusAudit(ctx context.Context, svc docusaurus.Service, args []s
 	}
 
 	if isReferenceAudit {
-		reg := buildRegistry()
+		reg := newRootCmd()
 		srv := buildMCPServer()
 		rep, err := reflect.AuditReferenceDocs(docsDir, reg, srv)
 		if err != nil {

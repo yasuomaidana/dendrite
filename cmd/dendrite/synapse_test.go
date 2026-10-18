@@ -430,82 +430,31 @@ func TestSynapseCommand_InspectUnknown(t *testing.T) {
 func TestSynapseCommand_UnknownActionAndUsage(t *testing.T) {
 	var buf bytes.Buffer
 
-	// Unknown action
 	err := runSynapseCommand(context.Background(), []string{"unknown-action"}, &buf)
-	if err == nil {
-		t.Fatal("expected error for unknown action, got nil")
-	}
-	expectedMsg := `unknown synapse action "unknown-action"`
-	if !strings.Contains(err.Error(), expectedMsg) {
-		t.Errorf("expected error containing %q, got: %v", expectedMsg, err)
+	if !isUsageError(err) || !strings.Contains(err.Error(), `unknown command "unknown-action"`) {
+		t.Fatalf("expected usage error for unknown action, got: %v", err)
 	}
 
-	// Empty args
 	buf.Reset()
-	err = runSynapseCommand(context.Background(), []string{}, &buf)
-	if err == nil {
-		t.Fatal("expected error for empty args, got nil")
+	if err := runSynapseCommand(context.Background(), []string{}, &buf); err != nil {
+		t.Fatalf("expected help for empty args, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), `unknown synapse action ""`) {
-		t.Errorf("expected error containing %q, got: %v", `unknown synapse action ""`, err)
-	}
-
-	// printSynapseUsage
-	buf.Reset()
-	printSynapseUsage(&buf)
-	usage := buf.String()
-	for _, sub := range []string{"create", "list", "inspect"} {
-		if !strings.Contains(usage, sub) {
-			t.Errorf("printSynapseUsage missing subcommand %q, got:\n%s", sub, usage)
+	for _, sub := range []string{"create", "list", "inspect", "heal", "locate", "move", "ide-sync"} {
+		if !strings.Contains(buf.String(), sub) {
+			t.Errorf("synapse help missing subcommand %q, got:\n%s", sub, buf.String())
 		}
 	}
 }
 
-func TestSynapseCommand_RegistryRegistration(t *testing.T) {
-	reg := buildRegistry()
-	cmd, ok := reg.Lookup("synapse")
-	if !ok || cmd == nil {
-		t.Fatal("command 'synapse' not registered in buildRegistry()")
+func TestSynapseCommand_TreeRegistration(t *testing.T) {
+	cmd, _, err := newRootCmd().Find([]string{"syn"})
+	if err != nil || cmd.Name() != "synapse" {
+		t.Fatalf("alias 'syn' did not resolve to synapse: %v", err)
 	}
-
-	if cmd.Name != "synapse" {
-		t.Errorf("cmd.Name = %q, want 'synapse'", cmd.Name)
+	if groupTitle(cmd.GroupID) != "Synaptic Cleft & Gating" {
+		t.Errorf("synapse group = %q", groupTitle(cmd.GroupID))
 	}
-	if cmd.Category != "Synaptic Cleft & Gating" {
-		t.Errorf("cmd.Category = %q, want 'Synaptic Cleft & Gating'", cmd.Category)
-	}
-	if cmd.Description != "Typed cross-project links with scoped MCP servers and self-healing paths" {
-		t.Errorf("unexpected description: %q", cmd.Description)
-	}
-
-	// Check aliases
-	foundSyn := false
-	foundSynapses := false
-	for _, a := range cmd.Aliases {
-		if a == "syn" {
-			foundSyn = true
-		}
-		if a == "synapses" {
-			foundSynapses = true
-		}
-	}
-	if !foundSyn || !foundSynapses {
-		t.Errorf("expected aliases ['syn', 'synapses'], got %v", cmd.Aliases)
-	}
-
-	// Run with empty args should print usage without error
-	var out bytes.Buffer
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	err := cmd.Run(context.Background(), []string{})
-	w.Close()
-	os.Stdout = oldStdout
-	if err != nil {
-		t.Errorf("cmd.Run with no args returned error: %v", err)
-	}
-	_, _ = out.ReadFrom(r)
-	if !strings.Contains(out.String(), "Usage: dendrite synapse") {
-		t.Errorf("expected usage output when running with no args, got:\n%s", out.String())
+	if cmd.Short != "Typed cross-project links with scoped MCP servers and self-healing paths" {
+		t.Errorf("unexpected description: %q", cmd.Short)
 	}
 }

@@ -6,11 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
+
+	"github.com/spf13/cobra"
 
 	"Dendrite/pkg/projectid"
 	"Dendrite/pkg/synapse"
@@ -140,85 +141,24 @@ func parseContractSpec(raw string) (synapse.Contract, error) {
 }
 
 // runSynapseCreate executes the create subcommand.
-func runSynapseCreate(ctx context.Context, subArgs []string, out io.Writer) error {
-	var (
-		id            string
-		name          string
-		membersRaw    string
-		contractSpecs []string
-		syncStrategy  string
-		parityCmds    = make(map[string]string)
-	)
+// synapseCreateOptions holds the flags of `synapse create`.
+type synapseCreateOptions struct {
+	Name      string
+	Members   string
+	Contracts []string
+	Sync      string
+	Parity    []string
+}
 
-	for i := 0; i < len(subArgs); i++ {
-		arg := subArgs[i]
-		switch {
-		case arg == "--members":
-			if i+1 >= len(subArgs) {
-				return errors.New("flag --members requires an argument")
-			}
-			membersRaw = subArgs[i+1]
-			i++
-		case strings.HasPrefix(arg, "--members="):
-			membersRaw = strings.TrimPrefix(arg, "--members=")
-		case arg == "--name":
-			if i+1 >= len(subArgs) {
-				return errors.New("flag --name requires an argument")
-			}
-			name = subArgs[i+1]
-			i++
-		case strings.HasPrefix(arg, "--name="):
-			name = strings.TrimPrefix(arg, "--name=")
-		case arg == "--contract":
-			if i+1 >= len(subArgs) {
-				return errors.New("flag --contract requires an argument")
-			}
-			contractSpecs = append(contractSpecs, subArgs[i+1])
-			i++
-		case strings.HasPrefix(arg, "--contract="):
-			contractSpecs = append(contractSpecs, strings.TrimPrefix(arg, "--contract="))
-		case arg == "--sync":
-			if i+1 >= len(subArgs) {
-				return errors.New("flag --sync requires an argument")
-			}
-			syncStrategy = subArgs[i+1]
-			i++
-		case strings.HasPrefix(arg, "--sync="):
-			syncStrategy = strings.TrimPrefix(arg, "--sync=")
-		case arg == "--parity":
-			if i+1 >= len(subArgs) {
-				return errors.New("flag --parity requires an argument")
-			}
-			pair := subArgs[i+1]
-			i++
-			k, v, ok := strings.Cut(pair, "=")
-			if !ok || k == "" || v == "" {
-				return fmt.Errorf("invalid parity command %q: expected alias=cmd", pair)
-			}
-			parityCmds[k] = v
-		case strings.HasPrefix(arg, "--parity="):
-			pair := strings.TrimPrefix(arg, "--parity=")
-			k, v, ok := strings.Cut(pair, "=")
-			if !ok || k == "" || v == "" {
-				return fmt.Errorf("invalid parity command %q: expected alias=cmd", pair)
-			}
-			parityCmds[k] = v
-		case strings.HasPrefix(arg, "-"):
-			return fmt.Errorf("unknown flag: %s", arg)
-		default:
-			if id == "" {
-				id = arg
-			} else {
-				return fmt.Errorf("unexpected argument: %s", arg)
-			}
+func runSynapseCreate(ctx context.Context, id string, o synapseCreateOptions, out io.Writer) error {
+	name, membersRaw, contractSpecs, syncStrategy := o.Name, o.Members, o.Contracts, o.Sync
+	parityCmds := make(map[string]string)
+	for _, pair := range o.Parity {
+		k, v, ok := strings.Cut(pair, "=")
+		if !ok || k == "" || v == "" {
+			return usageErrorf("invalid parity command %q: expected alias=cmd", pair)
 		}
-	}
-
-	if id == "" {
-		return errors.New("synapse id is required")
-	}
-	if membersRaw == "" {
-		return errors.New("flag --members is required")
+		parityCmds[k] = v
 	}
 
 	st, err := synapse.DefaultStore()
@@ -307,19 +247,7 @@ func runSynapseCreate(ctx context.Context, subArgs []string, out io.Writer) erro
 }
 
 // runSynapseList executes the list subcommand.
-func runSynapseList(ctx context.Context, subArgs []string, out io.Writer) error {
-	jsonMode := false
-	for _, arg := range subArgs {
-		switch {
-		case arg == "--json":
-			jsonMode = true
-		case strings.HasPrefix(arg, "-"):
-			return fmt.Errorf("unknown flag: %s", arg)
-		default:
-			return fmt.Errorf("unexpected argument: %s", arg)
-		}
-	}
-
+func runSynapseList(ctx context.Context, jsonMode bool, out io.Writer) error {
 	st, err := synapse.DefaultStore()
 	if err != nil {
 		return err
@@ -381,29 +309,7 @@ func runSynapseList(ctx context.Context, subArgs []string, out io.Writer) error 
 }
 
 // runSynapseInspect executes the inspect subcommand.
-func runSynapseInspect(ctx context.Context, subArgs []string, out io.Writer) error {
-	var id string
-	jsonMode := false
-
-	for _, arg := range subArgs {
-		switch {
-		case arg == "--json":
-			jsonMode = true
-		case strings.HasPrefix(arg, "-"):
-			return fmt.Errorf("unknown flag: %s", arg)
-		default:
-			if id == "" {
-				id = arg
-			} else {
-				return fmt.Errorf("unexpected argument: %s", arg)
-			}
-		}
-	}
-
-	if id == "" {
-		return errors.New("synapse id is required")
-	}
-
+func runSynapseInspect(ctx context.Context, id string, jsonMode bool, out io.Writer) error {
 	st, err := synapse.DefaultStore()
 	if err != nil {
 		return err
@@ -494,53 +400,92 @@ func runSynapseInspect(ctx context.Context, subArgs []string, out io.Writer) err
 	return nil
 }
 
-// runSynapseCommand executes a synapse subcommand writing human/JSON output to out; returns an error instead of exiting.
-func runSynapseCommand(ctx context.Context, args []string, out io.Writer) error {
-	if len(args) == 0 {
-		printSynapseUsage(out)
-		return fmt.Errorf("unknown synapse action %q", "")
+// newSynapseCmd builds `dendrite synapse`: typed cross-project links.
+func newSynapseCmd() *cobra.Command {
+	cmd := newGroupCmd("synapse", "Typed cross-project links with scoped MCP servers and self-healing paths", "cleft", "syn", "synapses")
+	cmd.Example = "dendrite synapse create billing --members ../api=api:producer,../web=web:consumer\ndendrite synapse list --json\ndendrite synapse heal --auto"
+
+	var create synapseCreateOptions
+	createCmd := &cobra.Command{
+		Use:     "create <id>",
+		Short:   "Create a synapse manifest linking member projects",
+		Args:    exactArgs(1),
+		Example: "dendrite synapse create billing --members ../api=api:producer,../web=web:consumer --contract openapi:api:spec.yaml>web:client.ts",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseCreate(c.Context(), args[0], create, c.OutOrStdout())
+		},
+	}
+	cf := createCmd.Flags()
+	cf.StringVar(&create.Members, "members", "", "Members as <dir>[=alias][:role],...")
+	cf.StringVar(&create.Name, "name", "", "Display name (default: id)")
+	cf.StringArrayVar(&create.Contracts, "contract", nil, "Contract kind:producer:path[>consumer:path...] (repeatable)")
+	cf.StringVar(&create.Sync, "sync", "", "Sync strategy")
+	cf.StringArrayVar(&create.Parity, "parity", nil, "Parity command alias=cmd (repeatable)")
+	requireFlags(createCmd, "members")
+
+	listCmd := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List synapses and their health",
+		Args:    noArgs,
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseList(c.Context(), globals.JSON, c.OutOrStdout())
+		},
 	}
 
-	action := args[0]
-	subArgs := args[1:]
-	switch action {
-	case "create":
-		return runSynapseCreate(ctx, subArgs, out)
-	case "list", "ls":
-		return runSynapseList(ctx, subArgs, out)
-	case "inspect":
-		return runSynapseInspect(ctx, subArgs, out)
-	case "heal":
-		return runSynapseHeal(ctx, subArgs, out)
-	case "locate":
-		return runSynapseLocate(ctx, subArgs, out)
-	case "move", "mv":
-		return runSynapseMove(ctx, subArgs, out)
-	case "ide-sync":
-		return runSynapseIDESync(ctx, subArgs, out)
-	default:
-		return fmt.Errorf("unknown synapse action %q", action)
+	inspectCmd := &cobra.Command{
+		Use:   "inspect <id>",
+		Short: "Show members, contracts and parity commands of a synapse",
+		Args:  exactArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseInspect(c.Context(), args[0], globals.JSON, c.OutOrStdout())
+		},
 	}
-}
 
-// handleSynapseCommand calls runSynapseCommand(ctx, args, os.Stdout); on error prints "[-] <err>" to stderr and os.Exit(1).
-func handleSynapseCommand(ctx context.Context, args []string) {
-	if err := runSynapseCommand(ctx, args, os.Stdout); err != nil {
-		fmt.Fprintf(os.Stderr, "[-] %v\n", err)
-		os.Exit(1)
+	var heal synapseHealOptions
+	healCmd := &cobra.Command{
+		Use:     "heal",
+		Short:   "Find moved member projects and repair their paths",
+		Args:    noArgs,
+		Example: "dendrite synapse heal --roots ~/code,~/work --depth 3 --auto",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseHeal(c.Context(), heal, globals.JSON, c.OutOrStdout())
+		},
 	}
-}
+	healCmd.Flags().BoolVar(&heal.Auto, "auto", false, "Apply the repairs instead of only reporting them")
+	healCmd.Flags().StringSliceVar(&heal.Roots, "roots", nil, "Search roots (comma-separated, repeatable)")
+	healCmd.Flags().IntVar(&heal.Depth, "depth", 0, "Maximum search depth")
 
-// printSynapseUsage prints human-readable usage instructions for the synapse command.
-func printSynapseUsage(out io.Writer) {
-	fmt.Fprintln(out, "Usage: dendrite synapse <action> [flags...]")
-	fmt.Fprintln(out, "\nAvailable Subcommands:")
-	fmt.Fprintln(out, "  create <id> --members <dir>[=alias][:role],... [flags...]")
-	fmt.Fprintln(out, "  list [--json]")
-	fmt.Fprintln(out, "  inspect <id> [--json]")
-	fmt.Fprintln(out, "  heal [--auto] [--roots dir,...] [--depth N] [--json]")
-	fmt.Fprintln(out, "  locate <alias|project-id> [hint-dir...] [--json]")
-	fmt.Fprintln(out, "  move <alias|project-id> <new-path> [--json]")
-	fmt.Fprintln(out, "  ide-sync <id> [--binary path]")
-	fmt.Fprintln(out, "  (scoped MCP server: dendrite mcp serve --synapse <id>)")
+	locateCmd := &cobra.Command{
+		Use:   "locate <alias|project-id> [hint-dir...]",
+		Short: "Locate a member project on disk",
+		Args:  minArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseLocate(c.Context(), args[0], args[1:], globals.JSON, c.OutOrStdout())
+		},
+	}
+
+	moveCmd := &cobra.Command{
+		Use:     "move <alias|project-id> <new-path>",
+		Aliases: []string{"mv"},
+		Short:   "Move a member project and update every manifest atomically",
+		Args:    exactArgs(2),
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseMove(c.Context(), args[0], args[1], globals.JSON, c.OutOrStdout())
+		},
+	}
+
+	var binary string
+	ideSyncCmd := &cobra.Command{
+		Use:   "ide-sync <id>",
+		Short: "Write IDE MCP configuration for a synapse's members",
+		Args:  exactArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseIDESync(c.Context(), args[0], binary, c.OutOrStdout())
+		},
+	}
+	ideSyncCmd.Flags().StringVar(&binary, "binary", "", "dendrite binary for the MCP entry (default: this executable)")
+
+	cmd.AddCommand(createCmd, listCmd, inspectCmd, healCmd, locateCmd, moveCmd, ideSyncCmd)
+	return cmd
 }

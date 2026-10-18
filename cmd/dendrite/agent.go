@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"Dendrite/pkg/agent"
 	"Dendrite/pkg/agentjobs"
 	"Dendrite/pkg/agentsearch"
@@ -166,27 +168,48 @@ func handleAgentRouteCommand(ctx context.Context, args []string) {
 	}
 }
 
-func init() {
-	if len(os.Args) >= 3 && isAgentJobsInvocation(os.Args[1], os.Args[2]) {
-		ctx := context.Background()
-		if err := handleAgentJobsCommand(ctx, os.Args[3:]); err != nil {
-			fmt.Fprintf(os.Stderr, "[-] %v\n", err)
-			os.Exit(1)
-		}
-		os.Exit(0)
+// newBoutonCmd builds `dendrite bouton`: the coding agent harness and the agent job dispatcher.
+func newBoutonCmd() *cobra.Command {
+	cmd := newGroupCmd("bouton", "Autonomous coding agent harness and job dispatcher (Aider, OpenHands, OpenCode, AGY, Copilot)", "effectors",
+		"agent", "effector-dispatch", "bouton-dispatch", "dispatch", "agt")
+	cmd.Example = "dendrite bouton run aider --ticket DEN-030\ndendrite bouton jobs submit --ticket DEN-123 --agent agy --scope pkg/foo --prompt-file prompt.md --isolate"
+	agentSub := func(name, short string) *cobra.Command {
+		return legacySub(name, short, func(ctx context.Context, args []string) error {
+			handleAgentCommand(ctx, name, args)
+			return nil
+		})
 	}
+	cmd.AddCommand(
+		agentSub("run", "Launch an autonomous coding agent (aider, openhands, opencode, agy, copilot)"),
+		agentSub("search", "Search and rank agents with hybrid vector & BM25 search"),
+		agentSub("route", "Auto-route a task to the optimal agent with a LiteLLM virtual key"),
+		agentSub("session", "View agent execution history, token spend, and commits"),
+		newBoutonJobsCmd(),
+	)
+	return cmd
 }
 
-func isAgentJobsInvocation(cmd, sub string) bool {
-	if strings.ToLower(sub) != "jobs" {
-		return false
+// newBoutonJobsCmd builds `dendrite bouton jobs`: the delegated agent job ledger.
+func newBoutonJobsCmd() *cobra.Command {
+	cmd := newGroupCmd("jobs", "Submit, watch and manage delegated agent jobs", "")
+	cmd.Example = "dendrite bouton jobs submit --ticket DEN-123 --agent agy --scope pkg/foo --prompt-file prompt.md --isolate\ndendrite bouton jobs list --json\ndendrite bouton jobs wait --ticket DEN-123"
+	for _, s := range []struct {
+		name, short string
+		run         func(context.Context, []string) error
+	}{
+		{"submit", "Submit a job: --ticket --agent --model --scope --prompt-file [--worktree|--isolate] [--complexity]", handleAgentJobsSubmit},
+		{"list", "List jobs [--json]", handleAgentJobsList},
+		{"show", "Show one job: <id>", handleAgentJobsShow},
+		{"tail", "Print the last lines of a job log: <id>", handleAgentJobsTail},
+		{"wait", "Wait for jobs to finish [--ticket] [--timeout] [--interval]", handleAgentJobsWait},
+		{"retry", "Retry a job: <id>", handleAgentJobsRetry},
+		{"cancel", "Cancel a job: <id>", handleAgentJobsCancel},
+		{"daemon", "Run the stall watcher [--once] [--interval] [--install]", handleAgentJobsDaemon},
+		{"run", "Run a job in the foreground (internal): <id>", handleAgentJobsRun},
+	} {
+		cmd.AddCommand(legacySub(s.name, s.short, s.run))
 	}
-	switch strings.ToLower(cmd) {
-	case "agent", "effector-dispatch", "bouton-dispatch", "dispatch", "bouton", "agt":
-		return true
-	default:
-		return false
-	}
+	return cmd
 }
 
 func handleAgentJobsCommand(ctx context.Context, args []string) error {

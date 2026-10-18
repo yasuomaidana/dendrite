@@ -3,12 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -38,34 +36,24 @@ func splitList(v string) []string {
 }
 
 // runSynapseHeal executes `synapse heal [--auto] [--roots a,b] [--depth N] [--json]`.
-func runSynapseHeal(ctx context.Context, subArgs []string, out io.Writer) error {
+// synapseHealOptions holds the flags of `synapse heal`.
+type synapseHealOptions struct {
+	Auto  bool
+	Roots []string
+	Depth int
+}
+
+func runSynapseHeal(ctx context.Context, o synapseHealOptions, jsonMode bool, out io.Writer) error {
+	if o.Depth < 0 {
+		return usageErrorf("invalid --depth %d: expected a positive integer", o.Depth)
+	}
 	ix, err := loadDefaultIndex()
 	if err != nil {
 		return err
 	}
-	opts := synapse.HealOptions{Index: ix}
-	jsonMode := false
-	for i := 0; i < len(subArgs); i++ {
-		switch arg := subArgs[i]; {
-		case arg == "--auto":
-			opts.Apply = true
-		case arg == "--json":
-			jsonMode = true
-		case arg == "--roots" || arg == "--depth":
-			if i+1 >= len(subArgs) {
-				return fmt.Errorf("flag %s requires an argument", arg)
-			}
-			i++
-			if arg == "--roots" {
-				opts.Roots = append(opts.Roots, splitList(subArgs[i])...)
-				continue
-			}
-			if opts.MaxDepth, err = strconv.Atoi(subArgs[i]); err != nil || opts.MaxDepth < 1 {
-				return fmt.Errorf("invalid --depth %q: expected a positive integer", subArgs[i])
-			}
-		default:
-			return fmt.Errorf("unexpected argument: %s", arg)
-		}
+	opts := synapse.HealOptions{Index: ix, Apply: o.Auto, MaxDepth: o.Depth}
+	for _, r := range o.Roots {
+		opts.Roots = append(opts.Roots, splitList(r)...)
 	}
 
 	st, err := synapse.DefaultStore()
@@ -154,25 +142,7 @@ func findMember(st *synapse.Store, ref string) (synapse.Member, error) {
 }
 
 // runSynapseLocate executes `synapse locate <alias|project-id> [hint-dir...] [--json]`.
-func runSynapseLocate(ctx context.Context, subArgs []string, out io.Writer) error {
-	var ref string
-	var hints []string
-	jsonMode := false
-	for _, arg := range subArgs {
-		switch {
-		case arg == "--json":
-			jsonMode = true
-		case strings.HasPrefix(arg, "-"):
-			return fmt.Errorf("unknown flag: %s", arg)
-		case ref == "":
-			ref = arg
-		default:
-			hints = append(hints, arg)
-		}
-	}
-	if ref == "" {
-		return errors.New("usage: dendrite synapse locate <alias|project-id> [hint-dir]")
-	}
+func runSynapseLocate(ctx context.Context, ref string, hints []string, jsonMode bool, out io.Writer) error {
 	st, err := synapse.DefaultStore()
 	if err != nil {
 		return err
@@ -206,27 +176,7 @@ func runSynapseLocate(ctx context.Context, subArgs []string, out io.Writer) erro
 }
 
 // runSynapseIDESync executes `synapse ide-sync <id> [--binary path]`.
-func runSynapseIDESync(ctx context.Context, subArgs []string, out io.Writer) error {
-	var id, binary string
-	for i := 0; i < len(subArgs); i++ {
-		switch arg := subArgs[i]; {
-		case arg == "--binary":
-			if i+1 >= len(subArgs) {
-				return errors.New("flag --binary requires an argument")
-			}
-			i++
-			binary = subArgs[i]
-		case strings.HasPrefix(arg, "-"):
-			return fmt.Errorf("unknown flag: %s", arg)
-		case id == "":
-			id = arg
-		default:
-			return fmt.Errorf("unexpected argument: %s", arg)
-		}
-	}
-	if id == "" {
-		return errors.New("usage: dendrite synapse ide-sync <id> [--binary path]")
-	}
+func runSynapseIDESync(ctx context.Context, id, binary string, out io.Writer) error {
 	if binary == "" {
 		exe, err := os.Executable()
 		if err != nil {
@@ -257,22 +207,7 @@ func runSynapseIDESync(ctx context.Context, subArgs []string, out io.Writer) err
 }
 
 // runSynapseMove executes `synapse move <alias|project-id> <new-path> [--json]`.
-func runSynapseMove(ctx context.Context, subArgs []string, out io.Writer) error {
-	var positional []string
-	jsonMode := false
-	for _, arg := range subArgs {
-		switch {
-		case arg == "--json":
-			jsonMode = true
-		case strings.HasPrefix(arg, "-"):
-			return fmt.Errorf("unknown flag: %s", arg)
-		default:
-			positional = append(positional, arg)
-		}
-	}
-	if len(positional) != 2 {
-		return errors.New("usage: dendrite synapse move <alias|project-id> <new-path>")
-	}
+func runSynapseMove(ctx context.Context, ref, newPath string, jsonMode bool, out io.Writer) error {
 	st, err := synapse.DefaultStore()
 	if err != nil {
 		return err
@@ -281,7 +216,7 @@ func runSynapseMove(ctx context.Context, subArgs []string, out io.Writer) error 
 	if err != nil {
 		return err
 	}
-	res, err := synapse.Move(st, positional[0], positional[1], synapse.MoveOptions{Index: ix})
+	res, err := synapse.Move(st, ref, newPath, synapse.MoveOptions{Index: ix})
 	if err != nil {
 		return err
 	}

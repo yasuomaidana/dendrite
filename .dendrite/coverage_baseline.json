@@ -10,7 +10,6 @@
   "pkg/ai/translate/verify": 91.5,
   "pkg/ast": 92.2,
   "pkg/audit": 100,
-  "pkg/cli": 99,
   "pkg/devtool": 77.2,
   "pkg/distcodebase": 91.6,
   "pkg/docgen": 91.2,
