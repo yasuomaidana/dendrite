@@ -111,6 +111,7 @@ flowchart TD
    - [System Topology & Placement Topologies](./architecture/01-system-topology.md)
    - [Token Budget Governance & Gateway](./architecture/02-token-governance-litellm.md)
    - [Context Intelligence & REA Engineering](./architecture/03-context-intelligence-re.md)
+   - [Sub-Project Map & Responsibilities](./architecture/subprojects.md)
 2. **Feature Specifications (`FEAT-*`)**:
    - [FEAT-001: Topology & Scenario Management](./features/FEAT-001-topology-scenarios.md)
    - [FEAT-002: Token Governance & Model Cascades](./features/FEAT-002-token-budget-governance.md)

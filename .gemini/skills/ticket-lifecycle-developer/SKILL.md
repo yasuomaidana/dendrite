@@ -240,6 +240,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
       - *Example*: `./bin/dendrite mcp call dendrite_canvas_penpot_bridge '{"subaction":"relate","ticket_id":"DEN-807","feature_name":"Canvas Workspace"}'`
 
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
+- `dendrite session <checkpoint|resume> [--worktree <dir>] [--decision <desc>] [--next <ticket>] [--note <notes>] [--json]`: Session checkpoint and resume protocol for multi-agent coordination.
 - `dendrite canvas <actions|dispatch|relate|sync|update-state|list> [flags]`: Interactive writing canvas, Penpot UI creative action bridge, and bidirectional project state synchronization.
 - `dendrite env <prepare|sync|update> [--path <dir>] [--tool <name>] [--no-cicd] [--no-skills] [--dry-run] [--json]`: Prepares environment, synchronizes agent rules and skills, and enforces CI/CD with GitHub Copilot as default (alias: `dendrite project <prepare|sync|update>`).
 - `dendrite greeting [--topic <t>] [--milestone <m>] [--event <e>] [--days <d>] [--options <a,b>] [--challenge <c>] [--stress] [--hobby] [--suppress <g1,g2>] [--json]`: Dynamic 10-Style Greeting Matrix resolution with strict cliché suppression.
@@ -387,6 +388,20 @@ To achieve maximum engineering throughput without exhausting API token budgets o
    - Failures are **ONLY** counted against the failure limit when execution is attempted on the **smartest available local model(s)**.
 4. **Escalation to Paid Models**:
    - Only if the smartest available local model(s) fail **twice or three times** (configurable threshold, default: 2) is the local tier declared failed. At that point, the task leverages and escalates to paid commercial models (`gemini-2.5-pro` or `copilot-sonnet`).
+
+## Session Start & Handoff
+
+Every new session (Claude, AGY, or human) starts by executing:
+```bash
+dendrite session resume
+```
+This restores context, displays the handoff markdown, and calculates any job status deltas since the checkpoint.
+
+Orchestrators run:
+```bash
+dendrite session checkpoint [--worktree <dir>] [--decision "..."]... [--next "DEN-XXX"]... [--note "..."]
+```
+after each finished ticket and before long waits to persist in-flight and verified work, pending decisions, and next steps into `.dendrite/session/handoff.md`.
 
 ---
 

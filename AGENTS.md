@@ -18,3 +18,13 @@ dendrite env prepare
 ## Commit & VCS Guidance
 - `dendrite commit` pushes the new commit to the configured remote (origin preferred) after every successful commit; use `--no-push` or `DENDRITE_COMMIT_PUSH=false` to opt out; it never force-pushes and refuses to push main/master.
 
+## Session Start & Handoff
+Every new session (Claude, AGY, or human) starts with:
+```bash
+dendrite session resume
+```
+Orchestrators run `dendrite session checkpoint` after each finished ticket and before long waits:
+```bash
+dendrite session checkpoint [--worktree dir] [--decision "..."]... [--next "DEN-XXX"]... [--note "..."]
+```
+

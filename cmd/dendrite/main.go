@@ -586,6 +586,16 @@ func buildRegistry() *cli.Registry {
 		},
 	})
 
+	reg.Register(&cli.Command{
+		Name:        "session",
+		Aliases:     []string{"handoff", "checkpoint"},
+		Category:    "Synaptic Cleft & Gating",
+		Description: "Session checkpoint and resume for multi-agent coordination",
+		Run: func(ctx context.Context, args []string) error {
+			return handleSessionCommand(ctx, args)
+		},
+	})
+
 	return reg
 }
 
