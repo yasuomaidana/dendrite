@@ -249,6 +249,12 @@ func parseDetailedSpecs(content string, data *DevStatusData) {
 
 // PushStatusToPlane moves all DEV_STATUS content to Plane service, generating Gantt dates and blocker relations.
 func PushStatusToPlane(ctx context.Context, client *Client, mdContent string) (*StatusReplicationReport, error) {
+	return PushStatusToPlaneIn(ctx, client, mdContent, ".")
+}
+
+// PushStatusToPlaneIn is PushStatusToPlane with the zero-mock gate evaluated against repoDir,
+// so a peer repository's DEV_STATUS is checked against that peer's packages.
+func PushStatusToPlaneIn(ctx context.Context, client *Client, mdContent, repoDir string) (*StatusReplicationReport, error) {
 	start := time.Now()
 	data, err := ParseDevStatus(mdContent)
 	if err != nil {
@@ -396,7 +402,7 @@ func PushStatusToPlane(ctx context.Context, client *Client, mdContent string) (*
 		if t.Status == tracker.StatusDone || t.Status == tracker.StatusInReview {
 			pkgs := quality.ExtractPackages(t.Title + " " + t.TargetPackage)
 			if len(pkgs) > 0 {
-				if hasMocks, _, _ := quality.ValidateZeroMockGate(".", pkgs); hasMocks {
+				if hasMocks, _, _ := quality.ValidateZeroMockGate(repoDir, pkgs); hasMocks {
 					t.Status = tracker.StatusTodo
 				}
 			}

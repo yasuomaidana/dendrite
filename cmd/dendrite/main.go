@@ -467,6 +467,17 @@ func buildRegistry() *cli.Registry {
 	})
 
 	reg.Register(&cli.Command{
+		Name:        "sync",
+		Aliases:     []string{"propagate"},
+		Category:    "Terminal Boutons & Vesicles",
+		Description: "Push commits and refresh Plane for this project and its synapse peers",
+		Run: func(ctx context.Context, args []string) error {
+			handleSyncCommand(ctx, args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
 		Name:        "skill",
 		Category:    "Postsynaptic Effectors & Actuation",
 		Description: "Execute skill integrations (ticket-relate, gantt-sync)",
@@ -628,6 +639,7 @@ func printUsage() {
 	fmt.Println("  agent run <tool> [flags]   Launch an autonomous coding agent (aider, openhands, opencode, agy, copilot)")
 	fmt.Println("  agent session [list]       View agent execution history and commits")
 	fmt.Println("  commit [flags]             Autonomous Git commit with local model message generation")
+	fmt.Println("  sync [flags]               Push commits and refresh Plane for this project and its synapse peers")
 	fmt.Println("  audit-changes [flags]      Topological vendor audit and rebase engine for local/* branches")
 	fmt.Println("  vcs <guard|check|status>   Enforce Git branch guardrails (prohibit main, develop default)")
 	fmt.Println("  github-sync [flags]        Synchronize prioritized tickets and DAG dependencies to GitHub Issues")
