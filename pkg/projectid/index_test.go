@@ -467,3 +467,14 @@ func TestRegister(t *testing.T) {
 		}
 	})
 }
+
+func TestIndexPath(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "projects.json")
+	ix, err := LoadIndex(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ix.Path() != p {
+		t.Fatalf("Path() = %q, want %q", ix.Path(), p)
+	}
+}

@@ -255,3 +255,45 @@ func runSynapseIDESync(ctx context.Context, subArgs []string, out io.Writer) err
 	}
 	return nil
 }
+
+// runSynapseMove executes `synapse move <alias|project-id> <new-path> [--json]`.
+func runSynapseMove(ctx context.Context, subArgs []string, out io.Writer) error {
+	var positional []string
+	jsonMode := false
+	for _, arg := range subArgs {
+		switch {
+		case arg == "--json":
+			jsonMode = true
+		case strings.HasPrefix(arg, "-"):
+			return fmt.Errorf("unknown flag: %s", arg)
+		default:
+			positional = append(positional, arg)
+		}
+	}
+	if len(positional) != 2 {
+		return errors.New("usage: dendrite synapse move <alias|project-id> <new-path>")
+	}
+	st, err := synapse.DefaultStore()
+	if err != nil {
+		return err
+	}
+	ix, err := loadDefaultIndex()
+	if err != nil {
+		return err
+	}
+	res, err := synapse.Move(st, positional[0], positional[1], synapse.MoveOptions{Index: ix})
+	if err != nil {
+		return err
+	}
+	if jsonMode {
+		data, _ := json.MarshalIndent(res, "", "  ")
+		fmt.Fprintln(out, string(data))
+		return nil
+	}
+	fmt.Fprintf(out, "[✓] Moved %s -> %s\n", res.OldPath, res.NewPath)
+	if res.CrossDevice {
+		fmt.Fprintln(out, "    (cross-device: copied then removed the source)")
+	}
+	fmt.Fprintf(out, "    Rebound synapses: %s\n", strings.Join(res.Synapses, ", "))
+	return nil
+}

@@ -514,6 +514,8 @@ func runSynapseCommand(ctx context.Context, args []string, out io.Writer) error 
 		return runSynapseHeal(ctx, subArgs, out)
 	case "locate":
 		return runSynapseLocate(ctx, subArgs, out)
+	case "move", "mv":
+		return runSynapseMove(ctx, subArgs, out)
 	case "ide-sync":
 		return runSynapseIDESync(ctx, subArgs, out)
 	default:
@@ -538,6 +540,7 @@ func printSynapseUsage(out io.Writer) {
 	fmt.Fprintln(out, "  inspect <id> [--json]")
 	fmt.Fprintln(out, "  heal [--auto] [--roots dir,...] [--depth N] [--json]")
 	fmt.Fprintln(out, "  locate <alias|project-id> [hint-dir...] [--json]")
+	fmt.Fprintln(out, "  move <alias|project-id> <new-path> [--json]")
 	fmt.Fprintln(out, "  ide-sync <id> [--binary path]")
 	fmt.Fprintln(out, "  (scoped MCP server: dendrite mcp serve --synapse <id>)")
 }

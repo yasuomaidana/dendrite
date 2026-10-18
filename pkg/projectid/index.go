@@ -79,6 +79,11 @@ func LoadIndex(path string) (*Index, error) {
 	return &ix, nil
 }
 
+// Path returns the file the index was loaded from and saves to.
+func (ix *Index) Path() string {
+	return ix.path
+}
+
 // Save writes the index atomically to disk using a temporary file and rename.
 func (ix *Index) Save() error {
 	ix.mu.Lock()

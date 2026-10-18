@@ -194,3 +194,41 @@ func TestSynapseIDESyncCLI(t *testing.T) {
 	runErr(t, "ide-sync", "web-api", "extra")
 	runErr(t, "ide-sync", "missing")
 }
+
+func TestSynapseMoveCLI(t *testing.T) {
+	root := healWorkspace(t)
+	dst := filepath.Join(root, "relocated", "api")
+	out := runOK(t, "move", "api", dst)
+	if !strings.Contains(out, "Moved") || !strings.Contains(out, "web-api") {
+		t.Fatalf("move output: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(dst, ".dendrite", "project.id")); err != nil {
+		t.Fatalf("project not at destination: %v", err)
+	}
+	var inspected struct {
+		Members []struct{ Alias, Status, PathHint string } `json:"members"`
+	}
+	if err := json.Unmarshal([]byte(runOK(t, "inspect", "web-api", "--json")), &inspected); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range inspected.Members {
+		if m.Status != "OK" {
+			t.Fatalf("member %s status %s after move", m.Alias, m.Status)
+		}
+	}
+
+	var res synapse.MoveResult
+	back := filepath.Join(root, "ws", "api")
+	if err := json.Unmarshal([]byte(runOK(t, "mv", "api", back, "--json")), &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.NewPath != back {
+		t.Fatalf("move --json = %+v", res)
+	}
+
+	runErr(t, "move", "api")
+	runErr(t, "move", "api", back, "--force")
+	if err := runErr(t, "move", "api", filepath.Join(root, "ws", "web")); !strings.Contains(err.Error(), "exists") {
+		t.Fatalf("moving onto an existing dir: %v", err)
+	}
+}
