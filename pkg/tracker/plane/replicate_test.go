@@ -973,3 +973,58 @@ func TestAC4_StatementCoverageEdgeCases(t *testing.T) {
 		t.Errorf("buildDevStatusPageHTML missing expected status badges: %s", htmlOut)
 	}
 }
+
+func TestPullStatusFromPlane_RelocatedCopiesUseSubProjectIDsAndStates(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/workspaces/ws/projects/"):
+			_, _ = w.Write([]byte(`{"results": [
+				{"id": "proj-den", "identifier": "DEN"},
+				{"id": "proj-dcore", "identifier": "DCORE"}
+			]}`))
+		case strings.Contains(r.URL.Path, "/projects/proj-den/states/"):
+			_, _ = w.Write([]byte(`{"results": [{"id": "den-todo", "name": "To Do", "group": "unstarted"}]}`))
+		case strings.Contains(r.URL.Path, "/projects/proj-dcore/states/"):
+			_, _ = w.Write([]byte(`{"results": [{"id": "dcore-verify", "name": "To Verify", "group": "started"}]}`))
+		case strings.Contains(r.URL.Path, "/projects/proj-den/issues/"):
+			_, _ = w.Write([]byte(`{"results": [
+				{"id": "d1", "name": "[DEND-302] JetBrains Plugin", "sequence_id": 110, "state": "den-todo"},
+				{"id": "d2", "name": "[DEN-942] Truncation splicer (other languages after DEN-972)", "sequence_id": 174, "state": "den-todo"},
+				{"id": "d3", "name": "[DEN-701-COV-1] Coverage Gap: pkg/vcs/guard.go", "sequence_id": 124, "state": "den-todo"}
+			]}`))
+		case strings.Contains(r.URL.Path, "/projects/proj-dcore/issues/"):
+			_, _ = w.Write([]byte(`{"results": [
+				{"id": "c6", "name": "[DEN-018] AST Context Compaction", "sequence_id": 6, "state": "dcore-verify"}
+			]}`))
+		default:
+			_, _ = w.Write([]byte(`{"results": []}`))
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Config{BaseURL: server.URL, WorkspaceSlug: "ws", ProjectID: "proj-den", DirectToken: "k"}, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, rep, err := PullStatusFromPlane(context.Background(), client)
+	if err != nil {
+		t.Fatalf("PullStatusFromPlane failed: %v", err)
+	}
+
+	if !strings.Contains(rendered, "**DCORE-6**: [DEN-018] AST Context Compaction [State: To Verify") {
+		t.Errorf("relocated copy not listed under its DCORE key with the DCORE state:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "### DEND") {
+		t.Errorf("DEND-* tickets living in DEN must not get their own project section:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "**DEN-942**: Truncation splicer (other languages after DEN-972)") {
+		t.Errorf("IDs referenced later in a title must be kept:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "**DEN-701-COV-1**: Coverage Gap") {
+		t.Errorf("suffixed follow-up IDs must be kept whole:\n%s", rendered)
+	}
+	if rep.ToVerifyTickets != 1 || rep.TodoTickets != 3 {
+		t.Errorf("state counts = verify %d, todo %d; want 1, 3", rep.ToVerifyTickets, rep.TodoTickets)
+	}
+}

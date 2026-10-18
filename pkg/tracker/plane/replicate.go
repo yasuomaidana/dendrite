@@ -21,7 +21,7 @@ import (
 var (
 	devTicketLineRegex      = regexp.MustCompile(`^-\s+\[([ xX])\]\s+\*\*([A-Za-z0-9-]+)\*\*:\s+(.*?)(?:\s+\(([^)]+)\))?(?:\s+(?:\[|\*\()(?:State:\s*)?([A-Za-z0-9_ ]+?)(?:[|,]?\s*Priority:\s*([A-Za-z0-9_ ]+?))?(?:\]|\)\*))?$`)
 	milestoneHdrRegex       = regexp.MustCompile(`^###\s+(Milestone\s+\d+:.*?)(?:\s+\(([^)]+)\))?$`)
-	ticketIdPrefixRegex     = regexp.MustCompile(`\[?([A-Za-z0-9]+-\d+)\]?`)
+	ticketIdPrefixRegex     = regexp.MustCompile(`\[?([A-Za-z0-9]+-\d+(?:-[A-Za-z]+-\d+)?)\]?`)
 	complexityTableRowRegex = regexp.MustCompile(`\|\s*(?:\*\*\d+\*\*|\d+)\s*\|\s*\*?\*?([A-Za-z0-9-]+)\*?\*?\s*\|\s*([^|]+)\|\s*([^|]+)\|\s*(\d+)\s*SP\s*\|\s*([0-9.]+)\s*/\s*10`)
 )
 
@@ -812,8 +812,17 @@ func PullStatusFromPlane(ctx context.Context, client *Client) (string, *StatusRe
 	}
 	var otherProjectIssues []projectIssuePair
 
+	// State UUIDs are per project, so each sub-project needs its own lookup.
+	projectStateLookup := map[string]map[string]tracker.Status{"DEN": stateNameLookup}
 	for _, ident := range otherProjectNames {
 		p := otherProjectsMap[ident]
+		lookup := make(map[string]tracker.Status)
+		if pStates, err := client.ListStatesForProject(ctx, p.ID); err == nil {
+			for _, s := range pStates {
+				lookup[s.ID] = resolvePlaneState(s.Group, s.Name)
+			}
+		}
+		projectStateLookup[ident] = lookup
 		pIssues, err := client.ListPlaneIssuesForProject(ctx, p.ID)
 		if err == nil {
 			for _, pi := range pIssues {
@@ -840,7 +849,7 @@ func PullStatusFromPlane(ctx context.Context, client *Client) (string, *StatusRe
 			seenIDs[iss.ID] = true
 		}
 
-		st := stateNameLookup[iss.State]
+		st := projectStateLookup[defaultProj][iss.State]
 		if st == "" {
 			st = resolvePlaneState(iss.StateDetail.Group, iss.StateDetail.Name)
 		}
@@ -864,16 +873,22 @@ func PullStatusFromPlane(ctx context.Context, client *Client) (string, *StatusRe
 		rawName := iss.Name
 		id := fmt.Sprintf("%s-%03d", defaultProj, iss.SequenceID)
 		title := rawName
-		m := ticketIdPrefixRegex.FindStringSubmatch(rawName)
-		if len(m) > 1 {
-			id = m[1]
-			title = strings.TrimSpace(ticketIdPrefixRegex.ReplaceAllString(rawName, ""))
+		// Only the leading ID is stripped; IDs referenced later in the title stay.
+		if loc := ticketIdPrefixRegex.FindStringSubmatchIndex(rawName); loc != nil {
+			id = rawName[loc[2]:loc[3]]
+			title = strings.TrimSpace(rawName[:loc[0]] + rawName[loc[1]:])
 			title = strings.TrimPrefix(title, ":")
 			title = strings.TrimSpace(title)
 		}
 
 		proj := extractProjectIdentifier(id)
-		if proj == "" || (proj == "DEN" && defaultProj != "DEN" && defaultProj != "") {
+		if defaultProj == "DEN" {
+			// Legacy DEND-* tickets live in DEN and belong to its milestones.
+			proj = "DEN"
+		} else if proj != defaultProj {
+			// Relocated copies keep their DEN title; list them under their own key.
+			id = fmt.Sprintf("%s-%d", defaultProj, iss.SequenceID)
+			title = strings.TrimSpace(rawName)
 			proj = defaultProj
 		}
 
