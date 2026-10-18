@@ -8,10 +8,10 @@ This document maintains the real-time development status, milestones, and active
 ## Current Status Overview
 
 - **Active Milestone**: Milestone 17 — Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)
-- **Current Focus**: `DEN-981: GitHub Copilot access via LiteLLM: persisted device login and configurable model`
-- **Last Updated**: 2026-10-17
-- **Summary**: Backlog: 49 | To Do: 35 | In Progress: 26 | To Verify: 80 | Done: 20 (Total: 210)
-- **Overall Progress**: 20 / 210 Tickets Completed (9.5%)
+- **Current Focus**: `DEN-996: Raise pkg/devtool statement coverage to 100%`
+- **Last Updated**: 2026-10-18
+- **Summary**: Backlog: 59 | To Do: 40 | In Progress: 33 | To Verify: 105 | Done: 21 (Total: 258)
+- **Overall Progress**: 21 / 258 Tickets Completed (8.1%)
 
 ---
 
@@ -40,10 +40,10 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 - [ ] **DEN-900**: Fix cmd/dendrite exit codes [State: To Verify, Priority: Urgent]
 - [ ] **DEN-901**: Untrack runtime artifacts and committed secret [State: To Verify, Priority: Urgent]
-- [ ] **DEN-902**: EnsureLiteLLMMasterKey + compose wiring (P4) [State: Backlog, Priority: Urgent]
+- [ ] **DEN-902**: EnsureLiteLLMMasterKey + compose wiring (P4) [State: In Progress, Priority: Urgent]
 - [ ] **DEN-976**: Spawned projects get lifecycle states (To Verify) and exact ticket-ID matching [State: To Verify, Priority: High]
 - [ ] **DEN-977**: plane create/update accept Markdown spec files [State: To Verify, Priority: High]
-- [ ] **DEN-978**: Hermetic agent tests: no live daemon probing or real agent execution [State: In Progress, Priority: Urgent]
+- [ ] **DEN-978**: Hermetic agent tests: no live daemon probing or real agent execution [State: To Verify, Priority: Urgent]
 - [ ] **DEN-979**: De-mock pkg/story/fork tests with real git repos [State: To Verify, Priority: High]
 - [ ] **DEN-980**: dendrite commit pushes after committing when a remote is configured [State: To Verify, Priority: Urgent]
 - [ ] **DEN-981**: GitHub Copilot access via LiteLLM: persisted device login and configurable model [State: In Progress, Priority: Urgent]
@@ -52,6 +52,9 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 - [ ] **DEN-985**: Enforced documentation: generated CLI/MCP reference, README and docs audit gate [State: To Verify, Priority: High]
 - [ ] **DEN-986**: Per-package coverage ratchet towards the 100% goal [State: To Verify, Priority: High]
 - [ ] **DEN-987**: Stop env replicate and root tests from reverting the LiteLLM control stack [State: To Verify, Priority: Urgent]
+- [ ] **DEN-994**: Raise pkg/mcpserver statement coverage to 100% [State: In Progress, Priority: High]
+- [ ] **DEN-995**: Raise pkg/server statement coverage to 100% [State: In Progress, Priority: High]
+- [ ] **DEN-996**: Raise pkg/devtool statement coverage to 100% [State: In Progress, Priority: High]
 
 ### Milestone 1: Core Foundation, Developer Tools & Ollama Engine
 
@@ -66,12 +69,10 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 - [ ] **DEN-705**: dendrite audit-changes CLI Command & Vendor LLM Rebase/Merge Engine [State: To Verify, Priority: Urgent]
 - [ ] **DEN-801**: Topic Zero State Prompt Engine & Multi-Turn State Machine [State: In Progress, Priority: High]
 - [ ] **DEN-802**: Welcome Prompt Suite & Cross-Source Synthesis Dispatcher [State: To Verify, Priority: High]
-- [ ] **DEN-803**: Structured Topic Memory Parser & Zero-Extrapolation Fidelity Guard [State: To Verify, Priority: Medium]
 - [ ] **DEN-804**: System Installer Helpers: Pre-Flight Audit & Port/Hardware Prober [State: To Verify, Priority: High]
 - [ ] **DEN-805**: Local LLM Model Provisioner & LiteLLM Gateway Routing Bridge [State: To Verify, Priority: Medium]
 - [ ] **DEN-806**: Dynamic 10-Style Greeting Matrix & Cliché Suppression Engine [State: To Verify, Priority: Medium]
 - [ ] **DEN-807**: Canvas Interactive Writing & Direct Creative Action Handlers [State: To Verify, Priority: Medium]
-- [ ] **DEN-808**: Personal Context MCP Connectors: Workspace & Enterprise Tool Adapters [State: Backlog, Priority: Medium]
 - [ ] **DEN-809**: Local LLM Inference Concurrency Limiter & FIFO Priority Queue [State: To Verify, Priority: High]
 - [ ] **DEN-817**: Decouple Git Commit Synthesis Engine: OxiLLaMa HTTP Adapter & Configurable Fallbacks [State: To Verify, Priority: Medium]
 - [ ] **DEN-822**: Modernize Root CLI with Cobra-style Command Architecture and Local Model Delegation [State: To Verify, Priority: High]
@@ -80,12 +81,12 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 - [ ] **DEN-910**: ASTProvider iface + Go go/ast impl (changed symbols, fold, last-node for Go) [State: In Progress, Priority: High]
 - [ ] **DEN-911**: AST mock-reachability analyzer (replaces ScanFilesForMocks) [State: Backlog, Priority: High]
-- [ ] **DEN-912**: Stage B toolchain adapter (go/cargo/bun/uv) + changed-pkg coverage & cyclomatic [State: In Progress, Priority: High]
+- [ ] **DEN-912**: Stage B toolchain adapter (go/cargo/bun/uv) + changed-pkg coverage & cyclomatic [State: To Verify, Priority: High]
 - [ ] **DEN-913**: LLM assertion query + strict JSON verdict (per-AC evidence) [State: Backlog, Priority: High]
 - [ ] **DEN-914**: Delete stub analyzers; rewire AuditFinishedTicket to pkg/assert; 85% gate [State: Backlog, Priority: High]
 - [ ] **DEN-915**: TODO extractor + Plane child-ticket spawner [State: Backlog, Priority: High]
 - [ ] **DEN-916**: GatedTracker (ironclad state gate) [State: Backlog, Priority: High]
-- [ ] **DEN-917**: Backfill: re-audit the 37 under-specified tickets and all To Verify [State: Backlog, Priority: High]
+- [ ] **DEN-917**: Backfill: re-audit the 37 under-specified tickets and all To Verify [State: To Verify, Priority: High]
 - [ ] **DEN-982**: Replace production mock types with real implementations [State: To Verify, Priority: Urgent]
 
 ### Milestone 2: Multi-Node Topology & Cloud-Burst Infrastructure
@@ -99,7 +100,7 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 ### QA-M2: Router, Cooldown & Escalation Ladder (Pillar 2)
 
 - [ ] **DEN-920**: Capability catalog (models.toml) + bench ingestion [State: In Progress, Priority: High]
-- [ ] **DEN-921**: Capability scorer + OxiLLaMa tie-break +  small-model rule [State: Backlog, Priority: High]
+- [ ] **DEN-921**: Capability scorer + OxiLLaMa tie-break + C1-3 small-model rule [State: Backlog, Priority: High]
 - [ ] **DEN-922**: Lifecycle manager: leases, derived 30m countdown, unload [State: Backlog, Priority: High]
 - [ ] **DEN-923**: Probe + auto-start + VRAM check [State: Backlog, Priority: High]
 - [ ] **DEN-924**: Escalation ladder + HandoverCapsule + retry budgets [State: Backlog, Priority: High]
@@ -112,34 +113,35 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 ### QA-M3: Smart Commit (Pillar 8)
 
-- [ ] **DEN-932**: Hunk extractor + symbol-dependency graph [State: Backlog, Priority: High]
-- [ ] **DEN-933**: Clusterer + LLM plan + validators (exactly-once, topo order, per-commit build) [State: Backlog, Priority: High]
 - [ ] **DEN-934**: --local-review stacked branches + git notes telemetry + review audit/land [State: Backlog, Priority: High]
 
 ### Milestone 4: Autonomous Coding Agent Harness & Tool Orchestration
 
-- [ ] **DEN-024**: Agent Runner Harness & Environment Injector for Aider, OpenHands, and OpenCode [State: To Do, Priority: Medium]
+- [ ] **DEN-024**: Agent Runner Harness & Environment Injector for Aider, OpenHands, and OpenCode [State: To Verify, Priority: Medium]
 - [x] **DEN-025**: Agent Sandbox Isolation & LiteLLM Gateway Budget Binding [State: Done, Priority: Medium]
 - [ ] **DEN-026**: Agent Session Tracker, Git Commit Provenance & Issue Tracker Sync [State: In Progress, Priority: Medium]
 - [ ] **DEN-819**: Externalize Agent Runner Gateway Credentials & Virtual Key Governance [State: Backlog, Priority: Medium]
 
 ### Milestone 4: Autonomous Coding Agent Harness &amp; Tool Orchestration (FEAT-013)
 
-- [ ] **DEN-103**: & Completed Agent Modules: Exhaustive Test Suite & 100% Statement Coverage [State: In Progress, Priority: Medium]
+- [ ] **DEN-103**: FEAT-013 & Completed Agent Modules: Exhaustive Test Suite & 100% Statement Coverage [State: In Progress, Priority: Medium]
 
 ### QA-M4: Token-Limit Recovery (Pillar 13)
 
 - [ ] **DEN-940**: TokenCounter impls + Budget.Fit (25% reserve, 80% trigger) [State: Backlog, Priority: High]
 - [ ] **DEN-941**: <StateCheckpoint> schema + Engram flush [State: Backlog, Priority: High]
-- [ ] **DEN-942**: Truncation splicer (Go via go/ast; other languages after ) [State: Backlog, Priority: High]
-- [ ] **DEN-943**: BLAKE3 chunk ledger + WAL + resume [State: Backlog, Priority: High]
+- [ ] **DEN-942**: Truncation splicer (Go via go/ast; other languages after DEN-972) [State: Backlog, Priority: High]
 - [ ] **DEN-944**: 429 backoff + quota-floor downshift / PAUSED_QUOTA_FLOOR [State: Backlog, Priority: High]
-- [ ] **DEN-945**: LiteLLM enable_pre_call_checks + per-local-alias context_window_fallbacks [State: Backlog, Priority: High]
+- [ ] **DEN-945**: LiteLLM enable_pre_call_checks + per-local-alias context_window_fallbacks [State: In Progress, Priority: High]
+- [ ] **DEN-988**: Agent job ledger (WAL) and outcome classifier [State: To Verify, Priority: Urgent]
+- [ ] **DEN-989**: dendrite agent jobs dispatcher CLI with scope guard [State: To Verify, Priority: Urgent]
+- [ ] **DEN-990**: Quota fallback chain with governor integration and park/resume [State: To Verify, Priority: Urgent]
+- [ ] **DEN-991**: Verify-only watcher daemon for agent jobs [State: In Progress, Priority: Urgent]
+- [ ] **DEN-992**: dendrite session checkpoint and resume for orchestrator handoff [State: To Verify, Priority: Urgent]
+- [ ] **DEN-993**: Spike: capture agent quota errors and AGY conversation resume [State: To Verify, Priority: Urgent]
 
 ### Milestone 5: Reverse Engineering & Sandboxed Intelligence
 
-- [ ] **DEN-009**: REA MCP Bridge & Disassembler Protocol Client [State: To Do, Priority: Medium]
-- [x] **DEN-010**: Tree-sitter AST & Complexity Analyzer [State: Done, Priority: Medium]
 - [x] **DEN-011**: Ephemeral Hardened Container Sandbox with RAII Drop [State: Done, Priority: Medium]
 
 ### QA-M5: CLI, Tokens & Tool Registry (Pillars 10-12)
@@ -157,17 +159,13 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 ### QA-M6: Native AI, Lifecycle Schema & Memory (Pillars 3,5,6,7)
 
-- [ ] **DEN-930**: Spike: Penpot official MCP server deployment shape [State: Backlog, Priority: Medium]
 - [ ] **DEN-931**: Spike: Plane AI env/edition verification [State: Backlog, Priority: Medium]
-- [ ] **DEN-960**: Penpot MCP service + hub registration [State: Backlog, Priority: Medium]
 - [ ] **DEN-961**: Plane AI → LiteLLM virtual key + local-coder alias [State: Backlog, Priority: Medium]
 - [ ] **DEN-962**: TicketSpec schema + vagueness linter + /plan auto-trigger [State: Backlog, Priority: Medium]
 - [ ] **DEN-963**: Single-source skill generation for .agents/.gemini lifecycle skills [State: Backlog, Priority: Medium]
-- [ ] **DEN-964**: memory modes: local-only / edge (WAL) / push (+compaction) [State: Backlog, Priority: Medium]
 
 ### Milestone 7: Polyglot Translation & Documentation Reflection
 
-- [ ] **DEN-020**: Intermediate Semantic Representation ISR Tree-sitter Parser [State: To Do, Priority: Medium]
 - [ ] **DEN-021**: Idiomatic Target Code Synthesizer & Dual Property Test Parity Generator [State: In Progress, Priority: Medium]
 - [x] **DEN-022**: AST Docs-as-Code Synthesizer for FEAT/ADR Specs & OpenAPI 3.1 [State: Done, Priority: Medium]
 - [x] **DEN-023**: Cross-Project Documentation Reflection Engine & Docusaurus Sync [State: Done, Priority: Medium]
@@ -186,7 +184,6 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 - [x] **DEN-012**: Multi-Project Workspace Registry & Context Switcher [State: Done, Priority: Medium]
 - [x] **DEN-013**: Pluggable Issue Tracker Interface & Atlassian Jira Adapter [State: Done, Priority: Medium]
 - [ ] **DEN-027**: Plane v2 & Linear Strategy Adapters [State: To Verify, Priority: Medium]
-- [ ] **DEN-812**: Bidirectional Multi-Vendor Migration & Real-Time Sync Engine (Plane <-> Jira, Penpot <-> Figma) [State: Backlog, Priority: High]
 
 ### Milestone 9: Web UI & Dashboard Engine
 
@@ -195,7 +192,11 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 ### Milestone 10: IDE Intelligence & JetBrains MCP Bridge
 
-- [ ] **DEN-028**: JetBrains IDE MCP Integration & Communication Bridge [State: To Verify, Priority: Medium]
+- [ ] **DEND-301**: [JetBrains Validation]: Audit live IDE socket bridge & state detection without mocks [State: In Progress, Priority: High]
+- [ ] **DEND-302**: [Plugin - JetBrains]: JetBrains Plugin (dendrite-jetbrains) with local AI chat & Graphify markers [State: To Do, Priority: Urgent]
+- [ ] **DEND-303**: [Plugin - VS Code]: VS Code Extension (dendrite-vscode) built with bun & MCP context [State: To Do, Priority: High]
+- [ ] **DEND-304**: [Plugin - Neovim]: Headless Lua RPC client (dendrite.nvim) [State: To Do, Priority: Medium]
+- [ ] **DEND-305**: [Plugin - Zed]: Rust WASM extension (dendrite-zed) [State: To Do, Priority: Medium]
 
 ### Milestone 11: Pluggable Mesh Networking & Zero-Trust Connectivity
 
@@ -205,10 +206,13 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 - [ ] **DEN-031**: Self-Hosted Plane v2 & Penpot Design Token Stacks & Replicator (`pkg/env`, `stacks/compose.plane.yaml`, `stacks/compose.penpot.yaml`) [State: To Verify, Priority: Medium]
 - [ ] **DEN-097**: Plane Doc Sync Taxonomy Guard & Markdown-to-HTML Robust Formatter [State: To Verify, Priority: Medium]
+- [ ] **DEND-402**: [Infra - Start]: Mock-free service lifecycle manager with Penpot compose/MCP provisioning [State: To Verify, Priority: High]
 
 ### Milestone 13: Remote SSH Hardware Discovery & Automated Service Placement Router
 
 - [ ] **DEN-032**: Remote SSH Node Topology Provisioner & Dynamic Service Placement Router (`pkg/topology/advisor`, `cmd/dendrite`) [State: To Verify, Priority: Medium]
+- [x] **DEND-401**: [Infra - Migration]: Zero-credential SSH service migration (move <svc> to --ssh) [State: Done, Priority: Urgent]
+- [ ] **DEND-403**: [Infra - Sync]: Cross-node endpoint & schema update propagation (dendrite cluster sync) [State: To Do, Priority: High]
 
 ### Milestone 14: Hybrid Telemetry Architecture & Prometheus/Grafana Observability Suite
 
@@ -235,15 +239,15 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 ### Milestone 19: Developer Test Automation, Self-Healing Harness & UI Integration Suite
 
 - [ ] **DEN-038**: Automated Test Synthesizer, Self-Healing Convergence Loop & Web UI Test Harness (`pkg/testgen`, `pkg/uitest`, `cmd/dendrite`) [State: In Progress, Priority: Urgent]
+- [ ] **DEND-101**: [Anti-Mock Guard]: Tree-sitter AST mock detection & pre-commit hook [State: In Progress, Priority: Urgent]
+- [ ] **DEND-102**: [Verification Routine]: Plane To Verify intermediate state & dendrite verify skill [State: In Progress, Priority: High]
+- [ ] **DEND-103**: [Toolchain Migration]: Standardize build & test tooling on uv and bun [State: To Verify, Priority: Medium]
 - [ ] **DEN-821**: Standardize Toolchain Migration on uv (Python) and bun (Node/TS) across Website, Scripts & CI/CD [State: Backlog, Priority: High]
 
 ### Milestone 20: Open-Source REA Showcase Pipeline & Cleanroom Parity Verification Suite
 
 - [ ] **DEN-039**: Open-Source Reverse Engineering Showcases & Cleanroom Parity Verification Suite (`pkg/rea`, `pkg/ai/import`, `tests/showcase`, `cmd/dendrite`) [State: To Verify, Priority: High]
-
-### Milestone 21: Model Context Protocol (MCP) Server & Tool Registry Bridge
-
-- [ ] **DEN-040**: Dendrite Native MCP Server & Tool Registry Bridge (`pkg/mcpserver`, `cmd/dendrite`) [State: To Verify, Priority: Medium]
+- [ ] **DEND-501**: [REA]: macOS PE .EXE analysis, pause/resume checkpointing, multi-tier LLM triage & purge [State: In Progress, Priority: High]
 
 ### Milestone 22: Distributed Codebase Ecosystem, Modular REA & Cross-Project Interoperability Coordinator
 
@@ -289,7 +293,6 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 ### Milestone 27: Advanced Polyglot Contract Sync, Speculative Branching & Upstream Drift
 
-- [ ] **DEN-063**: Quad-IDE Cross-Language Schema & IPC Contract Drift Monitor (`pkg/polyglot/contract`, `pkg/jetbrains`) [State: To Verify, Priority: Medium]
 - [ ] **DEN-064**: Speculative Git Worktree Branching & Differential Architecture Benchmark Harness (`pkg/story/fork`, `pkg/perf`) [State: To Verify, Priority: Medium]
 - [ ] **DEN-065**: Sliced Upstream Commit Drift Analyzer & Bug Fix Porting Generator (`pkg/story/drift`, `pkg/query`) [State: To Do, Priority: Medium]
 - [ ] **DEN-066**: Multi-Repo Context Re-Hydration & IDE Scope Restorer (`pkg/story/resume`, `cmd/dendrite`) [State: To Do, Priority: Medium]
@@ -316,6 +319,7 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 - [ ] **DEN-074**: Ticket-Milestone Relational Ingestion & Dependency DAG Solver (`pkg/stories/dag`, `pkg/tracker`) [State: To Verify, Priority: High]
 - [ ] **DEN-075**: Context-Aware `dendrite stories next` Scheduler & Active Story Context Injector (`pkg/stories/next`, `pkg/jetbrains`) [State: In Progress, Priority: High]
+- [ ] **DEND-601**: [Tickets Skill]: Ticket Connection & Priority Updater (dendrite skill ticket-relate) [State: To Verify, Priority: Urgent]
 
 ### Milestone 32: Bidirectional Penpot UI Documentation & MCP Integration
 
@@ -353,9 +357,7 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 ### Milestone 38: Artifact & Package Publisher MCP Service & Registry Governance
 
-- [ ] **DEN-091**: Pluggable Registry Adapter Interface & Cargo Workspace Topological Publisher (`pkg/mcp/publisher`, `internal/mcp/publisher`) [State: To Do, Priority: Medium]
 - [ ] **DEN-092**: Pre-Flight Validation, Dry-Run SemVer Guard & Secret-Isolated Execution Gate (`pkg/mcp/publisher`, `cmd/dendrite`) [State: To Do, Priority: Medium]
-- [ ] **DEN-093**: Post-Publish Git Tag Lifecycle & Stdio JSON-RPC MCP Tool Registry (`pkg/mcp/publisher`, `pkg/mcpserver`) [State: To Do, Priority: Medium]
 
 ### Milestone 39: Local & Custom-Server Ephemeral CI/CD Routine & Mesh Runner
 
@@ -365,15 +367,38 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 - [ ] **DEN-814**: Dynamic LiteLLM Routing Table Updater & Daily Scheduler with Manual Trigger [State: To Verify, Priority: High]
 - [ ] **DEN-820**: Dynamic Gateway Renderer Model Routing by Live Engine Intelligence [State: To Verify, Priority: High]
 
+### Milestone 40: Synapse Cross-Project Links & Multi-Agent Arbitration Mesh
+
+- [ ] **DEN-997**: docs: Synapse & multi-agent mesh architecture spec [State: To Verify, Priority: Medium]
+- [ ] **DEN-998**: feat(projectid): persistent project identity + global project index [State: To Verify, Priority: Medium]
+- [ ] **DEN-999**: feat(pool): mint project IDs on pool add and project add [State: To Verify, Priority: Medium]
+- [ ] **DEN-1000**: feat(synapse): manifest schema, store and state machine [State: To Verify, Priority: Medium]
+- [ ] **DEN-1001**: feat(cli): dendrite synapse create/list/inspect [State: To Verify, Priority: Medium]
+- [ ] **DEN-1002**: feat(synapse): locate and heal with health matrix [State: To Verify, Priority: High]
+- [ ] **DEN-1003**: feat(synapse): atomic synapse move with rollback [State: To Verify, Priority: Medium]
+- [ ] **DEN-1004**: feat(jetbrains): merge-aware scopes and per-synapse MCP entries [State: To Verify, Priority: Medium]
+- [ ] **DEN-1005**: feat(mcp): scoped server mode mcp serve --synapse [State: To Verify, Priority: Medium]
+- [ ] **DEN-1006**: feat(mcp): synapse_diff_contract [State: Backlog, Priority: Medium]
+- [ ] **DEN-1007**: feat(mcp): synapse_query_peer with ast ExportedSymbols [State: Backlog, Priority: Medium]
+- [ ] **DEN-1008**: feat(mcp): synapse_run_parity_tests and synapse_propose_sync [State: Backlog, Priority: Medium]
+- [ ] **DEN-1009**: feat(mesh): cross-process store, sessions and liveness reaper [State: Backlog, Priority: High]
+- [ ] **DEN-1010**: feat(mesh): semantic symbol leases with conflict notice and queue [State: Backlog, Priority: High]
+- [ ] **DEN-1011**: feat(mesh): blackboard event log and SSE endpoint [State: Backlog, Priority: High]
+- [ ] **DEN-1012**: feat(mesh): dendrite exec shim and mesh MCP tools [State: Backlog, Priority: High]
+- [ ] **DEN-1013**: feat(cli): dendrite agent bus listen/sessions/leases/evict [State: Backlog, Priority: Medium]
+- [ ] **DEN-1014**: feat(agentjobs): per-session isolated worktrees [State: Backlog, Priority: Medium]
+- [ ] **DEN-1015**: feat(mesh): reconcile with symbol-disjoint merge [State: Backlog, Priority: High]
+- [ ] **DEN-1016**: feat(jetbrains): surface active leases in the IDE [State: Backlog, Priority: Medium]
+
 ### General
 
 - [ ] **DEN-101**: Multi-Vendor Agent Architecture Review: Evaluate Anthropic Claude Code, OpenAI Operator, and Cursor Integration [State: To Do, Priority: Medium]
 - [ ] **DEN-102**: Autonomous Agent Harness: OpenCode Real Execution Validation & Sandboxing [State: In Progress, Priority: Medium]
-- [ ] **DEN-701**: - Coverage Gap: Reach 100% coverage in pkg/vcs/guard.go [State: In Progress, Priority: Urgent]
-- [ ] **DEN-702**: - Coverage Gap: Reach 100% coverage in pkg/tracker/routing.go [State: In Progress, Priority: Urgent]
-- [ ] **DEN-703**: - Coverage Gap: Reach 100% coverage in pkg/tracker/github/github.go [State: To Verify, Priority: Urgent]
-- [ ] **DEN-704**: - Coverage Gap: Reach 100% coverage in pkg/vcs/orchestrator.go & remote_sync.go [State: In Progress, Priority: Urgent]
-- [ ] **DEN-705**: - Coverage Gap: Reach 100% coverage in pkg/audit/auditor.go [State: To Verify, Priority: Urgent]
+- [ ] **DEN-701-COV-1**: Coverage Gap: Reach 100% coverage in pkg/vcs/guard.go [State: In Progress, Priority: Urgent]
+- [ ] **DEN-702-COV-1**: Coverage Gap: Reach 100% coverage in pkg/tracker/routing.go [State: In Progress, Priority: Urgent]
+- [ ] **DEN-703-COV-1**: Coverage Gap: Reach 100% coverage in pkg/tracker/github/github.go [State: To Verify, Priority: Urgent]
+- [ ] **DEN-704-COV-1**: Coverage Gap: Reach 100% coverage in pkg/vcs/orchestrator.go & remote_sync.go [State: In Progress, Priority: Urgent]
+- [ ] **DEN-705-COV-1**: Coverage Gap: Reach 100% coverage in pkg/audit/auditor.go [State: To Verify, Priority: Urgent]
 - [ ] **DEN-811**: Modular CLI Command Registry & Dispatcher Architecture [State: To Verify, Priority: High]
 
 ---
@@ -383,35 +408,55 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 ### DCORE
 
 - [ ] **DCORE-1**: dendrite-core-rs: tree-sitter fold / last-node / complexity / blake3 / tokenize sidecar [State: Backlog, Priority: Medium]
-
-### DEND
-
-- [ ] **DEND-101**: [Anti-Mock Guard]: Tree-sitter AST mock detection & pre-commit hook [State: In Progress, Priority: Urgent]
-- [ ] **DEND-102**: [Verification Routine]: Plane To Verify intermediate state & dendrite verify skill [State: In Progress, Priority: High]
-- [ ] **DEND-103**: [Toolchain Migration]: Standardize build & test tooling on uv and bun [State: To Verify, Priority: Medium]
-- [ ] **DEND-201**: [Code Knowledge MCP]: Local AST query MCP server [State: To Verify, Priority: High]
-- [ ] **DEND-202**: [Graphify Community Graph]: Leiden clustering & god-node dependency index [State: To Do, Priority: High]
-- [ ] **DEND-203**: [Local-First RAG & Shared Library Deduplication]: Zero-cost nomic embeddings & CAS library store [State: In Progress, Priority: Urgent]
-- [ ] **DEND-301**: [JetBrains Validation]: Audit live IDE socket bridge & state detection without mocks [State: In Progress, Priority: High]
-- [ ] **DEND-302**: [Plugin - JetBrains]: JetBrains Plugin (dendrite-jetbrains) with local AI chat & Graphify markers [State: To Do, Priority: Urgent]
-- [ ] **DEND-303**: [Plugin - VS Code]: VS Code Extension (dendrite-vscode) built with bun & MCP context [State: To Do, Priority: High]
-- [ ] **DEND-304**: [Plugin - Neovim]: Headless Lua RPC client (dendrite.nvim) [State: To Do, Priority: Medium]
-- [ ] **DEND-305**: [Plugin - Zed]: Rust WASM extension (dendrite-zed) [State: To Do, Priority: Medium]
-- [x] **DEND-401**: [Infra - Migration]: Zero-credential SSH service migration (move <svc> to --ssh) [State: Done, Priority: Urgent]
-- [ ] **DEND-402**: [Infra - Start]: Mock-free service lifecycle manager with Penpot compose/MCP provisioning [State: To Verify, Priority: High]
-- [ ] **DEND-403**: [Infra - Sync]: Cross-node endpoint & schema update propagation (dendrite cluster sync) [State: To Do, Priority: High]
-- [ ] **DEND-501**: [REA]: macOS PE .EXE analysis, pause/resume checkpointing, multi-tier LLM triage & purge [State: In Progress, Priority: High]
-- [ ] **DEND-601**: [Tickets Skill]: Ticket Connection & Priority Updater (dendrite skill ticket-relate) [State: To Verify, Priority: Urgent]
+- [ ] **DCORE-2**: [DEN-943] BLAKE3 chunk ledger + WAL + resume (was DEN #175) [State: Backlog, Priority: High]
+- [ ] **DCORE-3**: [DEN-942] Truncation splicer (Go via go/ast; other languages after DEN-972) (was DEN #174) [State: Backlog, Priority: High]
+- [ ] **DCORE-4**: [DEN-056] Idiomatic Binary/Repo-to-Rust Transpiler & Differential Test Harness (`pkg/query/transpile`, `tests/differential`) [State: To Verify, Priority: Medium]
+- [ ] **DCORE-5**: [DEN-020] Intermediate Semantic Representation ISR Tree-sitter Parser [State: To Do, Priority: Medium]
+- [x] **DCORE-6**: [DEN-018] AST Context Compaction & LiteLLM Prefix Cache Harness [State: Done, Priority: Medium]
+- [x] **DCORE-7**: [DEN-010] Tree-sitter AST & Complexity Analyzer [State: Done, Priority: Medium]
 
 ### DGIT
 
 - [ ] **DGIT-1**: dendrite-git-rs: gix hunk graph + semantic clusterer sidecar [State: Backlog, Priority: Medium]
+- [ ] **DGIT-2**: [DEN-934] --local-review stacked branches + git notes telemetry + review audit/land (was DEN #171) [State: Backlog, Priority: High]
+- [ ] **DGIT-3**: [DEN-933] Clusterer + LLM plan + validators (exactly-once, topo order, per-commit build) (was DEN #170) [State: Backlog, Priority: High]
+- [ ] **DGIT-4**: [DEN-932] Hunk extractor + symbol-dependency graph (was DEN #169) [State: Backlog, Priority: High]
+- [ ] **DGIT-5**: [DEN-098] Autonomous Git Commit Engine with Local Model Message Delegation & Zero-Cost Synthesis [State: To Verify, Priority: High]
+- [ ] **DGIT-6**: [DEN-065] Sliced Upstream Commit Drift Analyzer & Bug Fix Porting Generator (`pkg/story/drift`, `pkg/query`) [State: To Do, Priority: Medium]
+- [ ] **DGIT-7**: [DEN-064] Speculative Git Worktree Branching & Differential Architecture Benchmark Harness (`pkg/story/fork`, `pkg/perf`) [State: To Verify, Priority: Medium]
 
 ### DMCP
 
 - [ ] **DMCP-1**: dendrite-mcp-hub: extract pkg/mcpserver into a standalone Go module [State: Backlog, Priority: Medium]
+- [ ] **DMCP-2**: [DEN-960] Penpot MCP service + hub registration (was DEN #185) [State: Backlog, Priority: Medium]
+- [ ] **DMCP-3**: [DEN-930] Spike: Penpot official MCP server deployment shape (was DEN #183) [State: Backlog, Priority: Medium]
+- [ ] **DMCP-4**: [DEN-812] Bidirectional Multi-Vendor Migration & Real-Time Sync Engine (Plane <-> Jira, Penpot <-> Figma) (was DEN #141) [State: Backlog, Priority: High]
+- [ ] **DMCP-5**: [DEN-808] Personal Context MCP Connectors: Workspace & Enterprise Tool Adapters (was DEN #136) [State: Backlog, Priority: Medium]
+- [ ] **DMCP-6**: [DEND-305] [Plugin - Zed]: Rust WASM extension (dendrite-zed) (was DEN #113) [State: To Do, Priority: Medium]
+- [ ] **DMCP-7**: [DEND-304] [Plugin - Neovim]: Headless Lua RPC client (dendrite.nvim) (was DEN #112) [State: To Do, Priority: Medium]
+- [ ] **DMCP-8**: [DEND-303] [Plugin - VS Code]: VS Code Extension (dendrite-vscode) built with bun & MCP context (was DEN #111) [State: To Do, Priority: High]
+- [ ] **DMCP-9**: [DEND-302] [Plugin - JetBrains]: JetBrains Plugin (dendrite-jetbrains) with local AI chat & Graphify markers (was DEN #110) [State: To Do, Priority: Urgent]
+- [ ] **DMCP-10**: [DEND-201] [Code Knowledge MCP]: Local AST query MCP server (was DEN #106) [State: To Verify, Priority: High]
+- [ ] **DMCP-11**: [DEN-096] Token-Efficient Structured Log Tailing & MCP Routine Control Tools (`pkg/routines/cicd`, `pkg/mcpserver`, `cmd/dendrite`) [State: To Do, Priority: Medium]
+- [ ] **DMCP-12**: [DEN-093] Post-Publish Git Tag Lifecycle & Stdio JSON-RPC MCP Tool Registry (`pkg/mcp/publisher`, `pkg/mcpserver`) [State: To Do, Priority: Medium]
+- [ ] **DMCP-13**: [DEN-092] Pre-Flight Validation, Dry-Run SemVer Guard & Secret-Isolated Execution Gate (`pkg/mcp/publisher`, `cmd/dendrite`) [State: To Do, Priority: Medium]
+- [ ] **DMCP-14**: [DEN-091] Pluggable Registry Adapter Interface & Cargo Workspace Topological Publisher (`pkg/mcp/publisher`, `internal/mcp/publisher`) [State: To Do, Priority: Medium]
+- [ ] **DMCP-15**: [DEN-076] UI File Mutation Watcher & Penpot Documentation Token Diff Synthesizer (`pkg/ui/penpot`, `pkg/mcpserver`) [State: To Verify, Priority: Medium]
+- [ ] **DMCP-16**: [DEN-075] Context-Aware `dendrite stories next` Scheduler & Active Story Context Injector (`pkg/stories/next`, `pkg/jetbrains`) [State: In Progress, Priority: High]
+- [ ] **DMCP-17**: [DEN-063] Quad-IDE Cross-Language Schema & IPC Contract Drift Monitor (`pkg/polyglot/contract`, `pkg/jetbrains`) [State: To Verify, Priority: Medium]
+- [ ] **DMCP-18**: [DEN-050] Local Agent Triage Gateway, Token-Efficient Prompt Router & JetBrains AI Chat Multi-MCP Orchestrator (`pkg/agent/triage`, `pkg/jetbrains`, `pkg/mcpserver`, `pkg/gateway`) [State: In Progress, Priority: Medium]
+- [ ] **DMCP-19**: [DEN-046] JetBrains IDE Toolset Integration, 19 MCP Tools & Agentic Developer Workflow Guide (pkg/jetbrains, pkg/mcpserver, cmd/dendrite) [State: To Verify, Priority: Medium]
+- [ ] **DMCP-20**: [DEN-040] Dendrite Native MCP Server & Tool Registry Bridge (`pkg/mcpserver`, `cmd/dendrite`) [State: To Verify, Priority: Medium]
+- [ ] **DMCP-21**: [DEN-028] JetBrains IDE MCP Integration & Communication Bridge [State: To Verify, Priority: Medium]
+- [ ] **DMCP-22**: [DEN-009] REA MCP Bridge & Disassembler Protocol Client [State: To Do, Priority: Medium]
 
 ### DRAG
 
 - [ ] **DRAG-1**: dendrite-rag-rs: BM25+vector hybrid retrieval and memory sync engine [State: Backlog, Priority: Medium]
+- [ ] **DRAG-2**: [DEN-964] memory modes: local-only / edge (WAL) / push (+compaction) (was DEN #189) [State: Backlog, Priority: Medium]
+- [ ] **DRAG-3**: [DEN-803] Structured Topic Memory Parser & Zero-Extrapolation Fidelity Guard (was DEN #131) [State: To Verify, Priority: Medium]
+- [ ] **DRAG-4**: [DEND-203] [Local-First RAG & Shared Library Deduplication]: Zero-cost nomic embeddings & CAS library store (was DEN #108) [State: In Progress, Priority: Urgent]
+- [ ] **DRAG-5**: [DEN-060] Store Inspection, Chunk Status Telemetry & Explicit User Purge Lifecycler (`pkg/store/status`, `pkg/ui/store`) [State: To Verify, Priority: Medium]
+- [ ] **DRAG-6**: [DEN-059] BLAKE3 Content-Addressed Persistent Segmented Store & Chunk Checkpointer (`pkg/store/segmented`, `cmd/dendrite`) [State: To Verify, Priority: Medium]
+- [ ] **DRAG-7**: [DEN-037] Hybrid Agent Search, TEI Embeddings & Semantic Routing Engine (`pkg/agentsearch`, `cmd/dendrite`) [State: In Progress, Priority: High]
 
