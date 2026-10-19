@@ -3,30 +3,47 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 
 	"Dendrite/pkg/devtool"
 	"Dendrite/pkg/ollama"
 )
 
-func runDoctor(ctx context.Context) {
-	fmt.Println("[+] Running Dendrite Doctor diagnostics...")
+// doctorOllamaURL is the Ollama endpoint probed by `soma diagnose`.
+var doctorOllamaURL = ollama.DefaultBaseURL
 
-	status, models, err := devtool.ProbeOllama(ctx, ollama.DefaultBaseURL)
-	if err != nil {
-		fmt.Printf("  [-] Local Ollama: UNREACHABLE (%v)\n", err)
+// runDoctor runs pre-flight diagnostics to os.Stdout.
+func runDoctor(ctx context.Context) {
+	if err := runDiagnose(ctx, os.Stdout); err != nil {
+		fmt.Fprintf(os.Stderr, "[-] %v\n", err)
+	}
+}
+
+// runDiagnose runs environment pre-flight diagnostics and returns an error when Ollama is unreachable.
+func runDiagnose(ctx context.Context, out io.Writer) error {
+	fmt.Fprintln(out, "[+] Running Dendrite Doctor diagnostics...")
+
+	status, models, probeErr := devtool.ProbeOllama(ctx, doctorOllamaURL)
+	if probeErr != nil {
+		fmt.Fprintf(out, "  [-] Local Ollama: UNREACHABLE (%v)\n", probeErr)
 	} else {
-		fmt.Printf("  [✓] Local Ollama: REACHABLE (latency: %v, loaded models: %d)\n", status.Latency, len(models))
+		fmt.Fprintf(out, "  [✓] Local Ollama: REACHABLE (latency: %v, loaded models: %d)\n", status.Latency, len(models))
 		for _, m := range models {
-			fmt.Printf("      - %s (size: %.2f GB)\n", m.Name, float64(m.Size)/(1024*1024*1024))
+			fmt.Fprintf(out, "      - %s (size: %.2f GB)\n", m.Name, float64(m.Size)/(1024*1024*1024))
 		}
 	}
 
 	if _, err := os.Stat("DEV_STATUS.md"); err == nil {
-		fmt.Println("  [✓] Project Status: DEV_STATUS.md present")
+		fmt.Fprintln(out, "  [✓] Project Status: DEV_STATUS.md present")
 	} else {
-		fmt.Println("  [-] Project Status: DEV_STATUS.md not found in current directory")
+		fmt.Fprintln(out, "  [-] Project Status: DEV_STATUS.md not found in current directory")
 	}
 
-	fmt.Println("[+] Pre-flight diagnostics complete.")
+	fmt.Fprintln(out, "[+] Pre-flight diagnostics complete.")
+	if probeErr != nil {
+		return fmt.Errorf("local ollama unreachable: %w", probeErr)
+	}
+	return nil
 }
+
