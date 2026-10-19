@@ -662,20 +662,7 @@ func resolvePlaneState(group, name string) tracker.Status {
 }
 
 func formatStatusName(st tracker.Status) string {
-	switch st {
-	case tracker.StatusDone:
-		return "Done"
-	case tracker.StatusInReview:
-		return "To Verify"
-	case tracker.StatusInProgress:
-		return "In Progress"
-	case tracker.StatusTodo:
-		return "To Do"
-	case tracker.StatusBacklog:
-		return "Backlog"
-	default:
-		return "Backlog"
-	}
+	return tracker.StatusDisplayName(st)
 }
 
 func normalizePriority(prio string) string {

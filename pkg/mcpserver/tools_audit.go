@@ -7,8 +7,8 @@ import (
 
 	"Dendrite/pkg/audit"
 	"Dendrite/pkg/quality"
-	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/github"
+	"Dendrite/pkg/tracker/hitl"
 	"Dendrite/pkg/vcs"
 )
 
@@ -52,7 +52,7 @@ func (s *Server) registerAuditTools(deps Dependencies) {
 
 		guard := vcs.NewGitGuard(".", vcs.ModeAuditChanges)
 		orch := vcs.NewStackedBranchOrchestrator(guard, "")
-		gh := github.NewGitHubClient("yasuomaidana/dendrite")
+		gh := github.NewGitHubClient("") // gh resolves the repository from the git remote
 		auditor := audit.NewAuditor(guard, orch, gh)
 
 		summary, err := auditor.AuditChanges(ctx, audit.AuditOptions{
@@ -77,96 +77,32 @@ func (s *Server) registerAuditTools(deps Dependencies) {
 	// dendrite_github_sync
 	s.RegisterTool(Tool{
 		Name:        "dendrite_github_sync",
-		Description: "Synchronize prioritized P0 tickets, dependency relations, and governance labels with remote GitHub Issues (yasuomaidana/dendrite).",
+		Description: "Mirror Plane verification state onto GitHub issues: open a HITL verification issue for every To Verify ticket, add missing labels, and close issues of tickets Done in Plane. Tickets come from Plane and the repository from the git origin remote.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"repo": map[string]interface{}{
 					"type":        "string",
-					"description": "Target GitHub repository in owner/repo format (default: yasuomaidana/dendrite)",
+					"description": "Target GitHub repository in owner/repo format (default: the origin remote of the working directory)",
+				},
+				"dry_run": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Plan the GitHub changes without applying them",
 				},
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		repo, _ := args["repo"].(string)
-		if repo == "" {
-			repo = "yasuomaidana/dendrite"
-		}
-
-		client := github.NewGitHubClient(repo)
-		tickets := []*tracker.RoutingTicket{
-			{
-				ID:            "DEN-701",
-				Title:         "Git Branch Guard: main lock, develop default & atomic CommitAndPush",
-				Description:   "Halts direct main commits with ErrForbiddenBranchMain, evacuates to develop automatically, and enforces atomic CommitAndPush transactions with auto-rebase on divergence.",
-				Priority:      "P0_TOP_BLOCKER",
-				Difficulty:    tracker.TierL2Low,
-				LocalFeasible: true,
-				RequiresAudit: true,
-				Module:        "vcs",
-				Blocks:        []string{"DEN-702"},
-			},
-			{
-				ID:            "DEN-702",
-				Title:         "Ticket Domain Model, Triage & Low-Budget DAG Prioritizer",
-				Description:   "Enriches tickets with DifficultyTier (L1-L5), InferenceEngine, and AuditStatus; provides EnrichTicketClassification, SelectInferenceEngine, and SortForLowBudgetQueue.",
-				Priority:      "P0_TOP_BLOCKER",
-				Difficulty:    tracker.TierL2Low,
-				LocalFeasible: true,
-				RequiresAudit: true,
-				Module:        "tracker",
-				DependsOn:     []string{"DEN-701"},
-				Blocks:        []string{"DEN-703"},
-			},
-			{
-				ID:            "DEN-703",
-				Title:         "GitHub Issues Two-Way Synchronizer & Label Provisioner",
-				Description:   "Syncs prioritized tickets with remote GitHub Issues (yasuomaidana/dendrite), auto-provisions labels (P0-TOP-BLOCKER, local-llm-delegated, needs-vendor-audit, module:<name>), and links dependencies.",
-				Priority:      "P0_TOP_BLOCKER",
-				Difficulty:    tracker.TierL3Medium,
-				LocalFeasible: true,
-				RequiresAudit: true,
-				Module:        "tracker",
-				DependsOn:     []string{"DEN-702"},
-				Blocks:        []string{"DEN-704"},
-			},
-			{
-				ID:            "DEN-704",
-				Title:         "Speculative Stacked Branch Orchestrator & Degraded Budget Mode",
-				Description:   "Switches to DegradedBudgetMode under low token budgets, locks develop merges with ErrMergeLockedInDegradedMode, creates local/<module> stacked branches, and records audit manifests in .dendrite/audit_queue.json.",
-				Priority:      "P0_TOP_BLOCKER",
-				Difficulty:    tracker.TierL3Medium,
-				LocalFeasible: true,
-				RequiresAudit: true,
-				Module:        "vcs",
-				DependsOn:     []string{"DEN-703"},
-				Blocks:        []string{"DEN-705"},
-			},
-			{
-				ID:            "DEN-705",
-				Title:         "dendrite audit-changes CLI Command & Vendor LLM Rebase/Merge Engine",
-				Description:   "Topologically audits queued local/* branches, constructs token-efficient diff payloads, applies fixes, non-fast-forward merges into develop, and rebases downstream branches.",
-				Priority:      "P0_TOP_BLOCKER",
-				Difficulty:    tracker.TierL4High,
-				LocalFeasible: false,
-				RequiresAudit: false,
-				Module:        "audit",
-				DependsOn:     []string{"DEN-704"},
-			},
-		}
-
-		synced, err := client.SyncTickets(ctx, tickets)
+		dryRun, _ := args["dry_run"].(bool)
+		syncer, err := newHITLSyncer(ctx, deps, repo)
 		if err != nil {
 			return nil, fmt.Errorf("github sync failed: %w", err)
 		}
-
-		data, err := json.MarshalIndent(synced, "", "  ")
+		res, err := syncer.GitHubSync(ctx, dryRun)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("github sync failed: %w", err)
 		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		return jsonResult(res)
 	})
 
 	// dendrite_vcs_guard
@@ -292,40 +228,50 @@ func (s *Server) registerAuditTools(deps Dependencies) {
 	// dendrite_hitl_sync
 	s.RegisterTool(Tool{
 		Name:        "dendrite_hitl_sync",
-		Description: "Poll remote GitHub Issues for Human-in-the-Loop review approvals or change feedback.",
+		Description: "Poll the GitHub verification issue of every Plane To Verify ticket: issues closed as completed move the ticket to Done, reviewer comments are reported as feedback.",
 		InputSchema: map[string]interface{}{
-			"type":       "object",
-			"properties": map[string]interface{}{},
+			"type": "object",
+			"properties": map[string]interface{}{
+				"repo": map[string]interface{}{
+					"type":        "string",
+					"description": "Target GitHub repository in owner/repo format (default: the origin remote of the working directory)",
+				},
+				"dry_run": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Report approvals without moving tickets to Done",
+				},
+			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		poller := quality.NewGitHubHITLPoller("yasuomaidana/dendrite", &github.DefaultCommandExecutor{})
-		tickets := []*quality.IssueSpec{
-			{ID: "DEN-701", GitHubIssueNum: 1, State: quality.StateToVerify},
-			{ID: "DEN-702", GitHubIssueNum: 2, State: quality.StateToVerify},
-			{ID: "DEN-703", GitHubIssueNum: 3, State: quality.StateToVerify},
-			{ID: "DEN-704", GitHubIssueNum: 4, State: quality.StateToVerify},
-			{ID: "DEN-705", GitHubIssueNum: 5, State: quality.StateToVerify},
+		repo, _ := args["repo"].(string)
+		dryRun, _ := args["dry_run"].(bool)
+		syncer, err := newHITLSyncer(ctx, deps, repo)
+		if err != nil {
+			return nil, fmt.Errorf("hitl sync failed: %w", err)
 		}
-		type resItem struct {
-			ID       string              `json:"id"`
-			State    quality.TicketState `json:"state"`
-			FollowUp *quality.IssueSpec  `json:"follow_up,omitempty"`
+		results, err := syncer.HITLSync(ctx, dryRun)
+		if err != nil {
+			return nil, fmt.Errorf("hitl sync failed: %w", err)
 		}
-		var items []resItem
-		for _, t := range tickets {
-			followUp, _ := poller.SyncValidationState(ctx, t)
-			items = append(items, resItem{
-				ID:       t.ID,
-				State:    t.State,
-				FollowUp: followUp,
-			})
+		if results == nil {
+			results = []hitl.HITLResult{}
 		}
-		data, err := json.MarshalIndent(items, "", "  ")
+		return jsonResult(results)
+	})
+}
+
+// newHITLSyncer builds the Plane/GitHub verification syncer, reusing the server's
+// Plane client when one is configured. It is a seam so tests stay offline.
+var newHITLSyncer = func(ctx context.Context, deps Dependencies, repo string) (*hitl.Syncer, error) {
+	if deps.PlaneClient == nil {
+		return hitl.NewFromEnv(ctx, repo, ".")
+	}
+	if repo == "" {
+		detected, err := github.DetectRepo(ctx, &github.DefaultCommandExecutor{}, ".")
 		if err != nil {
 			return nil, err
 		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
-	})
+		repo = detected
+	}
+	return hitl.New(deps.PlaneClient, github.NewGitHubClient(repo), "."), nil
 }

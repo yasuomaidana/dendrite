@@ -316,24 +316,8 @@ func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tr
 	// Zero-Mock Policy Enforcement Gate:
 	// Prohibit transitioning issues to review/verify/done if any mocks exist in associated packages
 	if state == tracker.StatusDone || state == tracker.StatusInReview {
-		issueUUIDCheck := string(id)
 		issueList, _ := c.ListPlaneIssues(ctx)
-		var matchedIssue *PlaneIssue
-		for _, iss := range issueList {
-			if iss.ID == issueUUIDCheck || strings.Contains(iss.Name, "["+string(id)+"]") {
-				matchedIssue = &iss
-				break
-			}
-		}
-		if matchedIssue == nil {
-			for _, iss := range issueList {
-				if strings.Contains(iss.Name, string(id)) {
-					matchedIssue = &iss
-					break
-				}
-			}
-		}
-		if matchedIssue != nil {
+		if matchedIssue := findIssueByTicketID(issueList, string(id)); matchedIssue != nil {
 			pkgs := quality.ExtractPackages(matchedIssue.Name + " " + matchedIssue.DescriptionHTML)
 			if len(pkgs) > 0 {
 				if hasMocks, mockLocs, _ := quality.ValidateZeroMockGate(".", pkgs); hasMocks {
@@ -345,23 +329,9 @@ func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tr
 
 	issueUUID := string(id)
 	if len(issueUUID) != 36 || strings.Count(issueUUID, "-") != 4 {
-		issues, err := c.ListPlaneIssues(ctx)
-		if err == nil {
-			found := false
-			for _, iss := range issues {
-				if strings.Contains(iss.Name, "["+string(id)+"]") {
-					issueUUID = iss.ID
-					found = true
-					break
-				}
-			}
-			if !found {
-				for _, iss := range issues {
-					if strings.Contains(iss.Name, string(id)) {
-						issueUUID = iss.ID
-						break
-					}
-				}
+		if issues, err := c.ListPlaneIssues(ctx); err == nil {
+			if matched := findIssueByTicketID(issues, string(id)); matched != nil {
+				issueUUID = matched.ID
 			}
 		}
 	}
@@ -1047,23 +1017,9 @@ func (c *Client) AddIssueComment(ctx context.Context, id string, comment string)
 func (c *Client) AddComment(ctx context.Context, id tracker.TicketID, comment string) error {
 	issueUUID := string(id)
 	if len(issueUUID) != 36 || strings.Count(issueUUID, "-") != 4 {
-		issues, err := c.ListPlaneIssues(ctx)
-		if err == nil {
-			found := false
-			for _, iss := range issues {
-				if strings.Contains(iss.Name, "["+string(id)+"]") {
-					issueUUID = iss.ID
-					found = true
-					break
-				}
-			}
-			if !found {
-				for _, iss := range issues {
-					if strings.Contains(iss.Name, string(id)) {
-						issueUUID = iss.ID
-						break
-					}
-				}
+		if issues, err := c.ListPlaneIssues(ctx); err == nil {
+			if matched := findIssueByTicketID(issues, string(id)); matched != nil {
+				issueUUID = matched.ID
 			}
 		}
 	}
@@ -1199,4 +1155,23 @@ func extractLinkedSpecs(content string) []string {
 		}
 	}
 	return unique
+}
+
+// findIssueByTicketID returns the issue whose UUID is id, else the one named "[id] ...",
+// else one mentioning id as a whole token. It never matches by substring, so
+// "DEN-10" does not resolve to "[DEN-1014]".
+func findIssueByTicketID(issues []PlaneIssue, id string) *PlaneIssue {
+	prefix := "[" + id + "]"
+	for i := range issues {
+		if issues[i].ID == id || strings.HasPrefix(strings.TrimSpace(issues[i].Name), prefix) {
+			return &issues[i]
+		}
+	}
+	token := regexp.MustCompile(`(^|[^A-Za-z0-9-])` + regexp.QuoteMeta(id) + `($|[^A-Za-z0-9-])`)
+	for i := range issues {
+		if token.MatchString(issues[i].Name) {
+			return &issues[i]
+		}
+	}
+	return nil
 }

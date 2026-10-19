@@ -6,7 +6,7 @@ sidebar_label: "github-sync"
 
 # dendrite github-sync
 
-Synchronize prioritized tickets and DAG dependencies to GitHub Issues
+Mirror Plane verification state to GitHub: open HITL issues for To Verify tickets, close them when Done
 
 ## Category
 
@@ -27,11 +27,13 @@ None
 
 | Flag | Description |
 | :--- | :--- |
-| `--repo` | Target GitHub repository (owner/repo) |
-| `--dry-run` | Preview issue sync without modifying GitHub |
+| `--repo` | Target GitHub repository (owner/repo); default: the origin remote |
+| `--dry-run` | Show the planned issue changes without modifying GitHub |
+| `--json` | Output the sync result as JSON |
 
 ## Examples
 
 ```bash
+dendrite github-sync --dry-run
 dendrite github-sync
 ```

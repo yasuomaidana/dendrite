@@ -52,7 +52,7 @@ func NewAuditor(guard *vcs.GitGuard, orch *vcs.StackedBranchOrchestrator, gh *gi
 		orch = vcs.NewStackedBranchOrchestrator(guard, "")
 	}
 	if gh == nil {
-		gh = github.NewGitHubClient("yasuomaidana/dendrite")
+		gh = github.NewGitHubClient("") // gh resolves the repository from the git remote
 	}
 	return &Auditor{
 		Guard:        guard,

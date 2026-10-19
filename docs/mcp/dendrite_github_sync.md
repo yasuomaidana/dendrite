@@ -6,15 +6,19 @@ sidebar_label: "dendrite_github_sync"
 
 # dendrite_github_sync
 
-Synchronize prioritized P0 tickets, dependency relations, and governance labels with remote GitHub Issues (yasuomaidana/dendrite).
+Mirror Plane verification state onto GitHub issues: open a HITL verification issue for every To Verify ticket, add missing labels, and close issues of tickets Done in Plane. Tickets come from Plane and the repository from the git origin remote.
 
 ## Input Schema
 
 ```json
 {
   "properties": {
+    "dry_run": {
+      "description": "Plan the GitHub changes without applying them",
+      "type": "boolean"
+    },
     "repo": {
-      "description": "Target GitHub repository in owner/repo format (default: yasuomaidana/dendrite)",
+      "description": "Target GitHub repository in owner/repo format (default: the origin remote of the working directory)",
       "type": "string"
     }
   },
@@ -33,7 +37,8 @@ Synchronize prioritized P0 tickets, dependency relations, and governance labels 
   "method": "tools/call",
   "params": {
     "arguments": {
-      "repo": "yasuomaidana/dendrite"
+      "dry_run": false,
+      "repo": "the origin remote of the working directory"
     },
     "name": "dendrite_github_sync"
   }
@@ -43,5 +48,5 @@ Synchronize prioritized P0 tickets, dependency relations, and governance labels 
 ### CLI
 
 ```bash
-dendrite mcp call dendrite_github_sync '{"repo":"yasuomaidana/dendrite"}'
+dendrite mcp call dendrite_github_sync '{"dry_run":false,"repo":"the origin remote of the working directory"}'
 ```

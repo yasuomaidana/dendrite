@@ -474,9 +474,6 @@ type GitHubHITLPoller struct {
 }
 
 func NewGitHubHITLPoller(repo string, exec github.CommandExecutor) *GitHubHITLPoller {
-	if repo == "" {
-		repo = "yasuomaidana/dendrite"
-	}
 	if exec == nil {
 		exec = &github.DefaultCommandExecutor{}
 	}
@@ -492,9 +489,11 @@ func (p *GitHubHITLPoller) SyncValidationState(ctx context.Context, ticket *Issu
 	}
 
 	// Fetch issue status and comments via gh issue view
-	out, err := p.Executor.Execute(ctx, "gh", "issue", "view", strconv.Itoa(ticket.GitHubIssueNum),
-		"--repo", p.Repo,
-		"--json", "state,comments,updatedAt")
+	args := []string{"issue", "view", strconv.Itoa(ticket.GitHubIssueNum), "--json", "state,comments,updatedAt"}
+	if p.Repo != "" { // empty: gh resolves the repository from the git remote
+		args = append(args, "--repo", p.Repo)
+	}
+	out, err := p.Executor.Execute(ctx, "gh", args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query GitHub issue #%d: %w", ticket.GitHubIssueNum, err)
 	}

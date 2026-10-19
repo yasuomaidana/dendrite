@@ -142,7 +142,8 @@ func TestHandleQualityCommand(t *testing.T) {
 	// 5. Audit command default pkg
 	handleQualityCommand(ctx, []string{"audit"})
 
-	// 6. HITL sync command
+	// 6. HITL sync command (offline: local Plane server and scripted gh)
+	offlineSyncer(t)
 	handleQualityCommand(ctx, []string{"hitl-sync"})
 }
 

@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
 	"Dendrite/pkg/quality"
 	"Dendrite/pkg/quality/coverage"
-	"Dendrite/pkg/tracker/github"
+	"Dendrite/pkg/tracker/hitl"
 )
 
 var (
@@ -65,27 +68,8 @@ func handleQualityCommand(ctx context.Context, args []string) {
 		}
 
 	case "hitl-sync", "sync-hitl":
-		fmt.Println("[+] Polling GitHub Issues for Human-in-the-Loop Verification...")
-		poller := quality.NewGitHubHITLPoller("yasuomaidana/dendrite", &github.DefaultCommandExecutor{})
-		tickets := []*quality.IssueSpec{
-			{ID: "DEN-701", GitHubIssueNum: 1, State: quality.StateToVerify},
-			{ID: "DEN-702", GitHubIssueNum: 2, State: quality.StateToVerify},
-			{ID: "DEN-703", GitHubIssueNum: 3, State: quality.StateToVerify},
-			{ID: "DEN-704", GitHubIssueNum: 4, State: quality.StateToVerify},
-			{ID: "DEN-705", GitHubIssueNum: 5, State: quality.StateToVerify},
-		}
-
-		for _, t := range tickets {
-			followUp, err := poller.SyncValidationState(ctx, t)
-			if err != nil {
-				fmt.Printf("[-] Failed to sync %s: %v\n", t.ID, err)
-				continue
-			}
-			if followUp != nil {
-				fmt.Printf("[!] Human feedback received on %s! Demoted to TO_DO. Follow-up: %s\n", t.ID, followUp.ID)
-			} else {
-				fmt.Printf("    * [%s] Current State: %s (GitHub #%d)\n", t.ID, t.State, t.GitHubIssueNum)
-			}
+		if err := runHITLSync(ctx, args[1:], os.Stdout); err != nil {
+			fmt.Printf("[-] HITL sync failed: %v\n", err)
 		}
 
 	default:
@@ -141,7 +125,8 @@ func printQualityUsage() {
 	fmt.Println("Usage: dendrite quality <audit|hitl-sync|coverage> [args...]")
 	fmt.Println("\nCommands:")
 	fmt.Println("  audit [package]    Run anti-mock scan and 100% coverage profiler on package")
-	fmt.Println("  hitl-sync          Poll GitHub issues for closed approvals (DONE) or new feedback")
+	fmt.Println("  hitl-sync [--dry-run] [--json] [--repo owner/repo]")
+	fmt.Println("                     Poll the GitHub issue of every Plane To Verify ticket: closed as completed -> Done, comments -> feedback")
 	fmt.Println("  coverage [flags]   Per-package coverage ratchet and baseline management (--ratchet, --update)")
 }
 
@@ -151,4 +136,72 @@ func printCoverageUsage() {
 	fmt.Println("  --ratchet           Fail (exit 1) if any package drops below its baseline")
 	fmt.Println("  --update            Automatically raise baseline with improvements and initialize new packages at 100%")
 	fmt.Println("  --baseline <path>   Path to coverage baseline JSON file (default .dendrite/coverage_baseline.json)")
+}
+
+// runHITLSync polls the verification issue of every Plane ticket in To Verify.
+func runHITLSync(ctx context.Context, args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("hitl-sync", flag.ContinueOnError)
+	fs.SetOutput(out)
+	repo := fs.String("repo", "", "Target GitHub repository owner/repo (default: the origin remote)")
+	dryRun := fs.Bool("dry-run", false, "Report approvals without moving tickets to Done")
+	asJSON := fs.Bool("json", false, "Output results as JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	syncer, err := newHITLSyncer(ctx, *repo)
+	if err != nil {
+		return err
+	}
+	results, err := syncer.HITLSync(ctx, *dryRun)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		if results == nil {
+			results = []hitl.HITLResult{}
+		}
+		data, _ := json.MarshalIndent(results, "", "  ")
+		fmt.Fprintln(out, string(data))
+		return nil
+	}
+
+	fmt.Fprintf(out, "[+] Human-in-the-Loop verification in %s (%d tickets To Verify)\n", syncer.GitHub.Repo, len(results))
+	for _, r := range results {
+		fmt.Fprintf(out, "    * %s\n", describeHITLResult(r, *dryRun))
+	}
+	return nil
+}
+
+func describeHITLResult(r hitl.HITLResult, dryRun bool) string {
+	issue := "no issue"
+	if r.IssueNumber > 0 {
+		issue = fmt.Sprintf("#%d", r.IssueNumber)
+	}
+	line := fmt.Sprintf("[%s] %s (%s): %s", r.TicketID, r.Outcome, issue, r.Title)
+	switch {
+	case r.Error != "":
+		line += " [failed: " + r.Error + "]"
+	case r.Outcome == hitl.OutcomeApproved && r.Applied:
+		line += " -> moved to Done in Plane"
+	case r.Outcome == hitl.OutcomeApproved && dryRun:
+		line += " -> would move to Done"
+	case r.Outcome == hitl.OutcomeFeedback:
+		last := r.Feedback[len(r.Feedback)-1]
+		line += fmt.Sprintf(" -> %d comment(s), latest by @%s: %s", len(r.Feedback), last.Author, firstLine(last.Body))
+	case r.Outcome == hitl.OutcomeNoIssue:
+		line += " -> run `dendrite github-sync` to open its verification issue"
+	}
+	return line
+}
+
+func firstLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	if len(s) > 100 {
+		s = s[:100] + "…"
+	}
+	return s
 }
