@@ -41,6 +41,7 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 | [`ask`](ask.md) | `query-project`, `rag-ask`, `q` | Ask questions to Dendrite about a project with local RAG and interactive paid fallback |
 | [`codex`](codex.md) | `doc`, `docs`, `engram-codex` | Docs-as-Code reflection, Docusaurus synthesis and portal |
 | [`cortex`](cortex.md) | `ui`, `cortex-cockpit` | Embedded Web Control Cockpit and telemetry server |
+| [`install`](install.md) | `bootstrap` | Install dendrite and its sub-projects from git: main (stable) or develop (--dev), per-member --ref overrides |
 | [`sensory`](sensory.md) | `telemetry`, `afferent-telemetry`, `tel` | Hardware thermal, token spend, and Prometheus telemetry |
 | [`update`](update.md) | `upgrade`, `self-update` | Update dendrite from a release, or rebuild it and its synapse siblings from local sources (--dev) |
 | [`version`](version.md) |  | Print Dendrite CLI version |

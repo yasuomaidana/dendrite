@@ -311,4 +311,3 @@ func printDriftReport(out io.Writer, report *contract.DriftReport) {
 		fmt.Fprintf(out, "      Message:  %s\n", v.Message)
 	}
 }
-

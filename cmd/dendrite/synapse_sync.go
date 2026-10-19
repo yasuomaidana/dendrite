@@ -18,6 +18,7 @@ type synapseSyncOptions struct {
 	NoFetch   bool
 	Autostash bool
 	Rebase    bool
+	Enforce   bool
 	NoLink    bool
 	Merge     []string
 }
@@ -45,9 +46,10 @@ func newSynapseSyncCmd() *cobra.Command {
 		Use:   "sync <id>",
 		Short: "Fast-forward members to their tracked ref, lock their commits and relink (go.work / cargo patches)",
 		Long: "Fast-forwards every local member that is on its tracked branch, resolves remote members,\n" +
-			"records each member's commit as its lock and applies the sync strategy.",
+			"records each member's commit as its lock and applies the sync strategy. --enforce also\n" +
+			"switches clean members that sit on another branch back to their tracked branch.",
 		Args:    exactArgs(1),
-		Example: "dendrite synapse sync dendrite-ecosystem\ndendrite synapse sync dendrite-ecosystem --merge mcp-hub=feat/x",
+		Example: "dendrite synapse sync dendrite-ecosystem\ndendrite synapse sync dendrite-ecosystem --enforce\ndendrite synapse sync dendrite-ecosystem --merge mcp-hub=feat/x",
 		RunE: func(c *cobra.Command, args []string) error {
 			return runSynapseSync(c.Context(), args[0], o, true, c.OutOrStdout())
 		},
@@ -56,6 +58,7 @@ func newSynapseSyncCmd() *cobra.Command {
 	f.BoolVar(&o.NoFetch, "no-fetch", false, "Use the last fetched remote state")
 	f.BoolVar(&o.Autostash, "autostash", false, "Stash uncommitted changes around member fast-forwards")
 	f.BoolVar(&o.Rebase, "rebase", false, "Replay local commits with rebase instead of fast-forward only")
+	f.BoolVar(&o.Enforce, "enforce", false, "Switch clean members on another branch to their tracked branch")
 	f.BoolVar(&o.NoLink, "no-link", false, "Do not apply the sync strategy")
 	f.StringArrayVar(&o.Merge, "merge", nil, "Merge <alias>=<branch> into that member after updating it (repeatable)")
 	return cmd
@@ -70,7 +73,7 @@ func newSynapseSyncCmd() *cobra.Command {
 func runSynapseSync(ctx context.Context, id string, o synapseSyncOptions, pull bool, out io.Writer) error {
 	opts := synapse.SyncOptions{
 		Pull: pull, Link: pull && !o.NoLink, NoFetch: o.NoFetch,
-		Autostash: o.Autostash, Rebase: o.Rebase, Merge: map[string]string{},
+		Autostash: o.Autostash, Rebase: o.Rebase, Enforce: o.Enforce, Merge: map[string]string{},
 	}
 	for _, val := range o.Merge {
 		alias, branch, ok := strings.Cut(val, "=")
@@ -127,6 +130,10 @@ func printSynapseSyncReport(out io.Writer, rep *synapse.SyncReport) {
 			ab = fmt.Sprintf("%d/%d", r.Ahead, r.Behind)
 			dirty = fmt.Sprintf("%d", r.DirtyFiles)
 			switch {
+			case r.Switched != "" && r.Merged != "":
+				status = "switched from " + r.Switched + ", merged " + r.Merged
+			case r.Switched != "":
+				status = "switched from " + r.Switched
 			case r.Merged != "":
 				status = "merged " + r.Merged
 			case r.Updated:

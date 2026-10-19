@@ -21,7 +21,6 @@ import (
 	"github.com/spf13/pflag"
 )
 
-
 // syncTestRepo creates a repo on "feature" with one pushed commit, a bare origin and a project.id.
 func syncTestRepo(t *testing.T, name string) (dir, bare string) {
 	t.Helper()

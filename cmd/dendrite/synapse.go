@@ -61,6 +61,7 @@ type synapseInspectJSON struct {
 	ID        string             `json:"id"`
 	Name      string             `json:"name"`
 	State     string             `json:"state"`
+	Channel   string             `json:"channel,omitempty"`
 	Members   []memberJSON       `json:"members"`
 	Contracts []synapse.Contract `json:"contracts"`
 	Sync      synapse.Sync       `json:"sync"`
@@ -361,6 +362,7 @@ func runSynapseInspect(ctx context.Context, id string, jsonMode bool, out io.Wri
 			ID:        s.ID,
 			Name:      s.Name,
 			State:     string(s.State),
+			Channel:   string(s.Channel),
 			Members:   membersJSON,
 			Contracts: contracts,
 			Sync:      s.Sync,
@@ -382,6 +384,9 @@ func runSynapseInspect(ctx context.Context, id string, jsonMode bool, out io.Wri
 		syncStrat = "none"
 	}
 	fmt.Fprintf(out, "    Sync Strategy: %s\n", syncStrat)
+	if s.Channel != "" {
+		fmt.Fprintf(out, "    Channel:       %s (tracks %s)\n", s.Channel, s.Channel.DefaultRef())
+	}
 	fmt.Fprintf(out, "    Members (%d):\n", len(s.Members))
 	for _, m := range s.Members {
 		status := synapse.StatusOf(m)
@@ -520,7 +525,7 @@ func newSynapseCmd() *cobra.Command {
 		Use:   "set-source <id> <alias> local|remote",
 		Short: "Consume a member from its local checkout or its remote, optionally tracking another ref",
 		Long: "Switches a member between its local checkout and its remote for develop mode. --ref sets the\n" +
-			"branch, tag or commit the member tracks (--ref= clears it).",
+			"branch, tag or commit the member tracks instead of the synapse channel's branch (--ref= clears it).",
 		Args:    exactArgs(3),
 		Example: "dendrite synapse set-source dendrite-ecosystem rag-rs local --ref feat/ann\ndendrite synapse set-source dendrite-ecosystem mcp-hub remote --ref develop",
 		RunE: func(c *cobra.Command, args []string) error {
@@ -534,12 +539,22 @@ func newSynapseCmd() *cobra.Command {
 				pick("ref", &ref), pick("remote", &remote), pick("module", &module), c.OutOrStdout())
 		},
 	}
-	setSourceCmd.Flags().StringVar(&ref, "ref", "", "Branch, tag or commit to track (empty: the checkout's upstream)")
+	setSourceCmd.Flags().StringVar(&ref, "ref", "", "Branch, tag or commit to track (empty: the channel's branch)")
 	setSourceCmd.Flags().StringVar(&remote, "remote", "", "Git URL of the member (default: its origin)")
 	setSourceCmd.Flags().StringVar(&module, "module", "", "Go module path or Cargo crate name consumers link against")
 
+	channelCmd := &cobra.Command{
+		Use:     "channel <id> [stable|dev]",
+		Short:   "Show or set the branch members track by default (stable: main, dev: develop)",
+		Args:    rangeArgs(1, 2),
+		Example: "dendrite synapse channel dendrite-ecosystem\ndendrite synapse channel dendrite-ecosystem dev",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseChannel(c.Context(), args, c.OutOrStdout())
+		},
+	}
+
 	cmd.AddCommand(createCmd, listCmd, inspectCmd, healCmd, locateCmd, moveCmd, ideSyncCmd,
-		setPlaneCmd, setSourceCmd, newSynapseStatusCmd(), newSynapseSyncCmd())
+		setPlaneCmd, setSourceCmd, channelCmd, newSynapseStatusCmd(), newSynapseSyncCmd())
 	return cmd
 }
 
@@ -668,5 +683,45 @@ func runSynapseSetSource(ctx context.Context, id, alias string, source synapse.S
 		return err
 	}
 	fmt.Fprintf(out, "[+] %s/%s now consumed from %s%s\n", s.ID, m.Alias, m.Source, describeSource(*m))
+	return nil
+}
+
+// runSynapseChannel shows or sets the channel whose branch members track by default.
+// Members with their own --ref (set-source) keep it; the next 'synapse sync --enforce'
+// moves the rest onto the new branch.
+func runSynapseChannel(_ context.Context, args []string, out io.Writer) error {
+	st, err := synapse.DefaultStore()
+	if err != nil {
+		return err
+	}
+	s, err := st.Load(args[0])
+	if err != nil {
+		return fmt.Errorf("synapse %q: %w", args[0], err)
+	}
+	if len(args) == 2 {
+		ch, err := synapse.ParseChannel(args[1])
+		if err != nil {
+			return err
+		}
+		if ch != s.Channel {
+			s.Channel = ch
+			for i := range s.Members {
+				s.Members[i].LockedSHA, s.Members[i].LockedAt = "", time.Time{}
+			}
+			if err := st.Save(s); err != nil {
+				return err
+			}
+		}
+	}
+	if s.Channel == "" {
+		fmt.Fprintf(out, "[i] %s has no channel: members follow their checkout's upstream\n", s.ID)
+		return nil
+	}
+	fmt.Fprintf(out, "[+] %s channel: %s (tracks %s)\n", s.ID, s.Channel, s.Channel.DefaultRef())
+	for _, m := range s.Members {
+		if m.Ref != "" {
+			fmt.Fprintf(out, "    [i] %s overrides it with %s\n", m.Alias, m.Ref)
+		}
+	}
 	return nil
 }

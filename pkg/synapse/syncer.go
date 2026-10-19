@@ -19,6 +19,9 @@ type SyncOptions struct {
 	// Rebase and Autostash are passed to vcs.RepoSync for local members.
 	Rebase    bool
 	Autostash bool
+	// Enforce switches a clean local checkout that is on another branch to its tracked
+	// branch (vcs.RepoSyncOptions.Enforce) instead of only reporting the drift.
+	Enforce bool
 	// Merge maps a member alias to a remote branch to merge into its checkout.
 	Merge map[string]string
 	// Link applies the synapse's sync strategy (go.work, cargo-patch) after syncing.
@@ -89,7 +92,7 @@ func SyncSynapse(ctx context.Context, s *Synapse, opts SyncOptions) *SyncReport 
 	missing, drifted := false, false
 	for _, i := range idx {
 		m := &s.Members[i]
-		ms := syncMember(ctx, repo, m, opts)
+		ms := syncMember(ctx, repo, m, s.Channel, opts)
 		missing = missing || ms.Missing
 		if len(ms.Drift) > 0 || ms.Error != "" {
 			drifted = true
@@ -122,8 +125,9 @@ func SyncSynapse(ctx context.Context, s *Synapse, opts SyncOptions) *SyncReport 
 	return rep
 }
 
-func syncMember(ctx context.Context, repo *vcs.RepoSync, m *Member, opts SyncOptions) MemberSync {
-	ms := MemberSync{Alias: m.Alias, Role: m.Role, Source: m.Source, Remote: m.Remote, Ref: m.Ref, LockedSHA: m.LockedSHA}
+func syncMember(ctx context.Context, repo *vcs.RepoSync, m *Member, ch Channel, opts SyncOptions) MemberSync {
+	ref := m.TrackedRef(ch)
+	ms := MemberSync{Alias: m.Alias, Role: m.Role, Source: m.Source, Remote: m.Remote, Ref: ref, LockedSHA: m.LockedSHA}
 	if ms.Source == "" {
 		ms.Source = SourceLocal
 	}
@@ -132,7 +136,7 @@ func syncMember(ctx context.Context, repo *vcs.RepoSync, m *Member, opts SyncOpt
 		if opts.NoFetch {
 			return ms
 		}
-		sha, err := repo.ResolveRemoteRef(ctx, m.Remote, m.Ref)
+		sha, err := repo.ResolveRemoteRef(ctx, m.Remote, ref)
 		if err != nil {
 			ms.Error = err.Error()
 			return ms
@@ -149,9 +153,9 @@ func syncMember(ctx context.Context, repo *vcs.RepoSync, m *Member, opts SyncOpt
 	}
 	ms.Path = path
 
-	ropts := vcs.RepoSyncOptions{Ref: m.Ref, NoFetch: opts.NoFetch, Rebase: opts.Rebase, Autostash: opts.Autostash, Merge: opts.Merge[m.Alias]}
+	ropts := vcs.RepoSyncOptions{Ref: ref, NoFetch: opts.NoFetch, Rebase: opts.Rebase, Autostash: opts.Autostash, Merge: opts.Merge[m.Alias], Enforce: opts.Enforce}
 	var st *vcs.RepoState
-	if opts.Pull || ropts.Merge != "" {
+	if opts.Pull || opts.Enforce || ropts.Merge != "" {
 		st, err = repo.Sync(ctx, path, ropts)
 	} else {
 		st, err = repo.Inspect(ctx, path, ropts)
@@ -167,11 +171,11 @@ func syncMember(ctx context.Context, repo *vcs.RepoSync, m *Member, opts SyncOpt
 	if st.Behind > 0 {
 		ms.Drift = append(ms.Drift, fmt.Sprintf("%d commit(s) behind %s", st.Behind, st.Target))
 	}
-	if m.Ref != "" && st.Target != "" && !st.OnTarget && !st.Detached {
-		ms.Drift = append(ms.Drift, fmt.Sprintf("checked out on %q but tracks %q", st.Branch, m.Ref))
+	if ref != "" && st.Target != "" && !st.OnTarget && !st.Detached {
+		ms.Drift = append(ms.Drift, fmt.Sprintf("checked out on %q but tracks %q", st.Branch, ref))
 	}
-	if m.Ref != "" && st.Target == "" {
-		ms.Drift = append(ms.Drift, fmt.Sprintf("tracked ref %q not found", m.Ref))
+	if ref != "" && st.Target == "" {
+		ms.Drift = append(ms.Drift, fmt.Sprintf("tracked ref %q not found", ref))
 	}
 	return ms
 }

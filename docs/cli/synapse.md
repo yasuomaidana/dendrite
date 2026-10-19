@@ -21,6 +21,7 @@ Synaptic Cleft & Gating
 
 | Subcommand | Description |
 | :--- | :--- |
+| `channel` | Show or set the branch members track by default (stable: main, dev: develop) |
 | `create` | Create a synapse manifest linking member projects |
 | `heal` | Find moved member projects and repair their paths |
 | `ide-sync` | Write IDE MCP configuration for a synapse's members |
@@ -38,6 +39,19 @@ Synaptic Cleft & Gating
 None
 
 ## Subcommand Reference
+
+### `dendrite synapse channel`
+
+Show or set the branch members track by default (stable: main, dev: develop)
+
+```bash
+dendrite synapse channel <id> [stable|dev]
+```
+
+```bash
+dendrite synapse channel dendrite-ecosystem
+dendrite synapse channel dendrite-ecosystem dev
+```
 
 ### `dendrite synapse create`
 
@@ -132,7 +146,7 @@ dendrite synapse set-source <id> <alias> local|remote [flags]
 | Flag | Description |
 | :--- | :--- |
 | `--module` | Go module path or Cargo crate name consumers link against |
-| `--ref` | Branch, tag or commit to track (empty: the checkout's upstream) |
+| `--ref` | Branch, tag or commit to track (empty: the channel's branch) |
 | `--remote` | Git URL of the member (default: its origin) |
 
 ```bash
@@ -168,6 +182,7 @@ dendrite synapse sync <id> [flags]
 | Flag | Description |
 | :--- | :--- |
 | `--autostash` | Stash uncommitted changes around member fast-forwards |
+| `--enforce` | Switch clean members on another branch to their tracked branch |
 | `--merge` | Merge <alias>=<branch> into that member after updating it (repeatable) |
 | `--no-fetch` | Use the last fetched remote state |
 | `--no-link` | Do not apply the sync strategy |
@@ -175,6 +190,7 @@ dendrite synapse sync <id> [flags]
 
 ```bash
 dendrite synapse sync dendrite-ecosystem
+dendrite synapse sync dendrite-ecosystem --enforce
 dendrite synapse sync dendrite-ecosystem --merge mcp-hub=feat/x
 ```
 

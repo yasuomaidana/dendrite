@@ -28,7 +28,7 @@ flowchart TD
     Bundle --> GitHubStore[GitHub Private Repo / Git LFS / Releases]
     GitHubStore --> NewDev[Onboarding Engineer]
     
-    NewDev -->|2. GitHub Release Bootstrap| Install["curl -sSL https://raw.githubusercontent.com/dendrite-dev/dendrite/main/scripts/install.sh | bash"]
+    NewDev -->|2. GitHub Release Bootstrap| Install["curl -sSL https://raw.githubusercontent.com/yasuomaidana/dendrite/main/scripts/install.sh | bash"]
     Install --> ImportCmd["dendrite share import project.dendrite.bundle"]
     ImportCmd --> ReplicateCmd["dendrite env replicate --mode container"]
     ReplicateCmd --> Ready["dendrite env status<br/>Ready for Production"]
@@ -54,12 +54,10 @@ flowchart TD
 
 ## 3. Installation & Updates
 
-### Option A: Build from source (current path)
-No release binaries are published yet, so build from a clone:
+### Option A: Install from git (current path)
+No release binaries are published yet. Install from the repositories instead. Stable tracks `main` everywhere, and `--dev` tracks `develop`:
 ```bash
-git clone https://github.com/yasuomaidana/dendrite.git
-cd dendrite
-go install ./cmd/dendrite        # installs to $GOBIN or $GOPATH/bin
+curl -sSL https://raw.githubusercontent.com/yasuomaidana/dendrite/main/scripts/install.sh | bash
 dendrite version
 ```
 

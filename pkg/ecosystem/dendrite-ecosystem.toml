@@ -1,0 +1,61 @@
+# The Dendrite ecosystem: the control plane and the sub-projects it builds on.
+# `dendrite install` clones each member next to the others (path_hint is the directory
+# name under the install root) and checks it out on the channel's branch:
+# stable -> main, dev -> develop. Per-member overrides go through
+# `dendrite install --ref <alias>=<branch>` or `dendrite synapse set-source`.
+id = "dendrite-ecosystem"
+name = "Dendrite control plane and sub-projects"
+state = "active"
+
+[sync]
+strategy = "none"
+
+[parity.commands]
+control = "go test ./..."
+core-rs = "cargo test"
+embedag = "cargo test --workspace"
+git-rs = "cargo test"
+mcp-hub = "go test ./..."
+rag-rs = "cargo test"
+
+[[members]]
+project_id = "dpid_e5cfb0b3d56dbf8c638ad0e16b4b6f14"
+alias = "control"
+role = "consumer"
+path_hint = "Dendrite"
+remote = "https://github.com/yasuomaidana/dendrite.git"
+
+[[members]]
+project_id = "dpid_7db0e9930b78e6d304692b3c2ae3f3fe"
+alias = "mcp-hub"
+role = "peer"
+path_hint = "dendrite-mcp-hub"
+remote = "https://github.com/yasuomaidana/dendrite-mcp-hub.git"
+
+[[members]]
+project_id = "dpid_c5c083becf371dda8bbbea01666fb5a6"
+alias = "core-rs"
+role = "producer"
+path_hint = "dendrite-core-rs"
+remote = "https://github.com/yasuomaidana/dendrite-core-rs.git"
+
+[[members]]
+project_id = "dpid_073cff27dc0a54e9709c0909ac2a5f49"
+alias = "git-rs"
+role = "producer"
+path_hint = "dendrite-git-rs"
+remote = "https://github.com/yasuomaidana/dendrite-git-rs.git"
+
+[[members]]
+project_id = "dpid_51e41909af53ad63c519ca9a2f266675"
+alias = "rag-rs"
+role = "producer"
+path_hint = "dendrite-rag-rs"
+remote = "https://github.com/yasuomaidana/dendrite-rag-rs.git"
+
+[[members]]
+project_id = "dpid_686959c871607657ff4759a33f7a44dc"
+alias = "embedag"
+role = "producer"
+path_hint = "embedag"
+remote = "https://github.com/yasuomaidana/embedag.git"

@@ -76,6 +76,39 @@ const (
 	SourceRemote Source = "remote"
 )
 
+// Channel selects the branch every member tracks unless it sets its own Ref.
+type Channel string
+
+const (
+	// ChannelStable tracks main: what a normal install runs.
+	ChannelStable Channel = "stable"
+	// ChannelDev tracks develop: what a develop-mode install runs.
+	ChannelDev Channel = "dev"
+)
+
+// DefaultRef is the branch members on c track when they set no Ref; empty for no channel,
+// which keeps following each checkout's own upstream.
+func (c Channel) DefaultRef() string {
+	switch c {
+	case ChannelStable:
+		return "main"
+	case ChannelDev:
+		return "develop"
+	}
+	return ""
+}
+
+// ParseChannel accepts stable|main and dev|develop.
+func ParseChannel(s string) (Channel, error) {
+	switch s {
+	case "stable", "main":
+		return ChannelStable, nil
+	case "dev", "develop":
+		return ChannelDev, nil
+	}
+	return "", fmt.Errorf("invalid channel %q (want stable or dev)", s)
+}
+
 // Member models a repository participating in a Synapse cross-project link.
 type Member struct {
 	ProjectID string `toml:"project_id" json:"project_id"`
@@ -86,7 +119,8 @@ type Member struct {
 	Source Source `toml:"source" json:"source,omitempty"`
 	// Remote is the git URL consumed when Source is remote, and fetched by sync.
 	Remote string `toml:"remote" json:"remote,omitempty"`
-	// Ref is the branch, tag or commit to track; empty follows the checkout's current branch upstream.
+	// Ref is the branch, tag or commit to track. Empty tracks the synapse channel's branch,
+	// or the checkout's current branch upstream when the synapse has no channel.
 	Ref string `toml:"ref" json:"ref,omitempty"`
 	// Module is the Go module path or Cargo crate name consumers link against.
 	Module string `toml:"module" json:"module,omitempty"`
@@ -99,6 +133,15 @@ type Member struct {
 
 // IsRemote reports whether the member is consumed from its remote rather than its local checkout.
 func (m Member) IsRemote() bool { return m.Source == SourceRemote }
+
+// TrackedRef is the ref the member follows on channel c: its own Ref (an override) when
+// set, otherwise the channel's branch.
+func (m Member) TrackedRef(c Channel) string {
+	if m.Ref != "" {
+		return m.Ref
+	}
+	return c.DefaultRef()
+}
 
 // Consumer specifies a consuming repository alias and the relative file path where the contract is consumed.
 type Consumer struct {
@@ -126,11 +169,13 @@ type Parity struct {
 
 // Synapse is the core manifest defining typed cross-project links between autonomous repositories.
 type Synapse struct {
-	ID        string     `toml:"id" json:"id"`
-	Name      string     `toml:"name" json:"name"`
-	State     State      `toml:"state" json:"state"`
-	CreatedAt time.Time  `toml:"created_at" json:"created_at"`
-	UpdatedAt time.Time  `toml:"updated_at" json:"updated_at"`
+	ID        string    `toml:"id" json:"id"`
+	Name      string    `toml:"name" json:"name"`
+	State     State     `toml:"state" json:"state"`
+	CreatedAt time.Time `toml:"created_at" json:"created_at"`
+	UpdatedAt time.Time `toml:"updated_at" json:"updated_at"`
+	// Channel picks the branch members track by default (stable: main, dev: develop).
+	Channel   Channel    `toml:"channel" json:"channel,omitempty"`
 	Members   []Member   `toml:"members" json:"members"`
 	Contracts []Contract `toml:"contracts" json:"contracts"`
 	Sync      Sync       `toml:"sync" json:"sync"`
@@ -218,6 +263,9 @@ func (s *Synapse) Validate() error {
 	}
 	if s.State != "" && !validStates[s.State] {
 		return fmt.Errorf("invalid synapse state %q", s.State)
+	}
+	if s.Channel != "" && s.Channel.DefaultRef() == "" {
+		return fmt.Errorf("invalid synapse channel %q (want stable or dev)", s.Channel)
 	}
 	if len(s.Members) < 2 {
 		return fmt.Errorf("synapse must have at least 2 members, got %d", len(s.Members))

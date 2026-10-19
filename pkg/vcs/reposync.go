@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,6 +16,14 @@ var ErrDetachedHead = errors.New("vcs: detached HEAD has no branch to update")
 
 // ErrDirtyWorktree is returned when a pull would run over uncommitted tracked changes.
 var ErrDirtyWorktree = errors.New("vcs: worktree has uncommitted changes (commit, stash or pass autostash)")
+
+// ErrOffTrackedBranch is returned when Enforce cannot move a checkout onto its tracked
+// branch because it has uncommitted tracked changes.
+var ErrOffTrackedBranch = errors.New("vcs: checkout is off its tracked branch and has uncommitted changes (commit or stash, then sync again)")
+
+// WorkCopyDir is the directory holding model-owned working copies (dendrite work new);
+// Enforce never switches a checkout inside it, since those sit on their own agent branches.
+const WorkCopyDir = "dendrite-work"
 
 // PendingBranch is a remote branch carrying commits the tracked target does not have yet.
 type PendingBranch struct {
@@ -38,7 +48,9 @@ type RepoState struct {
 	Pending    []PendingBranch `json:"pending,omitempty"`
 	Updated    bool            `json:"updated"`
 	Merged     string          `json:"merged,omitempty"`
-	Notes      []string        `json:"notes,omitempty"`
+	// Switched names the branch Enforce moved the checkout away from.
+	Switched string   `json:"switched,omitempty"`
+	Notes    []string `json:"notes,omitempty"`
 }
 
 // Dirty reports whether tracked files have uncommitted changes.
@@ -60,6 +72,11 @@ type RepoSyncOptions struct {
 	// Merge names a remote branch (with or without the "<remote>/" prefix) to merge
 	// into the checkout after updating it; a conflicting merge is aborted.
 	Merge string
+	// Enforce switches a checkout that is not on the tracked branch Ref onto it (creating
+	// the local branch from <remote>/<Ref> when missing) before updating. A checkout with
+	// uncommitted tracked changes is refused with ErrOffTrackedBranch, and working copies
+	// under WorkCopyDir are left alone. Without Ref, or when Ref is a tag or commit, it is a no-op.
+	Enforce bool
 }
 
 func (o RepoSyncOptions) remote() string {
@@ -193,11 +210,16 @@ func (r *RepoSync) pending(ctx context.Context, dir, target, remote string) []Pe
 // Sync inspects dir and, when the checkout is on its tracked branch and behind, updates it
 // (fast-forward only unless opts.Rebase). It refuses on a detached HEAD and on uncommitted
 // tracked changes unless opts.Autostash. With opts.Merge it then merges that remote branch,
-// aborting the merge on conflict. The checkout's branch is never switched.
+// aborting the merge on conflict. The checkout's branch is only switched with opts.Enforce.
 func (r *RepoSync) Sync(ctx context.Context, dir string, opts RepoSyncOptions) (*RepoState, error) {
 	st, err := r.Inspect(ctx, dir, opts)
 	if err != nil {
 		return nil, err
+	}
+	if opts.Enforce {
+		if st, err = r.enforce(ctx, dir, st, opts); err != nil {
+			return st, err
+		}
 	}
 	needPull := st.Behind > 0 && st.OnTarget
 	if st.Behind > 0 && !st.OnTarget && st.Target != "" {
@@ -258,6 +280,94 @@ func (r *RepoSync) Sync(ctx context.Context, dir string, opts RepoSyncOptions) (
 	}
 	st.Pending = r.pending(ctx, dir, st.Target, opts.remote())
 	return st, nil
+}
+
+// Clone checks url out into dir on ref (a branch or tag; the remote's default branch when
+// empty). A commit ref is cloned from the default branch and then checked out detached.
+func (r *RepoSync) Clone(ctx context.Context, url, ref, dir string) error {
+	args := []string{"clone"}
+	if ref != "" && !isFullSHA(ref) {
+		args = append(args, "--branch", ref)
+	}
+	if _, err := r.git(ctx, "", append(args, url, dir)...); err != nil {
+		return fmt.Errorf("git clone %s (%s): %w", url, ref, err)
+	}
+	if isFullSHA(ref) {
+		if _, err := r.git(ctx, dir, "checkout", "--detach", ref); err != nil {
+			return fmt.Errorf("checking out %s in %s: %w", ref, dir, err)
+		}
+	}
+	return nil
+}
+
+// Exclude adds pattern to the checkout's local exclude file (info/exclude, shared by its
+// worktrees) unless it is already listed. Git treats excluded files as expendable, so a
+// later checkout of a branch that tracks the same path replaces it instead of refusing.
+func (r *RepoSync) Exclude(ctx context.Context, dir, pattern string) error {
+	path, err := r.git(ctx, dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return err
+	}
+	path = filepath.Join(path, "info", "exclude")
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == pattern {
+			return nil
+		}
+	}
+	if len(data) > 0 && !strings.HasSuffix(string(data), "\n") {
+		data = append(data, '\n')
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(data, []byte(pattern+"\n")...), 0o644)
+}
+
+// enforce moves dir onto its tracked branch when it sits elsewhere, and returns the
+// re-inspected state. It does nothing when the checkout is already there, the tracked ref
+// is not a remote branch, or dir is a working copy under WorkCopyDir.
+func (r *RepoSync) enforce(ctx context.Context, dir string, st *RepoState, opts RepoSyncOptions) (*RepoState, error) {
+	remote := opts.remote()
+	ref := strings.TrimPrefix(opts.Ref, remote+"/")
+	if ref == "" || st.OnTarget || st.Target != remote+"/"+ref {
+		return st, nil
+	}
+	if inWorkCopy(dir) {
+		st.Notes = append(st.Notes, fmt.Sprintf("working copy in %s/ stays on %q", WorkCopyDir, displayBranch(st)))
+		return st, nil
+	}
+	if st.Dirty() {
+		return st, fmt.Errorf("%w: on %q, tracks %s", ErrOffTrackedBranch, displayBranch(st), st.Target)
+	}
+	from := displayBranch(st)
+	args := []string{"switch", ref}
+	if !r.refExists(ctx, dir, "refs/heads/"+ref) {
+		args = []string{"switch", "-c", ref, "--track", st.Target}
+	}
+	if _, err := r.git(ctx, dir, args...); err != nil {
+		return st, fmt.Errorf("switching %s from %q to %q: %w", dir, from, ref, err)
+	}
+	next, err := r.Inspect(ctx, dir, RepoSyncOptions{Remote: opts.Remote, Ref: opts.Ref, NoFetch: true})
+	if err != nil {
+		return st, err
+	}
+	next.Switched = from
+	next.Notes = append(st.Notes, fmt.Sprintf("switched from %q to tracked branch %q", from, ref))
+	return next, nil
+}
+
+// inWorkCopy reports whether dir lies inside a WorkCopyDir directory.
+func inWorkCopy(dir string) bool {
+	for _, part := range strings.Split(filepath.ToSlash(filepath.Clean(dir)), "/") {
+		if part == WorkCopyDir {
+			return true
+		}
+	}
+	return false
 }
 
 // ResolveRemoteRef returns the commit ref points to on the remote at url without a local

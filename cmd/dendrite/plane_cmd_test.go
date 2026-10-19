@@ -90,7 +90,6 @@ func TestPlaneCommand_Create_WithDescFile(t *testing.T) {
 		t.Fatalf("failed to write spec.md: %v", err)
 	}
 
-
 	// Execute create with --desc-file, --milestone, --priority, --estimate, --blocked-by
 	args := []string{
 		"--name", "[DEN-101] Implement Feature",
@@ -154,7 +153,6 @@ func TestPlaneCommand_Create_EdgeCasesAndErrors(t *testing.T) {
 	t.Setenv("PLANE_API_KEY", "test-token")
 	t.Setenv("PLANE_WORKSPACE_SLUG", "ws")
 	t.Setenv("PLANE_PROJECT_ID", "proj")
-
 
 	// 1. Missing name and desc
 	expectChronos(t, ExitUsage, "create")
@@ -235,7 +233,6 @@ func TestPlaneCommand_Update_WithDescFile(t *testing.T) {
 		t.Fatalf("failed to write spec.md: %v", err)
 	}
 
-
 	// 1. Successful update of exactly [DEN-100]
 	expectChronos(t, ExitOK, "update", "--ticket", "DEN-100", "--desc-file", specFile)
 
@@ -305,7 +302,6 @@ func TestPlaneCommand_Update_EdgeCasesAndErrors(t *testing.T) {
 	t.Setenv("PLANE_API_KEY", "test-token")
 	t.Setenv("PLANE_WORKSPACE_SLUG", "ws")
 	t.Setenv("PLANE_PROJECT_ID", "proj")
-
 
 	// Empty args
 	expectChronos(t, ExitUsage, "update")
@@ -403,7 +399,6 @@ func TestPlaneCommand_States(t *testing.T) {
 	t.Setenv("PLANE_API_KEY", "test-token")
 	t.Setenv("PLANE_WORKSPACE_SLUG", "ws")
 	t.Setenv("PLANE_PROJECT_ID", "proj-default")
-
 
 	// 1. states ensure --project <uuid>
 	expectChronos(t, ExitOK, "states", "ensure", "--project", "proj-custom-uuid")

@@ -63,7 +63,9 @@ func TestEngram_StoreUnavailable(t *testing.T) {
 		t.Fatal(err)
 	}
 	prev := openSegmentedStore
-	openSegmentedStore = func() (*segmented.SegmentedStore, error) { return segmented.NewSegmentedStore(filepath.Join(blocker, "store")) }
+	openSegmentedStore = func() (*segmented.SegmentedStore, error) {
+		return segmented.NewSegmentedStore(filepath.Join(blocker, "store"))
+	}
 	t.Cleanup(func() { openSegmentedStore = prev })
 	for _, args := range [][]string{{"engram", "status"}, {"cognition", "status"}} {
 		if out, code := cliOutput(t, args...); code != ExitError || !strings.Contains(out, "open segmented store") {
