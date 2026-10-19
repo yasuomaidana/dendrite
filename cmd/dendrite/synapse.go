@@ -596,6 +596,8 @@ func runSynapseCommand(ctx context.Context, args []string, out io.Writer) error 
 		return runSynapseIDESync(ctx, subArgs, out)
 	case "set-source":
 		return runSynapseSetSource(ctx, subArgs, out)
+	case "channel":
+		return runSynapseChannel(ctx, subArgs, out)
 	case "status":
 		return runSynapseSyncCommand(ctx, subArgs, out, false)
 	case "sync":
@@ -629,7 +631,8 @@ func printSynapseUsage(out io.Writer) {
 	fmt.Fprintln(out, "  ide-sync <id> [--binary path]")
 	fmt.Fprintln(out, "  set-source <id> <alias> local|remote [--ref branch|tag|sha] [--remote url] [--module path]")
 	fmt.Fprintln(out, "  status <id> [--no-fetch] [--json]")
-	fmt.Fprintln(out, "  sync <id> [--autostash] [--rebase] [--merge alias=branch]... [--no-link] [--no-fetch] [--json]")
+	fmt.Fprintln(out, "  channel <id> [stable|dev]   Show or set the branch members track (stable: main, dev: develop)")
+	fmt.Fprintln(out, "  sync <id> [--enforce] [--autostash] [--rebase] [--merge alias=branch]... [--no-link] [--no-fetch] [--json]")
 	fmt.Fprintln(out, "  (scoped MCP server: dendrite mcp serve --synapse <id>)")
 }
 
@@ -654,6 +657,49 @@ func describeSource(m synapse.Member) string {
 		return ""
 	}
 	return " {" + strings.Join(parts, " ") + "}"
+}
+
+// runSynapseChannel shows or sets the channel whose branch members track by default.
+// Members with their own --ref (set-source) keep it; the next 'synapse sync --enforce'
+// moves the rest onto the new branch.
+func runSynapseChannel(ctx context.Context, subArgs []string, out io.Writer) error {
+	if len(subArgs) < 1 || len(subArgs) > 2 {
+		return errors.New("usage: dendrite synapse channel <id> [stable|dev]")
+	}
+	st, err := synapse.DefaultStore()
+	if err != nil {
+		return err
+	}
+	s, err := st.Load(subArgs[0])
+	if err != nil {
+		return fmt.Errorf("synapse %q: %w", subArgs[0], err)
+	}
+	if len(subArgs) == 2 {
+		ch, err := synapse.ParseChannel(subArgs[1])
+		if err != nil {
+			return err
+		}
+		if ch != s.Channel {
+			s.Channel = ch
+			for i := range s.Members {
+				s.Members[i].LockedSHA, s.Members[i].LockedAt = "", time.Time{}
+			}
+			if err := st.Save(s); err != nil {
+				return err
+			}
+		}
+	}
+	if s.Channel == "" {
+		fmt.Fprintf(out, "[i] %s has no channel: members follow their checkout's upstream\n", s.ID)
+		return nil
+	}
+	fmt.Fprintf(out, "[+] %s channel: %s (tracks %s)\n", s.ID, s.Channel, s.Channel.DefaultRef())
+	for _, m := range s.Members {
+		if m.Ref != "" {
+			fmt.Fprintf(out, "    [i] %s overrides it with %s\n", m.Alias, m.Ref)
+		}
+	}
+	return nil
 }
 
 // runSynapseSetSource switches a member between its local checkout and its remote

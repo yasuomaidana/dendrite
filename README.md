@@ -249,32 +249,28 @@ flowchart TB
 
 ### Prerequisites
 - **Go**: Version `1.25` or higher ([go.dev/dl](https://go.dev/dl/))
-- **Git**: Version `2.30+`
+- **Git**: Version `2.30+` (`2.31+` for `git rev-parse --path-format`)
 - **Docker & Docker Compose**: (Optional) For containerized microservice stacks (Plane, Penpot, LiteLLM)
 - **Polyglot Toolchains**: (Optional) `bun` (for documentation site), `cargo` (for Rust modules), `uv` (for Python scripts)
 
-### Installation from Source
+### Installation
 
-Clone the repository and compile the single `dendrite` binary:
+Dendrite and its sub-projects (`dendrite-mcp-hub`, `dendrite-core-rs`, `dendrite-git-rs`, `dendrite-rag-rs`, `embedag`) are installed from git. Every repository is cloned next to the others and kept on one branch: `main` for a normal install, `develop` for a dev install.
 
 ```bash
-# Clone the repository
-git clone https://github.com/yasuomaidana/dendrite.git
-cd dendrite
+# Stable: every repository on main, under ~/dendrite (override with --root)
+curl -sSL https://raw.githubusercontent.com/yasuomaidana/dendrite/main/scripts/install.sh | bash
 
-# Build binary into ./bin/dendrite
-go build -v -o bin/dendrite ./cmd/dendrite
+# Dev: every repository on develop
+curl -sSL https://raw.githubusercontent.com/yasuomaidana/dendrite/develop/scripts/install.sh | bash -s -- --dev
 
-# Optionally install globally to $GOPATH/bin
-go install ./cmd/dendrite
+# Point one sub-project at another branch
+dendrite install --dev --ref rag-rs=feat/ann
 ```
 
-Verify binary execution:
-```bash
-./bin/dendrite version
-```
+Already have a checkout? Run `go run ./cmd/dendrite install [--dev]` inside it. Verify with `dendrite version`.
 
-Keep it current with `dendrite update --dev` from the checkout: it fast-forwards the sibling repositories linked through a synapse, rebuilds their binaries and swaps in a rebuilt `dendrite` with a backup and smoke test. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Keep it current with `dendrite update --dev` (or `dendrite install` again). It puts every member back on its tracked branch, fast-forwards it, rebuilds the sub-project binaries and swaps in a rebuilt `dendrite` with a backup and smoke test. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ### First Steps: Environment Preparation & Synchronization
 

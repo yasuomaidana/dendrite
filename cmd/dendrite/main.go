@@ -83,6 +83,16 @@ func buildRegistry() *cli.Registry {
 	})
 
 	reg.Register(&cli.Command{
+		Name:        "install",
+		Aliases:     []string{"bootstrap"},
+		Category:    "Cortex & Sensory Integration",
+		Description: "Install dendrite and its sub-projects from git: main (stable) or develop (--dev), per-member --ref overrides",
+		Run: func(ctx context.Context, args []string) error {
+			return runInstallCommand(ctx, args, os.Stdout)
+		},
+	})
+
+	reg.Register(&cli.Command{
 		Name:        "doctor",
 		Aliases:     []string{"soma-diagnose", "probe", "diag"},
 		Category:    "Soma & Axon Hillock",

@@ -72,6 +72,9 @@ func Marshal(s *Synapse) ([]byte, error) {
 	if !s.UpdatedAt.IsZero() {
 		fmt.Fprintf(&buf, "updated_at = %s\n", quoteString(s.UpdatedAt.UTC().Format(time.RFC3339)))
 	}
+	if s.Channel != "" {
+		fmt.Fprintf(&buf, "channel = %s\n", quoteString(string(s.Channel)))
+	}
 
 	// [sync]
 	if s.Sync.Strategy != "" {
@@ -411,6 +414,8 @@ func Unmarshal(data []byte) (*Synapse, error) {
 					return nil, fmt.Errorf("line %d: invalid updated_at timestamp %q: %w", lineNum, val, err)
 				}
 				s.UpdatedAt = t
+			case "channel":
+				s.Channel = Channel(val)
 			default:
 				return nil, fmt.Errorf("line %d: unknown key %q in root table", lineNum, key)
 			}

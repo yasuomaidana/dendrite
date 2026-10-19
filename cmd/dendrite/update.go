@@ -34,9 +34,11 @@ type updateOptions struct {
 func printUpdateUsage(out io.Writer) {
 	fmt.Fprintln(out, "Usage: dendrite update [--dev] [flags]")
 	fmt.Fprintln(out, "\nRelease mode (default): downloads the latest GitHub release for this platform,")
-	fmt.Fprintln(out, "verifies its SHA-256 checksum and swaps it in with a backup and smoke test.")
+	fmt.Fprintln(out, "verifies its SHA-256 checksum and swaps it in with a backup and smoke test. While no")
+	fmt.Fprintln(out, "release is published it runs 'dendrite install' (git, on the installed channel's branch).")
 	fmt.Fprintln(out, "\nDevelop mode (--dev): syncs every synapse the Dendrite checkout belongs to")
-	fmt.Fprintln(out, "(fast-forwarding local members and linking go.work / cargo patches), builds the")
+	fmt.Fprintln(out, "(fast-forwarding local members and linking go.work / cargo patches; a synapse with a")
+	fmt.Fprintln(out, "channel also switches clean members back to their tracked branch), builds the")
 	fmt.Fprintln(out, "binaries of the local members, then rebuilds and swaps dendrite itself.")
 	fmt.Fprintln(out, "\nFlags:")
 	fmt.Fprintln(out, "  --dev                Build from local sources instead of downloading a release")
@@ -110,7 +112,13 @@ func runUpdateCommand(ctx context.Context, args []string, out io.Writer) error {
 	if o.dev {
 		return runDevUpdate(ctx, o, target, out)
 	}
-	return runReleaseUpdate(ctx, selfupdate.GitHubReleases{Repo: releaseRepo}, target, out)
+	err = runReleaseUpdate(ctx, selfupdate.GitHubReleases{Repo: releaseRepo}, target, out)
+	if errors.Is(err, selfupdate.ErrNoRelease) {
+		// No published binaries yet: git is the distribution channel.
+		fmt.Fprintln(out, "[i] No release published; installing from git ('dendrite install')")
+		return runInstall(ctx, installOptions{target: target}, out)
+	}
+	return err
 }
 
 func runReleaseUpdate(ctx context.Context, gh selfupdate.GitHubReleases, target string, out io.Writer) error {
@@ -155,7 +163,8 @@ func runDevUpdate(ctx context.Context, o updateOptions, target string, out io.Wr
 	var warnings []string
 	if !o.noSync {
 		for _, s := range syns {
-			rep := synapse.SyncSynapse(ctx, s, synapse.SyncOptions{Pull: true, Link: true, Autostash: o.autostash})
+			// A synapse on a channel (dendrite install) keeps every member on its tracked branch.
+			rep := synapse.SyncSynapse(ctx, s, synapse.SyncOptions{Pull: true, Link: true, Autostash: o.autostash, Enforce: s.Channel != ""})
 			if rep.Changed {
 				if err := st.Save(s); err != nil {
 					warnings = append(warnings, fmt.Sprintf("saving synapse %s: %v", s.ID, err))
@@ -171,33 +180,57 @@ func runDevUpdate(ctx context.Context, o updateOptions, target string, out io.Wr
 	}
 
 	if !o.noMembers {
-		home, err := projectid.HomeDir()
+		w, err := buildSynapseMembers(ctx, syns, src, out)
 		if err != nil {
 			return err
 		}
-		binDir := filepath.Join(home, "bin")
-		built := map[string]bool{src: true}
-		for _, s := range syns {
-			for _, m := range s.Members {
-				dir, err := synapse.Resolve(m)
-				if m.IsRemote() || err != nil || built[dir] {
-					continue
-				}
-				built[dir] = true
-				art, outputs, err := selfupdate.BuildMember(ctx, dir, binDir)
-				switch {
-				case err != nil:
-					warnings = append(warnings, fmt.Sprintf("building %s: %v", m.Alias, err))
-					fmt.Fprintf(out, "    [-] %s: build failed\n", m.Alias)
-				case len(outputs) == 0:
-					fmt.Fprintf(out, "    [i] %s: %s, nothing to build\n", m.Alias, art.Kind)
-				default:
-					fmt.Fprintf(out, "    [✓] %s: built %s\n", m.Alias, strings.Join(outputs, ", "))
-				}
+		warnings = append(warnings, w...)
+	}
+
+	if err := rebuildDendrite(ctx, src, target, out); err != nil {
+		return err
+	}
+	for _, w := range warnings {
+		fmt.Fprintf(out, "    [!] %s\n", w)
+	}
+	return nil
+}
+
+// buildSynapseMembers builds the binaries of every local member of syns, except the
+// Dendrite checkout at src, into $DENDRITE_HOME/bin. Build failures come back as warnings.
+func buildSynapseMembers(ctx context.Context, syns []*synapse.Synapse, src string, out io.Writer) ([]string, error) {
+	home, err := projectid.HomeDir()
+	if err != nil {
+		return nil, err
+	}
+	binDir := filepath.Join(home, "bin")
+	var warnings []string
+	built := map[string]bool{src: true}
+	for _, s := range syns {
+		for _, m := range s.Members {
+			dir, err := synapse.Resolve(m)
+			if m.IsRemote() || err != nil || built[dir] {
+				continue
+			}
+			built[dir] = true
+			art, outputs, err := selfupdate.BuildMember(ctx, dir, binDir)
+			switch {
+			case err != nil:
+				warnings = append(warnings, fmt.Sprintf("building %s: %v", m.Alias, err))
+				fmt.Fprintf(out, "    [-] %s: build failed\n", m.Alias)
+			case len(outputs) == 0:
+				fmt.Fprintf(out, "    [i] %s: %s, nothing to build\n", m.Alias, art.Kind)
+			default:
+				fmt.Fprintf(out, "    [✓] %s: built %s\n", m.Alias, strings.Join(outputs, ", "))
 			}
 		}
 	}
+	return warnings, nil
+}
 
+// rebuildDendrite builds cmd/dendrite from the checkout at src and swaps it in at target,
+// keeping the previous binary as <target>.bak.
+func rebuildDendrite(ctx context.Context, src, target string, out io.Writer) error {
 	fmt.Fprintf(out, "[+] Building dendrite into %s\n", target)
 	staged := selfupdate.StagePath(target)
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
@@ -211,9 +244,6 @@ func runDevUpdate(ctx context.Context, o updateOptions, target string, out io.Wr
 		return err
 	}
 	fmt.Fprintf(out, "[✓] dendrite rebuilt at %s (previous binary kept as %s.bak)\n", target, target)
-	for _, w := range warnings {
-		fmt.Fprintf(out, "    [!] %s\n", w)
-	}
 	return nil
 }
 

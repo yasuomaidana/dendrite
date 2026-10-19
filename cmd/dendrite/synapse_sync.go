@@ -33,6 +33,8 @@ func runSynapseSyncCommand(ctx context.Context, subArgs []string, out io.Writer,
 			opts.Autostash = true
 		case pull && arg == "--rebase":
 			opts.Rebase = true
+		case pull && arg == "--enforce":
+			opts.Enforce = true
 		case pull && arg == "--no-link":
 			opts.Link = false
 		case pull && (arg == "--merge" || strings.HasPrefix(arg, "--merge=")):
@@ -108,6 +110,10 @@ func printSynapseSyncReport(out io.Writer, rep *synapse.SyncReport) {
 			ab = fmt.Sprintf("%d/%d", r.Ahead, r.Behind)
 			dirty = fmt.Sprintf("%d", r.DirtyFiles)
 			switch {
+			case r.Switched != "" && r.Merged != "":
+				status = "switched from " + r.Switched + ", merged " + r.Merged
+			case r.Switched != "":
+				status = "switched from " + r.Switched
 			case r.Merged != "":
 				status = "merged " + r.Merged
 			case r.Updated:
