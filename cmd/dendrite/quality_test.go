@@ -1,152 +1,104 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"Dendrite/pkg/quality/coverage"
 )
 
-func TestHandleQualityCoverage_FlagsAndSuccess(t *testing.T) {
-	origRun := runCoverage
-	origExit := osExit
-	defer func() {
-		runCoverage = origRun
-		osExit = origExit
-	}()
+// withCoverageRunner swaps runCoverage for the duration of the test.
+func withCoverageRunner(t *testing.T, fn func(context.Context, coverage.Options) (*coverage.Result, error)) {
+	t.Helper()
+	orig := runCoverage
+	runCoverage = fn
+	t.Cleanup(func() { runCoverage = orig })
+}
 
-	var capturedOpts coverage.Options
-	runCoverage = func(ctx context.Context, opts coverage.Options) (*coverage.Result, error) {
-		capturedOpts = opts
+func TestAllostasisCoverage_FlagsAndSuccess(t *testing.T) {
+	var captured coverage.Options
+	withCoverageRunner(t, func(_ context.Context, opts coverage.Options) (*coverage.Result, error) {
+		captured = opts
 		return &coverage.Result{Passed: true}, nil
-	}
+	})
 
-	exitCalled := false
-	osExit = func(code int) {
-		exitCalled = true
+	var out bytes.Buffer
+	err := runWith(context.Background(), &out, newAllostasisCmd(),
+		"allostasis", "coverage", "--ratchet", "--update", "--baseline", "custom_baseline.json", "pkg/sample")
+	if err != nil {
+		t.Fatalf("coverage: %v\n%s", err, out.String())
 	}
-
-	ctx := context.Background()
-	args := []string{
-		"--ratchet",
-		"--update",
-		"--baseline",
-		"custom_baseline.json",
-		"--unknown-flag",
-		"pkg/sample",
+	if !captured.Ratchet || !captured.Update {
+		t.Fatalf("expected ratchet and update, got %+v", captured)
 	}
-
-	handleQualityCoverage(ctx, args)
-
-	if exitCalled {
-		t.Fatal("expected osExit not to be called on success")
+	if captured.BaselinePath != "custom_baseline.json" {
+		t.Fatalf("expected custom_baseline.json, got %s", captured.BaselinePath)
 	}
-	if !capturedOpts.Ratchet {
-		t.Fatal("expected Ratchet to be true")
-	}
-	if !capturedOpts.Update {
-		t.Fatal("expected Update to be true")
-	}
-	if capturedOpts.BaselinePath != "custom_baseline.json" {
-		t.Fatalf("expected custom_baseline.json, got %s", capturedOpts.BaselinePath)
-	}
-	if len(capturedOpts.Packages) != 1 || capturedOpts.Packages[0] != "pkg/sample" {
-		t.Fatalf("expected [pkg/sample], got %v", capturedOpts.Packages)
+	if len(captured.Packages) != 1 || captured.Packages[0] != "pkg/sample" {
+		t.Fatalf("expected [pkg/sample], got %v", captured.Packages)
 	}
 }
 
-func TestHandleQualityCoverage_HelpFlags(t *testing.T) {
-	ctx := context.Background()
+func TestAllostasisCoverage_DefaultBaseline(t *testing.T) {
+	var captured coverage.Options
+	withCoverageRunner(t, func(_ context.Context, opts coverage.Options) (*coverage.Result, error) {
+		captured = opts
+		return &coverage.Result{Passed: true}, nil
+	})
 
-	// Should return early and not invoke runCoverage or osExit
-	handleQualityCoverage(ctx, []string{"--help"})
-	handleQualityCoverage(ctx, []string{"-h"})
+	var out bytes.Buffer
+	if err := runWith(context.Background(), &out, newAllostasisCmd(), "allostasis", "coverage"); err != nil {
+		t.Fatalf("coverage: %v", err)
+	}
+	if captured.BaselinePath != ".dendrite/coverage_baseline.json" {
+		t.Fatalf("unexpected default baseline %q", captured.BaselinePath)
+	}
 }
 
-func TestHandleQualityCoverage_RunError(t *testing.T) {
-	origRun := runCoverage
-	origExit := osExit
-	defer func() {
-		runCoverage = origRun
-		osExit = origExit
-	}()
+func TestAllostasisCoverage_UnknownFlagRejected(t *testing.T) {
+	withCoverageRunner(t, func(context.Context, coverage.Options) (*coverage.Result, error) {
+		t.Fatal("runner must not be called on a flag error")
+		return nil, nil
+	})
+	var out bytes.Buffer
+	if err := runWith(context.Background(), &out, newAllostasisCmd(), "allostasis", "coverage", "--unknown-flag"); err == nil {
+		t.Fatal("expected an unknown-flag error")
+	}
+}
 
-	runCoverage = func(ctx context.Context, opts coverage.Options) (*coverage.Result, error) {
+func TestAllostasisCoverage_RunError(t *testing.T) {
+	withCoverageRunner(t, func(context.Context, coverage.Options) (*coverage.Result, error) {
 		return nil, errors.New("simulated runner failure")
-	}
-
-	exitCode := 0
-	osExit = func(code int) {
-		exitCode = code
-	}
-
-	handleQualityCoverage(context.Background(), []string{"--ratchet"})
-
-	if exitCode != 1 {
-		t.Fatalf("expected exit code 1 on run error, got %d", exitCode)
+	})
+	var out bytes.Buffer
+	err := runWith(context.Background(), &out, newAllostasisCmd(), "allostasis", "coverage", "--ratchet")
+	if err == nil || !strings.Contains(err.Error(), "simulated runner failure") {
+		t.Fatalf("expected runner failure, got %v", err)
 	}
 }
 
-func TestHandleQualityCoverage_RatchetFailed(t *testing.T) {
-	origRun := runCoverage
-	origExit := osExit
-	defer func() {
-		runCoverage = origRun
-		osExit = origExit
-	}()
-
-	runCoverage = func(ctx context.Context, opts coverage.Options) (*coverage.Result, error) {
+func TestAllostasisCoverage_RatchetFailed(t *testing.T) {
+	withCoverageRunner(t, func(context.Context, coverage.Options) (*coverage.Result, error) {
 		return &coverage.Result{Passed: false}, nil
-	}
-
-	exitCode := 0
-	osExit = func(code int) {
-		exitCode = code
-	}
-
-	handleQualityCoverage(context.Background(), []string{"--ratchet"})
-
-	if exitCode != 1 {
-		t.Fatalf("expected exit code 1 when ratchet fails, got %d", exitCode)
+	})
+	var out bytes.Buffer
+	err := runWith(context.Background(), &out, newAllostasisCmd(), "allostasis", "coverage", "--ratchet")
+	if err == nil || !strings.Contains(err.Error(), "ratchet failed") {
+		t.Fatalf("expected ratchet failure, got %v", err)
 	}
 }
 
-func TestHandleQualityCommand(t *testing.T) {
-	origRun := runCoverage
-	origExit := osExit
-	defer func() {
-		runCoverage = origRun
-		osExit = origExit
-	}()
-
-	runCoverage = func(ctx context.Context, opts coverage.Options) (*coverage.Result, error) {
+func TestAllostasisCmd_LegacyQualityEntryPoint(t *testing.T) {
+	calls := 0
+	withCoverageRunner(t, func(context.Context, coverage.Options) (*coverage.Result, error) {
+		calls++
 		return &coverage.Result{Passed: true}, nil
+	})
+	handleQualityCommand(context.Background(), []string{"coverage", "--ratchet"})
+	if calls != 1 {
+		t.Fatalf("expected the legacy entry point to run coverage once, ran %d", calls)
 	}
-	osExit = func(code int) {}
-
-	ctx := context.Background()
-
-	// 1. Empty args
-	handleQualityCommand(ctx, []string{})
-
-	// 2. Unknown command
-	handleQualityCommand(ctx, []string{"unrecognized-subcommand"})
-
-	// 3. Coverage command
-	handleQualityCommand(ctx, []string{"coverage", "--ratchet"})
-
-	// 4. Audit command
-	handleQualityCommand(ctx, []string{"audit", "pkg/quality/coverage"})
-
-	// 5. Audit command default pkg
-	handleQualityCommand(ctx, []string{"audit"})
-
-	// 6. HITL sync command
-	handleQualityCommand(ctx, []string{"hitl-sync"})
-}
-
-func TestPrintUsageFunctions(t *testing.T) {
-	printQualityUsage()
-	printCoverageUsage()
 }

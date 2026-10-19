@@ -2,22 +2,38 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 
+	"github.com/spf13/cobra"
+
+	"Dendrite/pkg/quality"
 	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/github"
 )
 
-func handleGitHubSyncCommand(ctx context.Context, args []string) {
-	repo := "yasuomaidana/dendrite"
-	for i := 0; i < len(args); i++ {
-		if (args[i] == "--repo" || args[i] == "-r") && i+1 < len(args) {
-			repo = args[i+1]
-			i++
-		}
+func newMyelinGitHubSyncCmd() *cobra.Command {
+	var repo string
+	cmd := &cobra.Command{
+		Use:     "github-sync",
+		Short:   "Synchronize prioritized tickets and poll HITL verification state on GitHub Issues",
+		Args:    noArgs,
+		Example: "dendrite myelin github-sync --repo yasuomaidana/dendrite",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runMyelinGitHubSync(c.Context(), repo, c.OutOrStdout())
+		},
+	}
+	cmd.Flags().StringVar(&repo, "repo", "yasuomaidana/dendrite", "Target GitHub repository (owner/repo)")
+	return cmd
+}
+
+func runMyelinGitHubSync(ctx context.Context, repo string, out io.Writer) error {
+	if repo == "" {
+		repo = "yasuomaidana/dendrite"
 	}
 
-	fmt.Printf("[+] Synchronizing Sequenced P0 Blockers to GitHub Issues (%s)...\n", repo)
+	fmt.Fprintf(out, "[+] Synchronizing Sequenced P0 Blockers to GitHub Issues (%s)...\n", repo)
 	client := github.NewGitHubClient(repo)
 
 	tickets := []*tracker.RoutingTicket{
@@ -81,15 +97,44 @@ func handleGitHubSyncCommand(ctx context.Context, args []string) {
 		},
 	}
 
+	var errs []error
 	synced, err := client.SyncTickets(ctx, tickets)
 	if err != nil {
-		fmt.Printf("[-] GitHub synchronization failed: %v\n", err)
-		return
+		errs = append(errs, fmt.Errorf("github synchronization failed: %w", err))
+	} else {
+		fmt.Fprintln(out, "[✓] Successfully synchronized tickets to GitHub:")
+		for _, t := range synced {
+			fmt.Fprintf(out, "    * #%d: [%s] %s (Module: %s, Labels: P0-TOP-BLOCKER, %s)\n",
+				t.GitHubIssueNum, t.ID, t.Title, t.Module, t.Difficulty.String())
+		}
 	}
 
-	fmt.Println("[✓] Successfully synchronized tickets to GitHub:")
-	for _, t := range synced {
-		fmt.Printf("    * #%d: [%s] %s (Module: %s, Labels: P0-TOP-BLOCKER, %s)\n",
-			t.GitHubIssueNum, t.ID, t.Title, t.Module, t.Difficulty.String())
+	fmt.Fprintln(out, "[+] Polling GitHub Issues for Human-in-the-Loop Verification...")
+	poller := quality.NewGitHubHITLPoller(repo, &github.DefaultCommandExecutor{})
+	hitlTickets := []*quality.IssueSpec{
+		{ID: "DEN-701", GitHubIssueNum: 1, State: quality.StateToVerify},
+		{ID: "DEN-702", GitHubIssueNum: 2, State: quality.StateToVerify},
+		{ID: "DEN-703", GitHubIssueNum: 3, State: quality.StateToVerify},
+		{ID: "DEN-704", GitHubIssueNum: 4, State: quality.StateToVerify},
+		{ID: "DEN-705", GitHubIssueNum: 5, State: quality.StateToVerify},
 	}
+
+	for _, t := range hitlTickets {
+		followUp, err := poller.SyncValidationState(ctx, t)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to sync %s: %w", t.ID, err))
+			continue
+		}
+		if followUp != nil {
+			fmt.Fprintf(out, "[!] Human feedback received on %s! Demoted to TO_DO. Follow-up: %s\n", t.ID, followUp.ID)
+		} else {
+			fmt.Fprintf(out, "    * [%s] Current State: %s (GitHub #%d)\n", t.ID, t.State, t.GitHubIssueNum)
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func handleGitHubSyncCommand(ctx context.Context, args []string) {
+	_ = invokeCmd(ctx, newMyelinCmd(), append([]string{"github-sync"}, args...)...)
 }

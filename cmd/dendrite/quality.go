@@ -2,153 +2,118 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
+	"io"
 	"strings"
+
+	"github.com/spf13/cobra"
 
 	"Dendrite/pkg/quality"
 	"Dendrite/pkg/quality/coverage"
-	"Dendrite/pkg/tracker/github"
 )
 
-var (
-	osExit      = os.Exit
-	runCoverage = coverage.Run
-)
+var runCoverage = coverage.Run
 
-func handleQualityCommand(ctx context.Context, args []string) {
-	if len(args) == 0 {
-		printQualityUsage()
-		return
-	}
+// newAllostasisCmd builds `dendrite allostasis`: anti-mock scan and per-package statement coverage ratchet.
+func newAllostasisCmd() *cobra.Command {
+	cmd := newGroupCmd("allostasis", "Anti-mock scan, 100% coverage profiler, and per-package coverage ratchet", "glia",
+		"quality", "homeostatic-audit", "allostasis-audit", "qlty")
+	cmd.Example = "dendrite allostasis audit pkg/vcs\ndendrite allostasis coverage --ratchet"
+	cmd.AddCommand(newAllostasisAuditCmd(), newAllostasisCoverageCmd())
+	return cmd
+}
 
-	switch args[0] {
-	case "coverage":
-		handleQualityCoverage(ctx, args[1:])
-	case "audit":
-		pkgPath := "pkg/vcs"
-		if len(args) > 1 {
-			pkgPath = args[1]
-		}
-		fmt.Printf("[+] Running Anti-Mock & 100%% Coverage Quality Audit on %s...\n", pkgPath)
-		hasMocks, mockLocs, mErr := quality.ScanForMocks(".", pkgPath)
-		if mErr != nil {
-			fmt.Printf("[-] Mock scan error: %v\n", mErr)
-			return
-		}
-		if hasMocks {
-			fmt.Printf("[!] Zero-Mock Policy Violation: Detected %d mock pattern(s):\n", len(mockLocs))
-			for _, loc := range mockLocs {
-				fmt.Printf("    * %s\n", loc)
+func newAllostasisAuditCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "audit [package]",
+		Short:   "Run anti-mock scan and 100% coverage profiler on a package",
+		Args:    maxArgs(1),
+		Example: "dendrite allostasis audit\ndendrite allostasis audit pkg/vcs",
+		RunE: func(c *cobra.Command, args []string) error {
+			pkgPath := "pkg/vcs"
+			if len(args) > 0 {
+				pkgPath = args[0]
 			}
-		} else {
-			fmt.Println("[✓] Zero-Mock Policy: Clean (Zero mocks or stubs detected).")
-		}
-
-		uncovered, pct, failed, out := quality.RunCoverageAudit(ctx, ".", pkgPath)
-		if failed {
-			fmt.Printf("[-] Test execution failed:\n%s\n", out)
-			return
-		}
-		fmt.Printf("[✓] Statement Coverage: %.1f%%\n", pct)
-		if len(uncovered) > 0 {
-			fmt.Printf("[!] %d Statement Block(s) Uncovered (< 100%%):\n", len(uncovered))
-			for i, b := range uncovered {
-				if i >= 5 {
-					fmt.Printf("    ... and %d more blocks\n", len(uncovered)-5)
-					break
-				}
-				fmt.Printf("    * %s\n", b)
-			}
-		} else {
-			fmt.Println("[✓] 100% Statement Coverage achieved!")
-		}
-
-	case "hitl-sync", "sync-hitl":
-		fmt.Println("[+] Polling GitHub Issues for Human-in-the-Loop Verification...")
-		poller := quality.NewGitHubHITLPoller("yasuomaidana/dendrite", &github.DefaultCommandExecutor{})
-		tickets := []*quality.IssueSpec{
-			{ID: "DEN-701", GitHubIssueNum: 1, State: quality.StateToVerify},
-			{ID: "DEN-702", GitHubIssueNum: 2, State: quality.StateToVerify},
-			{ID: "DEN-703", GitHubIssueNum: 3, State: quality.StateToVerify},
-			{ID: "DEN-704", GitHubIssueNum: 4, State: quality.StateToVerify},
-			{ID: "DEN-705", GitHubIssueNum: 5, State: quality.StateToVerify},
-		}
-
-		for _, t := range tickets {
-			followUp, err := poller.SyncValidationState(ctx, t)
-			if err != nil {
-				fmt.Printf("[-] Failed to sync %s: %v\n", t.ID, err)
-				continue
-			}
-			if followUp != nil {
-				fmt.Printf("[!] Human feedback received on %s! Demoted to TO_DO. Follow-up: %s\n", t.ID, followUp.ID)
-			} else {
-				fmt.Printf("    * [%s] Current State: %s (GitHub #%d)\n", t.ID, t.State, t.GitHubIssueNum)
-			}
-		}
-
-	default:
-		printQualityUsage()
+			return runAllostasisAudit(c.Context(), pkgPath, c.OutOrStdout())
+		},
 	}
 }
 
-func handleQualityCoverage(ctx context.Context, args []string) {
-	ratchet := false
-	update := false
-	baselinePath := ".dendrite/coverage_baseline.json"
-	var targetPackages []string
+type allostasisCoverageOptions struct {
+	Ratchet  bool
+	Update   bool
+	Baseline string
+}
 
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--ratchet":
-			ratchet = true
-		case "--update":
-			update = true
-		case "--baseline":
-			if i+1 < len(args) {
-				baselinePath = args[i+1]
-				i++
-			}
-		case "--help", "-h":
-			printCoverageUsage()
-			return
-		default:
-			if !strings.HasPrefix(args[i], "-") {
-				targetPackages = append(targetPackages, args[i])
-			}
-		}
+func newAllostasisCoverageCmd() *cobra.Command {
+	var o allostasisCoverageOptions
+	cmd := &cobra.Command{
+		Use:     "coverage [packages...]",
+		Short:   "Per-package coverage ratchet and baseline management",
+		Example: "dendrite allostasis coverage --ratchet\ndendrite allostasis coverage --update pkg/vcs",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runAllostasisCoverage(c.Context(), o, args)
+		},
 	}
+	f := cmd.Flags()
+	f.BoolVar(&o.Ratchet, "ratchet", false, "Fail if any package drops below its baseline")
+	f.BoolVar(&o.Update, "update", false, "Raise baseline with improvements and initialize new packages at 100%")
+	f.StringVar(&o.Baseline, "baseline", ".dendrite/coverage_baseline.json", "Path to coverage baseline JSON file")
+	return cmd
+}
 
+func runAllostasisAudit(ctx context.Context, pkgPath string, out io.Writer) error {
+	fmt.Fprintf(out, "[+] Running Anti-Mock & 100%% Coverage Quality Audit on %s...\n", pkgPath)
+	hasMocks, mockLocs, mErr := quality.ScanForMocks(".", pkgPath)
+	if mErr != nil {
+		return fmt.Errorf("mock scan error: %w", mErr)
+	}
+	if hasMocks {
+		fmt.Fprintf(out, "[!] Zero-Mock Policy Violation: Detected %d mock pattern(s):\n", len(mockLocs))
+		for _, loc := range mockLocs {
+			fmt.Fprintf(out, "    * %s\n", loc)
+		}
+		return fmt.Errorf("zero-mock policy violation: detected %d mock pattern(s) in %s", len(mockLocs), pkgPath)
+	}
+	fmt.Fprintln(out, "[✓] Zero-Mock Policy: Clean (Zero mocks or stubs detected).")
+
+	uncovered, pct, failed, testOut := quality.RunCoverageAudit(ctx, ".", pkgPath)
+	if failed {
+		return fmt.Errorf("test execution failed:\n%s", strings.TrimSpace(testOut))
+	}
+	fmt.Fprintf(out, "[✓] Statement Coverage: %.1f%%\n", pct)
+	if len(uncovered) > 0 {
+		fmt.Fprintf(out, "[!] %d Statement Block(s) Uncovered (< 100%%):\n", len(uncovered))
+		for i, b := range uncovered {
+			if i >= 5 {
+				fmt.Fprintf(out, "    ... and %d more blocks\n", len(uncovered)-5)
+				break
+			}
+			fmt.Fprintf(out, "    * %s\n", b)
+		}
+	} else {
+		fmt.Fprintln(out, "[✓] 100% Statement Coverage achieved!")
+	}
+	return nil
+}
+
+func runAllostasisCoverage(ctx context.Context, o allostasisCoverageOptions, targetPackages []string) error {
 	res, err := runCoverage(ctx, coverage.Options{
-		BaselinePath: baselinePath,
-		Ratchet:      ratchet,
-		Update:       update,
+		BaselinePath: o.Baseline,
+		Ratchet:      o.Ratchet,
+		Update:       o.Update,
 		Packages:     targetPackages,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[-] Coverage error: %v\n", err)
-		osExit(1)
-		return
+		return fmt.Errorf("coverage error: %w", err)
 	}
 	if !res.Passed {
-		osExit(1)
-		return
+		return errors.New("coverage ratchet failed")
 	}
+	return nil
 }
 
-func printQualityUsage() {
-	fmt.Println("Usage: dendrite quality <audit|hitl-sync|coverage> [args...]")
-	fmt.Println("\nCommands:")
-	fmt.Println("  audit [package]    Run anti-mock scan and 100% coverage profiler on package")
-	fmt.Println("  hitl-sync          Poll GitHub issues for closed approvals (DONE) or new feedback")
-	fmt.Println("  coverage [flags]   Per-package coverage ratchet and baseline management (--ratchet, --update)")
-}
-
-func printCoverageUsage() {
-	fmt.Println("Usage: dendrite quality coverage [--ratchet] [--update] [--baseline <path>] [packages...]")
-	fmt.Println("\nFlags:")
-	fmt.Println("  --ratchet           Fail (exit 1) if any package drops below its baseline")
-	fmt.Println("  --update            Automatically raise baseline with improvements and initialize new packages at 100%")
-	fmt.Println("  --baseline <path>   Path to coverage baseline JSON file (default .dendrite/coverage_baseline.json)")
+func handleQualityCommand(ctx context.Context, args []string) {
+	_ = invokeCmd(ctx, newAllostasisCmd(), args...)
 }
