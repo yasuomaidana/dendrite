@@ -279,3 +279,40 @@ echo '{"status":"SUCCESS"}'
 		t.Errorf("changed baseline file must be offending, got %v, %v", offending, err)
 	}
 }
+
+func TestSharedState_SpreadsAndCoolsDownAcrossRepositories(t *testing.T) {
+	shared := t.TempDir()
+	repoA := NewDispatcher(NewLedger(t.TempDir()))
+	repoB := NewDispatcher(NewLedger(t.TempDir()))
+	repoA.SharedDir, repoB.SharedDir = shared, shared
+	for _, d := range []*Dispatcher{repoA, repoB} {
+		d.Executable = installExecutableScript(t, t.TempDir(), "dummy_runner", "exit 0\n")
+	}
+
+	// A job submitted in repository A counts as load for repository B.
+	worktree := createGitRepo(t)
+	if _, err := repoA.Submit(SubmitSpec{Agent: "agy", Worktree: worktree, Prompt: "p", Complexity: 5}); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := repoB.PickAGYModel(5); m != "gemini-4-argon-medium" {
+		t.Errorf("repository B picked %q, want gemini-4-argon-medium while A runs on gemini-3.8", m)
+	}
+
+	// A cooldown recorded by A is seen by B.
+	if err := repoA.markProviderExhausted("agy:gemini-4-argon", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := repoB.PickAGYModel(8); m != "gemini-3.8-flash-high" {
+		t.Errorf("repository B picked %q, want gemini-3.8-flash-high while argon cools down", m)
+	}
+
+	// Cooldowns written to a ledger root before the state was shared still count.
+	legacy := NewDispatcher(NewLedger(t.TempDir()))
+	_ = os.MkdirAll(legacy.Ledger.Root(), 0o755)
+	_ = os.WriteFile(filepath.Join(legacy.Ledger.Root(), "_providers.json"),
+		[]byte(fmt.Sprintf(`{"agy:gemini-3.8":%q}`, time.Now().Add(time.Hour).Format(time.RFC3339))), 0o644)
+	legacy.SharedDir = t.TempDir()
+	if !coolingDown(legacy.loadExhaustedProviders(), "agy:gemini-3.8", time.Now()) {
+		t.Error("legacy per-ledger cooldown must still be honoured")
+	}
+}

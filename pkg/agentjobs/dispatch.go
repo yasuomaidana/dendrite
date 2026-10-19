@@ -60,6 +60,9 @@ type Dispatcher struct {
 	HTTPClient       *http.Client
 	// RepoDir is the repository isolated working copies are created from (default ".").
 	RepoDir string
+	// SharedDir holds state shared by every repository's ledger on this machine: provider cooldowns
+	// and the registry of ledgers used to count model load. Empty means the ledger root.
+	SharedDir string
 }
 
 // DefaultDispatcher is the shared default dispatcher.
@@ -83,6 +86,7 @@ func NewDispatcher(l *Ledger) *Dispatcher {
 		AiderPath:        "aider",
 		OxillamaEndpoint: endpoint,
 		HTTPClient:       &http.Client{Timeout: 60 * time.Second},
+		SharedDir:        defaultSharedDir(),
 	}
 }
 
@@ -166,6 +170,7 @@ func (d *Dispatcher) Submit(spec SubmitSpec) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("agentjobs: failed to create job in ledger: %w", err)
 	}
+	d.registerLedger()
 
 	promptPath := d.Ledger.PromptPath(created.ID)
 	if err := os.WriteFile(promptPath, []byte(promptText), 0644); err != nil {

@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"testing"
 	"time"
 )
 
@@ -139,16 +140,82 @@ var activeStatuses = map[Status]bool{
 	StatusQueued: true, StatusRunning: true, StatusFailedRetryable: true, StatusEscalated: true,
 }
 
-// modelLoad counts active ledger jobs per AGY family.
+// defaultSharedDir is $DENDRITE_SHARED_STATE_DIR or ~/.dendrite/agentjobs. Test binaries get ""
+// (the ledger root), so tests never touch the user's shared state.
+func defaultSharedDir() string {
+	if dir := os.Getenv("DENDRITE_SHARED_STATE_DIR"); dir != "" {
+		return dir
+	}
+	if testing.Testing() {
+		return ""
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".dendrite", "agentjobs")
+}
+
+// sharedDir is where machine-wide job state lives.
+func (d *Dispatcher) sharedDir() string {
+	if d.SharedDir != "" {
+		return d.SharedDir
+	}
+	return d.Ledger.Root()
+}
+
+func (d *Dispatcher) ledgersPath() string {
+	return filepath.Join(d.sharedDir(), "_ledgers.json")
+}
+
+// registeredLedgers lists every ledger root that has submitted a job on this machine.
+func (d *Dispatcher) registeredLedgers() []string {
+	var roots []string
+	if data, err := os.ReadFile(d.ledgersPath()); err == nil {
+		_ = json.Unmarshal(data, &roots)
+	}
+	return roots
+}
+
+// registerLedger records this dispatcher's ledger so other repositories count its jobs as load.
+func (d *Dispatcher) registerLedger() {
+	root, err := filepath.Abs(d.Ledger.Root())
+	if err != nil {
+		return
+	}
+	roots := d.registeredLedgers()
+	for _, r := range roots {
+		if r == root {
+			return
+		}
+	}
+	data, _ := json.MarshalIndent(append(roots, root), "", "  ")
+	if os.MkdirAll(d.sharedDir(), 0o755) == nil {
+		_ = writeFileAtomic(d.ledgersPath(), data)
+	}
+}
+
+// modelLoad counts active AGY jobs per family across every registered ledger, so jobs submitted
+// from different repositories (synapse peers) spread across Gemini 3.8 and Argon too.
 func (d *Dispatcher) modelLoad() map[string]int {
 	load := map[string]int{}
-	jobs, err := d.Ledger.List()
-	if err != nil {
-		return load
+	roots := []string{d.Ledger.Root()}
+	if own, err := filepath.Abs(d.Ledger.Root()); err == nil {
+		for _, r := range d.registeredLedgers() {
+			if r != own {
+				roots = append(roots, r)
+			}
+		}
 	}
-	for _, j := range jobs {
-		if (j.Agent == "agy" || j.Agent == "") && activeStatuses[j.Status] {
-			load[AGYFamily(j.Model)]++
+	for _, root := range roots {
+		jobs, err := NewLedger(root).List()
+		if err != nil {
+			continue
+		}
+		for _, j := range jobs {
+			if (j.Agent == "agy" || j.Agent == "") && activeStatuses[j.Status] {
+				load[AGYFamily(j.Model)]++
+			}
 		}
 	}
 	return load

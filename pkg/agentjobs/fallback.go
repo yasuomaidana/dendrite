@@ -88,17 +88,31 @@ func (d *Dispatcher) now() time.Time {
 }
 
 func (d *Dispatcher) providersPath() string {
-	return filepath.Join(d.Ledger.Root(), "_providers.json")
+	return filepath.Join(d.sharedDir(), "_providers.json")
 }
 
 // loadExhaustedProviders reads the provider cooldown memory shared by all jobs.
 func (d *Dispatcher) loadExhaustedProviders() map[string]time.Time {
 	exhausted := map[string]time.Time{}
-	data, err := os.ReadFile(d.providersPath())
-	if err != nil {
-		return exhausted
+	paths := []string{d.providersPath()}
+	if legacy := filepath.Join(d.Ledger.Root(), "_providers.json"); legacy != paths[0] {
+		paths = append(paths, legacy) // cooldowns recorded before the state was shared
 	}
-	_ = json.Unmarshal(data, &exhausted)
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var m map[string]time.Time
+		if json.Unmarshal(data, &m) != nil {
+			continue
+		}
+		for k, v := range m {
+			if v.After(exhausted[k]) {
+				exhausted[k] = v
+			}
+		}
+	}
 	return exhausted
 }
 
@@ -106,7 +120,7 @@ func (d *Dispatcher) markProviderExhausted(provider string, until time.Time) err
 	exhausted := d.loadExhaustedProviders()
 	exhausted[provider] = until
 	data, _ := json.MarshalIndent(exhausted, "", "  ")
-	if err := os.MkdirAll(d.Ledger.Root(), 0o755); err != nil {
+	if err := os.MkdirAll(d.sharedDir(), 0o755); err != nil {
 		return err
 	}
 	return writeFileAtomic(d.providersPath(), data)
