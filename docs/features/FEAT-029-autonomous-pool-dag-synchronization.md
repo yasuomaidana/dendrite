@@ -105,7 +105,7 @@ To prevent the broader multi-IDE effort from delaying core releases, the archite
 #### Trigger Conditions
 The `StoriesTicketsMilestonesConnector` executes automatically as a synchronous post-hook on two lifecycle events:
 1. **`on_design_prompt_write`**: Triggered whenever a technical design prompt, architectural RFC, or Penpot UI design specification is generated or modified.
-2. **`on_ticket_insert` / `on_ticket_mutate`**: Triggered whenever a new User Story, Ticket, or Milestone is created or imported via the CLI (`dendrite dev ticket set`, `dendrite stories link`), IDE extension, or Plane webhook sync.
+2. **`on_ticket_insert` / `on_ticket_mutate`**: Triggered whenever a new User Story, Ticket, or Milestone is created or imported via the CLI (`dendrite chronos ticket set`, `dendrite chronos link`), IDE extension, or Plane webhook sync.
 
 #### 4-Stage Reconciliation Pipeline & Mathematical Priority Propagation
 1. **Entity & Link Extraction**:

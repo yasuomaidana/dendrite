@@ -498,6 +498,6 @@ Deploying the documentation site locally or across internal clusters:
 ### 1. Build and Run via Docker Compose
 ` + "```bash\n" + `docker compose -f docker-compose.share.yaml up --build -d
 ` + "```\n\n" + `### 2. Export Standalone Archive
-` + "```bash\n" + `dendrite doc docusaurus share --out dendrite-docs.tar.gz
+` + "```bash\n" + `dendrite codex site share --out dendrite-docs.tar.gz
 ` + "```\n"
 }

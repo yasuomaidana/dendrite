@@ -95,11 +95,15 @@ func newRefCmd() *cobra.Command {
 
 Reference implementations: `session.go` and `synapse.go`.
 
-## Migration state
+## State and seams
 
-Commands not yet migrated go through `legacyCmd` / `legacySub` (`root.go`). These set `DisableFlagParsing` and pass the raw args to the old handler. When a group is migrated:
-1. Replace its `legacyCmd(...)` entry in `legacyCommands()` (`main.go`) with the new constructor in `newRootCmd()`.
-2. Delete the old `handle*` / `print*Usage` functions.
-3. Remove the matching entry from the static catalog in `pkg/docgen/reflect/cli_reflect.go`.
+- **No package-level state:** commands build their managers, stores and clients inside `RunE` (`newRefManager()`, `newPoolManager()`, `openSegmentedStore()`, `newForkController()`, ...). A value resolved at package init would miss `--state-dir`, which is only exported in `PersistentPreRunE`.
+- **Test seams** are package variables holding a constructor: `newPlaneClient`, `newProjectRegistry`, `openSegmentedStore`, `newWorkManager`, `runCoverage`, `runCompose`, `jetbrainsMCPURL`. Tests swap them with `t.Cleanup` to restore. Never name test types or helpers "mock", "fake" or "stub": the commit gate rejects them. Prefer real `httptest` servers and temp dirs.
 
-`legacyCmd`, `legacySub` and the catalog are deleted in DEN-1032, once the last group is migrated.
+## Paths other code depends on
+
+- `pkg/agentjobs` re-executes `<binary> bouton jobs run <id>` (hidden leaf), and the LaunchAgent runs `bouton jobs daemon`.
+- The IDE run configurations and external tools that `bridge setup` writes (`pkg/jetbrains/setup.go`) and `.ai/mcp/mcp.json` call `inter serve`.
+- CI and the pre-commit hook run `allostasis coverage --ratchet` and `codex audit --strict`.
+
+Renaming any of these needs the caller changed in the same commit. The plain-name aliases keep older installs working.

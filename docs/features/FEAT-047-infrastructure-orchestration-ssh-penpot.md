@@ -19,7 +19,7 @@ sequenceDiagram
     participant Remote as Remote Debian Host
     participant Mesh as Cluster Registry
 
-    Dev->>CLI: dendrite move plane to --ssh user@debian-server
+    Dev->>CLI: dendrite translocate run plane --ssh user@debian-server
     CLI->>Dev: Prompt interactive authorization: Confirm migration? [y/N]
     Dev->>CLI: "y" (Explicit Human Consent)
     CLI->>SSH: Request ephemeral auth via ssh-agent (Zero disk credentials)
@@ -64,7 +64,7 @@ sequenceDiagram
   dendrite audit module infra/migrate --assert-no-mocks
 
   # 2. Execute migration (interactive prompt)
-  dendrite move plane to --ssh user@debian-server
+  dendrite translocate run plane --ssh user@debian-server
 
   # 3. Verify remote health and local cleanup
   curl -s http://debian-server:8090/api/health/
@@ -95,7 +95,7 @@ sequenceDiagram
 - **Engine Package**: `pkg/node/migrate`
 - **CLI Subcommands**:
   - `dendrite move <svc> to --ssh <target>`: Migrate services (e.g. `plane`, `litellm`, `database`) to remote SSH server.
-  - `dendrite move debian --ssh <target>`: Automatically migrate all services compatible with target Debian server.
+  - `dendrite translocate run debian --ssh <target>`: Automatically migrate all services compatible with target Debian server.
   - `dendrite move plan [--ram <size>] [--disk <size>]`: Capacity evaluation breakdown for target compute node.
 - **Native MCP Tools**:
   - `dendrite_service_move`: Autonomous agent tool for executing service migration.

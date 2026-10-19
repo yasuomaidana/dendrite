@@ -486,7 +486,7 @@ func TestConfigureMCPFile_RecordsCreatedVsUpdated(t *testing.T) {
 	}
 
 	// 1. First run creates the file
-	err := configureMCPFile(targetPath, "/bin/dendrite", dir, res)
+	err := configureMCPFile(targetPath, "/bin/dendrite", res)
 	if err != nil {
 		t.Fatalf("first configureMCPFile failed: %v", err)
 	}
@@ -498,7 +498,7 @@ func TestConfigureMCPFile_RecordsCreatedVsUpdated(t *testing.T) {
 	}
 
 	// 2. Second run updates the file
-	err = configureMCPFile(targetPath, "/bin/dendrite", dir, res)
+	err = configureMCPFile(targetPath, "/bin/dendrite", res)
 	if err != nil {
 		t.Fatalf("second configureMCPFile failed: %v", err)
 	}
@@ -525,7 +525,7 @@ func TestConfigureMCPFile_RecordsCreatedVsUpdated(t *testing.T) {
 	if srv.Command != "/bin/dendrite" {
 		t.Errorf("expected command '/bin/dendrite', got '%s'", srv.Command)
 	}
-	if srv.Env["DENDRITE_WORKSPACE"] != dir {
-		t.Errorf("expected DENDRITE_WORKSPACE=%s, got %s", dir, srv.Env["DENDRITE_WORKSPACE"])
+	if strings.Join(srv.Args, " ") != "inter serve" || len(srv.Env) != 0 {
+		t.Errorf("expected 'inter serve' with no env, got %v %v", srv.Args, srv.Env)
 	}
 }

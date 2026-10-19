@@ -641,7 +641,7 @@ func (d *Dispatcher) CheckScope(ctx context.Context, worktree string, scope []st
 	return changedInScope, offending, nil
 }
 
-// Retry re-submits a job detached by re-executing `<binary> agent jobs run <id>`.
+// Retry re-submits a job detached by re-executing `<binary> bouton jobs run <id>`.
 func (d *Dispatcher) Retry(id string) error {
 	job, err := d.Ledger.Load(id)
 	if err != nil {
@@ -700,7 +700,7 @@ func (d *Dispatcher) backoffDuration(attempt int) time.Duration {
 // which would recursively run the whole test suite (a fork bomb).
 var ErrSelfExecInTest = errors.New("agentjobs: refusing to re-execute the test binary as job runner; set Dispatcher.Executable")
 
-// spawnRunner starts `<binary> agent jobs run <id>` detached in its own session, logging to agent.log.
+// spawnRunner starts `<binary> bouton jobs run <id>` detached in its own session, logging to agent.log.
 // It returns the runner's process id, which is also its process group id (Setsid).
 func (d *Dispatcher) spawnRunner(id string) (int, error) {
 	self, _ := os.Executable()
@@ -721,7 +721,7 @@ func (d *Dispatcher) spawnRunner(id string) (int, error) {
 	}
 	defer logFile.Close()
 
-	cmd := exec.Command(exe, "agent", "jobs", "run", id)
+	cmd := exec.Command(exe, "bouton", "jobs", "run", id)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.SysProcAttr = sysProcAttrSetsid()

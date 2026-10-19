@@ -32,9 +32,9 @@ fi
 # 2. Reference documentation audit when CLI/MCP code or docs change.
 # Always audit the current source with go run, never a possibly stale ./bin/dendrite.
 if echo "$STAGED" | grep -qE '^(cmd/|pkg/|docs/(cli|mcp)/|README\.md$)'; then
-    if ! go run ./cmd/dendrite docs audit --strict; then
+    if ! go run ./cmd/dendrite codex audit --strict; then
         echo "[-] PRE-COMMIT REJECTION: reference documentation is missing or stale (DEN-985)."
-        echo "    Run: go run ./cmd/dendrite docs generate --reference && git add docs/"
+        echo "    Run: go run ./cmd/dendrite codex generate --reference && git add docs/"
         exit 1
     fi
 fi

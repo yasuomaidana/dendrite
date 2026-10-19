@@ -81,7 +81,7 @@ go build -o /usr/local/bin/dendrite ./cmd/dendrite
 ### Step 1: Pre-Flight Verification
 Run the diagnostics engine to verify local system compatibility:
 ```bash
-dendrite doctor
+dendrite soma diagnose
 dendrite env doctor
 ```
 

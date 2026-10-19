@@ -2,7 +2,7 @@
 
 ## Authoritative Project Management & Plane Ownership
 - Plane v2 (`http://localhost:8090`) is the authoritative owner of ticket state.
-- NEVER use `DEV_STATUS.md` to decide what to work on; query Plane via `./bin/dendrite plane next` or `dendrite_ticket_smart_select`.
+- NEVER use `DEV_STATUS.md` to decide what to work on; query Plane via `./bin/dendrite chronos next` or `dendrite_ticket_smart_select`.
 - Completed features must transition to `To Verify` (intermediate verification state) for human sign-off, never directly to `Done`.
 
 ## Architecture & CI/CD Tooling Defaults
@@ -18,9 +18,9 @@
 
 ## Dendrite-First Workflow (every model and session)
 1. Start every session with `dendrite session resume`; it also removes merged, clean working copies.
-2. Pick work from Plane with `dendrite plane next` (or `dendrite_ticket_smart_select`), never from `DEV_STATUS.md`.
+2. Pick work from Plane with `dendrite chronos next` (alias `plane next`, or the `dendrite_ticket_smart_select` MCP tool), never from `DEV_STATUS.md`.
 3. Need an isolated checkout? Run `dendrite work new <ticket>`. It creates a git worktree in `dendrite-work/` next to the main checkout. Never hand-make `git clone` or `git worktree add ../<dir>` copies: those mix with human projects and are never cleaned up.
-4. Commit with `dendrite commit` (it references the ticket and pushes to origin; never to main/master).
-5. Route every LLM call through Dendrite: the LiteLLM gateway (`http://localhost:4000`) for model access and `dendrite agent jobs submit --isolate` to delegate to Antigravity (AGY) or other models. Do not call provider APIs or spawn other agent CLIs directly.
+4. Commit with `dendrite quantal` (alias `commit`; it references the ticket and pushes to origin, never to main/master).
+5. Route every LLM call through Dendrite: the LiteLLM gateway (`http://localhost:4000`) for model access and `dendrite bouton jobs submit --isolate` (alias `agent jobs`) to delegate to Antigravity (AGY) or other models. Do not call provider APIs or spawn other agent CLIs directly.
 6. Run `dendrite session checkpoint` after each finished ticket and before long waits.
 7. When a copy is finished and merged, `dendrite work gc` (or the next resume/checkpoint) deletes it; `dendrite work done <name>` removes one explicitly.

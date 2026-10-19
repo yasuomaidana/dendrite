@@ -157,45 +157,16 @@ func TestRenderCLICommandMarkdown_Variations(t *testing.T) {
 	}
 }
 
-func TestEnrichCommandDoc_AllCatalogEntries(t *testing.T) {
-	commandNames := []string{
-		"version", "doctor", "env", "triage", "test", "agent", "project",
-		"doc", "ui", "telemetry", "dev", "gateway", "topology", "jetbrains",
-		"inference", "plane", "mcp", "dist", "bench", "rea", "pool",
-		"query", "ref", "store", "analyze", "tokens", "story", "commit",
-		"skill", "audit-changes", "vcs", "github-sync", "quality",
-		"sync-remote", "move", "service", "canvas", "ask", "greeting",
-		"unknown-command",
+func TestDefaultExample(t *testing.T) {
+	doc := CLICommandDoc{Name: "soma"}
+	defaultExample(&doc)
+	if len(doc.Examples) != 1 || doc.Examples[0] != "dendrite soma" {
+		t.Fatalf("missing default example: %v", doc.Examples)
 	}
-
-	for _, name := range commandNames {
-		doc := CLICommandDoc{Name: name}
-		enrichCommandDoc(&doc)
-		if len(doc.Examples) == 0 {
-			t.Errorf("command '%s' expected to have at least one example", name)
-		}
-	}
-
-	// Verify that existing pre-populated fields are not overwritten
-	preDoc := CLICommandDoc{
-		Name: "env",
-		Subcommands: []SubcommandDoc{
-			{Name: "custom-sub", Description: "Do not overwrite"},
-		},
-		Flags: []FlagDoc{
-			{Name: "--custom-flag", Description: "Do not overwrite"},
-		},
-		Examples: []string{"dendrite env custom-sub"},
-	}
-	enrichCommandDoc(&preDoc)
-	if len(preDoc.Subcommands) != 1 || preDoc.Subcommands[0].Name != "custom-sub" {
-		t.Errorf("pre-populated subcommands should be preserved")
-	}
-	if len(preDoc.Flags) != 1 || preDoc.Flags[0].Name != "--custom-flag" {
-		t.Errorf("pre-populated flags should be preserved")
-	}
-	if len(preDoc.Examples) != 1 || preDoc.Examples[0] != "dendrite env custom-sub" {
-		t.Errorf("pre-populated examples should be preserved")
+	kept := CLICommandDoc{Name: "soma", Examples: []string{"dendrite soma prepare"}}
+	defaultExample(&kept)
+	if len(kept.Examples) != 1 || kept.Examples[0] != "dendrite soma prepare" {
+		t.Fatalf("explicit examples must be kept: %v", kept.Examples)
 	}
 }
 

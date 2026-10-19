@@ -451,8 +451,8 @@ func TestSynapseCommand_TreeRegistration(t *testing.T) {
 	if err != nil || cmd.Name() != "synapse" {
 		t.Fatalf("alias 'syn' did not resolve to synapse: %v", err)
 	}
-	if groupTitle(cmd.GroupID) != "Synaptic Cleft & Gating" {
-		t.Errorf("synapse group = %q", groupTitle(cmd.GroupID))
+	if cmd.GroupID != "cleft" {
+		t.Errorf("synapse group = %q", cmd.GroupID)
 	}
 	if cmd.Short != "Typed cross-project links with scoped MCP servers and self-healing paths" {
 		t.Errorf("unexpected description: %q", cmd.Short)

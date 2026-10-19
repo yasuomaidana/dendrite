@@ -83,11 +83,11 @@ flowchart TD
    - Cryptographic `sharing-manifest.json`:
      - Records SHA-256 hashes for every exported document to guarantee content integrity.
      - Captures git commit provenance, branch name, generation timestamp, and dependency links.
-   - Portable `.tar.gz` archive export (`dendrite doc docusaurus share`) for air-gapped sharing or remote mirroring.
+   - Portable `.tar.gz` archive export (`dendrite codex site share`) for air-gapped sharing or remote mirroring.
    - Multi-stage `Dockerfile` and `docker-compose.share.yaml` with Nginx Alpine for instant intranet hosting.
 
 4. **Embedded Preview & Sharing Server**:
-   - Lightweight built-in HTTP server (`dendrite doc docusaurus serve`):
+   - Lightweight built-in HTTP server (`dendrite codex site serve`):
      - Serves static site files with graceful shutdown (`context.Context`).
      - REST API endpoints:
        - `GET /api/v1/health`: Health status.
@@ -95,7 +95,7 @@ flowchart TD
        - `GET /api/v1/download-bundle`: Serves downloadable tar.gz archive.
 
 5. **CLI & Model Context Protocol (MCP) Integration**:
-   - CLI: `dendrite doc docusaurus <generate|init|share|audit|serve|build> [flags...]`.
+   - CLI: `dendrite codex <generate|audit|site <init|share|serve|build>> [flags...]`.
    - MCP Server:
      - `dendrite_docusaurus_generate`: Generate site from specifications.
      - `dendrite_docusaurus_share`: Export portable distribution bundle.
@@ -105,7 +105,7 @@ flowchart TD
 
 ## 3. Acceptance Criteria & Verification Matrix
 
-- [x] **AC-1**: `dendrite doc docusaurus generate` synthesizes a complete Docusaurus v3 project structure with valid `package.json`, `docusaurus.config.ts`, `sidebars.ts`, `src/pages/index.tsx`, `src/pages/share.tsx`, and categorized `docs/`.
+- [x] **AC-1**: `dendrite codex generate` synthesizes a complete Docusaurus v3 project structure with valid `package.json`, `docusaurus.config.ts`, `sidebars.ts`, `src/pages/index.tsx`, `src/pages/share.tsx`, and categorized `docs/`.
 - [x] **AC-2**: Document transformer normalizes YAML frontmatter across all `docs/` files and writes `_category_.json` descriptors for every documentation section.
 - [x] **AC-3**: Project Sharing Hub (`/share`) and `docs/project-sharing/` documents accurately describe bundle exports, containerized deployment, and distributed codebase federation.
 - [x] **AC-4**: `sharing-manifest.json` correctly computes SHA-256 cryptographic hashes for all documents and records git commit metadata.

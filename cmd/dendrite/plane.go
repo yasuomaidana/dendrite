@@ -67,11 +67,6 @@ func newChronosCmd() *cobra.Command {
 	return cmd
 }
 
-// handlePlaneCommand runs `chronos <action> args...` for legacy callers (DEN-1032 removes it).
-func handlePlaneCommand(ctx context.Context, action string, args []string) {
-	_ = invokeCmd(ctx, newChronosCmd(), append([]string{action}, args...)...)
-}
-
 func newChronosReplicateCmd() *cobra.Command {
 	var file string
 	var dryRun bool

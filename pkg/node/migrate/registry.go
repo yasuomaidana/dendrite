@@ -239,7 +239,7 @@ func EvaluateDebianServer(totalRAMMB uint64, totalDiskGB uint64) DebianCapacityP
 		eligibleNames = append(eligibleNames, e.Service)
 	}
 
-	recommendedCmd := fmt.Sprintf("dendrite move %s to --ssh user@debian-server", strings.Join(eligibleNames, ","))
+	recommendedCmd := fmt.Sprintf("dendrite translocate run %s --ssh user@debian-server", strings.Join(eligibleNames, " "))
 
 	return DebianCapacityPlan{
 		ServerProfile:     fmt.Sprintf("Debian Linux (RAM: %.1f GB, Disk: %d GB)", float64(totalRAMMB)/1024.0, totalDiskGB),

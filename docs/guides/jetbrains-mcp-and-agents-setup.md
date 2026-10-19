@@ -82,14 +82,13 @@ Alternatively, this routine can be triggered dynamically from any AI agent via t
 1. **`.ai/mcp/mcp.json` (Project Root)**: Registers `dendrite` as an active project MCP server.
 2. **`~/.ai/mcp/mcp.json` (User Home)**: Registers `dendrite` as a globally available MCP server across all installed JetBrains IDEs.
 3. **`.idea/runConfigurations/`**: Generates ready-to-run GoLand / IntelliJ configurations:
-   - `Dendrite_MCP_Server.xml` (`dendrite mcp serve`)
-   - `Dendrite_Agent_Aider.xml` (`dendrite agent run aider --ticket DEN-036`)
-   - `Dendrite_Agent_Antigravity.xml` (`dendrite agent run agy`)
-   - `Dendrite_Web_UI.xml` (`dendrite ui --port 3456`)
-   - `Dendrite_Doctor.xml` (`dendrite doctor`)
-   - `Dendrite_JetBrains_Probe.xml` (`dendrite jetbrains probe`)
-   - `Dendrite_Publisher_Preflight.xml` (`dendrite publish preflight`)
-   - `Dendrite_CICD_Run_Local.xml` (`dendrite cicd run --target local`)
+   - `Dendrite_Local_Agent_Triage.xml` (`dendrite inhibitory-triage "<prompt>"`)
+   - `Dendrite_MCP_Server.xml` (`dendrite inter serve`)
+   - `Dendrite_Agent_Aider.xml` (`dendrite bouton run aider --ticket DEN-050 --task "..."`)
+   - `Dendrite_Agent_Antigravity.xml` (`dendrite bouton run agy --task "..."`)
+   - `Dendrite_Web_UI.xml` (`dendrite cortex serve --port 3456`)
+   - `Dendrite_Doctor.xml` (`dendrite soma diagnose`)
+   - `Dendrite_JetBrains_Probe.xml` (`dendrite bridge probe`)
 4. **`.idea/tools/External_Tools.xml`**: Adds context-menu IDE external tools:
    - `Dendrite: Run Aider on Active File`
    - `Dendrite: Run Antigravity on Active File`

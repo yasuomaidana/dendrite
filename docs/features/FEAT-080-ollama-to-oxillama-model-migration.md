@@ -81,8 +81,8 @@ Migrated models are automatically registered into Dendrite's `ZeroCostRegistry` 
 ### 2.4 OpenAI-Compatible OxiLLaMa Server (`:8080`)
 To allow coding agents, external tools, and developer scripts to execute completions against migrated models, Dendrite includes an OpenAI-compatible HTTP server:
 - **CLI Commands**:
-  - `dendrite dev inference serve [--port 8080] [--daemon]`: Start server in foreground or background daemon mode.
-  - `dendrite dev inference stop [--port 8080]`: Gracefully terminate running instances and release port 8080.
+  - `dendrite spike serve [--port 8080]`: Start server in foreground or background daemon mode.
+  - `dendrite spike stop [--port 8080]`: Gracefully terminate running instances and release port 8080.
 - **Endpoints**:
   - `GET /v1/models`: Enumerate migrated models directly from `~/.oxillama/models`.
   - `POST /v1/chat/completions`: Standard OpenAI chat completion format (JSON & streaming SSE).
@@ -96,7 +96,7 @@ The native `oxillama-cli` binary (`/Users/yasuomaidana/.cargo/bin/oxillama`) was
 
 ### 2.6 JetBrains IDE Integration (Managed & Direct Sovereign Modes)
 Developers can bind OxiLLaMa directly to JetBrains AI Assistant, Continue, and CodeGPT plugins:
-- **Managed Mode (Dendrite)**: `dendrite dev inference serve -d` starts and monitors the server, while `dendrite dev inference stop` halts it.
+- **Managed Mode (Dendrite)**: `dendrite spike serve` starts and monitors the server, while `dendrite spike stop` halts it.
 - **Direct Sovereign Mode**: `oxillama serve --model ~/.oxillama/models/qwen3.5_9b --port 8080`.
 - **JetBrains Endpoint**: Set Base URL to `http://127.0.0.1:8080/v1` with model `qwen3.5:9b` or `qwen3.8:27b`.
 - **Detailed Guide**: See [Using OxiLLaMa with JetBrains IDEs](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/guides/oxillama-jetbrains-integration.md).
@@ -107,7 +107,7 @@ Developers can bind OxiLLaMa directly to JetBrains AI Assistant, Continue, and C
 
 ### Scenario 1: Dry-Run Model Migration
 - **Given** model `qwen3.5:9b` is registered in Ollama
-- **When** the developer executes `dendrite dev inference migrate qwen3.5:9b --dry-run`
+- **When** the developer executes `dendrite spike migrate qwen3.5:9b --dry-run`
 - **Then** the migrator reports blob count and byte size without modifying disk or contacting deletion endpoints.
 
 ### Scenario 2: Successful Migration with Memory Reclaim
@@ -122,7 +122,7 @@ Developers can bind OxiLLaMa directly to JetBrains AI Assistant, Continue, and C
 
 ### Scenario 4: Clean Server Shutdown
 - **Given** an OxiLLaMa server running on port 8080
-- **When** the developer executes `dendrite dev inference stop`
+- **When** the developer executes `dendrite spike stop`
 - **Then** Dendrite terminates the process and releases port 8080 cleanly.
 
 ---
@@ -133,7 +133,7 @@ Developers can bind OxiLLaMa directly to JetBrains AI Assistant, Continue, and C
 - [x] **AC-2 (Zero-Copy Linking)**: Preserves storage and avoids redundant writes via atomic hardlinks.
 - [x] **AC-3 (Verification Gate)**: Confirms all blobs and descriptors prior to source deletion.
 - [x] **AC-4 (Source Eviction)**: Removes migrated models from Ollama daemon via API and disk manifests to save memory (freed 24.04 GB).
-- [x] **AC-5 (CLI & MCP Tooling)**: Exposed via CLI `dendrite dev inference migrate` and native MCP tool `dendrite_inference_migrate_model`.
+- [x] **AC-5 (CLI & MCP Tooling)**: Exposed via CLI `dendrite spike migrate` and native MCP tool `dendrite_inference_migrate_model`.
 - [x] **AC-6 (Unit Test Coverage)**: Comprehensive unit tests in `pkg/inference/migration_test.go` and `pkg/inference/engine_test.go` achieving $\ge 81.6\%$ coverage.
 - [x] **AC-7 (Native CLI Healing)**: Positional prompts, tilde expansion, and directory GGUF discovery operational in `/Users/yasuomaidana/.cargo/bin/oxillama`.
 - [x] **AC-8 (Lifecycle & JetBrains Integration)**: Complete documentation for managed and sovereign execution, JetBrains IDE setup, and clean server termination.

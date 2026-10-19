@@ -163,17 +163,6 @@ func TestGlobalFlags_ApplyToEnv(t *testing.T) {
 	}
 }
 
-func TestExtractGlobalFlags(t *testing.T) {
-	globals = globalOptions{}
-	out := extractGlobalFlags([]string{"next", "--state-dir", "/s", "--plane-url=http://p", "--json", "-y", "--ticket", "DEN-1"})
-	if strings.Join(out, " ") != "next --json -y --ticket DEN-1" {
-		t.Fatalf("remaining args = %v", out)
-	}
-	if globals.StateDir != "/s" || globals.PlaneURL != "http://p" || !globals.JSON || !globals.Yes {
-		t.Fatalf("globals not recorded: %+v", globals)
-	}
-}
-
 func TestGatewayURL(t *testing.T) {
 	globals = globalOptions{}
 	t.Setenv("LITELLM_PROXY_URL", "")
@@ -209,15 +198,6 @@ func TestSharedFlagHelpers(t *testing.T) {
 		if err := v(c, []string{"a"}); err != nil && !isUsageError(err) {
 			t.Fatalf("validator error is not a usage error: %v", err)
 		}
-	}
-}
-
-func TestInvokeCmd(t *testing.T) {
-	if err := invokeCmd(context.Background(), newSessionCmd(), "--help"); err != nil {
-		t.Fatalf("invokeCmd help: %v", err)
-	}
-	if err := invokeCmd(context.Background(), newSessionCmd(), "bogus"); !isUsageError(err) {
-		t.Fatalf("invokeCmd bogus = %v; want usage error", err)
 	}
 }
 

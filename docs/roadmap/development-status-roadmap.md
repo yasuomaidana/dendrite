@@ -42,7 +42,7 @@ pie title Real-Time Ticket Status Breakdown (Plane v2 Authority)
 
 > [!NOTE]
 > ### Real-Time Status Breakdown & The Human-in-the-Loop (HITL) Gate
-> - **Done / Formally Verified (2.0%, 2 Tickets)**: Tickets that have been reviewed, audited, and approved through human verification or `dendrite hitl-sync` (`[DEN-809]` #139, `[DEND-401]` #114).
+> - **Done / Formally Verified (2.0%, 2 Tickets)**: Tickets that have been reviewed, audited, and approved through human verification or `dendrite myelin github-sync --hitl` (`[DEN-809]` #139, `[DEND-401]` #114).
 > - **Ongoing / Active Backlog (5.0%, 5 Tickets)**: Tasks currently queued or undergoing active feature implementation (`[DEN-812]` #141, `[DEN-808]` #136, `[DEN-807]` #135).
 > - **To Be Verified by Human (94.0%, 94 Tickets)**: Autonomous agent deliverables that have satisfied all engineering criteria (compiling code, zero mock policy, Testcontainers integration, statement coverage $\ge 85\%$) and transitioned into Plane mandatory terminal `To Verify` state. These tickets await human inspection and sign-off before advancing to `Done`.
 
@@ -279,7 +279,7 @@ All 23 project milestones and their associated tickets:
 
 ### Milestone 25: Ticket-Milestone DAG Linker, Prioritization & IDE Connectors (FEAT-036, FEAT-100)
 - [ ] **DEN-056**: Multi-Source Ticket-Milestone Ingestor & Cycle Detector (`pkg/tracker/dag`)
-- [ ] **DEN-057**: Critical-Path Unblock Weight Calculator & `dendrite stories next` (`pkg/stories`)
+- [ ] **DEN-057**: Critical-Path Unblock Weight Calculator & `dendrite chronos next` (`pkg/stories`)
 - [ ] **DEN-058**: Automated Stories / Tickets / Milestones DAG Connector (`FEAT-DAG-CONNECTOR` in `pkg/connector`)
 - [ ] **DEN-059**: Decoupled Core JSON-RPC Engine & IPC Bridge (`TKT-IDE-001` in `pkg/ide/rpc`) [Elevated to Normal Priority]
 - [ ] **DEN-060**: VS Code Extension MVP & Status Bar / Webview Integration (`TKT-IDE-002`) [Normal Priority]
@@ -504,7 +504,7 @@ sequenceDiagram
     participant Local as DEV_STATUS.md
     participant Plane as Plane v2 Container (:8090)
 
-    Dev->>CLI: dendrite dev ticket list
+    Dev->>CLI: dendrite chronos ticket list
     CLI->>Local: Parse DEV_STATUS.md
     Local-->>CLI: Return 49 Tickets
     CLI-->>Dev: Display Ticket Pipeline
@@ -526,10 +526,10 @@ sequenceDiagram
 ### Operational Commands & MCP Tools
 
 - **List Tickets**:
-  - CLI: `dendrite dev ticket list [DEV_STATUS.md]`
+  - CLI: `dendrite chronos ticket list [DEV_STATUS.md]`
   - MCP: `dendrite_ticket_list` (`./bin/dendrite mcp call dendrite_ticket_list "{}"`)
 - **Mutate Ticket Status**:
-  - CLI: `dendrite dev ticket set <ID> <TODO|IN_PROGRESS|DONE>`
+  - CLI: `dendrite chronos ticket set <ID> <TODO|IN_PROGRESS|DONE>`
   - MCP: `dendrite_ticket_update` (`./bin/dendrite mcp call dendrite_ticket_update '{"ticket_id":"DEN-037","status":"IN_PROGRESS"}'`)
 - **Push Status to Plane**:
   - CLI: `dendrite plane push-status [--file DEV_STATUS.md]`
@@ -538,7 +538,7 @@ sequenceDiagram
   - CLI: `dendrite plane replicate [--file DEV_STATUS.md]`
   - MCP: `dendrite_plane_replicate`
 - **Bidirectional Documentation Sync**:
-  - CLI: `dendrite plane doc <push|pull|sync> [--dir docs]`
+  - CLI: `dendrite codex plane <push|pull|sync> [--dir docs]`
   - MCP: `dendrite_plane_doc_sync`
 
 ---
@@ -600,7 +600,7 @@ All tickets map directly to living architectural documents and feature specifica
   - [FEAT-041: Autonomous Agent Security, Quality, Resilience & Audit Guardrails](../features/FEAT-041-agent-security-quality-resilience-guardrails.md)
 - **Quality Gates & Scorecards**:
   - [Scrum Master Alignment & Code Complexity Scorecard](../quality/scrum-and-complexity-scorecard.md)
-  - [CLI Specification & Command Reference](../cli/dendrite-cli-specification.md)
+  - [CLI Command Reference](../cli/dendrite.md)
 
 ### Ticket `DEN-821`: Standardize Toolchain Migration on uv (Python), bun (Node/TS), and cargo (Rust) across Website, Scripts & CI/CD
 
@@ -619,7 +619,7 @@ All tickets map directly to living architectural documents and feature specifica
 
 - **Target Package**: `pkg/env/bootstrap`, `cmd/dendrite`, `pkg/mcpserver`
 - **Governing Specs**: [`docs/features/FEAT-039-polyglot-env-bootstrapper-gof-patterns.md`](../features/FEAT-039-polyglot-env-bootstrapper-gof-patterns.md), [`docs/features/FEAT-043-ephemeral-cicd-routine.md`](../features/FEAT-043-ephemeral-cicd-routine.md)
-- **Goal**: Implement project environment preparation, synchronization, and update capabilities (`dendrite env prepare/sync/update` and `dendrite project prepare/sync/update`). Inspects and fingerprints repository manifests, synchronizes stack-tailored agent rules (`.agents/rules.md`) and standard skills (`.agents/skills`, `.gemini/skills`), and enforces CI/CD practices using GitHub Copilot as the default tool (`.github/copilot-instructions.md`, `.github/workflows/ci.yml`, and toolchain detection).
+- **Goal**: Implement project environment preparation, synchronization, and update capabilities (`dendrite soma prepare` (alias `env prepare`)). Inspects and fingerprints repository manifests, synchronizes stack-tailored agent rules (`.agents/rules.md`) and standard skills (`.agents/skills`, `.gemini/skills`), and enforces CI/CD practices using GitHub Copilot as the default tool (`.github/copilot-instructions.md`, `.github/workflows/ci.yml`, and toolchain detection).
 - **Acceptance Criteria**:
     - [x] Fingerprints repository manifests (`go.mod`, `Cargo.toml`, `package.json`, `pyproject.toml`) detecting runtime stack, Go version, and linters.
     - [x] Scaffolds and synchronizes stack-tailored agent rules in `.agents/rules.md` and seeds standard skills in `.agents/skills` and `.gemini/skills`.

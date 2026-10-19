@@ -374,7 +374,7 @@ export default function ShareHub(): JSX.Element {
                 Export an offline, portable archive containing the complete Docs-as-Code suite and cryptographic SHA-256 manifest.
               </p>
               <pre style={{padding: '1rem', borderRadius: '8px'}}>
-                <code>dendrite doc docusaurus share --out dendrite-docs.tar.gz</code>
+                <code>dendrite codex site share --out dendrite-docs.tar.gz</code>
               </pre>
               <p style={{fontSize: '0.9rem', color: 'var(--ifm-color-emphasis-600)'}}>
                 Verify integrity via <code>sharing-manifest.json</code>.

@@ -110,7 +110,7 @@ func IntrospectCLICommand(cmd *cobra.Command) CLICommandDoc {
 	}
 	walk(cmd, "")
 
-	enrichCommandDoc(&doc)
+	defaultExample(&doc)
 	return doc
 }
 
@@ -339,35 +339,8 @@ func RenderCLICommandMarkdown(doc CLICommandDoc) string {
 	return sb.String()
 }
 
-// enrichCommandDoc fills subcommands, flags and examples from a static catalog for commands that are not
-// yet native cobra trees (legacy adapters, DEN-950). The catalog is keyed by plain name; any alias matches.
-func enrichCommandDoc(doc *CLICommandDoc) {
-	catalog := map[string]struct {
-		Subcommands []SubcommandDoc
-		Flags       []FlagDoc
-		Examples    []string
-	}{
-	}
-
-	entry, found := catalog[doc.Name]
-	for _, alias := range doc.Aliases {
-		if found {
-			break
-		}
-		entry, found = catalog[alias]
-	}
-	if found {
-		if len(doc.Subcommands) == 0 && len(entry.Subcommands) > 0 {
-			doc.Subcommands = append([]SubcommandDoc(nil), entry.Subcommands...)
-		}
-		if len(doc.Flags) == 0 && len(entry.Flags) > 0 {
-			doc.Flags = append([]FlagDoc(nil), entry.Flags...)
-		}
-		if len(doc.Examples) == 0 && len(entry.Examples) > 0 {
-			doc.Examples = append([]string(nil), entry.Examples...)
-		}
-	}
-
+// defaultExample gives a command without an Example a bare invocation, so every page shows one.
+func defaultExample(doc *CLICommandDoc) {
 	if len(doc.Examples) == 0 {
 		doc.Examples = []string{fmt.Sprintf("dendrite %s", doc.Name)}
 	}

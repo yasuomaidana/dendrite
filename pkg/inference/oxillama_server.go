@@ -409,14 +409,14 @@ func synthesizeRAGResponse(model, prompt string) string {
 	if strings.Contains(lower, "available llm") || strings.Contains(lower, "check available") || strings.Contains(lower, "list model") {
 		sb.WriteString("To check available LLMs and inference engines in Dendrite, execute the following commands:\n\n")
 		sb.WriteString("1. List all registered inference engines, active models, and cascade failover priority:\n")
-		sb.WriteString("   $ dendrite inference list\n")
-		sb.WriteString("   (or alias: dendrite dev inference list)\n\n")
+		sb.WriteString("   $ dendrite spike list\n")
+		sb.WriteString("   (alias: dendrite inference list)\n\n")
 		sb.WriteString("2. Check configured zero-cost and self-hosted models/prefixes:\n")
-		sb.WriteString("   $ dendrite dev inference zero-cost list\n\n")
+		sb.WriteString("   $ dendrite spike zero-cost list\n\n")
 		sb.WriteString("3. Probe local Ollama service health, latency, and loaded models:\n")
-		sb.WriteString("   $ dendrite dev ollama probe\n\n")
+		sb.WriteString("   $ dendrite spike probe --endpoint http://127.0.0.1:11434\n\n")
 		sb.WriteString("4. Probe real-time reachability and latency across all engines:\n")
-		sb.WriteString("   $ dendrite dev inference probe\n")
+		sb.WriteString("   $ dendrite spike probe\n")
 		return sb.String()
 	}
 

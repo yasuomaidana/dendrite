@@ -30,8 +30,8 @@ flowchart TD
 
     subgraph OperationalModes ["Inference Service Orchestration"]
         subgraph Mode1 ["Mode 1: Dendrite Managed Server"]
-            DendriteCLI["dendrite dev inference serve --port 8080"]
-            DendriteStop["dendrite dev inference stop --port 8080"]
+            DendriteCLI["dendrite spike serve --port 8080"]
+            DendriteStop["dendrite spike stop --port 8080"]
             ZeroCostReg["Zero-Cost Accounting Exemption (.dendrite/zero_cost_models.json)"]
         end
 
@@ -94,11 +94,8 @@ In Managed Mode, Dendrite handles the entire server lifecycle, ensuring proper p
 Start the OpenAI-compatible HTTP server:
 
 ```bash
-# Foreground / interactive mode
-dendrite dev inference serve --port 8080
-
-# Background daemon mode
-dendrite dev inference serve --port 8080 --daemon
+# Runs in the foreground until Ctrl+C; use your process manager to keep it running
+dendrite spike serve --port 8080
 ```
 
 Expected output:
@@ -113,7 +110,7 @@ Expected output:
 Verify that OxiLLaMa is responding and check available models:
 
 ```bash
-dendrite dev inference probe oxillama-rust
+dendrite spike probe oxillama-rust
 ```
 
 Output:
@@ -127,12 +124,12 @@ Output:
 To stop the server and release port 8080:
 
 ```bash
-dendrite dev inference stop
+dendrite spike stop
 ```
 
 Or for a non-standard port:
 ```bash
-dendrite dev inference stop --port 8080
+dendrite spike stop --port 8080
 ```
 
 Output:
@@ -174,7 +171,7 @@ To terminate a direct OxiLLaMa server instance:
 
 ```bash
 # Method A: Using Dendrite (works across both managed and direct servers)
-dendrite dev inference stop
+dendrite spike stop
 
 # Method B: Process kill by name
 pkill -f "oxillama serve"
@@ -260,8 +257,8 @@ dendrite jetbrains setup
 ```
 
 This registers:
-- `OxiLLaMa_Serve.xml`: Starts `dendrite dev inference serve --port 8080` in the background.
-- `OxiLLaMa_Stop.xml`: Executes `dendrite dev inference stop` to release port 8080.
+- `OxiLLaMa_Serve.xml`: Starts `dendrite spike serve --port 8080` in the background.
+- `OxiLLaMa_Stop.xml`: Executes `dendrite spike stop` to release port 8080.
 - `OxiLLaMa_Probe.xml`: Performs a quick health probe and prints available models in the IDE console.
 
 ---
@@ -271,8 +268,8 @@ This registers:
 | Check | Command | Expected Result |
 | :--- | :--- | :--- |
 | **Direct Inference** | `oxillama run --model ~/.oxillama/models/qwen3.5_9b "Hello"` | Emits completion in terminal zero-FFI (`✓ Done`). |
-| **Server Startup** | `dendrite dev inference serve -d` | Listening on `http://127.0.0.1:8080`. |
+| **Server Startup** | `dendrite spike serve` | Listening on `http://127.0.0.1:8080`. |
 | **API Health** | `curl -s http://127.0.0.1:8080/health` | `{"status":"online","engine":"oxillama-rust"}`. |
 | **Models API** | `curl -s http://127.0.0.1:8080/v1/models` | Lists `qwen3.5:9b` and `qwen3.8:27b`. |
 | **JetBrains Integration** | Prompt JetBrains AI Assistant / Continue | Instant response generated with zero cloud token cost. |
-| **Clean Shutdown** | `dendrite dev inference stop` | Terminated and port 8080 released. |
+| **Clean Shutdown** | `dendrite spike stop` | Terminated and port 8080 released. |

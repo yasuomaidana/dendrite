@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/spf13/cobra"
 	"os"
 )
 
@@ -15,10 +14,4 @@ func main() {
 		fmt.Fprintf(os.Stderr, "[-] %v\n", err)
 	}
 	os.Exit(exitCodeFor(err))
-}
-
-// legacyCommands returns the commands whose handlers still parse their own arguments (DEN-950).
-func legacyCommands() []*cobra.Command {
-	return []*cobra.Command{
-	}
 }

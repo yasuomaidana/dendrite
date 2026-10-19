@@ -150,7 +150,7 @@ probe_oxillama() {
         elif [[ -f "./bin/oxillama" ]]; then
             log_success "OxiLLaMa binary discovered in ./bin/oxillama"
         else
-            log_info "OxiLLaMa can be spawned on demand via: ./bin/dendrite inference zero-cost"
+            log_info "OxiLLaMa can be spawned on demand via: ./bin/dendrite spike zero-cost list"
         fi
     fi
 }
@@ -171,7 +171,7 @@ verify_plane() {
     if curl -s --max-time 3 "$PLANE_HOST" >/dev/null 2>&1 || curl -s --max-time 3 "$PLANE_HOST/api/instances/" >/dev/null 2>&1; then
         log_success "Plane v2 instance is reachable at $PLANE_HOST"
     else
-        log_info "Plane v2 container stack accessible via: ./bin/dendrite env status"
+        log_info "Plane v2 container stack accessible via: ./bin/dendrite soma status"
     fi
 }
 

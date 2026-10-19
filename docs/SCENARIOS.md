@@ -1045,7 +1045,7 @@ Part III refines and expands Dendrite as an enterprise-grade autonomous multi-pr
 - **Multi-Provider AI Execution**: Native direct Ollama streaming (`/api/chat`), bridged local inference, GitHub Copilot CLI/API, and GitHub CLI wrappers (`gh`).
 - **5-Tier Git Version Governance**: Strict deterministic interception of every `git` and `gh` command validating capabilities across Levels 1–5 (`conservative`, `super-safe`, `safe`, `normal`, `yolo`).
 - **Semantic Hierarchical Branching & Merging**: Strict 3-level tree structure (`milestone/<id>` $	o$ `story/<id>` $	o$ `feature/<id>`), ensuring merges occur level-by-level without bypassing parents or polluting `main`.
-- **Relational DAG Ingestion & Next Story Prioritizer**: `dendrite stories next` calculating critical path unblock weight across Plane, GitHub, and local cache.
+- **Relational DAG Ingestion & Next Story Prioritizer**: `dendrite chronos next` calculating critical path unblock weight across Plane, GitHub, and local cache.
 - **Bidirectional Penpot UI Auto-Documentation**: Deep-linking component states and token diffs between code, Penpot frames, and Plane tickets.
 - **Dual-Source Self-Update & Dev Mode**: In-place atomic binary swaps with rollback safeguards, defaulting to local Go source compilation in `--dev` mode.
 - **Polyglot Environment Bootstrapper & Canonical Design-Pattern Analyzer**: Stack fingerprinter generating `.agents/`, `.ai/`, `.gemini/`, and `AGENTS.md` with complete  Canonical Design Patterns catalogs and SOTA updates.
@@ -1144,17 +1144,17 @@ dendrite agent run --milestone M1-Auth --autonomy normal
 
 ---
 
-### Case 26: Relational Ticket-Milestone DAG Ingestion & Context-Aware Active Story Loading (`dendrite stories next`)
+### Case 26: Relational Ticket-Milestone DAG Ingestion & Context-Aware Active Story Loading (`dendrite chronos next`)
 
 **User Story**: As a developer starting my workday, I want Dendrite to analyze all open tickets and milestones across Plane and local cache, calculate critical-path unblock weights, and automatically check out the highest-priority story in my IDE.
 
 **Workflow**:
 
 ```
-dendrite stories link --analyze
+dendrite chronos link --analyze
 # [DAG SOLVER] Ingested 24 tickets, 4 milestones. Detected 0 circular dependencies.
 
-dendrite stories next
+dendrite chronos next
 # [PRIORITY] Selected DEN-051 (Unblock Weight: 26.5 SP - blocks DEN-052, DEN-053).
 # [GIT GOV] Checked out branch: story/DEN-051 off milestone/M24-pool-dag.
 # [IDE HOOK] Injected .idea/scopes/Dendrite_Active_Story.xml into GoLand.
@@ -1239,7 +1239,7 @@ dendrite env update --sota
 
 ```
 # Offline execution:
-dendrite stories next
+dendrite chronos next
 # [OFFLINE CACHE] Serving tickets from .dendrite/cache/dendrite.db (WAL mode)
 # [OUTBOX] Recorded completion of UI-101 into outbox_mutations table.
 
@@ -1317,7 +1317,7 @@ dendrite audit --story PROJ-104
 
 ```
 # 1. Insert new ticket requiring shared IDE bridge:
-dendrite dev ticket set TKT-IDE-002 "VS Code Extension" --priority Normal --depends-on TKT-IDE-001
+dendrite chronos ticket set TKT-IDE-002 "VS Code Extension" --priority Normal --depends-on TKT-IDE-001
 
 # 2. Synchronous DAG Connector Reconcile Hook triggers:
 # [DAG CONNECTOR] Hook triggered: on_ticket_insert (TKT-IDE-002)

@@ -507,7 +507,7 @@ func renderAgentRules(fp ProjectFingerprint) string {
 	sb.WriteString("# Autonomous Agent Operating Rules\n\n")
 	sb.WriteString("## Authoritative Project Management & Plane Ownership\n")
 	sb.WriteString("- Plane v2 (`http://localhost:8090`) is the authoritative owner of ticket state.\n")
-	sb.WriteString("- NEVER use `DEV_STATUS.md` to decide what to work on; query Plane via `./bin/dendrite plane next` or `dendrite_ticket_smart_select`.\n")
+	sb.WriteString("- NEVER use `DEV_STATUS.md` to decide what to work on; query Plane via `./bin/dendrite chronos next` or `dendrite_ticket_smart_select`.\n")
 	sb.WriteString("- Completed features must transition to `To Verify` (intermediate verification state) for human sign-off, never directly to `Done`.\n\n")
 
 	sb.WriteString("## Architecture & CI/CD Tooling Defaults\n")
@@ -540,7 +540,7 @@ func renderAgentsOverview(fp ProjectFingerprint) string {
 	sb.WriteString("## Preparation & Sync\n")
 	sb.WriteString("To synchronize agent rules, skills, and enforce CI/CD tooling defaults, execute:\n")
 	sb.WriteString("```bash\n")
-	sb.WriteString("dendrite env prepare\n")
+	sb.WriteString("dendrite soma prepare   # alias: dendrite env prepare\n")
 	sb.WriteString("```\n\n")
 
 	sb.WriteString("## Dendrite-First Workflow (all models: Claude, Antigravity/AGY, Gemini, Copilot, humans)\n")
@@ -548,7 +548,7 @@ func renderAgentsOverview(fp ProjectFingerprint) string {
 	sb.WriteString(fmt.Sprintf("\nSee the `%s` skill for commands and cleanup rules.\n\n", DendriteWorkflowSkill))
 
 	sb.WriteString("## Commit & VCS Guidance\n")
-	sb.WriteString("- `dendrite commit` pushes the new commit to the configured remote (origin preferred) after every successful commit; use `--no-push` or `DENDRITE_COMMIT_PUSH=false` to opt out; it never force-pushes and refuses to push main/master.\n\n")
+	sb.WriteString("- `dendrite quantal` (alias `commit`) pushes the new commit to the configured remote (origin preferred) after every successful commit; use `--no-push` or `DENDRITE_COMMIT_PUSH=false` to opt out; it never force-pushes and refuses to push main/master.\n\n")
 
 	sb.WriteString("## Session Start & Handoff\n")
 	sb.WriteString("Every new session (Claude, AGY, or human) starts with:\n")

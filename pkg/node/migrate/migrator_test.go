@@ -99,8 +99,8 @@ func TestEvaluateDebianServer_4GB_1TB(t *testing.T) {
 		t.Errorf("allocated RAM %d MB exceeds available 3072 MB", plan.AllocatedRAMMB)
 	}
 
-	if !strings.Contains(plan.RecommendedAction, "dendrite move") {
-		t.Errorf("expected recommended action to contain 'dendrite move', got '%s'", plan.RecommendedAction)
+	if !strings.Contains(plan.RecommendedAction, "dendrite translocate run") {
+		t.Errorf("expected recommended action to contain 'dendrite translocate run', got '%s'", plan.RecommendedAction)
 	}
 }
 

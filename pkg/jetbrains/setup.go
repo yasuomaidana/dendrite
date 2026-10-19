@@ -66,7 +66,7 @@ func SetupJetBrainsToolset(opts SetupOptions) (*SetupResult, error) {
 	// 1. Project-level MCP configuration (.ai/mcp/mcp.json)
 	if opts.ConfigureProjectMCP {
 		projectMCPPath := filepath.Join(absProjectDir, ".ai", "mcp", "mcp.json")
-		if err := configureMCPFile(projectMCPPath, opts.BinaryPath, absProjectDir, res); err != nil {
+		if err := configureMCPFile(projectMCPPath, opts.BinaryPath, res); err != nil {
 			return nil, fmt.Errorf("failed to configure project MCP: %w", err)
 		}
 	}
@@ -83,7 +83,7 @@ func SetupJetBrainsToolset(opts SetupOptions) (*SetupResult, error) {
 			}
 			globalMCPPath = filepath.Join(home, ".ai", "mcp", "mcp.json")
 		}
-		if err := configureMCPFile(globalMCPPath, opts.BinaryPath, absProjectDir, res); err != nil {
+		if err := configureMCPFile(globalMCPPath, opts.BinaryPath, res); err != nil {
 			return nil, fmt.Errorf("failed to configure global MCP: %w", err)
 		}
 	}
@@ -140,15 +140,10 @@ func SetupJetBrainsToolset(opts SetupOptions) (*SetupResult, error) {
 	return res, nil
 }
 
-func configureMCPFile(targetPath, binaryPath, projectDir string, res *SetupResult) error {
+func configureMCPFile(targetPath, binaryPath string, res *SetupResult) error {
 	entry := MCPServerEntry{
 		Command: binaryPath,
-		Args:    []string{"mcp", "serve"},
-		Env: map[string]string{
-			"DENDRITE_WORKSPACE":  projectDir,
-			"DENDRITE_ENV":        "development",
-			"DENDRITE_OLLAMA_URL": "http://127.0.0.1:11434",
-		},
+		Args:    []string{"inter", "serve"},
 	}
 
 	created, err := UpsertMCPServer(targetPath, "dendrite", entry)
@@ -175,7 +170,7 @@ func getRunConfigurationTemplates() map[string]string {
   <configuration default="false" name="Dendrite: Local Agent Triage" type="GoApplicationRunConfiguration" factoryName="Go Application">
     <module name="Dendrite" />
     <working_directory value="$PROJECT_DIR$" />
-    <parameters value="triage --prompt &quot;Evaluate task complexity, select skills, and optimize token spend&quot;" />
+    <parameters value="inhibitory-triage &quot;Evaluate task complexity, select skills, and optimize token spend&quot;" />
     <kind value="PACKAGE" />
     <package value="Dendrite/cmd/dendrite" />
     <directory value="$PROJECT_DIR$" />
@@ -187,7 +182,7 @@ func getRunConfigurationTemplates() map[string]string {
   <configuration default="false" name="Dendrite: MCP Server" type="GoApplicationRunConfiguration" factoryName="Go Application">
     <module name="Dendrite" />
     <working_directory value="$PROJECT_DIR$" />
-    <parameters value="mcp serve" />
+    <parameters value="inter serve" />
     <kind value="PACKAGE" />
     <package value="Dendrite/cmd/dendrite" />
     <directory value="$PROJECT_DIR$" />
@@ -199,7 +194,7 @@ func getRunConfigurationTemplates() map[string]string {
   <configuration default="false" name="Dendrite: Agent Runner (Aider)" type="GoApplicationRunConfiguration" factoryName="Go Application">
     <module name="Dendrite" />
     <working_directory value="$PROJECT_DIR$" />
-    <parameters value="agent run aider --ticket DEN-050 --task &quot;Autonomous implementation loop&quot;" />
+    <parameters value="bouton run aider --ticket DEN-050 --task &quot;Autonomous implementation loop&quot;" />
     <kind value="PACKAGE" />
     <package value="Dendrite/cmd/dendrite" />
     <directory value="$PROJECT_DIR$" />
@@ -211,7 +206,7 @@ func getRunConfigurationTemplates() map[string]string {
   <configuration default="false" name="Dendrite: Agent Runner (Antigravity)" type="GoApplicationRunConfiguration" factoryName="Go Application">
     <module name="Dendrite" />
     <working_directory value="$PROJECT_DIR$" />
-    <parameters value="agent run agy --task &quot;Strategic architecture synthesis&quot;" />
+    <parameters value="bouton run agy --task &quot;Strategic architecture synthesis&quot;" />
     <kind value="PACKAGE" />
     <package value="Dendrite/cmd/dendrite" />
     <directory value="$PROJECT_DIR$" />
@@ -223,7 +218,7 @@ func getRunConfigurationTemplates() map[string]string {
   <configuration default="false" name="Dendrite: Web UI &amp; Dashboard" type="GoApplicationRunConfiguration" factoryName="Go Application">
     <module name="Dendrite" />
     <working_directory value="$PROJECT_DIR$" />
-    <parameters value="ui --port 3456" />
+    <parameters value="cortex serve --port 3456" />
     <kind value="PACKAGE" />
     <package value="Dendrite/cmd/dendrite" />
     <directory value="$PROJECT_DIR$" />
@@ -235,7 +230,7 @@ func getRunConfigurationTemplates() map[string]string {
   <configuration default="false" name="Dendrite: Pre-flight Doctor" type="GoApplicationRunConfiguration" factoryName="Go Application">
     <module name="Dendrite" />
     <working_directory value="$PROJECT_DIR$" />
-    <parameters value="doctor" />
+    <parameters value="soma diagnose" />
     <kind value="PACKAGE" />
     <package value="Dendrite/cmd/dendrite" />
     <directory value="$PROJECT_DIR$" />
@@ -247,7 +242,7 @@ func getRunConfigurationTemplates() map[string]string {
   <configuration default="false" name="Dendrite: Probe JetBrains MCP" type="GoApplicationRunConfiguration" factoryName="Go Application">
     <module name="Dendrite" />
     <working_directory value="$PROJECT_DIR$" />
-    <parameters value="jetbrains probe" />
+    <parameters value="bridge probe" />
     <kind value="PACKAGE" />
     <package value="Dendrite/cmd/dendrite" />
     <directory value="$PROJECT_DIR$" />
@@ -263,42 +258,42 @@ func getExternalToolsXML() string {
   <tool name="Dendrite: Run Local Agent Triage on Active File" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="true" showConsoleOnStdOut="true" showConsoleOnStdErr="true" synchronizeAfterRun="false">
     <exec>
       <option name="COMMAND" value="$ProjectFileDir$/bin/dendrite" />
-      <option name="PARAMETERS" value="triage --file $FilePath$ --prompt &quot;Optimize context and triage task&quot;" />
+      <option name="PARAMETERS" value="inhibitory-triage --file $FilePath$ &quot;Optimize context and triage task&quot;" />
       <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
     </exec>
   </tool>
   <tool name="Dendrite: Run Aider on Active File" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="true" showConsoleOnStdOut="true" showConsoleOnStdErr="true" synchronizeAfterRun="true">
     <exec>
       <option name="COMMAND" value="$ProjectFileDir$/bin/dendrite" />
-      <option name="PARAMETERS" value="agent run aider --task &quot;Refactor and improve $FileName$&quot;" />
+      <option name="PARAMETERS" value="bouton run aider --task &quot;Refactor and improve $FileName$&quot;" />
       <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
     </exec>
   </tool>
   <tool name="Dendrite: Run Antigravity on Active File" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="true" showConsoleOnStdOut="true" showConsoleOnStdErr="true" synchronizeAfterRun="true">
     <exec>
       <option name="COMMAND" value="$ProjectFileDir$/bin/dendrite" />
-      <option name="PARAMETERS" value="agent run agy --task &quot;Analyze architecture and specs for $FilePath$&quot;" />
+      <option name="PARAMETERS" value="bouton run agy --task &quot;Analyze architecture and specs for $FilePath$&quot;" />
       <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
     </exec>
   </tool>
   <tool name="Dendrite: Probe MCP Diagnostics" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="true" showConsoleOnStdOut="true" showConsoleOnStdErr="true" synchronizeAfterRun="true">
     <exec>
       <option name="COMMAND" value="$ProjectFileDir$/bin/dendrite" />
-      <option name="PARAMETERS" value="jetbrains problems $FilePath$" />
+      <option name="PARAMETERS" value="bridge problems $FilePath$" />
       <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
     </exec>
   </tool>
   <tool name="Dendrite: List Registered MCP Tools" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="true" showConsoleOnStdOut="true" showConsoleOnStdErr="true" synchronizeAfterRun="false">
     <exec>
       <option name="COMMAND" value="$ProjectFileDir$/bin/dendrite" />
-      <option name="PARAMETERS" value="mcp tools" />
+      <option name="PARAMETERS" value="inter tools" />
       <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
     </exec>
   </tool>
   <tool name="Dendrite: Telemetry Snapshot" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="true" showConsoleOnStdOut="true" showConsoleOnStdErr="true" synchronizeAfterRun="false">
     <exec>
       <option name="COMMAND" value="$ProjectFileDir$/bin/dendrite" />
-      <option name="PARAMETERS" value="telemetry" />
+      <option name="PARAMETERS" value="sensory snapshot" />
       <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
     </exec>
   </tool>

@@ -93,7 +93,7 @@ flowchart TD
   go tool cover -func=coverage.out | grep total | awk '{print $3}'
 
   # 3. Simulate ticket verification routine
-  dendrite skill ticket-relate --ticket DEND-102 --priority high
+  dendrite chronos relate --ticket DEND-102 --priority high
   dendrite skill verify DEND-102 --dry-run
   ```
 

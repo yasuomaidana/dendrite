@@ -1,9 +1,6 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -21,68 +18,27 @@ var commandGroups = []*cobra.Group{
 	{ID: "boutons", Title: "Terminal Boutons & Vesicles:"},
 }
 
-// groupIDFor maps a category title to its group ID.
-func groupIDFor(category string) string {
-	for _, g := range commandGroups {
-		if strings.TrimSuffix(g.Title, ":") == category {
-			return g.ID
-		}
-	}
-	return ""
-}
-
-// groupTitle maps a group ID to its category title.
-func groupTitle(id string) string {
-	for _, g := range commandGroups {
-		if g.ID == id {
-			return strings.TrimSuffix(g.Title, ":")
-		}
-	}
-	return ""
-}
-
-// newRootCmd builds the full dendrite command tree.
+// newRootCmd builds the full dendrite command tree, listed by help group.
 func newRootCmd() *cobra.Command {
 	root := newBareRootCmd()
 	root.AddCommand(
-		newVersionCmd(),
-		newSynapseCmd(),
-		newSessionCmd(),
-		newBoutonCmd(),
-		newSomaCmd(),
-		newGanglionCmd(),
-		newWorkCmd(),
-		newChronosCmd(),
-		newCleftCmd(),
-		newSpikeCmd(),
-		newVelocityCmd(),
-		newInterCmd(),
-		newAxonCmd(),
-		newArborCmd(),
-		newAfferentCmd(),
-		newPlexusCmd(),
-		newRetroCmd(),
-		newMeshCmd(),
-		newEngramCmd(),
-		newCognitionCmd(),
-		newVesicleCmd(),
-		newQuantalCmd(),
-		newCortexCmd(),
-		newSensoryCmd(),
-		newCodexCmd(),
-		newBridgeCmd(),
-		newReflexCmd(),
-		newTriageCmd(),
-		newAskCmd(),
-		newGreetingCmd(),
-		newMyelinCmd(),
-		newPruneCmd(),
-		newAllostasisCmd(),
-		newMotorCmd(),
-		newTranslocateCmd(),
-		newSagaCmd(),
+		// Soma & Axon Hillock
+		newSomaCmd(), newGanglionCmd(), newWorkCmd(), newPlexusCmd(), newEngramCmd(),
+		// Cortex & Sensory Integration
+		newCortexCmd(), newSensoryCmd(), newCodexCmd(), newAskCmd(), newVersionCmd(),
+		// Postsynaptic Effectors & Actuation
+		newBoutonCmd(), newReflexCmd(), newTriageCmd(), newMotorCmd(), newSagaCmd(),
+		// Synaptic Cleft & Gating
+		newCleftCmd(), newSpikeCmd(), newInterCmd(), newBridgeCmd(), newSynapseCmd(), newSessionCmd(), newGreetingCmd(),
+		// Axon & Myelin Sheath
+		newAxonCmd(), newMyelinCmd(), newVelocityCmd(), newMeshCmd(), newTranslocateCmd(),
+		// Dendritic Arbor
+		newArborCmd(), newAfferentCmd(), newRetroCmd(),
+		// Glial Regulation & Pruning
+		newCognitionCmd(), newPruneCmd(), newAllostasisCmd(),
+		// Terminal Boutons & Vesicles
+		newChronosCmd(), newVesicleCmd(), newQuantalCmd(),
 	)
-	root.AddCommand(legacyCommands()...)
 	return root
 }
 
@@ -155,82 +111,4 @@ func runGroup(cmd *cobra.Command, args []string) error {
 		msg += "\n\nDid you mean this?\n\t" + strings.Join(s, "\n\t")
 	}
 	return usageErrorf(msg+"\nRun '%s --help' for usage.", args[0], cmd.CommandPath(), cmd.CommandPath())
-}
-
-// legacySpec describes a command whose handler still parses its own arguments.
-// It exists only until every command is migrated to native cobra subcommands (DEN-950).
-type legacySpec struct {
-	Name        string
-	Aliases     []string
-	Category    string
-	Description string
-	Run         func(ctx context.Context, args []string) error
-}
-
-// legacyCmd adapts a hand-parsed handler to cobra: flags pass through untouched.
-func legacyCmd(s legacySpec) *cobra.Command {
-	return &cobra.Command{
-		Use:                s.Name,
-		Aliases:            s.Aliases,
-		Short:              s.Description,
-		GroupID:            groupIDFor(s.Category),
-		DisableFlagParsing: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
-				return cmd.Help()
-			}
-			args = extractGlobalFlags(args)
-			if err := applyGlobals(); err != nil {
-				return err
-			}
-			return s.Run(cmd.Context(), args)
-		},
-	}
-}
-
-// extractGlobalFlags removes the value-taking global flags from raw args and records them in globals.
-// --json and -y/--yes stay in args because legacy handlers parse them themselves.
-func extractGlobalFlags(args []string) []string {
-	targets := map[string]*string{
-		"--state-dir":   &globals.StateDir,
-		"--home":        &globals.Home,
-		"--gateway-url": &globals.GatewayURL,
-		"--plane-url":   &globals.PlaneURL,
-	}
-	out := make([]string, 0, len(args))
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		name, value, hasValue := strings.Cut(a, "=")
-		p, ok := targets[name]
-		if !ok {
-			switch a {
-			case "--json":
-				globals.JSON = true
-			case "--yes", "-y":
-				globals.Yes = true
-			}
-			out = append(out, a)
-			continue
-		}
-		if !hasValue && i+1 < len(args) {
-			value = args[i+1]
-			i++
-		}
-		*p = value
-	}
-	return out
-}
-
-// invokeCmd runs cmd with args on a bare root, printing any error.
-// Migrated groups use it to keep their old handle* entry points working for legacy callers
-// in other files; the shims are deleted once nothing calls them (DEN-1032).
-func invokeCmd(ctx context.Context, cmd *cobra.Command, args ...string) error {
-	root := newBareRootCmd()
-	root.AddCommand(cmd)
-	root.SetArgs(append([]string{cmd.Name()}, args...))
-	err := root.ExecuteContext(ctx)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[-] %v\n", err)
-	}
-	return err
 }

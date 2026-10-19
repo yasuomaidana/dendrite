@@ -120,16 +120,6 @@ func TestChronos_ReadCommands(t *testing.T) {
 	}
 }
 
-func TestHandlePlaneCommandShim(t *testing.T) {
-	b := serveBoard(t)
-	handlePlaneCommand(context.Background(), "link", []string{"DEN-101", "relates_to", "DEN-100"})
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if len(b.relations) != 1 {
-		t.Fatalf("shim did not run chronos link: %v", b.relations)
-	}
-}
-
 func TestChronos_SmartSelectPicksBlockedTicketWarning(t *testing.T) {
 	serveBoard(t)
 	out, err := chronosOutput(t, "next", "--ticket", "DEN-101")
