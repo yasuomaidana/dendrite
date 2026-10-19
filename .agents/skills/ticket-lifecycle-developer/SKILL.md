@@ -253,8 +253,8 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - `dendrite quality <audit|hitl-sync>`: Anti-mock quality gate, 100% coverage profiler, and Human-in-the-Loop verification poller.
 - `dendrite audit-changes [--branch <name>] [--dry-run] [--max-tokens <int>] [--model <m>]`: Topological vendor audit and rebase engine for local/* branches.
 - `dendrite vcs <guard|check|status|evacuate>`: Enforce Git branch guardrails, check policy, and evacuate forbidden branches.
-- `dendrite github-sync [--repo <owner/repo>] [--dry-run] [--json]`: Open the HITL verification issue of every Plane To Verify ticket and close issues of tickets Done in Plane. Run it right after moving a ticket to To Verify.
-- `dendrite quality hitl-sync [--dry-run] [--json]`: Poll verification issues; issues closed as completed move their ticket to Done in Plane.
+- `dendrite github-sync [--ticket <ID,...>] [--repo <owner/repo>] [--dry-run] [--json]`: Open the HITL verification issue of every Plane To Verify ticket and close issues of tickets Done in Plane. Run it right after moving a ticket to To Verify.
+- `dendrite quality hitl-sync [--ticket <ID,...>] [--dry-run] [--json]`: Poll verification issues; issues closed as completed move their ticket to Done in Plane.
 - `dendrite plane next [--ticket <id>] [--milestone <m>] [--json]`: Smart ticket prioritization & DAG reachability engine (aliases: `dev ticket next`, `stories next`). Selects the optimal unblocked ticket considering priority weighting and downstream critical path, or validates user-requested ticket.
 - `dendrite plane link <ticket-a> <blocking|blocked_by|relates_to> <ticket-b>`: Link ticket relationships in Plane to render Gantt dependency arrows (alias: `dev ticket link`).
 - `dendrite plane relate --ticket <id> [--priority <prio>] [--blocked-by <ids>] [--blocking <ids>] [--relates-to <ids>] [--reason <reason>]`: Update ticket priority and synchronize DAG dependency relations in Plane (alias: `dendrite skill ticket-relate`).
@@ -471,7 +471,7 @@ after each finished ticket and before long waits to persist in-flight and verifi
   - `dendrite commit` pushes the new commit to the configured remote (origin preferred) after every successful commit; use `--no-push` or `DENDRITE_COMMIT_PUSH=false` to opt out; it never force-pushes and refuses to push main/master.
 - Mutate the ticket state directly in Plane:
   - Transition the issue state to `To Verify` in Plane via the Plane API / client or `./bin/dendrite dev ticket set <ID> "To Verify" --push-plane`.
-  - Open its GitHub verification issue with `./bin/dendrite github-sync` (preview with `--dry-run`).
+  - Open its GitHub verification issue with `./bin/dendrite github-sync --ticket <ID>` (preview with `--dry-run`).
   - Autonomous agents must NEVER mark an issue directly as `Done`; issues remain in `To Verify` until formally signed off through human verification (`dendrite hitl-sync` or Plane web UI).
   - Advance next ticket to `In Progress` in Plane.
 - Synchronize repository documentation for human readers:

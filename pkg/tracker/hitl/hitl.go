@@ -38,6 +38,8 @@ type Syncer struct {
 	GitHub  *github.GitHubClient
 	Git     github.CommandExecutor // runs git for commit and branch discovery
 	RepoDir string
+	// Only restricts both syncs to these ticket IDs; empty means every ticket.
+	Only []string
 }
 
 // New returns a Syncer for the git repository at repoDir.
@@ -76,6 +78,9 @@ func (s *Syncer) tickets(ctx context.Context) ([]github.VerificationTicket, []st
 	for _, iss := range issues {
 		id := github.TicketIDFromTitle(iss.Name)
 		if id == "" || iss.ArchivedAt != nil {
+			continue
+		}
+		if len(s.Only) > 0 && !contains(s.Only, id) {
 			continue
 		}
 		if seen[id] {
@@ -286,4 +291,13 @@ func NewFromEnv(ctx context.Context, repo, repoDir string) (*Syncer, error) {
 		}
 	}
 	return New(planeClient, github.NewGitHubClient(repo), repoDir), nil
+}
+
+func contains(ids []string, id string) bool {
+	for _, x := range ids {
+		if strings.EqualFold(strings.TrimSpace(x), id) {
+			return true
+		}
+	}
+	return false
 }

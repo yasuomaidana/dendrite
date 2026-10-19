@@ -65,6 +65,9 @@ func TestGitHubSyncAndHITLSyncTools(t *testing.T) {
 	if gh.Called("gh issue create") != 0 {
 		t.Fatal("dry run created an issue")
 	}
+	if text, _ = callTool(t, srv, "dendrite_github_sync", `{"dry_run":true,"tickets":["DEN-2",7]}`); strings.Contains(text, `"ticket_id": "DEN-1"`) {
+		t.Fatalf("tickets filter ignored: %s", text)
+	}
 	if text, isErr = callTool(t, srv, "dendrite_github_sync", `{}`); isErr || gh.Called("gh issue create") != 1 {
 		t.Fatalf("apply: %s", text)
 	}

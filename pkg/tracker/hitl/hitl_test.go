@@ -309,3 +309,18 @@ func TestNewDefaultsAndNewFromEnv(t *testing.T) {
 	}
 	_ = os.Remove(repo)
 }
+
+func TestOnlyRestrictsTickets(t *testing.T) {
+	_, gh, s := fixture(t)
+	s.Only = []string{" den-3 ", "DEN-4"}
+	res, err := s.GitHubSync(context.Background(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := kinds(res.Actions); len(got) != 2 || got["DEN-3"] != github.ActionClose || got["DEN-4"] != github.ActionRemoveLabel {
+		t.Errorf("filtered actions = %v", got)
+	}
+	if gh.Called("git") != 0 {
+		t.Error("filtered sync must not enrich other tickets")
+	}
+}

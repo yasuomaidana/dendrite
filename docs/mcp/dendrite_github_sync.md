@@ -20,6 +20,13 @@ Mirror Plane verification state onto GitHub issues: open a HITL verification iss
     "repo": {
       "description": "Target GitHub repository in owner/repo format (default: the origin remote of the working directory)",
       "type": "string"
+    },
+    "tickets": {
+      "description": "Limit the sync to these ticket IDs (default: every ticket)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "type": "object"
@@ -38,7 +45,10 @@ Mirror Plane verification state onto GitHub issues: open a HITL verification iss
   "params": {
     "arguments": {
       "dry_run": false,
-      "repo": "the origin remote of the working directory"
+      "repo": "the origin remote of the working directory",
+      "tickets": [
+        "item1"
+      ]
     },
     "name": "dendrite_github_sync"
   }
@@ -48,5 +58,5 @@ Mirror Plane verification state onto GitHub issues: open a HITL verification iss
 ### CLI
 
 ```bash
-dendrite mcp call dendrite_github_sync '{"dry_run":false,"repo":"the origin remote of the working directory"}'
+dendrite mcp call dendrite_github_sync '{"dry_run":false,"repo":"the origin remote of the working directory","tickets":["item1"]}'
 ```

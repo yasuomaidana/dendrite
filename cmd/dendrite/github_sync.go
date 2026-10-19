@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"Dendrite/pkg/tracker/github"
 	"Dendrite/pkg/tracker/hitl"
@@ -31,6 +32,7 @@ func runGitHubSync(ctx context.Context, args []string, out io.Writer) error {
 	repo := fs.String("repo", "", "Target GitHub repository owner/repo (default: the origin remote)")
 	fs.StringVar(repo, "r", "", "Shorthand for --repo")
 	dryRun := fs.Bool("dry-run", false, "Show planned GitHub changes without applying them")
+	only := fs.String("ticket", "", "Limit the sync to these ticket IDs (comma-separated)")
 	asJSON := fs.Bool("json", false, "Output the sync result as JSON")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -40,6 +42,7 @@ func runGitHubSync(ctx context.Context, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	syncer.Only = splitTicketIDs(*only)
 	res, err := syncer.GitHubSync(ctx, *dryRun)
 	if err != nil {
 		return err
@@ -85,4 +88,15 @@ func describeAction(a github.Action, dryRun bool) string {
 		line += " [failed: " + a.Error + "]"
 	}
 	return line
+}
+
+// splitTicketIDs parses a comma-separated --ticket value.
+func splitTicketIDs(raw string) []string {
+	var ids []string
+	for _, id := range strings.Split(raw, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }

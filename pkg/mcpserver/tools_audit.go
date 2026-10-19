@@ -89,6 +89,11 @@ func (s *Server) registerAuditTools(deps Dependencies) {
 					"type":        "boolean",
 					"description": "Plan the GitHub changes without applying them",
 				},
+				"tickets": map[string]interface{}{
+					"type":        "array",
+					"items":       map[string]interface{}{"type": "string"},
+					"description": "Limit the sync to these ticket IDs (default: every ticket)",
+				},
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
@@ -97,6 +102,13 @@ func (s *Server) registerAuditTools(deps Dependencies) {
 		syncer, err := newHITLSyncer(ctx, deps, repo)
 		if err != nil {
 			return nil, fmt.Errorf("github sync failed: %w", err)
+		}
+		if ids, ok := args["tickets"].([]interface{}); ok {
+			for _, id := range ids {
+				if str, ok := id.(string); ok {
+					syncer.Only = append(syncer.Only, str)
+				}
+			}
 		}
 		res, err := syncer.GitHubSync(ctx, dryRun)
 		if err != nil {

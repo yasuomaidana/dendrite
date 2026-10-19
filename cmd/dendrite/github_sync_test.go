@@ -176,3 +176,22 @@ func TestFirstLine(t *testing.T) {
 		t.Errorf("long line not truncated: %q", got)
 	}
 }
+
+func TestGitHubSyncTicketFilter(t *testing.T) {
+	_, gh := offlineSyncer(t,
+		plane.PlaneIssue{ID: "u-1", Name: "[DEN-1] one", State: "st-verify"},
+		plane.PlaneIssue{ID: "u-2", Name: "[DEN-2] two", State: "st-verify"},
+	)
+	var out bytes.Buffer
+	if err := runGitHubSync(context.Background(), []string{"--dry-run", "--ticket", "DEN-2, ,"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "DEN-1 ") || !strings.Contains(out.String(), "would create DEN-2") {
+		t.Errorf("filter output:\n%s", out.String())
+	}
+	out.Reset()
+	if err := runHITLSync(context.Background(), []string{"--ticket", "DEN-1"}, &out); err != nil || strings.Contains(out.String(), "DEN-2") {
+		t.Errorf("hitl filter: %v\n%s", err, out.String())
+	}
+	_ = gh
+}

@@ -144,6 +144,7 @@ func runHITLSync(ctx context.Context, args []string, out io.Writer) error {
 	fs.SetOutput(out)
 	repo := fs.String("repo", "", "Target GitHub repository owner/repo (default: the origin remote)")
 	dryRun := fs.Bool("dry-run", false, "Report approvals without moving tickets to Done")
+	only := fs.String("ticket", "", "Limit the sync to these ticket IDs (comma-separated)")
 	asJSON := fs.Bool("json", false, "Output results as JSON")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -153,6 +154,7 @@ func runHITLSync(ctx context.Context, args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	syncer.Only = splitTicketIDs(*only)
 	results, err := syncer.HITLSync(ctx, *dryRun)
 	if err != nil {
 		return err

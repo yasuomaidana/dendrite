@@ -578,9 +578,11 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 			Flags: []FlagDoc{
 				{Name: "--repo", Description: "Target GitHub repository (owner/repo); default: the origin remote"},
 				{Name: "--dry-run", Description: "Show the planned issue changes without modifying GitHub"},
+				{Name: "--ticket", Description: "Limit the sync to these ticket IDs (comma-separated)"},
 				{Name: "--json", Description: "Output the sync result as JSON"},
 			},
 			Examples: []string{
+				"dendrite github-sync --ticket DEN-123",
 				"dendrite github-sync --dry-run",
 				"dendrite github-sync",
 			},
