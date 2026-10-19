@@ -77,7 +77,19 @@ func NewClientFromEnv() (*Client, error) {
 		workspaceSlug = "dendrite-ws"
 	}
 
+	// Each editable repository names its own Plane project in .dendrite/plane.json;
+	// PLANE_PROJECT_ID overrides it and Dendrite Core is the fallback.
 	projectID := os.Getenv("PLANE_PROJECT_ID")
+	if projectID == "" {
+		if cwd, err := os.Getwd(); err == nil {
+			if link, _, err := LinkForDir(cwd); err == nil {
+				projectID = link.ProjectID
+				if os.Getenv("PLANE_WORKSPACE_SLUG") == "" && link.Workspace != "" {
+					workspaceSlug = link.Workspace
+				}
+			}
+		}
+	}
 	if projectID == "" {
 		projectID = "e6380603-1428-4a66-995e-e06039915d52"
 	}

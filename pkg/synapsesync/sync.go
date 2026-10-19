@@ -218,6 +218,12 @@ func syncMember(ctx context.Context, opts Options, t Target) MemberReport {
 		PlaneProject: m.PlaneProject,
 		Status:       synapse.StatusOK,
 	}
+	if mr.PlaneProject == "" && mr.Dir != "" {
+		// Every editable repository names its Plane project in .dendrite/plane.json.
+		if link, err := plane.ReadLink(mr.Dir); err == nil {
+			mr.PlaneProject = link.Identifier
+		}
+	}
 	if t.Synapse != "" {
 		mr.Status = synapse.StatusOf(m)
 		if mr.Status != synapse.StatusOK {

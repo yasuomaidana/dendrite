@@ -733,6 +733,9 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 	case "states":
 		handlePlaneStates(ctx, client, args)
 
+	case "project":
+		handlePlaneProject(ctx, client, args)
+
 	default:
 		fmt.Printf("[-] Unknown plane action: %s\n", action)
 		fmt.Println("Usage:")
@@ -745,6 +748,7 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 		fmt.Println("  dendrite plane create --name \"[DEN-XXX] Title\" --desc \"Acceptance criteria and context\" [--milestone \"M1\"] [--priority high] [--estimate 5] [--blocked-by \"DEN-001\"]")
 		fmt.Println("  dendrite plane update --ticket <DEN-XXX> [--name \"[DEN-XXX] Title\"] (--desc \"markdown\" | --desc-file spec.md)")
 		fmt.Println("  dendrite plane states reconcile [--project <uuid|IDENT>] [--all] [--dry-run]")
+		fmt.Println("  dendrite plane project <ensure|show|audit> [args...]")
 		fmt.Println("  dendrite plane doc <push|pull|sync> [--dir docs]")
 		fmt.Println("  dendrite plane issues")
 		fmt.Println("  dendrite plane modules")

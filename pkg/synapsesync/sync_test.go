@@ -329,3 +329,20 @@ func TestRun_DivergedAndUnknownPlaneProject(t *testing.T) {
 		t.Errorf("unknown Plane project should be reported: %v", m.Errors)
 	}
 }
+
+func TestRun_StandaloneUsesRepoPlaneLink(t *testing.T) {
+	t.Setenv("DENDRITE_HOME", t.TempDir())
+	solo, _ := newRepo(t, "linked")
+	if err := plane.WriteLink(solo, plane.ProjectLink{Identifier: "LINKED", ProjectID: "p-linked"}); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := Run(context.Background(), Options{StartDir: solo, PlaneOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := rep.Members[0]
+	if m.PlaneProject != "LINKED" || m.Plane.Skipped != "Plane client unavailable" {
+		t.Errorf("standalone repo must fall back to .dendrite/plane.json: %+v %+v", m, m.Plane)
+	}
+}

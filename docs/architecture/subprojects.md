@@ -13,7 +13,15 @@ The boundary comes from [2026-10 Quality Audit & Execution Plan §5](./2026-10-q
 | **dendrite-core-rs** | `../dendrite-core-rs` | Rust | `DCORE` | DEN-972 | `dendrite-core-rs/docs/RESPONSIBILITIES.md` |
 | **dendrite-git-rs** | `../dendrite-git-rs` | Rust | `DGIT` | DEN-973 | `dendrite-git-rs/docs/RESPONSIBILITIES.md` |
 | **dendrite-rag-rs** | `../dendrite-rag-rs` | Rust | `DRAG` | DEN-974 | `dendrite-rag-rs/docs/RESPONSIBILITIES.md` |
-| **embedag** | `~/RustRoverProjects/embedag` | Rust | none: `DEV_STATUS.md` Milestone 9 | DEN-051 / 068 / 074 | `embedag/doc/dendrite-integration.md` |
+| **embedag** | `~/RustRoverProjects/embedag` | Rust | `EMBEDAG` (Milestone 9 imported from `DEV_STATUS.md`) | DEN-051 / 068 / 074 | `embedag/doc/dendrite-integration.md` |
+
+## Projects and synapses rule
+
+Every repository we can modify is a Plane project, and repositories that depend on each other share a synapse (rule 3 in `AGENTS.md`).
+
+- **Link file:** each repository commits `.dendrite/plane.json` (identifier, project UUID, workspace) next to `.dendrite/project.id`. `dendrite plane …`, `dendrite sync` and agents use that board when run inside the repository; `PLANE_PROJECT_ID` still overrides it, and Dendrite Core is the fallback.
+- **Commands:** `dendrite plane project ensure [dir] [--identifier ID] [--import DEV_STATUS.md]` adopts or creates the project, converges its states onto the canonical set and writes the link. `dendrite plane project audit` checks the rule across the IDE project folders. Editable means the origin belongs to the owner of this repository's origin, or the repository has no remote.
+- **State on 2026-10-18:** 13 editable repositories, 13 Plane projects (DEN, DMCP, DCORE, DGIT, DRAG, EMBEDAG, DOCULA, OXI, K8SLAB, DIESELJP, EMBRUST, CAPACITANCE, INTROML). Two synapses: `dendrite-ecosystem` (this repo, the four sub-projects and embedag) and `docula-embedag` (docula's `docula-rag` depends on `embedag-rag`). `rqlite` is a third-party clone and is not a project.
 
 ## Who owns what
 
@@ -93,8 +101,8 @@ An audit of the live Plane data found gaps, which `reconcile_relocation.py` clos
 | DEN-064, DEN-065, DEN-098, DEN-934 | split | DGIT-7, -6, -5, -2 |
 | DEND-203, DEN-803, DEN-964 | move | DRAG-4, -3, -2 |
 | DEN-037, DEN-059, DEN-060 | split | DRAG-7, -6, -5 |
-| DEND-202 | move | embedag 9.4.1 |
-| DEN-051, DEN-074, DEN-068 | split | embedag 9.2.1, 9.2.2, 9.3.1 |
+| DEND-202 | move | EMBEDAG [9.4.1] |
+| DEN-051, DEN-074, DEN-068 | split | EMBEDAG [9.2.1], [9.2.2], [9.3.1] (`relates_to` links since embedag got its Plane project) |
 
 Each sub-project's `RESPONSIBILITIES` Ticket Map has the same mapping, with live states.
 
