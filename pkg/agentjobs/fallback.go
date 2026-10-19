@@ -295,6 +295,10 @@ func (d *Dispatcher) runAider(ctx context.Context, job *Job, prompt string) (int
 			code = exitErr.ExitCode()
 		}
 	}
+	if f, oErr := os.OpenFile(d.Ledger.AgentLogPath(job.ID), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); oErr == nil {
+		_, _ = fmt.Fprintf(f, "\n--- aider/%s ---\n%s", job.Model, out)
+		_ = f.Close()
+	}
 	logTail := tail(string(out), maxCapsuleOutput)
 	// Aider exits 0 after an authentication failure; report it so the provider is skipped, not retried.
 	if strings.Contains(logTail, "AuthenticationError") || strings.Contains(logTail, "not able to authenticate") {

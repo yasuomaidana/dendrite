@@ -262,6 +262,10 @@ func (d *Dispatcher) RunJob(ctx context.Context, id string) error {
 	otherRetries := 0
 
 	var lastClass Class
+	// tierBase snapshots the worktree whenever the job moves to another agent or model, so a fallback
+	// tier is credited only with its own edits, not with the partial work of the tier before it.
+	var tierBase map[string]string
+	tierKey := ""
 
 	for {
 		if ctx.Err() != nil {
@@ -271,6 +275,13 @@ func (d *Dispatcher) RunJob(ctx context.Context, id string) error {
 		}
 
 		d.skipExhaustedInitialTier(job)
+
+		if key := job.Agent + "/" + job.Model; key != tierKey {
+			if tierKey != "" && job.Agent != "oxillama" {
+				tierBase, _ = d.snapshotDirty(ctx, job.Worktree)
+			}
+			tierKey = key
+		}
 
 		if job.Attempts == nil {
 			job.Attempts = make(map[string]int)
@@ -328,6 +339,9 @@ func (d *Dispatcher) RunJob(ctx context.Context, id string) error {
 			changedInScope, offendingPaths, scopeErr = d.checkScopeAgainst(ctx, job.Worktree, job.Scope, job.Baseline)
 			if scopeErr != nil {
 				logTail += "\nscope_check_error: " + scopeErr.Error()
+			}
+			if tierBase != nil && changedInScope {
+				changedInScope, _, _ = d.checkScopeAgainst(ctx, job.Worktree, job.Scope, tierBase)
 			}
 		}
 

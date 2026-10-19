@@ -393,3 +393,38 @@ exit 0
 		t.Errorf("auth failure classified %q, want QUOTA so copilot is skipped", c)
 	}
 }
+
+// A fallback tier must not be credited with the partial edits of the tier before it.
+func TestRunJob_FallbackIsNotCreditedWithPreviousTierEdits(t *testing.T) {
+	worktree := createGitRepo(t)
+	binDir := t.TempDir()
+	agy := installExecutableScript(t, binDir, "agy", fmt.Sprintf(`
+mkdir -p "%s/pkg" && echo partial > "%s/pkg/half.txt"
+echo 'AGY_ERROR {"short_error":"RESOURCE_EXHAUSTED (code 429): Individual quota reached. Resets in 2h."}'
+exit 3
+`, worktree, worktree))
+	aider := installExecutableScript(t, binDir, "aider", "echo 'aider: nothing to do'\nexit 0\n")
+	ledger := NewLedger(t.TempDir())
+	d := NewDispatcher(ledger)
+	d.Executable = installExecutableScript(t, t.TempDir(), "dummy_runner", "exit 0\n")
+	d.AgyPath, d.AiderPath = agy, aider
+	d.LiteLLMKey = "sk-test"
+	d.Sleep = func(time.Duration) {}
+	t.Setenv("DENDRITE_AGY_MODELS", "gemini-3.8-flash-high")
+
+	id, _ := d.Submit(SubmitSpec{Agent: "agy", Model: "gemini-3.8-flash-high", Worktree: worktree, Scope: []string{"pkg"}, Prompt: "Task", Complexity: 8})
+	if err := d.RunJob(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	job, _ := ledger.Load(id)
+	if job.Agent != "aider" {
+		t.Fatalf("expected escalation to aider, job on %s/%s", job.Agent, job.Model)
+	}
+	if job.Status == StatusSucceeded {
+		t.Errorf("aider changed nothing; the job must not be succeeded on the previous tier's edits")
+	}
+	log, _ := os.ReadFile(ledger.AgentLogPath(id))
+	if !strings.Contains(string(log), "aider: nothing to do") {
+		t.Errorf("agent.log must record the aider attempt, got:\n%s", log)
+	}
+}
