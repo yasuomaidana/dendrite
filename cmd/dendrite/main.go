@@ -45,40 +45,6 @@ func legacyCommands() []*cobra.Command {
 			},
 		}),
 		legacyCmd(legacySpec{
-			Name:        "codex",
-			Aliases:     []string{"doc", "docs", "engram-codex"},
-			Category:    "Cortex & Sensory Integration",
-			Description: "Docs-as-Code reflection, Docusaurus synthesis and portal",
-			Run: func(ctx context.Context, args []string) error {
-				if len(args) < 1 {
-					fmt.Println("Usage: dendrite doc <generate|audit|docusaurus|reflect|plane> [args...]")
-					return nil
-				}
-				handleDocCommand(ctx, args[0], args[1:])
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "cortex",
-			Aliases:     []string{"ui", "cortex-cockpit"},
-			Category:    "Cortex & Sensory Integration",
-			Description: "Embedded Web Control Cockpit and telemetry server",
-			Run: func(ctx context.Context, args []string) error {
-				handleUICommand(ctx, args)
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "sensory",
-			Aliases:     []string{"telemetry", "afferent-telemetry", "tel"},
-			Category:    "Cortex & Sensory Integration",
-			Description: "Hardware thermal, token spend, and Prometheus telemetry",
-			Run: func(ctx context.Context, args []string) error {
-				handleTelemetryCommand(ctx, args)
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
 			Name:        "dev",
 			Category:    "Soma & Axon Hillock",
 			Description: "Developer diagnostics, local Ollama probe, and ticket tools",
@@ -88,20 +54,6 @@ func legacyCommands() []*cobra.Command {
 					return nil
 				}
 				handleDevCommand(ctx, args[0], args[1:])
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "bridge",
-			Aliases:     []string{"jetbrains", "neuromuscular-bridge", "jb"},
-			Category:    "Synaptic Cleft & Gating",
-			Description: "JetBrains IDE MCP protocol integration and PSI symbol indexer",
-			Run: func(ctx context.Context, args []string) error {
-				if len(args) < 1 {
-					fmt.Println("Usage: dendrite jetbrains <probe|open|problems|symbols|build|run|setup> [args...]")
-					return nil
-				}
-				handleJetBrainsCommand(ctx, args[0], args[1:])
 				return nil
 			},
 		}),
@@ -193,16 +145,6 @@ func legacyCommands() []*cobra.Command {
 					return nil
 				}
 				handleServiceCommand(ctx, args[0], args[1:])
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "canvas",
-			Aliases:     []string{"creative-canvas", "interactive-canvas", "pcontext-canvas"},
-			Category:    "Postsynaptic Effectors & Actuation",
-			Description: "Interactive writing canvas and Penpot UI direct creative action bridge",
-			Run: func(ctx context.Context, args []string) error {
-				handleCanvasCommand(ctx, args)
 				return nil
 			},
 		}),

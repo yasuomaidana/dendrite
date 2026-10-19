@@ -176,7 +176,7 @@ func handleServiceCommand(ctx context.Context, action string, args []string) {
 		}
 
 	case "ui-sync", "sync":
-		handleUICommand(ctx, append([]string{"sync"}, args...))
+		_ = invokeCmd(ctx, newCortexCmd(), append([]string{"sync"}, args...)...)
 
 	default:
 		printServiceUsage()

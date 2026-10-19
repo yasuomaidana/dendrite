@@ -383,52 +383,6 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 				"dendrite agent session list",
 			},
 		},
-		"doc": {
-			Subcommands: []SubcommandDoc{
-				{Name: "generate", Description: "Synthesize Docusaurus site or reference documentation"},
-				{Name: "audit", Description: "Audit documentation coverage and completeness against registries"},
-				{Name: "docusaurus", Description: "Complete Docusaurus site operations (generate, init, share, audit, serve, build)"},
-				{Name: "reflect", Description: "Reflect documentation taxonomy from reference to target directory"},
-				{Name: "plane", Description: "Synchronize documentation pages between Plane and local repository"},
-			},
-			Flags: []FlagDoc{
-				{Name: "--reference", Description: "Generate per-command and per-tool reference pages from live registries"},
-				{Name: "--strict", Description: "Exit 1 if any registered command or tool is undocumented or stale"},
-				{Name: "--docs", Description: "Documentation source directory", Default: "docs"},
-				{Name: "--out", Description: "Target output directory"},
-			},
-			Examples: []string{
-				"dendrite docs generate --reference",
-				"dendrite docs audit --strict",
-				"dendrite doc docusaurus serve --port 3000",
-			},
-		},
-		"ui": {
-			Subcommands: []SubcommandDoc{
-				{Name: "sync", Description: "Synchronize UI component design tokens and Penpot frames"},
-			},
-			Flags: []FlagDoc{
-				{Name: "--port", Description: "Local HTTP port to bind Web UI", Default: "3456"},
-				{Name: "--daemon", Description: "Run in continuous background daemon mode"},
-				{Name: "--file", Description: "Path to UI component file for synchronization"},
-				{Name: "--ticket", Description: "Associated ticket ID for UI synchronization"},
-			},
-			Examples: []string{
-				"dendrite ui",
-				"dendrite ui --port 8080 --daemon",
-				"dendrite ui sync --file src/Button.tsx --ticket DEN-810",
-			},
-		},
-		"telemetry": {
-			Subcommands: []SubcommandDoc{
-				{Name: "snapshot", Description: "Instantaneous hardware thermal and token budget metrics"},
-				{Name: "metrics", Description: "Export raw metrics in Prometheus text format"},
-			},
-			Examples: []string{
-				"dendrite telemetry",
-				"dendrite telemetry metrics",
-			},
-		},
 		"dev": {
 			Subcommands: []SubcommandDoc{
 				{Name: "ollama", Description: "Probe local Ollama inference engine health, latency, and models"},
@@ -441,25 +395,6 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 				"dendrite dev ollama probe",
 				"dendrite dev ticket list",
 				"dendrite dev audit-prompt \"Explain Dendrite architecture\"",
-			},
-		},
-		"jetbrains": {
-			Subcommands: []SubcommandDoc{
-				{Name: "probe", Description: "Discover IDE MCP capabilities and tools"},
-				{Name: "open", Description: "Open file at specified line in active JetBrains editor"},
-				{Name: "problems", Description: "Query IDE inspection errors and diagnostics for file"},
-				{Name: "symbols", Description: "Search symbol index in JetBrains PSI tree"},
-				{Name: "build", Description: "Trigger IDE background build"},
-				{Name: "run", Description: "Execute an IDE run configuration"},
-				{Name: "setup", Description: "Configure JetBrains IDE toolset (.ai/mcp/mcp.json, agents, run configs)"},
-			},
-			Flags: []FlagDoc{
-				{Name: "--line", Description: "Line number to navigate to", Default: "1"},
-			},
-			Examples: []string{
-				"dendrite jetbrains probe",
-				"dendrite jetbrains open main.go --line 42",
-				"dendrite jetbrains symbols \"Registry\"",
 			},
 		},
 		"story": {
@@ -537,18 +472,6 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 			Examples: []string{
 				"dendrite service list",
 				"dendrite service health plane",
-			},
-		},
-		"canvas": {
-			Subcommands: []SubcommandDoc{
-				{Name: "actions", Description: "List available creative canvas actions"},
-				{Name: "dispatch", Description: "Dispatch canvas action to Penpot"},
-				{Name: "relate", Description: "Relate canvas element to Plane ticket"},
-				{Name: "sync", Description: "Synchronize canvas state"},
-				{Name: "update-state", Description: "Update canvas element state"},
-			},
-			Examples: []string{
-				"dendrite canvas actions",
 			},
 		},
 		"ask": {

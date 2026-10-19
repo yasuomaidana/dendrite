@@ -3,111 +3,98 @@ package main
 import (
 	"context"
 	"fmt"
-	"strconv"
+	"io"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"Dendrite/pkg/server"
 	"Dendrite/pkg/ui/penpot"
-	"Dendrite/pkg/workspace"
+
+	"github.com/spf13/cobra"
 )
 
-func handleUICommand(ctx context.Context, args []string) {
-	if len(args) > 0 && (args[0] == "sync" || args[0] == "penpot") {
-		subArgs := args[1:]
-		if len(args) > 1 && args[0] == "penpot" && args[1] == "sync" {
-			subArgs = args[2:]
-		}
+const defaultPenpotEndpoint = "http://localhost:9000"
 
-		ticketID := "DEN-810"
-		filePath := ""
-		endpoint := "http://localhost:9000"
-		dryRun := false
+// newCortexCmd builds `dendrite cortex` (alias ui): the web cockpit, Penpot sync and the creative canvas.
+func newCortexCmd() *cobra.Command {
+	cmd := newGroupCmd("cortex", "Embedded Web Control Cockpit and telemetry server", "cortex",
+		"ui", "cortex-cockpit")
+	cmd.Example = "dendrite cortex serve --port 3456\n" +
+		"dendrite cortex sync --file web/src/Button.svelte --ticket DEN-810\n" +
+		"dendrite cortex canvas dispatch --action WRITE_PLAN --prompt \"Q4 roadmap\""
+	cmd.AddCommand(newCortexServeCmd(), newCortexSyncCmd(), newCortexCanvasCmd())
+	return cmd
+}
 
-		for i := 0; i < len(subArgs); i++ {
-			switch subArgs[i] {
-			case "--ticket", "-t":
-				if i+1 < len(subArgs) {
-					ticketID = subArgs[i+1]
-					i++
-				}
-			case "--file", "-f":
-				if i+1 < len(subArgs) {
-					filePath = subArgs[i+1]
-					i++
-				}
-			case "--endpoint", "-e":
-				if i+1 < len(subArgs) {
-					endpoint = subArgs[i+1]
-					i++
-				}
-			case "--dry-run":
-				dryRun = true
-			}
-		}
-
-		if filePath == "" {
-			fmt.Println("[-] Usage: dendrite ui sync --file <path> [--ticket <id>] [--endpoint <url>] [--dry-run]")
-			return
-		}
-
-		syncer := penpot.NewSynchronizer(nil)
-		res, err := syncer.Sync(ctx, penpot.SyncOptions{
-			TicketID:       ticketID,
-			FilePath:       filePath,
-			PenpotEndpoint: endpoint,
-			DryRun:         dryRun,
-			CommentPlane:   true,
-		})
-		if err != nil {
-			fmt.Printf("[-] UI synchronization failed: %v\n", err)
-			return
-		}
-
-		fmt.Printf("[✓] Successfully synchronized UI component '%s' (%s) with Penpot & Plane\n", res.Component.Name, res.Component.Framework)
-		fmt.Printf("    * Design Tokens:   %d tokens extracted\n", len(res.Component.Tokens))
-		fmt.Printf("    * Component Props: %s\n", strings.Join(res.Component.Props, ", "))
-		fmt.Printf("    * Penpot Frame:    %s\n", res.PenpotFrameURL)
-		fmt.Printf("    * Plane Synced:    %v (Ticket: %s)\n", res.PlaneSynced, res.TicketID)
-		fmt.Printf("    * Service Status:  %s\n", res.Notes)
-		return
+func newCortexServeCmd() *cobra.Command {
+	var port int
+	cmd := &cobra.Command{
+		Use:     "serve",
+		Aliases: []string{"start"},
+		Short:   "Run the web cockpit and telemetry server in the foreground (Ctrl+C stops it)",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			return runCortexServe(ctx, port, cmd.OutOrStdout())
+		},
 	}
+	cmd.Flags().IntVar(&port, "port", 3456, "Listen port")
+	return cmd
+}
 
-	port := 3456
-	daemonMode := false
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--port" && i+1 < len(args) {
-			if p, err := strconv.Atoi(args[i+1]); err == nil {
-				port = p
-			}
-			i++
-		} else if args[i] == "--daemon" || args[i] == "-d" {
-			daemonMode = true
-		}
-	}
-
-	reg, _ := workspace.NewRegistry("", "")
-	hub := server.NewTelemetryHub()
-
-	srv := server.NewServer(server.ServerConfig{
-		Host: "127.0.0.1",
-		Port: port,
-	}, reg, hub)
-
+func runCortexServe(ctx context.Context, port int, out io.Writer) error {
+	reg, _ := newProjectRegistry()
+	srv := server.NewServer(server.ServerConfig{Host: "127.0.0.1", Port: port}, reg, server.NewTelemetryHub())
 	start := time.Now()
 	if err := srv.Start(); err != nil {
-		fmt.Printf("[-] Failed to start Dendrite Web UI: %v\n", err)
-		return
+		return fmt.Errorf("start Dendrite Web UI: %w", err)
 	}
-	duration := time.Since(start)
+	defer func() { _ = srv.Shutdown(context.Background()) }()
+	fmt.Fprintf(out, "[✓] Dendrite Web UI listening at http://127.0.0.1:%d (Started in %v)\n", port, time.Since(start))
+	fmt.Fprintf(out, "    - WebSocket Telemetry: ws://127.0.0.1:%d/api/v1/telemetry/ws\n", port)
+	fmt.Fprintf(out, "    - REST API Snapshot:   http://127.0.0.1:%d/api/v1/telemetry/snapshot\n", port)
+	fmt.Fprintf(out, "    - Prometheus Metrics:  http://127.0.0.1:%d/metrics\n", port)
+	fmt.Fprintln(out, "[+] Press Ctrl+C to stop.")
+	<-ctx.Done()
+	return nil
+}
 
-	fmt.Printf("[✓] Dendrite Web UI listening at http://127.0.0.1:%d (Started in %v)\n", port, duration)
-	fmt.Printf("    - WebSocket Telemetry: ws://127.0.0.1:%d/api/v1/telemetry/ws\n", port)
-	fmt.Printf("    - REST API Snapshot:   http://127.0.0.1:%d/api/v1/telemetry/snapshot\n", port)
-	fmt.Printf("    - Prometheus Metrics:  http://127.0.0.1:%d/metrics\n", port)
-
-	if daemonMode {
-		fmt.Println("[+] Running in daemon mode. Press Ctrl+C to terminate.")
-		select {}
+func newCortexSyncCmd() *cobra.Command {
+	opts := penpot.SyncOptions{TicketID: "DEN-810", PenpotEndpoint: defaultPenpotEndpoint, CommentPlane: true}
+	cmd := &cobra.Command{
+		Use:     "sync",
+		Aliases: []string{"penpot"},
+		Short:   "Extract a UI component's tokens and props and sync them to Penpot and the Plane ticket",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCortexSync(cmd.Context(), opts, cmd.OutOrStdout())
+		},
 	}
+	addFileFlag(cmd, &opts.FilePath, "", "UI component file")
+	addTicketFlag(cmd, &opts.TicketID, opts.TicketID)
+	cmd.Flags().StringVarP(&opts.PenpotEndpoint, "endpoint", "e", opts.PenpotEndpoint, "Penpot URL")
+	addDryRunFlag(cmd, &opts.DryRun)
+	requireFlags(cmd, "file")
+	return cmd
+}
+
+func runCortexSync(ctx context.Context, opts penpot.SyncOptions, out io.Writer) error {
+	res, err := penpot.NewSynchronizer(nil).Sync(ctx, opts)
+	if err != nil {
+		return fmt.Errorf("UI synchronization: %w", err)
+	}
+	if globals.JSON {
+		return writeJSON(out, res)
+	}
+	fmt.Fprintf(out, "[✓] Successfully synchronized UI component '%s' (%s) with Penpot & Plane\n", res.Component.Name, res.Component.Framework)
+	fmt.Fprintf(out, "    * Design Tokens:   %d tokens extracted\n", len(res.Component.Tokens))
+	fmt.Fprintf(out, "    * Component Props: %s\n", strings.Join(res.Component.Props, ", "))
+	fmt.Fprintf(out, "    * Penpot Frame:    %s\n", res.PenpotFrameURL)
+	fmt.Fprintf(out, "    * Plane Synced:    %v (Ticket: %s)\n", res.PlaneSynced, res.TicketID)
+	fmt.Fprintf(out, "    * Service Status:  %s\n", res.Notes)
+	return nil
 }

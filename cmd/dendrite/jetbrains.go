@@ -3,186 +3,239 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
-	"strconv"
 	"time"
 
 	"Dendrite/pkg/jetbrains"
+
+	"github.com/spf13/cobra"
 )
 
-func getJetBrainsClient() (*jetbrains.Client, error) {
-	testClient := &http.Client{Timeout: 1500 * time.Millisecond}
-	transport := jetbrains.NewHTTPTransport("http://localhost:63342/api/mcp", testClient)
+// jetbrainsMCPURL is the IDE's built-in MCP endpoint; tests point it at a local server.
+var jetbrainsMCPURL = "http://localhost:63342/api/mcp"
+
+func getJetBrainsClient(ctx context.Context) (*jetbrains.Client, error) {
+	transport := jetbrains.NewHTTPTransport(jetbrainsMCPURL, &http.Client{Timeout: 1500 * time.Millisecond})
 	client, err := jetbrains.NewClient(transport)
 	if err != nil {
 		return nil, err
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
 	defer cancel()
-
-	connErr := error(nil)
-	if _, connErr = client.Connect(ctx); connErr == nil {
-		return client, nil
+	if _, err := client.Connect(ctx); err != nil {
+		return nil, fmt.Errorf("connect to the JetBrains IDE MCP server at %s (is the IDE running?): %w", jetbrainsMCPURL, err)
 	}
-
-	return nil, fmt.Errorf("failed to connect to live JetBrains IDE MCP server at http://localhost:63342/api/mcp: %w (Zero-Mock Policy: live IDE connection required)", connErr)
+	return client, nil
 }
 
-func handleJetBrainsCommand(ctx context.Context, action string, args []string) {
-	client, err := getJetBrainsClient()
+// withIDE connects to the IDE and runs fn with the client and its bridge.
+func withIDE(ctx context.Context, fn func(*jetbrains.Client, *jetbrains.Bridge) error) error {
+	client, err := getJetBrainsClient(ctx)
 	if err != nil {
-		fmt.Printf("[-] Failed to initialize JetBrains client: %v\n", err)
-		return
+		return err
 	}
-	bridge := jetbrains.NewBridge(client)
+	return fn(client, jetbrains.NewBridge(client))
+}
 
-	switch action {
-	case "docusaurus", "site":
-		handleDocusaurusCommand(ctx, args)
-	case "probe":
-		fmt.Println("[+] Probing JetBrains IDE MCP Server...")
-		srvInfo := client.GetServerInfo()
-		if srvInfo != nil {
-			fmt.Printf("  [✓] Connected: %s (v%s)\n", srvInfo.Name, srvInfo.Version)
-		}
-		tools, err := client.ListTools(ctx)
-		if err != nil {
-			fmt.Printf("[-] Failed to list tools: %v\n", err)
-			return
-		}
-		fmt.Printf("  [✓] Discovered Tools (%d):\n", len(tools))
-		for _, t := range tools {
-			fmt.Printf("      - %-25s: %s\n", t.Name, t.Description)
-		}
+// newBridgeCmd builds `dendrite bridge` (alias jetbrains): the JetBrains IDE MCP integration.
+func newBridgeCmd() *cobra.Command {
+	cmd := newGroupCmd("bridge", "JetBrains IDE MCP protocol integration and PSI symbol indexer", "cleft",
+		"jetbrains", "neuromuscular-bridge", "jb")
+	cmd.Example = "dendrite bridge setup\n" +
+		"dendrite bridge probe\n" +
+		"dendrite bridge open cmd/dendrite/root.go --line 40\n" +
+		"dendrite bridge symbols newRootCmd"
 
-	case "open":
-		if len(args) == 0 {
-			fmt.Println("[-] Please specify a file path to open")
-			return
-		}
-		filePath := args[0]
-		line := 1
-		for i := 1; i < len(args); i++ {
-			if (args[i] == "--line" || args[i] == "-l") && i+1 < len(args) {
-				if parsed, err := strconv.Atoi(args[i+1]); err == nil {
-					line = parsed
+	probe := &cobra.Command{
+		Use:   "probe",
+		Short: "Connect to the IDE and list its MCP tools",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withIDE(cmd.Context(), func(c *jetbrains.Client, _ *jetbrains.Bridge) error {
+				return runBridgeProbe(cmd.Context(), c, cmd.OutOrStdout())
+			})
+		},
+	}
+
+	var line int
+	open := &cobra.Command{
+		Use:   "open <file>",
+		Short: "Open a file in the IDE editor",
+		Args:  exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if line < 1 {
+				return usageErrorf("--line must be 1 or more")
+			}
+			return withIDE(cmd.Context(), func(_ *jetbrains.Client, b *jetbrains.Bridge) error {
+				if err := b.OpenFile(cmd.Context(), args[0], line, 1); err != nil {
+					return fmt.Errorf("open file: %w", err)
 				}
-				i++
-			}
-		}
-		if err := bridge.OpenFile(ctx, filePath, line, 1); err != nil {
-			fmt.Printf("[-] Failed to open file: %v\n", err)
-			return
-		}
-		fmt.Printf("[✓] Opened %s at line %d in JetBrains editor\n", filePath, line)
-
-	case "problems":
-		if len(args) == 0 {
-			fmt.Println("[-] Please specify a file path to inspect")
-			return
-		}
-		filePath := args[0]
-		problems, err := bridge.GetFileProblems(ctx, filePath)
-		if err != nil {
-			fmt.Printf("[-] Failed to get problems: %v\n", err)
-			return
-		}
-		fmt.Printf("[+] JetBrains Diagnostics for %s (%d found):\n", filePath, len(problems))
-		for _, p := range problems {
-			fmt.Printf("    [%s] Line %d:%d - %s\n", p.Severity, p.Line, p.Column, p.Description)
-		}
-
-	case "symbols":
-		query := ""
-		if len(args) > 0 {
-			query = args[0]
-		}
-		symbols, err := bridge.SearchSymbol(ctx, query)
-		if err != nil {
-			fmt.Printf("[-] Symbol search failed: %v\n", err)
-			return
-		}
-		fmt.Printf("[+] Matching Symbols (%d):\n", len(symbols))
-		for _, s := range symbols {
-			fmt.Printf("    - %s (%s) -> %s:%d\n", s.Name, s.Kind, s.File, s.Line)
-		}
-
-	case "build":
-		fmt.Println("[+] Triggering IDE project build...")
-		res, err := bridge.BuildProject(ctx)
-		if err != nil {
-			fmt.Printf("[-] Build failed: %v\n", err)
-			return
-		}
-		if res.Success {
-			fmt.Printf("[✓] Project build succeeded in %v\n", res.Duration)
-		} else {
-			fmt.Printf("[-] Build completed with errors in %v\n", res.Duration)
-		}
-
-	case "run":
-		if len(args) == 0 {
-			fmt.Println("[-] Please specify a run configuration name")
-			return
-		}
-		configName := args[0]
-		fmt.Printf("[+] Running IDE configuration '%s'...\n", configName)
-		out, err := bridge.ExecuteRunConfiguration(ctx, configName)
-		if err != nil {
-			fmt.Printf("[-] Execution failed: %v\n", err)
-			return
-		}
-		fmt.Printf("[✓] %s\n", out)
-
-	case "setup", "setup-mcp", "configure":
-		fmt.Println("[+] Configuring JetBrains IDE Toolset for Dendrite MCP & Autonomous Agents...")
-		opts := jetbrains.SetupOptions{
-			ConfigureProjectMCP:    true,
-			ConfigureGlobalMCP:     true,
-			ConfigureRunConfigs:    true,
-			ConfigureExternalTools: true,
-		}
-		for _, arg := range args {
-			if arg == "--project-only" {
-				opts.ConfigureGlobalMCP = false
-			} else if arg == "--global-only" {
-				opts.ConfigureProjectMCP = false
-				opts.ConfigureRunConfigs = false
-				opts.ConfigureExternalTools = false
-			}
-		}
-		res, err := jetbrains.SetupJetBrainsToolset(opts)
-		if err != nil {
-			fmt.Printf("[-] Setup failed: %v\n", err)
-			return
-		}
-		fmt.Printf("[✓] JetBrains Toolset configured successfully!\n")
-		if len(res.FilesCreated) > 0 {
-			fmt.Println("[+] Created Configurations:")
-			for _, f := range res.FilesCreated {
-				fmt.Printf("    - %s\n", f)
-			}
-		}
-		if len(res.FilesUpdated) > 0 {
-			fmt.Println("[+] Updated Configurations:")
-			for _, f := range res.FilesUpdated {
-				fmt.Printf("    - %s\n", f)
-			}
-		}
-		if len(res.ToolsAdded) > 0 {
-			fmt.Println("[+] Registered External Tools:")
-			for _, t := range res.ToolsAdded {
-				fmt.Printf("    - %s\n", t)
-			}
-		}
-		fmt.Println("[+] JetBrains MCP Integration Active:")
-		fmt.Println("    - Project MCP: .ai/mcp/mcp.json")
-		fmt.Println("    - Global MCP:  ~/.ai/mcp/mcp.json")
-		fmt.Println("    - Run Configs: .idea/runConfigurations/ (MCP Server, Aider, Antigravity, Web UI)")
-		fmt.Println("    - Toolset:     .idea/tools/External_Tools.xml")
-
-	default:
-		fmt.Printf("[-] Unknown jetbrains action: %s\n", action)
+				fmt.Fprintf(cmd.OutOrStdout(), "[✓] Opened %s at line %d in JetBrains editor\n", args[0], line)
+				return nil
+			})
+		},
 	}
+	open.Flags().IntVarP(&line, "line", "l", 1, "Line to place the caret on")
+
+	problems := &cobra.Command{
+		Use:   "problems <file>",
+		Short: "Show the IDE's inspection results for a file",
+		Args:  exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withIDE(cmd.Context(), func(_ *jetbrains.Client, b *jetbrains.Bridge) error {
+				probs, err := b.GetFileProblems(cmd.Context(), args[0])
+				if err != nil {
+					return fmt.Errorf("get problems: %w", err)
+				}
+				out := cmd.OutOrStdout()
+				if globals.JSON {
+					return writeJSON(out, probs)
+				}
+				fmt.Fprintf(out, "[+] JetBrains Diagnostics for %s (%d found):\n", args[0], len(probs))
+				for _, p := range probs {
+					fmt.Fprintf(out, "    [%s] Line %d:%d - %s\n", p.Severity, p.Line, p.Column, p.Description)
+				}
+				return nil
+			})
+		},
+	}
+
+	symbols := &cobra.Command{
+		Use:   "symbols [query]",
+		Short: "Search the IDE's symbol index",
+		Args:  maxArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			query := ""
+			if len(args) == 1 {
+				query = args[0]
+			}
+			return withIDE(cmd.Context(), func(_ *jetbrains.Client, b *jetbrains.Bridge) error {
+				syms, err := b.SearchSymbol(cmd.Context(), query)
+				if err != nil {
+					return fmt.Errorf("symbol search: %w", err)
+				}
+				out := cmd.OutOrStdout()
+				if globals.JSON {
+					return writeJSON(out, syms)
+				}
+				fmt.Fprintf(out, "[+] Matching Symbols (%d):\n", len(syms))
+				for _, s := range syms {
+					fmt.Fprintf(out, "    - %s (%s) -> %s:%d\n", s.Name, s.Kind, s.File, s.Line)
+				}
+				return nil
+			})
+		},
+	}
+
+	build := &cobra.Command{
+		Use:   "build",
+		Short: "Build the project in the IDE",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withIDE(cmd.Context(), func(_ *jetbrains.Client, b *jetbrains.Bridge) error {
+				out := cmd.OutOrStdout()
+				fmt.Fprintln(out, "[+] Triggering IDE project build...")
+				res, err := b.BuildProject(cmd.Context())
+				if err != nil {
+					return fmt.Errorf("build: %w", err)
+				}
+				if !res.Success {
+					return fmt.Errorf("build completed with errors in %v", res.Duration)
+				}
+				fmt.Fprintf(out, "[✓] Project build succeeded in %v\n", res.Duration)
+				return nil
+			})
+		},
+	}
+
+	run := &cobra.Command{
+		Use:   "run <configuration>",
+		Short: "Run an IDE run configuration",
+		Args:  exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withIDE(cmd.Context(), func(_ *jetbrains.Client, b *jetbrains.Bridge) error {
+				fmt.Fprintf(cmd.OutOrStdout(), "[+] Running IDE configuration '%s'...\n", args[0])
+				res, err := b.ExecuteRunConfiguration(cmd.Context(), args[0])
+				if err != nil {
+					return fmt.Errorf("run configuration: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "[✓] %s\n", res)
+				return nil
+			})
+		},
+	}
+
+	cmd.AddCommand(probe, open, problems, symbols, build, run, newBridgeSetupCmd())
+	return cmd
+}
+
+func runBridgeProbe(ctx context.Context, client *jetbrains.Client, out io.Writer) error {
+	fmt.Fprintln(out, "[+] Probing JetBrains IDE MCP Server...")
+	if info := client.GetServerInfo(); info != nil {
+		fmt.Fprintf(out, "  [✓] Connected: %s (v%s)\n", info.Name, info.Version)
+	}
+	tools, err := client.ListTools(ctx)
+	if err != nil {
+		return fmt.Errorf("list tools: %w", err)
+	}
+	fmt.Fprintf(out, "  [✓] Discovered Tools (%d):\n", len(tools))
+	for _, t := range tools {
+		fmt.Fprintf(out, "      - %-25s: %s\n", t.Name, t.Description)
+	}
+	return nil
+}
+
+func newBridgeSetupCmd() *cobra.Command {
+	var projectOnly, globalOnly bool
+	cmd := &cobra.Command{
+		Use:     "setup",
+		Aliases: []string{"setup-mcp", "configure"},
+		Short:   "Write the IDE's MCP config, run configurations and external tools (no running IDE needed)",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts := jetbrains.SetupOptions{
+				ConfigureProjectMCP:    !globalOnly,
+				ConfigureGlobalMCP:     !projectOnly,
+				ConfigureRunConfigs:    !globalOnly,
+				ConfigureExternalTools: !globalOnly,
+			}
+			return runBridgeSetup(opts, cmd.OutOrStdout())
+		},
+	}
+	cmd.Flags().BoolVar(&projectOnly, "project-only", false, "Only write this project's configuration")
+	cmd.Flags().BoolVar(&globalOnly, "global-only", false, "Only write the global MCP configuration")
+	cmd.MarkFlagsMutuallyExclusive("project-only", "global-only")
+	return cmd
+}
+
+func runBridgeSetup(opts jetbrains.SetupOptions, out io.Writer) error {
+	fmt.Fprintln(out, "[+] Configuring JetBrains IDE Toolset for Dendrite MCP & Autonomous Agents...")
+	res, err := jetbrains.SetupJetBrainsToolset(opts)
+	if err != nil {
+		return fmt.Errorf("setup: %w", err)
+	}
+	fmt.Fprintln(out, "[✓] JetBrains Toolset configured successfully!")
+	for _, group := range []struct {
+		title string
+		items []string
+	}{
+		{"Created Configurations", res.FilesCreated},
+		{"Updated Configurations", res.FilesUpdated},
+		{"Registered External Tools", res.ToolsAdded},
+	} {
+		if len(group.items) == 0 {
+			continue
+		}
+		fmt.Fprintf(out, "[+] %s:\n", group.title)
+		for _, item := range group.items {
+			fmt.Fprintf(out, "    - %s\n", item)
+		}
+	}
+	fmt.Fprintln(out, "[+] JetBrains MCP Integration Active:")
+	fmt.Fprintln(out, "    - Project MCP: .ai/mcp/mcp.json")
+	fmt.Fprintln(out, "    - Global MCP:  ~/.ai/mcp/mcp.json")
+	fmt.Fprintln(out, "    - Run Configs: .idea/runConfigurations/ (MCP Server, Aider, Antigravity, Web UI)")
+	fmt.Fprintln(out, "    - Toolset:     .idea/tools/External_Tools.xml")
+	return nil
 }

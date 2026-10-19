@@ -22,16 +22,29 @@ Cortex & Sensory Integration
 
 | Subcommand | Description |
 | :--- | :--- |
-| `snapshot` | Instantaneous hardware thermal and token budget metrics |
-| `metrics` | Export raw metrics in Prometheus text format |
+| `metrics` | Print the metrics in Prometheus exposition format |
+| `snapshot` | Print one telemetry snapshot (temperature, spend, node health) |
 
 ## Flags
 
 None
 
+## Subcommand Reference
+
+### `dendrite sensory metrics`
+
+Print the metrics in Prometheus exposition format
+
+```bash
+dendrite sensory metrics
+```
+
+Aliases: `export`, `prometheus`
+
 ## Examples
 
 ```bash
-dendrite telemetry
-dendrite telemetry metrics
+dendrite sensory
+dendrite sensory snapshot --json
+dendrite sensory metrics
 ```

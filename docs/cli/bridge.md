@@ -22,24 +22,52 @@ Synaptic Cleft & Gating
 
 | Subcommand | Description |
 | :--- | :--- |
-| `probe` | Discover IDE MCP capabilities and tools |
-| `open` | Open file at specified line in active JetBrains editor |
-| `problems` | Query IDE inspection errors and diagnostics for file |
-| `symbols` | Search symbol index in JetBrains PSI tree |
-| `build` | Trigger IDE background build |
-| `run` | Execute an IDE run configuration |
-| `setup` | Configure JetBrains IDE toolset (.ai/mcp/mcp.json, agents, run configs) |
+| `build` | Build the project in the IDE |
+| `open` | Open a file in the IDE editor |
+| `probe` | Connect to the IDE and list its MCP tools |
+| `problems` | Show the IDE's inspection results for a file |
+| `run` | Run an IDE run configuration |
+| `setup` | Write the IDE's MCP config, run configurations and external tools (no running IDE needed) |
+| `symbols` | Search the IDE's symbol index |
 
 ## Flags
 
+None
+
+## Subcommand Reference
+
+### `dendrite bridge open`
+
+Open a file in the IDE editor
+
+```bash
+dendrite bridge open <file> [flags]
+```
+
 | Flag | Description |
 | :--- | :--- |
-| `--line` | Line number to navigate to (default: 1) |
+| `--line, -l` | Line to place the caret on (default: 1) |
+
+### `dendrite bridge setup`
+
+Write the IDE's MCP config, run configurations and external tools (no running IDE needed)
+
+```bash
+dendrite bridge setup [flags]
+```
+
+Aliases: `setup-mcp`, `configure`
+
+| Flag | Description |
+| :--- | :--- |
+| `--global-only` | Only write the global MCP configuration |
+| `--project-only` | Only write this project's configuration |
 
 ## Examples
 
 ```bash
-dendrite jetbrains probe
-dendrite jetbrains open main.go --line 42
-dendrite jetbrains symbols "Registry"
+dendrite bridge setup
+dendrite bridge probe
+dendrite bridge open cmd/dendrite/root.go --line 40
+dendrite bridge symbols newRootCmd
 ```

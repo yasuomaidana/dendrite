@@ -51,7 +51,6 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 | Command | Aliases | Description |
 | :--- | :--- | :--- |
 | [`bouton`](bouton.md) | `agent`, `effector-dispatch`, `bouton-dispatch`, `dispatch`, `agt` | Autonomous coding agent harness and job dispatcher (Aider, OpenHands, OpenCode, AGY, Copilot) |
-| [`canvas`](canvas.md) | `creative-canvas`, `interactive-canvas`, `pcontext-canvas` | Interactive writing canvas and Penpot UI direct creative action bridge |
 | [`inhibitory-triage`](inhibitory-triage.md) | `triage`, `trg` | Resolve local agent task triage and priority routing |
 | [`motor`](motor.md) | `service`, `motor-unit`, `effector-service`, `svc` | Manage microservices (Plane, Penpot, Ollama, LiteLLM) |
 | [`reflex`](reflex.md) | `test`, `myotatic-reflex`, `tst` | Table-driven test synthesis, Testcontainers & UI tests |

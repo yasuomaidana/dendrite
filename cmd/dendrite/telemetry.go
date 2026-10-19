@@ -3,34 +3,70 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
+	"io"
+	"maps"
+	"slices"
 	"time"
 
 	"Dendrite/pkg/telemetry"
 	"Dendrite/pkg/telemetry/exporter"
+
+	"github.com/spf13/cobra"
 )
 
-func handleTelemetryCommand(ctx context.Context, args []string) {
-	daemon := telemetry.NewDaemon(telemetry.DaemonConfig{
-		Interval: 1 * time.Second,
-	}, nil, nil, nil, nil)
+func newTelemetryDaemon() *telemetry.Daemon {
+	return telemetry.NewDaemon(telemetry.DaemonConfig{Interval: time.Second}, nil, nil, nil, nil)
+}
 
-	if len(args) > 0 && (args[0] == "metrics" || args[0] == "export" || args[0] == "prometheus") {
-		exp := exporter.NewPrometheusExporter(daemon)
-		if err := exp.WriteMetrics(ctx, os.Stdout); err != nil {
-			fmt.Printf("[-] Failed to write Prometheus metrics: %v\n", err)
+// newSensoryCmd builds `dendrite sensory` (alias telemetry). With no subcommand it prints a snapshot.
+func newSensoryCmd() *cobra.Command {
+	cmd := newGroupCmd("sensory", "Hardware thermal, token spend, and Prometheus telemetry", "cortex",
+		"telemetry", "afferent-telemetry", "tel")
+	cmd.Example = "dendrite sensory\ndendrite sensory snapshot --json\ndendrite sensory metrics"
+	cmd.RunE = func(c *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return runSensorySnapshot(c.Context(), c.OutOrStdout())
 		}
-		return
+		return runGroup(c, args)
 	}
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "snapshot",
+			Short: "Print one telemetry snapshot (temperature, spend, node health)",
+			Args:  noArgs,
+			RunE: func(c *cobra.Command, args []string) error {
+				return runSensorySnapshot(c.Context(), c.OutOrStdout())
+			},
+		},
+		&cobra.Command{
+			Use:     "metrics",
+			Aliases: []string{"export", "prometheus"},
+			Short:   "Print the metrics in Prometheus exposition format",
+			Args:    noArgs,
+			RunE: func(c *cobra.Command, args []string) error {
+				if err := exporter.NewPrometheusExporter(newTelemetryDaemon()).WriteMetrics(c.Context(), c.OutOrStdout()); err != nil {
+					return fmt.Errorf("write Prometheus metrics: %w", err)
+				}
+				return nil
+			},
+		},
+	)
+	return cmd
+}
 
-	rep := daemon.CollectOnce(ctx)
-	fmt.Printf("[+] Instantaneous Telemetry Snapshot:\n")
-	fmt.Printf("    - Timestamp:        %s\n", rep.Timestamp.Format(time.RFC3339))
-	fmt.Printf("    - SoC Temperature:  %.1f°C (Alert: %v, Critical: %v)\n", rep.SoCTempC, rep.ThermalAlert, rep.ThermalCritical)
-	fmt.Printf("    - 24h Spend:        $%.2f / $%.2f daily budget\n", rep.Spend24hUSD, rep.DailyBudgetUSD)
-	fmt.Printf("    - 7d Spend:         $%.2f\n", rep.Spend7dUSD)
-	fmt.Println("    - Node Health:")
-	for node, status := range rep.NodeStatus {
-		fmt.Printf("        * %-10s -> %s\n", node, status)
+func runSensorySnapshot(ctx context.Context, out io.Writer) error {
+	rep := newTelemetryDaemon().CollectOnce(ctx)
+	if globals.JSON {
+		return writeJSON(out, rep)
 	}
+	fmt.Fprintln(out, "[+] Instantaneous Telemetry Snapshot:")
+	fmt.Fprintf(out, "    - Timestamp:        %s\n", rep.Timestamp.Format(time.RFC3339))
+	fmt.Fprintf(out, "    - SoC Temperature:  %.1f°C (Alert: %v, Critical: %v)\n", rep.SoCTempC, rep.ThermalAlert, rep.ThermalCritical)
+	fmt.Fprintf(out, "    - 24h Spend:        $%.2f / $%.2f daily budget\n", rep.Spend24hUSD, rep.DailyBudgetUSD)
+	fmt.Fprintf(out, "    - 7d Spend:         $%.2f\n", rep.Spend7dUSD)
+	fmt.Fprintln(out, "    - Node Health:")
+	for _, node := range slices.Sorted(maps.Keys(rep.NodeStatus)) {
+		fmt.Fprintf(out, "        * %-10s -> %s\n", node, rep.NodeStatus[node])
+	}
+	return nil
 }

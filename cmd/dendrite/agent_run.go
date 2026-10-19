@@ -15,8 +15,6 @@ import (
 
 func handleAgentCommand(ctx context.Context, action string, args []string) {
 	switch action {
-	case "docusaurus", "site":
-		handleDocusaurusCommand(ctx, args)
 	case "run":
 		if len(args) == 0 {
 			fmt.Println("[-] Please specify an agent tool: aider, openhands, opencode, agy, or copilot")

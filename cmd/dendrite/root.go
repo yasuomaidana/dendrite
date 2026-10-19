@@ -67,6 +67,10 @@ func newRootCmd() *cobra.Command {
 		newCognitionCmd(),
 		newVesicleCmd(),
 		newQuantalCmd(),
+		newCortexCmd(),
+		newSensoryCmd(),
+		newCodexCmd(),
+		newBridgeCmd(),
 	)
 	root.AddCommand(legacyCommands()...)
 	return root
