@@ -55,7 +55,7 @@ func handleAuditChangesCommand(ctx context.Context, args []string) {
 
 	guard := vcs.NewGitGuard(".", vcs.ModeAuditChanges)
 	orch := vcs.NewStackedBranchOrchestrator(guard, "")
-	gh := github.NewGitHubClient("yasuomaidana/dendrite")
+	gh := github.NewGitHubClient("") // gh resolves the repository from the git remote
 	auditor := audit.NewAuditor(guard, orch, gh)
 
 	summary, err := auditor.AuditChanges(ctx, opts)

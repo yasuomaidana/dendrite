@@ -340,7 +340,8 @@ func TestTools_Audit(t *testing.T) {
 		t.Fatal("expected response for audit_changes")
 	}
 
-	// 5. dendrite_hitl_sync
+	// 5. dendrite_hitl_sync (offline: local Plane server and scripted gh)
+	offlineHITL(t)
 	hitlReq := `{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "dendrite_hitl_sync", "arguments": {}}}`
 	hitlResp := srv.HandleRequest(context.Background(), []byte(hitlReq))
 	if hitlResp == nil {

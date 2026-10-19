@@ -199,8 +199,8 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   55. `dendrite_audit_changes`: Topological vendor audit and rebase engine for local/* stacked branches. Validates diffs, runs test suites, non-fast-forward merges into develop, and rebases downstream branches.
       - *Example*: `./bin/dendrite mcp call dendrite_audit_changes '{"dry_run":true}'`
 
-  56. `dendrite_github_sync`: Synchronize prioritized P0 tickets, dependency relations, and governance labels with remote GitHub Issues (yasuomaidana/dendrite).
-      - *Example*: `./bin/dendrite mcp call dendrite_github_sync '{"repo":"yasuomaidana/dendrite"}'`
+  56. `dendrite_github_sync`: Mirror Plane verification state onto GitHub issues: opens a HITL verification issue (`status:to-verify`, `hitl-validation`, `module:<scope>`) for every To Verify ticket, adds missing labels, and closes issues of tickets Done in Plane. Tickets come from Plane and the repository from the git origin remote; existing issue bodies are never rewritten.
+      - *Example*: `./bin/dendrite mcp call dendrite_github_sync '{"dry_run":true}'`
 
   57. `dendrite_vcs_guard`: Check or enforce Git branch guardrails (prohibits direct work on main/master, guarantees develop default).
       - *Example*: `./bin/dendrite mcp call dendrite_vcs_guard '{"mode":"STANDARD"}'`
@@ -210,8 +210,8 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   59. `dendrite_quality_audit`: Anti-mock static scan (prohibiting mocks/stubs/fake responses) and 100% atomic statement coverage audit with automatic coverage gap ticket synthesis.
       - *Example*: `./bin/dendrite mcp call dendrite_quality_audit '{"pkg":"pkg/vcs"}'`
 
-  60. `dendrite_hitl_sync`: Human-in-the-Loop verification poller checking linked GitHub issues: transitions approved (closed) issues to DONE, or parses feedback and generates follow-up blocker tickets.
-      - *Example*: `./bin/dendrite mcp call dendrite_hitl_sync '{}'`
+  60. `dendrite_hitl_sync`: Human-in-the-Loop verification poller for every Plane To Verify ticket: an issue closed as completed moves the ticket to Done, closed as not planned leaves it in To Verify, and reviewer comments are reported as feedback.
+      - *Example*: `./bin/dendrite mcp call dendrite_hitl_sync '{"dry_run":true}'`
 
   61. `dendrite_inference_migrate_model`: Moves models from Ollama to OxiLLaMa pure-Rust inference engine and evicts source blobs to save memory.
       - *Example*: `./bin/dendrite mcp call dendrite_inference_migrate_model model:qwen3.5:9b`
@@ -253,7 +253,8 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
 - `dendrite quality <audit|hitl-sync>`: Anti-mock quality gate, 100% coverage profiler, and Human-in-the-Loop verification poller.
 - `dendrite audit-changes [--branch <name>] [--dry-run] [--max-tokens <int>] [--model <m>]`: Topological vendor audit and rebase engine for local/* branches.
 - `dendrite vcs <guard|check|status|evacuate>`: Enforce Git branch guardrails, check policy, and evacuate forbidden branches.
-- `dendrite github-sync [--repo <owner/repo>]`: Synchronize sequenced P0 tickets, DAG dependencies, and governance labels to GitHub Issues.
+- `dendrite github-sync [--ticket <ID,...>] [--repo <owner/repo>] [--dry-run] [--json]`: Open the HITL verification issue of every Plane To Verify ticket and close issues of tickets Done in Plane. Run it right after moving a ticket to To Verify.
+- `dendrite quality hitl-sync [--ticket <ID,...>] [--dry-run] [--json]`: Poll verification issues; issues closed as completed move their ticket to Done in Plane.
 - `dendrite plane next [--ticket <id>] [--milestone <m>] [--json]`: Smart ticket prioritization & DAG reachability engine (aliases: `dev ticket next`, `stories next`). Selects the optimal unblocked ticket considering priority weighting and downstream critical path, or validates user-requested ticket.
 - `dendrite plane link <ticket-a> <blocking|blocked_by|relates_to> <ticket-b>`: Link ticket relationships in Plane to render Gantt dependency arrows (alias: `dev ticket link`).
 - `dendrite plane relate --ticket <id> [--priority <prio>] [--blocked-by <ids>] [--blocking <ids>] [--relates-to <ids>] [--reason <reason>]`: Update ticket priority and synchronize DAG dependency relations in Plane (alias: `dendrite skill ticket-relate`).
@@ -470,6 +471,7 @@ after each finished ticket and before long waits to persist in-flight and verifi
   - `dendrite commit` pushes the new commit to the configured remote (origin preferred) after every successful commit; use `--no-push` or `DENDRITE_COMMIT_PUSH=false` to opt out; it never force-pushes and refuses to push main/master.
 - Mutate the ticket state directly in Plane:
   - Transition the issue state to `To Verify` in Plane via the Plane API / client or `./bin/dendrite dev ticket set <ID> "To Verify" --push-plane`.
+  - Open its GitHub verification issue with `./bin/dendrite github-sync --ticket <ID>` (preview with `--dry-run`).
   - Autonomous agents must NEVER mark an issue directly as `Done`; issues remain in `To Verify` until formally signed off through human verification (`dendrite hitl-sync` or Plane web UI).
   - Advance next ticket to `In Progress` in Plane.
 - Synchronize repository documentation for human readers:

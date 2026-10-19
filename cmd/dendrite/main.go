@@ -540,7 +540,7 @@ func buildRegistry() *cli.Registry {
 		Name:        "github-sync",
 		Aliases:     []string{"sync-github", "saltatory-sync", "salt-sync", "gsync"},
 		Category:    "Axon & Myelin Sheath",
-		Description: "Synchronize prioritized tickets and DAG dependencies to GitHub Issues",
+		Description: "Mirror Plane verification state to GitHub: open HITL issues for To Verify tickets, close them when Done",
 		Run: func(ctx context.Context, args []string) error {
 			handleGitHubSyncCommand(ctx, args)
 			return nil

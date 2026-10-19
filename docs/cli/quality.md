@@ -24,7 +24,7 @@ Glial Regulation & Pruning
 | Subcommand | Description |
 | :--- | :--- |
 | `audit` | Run anti-mock scan and verify coverage gates |
-| `hitl-sync` | Poll human-in-the-loop verification status |
+| `hitl-sync` | Poll the GitHub issue of every Plane To Verify ticket; closed as completed moves it to Done |
 
 ## Flags
 

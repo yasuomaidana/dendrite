@@ -2,94 +2,101 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
+	"os"
+	"strings"
 
-	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/github"
+	"Dendrite/pkg/tracker/hitl"
 )
 
+// newHITLSyncer is a seam so tests can point the commands at a local Plane and gh.
+var newHITLSyncer = func(ctx context.Context, repo string) (*hitl.Syncer, error) {
+	return hitl.NewFromEnv(ctx, repo, ".")
+}
+
 func handleGitHubSyncCommand(ctx context.Context, args []string) {
-	repo := "yasuomaidana/dendrite"
-	for i := 0; i < len(args); i++ {
-		if (args[i] == "--repo" || args[i] == "-r") && i+1 < len(args) {
-			repo = args[i+1]
-			i++
+	if err := runGitHubSync(ctx, args, os.Stdout); err != nil {
+		fmt.Printf("[-] GitHub synchronization failed: %v\n", err)
+	}
+}
+
+// runGitHubSync mirrors Plane's verification state onto GitHub issues: To Verify
+// tickets get a HITL verification issue, Done tickets have theirs closed.
+func runGitHubSync(ctx context.Context, args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("github-sync", flag.ContinueOnError)
+	fs.SetOutput(out)
+	repo := fs.String("repo", "", "Target GitHub repository owner/repo (default: the origin remote)")
+	fs.StringVar(repo, "r", "", "Shorthand for --repo")
+	dryRun := fs.Bool("dry-run", false, "Show planned GitHub changes without applying them")
+	only := fs.String("ticket", "", "Limit the sync to these ticket IDs (comma-separated)")
+	asJSON := fs.Bool("json", false, "Output the sync result as JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	syncer, err := newHITLSyncer(ctx, *repo)
+	if err != nil {
+		return err
+	}
+	syncer.Only = splitTicketIDs(*only)
+	res, err := syncer.GitHubSync(ctx, *dryRun)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		data, _ := json.MarshalIndent(res, "", "  ")
+		fmt.Fprintln(out, string(data))
+		return nil
+	}
+
+	mode := "Synchronized"
+	if res.DryRun {
+		mode = "Dry run for"
+	}
+	fmt.Fprintf(out, "[+] %s verification issues in %s (%d tickets, %d To Verify)\n", mode, res.Repo, res.Tickets, len(res.Pending))
+	for _, d := range res.Duplicates {
+		fmt.Fprintf(out, "[!] Skipped duplicate ticket ID %s: rename it in Plane\n", d)
+	}
+	if len(res.Actions) == 0 {
+		fmt.Fprintln(out, "[✓] GitHub is already in sync with Plane; nothing to change")
+		return nil
+	}
+	for _, a := range res.Actions {
+		fmt.Fprintf(out, "    * %s\n", describeAction(a, res.DryRun))
+	}
+	if len(res.Errors) > 0 {
+		return fmt.Errorf("%d of %d GitHub changes failed", len(res.Errors), len(res.Actions))
+	}
+	return nil
+}
+
+func describeAction(a github.Action, dryRun bool) string {
+	issue := fmt.Sprintf("#%d", a.IssueNumber)
+	if a.IssueNumber == 0 {
+		issue = "new issue"
+	}
+	prefix := ""
+	if dryRun {
+		prefix = "would "
+	}
+	line := fmt.Sprintf("%s%s %s (%s): %s", prefix, a.Kind, a.TicketID, issue, a.Reason)
+	if a.Error != "" {
+		line += " [failed: " + a.Error + "]"
+	}
+	return line
+}
+
+// splitTicketIDs parses a comma-separated --ticket value.
+func splitTicketIDs(raw string) []string {
+	var ids []string
+	for _, id := range strings.Split(raw, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			ids = append(ids, id)
 		}
 	}
-
-	fmt.Printf("[+] Synchronizing Sequenced P0 Blockers to GitHub Issues (%s)...\n", repo)
-	client := github.NewGitHubClient(repo)
-
-	tickets := []*tracker.RoutingTicket{
-		{
-			ID:            "DEN-701",
-			Title:         "Git Branch Guard: main lock, develop default & atomic CommitAndPush",
-			Description:   "Halts direct main commits with ErrForbiddenBranchMain, evacuates to develop automatically, and enforces atomic CommitAndPush transactions with auto-rebase on divergence.",
-			Priority:      "P0_TOP_BLOCKER",
-			Difficulty:    tracker.TierL2Low,
-			LocalFeasible: true,
-			RequiresAudit: true,
-			Module:        "vcs",
-			Blocks:        []string{"DEN-702"},
-		},
-		{
-			ID:            "DEN-702",
-			Title:         "Ticket Domain Model, Triage & Low-Budget DAG Prioritizer",
-			Description:   "Enriches tickets with DifficultyTier (L1-L5), InferenceEngine, and AuditStatus; provides EnrichTicketClassification, SelectInferenceEngine, and SortForLowBudgetQueue.",
-			Priority:      "P0_TOP_BLOCKER",
-			Difficulty:    tracker.TierL2Low,
-			LocalFeasible: true,
-			RequiresAudit: true,
-			Module:        "tracker",
-			DependsOn:     []string{"DEN-701"},
-			Blocks:        []string{"DEN-703"},
-		},
-		{
-			ID:            "DEN-703",
-			Title:         "GitHub Issues Two-Way Synchronizer & Label Provisioner",
-			Description:   "Syncs prioritized tickets with remote GitHub Issues (yasuomaidana/dendrite), auto-provisions labels (P0-TOP-BLOCKER, local-llm-delegated, needs-vendor-audit, module:<name>), and links dependencies.",
-			Priority:      "P0_TOP_BLOCKER",
-			Difficulty:    tracker.TierL3Medium,
-			LocalFeasible: true,
-			RequiresAudit: true,
-			Module:        "tracker",
-			DependsOn:     []string{"DEN-702"},
-			Blocks:        []string{"DEN-704"},
-		},
-		{
-			ID:            "DEN-704",
-			Title:         "Speculative Stacked Branch Orchestrator & Degraded Budget Mode",
-			Description:   "Switches to DegradedBudgetMode under low token budgets, locks develop merges with ErrMergeLockedInDegradedMode, creates local/<module> stacked branches, and records audit manifests in .dendrite/audit_queue.json.",
-			Priority:      "P0_TOP_BLOCKER",
-			Difficulty:    tracker.TierL3Medium,
-			LocalFeasible: true,
-			RequiresAudit: true,
-			Module:        "vcs",
-			DependsOn:     []string{"DEN-703"},
-			Blocks:        []string{"DEN-705"},
-		},
-		{
-			ID:            "DEN-705",
-			Title:         "dendrite audit-changes CLI Command & Vendor LLM Rebase/Merge Engine",
-			Description:   "Topologically audits queued local/* branches, constructs token-efficient diff payloads, applies fixes, non-fast-forward merges into develop, and rebases downstream branches.",
-			Priority:      "P0_TOP_BLOCKER",
-			Difficulty:    tracker.TierL4High,
-			LocalFeasible: false,
-			RequiresAudit: false,
-			Module:        "audit",
-			DependsOn:     []string{"DEN-704"},
-		},
-	}
-
-	synced, err := client.SyncTickets(ctx, tickets)
-	if err != nil {
-		fmt.Printf("[-] GitHub synchronization failed: %v\n", err)
-		return
-	}
-
-	fmt.Println("[✓] Successfully synchronized tickets to GitHub:")
-	for _, t := range synced {
-		fmt.Printf("    * #%d: [%s] %s (Module: %s, Labels: P0-TOP-BLOCKER, %s)\n",
-			t.GitHubIssueNum, t.ID, t.Title, t.Module, t.Difficulty.String())
-	}
+	return ids
 }

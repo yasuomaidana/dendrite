@@ -64,10 +64,13 @@ func TestDefaultCommandExecutor_CommandError(t *testing.T) {
 	}
 }
 
-func TestNewGitHubClient_DefaultRepo(t *testing.T) {
+func TestNewGitHubClient_NoHardcodedRepo(t *testing.T) {
 	c := NewGitHubClient("")
-	if c.Repo != "yasuomaidana/dendrite" {
-		t.Fatalf("expected default repo, got %s", c.Repo)
+	if c.Repo != "" {
+		t.Fatalf("an empty repo must stay empty so gh resolves it from the git remote, got %s", c.Repo)
+	}
+	if got := strings.Join(c.repoArgs("issue", "list"), " "); got != "issue list" {
+		t.Fatalf("repoArgs without a repo = %q", got)
 	}
 }
 
@@ -151,8 +154,9 @@ func TestGitHubClient_CreateOrUpdateIssue_ExistingNumber(t *testing.T) {
 
 func TestGitHubClient_CreateOrUpdateIssue_FoundViaSearch(t *testing.T) {
 	mock := newTestScriptExecutor()
-	searchCmd := "gh issue list --repo yasuomaidana/dendrite --search [DEN-702] --json number,title --limit 1"
-	mock.calls[searchCmd] = `[{"number":99,"title":"[DEN-702] Existing"}]`
+	searchCmd := `gh issue list --state all --search "[DEN-702]" in:title --json number,title --limit 50 --repo yasuomaidana/dendrite`
+	// The search also returns a ticket whose ID merely starts with DEN-702; it must be skipped.
+	mock.calls[searchCmd] = `[{"number":7,"title":"[DEN-7020] Other"},{"number":99,"title":"[DEN-702] Existing"}]`
 
 	client := NewGitHubClient("yasuomaidana/dendrite").WithExecutor(mock)
 

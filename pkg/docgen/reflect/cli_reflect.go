@@ -601,17 +601,21 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 		},
 		"github-sync": {
 			Flags: []FlagDoc{
-				{Name: "--repo", Description: "Target GitHub repository (owner/repo)"},
-				{Name: "--dry-run", Description: "Preview issue sync without modifying GitHub"},
+				{Name: "--repo", Description: "Target GitHub repository (owner/repo); default: the origin remote"},
+				{Name: "--dry-run", Description: "Show the planned issue changes without modifying GitHub"},
+				{Name: "--ticket", Description: "Limit the sync to these ticket IDs (comma-separated)"},
+				{Name: "--json", Description: "Output the sync result as JSON"},
 			},
 			Examples: []string{
+				"dendrite github-sync --ticket DEN-123",
+				"dendrite github-sync --dry-run",
 				"dendrite github-sync",
 			},
 		},
 		"quality": {
 			Subcommands: []SubcommandDoc{
 				{Name: "audit", Description: "Run anti-mock scan and verify coverage gates"},
-				{Name: "hitl-sync", Description: "Poll human-in-the-loop verification status"},
+				{Name: "hitl-sync", Description: "Poll the GitHub issue of every Plane To Verify ticket; closed as completed moves it to Done"},
 			},
 			Examples: []string{
 				"dendrite quality audit",

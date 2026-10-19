@@ -422,8 +422,8 @@ func TestBroken(t *testing.T) {
 
 func TestNewGitHubHITLPoller_Defaults(t *testing.T) {
 	poller := NewGitHubHITLPoller("", nil)
-	if poller.Repo != "yasuomaidana/dendrite" {
-		t.Fatalf("expected default repo, got %s", poller.Repo)
+	if poller.Repo != "" {
+		t.Fatalf("an empty repo must stay empty so gh resolves it from the git remote, got %s", poller.Repo)
 	}
 	if poller.Executor == nil {
 		t.Fatal("expected non-nil default executor")

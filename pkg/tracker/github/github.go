@@ -3,7 +3,6 @@ package github
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -53,11 +52,9 @@ type GitHubClient struct {
 	Executor CommandExecutor
 }
 
-// NewGitHubClient creates a new client targeting a repository (e.g. "yasuomaidana/dendrite").
+// NewGitHubClient creates a new client targeting a repository ("owner/repo"). An empty
+// repo lets gh resolve the repository from the current directory's git remote.
 func NewGitHubClient(repo string) *GitHubClient {
-	if repo == "" {
-		repo = "yasuomaidana/dendrite"
-	}
 	return &GitHubClient{
 		Repo:     repo,
 		Executor: &DefaultCommandExecutor{},
@@ -71,6 +68,7 @@ func (c *GitHubClient) WithExecutor(executor CommandExecutor) *GitHubClient {
 }
 
 // ProvisionLabels ensures required semantic labels exist on the remote repository.
+// Existing labels are left untouched (their colors and descriptions are not reset).
 func (c *GitHubClient) ProvisionLabels(ctx context.Context, moduleNames ...string) error {
 	labels := append([]LabelDefinition{}, DefaultRequiredLabels...)
 	for _, mod := range moduleNames {
@@ -84,18 +82,16 @@ func (c *GitHubClient) ProvisionLabels(ctx context.Context, moduleNames ...strin
 	}
 
 	for _, l := range labels {
-		// Try creating label via gh label create
-		_, err := c.Executor.Execute(ctx, "gh", "label", "create", l.Name,
-			"--repo", c.Repo,
-			"--color", l.Color,
-			"--description", l.Description,
-			"--force")
-		if err != nil {
-			// If already exists or error, continue
-			continue
-		}
+		c.ensureLabel(ctx, l)
 	}
 	return nil
+}
+
+// ensureLabel creates a label when it does not exist yet; gh fails harmlessly when it does.
+func (c *GitHubClient) ensureLabel(ctx context.Context, l LabelDefinition) {
+	_, _ = c.Executor.Execute(ctx, "gh", c.repoArgs("label", "create", l.Name,
+		"--color", l.Color,
+		"--description", l.Description)...)
 }
 
 // BuildIssueBody formats the markdown body for a ticket including DAG dependency links.
@@ -154,7 +150,7 @@ func (c *GitHubClient) CreateOrUpdateIssue(ctx context.Context, t *tracker.Routi
 
 	// If issue number is already known, check if update is needed
 	if t.GitHubIssueNum > 0 {
-		args := []string{"issue", "edit", strconv.Itoa(t.GitHubIssueNum), "--repo", c.Repo, "--title", title, "--body", body}
+		args := c.repoArgs("issue", "edit", strconv.Itoa(t.GitHubIssueNum), "--title", title, "--body", body)
 		if len(labels) > 0 {
 			args = append(args, "--add-label", strings.Join(labels, ","))
 		}
@@ -164,31 +160,19 @@ func (c *GitHubClient) CreateOrUpdateIssue(ctx context.Context, t *tracker.Routi
 		}
 	}
 
-	// Check if an issue with the ticket ID already exists in repo
-	searchOut, err := c.Executor.Execute(ctx, "gh", "issue", "list",
-		"--repo", c.Repo,
-		"--search", fmt.Sprintf("[%s]", t.ID),
-		"--json", "number,title",
-		"--limit", "1")
-	if err == nil && searchOut != "" {
-		var found []struct {
-			Number int    `json:"number"`
-			Title  string `json:"title"`
+	// Reuse an issue whose title carries exactly this ticket ID ("[DEN-70]" never matches "[DEN-701]").
+	if issueNum, ok := c.findTicketIssue(ctx, t.ID); ok {
+		t.GitHubIssueNum = issueNum
+		args := c.repoArgs("issue", "edit", strconv.Itoa(issueNum), "--title", title, "--body", body)
+		if len(labels) > 0 {
+			args = append(args, "--add-label", strings.Join(labels, ","))
 		}
-		if jsonErr := json.Unmarshal([]byte(searchOut), &found); jsonErr == nil && len(found) > 0 {
-			issueNum := found[0].Number
-			t.GitHubIssueNum = issueNum
-			args := []string{"issue", "edit", strconv.Itoa(issueNum), "--repo", c.Repo, "--title", title, "--body", body}
-			if len(labels) > 0 {
-				args = append(args, "--add-label", strings.Join(labels, ","))
-			}
-			_, _ = c.Executor.Execute(ctx, "gh", args...)
-			return issueNum, nil
-		}
+		_, _ = c.Executor.Execute(ctx, "gh", args...)
+		return issueNum, nil
 	}
 
 	// Create new issue
-	args := []string{"issue", "create", "--repo", c.Repo, "--title", title, "--body", body}
+	args := c.repoArgs("issue", "create", "--title", title, "--body", body)
 	for _, l := range labels {
 		args = append(args, "--label", l)
 	}
@@ -198,15 +182,19 @@ func (c *GitHubClient) CreateOrUpdateIssue(ctx context.Context, t *tracker.Routi
 		return 0, fmt.Errorf("failed to create GitHub issue for %s: %w", t.ID, err)
 	}
 
-	// gh issue create returns the URL, e.g. https://github.com/yasuomaidana/dendrite/issues/1
-	parts := strings.Split(strings.TrimSpace(out), "/")
-	if len(parts) > 0 {
-		if num, parseErr := strconv.Atoi(parts[len(parts)-1]); parseErr == nil {
-			t.GitHubIssueNum = num
-			return num, nil
-		}
+	if num, ok := issueNumberFromURL(out); ok {
+		t.GitHubIssueNum = num
+		return num, nil
 	}
 	return 0, nil
+}
+
+// issueNumberFromURL parses the number from the URL `gh issue create` prints
+// (https://github.com/<owner>/<repo>/issues/<n>).
+func issueNumberFromURL(out string) (int, bool) {
+	parts := strings.Split(strings.TrimSpace(out), "/")
+	num, err := strconv.Atoi(parts[len(parts)-1])
+	return num, err == nil
 }
 
 // SyncTickets synchronizes a slice of sequenced tickets to GitHub Issues in topological order.
@@ -248,7 +236,7 @@ func (c *GitHubClient) SyncTickets(ctx context.Context, tickets []*tracker.Routi
 
 // CloseIssue closes an issue with an optional comment.
 func (c *GitHubClient) CloseIssue(ctx context.Context, issueNum int, comment string) error {
-	args := []string{"issue", "close", strconv.Itoa(issueNum), "--repo", c.Repo}
+	args := c.repoArgs("issue", "close", strconv.Itoa(issueNum))
 	if comment != "" {
 		args = append(args, "--comment", comment)
 	}
@@ -258,6 +246,6 @@ func (c *GitHubClient) CloseIssue(ctx context.Context, issueNum int, comment str
 
 // RemoveLabel removes a specific label from an issue.
 func (c *GitHubClient) RemoveLabel(ctx context.Context, issueNum int, label string) error {
-	_, err := c.Executor.Execute(ctx, "gh", "issue", "edit", strconv.Itoa(issueNum), "--repo", c.Repo, "--remove-label", label)
+	_, err := c.Executor.Execute(ctx, "gh", c.repoArgs("issue", "edit", strconv.Itoa(issueNum), "--remove-label", label)...)
 	return err
 }
