@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -73,7 +72,7 @@ func TestWorkCommand_UsageAndErrors(t *testing.T) {
 		if err := runWorkCommand(ctx, args, &buf); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(buf.String(), "dendrite work <new|list|done|gc|adopt>") {
+		if !strings.Contains(buf.String(), "dendrite work [command]") {
 			t.Errorf("usage missing for %v: %s", args, buf.String())
 		}
 	}
@@ -288,13 +287,6 @@ func TestSessionResumeRunsWorkCleanup(t *testing.T) {
 	var v map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &v); err != nil {
 		t.Fatalf("resume --json is not valid JSON: %v\n%s", err, buf.String())
-	}
-}
-
-func TestSplitPositional(t *testing.T) {
-	pos, flags := splitPositional([]string{"name", "--branch", "b", "--force", "--base=x"}, "branch")
-	if !reflect.DeepEqual(pos, []string{"name"}) || !reflect.DeepEqual(flags, []string{"--branch", "b", "--force", "--base=x"}) {
-		t.Fatalf("pos=%v flags=%v", pos, flags)
 	}
 }
 

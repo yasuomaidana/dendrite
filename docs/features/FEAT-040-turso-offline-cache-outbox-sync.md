@@ -13,7 +13,7 @@ tags: [turso, libsql, offline-cache, outbox-queue, gitignore-hygiene, plane-sync
 ## 1. Executive Summary & Problem Statement
 
 ### The Problem
-Autonomous development workflows frequently fail when network connectivity to external services (Plane v2, Penpot, GitHub API, Jira) drops or experiences latency spikes. When an engineer or autonomous agent works offline or on constrained networks, operations like `dendrite stories next`, ticket status mutations, and UI documentation sync fail catastrophically.
+Autonomous development workflows frequently fail when network connectivity to external services (Plane v2, Penpot, GitHub API, Jira) drops or experiences latency spikes. When an engineer or autonomous agent works offline or on constrained networks, operations like `dendrite chronos next`, ticket status mutations, and UI documentation sync fail catastrophically.
 
 Furthermore, when local embedded databases or cache artifacts (`.dendrite/cache/`, `*.db`, `*.db-wal`, `*.db-shm`) are created in the workspace, they risk being accidentally staged and committed into Git repositories by autonomous agents operating in Autonomy Levels 2–5, causing repository bloat and binary conflicts.
 
@@ -27,7 +27,7 @@ As an engineer and autonomous agent operator, I need `dendrite cache` and Dendri
 ```mermaid
 flowchart TD
     subgraph "Dendrite Core Invocations"
-        CLI["dendrite stories next / ticket set / ui doc"] --> CacheManager{"Cache & Network Router"}
+        CLI["dendrite chronos next / ticket set / ui doc"] --> CacheManager{"Cache & Network Router"}
     end
 
     subgraph "Embedded Turso Local Storage (.dendrite/cache/dendrite.db)"
@@ -127,7 +127,7 @@ If missing, patterns are appended idempotently without disrupting existing comme
 
 ### Scenario 7A: Seamless Offline Ticket Fetching & Mutation Queuing
 - **Given** Plane and Penpot servers are unreachable due to network loss
-- **When** the developer runs `dendrite stories next` and completes a UI story
+- **When** the developer runs `dendrite chronos next` and completes a UI story
 - **Then** Dendrite resolves the highest-priority ticket from the local Turso cache, displays the `[OFFLINE CACHE]` banner, records the story completion and Penpot documentation payload in the local `outbox_mutations` table, and automatically syncs both to Plane and Penpot once connectivity is restored.
 
 ### Scenario 7B: Cache Exclusion in `.gitignore`

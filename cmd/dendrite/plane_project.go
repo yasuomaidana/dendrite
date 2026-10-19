@@ -16,77 +16,84 @@ import (
 	"Dendrite/pkg/projectid"
 	"Dendrite/pkg/synapse"
 	"Dendrite/pkg/tracker/plane"
-)
 
-const planeProjectUsage = `Usage:
-  dendrite plane project ensure [dir] [--identifier ID] [--name NAME] [--description TEXT] [--import FILE]
-      Adopt or create the repository's Plane project, converge its states, and write .dendrite/plane.json.
-      --import loads a markdown checklist (e.g. DEV_STATUS.md) as issues, one module per milestone.
-  dendrite plane project show [dir]
-      Print the Plane project linked to the repository.
-  dendrite plane project audit [--roots dir,...] [--owner name,...] [--json]
-      Check the rule: every editable repository is a Plane project, and repositories that
-      depend on each other share a synapse. Exits non-zero when a repository breaks it.`
+	"github.com/spf13/cobra"
+)
 
 // errAuditViolations signals that the audit found repositories breaking the project rule.
 var errAuditViolations = errors.New("project rule violations found")
 
-func handlePlaneProject(ctx context.Context, client *plane.Client, args []string) {
-	if err := runPlaneProject(ctx, client, args, os.Stdout); err != nil {
-		if !errors.Is(err, errAuditViolations) {
-			fmt.Fprintf(os.Stderr, "[-] %v\n", err)
-		}
-		os.Exit(1)
-	}
+// planeProjectEnsureOptions are the `chronos project ensure` flags.
+type planeProjectEnsureOptions struct {
+	Dir         string
+	Identifier  string
+	Name        string
+	Description string
+	Import      string
 }
 
-func runPlaneProject(ctx context.Context, client *plane.Client, args []string, out io.Writer) error {
-	if len(args) == 0 {
-		fmt.Fprintln(out, planeProjectUsage)
-		return nil
+// newChronosProjectCmd builds `chronos project`: the repository's Plane project link and the project rule audit.
+func newChronosProjectCmd() *cobra.Command {
+	cmd := newGroupCmd("project", "Link the repository to its Plane project and audit the project rule", "")
+	var eo planeProjectEnsureOptions
+	ensure := &cobra.Command{
+		Use:   "ensure [dir]",
+		Short: "Adopt or create the repository's Plane project, converge its states, and write .dendrite/plane.json",
+		Long: "Adopt or create the repository's Plane project, converge its states, and write .dendrite/plane.json.\n" +
+			"--import loads a markdown checklist (e.g. DEV_STATUS.md) as issues, one module per milestone.",
+		Args:    maxArgs(1),
+		Example: "dendrite chronos project ensure\ndendrite chronos project ensure ../dendrite-git-rs --identifier DGIT --import DEV_STATUS.md",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eo.Dir = "."
+			if len(args) == 1 {
+				eo.Dir = args[0]
+			}
+			return planeRun(func(c *plane.Client) error {
+				return planeProjectEnsure(cmd.Context(), c, eo, cmd.OutOrStdout())
+			})
+		},
 	}
-	switch args[0] {
-	case "ensure":
-		return planeProjectEnsure(ctx, client, args[1:], out)
-	case "show":
-		return planeProjectShow(args[1:], out)
-	case "audit":
-		return planeProjectAudit(args[1:], out)
-	default:
-		fmt.Fprintln(out, planeProjectUsage)
-		return fmt.Errorf("unknown plane project action %q", args[0])
+	f := ensure.Flags()
+	f.StringVar(&eo.Identifier, "identifier", "", "Plane project identifier (default: the linked one, else derived from the name)")
+	f.StringVar(&eo.Name, "name", "", "Plane project name (default: the repository directory name)")
+	f.StringVar(&eo.Description, "description", "", "Plane project description")
+	f.StringVar(&eo.Import, "import", "", "Markdown checklist to import as issues")
+
+	show := &cobra.Command{
+		Use:     "show [dir]",
+		Short:   "Print the Plane project linked to the repository",
+		Args:    maxArgs(1),
+		Example: "dendrite chronos project show",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir := "."
+			if len(args) == 1 {
+				dir = args[0]
+			}
+			return planeProjectShow(dir, cmd.OutOrStdout())
+		},
 	}
+
+	var roots, owners []string
+	audit := &cobra.Command{
+		Use:   "audit",
+		Short: "Check that every editable repository is a Plane project and related repositories share a synapse",
+		Long: "Check the rule: every editable repository is a Plane project, and repositories that\n" +
+			"depend on each other share a synapse. Exits non-zero when a repository breaks it.",
+		Args:    noArgs,
+		Example: "dendrite chronos project audit\ndendrite chronos project audit --roots ~/GoLandProjects,~/RustRoverProjects --json",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return planeProjectAudit(roots, owners, cmd.OutOrStdout())
+		},
+	}
+	audit.Flags().StringSliceVar(&roots, "roots", nil, "Directories to scan (default: parents of every known project and synapse member)")
+	audit.Flags().StringSliceVar(&owners, "owner", nil, "Git remote owners whose repositories are editable (default: this repository's owner)")
+
+	cmd.AddCommand(ensure, show, audit)
+	return cmd
 }
 
-func planeProjectEnsure(ctx context.Context, client *plane.Client, args []string, out io.Writer) error {
-	dir, identifier, name, description, importFile := ".", "", "", "", ""
-	for i := 0; i < len(args); i++ {
-		flag := args[i]
-		switch flag {
-		case "--identifier", "--name", "--description", "--import":
-			if i+1 >= len(args) {
-				return fmt.Errorf("flag %s requires an argument", flag)
-			}
-			val := args[i+1]
-			i++
-			switch flag {
-			case "--identifier":
-				identifier = val
-			case "--name":
-				name = val
-			case "--description":
-				description = val
-			case "--import":
-				importFile = val
-			}
-		default:
-			if strings.HasPrefix(flag, "-") {
-				return fmt.Errorf("unknown flag: %s", flag)
-			}
-			dir = flag
-		}
-	}
-
+func planeProjectEnsure(ctx context.Context, client *plane.Client, o planeProjectEnsureOptions, out io.Writer) error {
+	dir, identifier, name, description, importFile := o.Dir, o.Identifier, o.Name, o.Description, o.Import
 	root, err := plane.FindRepoRoot(dir)
 	if err != nil {
 		return fmt.Errorf("%s: %w", dir, err)
@@ -159,15 +166,11 @@ func registerProjectIdentity(root string) error {
 	return idx.Save()
 }
 
-func planeProjectShow(args []string, out io.Writer) error {
-	dir := "."
-	if len(args) > 0 {
-		dir = args[0]
-	}
+func planeProjectShow(dir string, out io.Writer) error {
 	link, root, err := plane.LinkForDir(dir)
 	if err != nil {
 		if root != "" {
-			return fmt.Errorf("%s has no Plane project; run `dendrite plane project ensure %s`", root, root)
+			return fmt.Errorf("%s has no Plane project; run `dendrite chronos project ensure %s`", root, root)
 		}
 		return err
 	}
@@ -175,31 +178,11 @@ func planeProjectShow(args []string, out io.Writer) error {
 	return nil
 }
 
-func planeProjectAudit(args []string, out io.Writer) error {
-	var roots, owners []string
-	asJSON := false
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--roots", "--owner":
-			if i+1 >= len(args) {
-				return fmt.Errorf("flag %s requires an argument", args[i])
-			}
-			vals := strings.Split(args[i+1], ",")
-			if args[i] == "--roots" {
-				for _, v := range vals {
-					roots = append(roots, expandHome(v))
-				}
-			} else {
-				owners = append(owners, vals...)
-			}
-			i++
-		case "--json":
-			asJSON = true
-		default:
-			return fmt.Errorf("unknown flag: %s", args[i])
-		}
+func planeProjectAudit(rawRoots, owners []string, out io.Writer) error {
+	var roots []string
+	for _, r := range rawRoots {
+		roots = append(roots, expandHome(r))
 	}
-
 	var syns []*synapse.Synapse
 	if st, err := synapse.DefaultStore(); err == nil {
 		syns, _ = st.List()
@@ -216,7 +199,7 @@ func planeProjectAudit(args []string, out io.Writer) error {
 	}
 
 	rep := projectaudit.Audit(projectaudit.Discover(roots), owners, syns)
-	if asJSON {
+	if globals.JSON {
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(rep); err != nil {
@@ -291,7 +274,7 @@ func printAudit(out io.Writer, rep projectaudit.Report, roots, owners []string) 
 	if len(rep.MissingProject) > 0 {
 		fmt.Fprintln(out, "\n[-] Editable repositories without a Plane project:")
 		for _, r := range rep.MissingProject {
-			fmt.Fprintf(out, "    dendrite plane project ensure %s\n", r.Root)
+			fmt.Fprintf(out, "    dendrite chronos project ensure %s\n", r.Root)
 		}
 	}
 	if len(rep.Unsynapsed) > 0 {

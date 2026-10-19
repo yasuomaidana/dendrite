@@ -3,88 +3,73 @@ package main
 import (
 	"context"
 	"fmt"
-	"strconv"
+	"io"
 
 	"Dendrite/pkg/audit"
 	"Dendrite/pkg/tracker/github"
 	"Dendrite/pkg/vcs"
+
+	"github.com/spf13/cobra"
 )
 
-func handleAuditChangesCommand(ctx context.Context, args []string) {
-	opts := audit.AuditOptions{
-		MaxTokens: 4096,
-		Model:     "qwen3.8:27b",
+// newPruneCmd builds `dendrite prune` (alias audit-changes): audit and merge the queued local/* branches.
+func newPruneCmd() *cobra.Command {
+	opts := audit.AuditOptions{MaxTokens: 4096, Model: "qwen3.8:27b"}
+	cmd := &cobra.Command{
+		Use:     "prune",
+		Aliases: []string{"audit-changes", "microglial-prune", "synaptic-pruning", "prn"},
+		Short:   "Topological vendor audit and rebase engine for local/* branches",
+		GroupID: "glia",
+		Args:    noArgs,
+		Example: "dendrite prune --dry-run\ndendrite prune --branch local/module-a --max-tokens 8192",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if opts.MaxTokens <= 0 {
+				return usageErrorf("--max-tokens must be positive")
+			}
+			return runPrune(cmd.Context(), opts, cmd.OutOrStdout())
+		},
 	}
+	cmd.Flags().StringVarP(&opts.TargetBranch, "branch", "b", "", "Audit only this branch (default: every pending local/* branch)")
+	addDryRunFlag(cmd, &opts.DryRun)
+	cmd.Flags().IntVar(&opts.MaxTokens, "max-tokens", opts.MaxTokens, "Token budget for the audit payload")
+	addModelFlag(cmd, &opts.Model, opts.Model)
+	return cmd
+}
 
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--branch", "-b":
-			if i+1 < len(args) {
-				opts.TargetBranch = args[i+1]
-				i++
-			}
-		case "--dry-run":
-			opts.DryRun = true
-		case "--max-tokens":
-			if i+1 < len(args) {
-				if val, err := strconv.Atoi(args[i+1]); err == nil {
-					opts.MaxTokens = val
-				}
-				i++
-			}
-		case "--model":
-			if i+1 < len(args) {
-				opts.Model = args[i+1]
-				i++
-			}
-		case "--help", "-h":
-			printAuditUsage()
-			return
-		}
-	}
-
-	fmt.Println("[+] Initializing Vendor LLM Topological Audit & Merge Engine...")
+func runPrune(ctx context.Context, opts audit.AuditOptions, out io.Writer) error {
+	fmt.Fprintln(out, "[+] Initializing Vendor LLM Topological Audit & Merge Engine...")
 	if opts.TargetBranch != "" {
-		fmt.Printf("    - Target Branch: %s\n", opts.TargetBranch)
+		fmt.Fprintf(out, "    - Target Branch: %s\n", opts.TargetBranch)
 	} else {
-		fmt.Println("    - Target Mode:   All Pending local/* Branches (Topological Order)")
+		fmt.Fprintln(out, "    - Target Mode:   All Pending local/* Branches (Topological Order)")
 	}
 	if opts.DryRun {
-		fmt.Println("    - Execution:     DRY-RUN (Simulated Validation)")
+		fmt.Fprintln(out, "    - Execution:     DRY-RUN (Simulated Validation)")
 	}
 
 	guard := vcs.NewGitGuard(".", vcs.ModeAuditChanges)
-	orch := vcs.NewStackedBranchOrchestrator(guard, "")
-	gh := github.NewGitHubClient("") // gh resolves the repository from the git remote
-	auditor := audit.NewAuditor(guard, orch, gh)
-
+	// gh resolves the repository from the git remote.
+	auditor := audit.NewAuditor(guard, vcs.NewStackedBranchOrchestrator(guard, ""), github.NewGitHubClient(""))
 	summary, err := auditor.AuditChanges(ctx, opts)
 	if err != nil {
-		fmt.Printf("[-] Audit execution failed: %v\n", err)
-		return
+		return fmt.Errorf("audit: %w", err)
 	}
-
-	fmt.Printf("[✓] Audit Process Completed:\n")
-	fmt.Printf("    - Branches Evaluated: %d\n", summary.BranchesAudited)
-	fmt.Printf("    - Branches Merged:    %d\n", summary.BranchesMerged)
+	if globals.JSON {
+		return writeJSON(out, summary)
+	}
+	fmt.Fprintln(out, "[✓] Audit Process Completed:")
+	fmt.Fprintf(out, "    - Branches Evaluated: %d\n", summary.BranchesAudited)
+	fmt.Fprintf(out, "    - Branches Merged:    %d\n", summary.BranchesMerged)
 	for _, res := range summary.Results {
 		status := "MERGED"
 		if !res.Merged {
 			status = "SKIPPED/DRY-RUN"
 		}
-		fmt.Printf("    * [%s] %s (Base: %s, Diff lines: %d, Verdict: %s)\n",
+		fmt.Fprintf(out, "    * [%s] %s (Base: %s, Diff lines: %d, Verdict: %s)\n",
 			status, res.Branch, res.BaseBranch, res.DiffLines, res.Verdict)
 		if res.Notes != "" {
-			fmt.Printf("      Note: %s\n", res.Notes)
+			fmt.Fprintf(out, "      Note: %s\n", res.Notes)
 		}
 	}
-}
-
-func printAuditUsage() {
-	fmt.Println("Usage: dendrite audit-changes [flags]")
-	fmt.Println("\nFlags:")
-	fmt.Println("  --branch, -b <name>   Target specific branch (e.g. local/module-a)")
-	fmt.Println("  --dry-run             Preview topological rebase and audit checks without merging")
-	fmt.Println("  --max-tokens <int>    Ceiling token budget for audit payload context (default 4096)")
-	fmt.Println("  --model <name>        Inference model for audit validation (default qwen3.8:27b)")
+	return nil
 }

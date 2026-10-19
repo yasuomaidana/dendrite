@@ -124,10 +124,10 @@ func TestSynapseCommand_StatusAndSync(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"sync"}, "synapse id is required"},
+		{[]string{"sync"}, "accepts 1 arg(s), received 0"},
 		{[]string{"sync", "nope"}, "nope"},
-		{[]string{"sync", "stack", "extra"}, "unexpected argument"},
-		{[]string{"sync", "stack", "--merge"}, "requires"},
+		{[]string{"sync", "stack", "extra"}, "accepts 1 arg(s), received 2"},
+		{[]string{"sync", "stack", "--merge"}, "needs an argument"},
 		{[]string{"sync", "stack", "--merge=hub"}, "invalid --merge"},
 		{[]string{"sync", "stack", "--merge", "ghost=x"}, "no member"},
 		{[]string{"status", "stack", "--autostash"}, "unknown flag"},

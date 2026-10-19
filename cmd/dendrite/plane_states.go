@@ -3,91 +3,102 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"Dendrite/pkg/tracker/plane"
+
+	"github.com/spf13/cobra"
 )
 
-const planeStatesUsage = "Usage: dendrite plane states reconcile|ensure [--project <uuid|IDENT>] [--all] [--dry-run]"
+// chronosStatesOptions are the `chronos states reconcile` flags.
+type chronosStatesOptions struct {
+	Project string
+	All     bool
+	DryRun  bool
+}
 
-// handlePlaneStates converges one project (or every workspace project with --all)
-// onto plane.CanonicalStates. "ensure" is kept as an alias of "reconcile".
-func handlePlaneStates(ctx context.Context, client *plane.Client, args []string) {
-	if len(args) == 0 || (args[0] != "ensure" && args[0] != "reconcile") {
-		fmt.Println(planeStatesUsage)
-		return
+// newChronosStatesCmd builds `chronos states`: converge workflow states onto plane.CanonicalStates.
+func newChronosStatesCmd() *cobra.Command {
+	cmd := newGroupCmd("states", "Manage the project's workflow states", "")
+	var o chronosStatesOptions
+	reconcile := &cobra.Command{
+		Use:     "reconcile",
+		Aliases: []string{"ensure"},
+		Short:   "Converge workflow states (names, colors, order) onto the canonical set",
+		Args:    noArgs,
+		Example: "dendrite chronos states reconcile\ndendrite chronos states reconcile --project DGIT --dry-run\ndendrite chronos states reconcile --all",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return planeRun(func(c *plane.Client) error {
+				return runChronosStatesReconcile(cmd.Context(), c, o, cmd.OutOrStdout())
+			})
+		},
 	}
-	projectRef := ""
-	all, dryRun := false, false
-	for i := 1; i < len(args); i++ {
-		switch args[i] {
-		case "--project", "-p":
-			if i+1 >= len(args) {
-				fmt.Println(planeStatesUsage)
-				return
-			}
-			projectRef = args[i+1]
-			i++
-		case "--all":
-			all = true
-		case "--dry-run":
-			dryRun = true
-		default:
-			fmt.Println(planeStatesUsage)
-			return
-		}
-	}
+	addProjectFlag(reconcile, &o.Project, "", "Plane project UUID or identifier (default: the configured project)")
+	reconcile.Flags().BoolVar(&o.All, "all", false, "Reconcile every project in the workspace")
+	reconcile.Flags().BoolVar(&o.DryRun, "dry-run", false, "Show the changes without applying them")
+	cmd.AddCommand(reconcile)
+	return cmd
+}
 
+// runChronosStatesReconcile converges one project (or every workspace project with All)
+// onto plane.CanonicalStates. A project that fails is reported and the rest still run.
+func runChronosStatesReconcile(ctx context.Context, client *plane.Client, o chronosStatesOptions, out io.Writer) error {
 	type target struct{ id, label string }
 	var targets []target
 	switch {
-	case all:
+	case o.All:
 		projects, err := client.ListProjects(ctx)
 		if err != nil {
-			fmt.Printf("[-] Failed to list Plane projects: %v\n", err)
-			return
+			return fmt.Errorf("list Plane projects: %w", err)
 		}
 		for _, p := range projects {
 			targets = append(targets, target{p.ID, p.Identifier})
 		}
-	case projectRef != "":
+	case o.Project != "":
 		// Accept identifiers like DGIT; fall back to treating the value as a raw UUID.
-		if p, err := client.ResolveProject(ctx, projectRef); err == nil {
+		if p, err := client.ResolveProject(ctx, o.Project); err == nil {
 			targets = append(targets, target{p.ID, p.Identifier})
 		} else {
-			targets = append(targets, target{projectRef, projectRef})
+			targets = append(targets, target{o.Project, o.Project})
 		}
 	default:
 		targets = append(targets, target{client.ProjectID(), client.ProjectID()})
 	}
 
+	failed := 0
 	for _, t := range targets {
-		rep, err := client.ReconcileStates(ctx, t.id, dryRun)
+		rep, err := client.ReconcileStates(ctx, t.id, o.DryRun)
 		if err != nil {
-			fmt.Printf("[-] Failed to reconcile states for %s: %v\n", t.label, err)
+			fmt.Fprintf(out, "[-] Failed to reconcile states for %s: %v\n", t.label, err)
+			failed++
 			continue
 		}
 		verb := "Reconciled"
-		if dryRun {
+		if o.DryRun {
 			verb = "Would reconcile"
 		}
 		if len(rep.Changes) == 0 {
-			fmt.Printf("[✓] %s: states already canonical\n", t.label)
+			fmt.Fprintf(out, "[✓] %s: states already canonical\n", t.label)
 		} else {
-			fmt.Printf("[✓] %s states for %s:\n", verb, t.label)
+			fmt.Fprintf(out, "[✓] %s states for %s:\n", verb, t.label)
 			for _, ch := range rep.Changes {
 				switch {
 				case ch.Action == "create":
-					fmt.Printf("    + create %s\n", ch.Name)
+					fmt.Fprintf(out, "    + create %s\n", ch.Name)
 				case ch.From != "":
-					fmt.Printf("    ~ %s -> %s (%s)\n", ch.From, ch.Name, strings.Join(ch.Fields, ", "))
+					fmt.Fprintf(out, "    ~ %s -> %s (%s)\n", ch.From, ch.Name, strings.Join(ch.Fields, ", "))
 				default:
-					fmt.Printf("    ~ %s (%s)\n", ch.Name, strings.Join(ch.Fields, ", "))
+					fmt.Fprintf(out, "    ~ %s (%s)\n", ch.Name, strings.Join(ch.Fields, ", "))
 				}
 			}
 		}
 		if len(rep.Unmanaged) > 0 {
-			fmt.Printf("    ? unmanaged (left untouched): %s\n", strings.Join(rep.Unmanaged, ", "))
+			fmt.Fprintf(out, "    ? unmanaged (left untouched): %s\n", strings.Join(rep.Unmanaged, ", "))
 		}
 	}
+	if failed > 0 {
+		return fmt.Errorf("%d of %d project(s) failed to reconcile", failed, len(targets))
+	}
+	return nil
 }

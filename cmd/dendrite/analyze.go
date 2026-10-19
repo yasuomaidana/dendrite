@@ -2,352 +2,327 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
-	"strconv"
+	"io"
 	"strings"
 	"time"
 
 	"Dendrite/pkg/scheduler/governor"
 	"Dendrite/pkg/scheduler/token"
+
+	"github.com/spf13/cobra"
 )
 
-var defaultCLIScheduler = token.NewTokenScheduler(nil, nil, "")
-var defaultCLIGovernor = governor.NewQuotaGovernor(governor.DefaultConfig(), defaultSegmentedStore, defaultCLIScheduler)
+// newScheduler and newGovernor open the token scheduler and quota governor on use, so --state-dir is honored.
+func newScheduler() *token.TokenScheduler { return token.NewTokenScheduler(nil, nil, "") }
 
-func handleAnalyzeCommand(ctx context.Context, action string, args []string) {
-	switch action {
-	case "policy":
-		handleAnalyzePolicy(args)
-	case "status":
-		handleAnalyzeStatus(args)
-	case "switch":
-		handleAnalyzeSwitch(args)
-	case "mode":
-		handleAnalyzeMode(args)
-	case "pause":
-		handleAnalyzePause(ctx, args)
-	case "resume":
-		handleAnalyzeResume(ctx, args)
-	case "run":
-		handleAnalyzeRun(ctx, args)
-	case "tokens", "token":
-		handleTokensCommand(ctx, args)
-	default:
-		printAnalyzeUsage()
-	}
-}
-
-func handleAnalyzeSwitch(args []string) {
-	if len(args) == 0 {
-		fmt.Println("Usage: dendrite analyze switch --allow-zero on|off")
-		return
-	}
-
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--allow-zero" {
-			val := "on"
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
-				val = strings.ToLower(args[i+1])
-				i++
-			}
-			enabled := (val == "on" || val == "true" || val == "1" || val == "enable")
-			if err := defaultCLIGovernor.SetAllowZero(enabled); err != nil {
-				fmt.Printf("[-] Failed to set allow-zero switch: %v\n", err)
-				os.Exit(1)
-			}
-			if enabled {
-				fmt.Println("[✓] Allow-Zero Drain Override: ON (Cloud sprint permitted to drain past 20% down to 0%)")
-			} else {
-				fmt.Println("[✓] Allow-Zero Drain Override: OFF (Cloud calls halt at 20% safety reserve)")
-			}
-			return
-		}
-	}
-	fmt.Println("[-] Unrecognized switch flag. Use: dendrite analyze switch --allow-zero on|off")
-}
-
-func handleAnalyzeMode(args []string) {
-	if len(args) == 0 {
-		st := defaultCLIGovernor.GetState()
-		fmt.Printf("Current Operating Mode: %s\n", st.Mode)
-		return
-	}
-
-	modeStr := strings.ToLower(args[0])
-	var mode governor.AnalysisMode
-	switch modeStr {
-	case "always":
-		mode = governor.ModeAlways
-	case "policy":
-		mode = governor.ModePolicy
-	case "paused", "pause":
-		mode = governor.ModePaused
-	default:
-		fmt.Printf("[-] Invalid mode '%s'. Allowed modes: always, policy, paused\n", modeStr)
-		os.Exit(1)
-	}
-
-	if err := defaultCLIGovernor.SetMode(mode); err != nil {
-		fmt.Printf("[-] Failed to switch operating mode: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("[✓] Switched operational analysis mode to: %s\n", mode)
-}
-
-func handleAnalyzePolicy(args []string) {
-	currPolicy := defaultCLIScheduler.GetPolicy()
-	updated := false
-	jsonOutput := false
-
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--night-window":
-			if i+1 < len(args) {
-				currPolicy.NightWindow = args[i+1]
-				updated = true
-				i++
-			}
-		case "--weekly-reset":
-			if i+1 < len(args) {
-				currPolicy.WeeklyReset = args[i+1]
-				updated = true
-				i++
-			}
-		case "--sprint-before-reset":
-			if i+1 < len(args) {
-				dur, err := time.ParseDuration(args[i+1])
-				if err != nil {
-					fmt.Printf("[-] Invalid sprint-before-reset duration: %v\n", err)
-					os.Exit(1)
-				}
-				currPolicy.SprintBeforeReset = dur
-				updated = true
-				i++
-			}
-		case "--reserve-floor":
-			if i+1 < len(args) {
-				fl, err := strconv.ParseFloat(args[i+1], 64)
-				if err != nil {
-					fmt.Printf("[-] Invalid reserve-floor: %v\n", err)
-					os.Exit(1)
-				}
-				currPolicy.ReserveFloor = fl
-				updated = true
-				i++
-			}
-		case "--allow-zero":
-			currPolicy.AllowZero = true
-			if i+1 < len(args) && (args[i+1] == "true" || args[i+1] == "on" || args[i+1] == "1") {
-				i++
-			} else if i+1 < len(args) && (args[i+1] == "false" || args[i+1] == "off" || args[i+1] == "0") {
-				currPolicy.AllowZero = false
-				i++
-			}
-			updated = true
-		case "--mode":
-			if i+1 < len(args) {
-				currPolicy.Mode = args[i+1]
-				updated = true
-				i++
-			}
-		case "--json":
-			jsonOutput = true
-		}
-	}
-
-	if updated {
-		if err := defaultCLIScheduler.SetPolicy(currPolicy); err != nil {
-			fmt.Printf("[-] Failed to update policy: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	active := defaultCLIScheduler.GetPolicy()
-
-	if jsonOutput {
-		data, _ := json.MarshalIndent(map[string]interface{}{
-			"updated": updated,
-			"policy":  active,
-		}, "", "  ")
-		fmt.Println(string(data))
-		return
-	}
-
-	if updated {
-		fmt.Println("[✓] Successfully updated Token-Aware Hybrid Scheduler policy:")
-	} else {
-		fmt.Println("Token-Aware Hybrid Scheduler Policy:")
-	}
-	fmt.Printf("  • Night Window (Zero-Cost Local): %s\n", active.NightWindow)
-	fmt.Printf("  • Weekly Quota Reset:             %s\n", active.WeeklyReset)
-	fmt.Printf("  • Cloud Sprint Duration:          %v\n", active.SprintBeforeReset)
-	fmt.Printf("  • Safety Reserve Quota Floor:     %.1f%%\n", active.ReserveFloor*100)
-	fmt.Printf("  • Allow Zero Quota Drain:         %t\n", active.AllowZero)
-	fmt.Printf("  • Operational Mode:               %s\n", active.Mode)
-}
-
-func handleAnalyzeStatus(args []string) {
-	jsonOutput := false
-	for _, a := range args {
-		if a == "--json" {
-			jsonOutput = true
-		}
-	}
-
-	st, err := defaultCLIScheduler.Status()
+func newGovernor(sched *token.TokenScheduler) (*governor.QuotaGovernor, error) {
+	st, err := openSegmentedStore()
 	if err != nil {
-		fmt.Printf("[-] Failed to evaluate scheduler status: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("open segmented store: %w", err)
 	}
+	return governor.NewQuotaGovernor(governor.DefaultConfig(), st, sched), nil
+}
 
-	govState := defaultCLIGovernor.GetState()
+// withGovernor runs fn with a fresh scheduler and the governor built on it.
+func withGovernor(fn func(*token.TokenScheduler, *governor.QuotaGovernor) error) error {
+	sched := newScheduler()
+	gov, err := newGovernor(sched)
+	if err != nil {
+		return err
+	}
+	return fn(sched, gov)
+}
 
-	if jsonOutput {
-		payload := map[string]interface{}{
-			"scheduler": st,
-			"governor":  govState,
+// newCognitionCmd builds `dendrite cognition` (alias analyze): the token-aware scheduler and quota governor.
+func newCognitionCmd() *cobra.Command {
+	cmd := newGroupCmd("cognition", "Cognitive complexity analyzer, structural anti-pattern scanner, and policy router", "glia",
+		"analyze", "cognitive-analysis", "anlz")
+	cmd.Example = "dendrite cognition status --json\n" +
+		"dendrite cognition policy --night-window 22:00-06:00 --reserve-floor 0.25\n" +
+		"dendrite cognition switch --allow-zero off\n" +
+		"dendrite cognition mode paused\n" +
+		"dendrite cognition run --chunk ast-1 --simulate-night"
+	cmd.AddCommand(
+		newCognitionPolicyCmd(),
+		newCognitionStatusCmd(),
+		newCognitionSwitchCmd(),
+		newCognitionModeCmd(),
+		newCognitionPauseResumeCmd("pause", "Pause analysis and persist the active chunk's progress"),
+		newCognitionPauseResumeCmd("resume", "Resume analysis in the active mode"),
+		newCognitionRunCmd(),
+	)
+	return cmd
+}
+
+func newCognitionPolicyCmd() *cobra.Command {
+	var p token.Policy
+	cmd := &cobra.Command{
+		Use:   "policy",
+		Short: "Show the scheduler policy, or change it with flags",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCognitionPolicy(cmd, p, cmd.OutOrStdout())
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&p.NightWindow, "night-window", "", "Zero-cost local window, HH:MM-HH:MM")
+	f.StringVar(&p.WeeklyReset, "weekly-reset", "", "Weekly quota reset, e.g. \"MON 09:00\"")
+	f.DurationVar(&p.SprintBeforeReset, "sprint-before-reset", 0, "Cloud sprint window before the reset")
+	f.Float64Var(&p.ReserveFloor, "reserve-floor", 0, "Safety reserve as a fraction (0.0-1.0)")
+	f.BoolVar(&p.AllowZero, "allow-zero", false, "Allow draining the quota below the reserve floor")
+	f.StringVar(&p.Mode, "mode", "", "Mode: auto, always, night, sprint or paused")
+	return cmd
+}
+
+// runCognitionPolicy applies the flags the user set on top of the stored policy.
+func runCognitionPolicy(cmd *cobra.Command, set token.Policy, out io.Writer) error {
+	sched := newScheduler()
+	pol := sched.GetPolicy()
+	f := cmd.Flags()
+	if f.Changed("reserve-floor") && (set.ReserveFloor < 0 || set.ReserveFloor > 1) {
+		return usageErrorf("--reserve-floor must be between 0.0 and 1.0")
+	}
+	updated := false
+	apply := func(name string, fn func()) {
+		if f.Changed(name) {
+			fn()
+			updated = true
 		}
-		data, _ := json.MarshalIndent(payload, "", "  ")
-		fmt.Println(string(data))
-		return
+	}
+	apply("night-window", func() { pol.NightWindow = set.NightWindow })
+	apply("weekly-reset", func() { pol.WeeklyReset = set.WeeklyReset })
+	apply("sprint-before-reset", func() { pol.SprintBeforeReset = set.SprintBeforeReset })
+	apply("reserve-floor", func() { pol.ReserveFloor = set.ReserveFloor })
+	apply("allow-zero", func() { pol.AllowZero = set.AllowZero })
+	apply("mode", func() { pol.Mode = set.Mode })
+	if updated {
+		if err := sched.SetPolicy(pol); err != nil {
+			return fmt.Errorf("update policy: %w", err)
+		}
 	}
 
-	fmt.Println("=== Token-Aware Hybrid Scheduler & Quota Governor Status ===")
-	fmt.Printf("Current Time:           %s\n", st.CurrentTime.Format(time.RFC3339))
-	fmt.Printf("Operating Mode:         %s\n", govState.Mode)
-	fmt.Printf("Active Execution Tier:  %s\n", st.ActiveTier)
-	fmt.Printf("Selected Model:         %s\n", st.SelectedModel)
-	fmt.Printf("In Night Window:        %t (%s)\n", st.InNightWindow, st.Policy.NightWindow)
-	fmt.Printf("In Cloud Sprint Window: %t (within %v of reset)\n", st.InSprintWindow, st.Policy.SprintBeforeReset)
-	fmt.Printf("Next Quota Reset:       %s (in %v)\n", st.NextReset.Format(time.RFC3339), st.TimeUntilReset.Round(time.Minute))
+	active := sched.GetPolicy()
+	if globals.JSON {
+		return writeJSON(out, map[string]any{"updated": updated, "policy": active})
+	}
+	if updated {
+		fmt.Fprintln(out, "[✓] Successfully updated Token-Aware Hybrid Scheduler policy:")
+	} else {
+		fmt.Fprintln(out, "Token-Aware Hybrid Scheduler Policy:")
+	}
+	fmt.Fprintf(out, "  • Night Window (Zero-Cost Local): %s\n", active.NightWindow)
+	fmt.Fprintf(out, "  • Weekly Quota Reset:             %s\n", active.WeeklyReset)
+	fmt.Fprintf(out, "  • Cloud Sprint Duration:          %v\n", active.SprintBeforeReset)
+	fmt.Fprintf(out, "  • Safety Reserve Quota Floor:     %.1f%%\n", active.ReserveFloor*100)
+	fmt.Fprintf(out, "  • Allow Zero Quota Drain:         %t\n", active.AllowZero)
+	fmt.Fprintf(out, "  • Operational Mode:               %s\n", active.Mode)
+	return nil
+}
+
+func newCognitionStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show the scheduler's tier, windows, countdowns and the governor state",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withGovernor(func(sched *token.TokenScheduler, gov *governor.QuotaGovernor) error {
+				return runCognitionStatus(sched, gov, cmd.OutOrStdout())
+			})
+		},
+	}
+}
+
+func runCognitionStatus(sched *token.TokenScheduler, gov *governor.QuotaGovernor, out io.Writer) error {
+	st, err := sched.Status()
+	if err != nil {
+		return fmt.Errorf("evaluate scheduler status: %w", err)
+	}
+	govState := gov.GetState()
+	if globals.JSON {
+		return writeJSON(out, map[string]any{"scheduler": st, "governor": govState})
+	}
+	fmt.Fprintln(out, "=== Token-Aware Hybrid Scheduler & Quota Governor Status ===")
+	fmt.Fprintf(out, "Current Time:           %s\n", st.CurrentTime.Format(time.RFC3339))
+	fmt.Fprintf(out, "Operating Mode:         %s\n", govState.Mode)
+	fmt.Fprintf(out, "Active Execution Tier:  %s\n", st.ActiveTier)
+	fmt.Fprintf(out, "Selected Model:         %s\n", st.SelectedModel)
+	fmt.Fprintf(out, "In Night Window:        %t (%s)\n", st.InNightWindow, st.Policy.NightWindow)
+	fmt.Fprintf(out, "In Cloud Sprint Window: %t (within %v of reset)\n", st.InSprintWindow, st.Policy.SprintBeforeReset)
+	fmt.Fprintf(out, "Next Quota Reset:       %s (in %v)\n", st.NextReset.Format(time.RFC3339), st.TimeUntilReset.Round(time.Minute))
 	if !st.InSprintWindow {
-		fmt.Printf("Time Until Next Sprint: %v\n", st.TimeUntilSprint.Round(time.Minute))
+		fmt.Fprintf(out, "Time Until Next Sprint: %v\n", st.TimeUntilSprint.Round(time.Minute))
 	}
-	fmt.Printf("Remaining Quota:        %.1f%%\n", st.RemainingQuotaRatio*100)
-	fmt.Printf("Safety Reserve Floor:   %.1f%%\n", govState.ReserveFloor*100)
-	fmt.Printf("Allow-Zero Drain:       %t\n", govState.AllowZeroDrain)
-	fmt.Printf("Cloud Spend (USD):      $%.2f\n", st.CloudSpendUSD)
-	fmt.Printf("Cloud Blocked:          %t\n", govState.IsCloudBlocked)
-	fmt.Printf("Status Reason:          %s\n", st.Reason)
+	fmt.Fprintf(out, "Remaining Quota:        %.1f%%\n", st.RemainingQuotaRatio*100)
+	fmt.Fprintf(out, "Safety Reserve Floor:   %.1f%%\n", govState.ReserveFloor*100)
+	fmt.Fprintf(out, "Allow-Zero Drain:       %t\n", govState.AllowZeroDrain)
+	fmt.Fprintf(out, "Cloud Spend (USD):      $%.2f\n", st.CloudSpendUSD)
+	fmt.Fprintf(out, "Cloud Blocked:          %t\n", govState.IsCloudBlocked)
+	fmt.Fprintf(out, "Status Reason:          %s\n", st.Reason)
+	return nil
 }
 
-func handleAnalyzePause(ctx context.Context, args []string) {
-	project := ""
-	chunkID := ""
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--project" && i+1 < len(args) {
-			project = args[i+1]
-			i++
-		}
-		if args[i] == "--chunk" && i+1 < len(args) {
-			chunkID = args[i+1]
-			i++
-		}
+// parseOnOff reads an on/off switch value.
+func parseOnOff(s string) (bool, error) {
+	switch strings.ToLower(s) {
+	case "on", "true", "1", "enable", "yes":
+		return true, nil
+	case "off", "false", "0", "disable", "no":
+		return false, nil
 	}
-
-	_ = defaultCLIGovernor.Pause(ctx, project, chunkID)
-	fmt.Println("[✓] Token-Aware Hybrid Scheduler and Quota Governor paused. Active chunk progress persisted.")
+	return false, usageErrorf("invalid switch value %q: use on or off", s)
 }
 
-func handleAnalyzeResume(ctx context.Context, args []string) {
-	project := ""
-	chunkID := ""
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--project" && i+1 < len(args) {
-			project = args[i+1]
-			i++
-		}
-		if args[i] == "--chunk" && i+1 < len(args) {
-			chunkID = args[i+1]
-			i++
-		}
-	}
-
-	_ = defaultCLIGovernor.Resume(ctx, project, chunkID)
-	fmt.Println("[✓] Token-Aware Hybrid Scheduler and Quota Governor resumed.")
-}
-
-func handleAnalyzeRun(ctx context.Context, args []string) {
-	chunkID := "project-ast-chunk"
-	project := "dendrite"
-	simNight := false
-	simSprint := false
-
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--chunk", "-c":
-			if i+1 < len(args) {
-				chunkID = args[i+1]
-				i++
+func newCognitionSwitchCmd() *cobra.Command {
+	var allowZero string
+	cmd := &cobra.Command{
+		Use:   "switch",
+		Short: "Set runtime feature switches",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			enabled, err := parseOnOff(allowZero)
+			if err != nil {
+				return err
 			}
-		case "--project", "-p":
-			if i+1 < len(args) {
-				project = args[i+1]
-				i++
+			return withGovernor(func(_ *token.TokenScheduler, gov *governor.QuotaGovernor) error {
+				if err := gov.SetAllowZero(enabled); err != nil {
+					return fmt.Errorf("set allow-zero switch: %w", err)
+				}
+				if enabled {
+					fmt.Fprintln(cmd.OutOrStdout(), "[✓] Allow-Zero Drain Override: ON (Cloud sprint permitted to drain past 20% down to 0%)")
+				} else {
+					fmt.Fprintln(cmd.OutOrStdout(), "[✓] Allow-Zero Drain Override: OFF (Cloud calls halt at 20% safety reserve)")
+				}
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&allowZero, "allow-zero", "", "Allow-zero drain override: on or off")
+	requireFlags(cmd, "allow-zero")
+	return cmd
+}
+
+func newCognitionModeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:       "mode [always|policy|paused]",
+		Short:     "Show or set the analysis operating mode",
+		Args:      maxArgs(1),
+		ValidArgs: []string{"always", "policy", "paused"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var mode governor.AnalysisMode
+			if len(args) == 1 {
+				switch strings.ToLower(args[0]) {
+				case "always":
+					mode = governor.ModeAlways
+				case "policy":
+					mode = governor.ModePolicy
+				case "paused", "pause":
+					mode = governor.ModePaused
+				default:
+					return usageErrorf("invalid mode %q: use always, policy or paused", args[0])
+				}
 			}
-		case "--simulate-night":
-			simNight = true
-		case "--simulate-sprint":
-			simSprint = true
-		}
+			return withGovernor(func(_ *token.TokenScheduler, gov *governor.QuotaGovernor) error {
+				out := cmd.OutOrStdout()
+				if mode == "" {
+					fmt.Fprintf(out, "Current Operating Mode: %s\n", gov.GetState().Mode)
+					return nil
+				}
+				if err := gov.SetMode(mode); err != nil {
+					return fmt.Errorf("switch operating mode: %w", err)
+				}
+				fmt.Fprintf(out, "[✓] Switched operational analysis mode to: %s\n", mode)
+				return nil
+			})
+		},
 	}
+}
 
-	sched := defaultCLIScheduler
-	if simNight || simSprint {
-		pol := sched.GetPolicy()
-		if simNight {
-			pol.Mode = "night"
-		} else if simSprint {
-			pol.Mode = "sprint"
-		}
-		tempSched := token.NewTokenScheduler(nil, nil, "")
-		_ = tempSched.SetPolicy(pol)
-		sched = tempSched
+func newCognitionPauseResumeCmd(use, short string) *cobra.Command {
+	var project, chunk string
+	cmd := &cobra.Command{
+		Use:   use,
+		Short: short,
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withGovernor(func(_ *token.TokenScheduler, gov *governor.QuotaGovernor) error {
+				ctx, out := cmd.Context(), cmd.OutOrStdout()
+				if use == "pause" {
+					if err := gov.Pause(ctx, project, chunk); err != nil {
+						return fmt.Errorf("pause: %w", err)
+					}
+					fmt.Fprintln(out, "[✓] Token-Aware Hybrid Scheduler and Quota Governor paused. Active chunk progress persisted.")
+					return nil
+				}
+				if err := gov.Resume(ctx, project, chunk); err != nil {
+					return fmt.Errorf("resume: %w", err)
+				}
+				fmt.Fprintln(out, "[✓] Token-Aware Hybrid Scheduler and Quota Governor resumed.")
+				return nil
+			})
+		},
 	}
+	addProjectFlag(cmd, &project, "", "Project of the active chunk")
+	cmd.Flags().StringVarP(&chunk, "chunk", "c", "", "Active chunk ID")
+	return cmd
+}
 
-	res, err := sched.ProcessChunk(ctx, chunkID, func(ctx context.Context, model string) (string, int, float64, error) {
+func newCognitionRunCmd() *cobra.Command {
+	var chunk, project string
+	var simNight, simSprint bool
+	cmd := &cobra.Command{
+		Use:   "run",
+		Short: "Run one analysis pass on a chunk under scheduler governance",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withGovernor(func(sched *token.TokenScheduler, gov *governor.QuotaGovernor) error {
+				if simNight || simSprint {
+					pol := sched.GetPolicy()
+					pol.Mode = "night"
+					if simSprint {
+						pol.Mode = "sprint"
+					}
+					sched = token.NewTokenScheduler(nil, nil, "")
+					if err := sched.SetPolicy(pol); err != nil {
+						return fmt.Errorf("set simulated policy: %w", err)
+					}
+				}
+				return runCognitionChunk(cmd.Context(), sched, gov, project, chunk, cmd.OutOrStdout())
+			})
+		},
+	}
+	cmd.Flags().StringVarP(&chunk, "chunk", "c", "project-ast-chunk", "Chunk ID")
+	addProjectFlag(cmd, &project, "dendrite", "Project")
+	cmd.Flags().BoolVar(&simNight, "simulate-night", false, "Run as if inside the night window")
+	cmd.Flags().BoolVar(&simSprint, "simulate-sprint", false, "Run as if inside the sprint window")
+	cmd.MarkFlagsMutuallyExclusive("simulate-night", "simulate-sprint")
+	return cmd
+}
+
+func runCognitionChunk(ctx context.Context, sched *token.TokenScheduler, gov *governor.QuotaGovernor, project, chunk string, out io.Writer) error {
+	res, err := sched.ProcessChunk(ctx, chunk, func(ctx context.Context, model string) (string, int, float64, error) {
 		cost := 0.0
 		if model == "gemini-2.5-pro" {
-			// Check governor safety floor before invoking cloud model
-			allowed, gErr := defaultCLIGovernor.CheckCloudExecution(ctx, project, chunkID)
-			if !allowed {
+			// The governor's safety floor gates every cloud call.
+			if allowed, gErr := gov.CheckCloudExecution(ctx, project, chunk); !allowed {
 				return "", 0, 0, gErr
 			}
 			cost = 0.02
 		}
-		return fmt.Sprintf("Completed semantic AST analysis for %s", chunkID), 1500, cost, nil
+		return fmt.Sprintf("Completed semantic AST analysis for %s", chunk), 1500, cost, nil
 	})
 	if err != nil {
-		fmt.Printf("[-] Failed to process chunk: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("process chunk: %w", err)
 	}
-
-	fmt.Printf("[✓] Chunk Execution Outcome:\n")
-	fmt.Printf("    Chunk ID:       %s\n", res.ChunkID)
-	fmt.Printf("    Execution Tier: %s\n", res.ActiveTier)
-	fmt.Printf("    Selected Model: %s\n", res.SelectedModel)
-	fmt.Printf("    Tokens:         %d\n", res.Tokens)
-	fmt.Printf("    Cost (USD):     $%.4f\n", res.CostUSD)
-	fmt.Printf("    Details:        %s\n", res.Response)
-}
-
-func printAnalyzeUsage() {
-	fmt.Println("Usage: dendrite analyze <policy|status|switch|mode|pause|resume|run|tokens> [flags...]")
-	fmt.Println("\nCommands:")
-	fmt.Println("  policy   View or set scheduler policy directives")
-	fmt.Println("           Flags: --night-window <HH:MM-HH:MM>")
-	fmt.Println("                  --weekly-reset <DAY HH:MM>")
-	fmt.Println("                  --sprint-before-reset <duration>")
-	fmt.Println("                  --reserve-floor <0.0-1.0>")
-	fmt.Println("                  --allow-zero [true|false]")
-	fmt.Println("                  --mode <auto|always|night|sprint|paused>")
-	fmt.Println("  status   Inspect real-time scheduler state, countdowns, and active tiers")
-	fmt.Println("  tokens   Inspect day window and week window token availability & AGY access confirmation")
-	fmt.Println("  switch   Set runtime feature switches (e.g. --allow-zero on|off)")
-	fmt.Println("  mode     Switch operational analysis mode (always|policy|paused)")
-	fmt.Println("  pause    Pause scheduler analysis (persists chunk progress immediately)")
-	fmt.Println("  resume   Resume scheduler analysis in active mode")
-	fmt.Println("  run      Execute analysis pass on a target chunk under scheduler governance")
+	if globals.JSON {
+		return writeJSON(out, res)
+	}
+	fmt.Fprintln(out, "[✓] Chunk Execution Outcome:")
+	fmt.Fprintf(out, "    Chunk ID:       %s\n", res.ChunkID)
+	fmt.Fprintf(out, "    Execution Tier: %s\n", res.ActiveTier)
+	fmt.Fprintf(out, "    Selected Model: %s\n", res.SelectedModel)
+	fmt.Fprintf(out, "    Tokens:         %d\n", res.Tokens)
+	fmt.Fprintf(out, "    Cost (USD):     $%.4f\n", res.CostUSD)
+	fmt.Fprintf(out, "    Details:        %s\n", res.Response)
+	return nil
 }

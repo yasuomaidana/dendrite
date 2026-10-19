@@ -9,140 +9,117 @@ import (
 	"strings"
 
 	"Dendrite/pkg/devtool"
+
+	"github.com/spf13/cobra"
 )
 
-func handleCommitCommand(ctx context.Context, args []string) {
-	stageAllSet := false
-	withSynapse, assumeYes := false, false
-	synapseID := ""
-	opts := devtool.CommitOptions{
-		StageAll:      false,
-		UseLocalModel: true,
-		Model:         "qwen3.8:27b",
-		Smart:         true,
+// newQuantalCmd builds `dendrite quantal` (alias commit): ticket-aware commits with generated messages, then push.
+func newQuantalCmd() *cobra.Command {
+	opts := devtool.CommitOptions{UseLocalModel: true, Model: "qwen3.8:27b", Smart: true}
+	var noSmart, noLocal bool
+	var synapseID string
+	cmd := &cobra.Command{
+		Use:     "quantal",
+		Aliases: []string{"commit", "quantal-commit", "cmt"},
+		Short:   "Autonomous Git commit with local model message generation",
+		Long: "Commits the staged changes (or --files / --all), references the ticket, and pushes to the remote.\n" +
+			"It never pushes main/master; --no-push or DENDRITE_COMMIT_PUSH=false skips the push.",
+		GroupID: "boutons",
+		Args:    noArgs,
+		Example: "dendrite quantal --ticket DEN-123\n" +
+			"dendrite quantal -t DEN-123 --no-smart -m \"fix(cli): handle empty args\"\n" +
+			"dendrite quantal --files cmd/a.go,cmd/b.go --dry-run\n" +
+			"dendrite quantal --synapse -y",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts.Smart, opts.NoSmart = !noSmart, noSmart
+			opts.UseLocalModel = !noLocal
+			if strings.EqualFold(os.Getenv("DENDRITE_COMMIT_PUSH"), "false") {
+				opts.NoPush = true
+			}
+			if !cmd.Flags().Changed("synapse") {
+				return runQuantal(cmd.Context(), opts, cmd.OutOrStdout())
+			}
+			if synapseID == synapseAuto {
+				synapseID = ""
+			}
+			return runQuantalSynapse(cmd.Context(), opts, synapseID, cmd.InOrStdin(), cmd.OutOrStdout())
+		},
 	}
+	f := cmd.Flags()
+	addTicketFlag(cmd, &opts.TicketID, "")
+	f.StringVarP(&opts.Message, "message", "m", "", "Commit message (skips message generation)")
+	f.StringSliceVarP(&opts.Files, "files", "f", nil, "Files to stage (comma-separated)")
+	f.BoolVarP(&opts.StageAll, "all", "a", false, "Stage all modified and untracked files")
+	f.BoolVar(&opts.Amend, "amend", false, "Amend the previous commit")
+	f.BoolVar(&opts.NoPush, "no-push", false, "Do not push after committing")
+	f.Bool("smart", true, "Resolve the active ticket from Plane when --ticket is not given (default)")
+	f.BoolVar(&noSmart, "no-smart", false, "Do not resolve the ticket automatically")
+	addModelFlag(cmd, &opts.Model, opts.Model)
+	f.Bool("local", true, "Generate the message with the local model (default)")
+	f.BoolVar(&noLocal, "no-local", false, "Do not use the local model for the message")
+	addDryRunFlag(cmd, &opts.DryRun)
+	f.BoolVar(&opts.AllowMocks, "allow-mocks", false, "Bypass the zero-mock gate (emergencies only)")
+	f.StringVar(&synapseID, "synapse", "", "Then check every synapse peer (of this synapse, or every one holding the project): offer to commit dirty peers (-y: without asking), push peers ahead")
+	f.Lookup("synapse").NoOptDefVal = synapseAuto
+	cmd.MarkFlagsMutuallyExclusive("smart", "no-smart")
+	cmd.MarkFlagsMutuallyExclusive("local", "no-local")
+	cmd.MarkFlagsMutuallyExclusive("files", "all")
+	return cmd
+}
 
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--ticket", "-t":
-			if i+1 < len(args) {
-				opts.TicketID = args[i+1]
-				i++
-			}
-		case "--message", "-m":
-			if i+1 < len(args) {
-				opts.Message = args[i+1]
-				i++
-			}
-		case "--files", "-f":
-			if i+1 < len(args) {
-				opts.Files = strings.Split(args[i+1], ",")
-				opts.StageAll = false
-				i++
-			}
-		case "--all", "-a":
-			opts.StageAll = true
-			stageAllSet = true
-		case "--amend":
-			opts.Amend = true
-		case "--no-push":
-			opts.NoPush = true
-		case "--smart":
-			opts.Smart = true
-			opts.NoSmart = false
-		case "--no-smart":
-			opts.Smart = false
-			opts.NoSmart = true
-		case "--model":
-			if i+1 < len(args) {
-				opts.Model = args[i+1]
-				i++
-			}
-		case "--local":
-			opts.UseLocalModel = true
-		case "--no-local":
-			opts.UseLocalModel = false
-		case "--dry-run":
-			opts.DryRun = true
-		case "--allow-mocks", "--no-mock-gate":
-			opts.AllowMocks = true
-		case "--synapse":
-			withSynapse = true
-		case "--yes", "-y":
-			assumeYes = true
-		case "--help", "-h":
-			printCommitUsage()
-			return
-		default:
-			if strings.HasPrefix(args[i], "--synapse=") {
-				withSynapse = true
-				synapseID = strings.TrimPrefix(args[i], "--synapse=")
-			}
-		}
+// synapseAuto is the --synapse value given without "=<id>": every synapse holding the project.
+const synapseAuto = "auto"
+
+// runQuantalSynapse commits the current project (nothing to commit is fine), then walks its
+// synapse peers: dirty peers are committed after confirmation, peers ahead are pushed.
+func runQuantalSynapse(ctx context.Context, opts devtool.CommitOptions, synapseID string, in io.Reader, out io.Writer) error {
+	err := runQuantal(ctx, opts, out)
+	if errors.Is(err, devtool.ErrNothingToCommit) {
+		fmt.Fprintln(out, "[i] Nothing to commit in the current project; checking synapse peers...")
+		err = nil
 	}
-
-	if strings.EqualFold(os.Getenv("DENDRITE_COMMIT_PUSH"), "false") {
-		opts.NoPush = true
+	cwd, wdErr := os.Getwd()
+	if wdErr != nil {
+		return errors.Join(err, wdErr)
 	}
-
-	// If user did not specify files or --all, and nothing is staged yet, default to staging all
-	if !stageAllSet && len(opts.Files) == 0 {
-		// devtool.ExecuteCommit will intelligently check if index already has staged files
-		opts.StageAll = false
+	var confirm peerConfirm // nil: non-interactive without --yes, report only
+	switch {
+	case globals.Yes:
+		confirm = func(string, int) bool { return true }
+	case stdinIsTerminal():
+		confirm = linePrompter(in, out)
 	}
+	return errors.Join(err, commitSynapsePeers(ctx, out, cwd, synapseID, opts, confirm))
+}
 
-	fmt.Println("[+] Initializing Autonomous Git Commit Engine...")
+func runQuantal(ctx context.Context, opts devtool.CommitOptions, out io.Writer) error {
+	fmt.Fprintln(out, "[+] Initializing Autonomous Git Commit Engine...")
 	if opts.TicketID != "" {
-		fmt.Printf("    - Active Ticket:    %s\n", opts.TicketID)
+		fmt.Fprintf(out, "    - Active Ticket:    %s\n", opts.TicketID)
 	} else if !opts.NoSmart {
-		fmt.Println("    - Smart Strategy:   Auto-resolving active ticket and context from Plane / DAG...")
+		fmt.Fprintln(out, "    - Smart Strategy:   Auto-resolving active ticket and context from Plane / DAG...")
 	}
 	if opts.Amend {
-		fmt.Println("    - Commit Mode:      AMEND (--amend)")
+		fmt.Fprintln(out, "    - Commit Mode:      AMEND (--amend)")
 	}
 	if opts.UseLocalModel && opts.Message == "" {
-		fmt.Printf("    - Message Model:    %s (Delegated Local Engine)\n", opts.Model)
+		fmt.Fprintf(out, "    - Message Model:    %s (Delegated Local Engine)\n", opts.Model)
 	} else if opts.Message != "" {
-		fmt.Printf("    - Message Source:   User Specified\n")
+		fmt.Fprintf(out, "    - Message Source:   User Specified\n")
 	}
 	if opts.DryRun {
-		fmt.Println("    - Execution Mode:   DRY-RUN (Preview Only)")
+		fmt.Fprintln(out, "    - Execution Mode:   DRY-RUN (Preview Only)")
 	}
 
 	res, err := devtool.ExecuteCommit(ctx, opts)
-	failed := false
-	switch {
-	case err == nil:
-		failed = printCommitResult(os.Stdout, res)
-	case withSynapse && errors.Is(err, devtool.ErrNothingToCommit):
-		fmt.Println("[i] Nothing to commit in the current project; checking synapse peers...")
-	default:
-		fmt.Printf("[-] Commit failed: %v\n", err)
-		os.Exit(1)
-		return
+	if err != nil {
+		return fmt.Errorf("commit failed: %w", err)
 	}
 
-	if withSynapse {
-		cwd, wdErr := os.Getwd()
-		if wdErr != nil {
-			fmt.Printf("[-] %v\n", wdErr)
-			os.Exit(1)
-		}
-		var confirm peerConfirm // nil: non-interactive without --yes, report only
-		switch {
-		case assumeYes:
-			confirm = func(string, int) bool { return true }
-		case stdinIsTerminal():
-			confirm = linePrompter(os.Stdin, os.Stdout)
-		}
-		if peerErr := commitSynapsePeers(ctx, os.Stdout, cwd, synapseID, opts, confirm); peerErr != nil {
-			fmt.Printf("[-] %v\n", peerErr)
-			failed = true
-		}
+	if printCommitResult(out, res) {
+		return fmt.Errorf("git push failed: %w", res.PushError)
 	}
-	if failed {
-		os.Exit(1)
-	}
+	return nil
 }
 
 // printCommitResult renders a commit outcome and reports whether the push failed.
@@ -191,23 +168,6 @@ func printCommitResult(out io.Writer, res *devtool.CommitResult) bool {
 		return true
 	}
 	return false
-}
-
-func printCommitUsage() {
-	fmt.Println("Usage: dendrite commit [flags]")
-	fmt.Println("\nFlags:")
-	fmt.Println("  --ticket, -t <id>     Target Plane Ticket ID (e.g. DEN-098)")
-	fmt.Println("  --message, -m <msg>   Explicit commit message (skips local model generation)")
-	fmt.Println("  --files, -f <f1,f2>   Comma-separated files to stage (defaults to git add -A)")
-	fmt.Println("  --all, -a             Stage all modified and untracked files (default true)")
-	fmt.Println("  --amend               Amend previous commit instead of creating a new commit")
-	fmt.Println("  --no-push             Disable pushing commit to remote")
-	fmt.Println("  --smart / --no-smart  Enable/disable smart ticket auto-detection (default enabled)")
-	fmt.Println("  --model <model>       Target local model for message synthesis (default qwen3.8:27b)")
-	fmt.Println("  --local / --no-local  Enable/disable local model delegation (default enabled)")
-	fmt.Println("  --dry-run             Preview staged diff and synthesized commit message without committing")
-	fmt.Println("  --synapse[=<id>]      Then check every synapse peer: offer to commit dirty peers, push peers ahead")
-	fmt.Println("  --yes, -y             With --synapse, commit every dirty peer without prompting")
 }
 
 func indentText(text, indent string) string {

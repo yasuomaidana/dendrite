@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"Dendrite/pkg/cli"
 	"Dendrite/pkg/mcpserver"
+	"github.com/spf13/cobra"
 )
 
 // AuditItem represents a missing or stale documentation page.
@@ -28,12 +28,12 @@ type AuditReport struct {
 }
 
 // AuditReferenceDocs audits docs/cli/ and docs/mcp/ against live registries.
-func AuditReferenceDocs(docsDir string, reg *cli.Registry, srv *mcpserver.Server) (*AuditReport, error) {
+func AuditReferenceDocs(docsDir string, root *cobra.Command, srv *mcpserver.Server) (*AuditReport, error) {
 	if docsDir == "" {
 		docsDir = "docs"
 	}
-	if reg == nil {
-		return nil, fmt.Errorf("cli registry cannot be nil")
+	if root == nil {
+		return nil, fmt.Errorf("cli root command cannot be nil")
 	}
 
 	report := &AuditReport{
@@ -45,28 +45,26 @@ func AuditReferenceDocs(docsDir string, reg *cli.Registry, srv *mcpserver.Server
 	mcpDir := filepath.Join(docsDir, "mcp")
 
 	// 1. Audit CLI commands
-	cliDocs := IntrospectCLIRegistry(reg)
-	for _, cmdDoc := range cliDocs {
+	for _, page := range CLIReferencePages(root) {
 		report.TotalChecked++
-		targetFile := filepath.Join(cliDir, cmdDoc.Name+".md")
+		targetFile := filepath.Join(cliDir, page.Name+".md")
 		data, err := os.ReadFile(targetFile)
 		if err != nil {
 			report.MissingCount++
 			report.Items = append(report.Items, AuditItem{
 				Type:   "cli",
-				Name:   cmdDoc.Name,
+				Name:   page.Name,
 				Path:   targetFile,
 				Reason: "missing",
 			})
 			continue
 		}
 
-		expected := RenderCLICommandMarkdown(cmdDoc)
-		if strings.TrimSpace(string(data)) != strings.TrimSpace(expected) {
+		if strings.TrimSpace(string(data)) != strings.TrimSpace(page.Content) {
 			report.StaleCount++
 			report.Items = append(report.Items, AuditItem{
 				Type:   "cli",
-				Name:   cmdDoc.Name,
+				Name:   page.Name,
 				Path:   targetFile,
 				Reason: "stale",
 			})

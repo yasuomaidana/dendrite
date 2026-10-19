@@ -18,7 +18,7 @@ Launch an autonomous coding agent loop (aider, openhands, opencode, agy, copilot
       "type": "string"
     },
     "model": {
-      "description": "Target LLM model (default: gemini-3.8-flash-high for agy, the DENDRITE_COPILOT_MODEL default for copilot)",
+      "description": "Target LLM model (default: picked from Gemini 3.8 / Argon by load for agy, the DENDRITE_COPILOT_MODEL default for copilot)",
       "type": "string"
     },
     "sandbox": {
@@ -58,7 +58,7 @@ Launch an autonomous coding agent loop (aider, openhands, opencode, agy, copilot
   "params": {
     "arguments": {
       "agent_type": "sample",
-      "model": "gemini-3.8-flash-high for agy, the DENDRITE_COPILOT_MODEL default for copilot",
+      "model": "picked from Gemini 3.8 / Argon by load for agy, the DENDRITE_COPILOT_MODEL default for copilot",
       "sandbox": false,
       "spend_limit": 1,
       "task": "sample",
@@ -72,5 +72,5 @@ Launch an autonomous coding agent loop (aider, openhands, opencode, agy, copilot
 ### CLI
 
 ```bash
-dendrite mcp call dendrite_agent_run '{"agent_type":"sample","model":"gemini-3.8-flash-high for agy, the DENDRITE_COPILOT_MODEL default for copilot","sandbox":false,"spend_limit":1,"task":"sample","ticket_id":"DEN-985"}'
+dendrite mcp call dendrite_agent_run '{"agent_type":"sample","model":"picked from Gemini 3.8 / Argon by load for agy, the DENDRITE_COPILOT_MODEL default for copilot","sandbox":false,"spend_limit":1,"task":"sample","ticket_id":"DEN-985"}'
 ```

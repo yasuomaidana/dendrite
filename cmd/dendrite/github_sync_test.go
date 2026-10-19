@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -45,7 +46,7 @@ func TestGitHubSyncCommand(t *testing.T) {
 	ctx := context.Background()
 	var out bytes.Buffer
 
-	if err := runGitHubSync(ctx, []string{"--dry-run"}, &out); err != nil {
+	if err := ghSyncCLI(ctx, &out, "--dry-run"); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"Dry run for verification issues in o/r (2 tickets, 1 To Verify)", "Skipped duplicate ticket ID DEN-2 (Plane #5)", "would create DEN-1 (new issue)", "would close DEN-2 (#9)"} {
@@ -59,7 +60,7 @@ func TestGitHubSyncCommand(t *testing.T) {
 
 	out.Reset()
 	gh.On("gh issue close", "", errors.New("forbidden"))
-	err := runGitHubSync(ctx, nil, &out)
+	err := ghSyncCLI(ctx, &out)
 	if err == nil || !strings.Contains(err.Error(), "1 of 2 GitHub changes failed") {
 		t.Fatalf("expected partial failure, got %v", err)
 	}
@@ -68,7 +69,7 @@ func TestGitHubSyncCommand(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := runGitHubSync(ctx, []string{"--json", "--dry-run"}, &out); err != nil || !strings.Contains(out.String(), `"repo": "o/r"`) {
+	if err := ghSyncCLI(ctx, &out, "--json", "--dry-run"); err != nil || !strings.Contains(out.String(), `"repo": "o/r"`) {
 		t.Fatalf("json: %v\n%s", err, out.String())
 	}
 }
@@ -77,22 +78,21 @@ func TestGitHubSyncCommandInSyncAndErrors(t *testing.T) {
 	offlineSyncer(t)
 	ctx := context.Background()
 	var out bytes.Buffer
-	if err := runGitHubSync(ctx, nil, &out); err != nil || !strings.Contains(out.String(), "already in sync") {
+	if err := ghSyncCLI(ctx, &out); err != nil || !strings.Contains(out.String(), "already in sync") {
 		t.Fatalf("in sync: %v\n%s", err, out.String())
 	}
-	if err := runGitHubSync(ctx, []string{"--bogus"}, &out); err == nil {
+	if err := ghSyncCLI(ctx, &out, "--bogus"); err == nil {
 		t.Error("expected flag error")
 	}
-	if err := runGitHubSync(ctx, []string{"-r", "fail/me"}, &out); err == nil {
+	if err := ghSyncCLI(ctx, &out, "-r", "fail/me"); err == nil {
 		t.Error("expected setup error")
 	}
 
 	_, gh := offlineSyncer(t)
 	gh.On("gh issue list", "", errors.New("offline"))
-	if err := runGitHubSync(ctx, nil, &out); err == nil {
+	if err := ghSyncCLI(ctx, &out); err == nil {
 		t.Error("expected sync error")
 	}
-	handleGitHubSyncCommand(ctx, nil) // prints the error instead of returning it
 }
 
 func TestHITLSyncCommand(t *testing.T) {
@@ -113,12 +113,12 @@ func TestHITLSyncCommand(t *testing.T) {
 	ctx := context.Background()
 	var out bytes.Buffer
 
-	if err := runHITLSync(ctx, []string{"--dry-run"}, &out); err != nil {
+	if err := hitlSyncCLI(ctx, &out, "--dry-run"); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
 		"(4 tickets To Verify)",
-		"[DEN-1] no-issue (no issue): no issue yet -> run `dendrite github-sync`",
+		"[DEN-1] no-issue (no issue): no issue yet -> run `dendrite myelin github-sync`",
 		"[DEN-2] approved (#2): approved -> would move to Done",
 		"[DEN-3] feedback (#3): has feedback -> 1 comment(s), latest by @rev: Rename the flag",
 		"[DEN-4] waiting (#4)",
@@ -132,17 +132,17 @@ func TestHITLSyncCommand(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := runHITLSync(ctx, nil, &out); err != nil || !strings.Contains(out.String(), "-> moved to Done in Plane") || ps.Patches["u-2"] != "st-done" {
+	if err := hitlSyncCLI(ctx, &out); err != nil || !strings.Contains(out.String(), "-> moved to Done in Plane") || ps.Patches["u-2"] != "st-done" {
 		t.Fatalf("apply: %v %v\n%s", err, ps.Patches, out.String())
 	}
 
 	out.Reset()
 	ps.FailPatch = true
-	if err := runHITLSync(ctx, []string{"--json"}, &out); err != nil || !strings.Contains(out.String(), `"outcome": "approved"`) {
+	if err := hitlSyncCLI(ctx, &out, "--json"); err != nil || !strings.Contains(out.String(), `"outcome": "approved"`) {
 		t.Fatalf("json: %v\n%s", err, out.String())
 	}
 	out.Reset()
-	if err := runHITLSync(ctx, nil, &out); err != nil || !strings.Contains(out.String(), "[failed:") {
+	if err := hitlSyncCLI(ctx, &out); err != nil || !strings.Contains(out.String(), "[failed:") {
 		t.Fatalf("failed update must be shown: %v\n%s", err, out.String())
 	}
 }
@@ -151,20 +151,19 @@ func TestHITLSyncCommandEmptyAndErrors(t *testing.T) {
 	_, gh := offlineSyncer(t)
 	ctx := context.Background()
 	var out bytes.Buffer
-	if err := runHITLSync(ctx, []string{"--json"}, &out); err != nil || strings.TrimSpace(out.String()) != "[]" {
+	if err := hitlSyncCLI(ctx, &out, "--json"); err != nil || strings.TrimSpace(out.String()) != "[]" {
 		t.Fatalf("empty json = %q, %v", out.String(), err)
 	}
-	if err := runHITLSync(ctx, []string{"--bogus"}, &out); err == nil {
+	if err := hitlSyncCLI(ctx, &out, "--bogus"); err == nil {
 		t.Error("expected flag error")
 	}
-	if err := runHITLSync(ctx, []string{"--repo", "fail/me"}, &out); err == nil {
+	if err := hitlSyncCLI(ctx, &out, "--repo", "fail/me"); err == nil {
 		t.Error("expected setup error")
 	}
 	gh.On("gh issue list", "", errors.New("offline"))
-	if err := runHITLSync(ctx, nil, &out); err == nil {
+	if err := hitlSyncCLI(ctx, &out); err == nil {
 		t.Error("expected sync error")
 	}
-	handleQualityCommand(ctx, []string{"hitl-sync"}) // prints the error instead of returning it
 }
 
 func TestFirstLine(t *testing.T) {
@@ -178,20 +177,42 @@ func TestFirstLine(t *testing.T) {
 }
 
 func TestGitHubSyncTicketFilter(t *testing.T) {
+	ctx := context.Background()
 	_, gh := offlineSyncer(t,
 		plane.PlaneIssue{ID: "u-1", Name: "[DEN-1] one", State: "st-verify"},
 		plane.PlaneIssue{ID: "u-2", Name: "[DEN-2] two", State: "st-verify"},
 	)
 	var out bytes.Buffer
-	if err := runGitHubSync(context.Background(), []string{"--dry-run", "--ticket", "DEN-2, ,"}, &out); err != nil {
+	if err := ghSyncCLI(ctx, &out, "--dry-run", "--ticket", "DEN-2, ,"); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(out.String(), "DEN-1 ") || !strings.Contains(out.String(), "would create DEN-2") {
 		t.Errorf("filter output:\n%s", out.String())
 	}
 	out.Reset()
-	if err := runHITLSync(context.Background(), []string{"--ticket", "DEN-1"}, &out); err != nil || strings.Contains(out.String(), "DEN-2") {
+	if err := hitlSyncCLI(ctx, &out, "--ticket", "DEN-1"); err != nil || strings.Contains(out.String(), "DEN-2") {
 		t.Errorf("hitl filter: %v\n%s", err, out.String())
 	}
 	_ = gh
+}
+
+// ghSyncCLI runs `myelin github-sync <args...>` through the cobra tree.
+func ghSyncCLI(ctx context.Context, out io.Writer, args ...string) error {
+	return runWith(ctx, out, newMyelinGitHubSyncCmd(), append([]string{"github-sync"}, args...)...)
+}
+
+// hitlSyncCLI runs `allostasis hitl-sync <args...>` through the cobra tree.
+func hitlSyncCLI(ctx context.Context, out io.Writer, args ...string) error {
+	return runWith(ctx, out, newAllostasisHITLSyncCmd(), append([]string{"hitl-sync"}, args...)...)
+}
+
+func TestGitHubSyncWithHITL(t *testing.T) {
+	offlineSyncer(t, plane.PlaneIssue{ID: "u-1", Name: "[DEN-1] new", State: "st-verify"})
+	var out bytes.Buffer
+	if err := ghSyncCLI(context.Background(), &out, "--dry-run", "--hitl"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "would create DEN-1") || !strings.Contains(out.String(), "Human-in-the-Loop verification") {
+		t.Fatalf("github-sync --hitl output:\n%s", out.String())
+	}
 }

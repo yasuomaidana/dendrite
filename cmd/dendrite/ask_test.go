@@ -1,25 +1,26 @@
 package main
 
 import (
-	"context"
+	"strings"
 	"testing"
 )
 
-func TestHandleAskCommand_UsageAndFlags(t *testing.T) {
-	ctx := context.Background()
+func TestAsk_UsageErrors(t *testing.T) {
+	for _, args := range [][]string{
+		{"ask"},
+		{"ask", "q", "--tier", "galactic"},
+		{"ask", "q", "--top-k", "0"},
+		{"ask", "q", "--paid", "--hybrid"},
+	} {
+		if _, code := cliOutput(t, args...); code != ExitUsage {
+			t.Errorf("%v: exit %d, want %d", args, code, ExitUsage)
+		}
+	}
+}
 
-	// 1. No arguments: prints usage
-	handleAskCommand(ctx, []string{})
-
-	// 2. Help flag: prints usage
-	handleAskCommand(ctx, []string{"--help"})
-
-	// 3. Empty question after flags: prints error & usage
-	handleAskCommand(ctx, []string{"-y", "--project", t.TempDir()})
-
-	// 4. JSON flag with question
-	handleAskCommand(ctx, []string{"--json", "-y", "--top-k", "2", "test question"})
-
-	// 5. Paid / force-paid flag
-	handleAskCommand(ctx, []string{"--paid", "--tier", "paid", "test paid question"})
+func TestAsk_CentralServerUnreachable(t *testing.T) {
+	out, code := cliOutput(t, "ask", "--server", "http://127.0.0.1:1", "--project", t.TempDir(), "--tier", "hybrid", "where", "is", "telemetry?")
+	if code != ExitError || !strings.Contains(out, `Forwarding query to Central RAG Service at http://127.0.0.1:1 for: "where is telemetry?"`) {
+		t.Fatalf("unreachable server: exit %d\n%s", code, out)
+	}
 }

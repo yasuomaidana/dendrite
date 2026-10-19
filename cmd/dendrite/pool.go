@@ -2,283 +2,266 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
+	"io"
 	"strings"
 
 	"Dendrite/pkg/pool/dag"
 	"Dendrite/pkg/pool/split"
 	"Dendrite/pkg/pool/switcher"
 	"Dendrite/pkg/ui/modal"
+
+	"github.com/spf13/cobra"
 )
 
-var defaultPoolManager = dag.NewPoolManager("")
-var defaultDAGSolver = dag.NewDAGSolver()
-var defaultSwitcher = switcher.NewDependencySwitcher()
-var defaultSplitter = split.NewProjectSplitter()
+// newPoolManager loads .dendrite/pool.json on use, so --state-dir is honored.
+func newPoolManager() *dag.PoolManager { return dag.NewPoolManager("") }
 
-func handlePoolCommand(ctx context.Context, action string, args []string) {
-	switch action {
-	case "add":
-		if len(args) == 0 {
-			fmt.Println("[-] Usage: dendrite pool add <dir1> [dir2 ...]")
-			return
-		}
-		added, err := defaultPoolManager.Add(args...)
-		if err != nil {
-			fmt.Printf("[-] Error adding project to pool: %v\n", err)
-			return
-		}
-		if err := defaultPoolManager.Save(); err != nil {
-			fmt.Printf("[-] Warning: Failed to persist pool config: %v\n", err)
-		}
-		fmt.Printf("[+] Successfully registered %d project(s) in pool:\n", len(added))
-		for _, p := range added {
-			ecoStr := "none"
-			if len(p.Ecosystems) > 0 {
-				var ecos []string
-				for _, e := range p.Ecosystems {
-					ecos = append(ecos, string(e))
-				}
-				ecoStr = strings.Join(ecos, ", ")
+// newPlexusCmd builds `dendrite plexus` (alias pool): the multi-directory project pool and its dependency DAG.
+func newPlexusCmd() *cobra.Command {
+	cmd := newGroupCmd("plexus", "Multi-directory dependency inference & topological DAG solver", "soma",
+		"pool", "connectome-pool", "plexus-pool", "connectome", "plx")
+	cmd.Example = "dendrite plexus add ../core ../api\n" +
+		"dendrite plexus resolve --json\n" +
+		"dendrite plexus switch core-lib --in ../api --mode local --local-path ../core\n" +
+		"dendrite plexus split --module pkg/auth --name auth-svc"
+	cmd.AddCommand(
+		newPlexusAddCmd(),
+		newPlexusRemoveCmd(),
+		newPlexusListCmd(),
+		newPlexusResolveCmd(),
+		newPlexusSwitchCmd(),
+		newPlexusSplitCmd(),
+	)
+	return cmd
+}
+
+func joinEcosystems(ecos []dag.Ecosystem) string {
+	names := make([]string, 0, len(ecos))
+	for _, e := range ecos {
+		names = append(names, string(e))
+	}
+	return strings.Join(names, ", ")
+}
+
+func newPlexusAddCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "add <dir>...",
+		Short: "Register project directories in the pool",
+		Args:  minArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pm := newPoolManager()
+			added, err := pm.Add(args...)
+			if err != nil {
+				return fmt.Errorf("add to pool: %w", err)
 			}
-			fmt.Printf("    * %-25s | Ecosystems: %-15s | Path: %s\n", p.Name, ecoStr, p.Path)
-			if len(p.Dependencies) > 0 {
-				fmt.Printf("      Declared Dependencies (%d): %s\n", len(p.Dependencies), strings.Join(p.Dependencies, ", "))
+			if err := pm.Save(); err != nil {
+				return fmt.Errorf("save pool: %w", err)
 			}
-		}
-
-	case "remove", "rm":
-		if len(args) == 0 {
-			fmt.Println("[-] Usage: dendrite pool remove <name_or_path>")
-			return
-		}
-		if err := defaultPoolManager.Remove(args[0]); err != nil {
-			fmt.Printf("[-] Error removing project from pool: %v\n", err)
-			return
-		}
-		if err := defaultPoolManager.Save(); err != nil {
-			fmt.Printf("[-] Warning: Failed to persist pool config: %v\n", err)
-		}
-		fmt.Printf("[+] Removed '%s' from pool.\n", args[0])
-
-	case "list", "ls":
-		projects := defaultPoolManager.List()
-		if len(args) > 0 && args[0] == "--json" {
-			data, _ := json.MarshalIndent(projects, "", "  ")
-			fmt.Println(string(data))
-			return
-		}
-
-		fmt.Printf("[+] Registered Pool Members (%d):\n", len(projects))
-		if len(projects) == 0 {
-			fmt.Println("    (No projects registered. Use 'dendrite pool add <dir>' to add members)")
-			return
-		}
-		for i, p := range projects {
-			var ecos []string
-			for _, e := range p.Ecosystems {
-				ecos = append(ecos, string(e))
+			out := cmd.OutOrStdout()
+			if globals.JSON {
+				return writeJSON(out, added)
 			}
-			fmt.Printf("  %2d. %-25s [%s] -> %s\n", i+1, p.Name, strings.Join(ecos, ", "), p.Path)
-			if len(p.Manifests) > 0 {
-				fmt.Printf("      Manifests: %s\n", strings.Join(p.Manifests, ", "))
+			fmt.Fprintf(out, "[+] Successfully registered %d project(s) in pool:\n", len(added))
+			for _, p := range added {
+				ecoStr := joinEcosystems(p.Ecosystems)
+				if ecoStr == "" {
+					ecoStr = "none"
+				}
+				fmt.Fprintf(out, "    * %-25s | Ecosystems: %-15s | Path: %s\n", p.Name, ecoStr, p.Path)
+				if len(p.Dependencies) > 0 {
+					fmt.Fprintf(out, "      Declared Dependencies (%d): %s\n", len(p.Dependencies), strings.Join(p.Dependencies, ", "))
+				}
 			}
-		}
-
-	case "resolve":
-		projects := defaultPoolManager.List()
-		if len(projects) == 0 {
-			fmt.Println("[-] Pool is empty. Register directories first using 'dendrite pool add <dir>'")
-			return
-		}
-
-		res, err := defaultDAGSolver.Resolve(projects)
-		if err != nil {
-			fmt.Printf("[-] Dependency DAG resolution failed: %v\n", err)
-			os.Exit(1)
-		}
-
-		if len(args) > 0 && args[0] == "--json" {
-			data, _ := json.MarshalIndent(res, "", "  ")
-			fmt.Println(string(data))
-			return
-		}
-
-		fmt.Println("[+] Autonomous Multi-Directory DAG Resolution:")
-		fmt.Printf("    Nodes: %d | Edges: %d\n", len(res.Nodes), len(res.Edges))
-		fmt.Printf("    Topological Build Order (Foundational First):\n")
-		for i, id := range res.TopologicalOrder {
-			node := res.Nodes[id]
-			depCount := len(node.DependsOn)
-			fmt.Printf("      %2d. %-25s (depends on %d upstream)\n", i+1, id, depCount)
-		}
-
-		if len(res.Edges) > 0 {
-			fmt.Println("\n    Discovered Dependency Edges:")
-			for _, edge := range res.Edges {
-				fmt.Printf("      * %s -> %s (via %s)\n", edge.From, edge.To, edge.Ecosystem)
-			}
-		}
-
-		if len(res.LeafNodes) > 0 {
-			fmt.Printf("\n    Leaf Nodes (Foundational / Zero Dependencies): %s\n", strings.Join(res.LeafNodes, ", "))
-		}
-		if len(res.RootNodes) > 0 {
-			fmt.Printf("    Root Nodes (Top-Level / No Dependents):        %s\n", strings.Join(res.RootNodes, ", "))
-		}
-
-	case "switch":
-		if len(args) < 2 {
-			fmt.Println("[-] Usage: dendrite pool switch <dep_name> --in <project_dir> --mode <published|branch|local|fork> [flags]")
-			return
-		}
-
-		depName := args[0]
-		req := switcher.SwitchRequest{
-			DependencyName:   depName,
-			TargetProjectDir: ".",
-			SyncIDE:          true,
-		}
-
-		for i := 1; i < len(args); i++ {
-			switch args[i] {
-			case "--in":
-				if i+1 < len(args) {
-					req.TargetProjectDir = args[i+1]
-					i++
-				}
-			case "--mode":
-				if i+1 < len(args) {
-					req.Mode = switcher.DependencyMode(args[i+1])
-					i++
-				}
-			case "--version":
-				if i+1 < len(args) {
-					req.Version = args[i+1]
-					i++
-				}
-			case "--branch":
-				if i+1 < len(args) {
-					req.BranchName = args[i+1]
-					i++
-				}
-			case "--commit":
-				if i+1 < len(args) {
-					req.CommitSHA = args[i+1]
-					i++
-				}
-			case "--local-path":
-				if i+1 < len(args) {
-					req.LocalPath = args[i+1]
-					i++
-				}
-			case "--fork-url":
-				if i+1 < len(args) {
-					req.ForkURL = args[i+1]
-					i++
-				}
-			case "--fork-branch":
-				if i+1 < len(args) {
-					req.ForkBranch = args[i+1]
-					i++
-				}
-			case "--no-sync-ide":
-				req.SyncIDE = false
-			}
-		}
-
-		result, err := defaultSwitcher.Switch(ctx, req)
-		if err != nil {
-			fmt.Printf("[-] Dependency mode switch failed: %v\n", err)
-			os.Exit(1)
-		}
-
-		fmt.Printf("[+] Successfully switched '%s' dependency mode:\n", result.DependencyName)
-		fmt.Printf("    Target Project:     %s\n", result.TargetProject)
-		fmt.Printf("    Transition:         %s -> %s\n", result.PreviousMode, result.NewMode)
-		fmt.Printf("    Modified Files (%d): %s\n", len(result.ModifiedFiles), strings.Join(result.ModifiedFiles, ", "))
-		if result.IDEScopesUpdated {
-			fmt.Println("    JetBrains Scopes:   Synchronized (.idea/scopes/Dendrite_Local_Pool.xml)")
-		}
-
-	case "split":
-		req := split.SplitRequest{
-			SourceProjectDir: ".",
-			WireLocalMode:    true,
-			RegisterInPool:   true,
-			Prompt: func(m *modal.DirectoryPickerModal) (string, error) {
-				return m.RenderCLI(os.Stdin, os.Stdout)
-			},
-		}
-
-		for i := 0; i < len(args); i++ {
-			switch args[i] {
-			case "--from":
-				if i+1 < len(args) {
-					req.SourceProjectDir = args[i+1]
-					i++
-				}
-			case "--module":
-				if i+1 < len(args) {
-					req.ModuleSubpath = args[i+1]
-					i++
-				}
-			case "--name":
-				if i+1 < len(args) {
-					req.NewMemberName = args[i+1]
-					i++
-				}
-			case "--target-dir":
-				if i+1 < len(args) {
-					req.TargetDirectory = args[i+1]
-					i++
-				}
-			case "--no-wire-local":
-				req.WireLocalMode = false
-			case "--no-register-pool":
-				req.RegisterInPool = false
-			}
-		}
-
-		if req.ModuleSubpath == "" || req.NewMemberName == "" {
-			fmt.Println("[-] Usage: dendrite pool split --from <dir> --module <pkg> --name <member> [--target-dir <dir>]")
-			return
-		}
-
-		result, err := defaultSplitter.Split(ctx, req)
-		if err != nil {
-			fmt.Printf("[-] Project split failed: %v\n", err)
-			os.Exit(1)
-		}
-
-		fmt.Printf("[+] Successfully split module into new pool member '%s':\n", result.NewMemberName)
-		fmt.Printf("    Destination:      %s\n", result.TargetDirectory)
-		fmt.Printf("    Manifest Created: %s\n", result.ManifestCreated)
-		fmt.Printf("    Extracted Files:  %d files moved\n", len(result.ExtractedFiles))
-		if result.ParentWiredLocal {
-			fmt.Println("    Parent Wired:     Local dependency mode active in parent project")
-		}
-		if result.PoolRegistered {
-			fmt.Println("    Pool Registered:  Member added to .dendrite/pool.json")
-		}
-
-	default:
-		printPoolUsage()
+			return nil
+		},
 	}
 }
 
-func printPoolUsage() {
-	fmt.Println("Usage: dendrite pool <command> [args...]")
-	fmt.Println("\nAvailable Subcommands:")
-	fmt.Println("  add <dir1> [dir2...]    Register project directories into .dendrite/pool.json")
-	fmt.Println("  remove <name_or_path>   Remove a registered project from the pool")
-	fmt.Println("  list [--json]           List all registered pool member projects")
-	fmt.Println("  resolve [--json]        Compute deterministic topological DAG & detect cycles")
-	fmt.Println("  split [flags]           Extract module slice into a new project with mandatory directory gate")
-	fmt.Println("                          Flags: --from <dir> --module <pkg> --name <member> [--target-dir <dir>]")
-	fmt.Println("  switch <dep> [flags]    Switch dependency mode: published, branch, local, fork")
-	fmt.Println("                          Flags: --in <dir> --mode <m> --version <v> --branch <b>")
-	fmt.Println("                                 --local-path <p> --fork-url <u> --fork-branch <b>")
+func newPlexusRemoveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "remove <name|path>",
+		Aliases: []string{"rm"},
+		Short:   "Remove a project from the pool",
+		Args:    exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pm := newPoolManager()
+			if err := pm.Remove(args[0]); err != nil {
+				return fmt.Errorf("remove from pool: %w", err)
+			}
+			if err := pm.Save(); err != nil {
+				return fmt.Errorf("save pool: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "[+] Removed '%s' from pool.\n", args[0])
+			return nil
+		},
+	}
+}
+
+func newPlexusListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List pool members",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projects := newPoolManager().List()
+			out := cmd.OutOrStdout()
+			if globals.JSON {
+				if projects == nil {
+					projects = []dag.ProjectInfo{}
+				}
+				return writeJSON(out, projects)
+			}
+			fmt.Fprintf(out, "[+] Registered Pool Members (%d):\n", len(projects))
+			if len(projects) == 0 {
+				fmt.Fprintln(out, "    (No projects registered. Use 'dendrite plexus add <dir>' to add members)")
+				return nil
+			}
+			for i, p := range projects {
+				fmt.Fprintf(out, "  %2d. %-25s [%s] -> %s\n", i+1, p.Name, joinEcosystems(p.Ecosystems), p.Path)
+				if len(p.Manifests) > 0 {
+					fmt.Fprintf(out, "      Manifests: %s\n", strings.Join(p.Manifests, ", "))
+				}
+			}
+			return nil
+		},
+	}
+}
+
+func newPlexusResolveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "resolve",
+		Short: "Compute the topological build order and detect dependency cycles",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runPlexusResolve(newPoolManager().List(), cmd.OutOrStdout())
+		},
+	}
+}
+
+func runPlexusResolve(projects []dag.ProjectInfo, out io.Writer) error {
+	if len(projects) == 0 {
+		return fmt.Errorf("pool is empty: register directories first with 'dendrite plexus add <dir>'")
+	}
+	res, err := dag.NewDAGSolver().Resolve(projects)
+	if err != nil {
+		return fmt.Errorf("dependency DAG resolution: %w", err)
+	}
+	if globals.JSON {
+		return writeJSON(out, res)
+	}
+	fmt.Fprintln(out, "[+] Autonomous Multi-Directory DAG Resolution:")
+	fmt.Fprintf(out, "    Nodes: %d | Edges: %d\n", len(res.Nodes), len(res.Edges))
+	fmt.Fprintln(out, "    Topological Build Order (Foundational First):")
+	for i, id := range res.TopologicalOrder {
+		fmt.Fprintf(out, "      %2d. %-25s (depends on %d upstream)\n", i+1, id, len(res.Nodes[id].DependsOn))
+	}
+	if len(res.Edges) > 0 {
+		fmt.Fprintln(out, "\n    Discovered Dependency Edges:")
+		for _, edge := range res.Edges {
+			fmt.Fprintf(out, "      * %s -> %s (via %s)\n", edge.From, edge.To, edge.Ecosystem)
+		}
+	}
+	if len(res.LeafNodes) > 0 {
+		fmt.Fprintf(out, "\n    Leaf Nodes (Foundational / Zero Dependencies): %s\n", strings.Join(res.LeafNodes, ", "))
+	}
+	if len(res.RootNodes) > 0 {
+		fmt.Fprintf(out, "    Root Nodes (Top-Level / No Dependents):        %s\n", strings.Join(res.RootNodes, ", "))
+	}
+	return nil
+}
+
+func newPlexusSwitchCmd() *cobra.Command {
+	req := switcher.SwitchRequest{TargetProjectDir: ".", SyncIDE: true}
+	var mode string
+	var noSyncIDE bool
+	cmd := &cobra.Command{
+		Use:   "switch <dependency>",
+		Short: "Switch how a project consumes a dependency: published, branch, local or fork",
+		Args:  exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			req.DependencyName = args[0]
+			req.Mode = switcher.DependencyMode(mode)
+			req.SyncIDE = !noSyncIDE
+			return runPlexusSwitch(cmd.Context(), req, cmd.OutOrStdout())
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&req.TargetProjectDir, "in", ".", "Project whose manifest is rewritten")
+	f.StringVar(&mode, "mode", "", "Dependency mode: published, branch, local or fork")
+	f.StringVar(&req.Version, "version", "", "Published version (mode published)")
+	f.StringVar(&req.BranchName, "branch", "", "Git branch (mode branch)")
+	f.StringVar(&req.CommitSHA, "commit", "", "Git commit (mode branch)")
+	f.StringVar(&req.LocalPath, "local-path", "", "Local checkout (mode local)")
+	f.StringVar(&req.ForkURL, "fork-url", "", "Fork repository URL (mode fork)")
+	f.StringVar(&req.ForkBranch, "fork-branch", "", "Fork branch (mode fork)")
+	f.BoolVar(&noSyncIDE, "no-sync-ide", false, "Do not update the JetBrains scopes")
+	requireFlags(cmd, "mode")
+	return cmd
+}
+
+func runPlexusSwitch(ctx context.Context, req switcher.SwitchRequest, out io.Writer) error {
+	result, err := switcher.NewDependencySwitcher().Switch(ctx, req)
+	if err != nil {
+		return fmt.Errorf("dependency mode switch: %w", err)
+	}
+	if globals.JSON {
+		return writeJSON(out, result)
+	}
+	fmt.Fprintf(out, "[+] Successfully switched '%s' dependency mode:\n", result.DependencyName)
+	fmt.Fprintf(out, "    Target Project:     %s\n", result.TargetProject)
+	fmt.Fprintf(out, "    Transition:         %s -> %s\n", result.PreviousMode, result.NewMode)
+	fmt.Fprintf(out, "    Modified Files (%d): %s\n", len(result.ModifiedFiles), strings.Join(result.ModifiedFiles, ", "))
+	if result.IDEScopesUpdated {
+		fmt.Fprintln(out, "    JetBrains Scopes:   Synchronized (.idea/scopes/Dendrite_Local_Pool.xml)")
+	}
+	return nil
+}
+
+func newPlexusSplitCmd() *cobra.Command {
+	req := split.SplitRequest{SourceProjectDir: "."}
+	var noWire, noRegister bool
+	cmd := &cobra.Command{
+		Use:   "split",
+		Short: "Extract a module into a new pool member (asks for the destination when --target-dir is empty)",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			req.WireLocalMode = !noWire
+			req.RegisterInPool = !noRegister
+			in, out := cmd.InOrStdin(), cmd.OutOrStdout()
+			req.Prompt = func(m *modal.DirectoryPickerModal) (string, error) { return m.RenderCLI(in, out) }
+			return runPlexusSplit(cmd.Context(), req, out)
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&req.SourceProjectDir, "from", ".", "Project to split")
+	f.StringVar(&req.ModuleSubpath, "module", "", "Module path inside the project")
+	f.StringVar(&req.NewMemberName, "name", "", "Name of the new pool member")
+	f.StringVar(&req.TargetDirectory, "target-dir", "", "Destination directory")
+	f.BoolVar(&noWire, "no-wire-local", false, "Do not switch the parent to the local dependency")
+	f.BoolVar(&noRegister, "no-register-pool", false, "Do not add the new member to the pool")
+	requireFlags(cmd, "module", "name")
+	return cmd
+}
+
+func runPlexusSplit(ctx context.Context, req split.SplitRequest, out io.Writer) error {
+	result, err := split.NewProjectSplitter().Split(ctx, req)
+	if err != nil {
+		return fmt.Errorf("project split: %w", err)
+	}
+	if globals.JSON {
+		return writeJSON(out, result)
+	}
+	fmt.Fprintf(out, "[+] Successfully split module into new pool member '%s':\n", result.NewMemberName)
+	fmt.Fprintf(out, "    Destination:      %s\n", result.TargetDirectory)
+	fmt.Fprintf(out, "    Manifest Created: %s\n", result.ManifestCreated)
+	fmt.Fprintf(out, "    Extracted Files:  %d files moved\n", len(result.ExtractedFiles))
+	if result.ParentWiredLocal {
+		fmt.Fprintln(out, "    Parent Wired:     Local dependency mode active in parent project")
+	}
+	if result.PoolRegistered {
+		fmt.Fprintln(out, "    Pool Registered:  Member added to .dendrite/pool.json")
+	}
+	return nil
 }

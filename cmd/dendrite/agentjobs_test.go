@@ -296,20 +296,11 @@ func TestAgentJobs_CLI_Validation_And_Usage(t *testing.T) {
 	}
 }
 
-func TestAgentJobs_InvocationHelper(t *testing.T) {
-	if !isAgentJobsInvocation("agent", "jobs") {
-		t.Errorf("expected true for agent jobs")
-	}
-	if !isAgentJobsInvocation("agt", "jobs") {
-		t.Errorf("expected true for agt jobs")
-	}
-	if !isAgentJobsInvocation("bouton", "jobs") {
-		t.Errorf("expected true for bouton jobs")
-	}
-	if isAgentJobsInvocation("other", "jobs") {
-		t.Errorf("expected false for other jobs")
-	}
-	if isAgentJobsInvocation("agent", "other") {
-		t.Errorf("expected false for agent other")
+func TestAgentJobs_RoutedThroughBouton(t *testing.T) {
+	for _, alias := range []string{"agent", "agt", "bouton"} {
+		cmd, _, err := newRootCmd().Find([]string{alias, "jobs", "list"})
+		if err != nil || cmd.CommandPath() != "dendrite bouton jobs list" {
+			t.Errorf("%s jobs list resolved to %q (%v)", alias, cmd.CommandPath(), err)
+		}
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/spf13/cobra"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -353,4 +355,18 @@ func runBin(t *testing.T, bin string) string {
 		t.Fatalf("%s: %v\n%s", bin, err, out)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// parseUpdateArgs parses args with the `dendrite update` flags.
+func parseUpdateArgs(args []string) (updateOptions, error) {
+	var o updateOptions
+	cmd := &cobra.Command{Use: "update"}
+	o.bind(cmd)
+	err := cmd.ParseFlags(args)
+	return o, err
+}
+
+// runUpdateCommand runs `dendrite update <args...>` through the cobra tree.
+func runUpdateCommand(ctx context.Context, args []string, out io.Writer) error {
+	return runWith(ctx, out, newUpdateCmd(), append([]string{"update"}, args...)...)
 }

@@ -17,5 +17,5 @@ docker compose -f docker-compose.share.yaml up --build -d
 
 ### 2. Export Standalone Archive
 ```bash
-dendrite doc docusaurus share --out dendrite-docs.tar.gz
+dendrite codex site share --out dendrite-docs.tar.gz
 ```

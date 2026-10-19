@@ -15,6 +15,8 @@ import (
 	"Dendrite/pkg/projectid"
 	"Dendrite/pkg/selfupdate"
 	"Dendrite/pkg/synapse"
+
+	"github.com/spf13/cobra"
 )
 
 // releaseRepo is the GitHub repository dendrite releases are published to.
@@ -31,78 +33,42 @@ type updateOptions struct {
 	autostash bool
 }
 
-func printUpdateUsage(out io.Writer) {
-	fmt.Fprintln(out, "Usage: dendrite update [--dev] [flags]")
-	fmt.Fprintln(out, "\nRelease mode (default): downloads the latest GitHub release for this platform,")
-	fmt.Fprintln(out, "verifies its SHA-256 checksum and swaps it in with a backup and smoke test.")
-	fmt.Fprintln(out, "\nDevelop mode (--dev): syncs every synapse the Dendrite checkout belongs to")
-	fmt.Fprintln(out, "(fast-forwarding local members and linking go.work / cargo patches), builds the")
-	fmt.Fprintln(out, "binaries of the local members, then rebuilds and swaps dendrite itself.")
-	fmt.Fprintln(out, "\nFlags:")
-	fmt.Fprintln(out, "  --dev                Build from local sources instead of downloading a release")
-	fmt.Fprintln(out, "  --source-dir <dir>   Dendrite checkout to build (default: $DENDRITE_SRC or the enclosing git repo)")
-	fmt.Fprintln(out, "  --target <path>      Binary to replace (default: the running dendrite, or $GOBIN/dendrite under go run)")
-	fmt.Fprintln(out, "  --synapse <id>       Sync and build only this synapse's members (repeatable)")
-	fmt.Fprintln(out, "  --no-sync            Do not fetch or fast-forward synapse members")
-	fmt.Fprintln(out, "  --no-members         Do not build sibling member binaries")
-	fmt.Fprintln(out, "  --autostash          Stash uncommitted changes around member fast-forwards")
+func (o *updateOptions) bind(cmd *cobra.Command) {
+	f := cmd.Flags()
+	f.BoolVar(&o.dev, "dev", false, "Build from local sources instead of downloading a release")
+	f.StringVar(&o.sourceDir, "source-dir", "", "Dendrite checkout to build (default: $DENDRITE_SRC or the enclosing git repo)")
+	f.StringVar(&o.target, "target", "", "Binary to replace (default: the running dendrite, or $GOBIN/dendrite under go run)")
+	f.StringArrayVar(&o.synapses, "synapse", nil, "Sync and build only this synapse's members (repeatable)")
+	f.BoolVar(&o.noSync, "no-sync", false, "Do not fetch or fast-forward synapse members")
+	f.BoolVar(&o.noMembers, "no-members", false, "Do not build sibling member binaries")
+	f.BoolVar(&o.autostash, "autostash", false, "Stash uncommitted changes around member fast-forwards")
 }
 
-func parseUpdateArgs(args []string) (updateOptions, error) {
+// newUpdateCmd builds `dendrite update`: replace the binary from a release, or rebuild it from sources.
+func newUpdateCmd() *cobra.Command {
 	var o updateOptions
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		name, val, hasVal := strings.Cut(arg, "=")
-		takeValue := func() (string, error) {
-			if hasVal {
-				return val, nil
-			}
-			if i+1 >= len(args) {
-				return "", fmt.Errorf("%s requires a value", name)
-			}
-			i++
-			return args[i], nil
-		}
-		var err error
-		switch name {
-		case "--dev":
-			o.dev = true
-		case "--no-sync":
-			o.noSync = true
-		case "--no-members":
-			o.noMembers = true
-		case "--autostash":
-			o.autostash = true
-		case "--source-dir":
-			o.sourceDir, err = takeValue()
-		case "--target":
-			o.target, err = takeValue()
-		case "--synapse":
-			var id string
-			id, err = takeValue()
-			o.synapses = append(o.synapses, id)
-		default:
-			return o, fmt.Errorf("unknown flag: %s", arg)
-		}
-		if err != nil {
-			return o, err
-		}
+	cmd := &cobra.Command{
+		Use:     "update",
+		Aliases: []string{"upgrade", "self-update"},
+		Short:   "Update dendrite from a release, or rebuild it and its synapse siblings from local sources (--dev)",
+		Long: "Release mode (default): downloads the latest GitHub release for this platform,\n" +
+			"verifies its SHA-256 checksum and swaps it in with a backup and smoke test.\n\n" +
+			"Develop mode (--dev): syncs every synapse the Dendrite checkout belongs to\n" +
+			"(fast-forwarding local members and linking go.work / cargo patches), builds the\n" +
+			"binaries of the local members, then rebuilds and swaps dendrite itself.",
+		GroupID: "cortex",
+		Args:    noArgs,
+		Example: "dendrite update\ndendrite update --dev\ndendrite update --dev --synapse dendrite-ecosystem --no-members",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runUpdate(cmd.Context(), o, cmd.OutOrStdout())
+		},
 	}
-	return o, nil
+	o.bind(cmd)
+	return cmd
 }
 
-// runUpdateCommand implements `dendrite update`.
-func runUpdateCommand(ctx context.Context, args []string, out io.Writer) error {
-	for _, a := range args {
-		if a == "-h" || a == "--help" || a == "help" {
-			printUpdateUsage(out)
-			return nil
-		}
-	}
-	o, err := parseUpdateArgs(args)
-	if err != nil {
-		return err
-	}
+// runUpdate implements `dendrite update`.
+func runUpdate(ctx context.Context, o updateOptions, out io.Writer) error {
 	target, err := resolveUpdateTarget(o.target)
 	if err != nil {
 		return err

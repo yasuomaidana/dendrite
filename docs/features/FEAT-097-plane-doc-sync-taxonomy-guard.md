@@ -69,7 +69,7 @@ flowchart TD
 
 ### Core Invariants
 
-- **Zero Dirty Docs**: Running `dendrite plane doc <push|pull|sync>` must never create loose untracked markdown files in the root `docs/` directory.
+- **Zero Dirty Docs**: Running `dendrite codex plane <push|pull|sync>` must never create loose untracked markdown files in the root `docs/` directory.
 - **Taxonomy Fidelity**: Documents originating from `features/`, `architecture/`, `guides/`, `quality/`, or `adr/` must always be synchronized strictly within their designated directory.
 - **HTML Semantic Validity**: Code fences in Plane pages must maintain matched `<pre><code>` and `</code></pre>` counts, with no escaped closing tags (`&lt;/code&gt;`). Tables must render semantic `<table>` elements.
 

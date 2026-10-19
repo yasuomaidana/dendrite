@@ -11,13 +11,13 @@ For complete guidelines on authoring, committing, and publishing, see [**Documen
 ### 1. Generating & Updating Documentation
 Never edit files directly inside `website/docs/`. Always update canonical Markdown specifications under `docs/` in the repository root, then regenerate:
 ```bash
-./bin/dendrite doc docusaurus generate --docs docs --out website
+./bin/dendrite codex generate --docs docs --out website
 ```
 
 ### 2. Local Preview
 ```bash
 # Option A: Built-in preview server (zero npm dependencies)
-./bin/dendrite doc docusaurus serve --site website --port 3000
+./bin/dendrite codex site serve --site website --port 3000
 
 # Option B: Docusaurus development server
 npm install
@@ -36,7 +36,7 @@ Static production output will be generated in `website/build/`.
 
 ### 4. Exporting Portable Sharing Bundle
 ```bash
-./bin/dendrite doc docusaurus share --site website --out website/dendrite-docs.tar.gz
+./bin/dendrite codex site share --site website --out website/dendrite-docs.tar.gz
 ```
 Generates `website/dendrite-docs.tar.gz` and updates `website/sharing-manifest.json` with cryptographic SHA-256 hashes of every document and commit provenance.
 

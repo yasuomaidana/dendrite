@@ -15,28 +15,12 @@ import (
 
 	"Dendrite/pkg/synapsesync"
 	"Dendrite/pkg/tracker/plane"
+
+	"github.com/spf13/cobra"
 )
 
 // errSyncFailed signals that at least one member reported an error; details are already printed.
 var errSyncFailed = errors.New("sync finished with errors")
-
-func printSyncUsage(out io.Writer) {
-	fmt.Fprintln(out, "Usage: dendrite sync [flags]")
-	fmt.Fprintln(out, "\nPushes unpushed commits and refreshes the Plane board of the current project and of")
-	fmt.Fprintln(out, "every project linked to it through a synapse, then records each synapse's health.")
-	fmt.Fprintln(out, "\nFlags:")
-	fmt.Fprintln(out, "  --synapse <id>     Sync only the members of this synapse")
-	fmt.Fprintln(out, "  --all              Sync every non-archived synapse (daemon mode)")
-	fmt.Fprintln(out, "  --git-only         Only push git commits")
-	fmt.Fprintln(out, "  --plane-only       Only reconcile Plane states and push DEV_STATUS")
-	fmt.Fprintln(out, "  --plane <IDENT>    Plane project for a repository that is in no synapse (default: $PLANE_PROJECT_ID)")
-	fmt.Fprintln(out, "  --force-plane      Push DEV_STATUS even if unchanged since the last sync")
-	fmt.Fprintln(out, "  --no-fetch         Skip fetching remotes before computing ahead/behind")
-	fmt.Fprintln(out, "  --dry-run          Report what would happen without pushing or writing")
-	fmt.Fprintln(out, "  --json             Emit the report as JSON")
-	fmt.Fprintln(out, "  --watch            Keep running, syncing every interval (combine with --all for a daemon)")
-	fmt.Fprintln(out, "  --interval <dur>   Watch period, e.g. 5m (default: $DENDRITE_SYNC_INTERVAL or 10m)")
-}
 
 // syncCLI carries the CLI-only settings that are not part of synapsesync.Options.
 type syncCLI struct {
@@ -45,83 +29,90 @@ type syncCLI struct {
 	interval time.Duration
 }
 
-// parseSyncArgs turns CLI flags into synapsesync options; ok=false means usage was requested.
-func parseSyncArgs(args []string) (opts synapsesync.Options, cli syncCLI, ok bool, err error) {
-	opts.Fetch = true
-	opts.DefaultPlaneProject = os.Getenv("PLANE_PROJECT_ID")
-	cli.interval = synapsesync.IntervalFromEnv()
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "--synapse" || arg == "--plane":
-			if i+1 >= len(args) {
-				return opts, cli, true, fmt.Errorf("flag %s requires an argument", arg)
-			}
-			if arg == "--synapse" {
-				opts.SynapseID = args[i+1]
-			} else {
-				opts.DefaultPlaneProject = args[i+1]
-			}
-			i++
-		case strings.HasPrefix(arg, "--synapse="):
-			opts.SynapseID = strings.TrimPrefix(arg, "--synapse=")
-		case strings.HasPrefix(arg, "--plane="):
-			opts.DefaultPlaneProject = strings.TrimPrefix(arg, "--plane=")
-		case arg == "--all":
-			opts.All = true
-		case arg == "--git-only":
-			opts.GitOnly = true
-		case arg == "--plane-only":
-			opts.PlaneOnly = true
-		case arg == "--force-plane":
-			opts.ForcePlane = true
-		case arg == "--no-fetch":
-			opts.Fetch = false
-		case arg == "--dry-run":
-			opts.DryRun = true
-		case arg == "--json":
-			cli.asJSON = true
-		case arg == "--watch":
-			cli.watch = true
-		case arg == "--interval" || strings.HasPrefix(arg, "--interval="):
-			raw := strings.TrimPrefix(arg, "--interval=")
-			if arg == "--interval" {
-				if i+1 >= len(args) {
-					return opts, cli, true, errors.New("flag --interval requires an argument")
-				}
-				raw = args[i+1]
-				i++
-			}
-			d, perr := time.ParseDuration(raw)
-			if perr != nil || d <= 0 {
-				return opts, cli, true, fmt.Errorf("invalid --interval %q", raw)
-			}
-			cli.interval = d
-		case arg == "--help" || arg == "-h":
-			return opts, cli, false, nil
-		default:
-			return opts, cli, true, fmt.Errorf("unknown flag: %s", arg)
-		}
-	}
-	if opts.GitOnly && opts.PlaneOnly {
-		return opts, cli, true, errors.New("--git-only and --plane-only are mutually exclusive")
-	}
-	if cli.watch && cli.interval <= 0 {
-		return opts, cli, true, errors.New("--watch needs a positive interval (DENDRITE_SYNC_INTERVAL=0 disables it)")
-	}
-	return opts, cli, true, nil
+// syncFlags are the `dendrite sync` flags.
+type syncFlags struct {
+	Synapse    string
+	Plane      string
+	All        bool
+	GitOnly    bool
+	PlaneOnly  bool
+	ForcePlane bool
+	NoFetch    bool
+	DryRun     bool
+	Watch      bool
+	Interval   time.Duration
 }
 
-// runSyncCommand executes `dendrite sync`, writing the report to out.
-func runSyncCommand(ctx context.Context, args []string, out io.Writer) error {
-	opts, cli, ok, err := parseSyncArgs(args)
-	if err != nil {
-		return err
+func (f *syncFlags) bind(cmd *cobra.Command) {
+	fs := cmd.Flags()
+	fs.StringVar(&f.Synapse, "synapse", "", "Sync only the members of this synapse")
+	fs.BoolVar(&f.All, "all", false, "Sync every non-archived synapse (daemon mode)")
+	fs.BoolVar(&f.GitOnly, "git-only", false, "Only push git commits")
+	fs.BoolVar(&f.PlaneOnly, "plane-only", false, "Only reconcile Plane states and push DEV_STATUS")
+	fs.StringVar(&f.Plane, "plane", "", "Plane project for a repository that is in no synapse (default: $PLANE_PROJECT_ID)")
+	fs.BoolVar(&f.ForcePlane, "force-plane", false, "Push DEV_STATUS even if unchanged since the last sync")
+	fs.BoolVar(&f.NoFetch, "no-fetch", false, "Skip fetching remotes before computing ahead/behind")
+	fs.BoolVar(&f.DryRun, "dry-run", false, "Report what would happen without pushing or writing")
+	fs.BoolVar(&f.Watch, "watch", false, "Keep running, syncing every interval (combine with --all for a daemon)")
+	fs.DurationVar(&f.Interval, "interval", 0, "Watch period, e.g. 5m (default: $DENDRITE_SYNC_INTERVAL or 10m)")
+	cmd.MarkFlagsMutuallyExclusive("git-only", "plane-only")
+}
+
+// options turns the flags into synapsesync options and the CLI-only settings.
+func (f syncFlags) options(intervalSet bool) (synapsesync.Options, syncCLI, error) {
+	opts := synapsesync.Options{
+		Fetch: !f.NoFetch, SynapseID: f.Synapse, All: f.All, GitOnly: f.GitOnly,
+		PlaneOnly: f.PlaneOnly, ForcePlane: f.ForcePlane, DryRun: f.DryRun,
+		DefaultPlaneProject: f.Plane,
 	}
-	if !ok {
-		printSyncUsage(out)
-		return nil
+	if opts.DefaultPlaneProject == "" {
+		opts.DefaultPlaneProject = os.Getenv("PLANE_PROJECT_ID")
 	}
+	cli := syncCLI{asJSON: globals.JSON, watch: f.Watch, interval: synapsesync.IntervalFromEnv()}
+	if intervalSet {
+		if f.Interval <= 0 {
+			return opts, cli, usageErrorf("invalid --interval %s", f.Interval)
+		}
+		cli.interval = f.Interval
+	}
+	if opts.GitOnly && opts.PlaneOnly {
+		return opts, cli, usageErrorf("--git-only and --plane-only are mutually exclusive")
+	}
+	if cli.watch && cli.interval <= 0 {
+		return opts, cli, usageErrorf("--watch needs a positive interval (DENDRITE_SYNC_INTERVAL=0 disables it)")
+	}
+	return opts, cli, nil
+}
+
+// newSyncCmd builds `dendrite sync` (alias propagate): push commits and refresh Plane across synapse peers.
+func newSyncCmd() *cobra.Command {
+	var f syncFlags
+	cmd := &cobra.Command{
+		Use:     "sync",
+		Aliases: []string{"propagate"},
+		Short:   "Push commits and refresh Plane for this project and its synapse peers",
+		Long: "Pushes unpushed commits and refreshes the Plane board of the current project and of\n" +
+			"every project linked to it through a synapse, then records each synapse's health.",
+		GroupID: "boutons",
+		Args:    noArgs,
+		Example: "dendrite sync\ndendrite sync --all --watch --interval 10m\ndendrite sync --synapse dendrite-ecosystem --dry-run\ndendrite sync --all --git-only",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts, cli, err := f.options(cmd.Flags().Changed("interval"))
+			if err != nil {
+				return err
+			}
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			return runSync(ctx, opts, cli, cmd.OutOrStdout())
+		},
+	}
+	f.bind(cmd)
+	return cmd
+}
+
+// runSync executes `dendrite sync`, writing the report to out.
+func runSync(ctx context.Context, opts synapsesync.Options, cli syncCLI, out io.Writer) error {
+	var err error
 	if !opts.All {
 		if opts.StartDir, err = os.Getwd(); err != nil {
 			return err
@@ -239,16 +230,4 @@ func planeSummary(m synapsesync.MemberReport) string {
 		parts = append(parts, p.Skipped)
 	}
 	return strings.Join(parts, ": ")
-}
-
-// handleSyncCommand runs runSyncCommand against stdout and exits non-zero on failure.
-func handleSyncCommand(ctx context.Context, args []string) {
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	if err := runSyncCommand(ctx, args, os.Stdout); err != nil {
-		if !errors.Is(err, errSyncFailed) {
-			fmt.Fprintf(os.Stderr, "[-] %v\n", err)
-		}
-		os.Exit(1)
-	}
 }

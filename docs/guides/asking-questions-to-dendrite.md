@@ -87,16 +87,16 @@ You can check available LLMs in Dendrite using the following commands:
 
 1. List all registered multi-provider inference engines and models:
    $ dendrite inference list
-   (or alias: dendrite dev inference list)
+   (alias: dendrite inference list)
 
 2. Inspect configured zero-cost and self-hosted models:
-   $ dendrite dev inference zero-cost list
+   $ dendrite spike zero-cost list
 
 3. Probe active Ollama health, latency, and loaded models:
-   $ dendrite dev ollama probe
+   $ dendrite spike probe --endpoint http://127.0.0.1:11434
 
 4. Probe reachability for all registered engines:
-   $ dendrite dev inference probe
+   $ dendrite spike probe
 ================================================================================
 
 [+] Retrieved Project Documentation & Code Context:
@@ -137,11 +137,11 @@ To inspect and check available LLMs across all registered inference engines in D
    $ dendrite inference list
 
 2. Inspect zero-cost and self-hosted models configured in your local environment:
-   $ dendrite dev inference zero-cost list
+   $ dendrite spike zero-cost list
 
 3. Probe real-time reachability and latency of Ollama and external endpoints:
-   $ dendrite dev ollama probe
-   $ dendrite dev inference probe
+   $ dendrite spike probe --endpoint http://127.0.0.1:11434
+   $ dendrite spike probe
 ================================================================================
 
 [+] Note: Initial draft was synthesized locally at zero cost, then verified and refined via cloud LLM.
@@ -189,7 +189,7 @@ If local inference fails, Dendrite catches the error and interactively asks:
   ================================================================================
   To check available LLMs in Dendrite, execute:
   1. `dendrite inference list` — Displays all engines and active models.
-  2. `dendrite dev inference zero-cost list` — Lists self-hosted model patterns.
+  2. `dendrite spike zero-cost list` — Lists self-hosted model patterns.
   ================================================================================
   ```
 

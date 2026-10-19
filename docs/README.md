@@ -145,7 +145,7 @@ flowchart TD
    - [Tutorial: Asking Project Questions with Local RAG & Paid LLM Escalation](./guides/asking-questions-to-dendrite.md)
    - [Environment Sharing, Onboarding & Bootstrap Guide](./guides/sharing-and-onboarding.md)
 4. **CLI & Dashboard System Design**:
-   - [Dendrite CLI Specification & Command Reference](./cli/dendrite-cli-specification.md)
+   - [Dendrite CLI Command Reference](./cli/dendrite.md)
 5. **Quality, Compliance & Complexity**:
    - [Scrum Master DoD, Testcontainers & Complexity Scorecard](./quality/scrum-and-complexity-scorecard.md)
 6. **Project Status, Milestones & Ticket Lifecycle**:
@@ -159,7 +159,7 @@ The control plane tool `dendrite` manages the entire lifecycle of the multi-node
 
 ```bash
 # 1. Run environment diagnostics and pre-flight checks
-dendrite doctor
+dendrite soma diagnose
 
 # 2. Configure JetBrains IDE with Dendrite MCP server (19 tools), Run Configs, and External Tools
 dendrite jetbrains setup

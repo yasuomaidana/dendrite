@@ -3,20 +3,14 @@
     "dendrite": {
       "command": "/Users/yasuomaidana/GoLandProjects/Dendrite/bin/dendrite",
       "args": [
-        "mcp",
+        "inter",
         "serve"
-      ],
-      "env": {
-        "DENDRITE_ENV": "development",
-        "DENDRITE_OLLAMA_URL": "http://127.0.0.1:11434",
-        "DENDRITE_OXILLAMA_URL": "http://127.0.0.1:8080",
-        "DENDRITE_WORKSPACE": "/Users/yasuomaidana/GoLandProjects/Dendrite"
-      }
+      ]
     },
     "dendrite-synapse-dendrite-ecosystem": {
       "command": "/Users/yasuomaidana/go/bin/dendrite",
       "args": [
-        "mcp",
+        "inter",
         "serve",
         "--synapse",
         "dendrite-ecosystem"

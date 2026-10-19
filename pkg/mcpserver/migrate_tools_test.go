@@ -32,7 +32,7 @@ func TestMCP_MigrateTools(t *testing.T) {
 	if err := json.Unmarshal([]byte(callRes.Content[0].Text), &planData); err != nil {
 		t.Fatalf("failed to parse json response: %v", err)
 	}
-	if recCmd, ok := planData["recommended_action"].(string); !ok || !strings.Contains(recCmd, "dendrite move") {
+	if recCmd, ok := planData["recommended_action"].(string); !ok || !strings.Contains(recCmd, "dendrite translocate run") {
 		t.Errorf("expected recommended action with dendrite move, got %v", recCmd)
 	}
 

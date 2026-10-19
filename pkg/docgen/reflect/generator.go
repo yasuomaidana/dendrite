@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"Dendrite/pkg/cli"
 	"Dendrite/pkg/mcpserver"
+	"github.com/spf13/cobra"
 )
 
 // ReferenceGenerationResult details the files written by reference documentation generation.
@@ -17,12 +17,12 @@ type ReferenceGenerationResult struct {
 }
 
 // GenerateReferenceDocs generates docs/cli/<command>.md and docs/mcp/<tool>.md from live registries.
-func GenerateReferenceDocs(docsDir string, reg *cli.Registry, srv *mcpserver.Server) (*ReferenceGenerationResult, error) {
+func GenerateReferenceDocs(docsDir string, root *cobra.Command, srv *mcpserver.Server) (*ReferenceGenerationResult, error) {
 	if docsDir == "" {
 		docsDir = "docs"
 	}
-	if reg == nil {
-		return nil, fmt.Errorf("cli registry cannot be nil")
+	if root == nil {
+		return nil, fmt.Errorf("cli root command cannot be nil")
 	}
 
 	cliDir := filepath.Join(docsDir, "cli")
@@ -41,11 +41,9 @@ func GenerateReferenceDocs(docsDir string, reg *cli.Registry, srv *mcpserver.Ser
 	}
 
 	// 1. Generate CLI Command reference pages
-	cliDocs := IntrospectCLIRegistry(reg)
-	for _, cmdDoc := range cliDocs {
-		content := RenderCLICommandMarkdown(cmdDoc)
-		targetFile := filepath.Join(cliDir, cmdDoc.Name+".md")
-		if err := os.WriteFile(targetFile, []byte(content), 0644); err != nil {
+	for _, page := range CLIReferencePages(root) {
+		targetFile := filepath.Join(cliDir, page.Name+".md")
+		if err := os.WriteFile(targetFile, []byte(page.Content), 0644); err != nil {
 			return nil, fmt.Errorf("failed to write %s: %w", targetFile, err)
 		}
 		res.CLIFilesWritten = append(res.CLIFilesWritten, targetFile)
@@ -66,4 +64,20 @@ func GenerateReferenceDocs(docsDir string, reg *cli.Registry, srv *mcpserver.Ser
 
 	res.TotalWritten = len(res.CLIFilesWritten) + len(res.MCPFilesWritten)
 	return res, nil
+}
+
+// CLIReferencePage is one rendered docs/cli page.
+type CLIReferencePage struct {
+	Name    string
+	Content string
+}
+
+// CLIReferencePages renders the root page (global flags and command index) plus one page per top-level command.
+func CLIReferencePages(root *cobra.Command) []CLIReferencePage {
+	rootDoc := IntrospectCLIRoot(root)
+	pages := []CLIReferencePage{{Name: rootDoc.Name, Content: RenderCLIRootMarkdown(rootDoc)}}
+	for _, cmdDoc := range IntrospectCLITree(root) {
+		pages = append(pages, CLIReferencePage{Name: cmdDoc.Name, Content: RenderCLICommandMarkdown(cmdDoc)})
+	}
+	return pages
 }

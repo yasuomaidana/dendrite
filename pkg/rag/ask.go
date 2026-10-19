@@ -517,14 +517,14 @@ func enhanceAnswer(question, answer string, chunks []Chunk) string {
 		if strings.Contains(lowerQ, "available llm") || strings.Contains(lowerQ, "check available") || strings.Contains(lowerQ, "list model") {
 			return "To check available LLMs and inference engines in Dendrite, execute the following commands:\n\n" +
 				"1. List all registered engines, models, and fallback cascade order:\n" +
-				"   $ dendrite inference list\n" +
-				"   (or alias: dendrite dev inference list)\n\n" +
+				"   $ dendrite spike list\n" +
+				"   (alias: dendrite inference list)\n\n" +
 				"2. Inspect configured zero-cost and self-hosted models/prefixes:\n" +
-				"   $ dendrite dev inference zero-cost list\n\n" +
+				"   $ dendrite spike zero-cost list\n\n" +
 				"3. Probe local Ollama service health, latency, and loaded models:\n" +
-				"   $ dendrite dev ollama probe\n\n" +
+				"   $ dendrite spike probe --endpoint http://127.0.0.1:11434\n\n" +
 				"4. Probe real-time reachability and latency across all engines:\n" +
-				"   $ dendrite dev inference probe"
+				"   $ dendrite spike probe"
 		}
 
 		if len(extractedCmds) > 0 {

@@ -152,9 +152,9 @@ GitHub issues provide strategic human acceptance gates grouping related tickets:
 | **#4** | Validate Live JetBrains Interop & Full JetBrains AI Chat Plugin | Group C | `DEND-301`, `DEND-302` | `dendrite jetbrains probe && cd plugins/jetbrains && ./gradlew test` |
 | **#5** | Validate VS Code Extension with MCP Context and Sidebar AI Chat | Group C | `DEND-303` | `cd plugins/vscode && bun test` |
 | **#6** | Validate Neovim and Zed Headless Integration Specs | Group C | `DEND-304`, `DEND-305` | `nvim --headless -c 'PlenaryBustedDirectory tests/neovim'` |
-| **#7** | Validate Moving Plane to Remote Debian SSH Server & Update Sync | Group D | `DEND-401`, `DEND-403` | `dendrite move plane to --ssh debian-server && dendrite cluster sync` |
+| **#7** | Validate Moving Plane to Remote Debian SSH Server & Update Sync | Group D | `DEND-401`, `DEND-403` | `dendrite translocate run plane --ssh debian-server && dendrite cluster sync` |
 | **#8** | Validate Provisioning & Starting Penpot Service Stack | Group D | `DEND-402` | `dendrite service start penpot --verify-mcp && dendrite service health penpot` |
-| **#9** | Validate REA .EXE Analysis on macOS with Pause/Resume & Remote Purge | Group E | `DEND-501`, `DEND-601` | `dendrite rea analyze sample.exe && dendrite skill ticket-relate` |
+| **#9** | Validate REA .EXE Analysis on macOS with Pause/Resume & Remote Purge | Group E | `DEND-501`, `DEND-601` | `dendrite rea analyze sample.exe && dendrite chronos relate` |
 
 ---
 
@@ -170,7 +170,7 @@ Dendrite provides dedicated commands for keeping Plane Gantt diagrams synchroniz
 
 2. **Link or Update Ticket Relations & Priority**:
    ```bash
-   ./bin/dendrite skill ticket-relate \
+   ./bin/dendrite chronos relate \
      --ticket DEND-203 \
      --priority urgent \
      --blocked-by DEND-201,DEND-202 \

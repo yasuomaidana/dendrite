@@ -3,62 +3,81 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"text/tabwriter"
 
+	"github.com/spf13/cobra"
+
 	"Dendrite/pkg/synapse"
 )
 
-// runSynapseSyncCommand implements `synapse status` (pull=false) and `synapse sync` (pull=true).
+// synapseSyncOptions are the `synapse status` / `synapse sync` flags.
+type synapseSyncOptions struct {
+	NoFetch   bool
+	Autostash bool
+	Rebase    bool
+	NoLink    bool
+	Merge     []string
+}
+
+// newSynapseStatusCmd builds `synapse status`: fetch every member and report where it stands.
+func newSynapseStatusCmd() *cobra.Command {
+	var o synapseSyncOptions
+	cmd := &cobra.Command{
+		Use:     "status <id>",
+		Short:   "Fetch every member and report ahead/behind, dirty files and drift against its tracked ref",
+		Args:    exactArgs(1),
+		Example: "dendrite synapse status dendrite-ecosystem\ndendrite synapse status dendrite-ecosystem --no-fetch --json",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseSync(c.Context(), args[0], o, false, c.OutOrStdout())
+		},
+	}
+	cmd.Flags().BoolVar(&o.NoFetch, "no-fetch", false, "Use the last fetched remote state")
+	return cmd
+}
+
+// newSynapseSyncCmd builds `synapse sync`: bring every member to its tracked ref and relink.
+func newSynapseSyncCmd() *cobra.Command {
+	var o synapseSyncOptions
+	cmd := &cobra.Command{
+		Use:   "sync <id>",
+		Short: "Fast-forward members to their tracked ref, lock their commits and relink (go.work / cargo patches)",
+		Long: "Fast-forwards every local member that is on its tracked branch, resolves remote members,\n" +
+			"records each member's commit as its lock and applies the sync strategy.",
+		Args:    exactArgs(1),
+		Example: "dendrite synapse sync dendrite-ecosystem\ndendrite synapse sync dendrite-ecosystem --merge mcp-hub=feat/x",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseSync(c.Context(), args[0], o, true, c.OutOrStdout())
+		},
+	}
+	f := cmd.Flags()
+	f.BoolVar(&o.NoFetch, "no-fetch", false, "Use the last fetched remote state")
+	f.BoolVar(&o.Autostash, "autostash", false, "Stash uncommitted changes around member fast-forwards")
+	f.BoolVar(&o.Rebase, "rebase", false, "Replay local commits with rebase instead of fast-forward only")
+	f.BoolVar(&o.NoLink, "no-link", false, "Do not apply the sync strategy")
+	f.StringArrayVar(&o.Merge, "merge", nil, "Merge <alias>=<branch> into that member after updating it (repeatable)")
+	return cmd
+}
+
+// runSynapseSync implements `synapse status` (pull=false) and `synapse sync` (pull=true).
 //
 // status fetches every member and reports where it stands against its tracked ref without
 // touching any checkout; sync additionally fast-forwards local members, resolves remote
 // members, records each member's commit as its lock and applies the sync strategy
 // (go.work / cargo-patch). Both persist the refreshed locks and lifecycle state.
-func runSynapseSyncCommand(ctx context.Context, subArgs []string, out io.Writer, pull bool) error {
-	opts := synapse.SyncOptions{Pull: pull, Link: pull, Merge: map[string]string{}}
-	jsonMode := false
-	var id string
-	for i := 0; i < len(subArgs); i++ {
-		arg := subArgs[i]
-		switch {
-		case arg == "--json":
-			jsonMode = true
-		case arg == "--no-fetch":
-			opts.NoFetch = true
-		case pull && arg == "--autostash":
-			opts.Autostash = true
-		case pull && arg == "--rebase":
-			opts.Rebase = true
-		case pull && arg == "--no-link":
-			opts.Link = false
-		case pull && (arg == "--merge" || strings.HasPrefix(arg, "--merge=")):
-			val := strings.TrimPrefix(arg, "--merge=")
-			if arg == "--merge" {
-				if i+1 >= len(subArgs) {
-					return errors.New("--merge requires <alias>=<branch>")
-				}
-				i++
-				val = subArgs[i]
-			}
-			alias, branch, ok := strings.Cut(val, "=")
-			if !ok || alias == "" || branch == "" {
-				return fmt.Errorf("invalid --merge %q: expected <alias>=<branch>", val)
-			}
-			opts.Merge[alias] = branch
-		case strings.HasPrefix(arg, "-"):
-			return fmt.Errorf("unknown flag: %s", arg)
-		case id == "":
-			id = arg
-		default:
-			return fmt.Errorf("unexpected argument: %s", arg)
-		}
+func runSynapseSync(ctx context.Context, id string, o synapseSyncOptions, pull bool, out io.Writer) error {
+	opts := synapse.SyncOptions{
+		Pull: pull, Link: pull && !o.NoLink, NoFetch: o.NoFetch,
+		Autostash: o.Autostash, Rebase: o.Rebase, Merge: map[string]string{},
 	}
-	if id == "" {
-		return errors.New("synapse id is required")
+	for _, val := range o.Merge {
+		alias, branch, ok := strings.Cut(val, "=")
+		if !ok || alias == "" || branch == "" {
+			return usageErrorf("invalid --merge %q: expected <alias>=<branch>", val)
+		}
+		opts.Merge[alias] = branch
 	}
 
 	st, err := synapse.DefaultStore()
@@ -82,7 +101,7 @@ func runSynapseSyncCommand(ctx context.Context, subArgs []string, out io.Writer,
 		}
 	}
 
-	if jsonMode {
+	if globals.JSON {
 		data, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
 			return err

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,9 @@ import (
 	"Dendrite/pkg/projectid"
 	"Dendrite/pkg/synapse"
 	"Dendrite/pkg/synapsesync"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 
@@ -134,7 +138,7 @@ func TestRunSyncCommand(t *testing.T) {
 	chdirT(t, den)
 
 	var out bytes.Buffer
-	if err := runSyncCommand(ctx, []string{"--help"}, &out); err != nil || !strings.Contains(out.String(), "Usage: dendrite sync") {
+	if err := runSyncCommand(ctx, []string{"--help"}, &out); err != nil || !strings.Contains(out.String(), "dendrite sync [flags]") {
 		t.Fatalf("help: %v %s", err, out.String())
 	}
 	if err := runSyncCommand(ctx, []string{"--bogus"}, &out); err == nil {
@@ -227,4 +231,30 @@ func TestSyncSummaries(t *testing.T) {
 			t.Errorf("%s: planeSummary = %q, want %q", c.desc, got, c.pl)
 		}
 	}
+}
+
+// parseSyncArgs parses args with the `dendrite sync` flags (plus the global --json);
+// ok=false means help was requested.
+func parseSyncArgs(args []string) (synapsesync.Options, syncCLI, bool, error) {
+	var f syncFlags
+	cmd := &cobra.Command{Use: "sync"}
+	f.bind(cmd)
+	globals = globalOptions{}
+	cmd.Flags().BoolVar(&globals.JSON, "json", false, "")
+	if err := cmd.ParseFlags(args); err != nil {
+		if errors.Is(err, pflag.ErrHelp) {
+			return synapsesync.Options{}, syncCLI{}, false, nil
+		}
+		return synapsesync.Options{}, syncCLI{}, true, err
+	}
+	if err := cmd.ValidateFlagGroups(); err != nil {
+		return synapsesync.Options{}, syncCLI{}, true, err
+	}
+	opts, cli, err := f.options(cmd.Flags().Changed("interval"))
+	return opts, cli, true, err
+}
+
+// runSyncCommand runs `dendrite sync <args...>` through the cobra tree.
+func runSyncCommand(ctx context.Context, args []string, out io.Writer) error {
+	return runWith(ctx, out, newSyncCmd(), append([]string{"sync"}, args...)...)
 }

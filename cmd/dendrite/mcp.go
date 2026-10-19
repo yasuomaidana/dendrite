@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-	"strings"
 
 	"Dendrite/pkg/mcpserver"
 	"Dendrite/pkg/ollama"
 	"Dendrite/pkg/synapse"
+
+	"github.com/spf13/cobra"
 )
 
 // buildMCPServer constructs the live Dendrite Control Plane MCP server with registered default tools.
@@ -35,94 +35,100 @@ func buildSynapseMCPServer(id string) (*mcpserver.Server, error) {
 	return mcpserver.NewSynapseServer(mcpserver.SynapseScope{Store: st, ID: id}, version)
 }
 
-// extractSynapseFlag removes "--synapse <id>" / "--synapse=<id>" from args and returns the id.
-func extractSynapseFlag(args []string) (string, []string, error) {
-	var id string
-	rest := make([]string, 0, len(args))
-	for i := 0; i < len(args); i++ {
-		switch {
-		case args[i] == "--synapse":
-			if i+1 >= len(args) {
-				return "", nil, fmt.Errorf("--synapse requires a synapse id")
-			}
-			id = args[i+1]
-			i++
-		case strings.HasPrefix(args[i], "--synapse="):
-			id = strings.TrimPrefix(args[i], "--synapse=")
-		default:
-			rest = append(rest, args[i])
+// newInterCmd builds `dendrite inter` (alias mcp): the Model Context Protocol server over stdio.
+func newInterCmd() *cobra.Command {
+	cmd := newGroupCmd("inter", "Model Context Protocol (MCP) server over stdio", "cleft", "mcp", "interneuron-mcp")
+	cmd.Example = "dendrite inter serve\n" +
+		"dendrite inter serve --synapse web-api\n" +
+		"dendrite inter tools\n" +
+		"dendrite inter call dendrite_ticket_smart_select '{}'"
+	var synapseID string
+	cmd.PersistentFlags().StringVar(&synapseID, "synapse", "", "Expose only the synapse_* tools of this synapse")
+	server := func() (*mcpserver.Server, error) {
+		if synapseID != "" {
+			return buildSynapseMCPServer(synapseID)
 		}
+		return buildMCPServer(), nil
 	}
-	return id, rest, nil
+
+	serve := &cobra.Command{
+		Use:     "serve",
+		Aliases: []string{"stdio"},
+		Short:   "Serve MCP over stdin/stdout",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			srv, err := server()
+			if err != nil {
+				return err
+			}
+			if err := srv.ServeStdio(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout()); err != nil && err != io.EOF {
+				return fmt.Errorf("MCP server terminated: %w", err)
+			}
+			return nil
+		},
+	}
+	tools := &cobra.Command{
+		Use:     "tools",
+		Aliases: []string{"list", "ls"},
+		Short:   "List the registered MCP tools",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			srv, err := server()
+			if err != nil {
+				return err
+			}
+			return runInterTools(srv, cmd.OutOrStdout())
+		},
+	}
+	call := &cobra.Command{
+		Use:   "call <tool> [arguments-json]",
+		Short: "Call one MCP tool and print its result",
+		Args:  rangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			callArgs := map[string]any{}
+			if len(args) > 1 {
+				if err := json.Unmarshal([]byte(args[1]), &callArgs); err != nil {
+					return usageErrorf("arguments must be a JSON object: %v", err)
+				}
+			}
+			srv, err := server()
+			if err != nil {
+				return err
+			}
+			return runInterCall(cmd.Context(), srv, args[0], callArgs, cmd.OutOrStdout())
+		},
+	}
+	cmd.AddCommand(serve, tools, call)
+	return cmd
 }
 
-func handleMCPCommand(ctx context.Context, action string, args []string) {
-	synapseID, args, err := extractSynapseFlag(args)
+func runInterTools(srv *mcpserver.Server, out io.Writer) error {
+	tools := srv.ListTools()
+	if globals.JSON {
+		return writeJSON(out, tools)
+	}
+	fmt.Fprintf(out, "[+] Registered Dendrite MCP Tools (%d):\n", len(tools))
+	for _, t := range tools {
+		fmt.Fprintf(out, "    - %-25s: %s\n", t.Name, t.Description)
+	}
+	return nil
+}
+
+func runInterCall(ctx context.Context, srv *mcpserver.Server, tool string, callArgs map[string]any, out io.Writer) error {
+	rawParams, err := json.Marshal(mcpserver.CallToolParams{Name: tool, Arguments: callArgs})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[-] %v\n", err)
-		os.Exit(1)
+		return err
 	}
-	srv := buildMCPServer()
-	if synapseID != "" {
-		if srv, err = buildSynapseMCPServer(synapseID); err != nil {
-			fmt.Fprintf(os.Stderr, "[-] %v\n", err)
-			os.Exit(1)
-		}
+	reqBytes, err := json.Marshal(mcpserver.JSONRPCRequest{JSONRPC: "2.0", ID: 1, Method: "tools/call", Params: rawParams})
+	if err != nil {
+		return err
 	}
-
-	switch action {
-	case "serve", "stdio":
-		if err := srv.ServeStdio(ctx, os.Stdin, os.Stdout); err != nil && err != io.EOF {
-			fmt.Fprintf(os.Stderr, "[-] MCP Server terminated: %v\n", err)
-		}
-
-	case "tools", "list":
-		tools := srv.ListTools()
-		fmt.Printf("[+] Registered Dendrite MCP Tools (%d):\n", len(tools))
-		for _, t := range tools {
-			fmt.Printf("    - %-25s: %s\n", t.Name, t.Description)
-		}
-
-	case "call":
-		if len(args) == 0 {
-			fmt.Println("[-] Please specify a tool name. Usage: dendrite mcp call <tool> [arguments-json]")
-			return
-		}
-		toolName := args[0]
-		callArgs := make(map[string]interface{})
-		if len(args) > 1 {
-			if err := json.Unmarshal([]byte(args[1]), &callArgs); err != nil {
-				fmt.Printf("[-] Failed to parse arguments JSON: %v\n", err)
-				return
-			}
-		}
-
-		callReq := mcpserver.JSONRPCRequest{
-			JSONRPC: "2.0",
-			ID:      1,
-			Method:  "tools/call",
-		}
-		rawParams, _ := json.Marshal(mcpserver.CallToolParams{
-			Name:      toolName,
-			Arguments: callArgs,
-		})
-		callReq.Params = rawParams
-
-		reqBytes, _ := json.Marshal(callReq)
-		resp := srv.HandleRequest(ctx, reqBytes)
-		if resp == nil {
-			fmt.Println("[-] No response from MCP server")
-			return
-		}
-		if resp.Error != nil {
-			fmt.Printf("[-] MCP Error (%d): %s\n", resp.Error.Code, resp.Error.Message)
-			return
-		}
-
-		resData, _ := json.MarshalIndent(resp.Result, "", "  ")
-		fmt.Println(string(resData))
-
-	default:
-		fmt.Printf("[-] Unknown MCP action: %s. Use 'serve', 'tools', or 'call'.\n", action)
+	resp := srv.HandleRequest(ctx, reqBytes)
+	if resp == nil {
+		return fmt.Errorf("no response from MCP server")
 	}
+	if resp.Error != nil {
+		return fmt.Errorf("MCP error (%d): %s", resp.Error.Code, resp.Error.Message)
+	}
+	return writeJSON(out, resp.Result)
 }

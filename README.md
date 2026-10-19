@@ -20,7 +20,7 @@
 - **Sovereign Issue Tracking & DAG Scheduling**: Integrates directly with self-hosted Plane v2 (`stacks/compose.plane.yaml`) as the authoritative source of truth for tickets, milestones, and Gantt charts.
 - **Autonomous Coding Agent Harness**: Dispatches, monitors, and records autonomous agent loops (Aider, OpenHands, OpenCode, Google AGY, GitHub Copilot) inside ephemeral, RAII-cleaned container sandboxes.
 - **IDE Intelligence & Model Context Protocol (MCP)**: Bridges GoLand, IntelliJ, and JetBrains IDEs via bidirectional MCP servers connecting AST symbols, diagnostic problem inspections, and background run configurations.
-- **Living Docs-as-Code Reflection**: Introspects live CLI and MCP registries to automatically generate and strictly audit reference documentation ([`docs/cli/`](docs/cli/), [`docs/mcp/`](docs/mcp/)) via `dendrite docs generate --reference` and `dendrite docs audit --strict`.
+- **Living Docs-as-Code Reflection**: Introspects live CLI and MCP registries to automatically generate and strictly audit reference documentation ([`docs/cli/`](docs/cli/), [`docs/mcp/`](docs/mcp/)) via `dendrite codex generate --reference` and `dendrite codex audit --strict`.
 
 
 ## 1. The Neurobiological Inspiration: A Synthetic Nervous System
@@ -276,52 +276,41 @@ Verify binary execution:
 
 Keep it current with `dendrite update --dev` from the checkout: it fast-forwards the sibling repositories linked through a synapse, rebuilds their binaries and swaps in a rebuilt `dendrite` with a backup and smoke test. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
+### Command Names
+
+Commands use Neuro-Lore names grouped by category in `dendrite --help`; the plain names still work as aliases (`dendrite env prepare` is `dendrite soma prepare`, `dendrite plane next` is `dendrite chronos next`). Every command and subcommand has `--help`, and `--json`, `-y/--yes`, `--state-dir`, `--home`, `--gateway-url` and `--plane-url` are global flags. Exit codes are 0 for success, 1 for a failure and 2 for a usage error. The full tree is in [`docs/cli/dendrite.md`](docs/cli/dendrite.md).
+
 ### First Steps: Environment Preparation & Synchronization
 
 Initialize your workspace and synchronize agent rules, skills, and CI/CD tools:
 
 ```bash
 # Synchronize environment, skills, and toolchain rules
-dendrite env prepare
+dendrite soma prepare
 
-# Run pre-flight host and service diagnostics (<800ms)
-dendrite doctor
+# Run pre-flight host and service diagnostics
+dendrite soma diagnose
 ```
 
-### Pre-Flight Diagnostics & Health (Soma Diagnosis)
-Run environment diagnostics using either standard or lore commands:
-
-```bash
-# Standard syntax
-dendrite env doctor
-
-# Or using the Neuro-Lore alias (<800ms)
-dendrite probe
-```
-
-### Environment Replication (Soma Genesis)
-Replicate entire environments natively on the host or inside Docker containers across local and remote nodes:
+### Environment Replication (Soma)
+Replicate entire environments natively on the host or inside Docker containers:
 
 ```bash
 # 1. Plan replication in Hybrid Mode (services in Docker, dev tools on host)
-dendrite env plan --mode hybrid --with-plane --with-penpot
+dendrite soma plan --mode hybrid --with-plane --with-penpot
 
-# 2. Execute replication (or: dendrite genesis --mode hybrid)
-dendrite env replicate --mode hybrid --with-plane --with-penpot
+# 2. Execute replication
+dendrite soma replicate --mode hybrid --with-plane
 
-# 3. Check real-time component health (or: dendrite homeo)
-dendrite env status
+# 3. Check real-time component health
+dendrite soma status
 ```
 
-### Launching the Web Control Cockpit (Cortex Cockpit)
-Spin up the embedded HTTP and WebSocket control server:
+### Launching the Web Control Cockpit (Cortex)
+Run the embedded HTTP and WebSocket control server in the foreground:
 
 ```bash
-# Standard syntax
-dendrite ui
-
-# Or using the Neuro-Lore alias (<800ms startup)
-dendrite cortex
+dendrite cortex serve --port 3456
 ```
 
 ### Intent-Driven AST Slicing (Dendritic Arbor)
@@ -332,52 +321,52 @@ Debloat context and extract exact call graphs before feeding LLM prompts:
 dendrite arbor slice --sources ./pkg/env --entrypoint Replicate "verify docker container mounts"
 ```
 
-### Multi-Node Topology Management (Axonal Pathways)
-Switch between deployment scenarios declaratively:
+### Multi-Node Topology (Axon)
+Inspect deployment scenarios and get a placement recommendation from live hardware:
 
 ```bash
-# Scenario 1: Local MacBook + Debian Server (Zero Cloud Cost)
-dendrite up local-hybrid
+# Stack placements and compose profiles for a scenario
+dendrite axon inspect aws-burst
 
-# Scenario 2: Elastic AWS Spot Compute with Persistent EBS gp3
-dendrite up aws-burst
+# Probe nodes and recommend a service placement
+dendrite axon advisor --nodes local=localhost,gpu=10.0.0.5
 
-# Scenario 3: Elastic Azure Spot Compute with Managed Disks
-dendrite up azure-burst
-
-# Gracefully teardown compute while preserving persistent storage
-dendrite down
+# Render the LiteLLM gateway config for a scenario
+dendrite cleft render azure-burst
 ```
 
-### Autonomous Coding Agent Harness (Effector Dispatch)
+### Autonomous Coding Agent Harness (Bouton)
 Orchestrate autonomous coding tools through LiteLLM governance:
 
 ```bash
-# Run Aider bound to virtual key spend limits
-dendrite dispatch run aider --ticket DEN-030 --spend-cap 5.00
+# Run Aider through the gateway on a ticket
+dendrite bouton run aider --ticket DEN-030 --task "implement the scenario runner"
+
+# Delegate a ticket to another model in its own working copy
+dendrite bouton jobs submit --ticket DEN-030 --agent agy --scope pkg/env --prompt-file prompt.md --isolate
 
 # Inspect past agent sessions, commits, and token expenditure
-dendrite agent session list
+dendrite bouton sessions
 ```
 
 ### Living Documentation & Generated References
 
 Dendrite features an automated Docs-as-Code reflection and audit engine that guarantees committed documentation never drifts from code:
 
-- **[CLI Command Reference](docs/cli/) (`docs/cli/`)**: Individual reference pages for all 39 top-level commands (e.g. [`doctor.md`](docs/cli/doctor.md), [`env.md`](docs/cli/env.md), [`agent.md`](docs/cli/agent.md), [`doc.md`](docs/cli/doc.md)), documenting descriptions, aliases, subcommands, flags, and executable examples.
+- **[CLI Command Reference](docs/cli/) (`docs/cli/`)**: One page per top-level command, generated from the live command tree (e.g. [`soma.md`](docs/cli/soma.md), [`chronos.md`](docs/cli/chronos.md), [`bouton.md`](docs/cli/bouton.md), [`codex.md`](docs/cli/codex.md)), with aliases, every subcommand's flags, and examples. [`dendrite.md`](docs/cli/dendrite.md) lists the groups and the global flags.
 - **[MCP Tool Reference](docs/mcp/) (`docs/mcp/`)**: Individual reference pages for all registered Model Context Protocol tools (e.g. [`dendrite_env_status.md`](docs/mcp/dendrite_env_status.md), [`dendrite_ticket_list.md`](docs/mcp/dendrite_ticket_list.md), [`dendrite_commit.md`](docs/mcp/dendrite_commit.md)), documenting descriptions, JSON schemas, and example JSON-RPC/CLI calls.
-- **[CLI Specification & Architecture Guide](docs/cli/dendrite-cli-specification.md)**: Design patterns, typestate lifecycles, and architecture boundaries.
+- **[CLI Command Tree Conventions](docs/architecture/cli-cobra.md)**: How commands, flags, errors and tests are written.
 - **[System Topology & Decoupled Compute Tiers](docs/architecture/01-system-topology.md)**: Network mesh routing and node placement models.
 
 ```bash
-# Generate/regenerate reference documentation from live registries:
-dendrite docs generate --reference
+# Generate/regenerate reference documentation from the live command tree and MCP tools:
+dendrite codex generate --reference
 
 # Audit documentation completeness (exits 1 if any command or tool is undocumented or stale):
-dendrite docs audit --strict
+dendrite codex audit --strict
 ```
 
-Both the local pre-commit hook (`scripts/pre-commit-hook.sh`) and CI workflow (`.github/workflows/ci.yml`) run `dendrite docs audit --strict` on every commit.
+Both the local pre-commit hook (`scripts/pre-commit-hook.sh`) and CI workflow (`.github/workflows/ci.yml`) run `dendrite codex audit --strict` on every commit.
 
 ---
 
@@ -453,4 +442,4 @@ To verify all toolchains locally:
 
 ## 8. Roadmap & Milestone Progress
 
-Active milestone progress and tickets are tracked authoritatively in **Plane v2** (`http://localhost:8090`). **[DEV_STATUS.md](DEV_STATUS.md)** is maintained purely as a human-readable repository mirror replicated from Plane (`dendrite plane replicate`). Autonomous agents must never check or rely on `DEV_STATUS.md` when Plane is available.
+Active milestone progress and tickets are tracked authoritatively in **Plane v2** (`http://localhost:8090`). **[DEV_STATUS.md](DEV_STATUS.md)** is maintained purely as a human-readable repository mirror replicated from Plane (`dendrite chronos replicate`). Autonomous agents must never check or rely on `DEV_STATUS.md` when Plane is available.

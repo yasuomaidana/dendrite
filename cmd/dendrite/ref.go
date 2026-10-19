@@ -1,134 +1,96 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"os"
+	"io"
 	"strings"
 
 	"Dendrite/pkg/query/reuse"
+
+	"github.com/spf13/cobra"
 )
 
-var defaultRefMgr = reuse.NewRefManager(".dendrite/refs.json")
+// newRefManager opens the Tier 1 reference registry on use, so --state-dir is honored.
+func newRefManager() *reuse.RefManager { return reuse.NewRefManager("") }
 
-func handleRefCommand(ctx context.Context, action string, args []string) {
-	switch action {
-	case "list":
-		handleRefList(args)
-	case "add":
-		handleRefAdd(args)
-	case "remove", "rm":
-		handleRefRemove(args)
-	default:
-		printRefUsage()
-	}
-}
+// newAfferentCmd builds `dendrite afferent` (alias ref): Tier 1 source references for reuse and cleanroom synthesis.
+func newAfferentCmd() *cobra.Command {
+	cmd := newGroupCmd("afferent", "Manage Tier 1 source references for library reuse and cleanroom synthesis", "arbor",
+		"ref", "dendritic-afferent", "aff")
+	cmd.Example = "dendrite afferent list --json\n" +
+		"dendrite afferent add --id totp-go --repo https://github.com/pquerna/otp --lang go --caps totp,hotp\n" +
+		"dendrite afferent remove totp-go"
 
-func handleRefList(args []string) {
-	jsonOutput := false
-	for _, a := range args {
-		if a == "--json" {
-			jsonOutput = true
-		}
+	list := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List registered source references",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAfferentList(newRefManager(), cmd.OutOrStdout())
+		},
 	}
 
-	refs, err := defaultRefMgr.ListRefs()
-	if err != nil {
-		fmt.Printf("[-] Failed to list source references: %v\n", err)
-		os.Exit(1)
-	}
-
-	if jsonOutput {
-		data, _ := json.MarshalIndent(refs, "", "  ")
-		fmt.Println(string(data))
-		return
-	}
-
-	fmt.Printf("[+] Registered Source References (Tier 1: %d repos):\n", len(refs))
-	for _, r := range refs {
-		fmt.Printf("  • %-18s [%-10s] %s\n", r.ID, r.Language, r.Repository)
-		if len(r.Capabilities) > 0 {
-			fmt.Printf("    Capabilities: %s\n", strings.Join(r.Capabilities, ", "))
-		}
-	}
-}
-
-func handleRefAdd(args []string) {
 	var ref reuse.SourceReference
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--id":
-			if i+1 < len(args) {
-				ref.ID = args[i+1]
-				i++
+	add := &cobra.Command{
+		Use:   "add",
+		Short: "Register a source reference",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if ref.Name == "" {
+				ref.Name = ref.ID
 			}
-		case "--name":
-			if i+1 < len(args) {
-				ref.Name = args[i+1]
-				i++
+			if err := newRefManager().AddRef(ref); err != nil {
+				return fmt.Errorf("register reference: %w", err)
 			}
-		case "--repo", "--repository":
-			if i+1 < len(args) {
-				ref.Repository = args[i+1]
-				i++
+			fmt.Fprintf(cmd.OutOrStdout(), "[+] Registered Tier 1 Source Reference: %s (%s)\n", ref.Name, ref.Repository)
+			return nil
+		},
+	}
+	f := add.Flags()
+	f.StringVar(&ref.ID, "id", "", "Reference ID")
+	f.StringVar(&ref.Name, "name", "", "Display name (default: the ID)")
+	f.StringVar(&ref.Repository, "repo", "", "Repository URL")
+	f.StringVar(&ref.Language, "lang", "", "Primary language")
+	f.StringSliceVar(&ref.Capabilities, "caps", nil, "Capabilities (comma-separated)")
+	f.StringVar(&ref.License, "license", "", "SPDX license identifier")
+	requireFlags(add, "id", "repo")
+
+	remove := &cobra.Command{
+		Use:     "remove <id>",
+		Aliases: []string{"rm"},
+		Short:   "Remove a source reference",
+		Args:    exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := newRefManager().RemoveRef(args[0]); err != nil {
+				return fmt.Errorf("remove reference %s: %w", args[0], err)
 			}
-		case "--lang", "--language":
-			if i+1 < len(args) {
-				ref.Language = args[i+1]
-				i++
-			}
-		case "--caps", "--capabilities":
-			if i+1 < len(args) {
-				raw := strings.Split(args[i+1], ",")
-				for _, c := range raw {
-					trimmed := strings.TrimSpace(c)
-					if trimmed != "" {
-						ref.Capabilities = append(ref.Capabilities, trimmed)
-					}
-				}
-				i++
-			}
-		case "--license":
-			if i+1 < len(args) {
-				ref.License = args[i+1]
-				i++
-			}
+			fmt.Fprintf(cmd.OutOrStdout(), "[+] Removed Tier 1 Source Reference: %s\n", args[0])
+			return nil
+		},
+	}
+
+	cmd.AddCommand(list, add, remove)
+	return cmd
+}
+
+func runAfferentList(mgr *reuse.RefManager, out io.Writer) error {
+	refs, err := mgr.ListRefs()
+	if err != nil {
+		return fmt.Errorf("list source references: %w", err)
+	}
+	if globals.JSON {
+		if refs == nil {
+			refs = []reuse.SourceReference{}
+		}
+		return writeJSON(out, refs)
+	}
+	fmt.Fprintf(out, "[+] Registered Source References (Tier 1: %d repos):\n", len(refs))
+	for _, r := range refs {
+		fmt.Fprintf(out, "  • %-18s [%-10s] %s\n", r.ID, r.Language, r.Repository)
+		if len(r.Capabilities) > 0 {
+			fmt.Fprintf(out, "    Capabilities: %s\n", strings.Join(r.Capabilities, ", "))
 		}
 	}
-
-	if ref.ID == "" || ref.Repository == "" {
-		fmt.Println("[-] Usage: dendrite ref add --id <id> --name <name> --repo <url> [--lang <lang>] [--caps <c1,c2>]")
-		return
-	}
-	if ref.Name == "" {
-		ref.Name = ref.ID
-	}
-
-	if err := defaultRefMgr.AddRef(ref); err != nil {
-		fmt.Printf("[-] Failed to register reference: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("[+] Registered Tier 1 Source Reference: %s (%s)\n", ref.Name, ref.Repository)
-}
-
-func handleRefRemove(args []string) {
-	if len(args) == 0 {
-		fmt.Println("[-] Usage: dendrite ref remove <id>")
-		return
-	}
-	id := args[0]
-	if err := defaultRefMgr.RemoveRef(id); err != nil {
-		fmt.Printf("[-] Failed to remove reference: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("[+] Removed Tier 1 Source Reference: %s\n", id)
-}
-
-func printRefUsage() {
-	fmt.Println("Usage: dendrite ref <list|add|remove> [flags]")
-	fmt.Println("\nCommands:")
-	fmt.Println("  dendrite ref list [--json]")
-	fmt.Println("  dendrite ref add --id <id> --name <name> --repo <url> [--lang <lang>] [--caps <c1,c2>]")
-	fmt.Println("  dendrite ref remove <id>")
+	return nil
 }

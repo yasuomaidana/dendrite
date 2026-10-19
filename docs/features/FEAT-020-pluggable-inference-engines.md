@@ -101,7 +101,7 @@ flowchart TD
 - [ ] **AC-1**: Dynamic LiteLLM template generator (`pkg/gateway`) supports registering Ollama, OxiLLaMa, Hugging Face TGI/TEI, vLLM, and llama.cpp backends through declarative scenario configuration.
 - [ ] **AC-2**: Health probes periodically poll all configured inference engines and mark failing nodes offline within $< 2\text{ seconds}$, redirecting agent traffic to the next tier in the fallback chain.
 - [ ] **AC-3**: Local and self-hosted inference engines (Ollama, OxiLLaMa, local llama.cpp) are exempt from financial dollar budgets while enforcing local concurrency and timeout limits.
-- [ ] **AC-4**: Unified CLI commands `dendrite dev inference <list|probe|switch>` provide interactive status of active inference backends and loaded models.
+- [ ] **AC-4**: Unified CLI commands `dendrite spike <list|probe|switch>` provide interactive status of active inference backends and loaded models.
 - [ ] **AC-5**: Table-driven unit test suite achieves $\ge 85\%$ statement coverage across all provider adapters.
 
 ---

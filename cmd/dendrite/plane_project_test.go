@@ -145,7 +145,7 @@ func TestPlaneProject_ErrorsAndUsage(t *testing.T) {
 		}
 	}
 	out.Reset()
-	if err := runPlaneProject(ctx, client, nil, &out); err != nil || !strings.Contains(out.String(), "plane project ensure") {
+	if err := runPlaneProject(ctx, client, nil, &out); err != nil || !strings.Contains(out.String(), "Available Commands") {
 		t.Errorf("no args must print usage: %v %q", err, out.String())
 	}
 }
@@ -157,7 +157,7 @@ func TestPlaneProjectAudit_ReportsAndPasses(t *testing.T) {
 
 	var out bytes.Buffer
 	err := runPlaneProject(ctx, client, []string{"audit", "--roots", roots, "--owner", "me"}, &out)
-	if !errors.Is(err, errAuditViolations) || !strings.Contains(out.String(), "dendrite plane project ensure "+repo) {
+	if !errors.Is(err, errAuditViolations) || !strings.Contains(out.String(), "dendrite chronos project ensure "+repo) {
 		t.Fatalf("audit before ensure: %v\n%s", err, out.String())
 	}
 
@@ -183,4 +183,12 @@ func TestPlaneProjectAudit_ReportsAndPasses(t *testing.T) {
 	if got := expandHome("~/x"); !strings.HasSuffix(got, string(filepath.Separator)+"x") || strings.HasPrefix(got, "~") {
 		t.Errorf("expandHome = %q", got)
 	}
+}
+
+// runPlaneProject runs `chronos project <args...>` through the cobra tree against client.
+func runPlaneProject(ctx context.Context, client *plane.Client, args []string, out io.Writer) error {
+	prev := newPlaneClient
+	newPlaneClient = func() (*plane.Client, error) { return client, nil }
+	defer func() { newPlaneClient = prev }()
+	return runWith(ctx, out, newChronosProjectCmd(), append([]string{"project"}, args...)...)
 }

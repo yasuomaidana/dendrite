@@ -6,655 +6,366 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 
-	"Dendrite/pkg/agent"
 	"Dendrite/pkg/agentjobs"
-	"Dendrite/pkg/agentsearch"
+
+	"github.com/spf13/cobra"
 )
 
-func handleAgentSearchCommand(ctx context.Context, args []string) {
-	if len(args) == 0 {
-		fmt.Println("Usage: dendrite agent search <query> [--pkg <package>] [--local] [--max-cost <usd>]")
-		return
+// newBoutonJobsCmd builds `dendrite bouton jobs`: the delegated agent job ledger.
+// pkg/agentjobs re-executes `<binary> agent jobs run <id>` and `agent jobs daemon`, so those
+// paths must keep working through the agent alias.
+func newBoutonJobsCmd() *cobra.Command {
+	cmd := newGroupCmd("jobs", "Submit, watch and manage delegated agent jobs", "")
+	cmd.Example = "dendrite bouton jobs submit --ticket DEN-123 --agent agy --scope pkg/foo --prompt-file prompt.md --isolate\n" +
+		"dendrite bouton jobs list --json\n" +
+		"dendrite bouton jobs wait --ticket DEN-123 --timeout 2h"
+
+	idCmd := func(use, short string, run func(cmd *cobra.Command, id string) error) *cobra.Command {
+		return &cobra.Command{
+			Use:   use + " <job-id>",
+			Short: short,
+			Args:  exactArgs(1),
+			RunE:  func(cmd *cobra.Command, args []string) error { return run(cmd, args[0]) },
+		}
 	}
 
-	var queryParts []string
-	var targetPkg string
-	var requireLocal bool
-	var maxCost float64
+	tail := idCmd("tail", "Print the last lines of a job's agent.log", func(cmd *cobra.Command, id string) error {
+		lines, _ := cmd.Flags().GetInt("lines")
+		return runJobsTail(agentjobs.NewLedger(""), id, lines, cmd.OutOrStdout())
+	})
+	tail.Flags().IntP("lines", "n", 50, "Number of lines")
 
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--pkg", "--package":
-			if i+1 < len(args) {
-				targetPkg = args[i+1]
-				i++
+	run := idCmd("run", "Run a job in the foreground (used by the dispatcher)", func(cmd *cobra.Command, id string) error {
+		return agentjobs.RunJob(cmd.Context(), id)
+	})
+	run.Hidden = true
+
+	cmd.AddCommand(
+		newJobsSubmitCmd(),
+		&cobra.Command{
+			Use:     "list",
+			Aliases: []string{"ls"},
+			Short:   "List jobs",
+			Args:    noArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return runJobsList(agentjobs.NewLedger(""), cmd.OutOrStdout())
+			},
+		},
+		idCmd("show", "Show a job's specification and event history", func(cmd *cobra.Command, id string) error {
+			return runJobsShow(agentjobs.NewLedger(""), id, cmd.OutOrStdout())
+		}),
+		tail,
+		newJobsWaitCmd(),
+		idCmd("retry", "Re-dispatch a job", func(cmd *cobra.Command, id string) error {
+			if err := agentjobs.DefaultDispatcher.Retry(id); err != nil {
+				return err
 			}
-		case "--local":
-			requireLocal = true
-		case "--max-cost":
-			if i+1 < len(args) {
-				maxCost, _ = strconv.ParseFloat(args[i+1], 64)
-				i++
+			fmt.Fprintf(cmd.OutOrStdout(), "[✓] Job %s re-dispatched successfully\n", id)
+			return nil
+		}),
+		idCmd("cancel", "Cancel a job and stop its process group", func(cmd *cobra.Command, id string) error {
+			if err := agentjobs.DefaultDispatcher.Cancel(id); err != nil {
+				return err
 			}
-		default:
-			queryParts = append(queryParts, args[i])
-		}
-	}
-
-	qStr := strings.TrimSpace(strings.Join(queryParts, " "))
-	if qStr == "" {
-		fmt.Println("[-] Please provide a search query")
-		return
-	}
-
-	q := agentsearch.NewQueryBuilder().
-		WithText(qStr).
-		WithTargetPackage(targetPkg).
-		RequireLocalInference(requireLocal).
-		WithMaxCost(maxCost).
-		Build()
-
-	engine := agentsearch.NewSearchEngine(nil, nil, nil)
-	results, err := engine.Search(ctx, q)
-	if err != nil {
-		fmt.Printf("[-] Agent search error: %v\n", err)
-		return
-	}
-
-	fmt.Printf("[+] Agent Search Results (%d matching candidates):\n\n", len(results))
-	for i, res := range results {
-		fmt.Printf("  %d. [%s] %s\n", i+1, res.Manifest.ID, res.Manifest.Name)
-		fmt.Printf("     - Capability Score: %.2f (RRF: %.2f, Dense: %.2f, Sparse: %.2f)\n",
-			res.FinalScore, res.RRFScore, res.DenseScore, res.SparseScore)
-		fmt.Printf("     - Preferred Tier:   %s (Engine: %s, Model: %s)\n",
-			res.Manifest.PreferredTier, res.Manifest.PreferredEngine, res.Manifest.PreferredModel)
-		fmt.Printf("     - Zero-Cost:        %v\n", res.Manifest.ZeroCostCandidate)
-		fmt.Printf("     - Match Reasoning:  %s\n\n", res.Reasoning)
-	}
-}
-
-func handleAgentRouteCommand(ctx context.Context, args []string) {
-	if len(args) == 0 {
-		fmt.Println("Usage: dendrite agent route --task <desc> [--pkg <package>] [--exec] [--local]")
-		return
-	}
-
-	var taskDesc string
-	var targetPkg string
-	var execute bool
-	var requireLocal bool
-
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--task", "--prompt":
-			if i+1 < len(args) {
-				taskDesc = args[i+1]
-				i++
-			}
-		case "--pkg", "--package":
-			if i+1 < len(args) {
-				targetPkg = args[i+1]
-				i++
-			}
-		case "--exec", "--execute":
-			execute = true
-		case "--local":
-			requireLocal = true
-		default:
-			if taskDesc == "" && !strings.HasPrefix(args[i], "--") {
-				taskDesc = args[i]
-			}
-		}
-	}
-
-	taskDesc = strings.TrimSpace(taskDesc)
-	if taskDesc == "" {
-		fmt.Println("[-] Please provide a task description via --task \"...\"")
-		return
-	}
-
-	q := agentsearch.NewQueryBuilder().
-		WithText(taskDesc).
-		WithTargetPackage(targetPkg).
-		RequireLocalInference(requireLocal).
-		Build()
-
-	engine := agentsearch.NewSearchEngine(nil, nil, nil)
-	decision, err := engine.Route(ctx, q)
-	if err != nil {
-		fmt.Printf("[-] Routing error: %v\n", err)
-		return
-	}
-
-	fmt.Printf("[+] Optimal Agent Routing Decision:\n")
-	fmt.Printf("    - Selected Agent:   %s (%s)\n", decision.SelectedAgent.ID, decision.SelectedAgent.Name)
-	fmt.Printf("    - Capability Score:  %.2f\n", decision.Score)
-	fmt.Printf("    - Recommended Tier:  %s\n", decision.Tier)
-	fmt.Printf("    - Target Engine:    %s\n", decision.EngineID)
-	fmt.Printf("    - Target Model:     %s\n", decision.Model)
-	fmt.Printf("    - Virtual Key:      %s\n", decision.VirtualKeyAlias)
-	fmt.Printf("    - Estimated Cost:   $%.2f\n", decision.EstimatedCost)
-	fmt.Printf("    - Routing Rationale: %s\n", decision.Reasoning)
-
-	if execute {
-		fmt.Printf("\n[+] Auto-launching agent harness (%s)...\n", decision.SelectedAgent.ID)
-		cwd, _ := os.Getwd()
-		cfg := agent.AgentConfig{
-			Type:            decision.SelectedAgent.Type,
-			LiteLLMBaseURL:  "http://localhost:4000/v1",
-			VirtualAPIKey:   decision.VirtualKeyAlias,
-			Model:           decision.Model,
-			WorkspaceDir:    cwd,
-			TaskDescription: taskDesc,
-		}
-		var runner agent.Runner
-		if requireLocal {
-			runner = agent.NewSandboxedRunner(nil, nil)
-		} else {
-			runner = agent.NewHostRunner(true)
-		}
-		summary, rErr := runner.Execute(ctx, cfg)
-		if rErr != nil {
-			fmt.Printf("[-] Agent execution failed: %v\n", rErr)
-			return
-		}
-		fmt.Printf("[✓] Executed successfully (Session ID: %s, Duration: %v)\n", summary.SessionID, summary.Duration)
-	}
-}
-
-func init() {
-	if len(os.Args) >= 3 && isAgentJobsInvocation(os.Args[1], os.Args[2]) {
-		ctx := context.Background()
-		if err := handleAgentJobsCommand(ctx, os.Args[3:]); err != nil {
-			fmt.Fprintf(os.Stderr, "[-] %v\n", err)
-			os.Exit(1)
-		}
-		os.Exit(0)
-	}
-}
-
-func isAgentJobsInvocation(cmd, sub string) bool {
-	if strings.ToLower(sub) != "jobs" {
-		return false
-	}
-	switch strings.ToLower(cmd) {
-	case "agent", "effector-dispatch", "bouton-dispatch", "dispatch", "bouton", "agt":
-		return true
-	default:
-		return false
-	}
-}
-
-func handleAgentJobsCommand(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		printAgentJobsUsage()
-		return nil
-	}
-
-	switch args[0] {
-	case "submit":
-		return handleAgentJobsSubmit(ctx, args[1:])
-	case "list":
-		return handleAgentJobsList(ctx, args[1:])
-	case "show":
-		return handleAgentJobsShow(ctx, args[1:])
-	case "tail":
-		return handleAgentJobsTail(ctx, args[1:])
-	case "wait":
-		return handleAgentJobsWait(ctx, args[1:])
-	case "retry":
-		return handleAgentJobsRetry(ctx, args[1:])
-	case "cancel":
-		return handleAgentJobsCancel(ctx, args[1:])
-	case "daemon":
-		return handleAgentJobsDaemon(ctx, args[1:])
-	case "run":
-		return handleAgentJobsRun(ctx, args[1:])
-	case "models":
-		return handleAgentJobsModels(ctx)
-	default:
-		return fmt.Errorf("unknown agent jobs action: %s", args[0])
-	}
-}
-
-func printAgentJobsUsage() {
-	fmt.Println("Usage: dendrite agent jobs <submit|list|show|tail|wait|retry|cancel|daemon|models|run> [flags...]")
-	fmt.Println("\nSubcommands:")
-	fmt.Println("  submit   --ticket <T> --agent <A> --model <M|auto> --scope <S> --prompt-file <P> [--worktree <W> | --isolate] [--complexity <C>]")
-	fmt.Println("  list     [--json]")
-	fmt.Println("  show     <id>")
-	fmt.Println("  tail     <id>")
-	fmt.Println("  wait     [--ticket <T>] [--timeout <duration>]")
-	fmt.Println("  retry    <id>")
-	fmt.Println("  cancel   <id>")
-	fmt.Println("  daemon   [--once] [--interval <duration>] [--install]")
-	fmt.Println("  models   refresh the cached `agy models` listing and show the allowed AGY models")
-	fmt.Println("  run      <id> (internal)")
-}
-
-func handleAgentJobsSubmit(ctx context.Context, args []string) error {
-	var (
-		ticket     string
-		agentName  = "agy"
-		model      string
-		scopes     []string
-		promptFile string
-		promptText string
-		worktree   string
-		isolate    bool
-		complexity = 1
+			fmt.Fprintf(cmd.OutOrStdout(), "[✓] Job %s cancelled successfully\n", id)
+			return nil
+		}),
+		newJobsDaemonCmd(),
+		&cobra.Command{
+			Use:   "models",
+			Short: "Refresh the cached `agy models` listing and show the AGY models Dendrite schedules",
+			Args:  noArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return runJobsModels(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+			},
+		},
+		run,
 	)
-
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--ticket":
-			if i+1 < len(args) {
-				ticket = args[i+1]
-				i++
-			}
-		case "--agent":
-			if i+1 < len(args) {
-				agentName = args[i+1]
-				i++
-			}
-		case "--model":
-			if i+1 < len(args) {
-				model = args[i+1]
-				i++
-			}
-		case "--scope":
-			if i+1 < len(args) {
-				raw := args[i+1]
-				for _, s := range strings.Split(raw, ",") {
-					if trimmed := strings.TrimSpace(s); trimmed != "" {
-						scopes = append(scopes, trimmed)
-					}
-				}
-				i++
-			}
-		case "--prompt-file":
-			if i+1 < len(args) {
-				promptFile = args[i+1]
-				i++
-			}
-		case "--prompt":
-			if i+1 < len(args) {
-				promptText = args[i+1]
-				i++
-			}
-		case "--worktree":
-			if i+1 < len(args) {
-				worktree = args[i+1]
-				i++
-			}
-		case "--isolate":
-			isolate = true
-		case "--complexity":
-			if i+1 < len(args) {
-				if c, err := strconv.Atoi(args[i+1]); err == nil {
-					complexity = c
-				}
-				i++
-			}
-		}
-	}
-
-	if ticket == "" {
-		return errors.New("missing required flag --ticket")
-	}
-	if promptFile == "" && promptText == "" {
-		return errors.New("missing required flag --prompt-file or --prompt")
-	}
-
-	spec := agentjobs.SubmitSpec{
-		Ticket:     ticket,
-		Agent:      agentName,
-		Model:      model,
-		Scope:      scopes,
-		Worktree:   worktree,
-		PromptFile: promptFile,
-		Prompt:     promptText,
-		Complexity: complexity,
-		Isolate:    isolate,
-	}
-
-	if !isolate && worktree == "" {
-		if out, sErr := exec.CommandContext(ctx, "git", "status", "--porcelain").Output(); sErr == nil && len(bytes.TrimSpace(out)) > 0 {
-			fmt.Fprintln(os.Stderr, "[!] Running in a checkout with uncommitted changes. The agent will see them; use --isolate to run in a dendrite-work/ copy.")
-		}
-	}
-
-	id, err := agentjobs.Submit(spec)
-	if err != nil {
-		return fmt.Errorf("failed to submit job: %w", err)
-	}
-
-	fmt.Printf("[✓] Job submitted successfully: %s\n", id)
-	if job, lErr := agentjobs.DefaultDispatcher.Ledger.Load(id); lErr == nil {
-		fmt.Printf("    Agent/Model:     %s/%s\n", job.Agent, job.Model)
-	}
-	return nil
+	return cmd
 }
 
-func handleAgentJobsModels(ctx context.Context) error {
+// runJobsModels lists the AGY models on offer, the allowed set and the pick per complexity.
+func runJobsModels(ctx context.Context, out, errOut io.Writer) error {
 	live, err := agentjobs.DefaultDispatcher.RefreshAGYModels(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[!] %v\n", err)
+		fmt.Fprintf(errOut, "[!] %v\n", err)
 	} else {
-		fmt.Printf("[+] AGY offers %d models: %s\n", len(live), strings.Join(live, ", "))
+		fmt.Fprintf(out, "[+] AGY offers %d models: %s\n", len(live), strings.Join(live, ", "))
 	}
-	fmt.Printf("[+] Dendrite schedules (DENDRITE_AGY_MODELS): %s\n", strings.Join(agentjobs.AllowedAGYModels(), ", "))
+	fmt.Fprintf(out, "[+] Dendrite schedules (DENDRITE_AGY_MODELS): %s\n", strings.Join(agentjobs.AllowedAGYModels(), ", "))
 	for _, c := range []int{2, 5, 8} {
 		m, reason := agentjobs.DefaultDispatcher.PickAGYModel(c)
-		fmt.Printf("    complexity %d -> %s (%s)\n", c, m, reason)
+		fmt.Fprintf(out, "    complexity %d -> %s (%s)\n", c, m, reason)
 	}
 	return nil
 }
 
-func handleAgentJobsList(ctx context.Context, args []string) error {
-	asJSON := false
-	for _, a := range args {
-		if a == "--json" {
-			asJSON = true
-		}
+func newJobsSubmitCmd() *cobra.Command {
+	spec := agentjobs.SubmitSpec{Agent: "agy", Complexity: 1}
+	cmd := &cobra.Command{
+		Use:   "submit",
+		Short: "Submit a job to an agent (runs detached)",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !spec.Isolate && spec.Worktree == "" {
+				if out, sErr := exec.CommandContext(cmd.Context(), "git", "status", "--porcelain").Output(); sErr == nil && len(bytes.TrimSpace(out)) > 0 {
+					fmt.Fprintln(cmd.ErrOrStderr(), "[!] Running in a checkout with uncommitted changes. The agent will see them; use --isolate to run in a dendrite-work/ copy.")
+				}
+			}
+			id, err := agentjobs.Submit(spec)
+			if err != nil {
+				return fmt.Errorf("submit job: %w", err)
+			}
+			if globals.JSON {
+				return writeJSON(cmd.OutOrStdout(), map[string]string{"id": id})
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "[✓] Job submitted successfully: %s\n", id)
+			if job, lErr := agentjobs.DefaultDispatcher.Ledger.Load(id); lErr == nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "    Agent/Model:     %s/%s\n", job.Agent, job.Model)
+			}
+			return nil
+		},
 	}
+	f := cmd.Flags()
+	addTicketFlag(cmd, &spec.Ticket, "")
+	f.StringVar(&spec.Agent, "agent", spec.Agent, "Agent: agy, aider, copilot, ...")
+	addModelFlag(cmd, &spec.Model, "")
+	f.Lookup("model").Usage = "LLM model name, or auto to pick by complexity"
+	f.StringSliceVar(&spec.Scope, "scope", nil, "Paths the agent may change (comma-separated)")
+	f.StringVar(&spec.PromptFile, "prompt-file", "", "File with the prompt")
+	f.StringVar(&spec.Prompt, "prompt", "", "Prompt text")
+	f.StringVar(&spec.Worktree, "worktree", "", "Run in this checkout")
+	f.BoolVar(&spec.Isolate, "isolate", false, "Run in the ticket's dendrite-work/ copy")
+	f.IntVar(&spec.Complexity, "complexity", spec.Complexity, "Task complexity (1-10); picks the model tier")
+	requireFlags(cmd, "ticket")
+	cmd.MarkFlagsOneRequired("prompt-file", "prompt")
+	cmd.MarkFlagsMutuallyExclusive("prompt-file", "prompt")
+	cmd.MarkFlagsMutuallyExclusive("worktree", "isolate")
+	return cmd
+}
 
-	l := agentjobs.NewLedger("")
+func runJobsList(l *agentjobs.Ledger, out io.Writer) error {
 	jobs, err := l.List()
 	if err != nil {
-		return fmt.Errorf("failed to list jobs: %w", err)
+		return fmt.Errorf("list jobs: %w", err)
 	}
-
-	if asJSON {
-		data, err := json.MarshalIndent(jobs, "", "  ")
-		if err != nil {
-			return err
+	if globals.JSON {
+		if jobs == nil {
+			jobs = []*agentjobs.Job{}
 		}
-		fmt.Println(string(data))
-		return nil
+		return writeJSON(out, jobs)
 	}
-
-	fmt.Printf("[+] Agent Jobs (%d):\n", len(jobs))
+	fmt.Fprintf(out, "[+] Agent Jobs (%d):\n", len(jobs))
 	if len(jobs) == 0 {
-		fmt.Println("    No jobs recorded.")
+		fmt.Fprintln(out, "    No jobs recorded.")
 		return nil
 	}
-	fmt.Printf("  %-38s %-10s %-8s %-16s %s\n", "JOB ID", "TICKET", "AGENT", "STATUS", "UPDATED")
+	fmt.Fprintf(out, "  %-38s %-10s %-8s %-16s %s\n", "JOB ID", "TICKET", "AGENT", "STATUS", "UPDATED")
 	for _, j := range jobs {
-		fmt.Printf("  %-38s %-10s %-8s %-16s %s\n", j.ID, j.Ticket, j.Agent, j.Status, j.UpdatedAt.Format(time.RFC3339))
+		fmt.Fprintf(out, "  %-38s %-10s %-8s %-16s %s\n", j.ID, j.Ticket, j.Agent, j.Status, j.UpdatedAt.Format(time.RFC3339))
 	}
 	return nil
 }
 
-func handleAgentJobsShow(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		return errors.New("usage: dendrite agent jobs show <id>")
-	}
-	id := args[0]
-	l := agentjobs.NewLedger("")
+func runJobsShow(l *agentjobs.Ledger, id string, out io.Writer) error {
 	job, err := l.Load(id)
 	if err != nil {
-		return fmt.Errorf("failed to load job %q: %w", id, err)
+		return fmt.Errorf("load job %q: %w", id, err)
 	}
 	events, _ := l.Events(id)
-
-	fmt.Printf("[+] Job Specification: %s\n", job.ID)
-	fmt.Printf("    Ticket:          %s\n", job.Ticket)
-	fmt.Printf("    Status:          %s\n", job.Status)
-	fmt.Printf("    Agent:           %s\n", job.Agent)
-	fmt.Printf("    Model:           %s\n", job.Model)
-	fmt.Printf("    Complexity:      %d\n", job.Complexity)
-	fmt.Printf("    Worktree:        %s\n", job.Worktree)
-	fmt.Printf("    Scope:           %s\n", strings.Join(job.Scope, ", "))
-	fmt.Printf("    Prompt File:     %s\n", job.PromptFile)
+	if globals.JSON {
+		return writeJSON(out, map[string]any{"job": job, "events": events})
+	}
+	fmt.Fprintf(out, "[+] Job Specification: %s\n", job.ID)
+	fmt.Fprintf(out, "    Ticket:          %s\n", job.Ticket)
+	fmt.Fprintf(out, "    Status:          %s\n", job.Status)
+	fmt.Fprintf(out, "    Agent:           %s\n", job.Agent)
+	fmt.Fprintf(out, "    Model:           %s\n", job.Model)
+	fmt.Fprintf(out, "    Complexity:      %d\n", job.Complexity)
+	fmt.Fprintf(out, "    Worktree:        %s\n", job.Worktree)
+	fmt.Fprintf(out, "    Scope:           %s\n", strings.Join(job.Scope, ", "))
+	fmt.Fprintf(out, "    Prompt File:     %s\n", job.PromptFile)
 	if job.ConversationID != "" {
-		fmt.Printf("    Conversation ID: %s\n", job.ConversationID)
+		fmt.Fprintf(out, "    Conversation ID: %s\n", job.ConversationID)
 	}
 	if job.PGID > 0 {
-		fmt.Printf("    Process Group:   %d\n", job.PGID)
+		fmt.Fprintf(out, "    Process Group:   %d\n", job.PGID)
 	}
-	fmt.Printf("    Created At:      %s\n", job.CreatedAt.Format(time.RFC3339))
-	fmt.Printf("    Updated At:      %s\n", job.UpdatedAt.Format(time.RFC3339))
-
+	fmt.Fprintf(out, "    Created At:      %s\n", job.CreatedAt.Format(time.RFC3339))
+	fmt.Fprintf(out, "    Updated At:      %s\n", job.UpdatedAt.Format(time.RFC3339))
 	if len(events) > 0 {
-		fmt.Printf("\n[+] Events History (%d):\n", len(events))
+		fmt.Fprintf(out, "\n[+] Events History (%d):\n", len(events))
 		for _, ev := range events {
-			dataBytes, _ := json.Marshal(ev.Data)
-			fmt.Printf("    %d. [%s] %s %s\n", ev.Seq, ev.Time.Format(time.RFC3339), ev.Type, string(dataBytes))
+			data, _ := json.Marshal(ev.Data)
+			fmt.Fprintf(out, "    %d. [%s] %s %s\n", ev.Seq, ev.Time.Format(time.RFC3339), ev.Type, string(data))
 		}
 	}
 	return nil
 }
 
-func handleAgentJobsTail(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		return errors.New("usage: dendrite agent jobs tail <id>")
+func runJobsTail(l *agentjobs.Ledger, id string, n int, out io.Writer) error {
+	if n <= 0 {
+		return usageErrorf("--lines must be positive")
 	}
-	id := args[0]
-	l := agentjobs.NewLedger("")
-	logPath := l.AgentLogPath(id)
-	data, err := os.ReadFile(logPath)
+	data, err := os.ReadFile(l.AgentLogPath(id))
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Printf("[-] No agent.log found for job %s\n", id)
+			fmt.Fprintf(out, "[-] No agent.log found for job %s\n", id)
 			return nil
 		}
-		return fmt.Errorf("failed to read agent.log: %w", err)
+		return fmt.Errorf("read agent.log: %w", err)
 	}
-
 	lines := strings.Split(strings.TrimRight(string(data), "\r\n"), "\n")
-	if len(lines) > 50 {
-		lines = lines[len(lines)-50:]
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
 	}
-	for _, l := range lines {
-		fmt.Println(l)
+	for _, line := range lines {
+		fmt.Fprintln(out, line)
 	}
 	return nil
 }
 
-func handleAgentJobsWait(ctx context.Context, args []string) error {
-	ticketFilter := ""
-	timeout := 30 * time.Minute
-	interval := 2 * time.Second
-
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--ticket":
-			if i+1 < len(args) {
-				ticketFilter = args[i+1]
-				i++
+func newJobsWaitCmd() *cobra.Command {
+	var ticket string
+	timeout, interval := 30*time.Minute, 2*time.Second
+	cmd := &cobra.Command{
+		Use:   "wait",
+		Short: "Block until the matching jobs finish",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if timeout <= 0 || interval <= 0 {
+				return usageErrorf("--timeout and --interval must be positive")
 			}
-		case "--timeout":
-			if i+1 < len(args) {
-				if d, err := time.ParseDuration(args[i+1]); err == nil {
-					timeout = d
-				}
-				i++
-			}
-		case "--interval":
-			if i+1 < len(args) {
-				if d, err := time.ParseDuration(args[i+1]); err == nil {
-					interval = d
-				}
-				i++
-			}
-		}
+			return runJobsWait(cmd.Context(), agentjobs.NewLedger(""), ticket, timeout, interval, cmd.OutOrStdout())
+		},
 	}
+	addTicketFlag(cmd, &ticket, "")
+	cmd.Flags().DurationVar(&timeout, "timeout", timeout, "Give up after this long")
+	cmd.Flags().DurationVar(&interval, "interval", interval, "Polling interval")
+	return cmd
+}
 
-	l := agentjobs.NewLedger("")
-	allJobs, err := l.List()
+// runJobsWait returns once every matching job has a done marker newer than when waiting began.
+func runJobsWait(ctx context.Context, l *agentjobs.Ledger, ticket string, timeout, interval time.Duration, out io.Writer) error {
+	all, err := l.List()
 	if err != nil {
-		return fmt.Errorf("failed to list jobs: %w", err)
+		return fmt.Errorf("list jobs: %w", err)
 	}
-
 	initialDone := make(map[string]time.Time)
-	var targetJobs []*agentjobs.Job
-	for _, j := range allJobs {
-		if ticketFilter == "" || j.Ticket == ticketFilter {
-			targetJobs = append(targetJobs, j)
-			if fi, err := os.Stat(l.DoneMarkerPath(j.ID)); err == nil {
-				initialDone[j.ID] = fi.ModTime()
-			}
+	var targets []*agentjobs.Job
+	for _, j := range all {
+		if ticket != "" && j.Ticket != ticket {
+			continue
+		}
+		targets = append(targets, j)
+		if fi, err := os.Stat(l.DoneMarkerPath(j.ID)); err == nil {
+			initialDone[j.ID] = fi.ModTime()
 		}
 	}
-
-	if len(targetJobs) == 0 {
-		fmt.Println("[-] No matching jobs found")
+	if len(targets) == 0 {
+		fmt.Fprintln(out, "[-] No matching jobs found")
 		return nil
 	}
-
-	allAlreadyDone := true
-	for _, j := range targetJobs {
-		if _, ok := initialDone[j.ID]; !ok {
-			allAlreadyDone = false
-			break
-		}
-	}
-	if allAlreadyDone {
-		for _, j := range targetJobs {
-			fmt.Printf("[✓] Job finished: %s\n", j.ID)
+	if len(initialDone) == len(targets) {
+		for _, j := range targets {
+			fmt.Fprintf(out, "[✓] Job finished: %s\n", j.ID)
 		}
 		return nil
 	}
 
-	deadline := time.Now().Add(timeout)
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	tick := time.NewTicker(interval)
+	defer tick.Stop()
 	finished := make(map[string]bool)
-
-	for {
-		if time.Now().After(deadline) {
-			return fmt.Errorf("wait timed out after %v", timeout)
-		}
-
-		time.Sleep(interval)
-
-		currentJobs, err := l.List()
-		if err == nil {
-			for _, j := range currentJobs {
-				if ticketFilter != "" && j.Ticket != ticketFilter {
-					continue
-				}
-				if finished[j.ID] {
-					continue
-				}
-				markerPath := l.DoneMarkerPath(j.ID)
-				fi, err := os.Stat(markerPath)
-				if err != nil {
-					continue
-				}
-				prevTime, hadInitial := initialDone[j.ID]
-				if !hadInitial || fi.ModTime().After(prevTime) {
-					finished[j.ID] = true
-					fmt.Printf("[✓] Job finished: %s\n", j.ID)
-				}
-			}
-		}
-
-		allFinished := true
-		for _, j := range targetJobs {
-			if _, ok := initialDone[j.ID]; !ok && !finished[j.ID] {
-				allFinished = false
-				break
-			}
-		}
-		if allFinished && len(finished) > 0 {
-			return nil
-		}
-	}
-}
-
-func handleAgentJobsRetry(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		return errors.New("usage: dendrite agent jobs retry <id>")
-	}
-	id := args[0]
-	d := agentjobs.DefaultDispatcher
-	if err := d.Retry(id); err != nil {
-		return err
-	}
-	fmt.Printf("[✓] Job %s re-dispatched successfully\n", id)
-	return nil
-}
-
-func handleAgentJobsCancel(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		return errors.New("usage: dendrite agent jobs cancel <id>")
-	}
-	id := args[0]
-	d := agentjobs.DefaultDispatcher
-	if err := d.Cancel(id); err != nil {
-		return err
-	}
-	fmt.Printf("[✓] Job %s cancelled successfully\n", id)
-	return nil
-}
-
-func handleAgentJobsRun(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		return errors.New("usage: dendrite agent jobs run <id>")
-	}
-	id := args[0]
-	return agentjobs.RunJob(ctx, id)
-}
-
-func handleAgentJobsDaemon(ctx context.Context, args []string) error {
-	var (
-		once     bool
-		install  bool
-		interval = agentjobs.DefaultDaemonInterval
-	)
-
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--once":
-			once = true
-		case "--install":
-			install = true
-		case "--interval":
-			if i+1 < len(args) {
-				if d, err := time.ParseDuration(args[i+1]); err == nil {
-					interval = d
-				}
-				i++
-			}
-		}
-	}
-
-	if install {
-		plistPath, err := agentjobs.InstallLaunchAgent("", "")
-		if err != nil {
-			return fmt.Errorf("failed to install launch agent: %w", err)
-		}
-		fmt.Printf("[✓] LaunchAgent installed to %s\n", plistPath)
-		return nil
-	}
-
-	w := agentjobs.NewWatcher(nil, nil)
-	if once {
-		return w.Tick(ctx)
-	}
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	// Initial run
-	if err := w.Tick(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		fmt.Fprintf(os.Stderr, "[-] daemon tick error: %v\n", err)
-	}
-
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ticker.C:
-			if err := w.Tick(ctx); err != nil && !errors.Is(err, context.Canceled) {
-				fmt.Fprintf(os.Stderr, "[-] daemon tick error: %v\n", err)
+		case <-deadline.C:
+			return fmt.Errorf("wait timed out after %v", timeout)
+		case <-tick.C:
+		}
+		for _, j := range targets {
+			if finished[j.ID] {
+				continue
 			}
+			fi, err := os.Stat(l.DoneMarkerPath(j.ID))
+			if err != nil {
+				continue
+			}
+			if prev, had := initialDone[j.ID]; !had || fi.ModTime().After(prev) {
+				finished[j.ID] = true
+				fmt.Fprintf(out, "[✓] Job finished: %s\n", j.ID)
+			}
+		}
+		pending := 0
+		for _, j := range targets {
+			if _, had := initialDone[j.ID]; !had && !finished[j.ID] {
+				pending++
+			}
+		}
+		if pending == 0 && len(finished) > 0 {
+			return nil
+		}
+	}
+}
+
+func newJobsDaemonCmd() *cobra.Command {
+	var once, install bool
+	interval := agentjobs.DefaultDaemonInterval
+	cmd := &cobra.Command{
+		Use:   "daemon",
+		Short: "Run the stall watcher (foreground), once, or install it as a LaunchAgent",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if install {
+				plist, err := agentjobs.InstallLaunchAgent("", "")
+				if err != nil {
+					return fmt.Errorf("install launch agent: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "[✓] LaunchAgent installed to %s\n", plist)
+				return nil
+			}
+			w := agentjobs.NewWatcher(nil, nil)
+			if once {
+				return w.Tick(cmd.Context())
+			}
+			if interval <= 0 {
+				return usageErrorf("--interval must be positive")
+			}
+			return runJobsDaemon(cmd.Context(), w, interval, cmd.ErrOrStderr())
+		},
+	}
+	cmd.Flags().BoolVar(&once, "once", false, "Run one watcher pass and exit")
+	cmd.Flags().BoolVar(&install, "install", false, "Install the watcher as a macOS LaunchAgent")
+	cmd.Flags().DurationVar(&interval, "interval", interval, "Time between watcher passes")
+	cmd.MarkFlagsMutuallyExclusive("once", "install")
+	return cmd
+}
+
+// runJobsDaemon ticks the watcher until ctx is cancelled; tick errors are logged, not fatal.
+func runJobsDaemon(ctx context.Context, w *agentjobs.Watcher, interval time.Duration, errOut io.Writer) error {
+	tick := func() {
+		if err := w.Tick(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			fmt.Fprintf(errOut, "[-] daemon tick error: %v\n", err)
+		}
+	}
+	tick()
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-t.C:
+			tick()
 		}
 	}
 }

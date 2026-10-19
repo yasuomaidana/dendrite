@@ -56,7 +56,7 @@ func callTool(t *testing.T, srv *Server, name, args string) (string, bool) {
 func TestGitHubSyncAndHITLSyncTools(t *testing.T) {
 	ps, gh := offlineHITL(t)
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 
 	text, isErr := callTool(t, srv, "dendrite_github_sync", `{"dry_run":true}`)
 	if isErr || !strings.Contains(text, `"kind": "create"`) || !strings.Contains(text, `"dry_run": true`) {
@@ -103,7 +103,7 @@ func TestHITLSyncToolReturnsEmptyList(t *testing.T) {
 	}
 	defer func() { newHITLSyncer = prev }()
 	srv := NewServer(ServerConfig{})
-	srv.RegisterDefaultTools(Dependencies{})
+	RegisterDefaultTools(srv, Dependencies{})
 	if text, isErr := callTool(t, srv, "dendrite_hitl_sync", `{}`); isErr || strings.TrimSpace(text) != "[]" {
 		t.Fatalf("empty result = %q", text)
 	}

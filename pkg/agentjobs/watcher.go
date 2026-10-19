@@ -266,7 +266,7 @@ func (w *Watcher) checkStall(ctx context.Context, job *Job, now time.Time, stall
 	return w.Dispatcher.Retry(job.ID)
 }
 
-// GenerateLaunchdPlist returns the launchd plist XML content to run `dendrite agent jobs daemon`.
+// GenerateLaunchdPlist returns the launchd plist XML content to run `dendrite bouton jobs daemon`.
 func GenerateLaunchdPlist(binaryPath string) string {
 	if binaryPath == "" {
 		exe, err := os.Executable()
@@ -285,7 +285,7 @@ func GenerateLaunchdPlist(binaryPath string) string {
     <key>ProgramArguments</key>
     <array>
         <string>%s</string>
-        <string>agent</string>
+        <string>bouton</string>
         <string>jobs</string>
         <string>daemon</string>
     </array>

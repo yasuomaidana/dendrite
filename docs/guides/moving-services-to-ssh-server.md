@@ -15,7 +15,7 @@ sequenceDiagram
     participant Remote as Remote Debian Host
     participant Cluster as Cluster Registry / .env
 
-    Dev->>CLI: dendrite move plane,litellm,database to --ssh user@debian-server
+    Dev->>CLI: dendrite translocate run plane,litellm,database --ssh user@debian-server
     CLI->>Dev: Phase 1: Pre-flight capacity & OS validation
     CLI->>Dev: Phase 2: Interactive Authorization Gate: Confirm migration? [y/N]
     Dev->>CLI: "y" (Explicit Human Consent)
@@ -88,14 +88,14 @@ Output:
 ### Step 2: Validate Migration with Dry-Run
 Run a pre-flight dry-run against the target Debian server:
 ```bash
-./bin/dendrite move debian to --ssh user@debian-server --dry-run
+./bin/dendrite translocate run debian --ssh user@debian-server --dry-run
 ```
-*(Or specify explicit services: `./bin/dendrite move plane,litellm,database to --ssh user@debian-server --dry-run`)*
+*(Or specify explicit services: `./bin/dendrite translocate run plane,litellm,database --ssh user@debian-server --dry-run`)*
 
 ### Step 3: Execute Live Interactive Migration
 Execute the migration command:
 ```bash
-./bin/dendrite move debian to --ssh user@debian-server
+./bin/dendrite translocate run debian --ssh user@debian-server
 ```
 The CLI will display:
 ```text

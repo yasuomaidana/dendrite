@@ -27,11 +27,11 @@ jobs:
       - name: Coverage Ratchet (no package may drop; goal 100%)
         run: |
           # Fails when any package falls below .dendrite/coverage_baseline.json or a new package starts below 100%.
-          go run ./cmd/dendrite quality coverage --ratchet
+          go run ./cmd/dendrite allostasis coverage --ratchet
 
       - name: Verify Documentation Reference Audit (--strict)
         run: |
-          go run ./cmd/dendrite docs audit --strict
+          go run ./cmd/dendrite codex audit --strict
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2

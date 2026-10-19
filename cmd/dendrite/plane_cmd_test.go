@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -89,7 +90,6 @@ func TestPlaneCommand_Create_WithDescFile(t *testing.T) {
 		t.Fatalf("failed to write spec.md: %v", err)
 	}
 
-	ctx := context.Background()
 
 	// Execute create with --desc-file, --milestone, --priority, --estimate, --blocked-by
 	args := []string{
@@ -100,7 +100,7 @@ func TestPlaneCommand_Create_WithDescFile(t *testing.T) {
 		"--estimate", "5",
 		"--blocked-by", "DEN-001,b23b10b0-0000-0000-0000-000000000000",
 	}
-	handlePlaneCommand(ctx, "create", args)
+	expectChronos(t, ExitOK, append([]string{"create"}, args...)...)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -155,22 +155,23 @@ func TestPlaneCommand_Create_EdgeCasesAndErrors(t *testing.T) {
 	t.Setenv("PLANE_WORKSPACE_SLUG", "ws")
 	t.Setenv("PLANE_PROJECT_ID", "proj")
 
-	ctx := context.Background()
 
 	// 1. Missing name and desc
-	handlePlaneCommand(ctx, "create", []string{})
+	expectChronos(t, ExitUsage, "create")
 
 	// 2. Name provided, but empty desc
-	handlePlaneCommand(ctx, "create", []string{"--name", "Ticket Without Context", "--desc", ""})
+	expectChronos(t, ExitUsage, "create", "--name", "Ticket Without Context", "--desc", "")
 
 	// 3. Nonexistent desc file
-	handlePlaneCommand(ctx, "create", []string{"--name", "Test", "--desc-file", "/nonexistent/path/spec.md"})
+	expectChronos(t, ExitError, "create", "--name", "Test", "--desc-file", "/nonexistent/path/spec.md")
 
-	// 4. Server error on create
+	// 5. Server error on create
 	tmpDir := t.TempDir()
 	specFile := filepath.Join(tmpDir, "spec.md")
 	_ = os.WriteFile(specFile, []byte("Valid ticket context"), 0644)
-	handlePlaneCommand(ctx, "create", []string{"--name", "[DEN-500] Error Case", "--desc-file", specFile})
+	expectChronos(t, ExitError, "create", "--name", "[DEN-500] Error Case", "--desc-file", specFile)
+	expectChronos(t, ExitUsage, "create", "--name", "x", "--desc", "y", "--desc-file", specFile)
+	expectChronos(t, ExitUsage, "create", "--name", "x", "--desc", "y", "--estimate", "five")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -234,10 +235,9 @@ func TestPlaneCommand_Update_WithDescFile(t *testing.T) {
 		t.Fatalf("failed to write spec.md: %v", err)
 	}
 
-	ctx := context.Background()
 
 	// 1. Successful update of exactly [DEN-100]
-	handlePlaneCommand(ctx, "update", []string{"--ticket", "DEN-100", "--desc-file", specFile})
+	expectChronos(t, ExitOK, "update", "--ticket", "DEN-100", "--desc-file", specFile)
 
 	mu.Lock()
 	if patchCalls != 1 {
@@ -265,7 +265,7 @@ func TestPlaneCommand_Update_WithDescFile(t *testing.T) {
 	patchedIssueID = ""
 	mu.Unlock()
 
-	handlePlaneCommand(ctx, "update", []string{"--ticket", "DEN-999", "--desc-file", specFile})
+	expectChronos(t, ExitError, "update", "--ticket", "DEN-999", "--desc-file", specFile)
 
 	mu.Lock()
 	if patchCalls != 0 {
@@ -275,7 +275,7 @@ func TestPlaneCommand_Update_WithDescFile(t *testing.T) {
 	mu.Unlock()
 
 	// 3. Rename with an inline description
-	handlePlaneCommand(ctx, "update", []string{"--ticket", "DEN-100", "--name", "[DEN-100] New Title", "--desc", "inline **context**"})
+	expectChronos(t, ExitOK, "update", "--ticket", "DEN-100", "--name", "[DEN-100] New Title", "--desc", "inline **context**")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -306,22 +306,21 @@ func TestPlaneCommand_Update_EdgeCasesAndErrors(t *testing.T) {
 	t.Setenv("PLANE_WORKSPACE_SLUG", "ws")
 	t.Setenv("PLANE_PROJECT_ID", "proj")
 
-	ctx := context.Background()
 
 	// Empty args
-	handlePlaneCommand(ctx, "update", []string{})
+	expectChronos(t, ExitUsage, "update")
 
 	// Ticket given but no desc or name
-	handlePlaneCommand(ctx, "update", []string{"--ticket", "DEN-100"})
+	expectChronos(t, ExitUsage, "update", "--ticket", "DEN-100")
 
 	// Bad desc file path
-	handlePlaneCommand(ctx, "update", []string{"--ticket", "DEN-100", "--desc-file", "/nonexistent/spec.md"})
+	expectChronos(t, ExitError, "update", "--ticket", "DEN-100", "--desc-file", "/nonexistent/spec.md")
 
 	// Server error on ListPlaneIssues
 	tmpDir := t.TempDir()
 	specFile := filepath.Join(tmpDir, "spec.md")
 	_ = os.WriteFile(specFile, []byte("Content"), 0644)
-	handlePlaneCommand(ctx, "update", []string{"--ticket", "DEN-100", "--desc-file", specFile})
+	expectChronos(t, ExitError, "update", "--ticket", "DEN-100", "--desc-file", specFile)
 
 	// Server error on PATCH
 	patchErrServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -345,7 +344,7 @@ func TestPlaneCommand_Update_EdgeCasesAndErrors(t *testing.T) {
 	defer patchErrServer.Close()
 
 	t.Setenv("PLANE_BASE_URL", patchErrServer.URL)
-	handlePlaneCommand(ctx, "update", []string{"--ticket", "DEN-500", "--desc-file", specFile})
+	expectChronos(t, ExitError, "update", "--ticket", "DEN-500", "--desc-file", specFile)
 }
 
 func TestPlaneCommand_States(t *testing.T) {
@@ -405,10 +404,9 @@ func TestPlaneCommand_States(t *testing.T) {
 	t.Setenv("PLANE_WORKSPACE_SLUG", "ws")
 	t.Setenv("PLANE_PROJECT_ID", "proj-default")
 
-	ctx := context.Background()
 
 	// 1. states ensure --project <uuid>
-	handlePlaneCommand(ctx, "states", []string{"ensure", "--project", "proj-custom-uuid"})
+	expectChronos(t, ExitOK, "states", "ensure", "--project", "proj-custom-uuid")
 
 	mu.Lock()
 	if requestedProjectID != "proj-custom-uuid" {
@@ -426,7 +424,7 @@ func TestPlaneCommand_States(t *testing.T) {
 	postCount = 0
 	mu.Unlock()
 
-	handlePlaneCommand(ctx, "states", []string{"ensure"})
+	expectChronos(t, ExitOK, "states", "ensure")
 
 	mu.Lock()
 	if requestedProjectID != "proj-default" {
@@ -440,7 +438,7 @@ func TestPlaneCommand_States(t *testing.T) {
 	mu.Unlock()
 
 	// 3. reconcile by identifier, dry run and --all
-	handlePlaneCommand(ctx, "states", []string{"reconcile", "--project", "DGIT", "--dry-run"})
+	expectChronos(t, ExitOK, "states", "reconcile", "--project", "DGIT", "--dry-run")
 	mu.Lock()
 	if requestedProjectID != "proj-dgit-uuid" {
 		t.Errorf("expected DGIT resolved to proj-dgit-uuid, got: %s", requestedProjectID)
@@ -449,13 +447,13 @@ func TestPlaneCommand_States(t *testing.T) {
 		t.Errorf("dry run must not POST, got %d", postCount)
 	}
 	mu.Unlock()
-	handlePlaneCommand(ctx, "states", []string{"reconcile", "--all"})
+	expectChronos(t, ExitOK, "states", "reconcile", "--all")
 
 	// 4. Bad inputs
-	handlePlaneCommand(ctx, "states", []string{})
-	handlePlaneCommand(ctx, "states", []string{"invalid-subcommand"})
-	handlePlaneCommand(ctx, "states", []string{"ensure", "--project"})
-	handlePlaneCommand(ctx, "states", []string{"ensure", "--invalid-flag"})
+	expectChronos(t, ExitOK, "states")
+	expectChronos(t, ExitUsage, "states", "invalid-subcommand")
+	expectChronos(t, ExitUsage, "states", "ensure", "--project")
+	expectChronos(t, ExitUsage, "states", "ensure", "--invalid-flag")
 
 	// 5. Server error
 	errServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -464,8 +462,8 @@ func TestPlaneCommand_States(t *testing.T) {
 	defer errServer.Close()
 
 	t.Setenv("PLANE_BASE_URL", errServer.URL)
-	handlePlaneCommand(ctx, "states", []string{"ensure"})
-	handlePlaneCommand(ctx, "states", []string{"reconcile", "--all"})
+	expectChronos(t, ExitError, "states", "ensure")
+	expectChronos(t, ExitError, "states", "reconcile", "--all")
 }
 
 func TestPlaneCommand_DefaultAndFallback(t *testing.T) {
@@ -479,6 +477,15 @@ func TestPlaneCommand_DefaultAndFallback(t *testing.T) {
 	t.Setenv("PLANE_WORKSPACE_SLUG", "ws")
 	t.Setenv("PLANE_PROJECT_ID", "proj")
 
-	ctx := context.Background()
-	handlePlaneCommand(ctx, "nonexistent-action", nil)
+	expectChronos(t, ExitUsage, "nonexistent-action")
+}
+
+// expectChronos runs `dendrite chronos args...` and checks the exit code.
+func expectChronos(t *testing.T, want int, args ...string) {
+	t.Helper()
+	var buf bytes.Buffer
+	err := runCLI(context.Background(), &buf, append([]string{"chronos"}, args...)...)
+	if got := exitCodeFor(err); got != want {
+		t.Errorf("chronos %v: exit %d, want %d (err %v)\n%s", args, got, want, err, buf.String())
+	}
 }

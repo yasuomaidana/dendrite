@@ -6,13 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"github.com/spf13/cobra"
 
 	"Dendrite/pkg/projectid"
 	"Dendrite/pkg/synapse"
@@ -30,6 +31,23 @@ type memberJSON struct {
 	Module    string `json:"module,omitempty"`
 	LockedSHA string `json:"locked_sha,omitempty"`
 	Plane     string `json:"plane_project,omitempty"`
+}
+
+// toMemberJSON renders a member with its live status for the --json listings.
+func toMemberJSON(m synapse.Member) memberJSON {
+	return memberJSON{
+		Alias:     m.Alias,
+		ProjectID: m.ProjectID,
+		Role:      string(m.Role),
+		PathHint:  m.PathHint,
+		Status:    string(synapse.StatusOf(m)),
+		Source:    string(m.Source),
+		Remote:    m.Remote,
+		Ref:       m.Ref,
+		Module:    m.Module,
+		LockedSHA: m.LockedSHA,
+		Plane:     m.PlaneProject,
+	}
 }
 
 type synapseListJSON struct {
@@ -108,21 +126,6 @@ func parseMemberSpec(spec string) (dir string, alias string, role synapse.Role, 
 	return absDir, alias, role, nil
 }
 
-var planeIdentRegex = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]{0,11}$`)
-
-// splitPlaneSuffix strips a trailing "@IDENT" Plane project identifier from a member spec.
-func splitPlaneSuffix(spec string) (rest string, planeProject string) {
-	at := strings.LastIndex(spec, "@")
-	if at < 0 {
-		return spec, ""
-	}
-	ident := strings.TrimSpace(spec[at+1:])
-	if !planeIdentRegex.MatchString(ident) {
-		return spec, ""
-	}
-	return spec[:at], strings.ToUpper(ident)
-}
-
 // parseContractSpec parses a contract descriptor of the form:
 // kind:producerAlias:path[>consumerAlias:path]...
 func parseContractSpec(raw string) (synapse.Contract, error) {
@@ -163,85 +166,24 @@ func parseContractSpec(raw string) (synapse.Contract, error) {
 }
 
 // runSynapseCreate executes the create subcommand.
-func runSynapseCreate(ctx context.Context, subArgs []string, out io.Writer) error {
-	var (
-		id            string
-		name          string
-		membersRaw    string
-		contractSpecs []string
-		syncStrategy  string
-		parityCmds    = make(map[string]string)
-	)
+// synapseCreateOptions holds the flags of `synapse create`.
+type synapseCreateOptions struct {
+	Name      string
+	Members   string
+	Contracts []string
+	Sync      string
+	Parity    []string
+}
 
-	for i := 0; i < len(subArgs); i++ {
-		arg := subArgs[i]
-		switch {
-		case arg == "--members":
-			if i+1 >= len(subArgs) {
-				return errors.New("flag --members requires an argument")
-			}
-			membersRaw = subArgs[i+1]
-			i++
-		case strings.HasPrefix(arg, "--members="):
-			membersRaw = strings.TrimPrefix(arg, "--members=")
-		case arg == "--name":
-			if i+1 >= len(subArgs) {
-				return errors.New("flag --name requires an argument")
-			}
-			name = subArgs[i+1]
-			i++
-		case strings.HasPrefix(arg, "--name="):
-			name = strings.TrimPrefix(arg, "--name=")
-		case arg == "--contract":
-			if i+1 >= len(subArgs) {
-				return errors.New("flag --contract requires an argument")
-			}
-			contractSpecs = append(contractSpecs, subArgs[i+1])
-			i++
-		case strings.HasPrefix(arg, "--contract="):
-			contractSpecs = append(contractSpecs, strings.TrimPrefix(arg, "--contract="))
-		case arg == "--sync":
-			if i+1 >= len(subArgs) {
-				return errors.New("flag --sync requires an argument")
-			}
-			syncStrategy = subArgs[i+1]
-			i++
-		case strings.HasPrefix(arg, "--sync="):
-			syncStrategy = strings.TrimPrefix(arg, "--sync=")
-		case arg == "--parity":
-			if i+1 >= len(subArgs) {
-				return errors.New("flag --parity requires an argument")
-			}
-			pair := subArgs[i+1]
-			i++
-			k, v, ok := strings.Cut(pair, "=")
-			if !ok || k == "" || v == "" {
-				return fmt.Errorf("invalid parity command %q: expected alias=cmd", pair)
-			}
-			parityCmds[k] = v
-		case strings.HasPrefix(arg, "--parity="):
-			pair := strings.TrimPrefix(arg, "--parity=")
-			k, v, ok := strings.Cut(pair, "=")
-			if !ok || k == "" || v == "" {
-				return fmt.Errorf("invalid parity command %q: expected alias=cmd", pair)
-			}
-			parityCmds[k] = v
-		case strings.HasPrefix(arg, "-"):
-			return fmt.Errorf("unknown flag: %s", arg)
-		default:
-			if id == "" {
-				id = arg
-			} else {
-				return fmt.Errorf("unexpected argument: %s", arg)
-			}
+func runSynapseCreate(ctx context.Context, id string, o synapseCreateOptions, out io.Writer) error {
+	name, membersRaw, contractSpecs, syncStrategy := o.Name, o.Members, o.Contracts, o.Sync
+	parityCmds := make(map[string]string)
+	for _, pair := range o.Parity {
+		k, v, ok := strings.Cut(pair, "=")
+		if !ok || k == "" || v == "" {
+			return usageErrorf("invalid parity command %q: expected alias=cmd", pair)
 		}
-	}
-
-	if id == "" {
-		return errors.New("synapse id is required")
-	}
-	if membersRaw == "" {
-		return errors.New("flag --members is required")
+		parityCmds[k] = v
 	}
 
 	st, err := synapse.DefaultStore()
@@ -332,19 +274,7 @@ func runSynapseCreate(ctx context.Context, subArgs []string, out io.Writer) erro
 }
 
 // runSynapseList executes the list subcommand.
-func runSynapseList(ctx context.Context, subArgs []string, out io.Writer) error {
-	jsonMode := false
-	for _, arg := range subArgs {
-		switch {
-		case arg == "--json":
-			jsonMode = true
-		case strings.HasPrefix(arg, "-"):
-			return fmt.Errorf("unknown flag: %s", arg)
-		default:
-			return fmt.Errorf("unexpected argument: %s", arg)
-		}
-	}
-
+func runSynapseList(ctx context.Context, jsonMode bool, out io.Writer) error {
 	st, err := synapse.DefaultStore()
 	if err != nil {
 		return err
@@ -369,14 +299,7 @@ func runSynapseList(ctx context.Context, subArgs []string, out io.Writer) error 
 		for _, s := range synapses {
 			membersJSON := make([]memberJSON, 0, len(s.Members))
 			for _, m := range s.Members {
-				membersJSON = append(membersJSON, memberJSON{
-					Alias:     m.Alias,
-					ProjectID: m.ProjectID,
-					Role:      string(m.Role),
-					PathHint:  m.PathHint,
-					Status:    string(synapse.StatusOf(m)),
-					Plane:     m.PlaneProject,
-				})
+				membersJSON = append(membersJSON, toMemberJSON(m))
 			}
 			listJSON = append(listJSON, synapseListJSON{
 				ID:      s.ID,
@@ -407,29 +330,7 @@ func runSynapseList(ctx context.Context, subArgs []string, out io.Writer) error 
 }
 
 // runSynapseInspect executes the inspect subcommand.
-func runSynapseInspect(ctx context.Context, subArgs []string, out io.Writer) error {
-	var id string
-	jsonMode := false
-
-	for _, arg := range subArgs {
-		switch {
-		case arg == "--json":
-			jsonMode = true
-		case strings.HasPrefix(arg, "-"):
-			return fmt.Errorf("unknown flag: %s", arg)
-		default:
-			if id == "" {
-				id = arg
-			} else {
-				return fmt.Errorf("unexpected argument: %s", arg)
-			}
-		}
-	}
-
-	if id == "" {
-		return errors.New("synapse id is required")
-	}
-
+func runSynapseInspect(ctx context.Context, id string, jsonMode bool, out io.Writer) error {
 	st, err := synapse.DefaultStore()
 	if err != nil {
 		return err
@@ -446,19 +347,7 @@ func runSynapseInspect(ctx context.Context, subArgs []string, out io.Writer) err
 	if jsonMode {
 		membersJSON := make([]memberJSON, 0, len(s.Members))
 		for _, m := range s.Members {
-			membersJSON = append(membersJSON, memberJSON{
-				Alias:     m.Alias,
-				ProjectID: m.ProjectID,
-				Role:      string(m.Role),
-				PathHint:  m.PathHint,
-				Status:    string(synapse.StatusOf(m)),
-				Source:    string(m.Source),
-				Remote:    m.Remote,
-				Ref:       m.Ref,
-				Module:    m.Module,
-				LockedSHA: m.LockedSHA,
-				Plane:     m.PlaneProject,
-			})
+			membersJSON = append(membersJSON, toMemberJSON(m))
 		}
 		contracts := s.Contracts
 		if contracts == nil {
@@ -530,12 +419,148 @@ func runSynapseInspect(ctx context.Context, subArgs []string, out io.Writer) err
 	return nil
 }
 
-// runSynapseSetPlane binds (or with "-" clears) the Plane project identifier of one member.
-func runSynapseSetPlane(_ context.Context, subArgs []string, out io.Writer) error {
-	if len(subArgs) != 3 {
-		return errors.New("usage: dendrite synapse set-plane <id> <alias> <PLANE-IDENT|->")
+// newSynapseCmd builds `dendrite synapse`: typed cross-project links.
+func newSynapseCmd() *cobra.Command {
+	cmd := newGroupCmd("synapse", "Typed cross-project links with scoped MCP servers and self-healing paths", "cleft", "syn", "synapses")
+	cmd.Example = "dendrite synapse create billing --members ../api=api:producer,../web=web:consumer\ndendrite synapse list --json\ndendrite synapse heal --auto"
+
+	var create synapseCreateOptions
+	createCmd := &cobra.Command{
+		Use:     "create <id>",
+		Short:   "Create a synapse manifest linking member projects",
+		Args:    exactArgs(1),
+		Example: "dendrite synapse create billing --members ../api=api:producer,../web=web:consumer --contract openapi:api:spec.yaml>web:client.ts",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseCreate(c.Context(), args[0], create, c.OutOrStdout())
+		},
 	}
-	id, alias, ident := subArgs[0], subArgs[1], strings.TrimSpace(subArgs[2])
+	cf := createCmd.Flags()
+	cf.StringVar(&create.Members, "members", "", "Members as <dir>[=alias][:role][@PLANE],...")
+	cf.StringVar(&create.Name, "name", "", "Display name (default: id)")
+	cf.StringArrayVar(&create.Contracts, "contract", nil, "Contract kind:producer:path[>consumer:path...] (repeatable)")
+	cf.StringVar(&create.Sync, "sync", "", "Sync strategy")
+	cf.StringArrayVar(&create.Parity, "parity", nil, "Parity command alias=cmd (repeatable)")
+	requireFlags(createCmd, "members")
+
+	listCmd := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List synapses and their health",
+		Args:    noArgs,
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseList(c.Context(), globals.JSON, c.OutOrStdout())
+		},
+	}
+
+	inspectCmd := &cobra.Command{
+		Use:   "inspect <id>",
+		Short: "Show members, contracts and parity commands of a synapse",
+		Args:  exactArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseInspect(c.Context(), args[0], globals.JSON, c.OutOrStdout())
+		},
+	}
+
+	var heal synapseHealOptions
+	healCmd := &cobra.Command{
+		Use:     "heal",
+		Short:   "Find moved member projects and repair their paths",
+		Args:    noArgs,
+		Example: "dendrite synapse heal --roots ~/code,~/work --depth 3 --auto",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseHeal(c.Context(), heal, globals.JSON, c.OutOrStdout())
+		},
+	}
+	healCmd.Flags().BoolVar(&heal.Auto, "auto", false, "Apply the repairs instead of only reporting them")
+	healCmd.Flags().StringSliceVar(&heal.Roots, "roots", nil, "Search roots (comma-separated, repeatable)")
+	healCmd.Flags().IntVar(&heal.Depth, "depth", 0, "Maximum search depth")
+
+	locateCmd := &cobra.Command{
+		Use:   "locate <alias|project-id> [hint-dir...]",
+		Short: "Locate a member project on disk",
+		Args:  minArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseLocate(c.Context(), args[0], args[1:], globals.JSON, c.OutOrStdout())
+		},
+	}
+
+	moveCmd := &cobra.Command{
+		Use:     "move <alias|project-id> <new-path>",
+		Aliases: []string{"mv"},
+		Short:   "Move a member project and update every manifest atomically",
+		Args:    exactArgs(2),
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseMove(c.Context(), args[0], args[1], globals.JSON, c.OutOrStdout())
+		},
+	}
+
+	var binary string
+	ideSyncCmd := &cobra.Command{
+		Use:   "ide-sync <id>",
+		Short: "Write IDE MCP configuration for a synapse's members",
+		Args:  exactArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseIDESync(c.Context(), args[0], binary, c.OutOrStdout())
+		},
+	}
+	ideSyncCmd.Flags().StringVar(&binary, "binary", "", "dendrite binary for the MCP entry (default: this executable)")
+
+	setPlaneCmd := &cobra.Command{
+		Use:     "set-plane <id> <alias> <PLANE-IDENT|->",
+		Short:   "Bind a member to its Plane project identifier (- clears it)",
+		Args:    exactArgs(3),
+		Example: "dendrite synapse set-plane dendrite-ecosystem git-rs DGIT",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseSetPlane(c.Context(), args[0], args[1], args[2], c.OutOrStdout())
+		},
+	}
+
+	var ref, remote, module string
+	setSourceCmd := &cobra.Command{
+		Use:   "set-source <id> <alias> local|remote",
+		Short: "Consume a member from its local checkout or its remote, optionally tracking another ref",
+		Long: "Switches a member between its local checkout and its remote for develop mode. --ref sets the\n" +
+			"branch, tag or commit the member tracks (--ref= clears it).",
+		Args:    exactArgs(3),
+		Example: "dendrite synapse set-source dendrite-ecosystem rag-rs local --ref feat/ann\ndendrite synapse set-source dendrite-ecosystem mcp-hub remote --ref develop",
+		RunE: func(c *cobra.Command, args []string) error {
+			pick := func(name string, v *string) *string {
+				if c.Flags().Changed(name) {
+					return v
+				}
+				return nil
+			}
+			return runSynapseSetSource(c.Context(), args[0], args[1], synapse.Source(args[2]),
+				pick("ref", &ref), pick("remote", &remote), pick("module", &module), c.OutOrStdout())
+		},
+	}
+	setSourceCmd.Flags().StringVar(&ref, "ref", "", "Branch, tag or commit to track (empty: the checkout's upstream)")
+	setSourceCmd.Flags().StringVar(&remote, "remote", "", "Git URL of the member (default: its origin)")
+	setSourceCmd.Flags().StringVar(&module, "module", "", "Go module path or Cargo crate name consumers link against")
+
+	cmd.AddCommand(createCmd, listCmd, inspectCmd, healCmd, locateCmd, moveCmd, ideSyncCmd,
+		setPlaneCmd, setSourceCmd, newSynapseStatusCmd(), newSynapseSyncCmd())
+	return cmd
+}
+
+var planeIdentRegex = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]{0,11}$`)
+
+// splitPlaneSuffix strips a trailing "@IDENT" Plane project identifier from a member spec.
+func splitPlaneSuffix(spec string) (rest string, planeProject string) {
+	at := strings.LastIndex(spec, "@")
+	if at < 0 {
+		return spec, ""
+	}
+	ident := strings.TrimSpace(spec[at+1:])
+	if !planeIdentRegex.MatchString(ident) {
+		return spec, ""
+	}
+	return spec[:at], strings.ToUpper(ident)
+}
+
+// runSynapseSetPlane binds (or with "-" clears) the Plane project identifier of one member.
+func runSynapseSetPlane(_ context.Context, id, alias, ident string, out io.Writer) error {
+	ident = strings.TrimSpace(ident)
 	if ident == "-" {
 		ident = ""
 	} else if !planeIdentRegex.MatchString(ident) {
@@ -570,69 +595,6 @@ func runSynapseSetPlane(_ context.Context, subArgs []string, out io.Writer) erro
 	return nil
 }
 
-// runSynapseCommand executes a synapse subcommand writing human/JSON output to out; returns an error instead of exiting.
-func runSynapseCommand(ctx context.Context, args []string, out io.Writer) error {
-	if len(args) == 0 {
-		printSynapseUsage(out)
-		return fmt.Errorf("unknown synapse action %q", "")
-	}
-
-	action := args[0]
-	subArgs := args[1:]
-	switch action {
-	case "create":
-		return runSynapseCreate(ctx, subArgs, out)
-	case "list", "ls":
-		return runSynapseList(ctx, subArgs, out)
-	case "inspect":
-		return runSynapseInspect(ctx, subArgs, out)
-	case "heal":
-		return runSynapseHeal(ctx, subArgs, out)
-	case "locate":
-		return runSynapseLocate(ctx, subArgs, out)
-	case "move", "mv":
-		return runSynapseMove(ctx, subArgs, out)
-	case "ide-sync":
-		return runSynapseIDESync(ctx, subArgs, out)
-	case "set-source":
-		return runSynapseSetSource(ctx, subArgs, out)
-	case "status":
-		return runSynapseSyncCommand(ctx, subArgs, out, false)
-	case "sync":
-		return runSynapseSyncCommand(ctx, subArgs, out, true)
-	case "set-plane":
-		return runSynapseSetPlane(ctx, subArgs, out)
-	default:
-		return fmt.Errorf("unknown synapse action %q", action)
-	}
-}
-
-// handleSynapseCommand calls runSynapseCommand(ctx, args, os.Stdout); on error prints "[-] <err>" to stderr and os.Exit(1).
-func handleSynapseCommand(ctx context.Context, args []string) {
-	if err := runSynapseCommand(ctx, args, os.Stdout); err != nil {
-		fmt.Fprintf(os.Stderr, "[-] %v\n", err)
-		os.Exit(1)
-	}
-}
-
-// printSynapseUsage prints human-readable usage instructions for the synapse command.
-func printSynapseUsage(out io.Writer) {
-	fmt.Fprintln(out, "Usage: dendrite synapse <action> [flags...]")
-	fmt.Fprintln(out, "\nAvailable Subcommands:")
-	fmt.Fprintln(out, "  create <id> --members <dir>[=alias][:role][@PLANE],... [flags...]")
-	fmt.Fprintln(out, "  set-plane <id> <alias> <PLANE-IDENT|->")
-	fmt.Fprintln(out, "  list [--json]")
-	fmt.Fprintln(out, "  inspect <id> [--json]")
-	fmt.Fprintln(out, "  heal [--auto] [--roots dir,...] [--depth N] [--json]")
-	fmt.Fprintln(out, "  locate <alias|project-id> [hint-dir...] [--json]")
-	fmt.Fprintln(out, "  move <alias|project-id> <new-path> [--json]")
-	fmt.Fprintln(out, "  ide-sync <id> [--binary path]")
-	fmt.Fprintln(out, "  set-source <id> <alias> local|remote [--ref branch|tag|sha] [--remote url] [--module path]")
-	fmt.Fprintln(out, "  status <id> [--no-fetch] [--json]")
-	fmt.Fprintln(out, "  sync <id> [--autostash] [--rebase] [--merge alias=branch]... [--no-link] [--no-fetch] [--json]")
-	fmt.Fprintln(out, "  (scoped MCP server: dendrite mcp serve --synapse <id>)")
-}
-
 // describeSource renders a member's develop-mode source for the inspect listing,
 // e.g. " {remote develop @abc1234}"; local members tracking their current branch render as "".
 func describeSource(m synapse.Member) string {
@@ -657,52 +619,12 @@ func describeSource(m synapse.Member) string {
 }
 
 // runSynapseSetSource switches a member between its local checkout and its remote
-// for develop mode, optionally pinning the ref to track. The lock is cleared
-// whenever source or ref change so the next sync re-resolves it.
-func runSynapseSetSource(ctx context.Context, subArgs []string, out io.Writer) error {
-	var positional []string
-	var ref, remote, module *string
-	for i := 0; i < len(subArgs); i++ {
-		arg := subArgs[i]
-		var target **string
-		name := arg
-		if eq := strings.Index(arg, "="); eq >= 0 && strings.HasPrefix(arg, "--") {
-			name = arg[:eq]
-		}
-		switch name {
-		case "--ref":
-			target = &ref
-		case "--remote":
-			target = &remote
-		case "--module":
-			target = &module
-		default:
-			if strings.HasPrefix(arg, "-") {
-				return fmt.Errorf("unknown flag: %s", arg)
-			}
-			positional = append(positional, arg)
-			continue
-		}
-		var val string
-		if eq := strings.Index(arg, "="); eq >= 0 {
-			val = arg[eq+1:]
-		} else {
-			if i+1 >= len(subArgs) {
-				return fmt.Errorf("%s requires a value", name)
-			}
-			i++
-			val = subArgs[i]
-		}
-		*target = &val
-	}
-	if len(positional) != 3 {
-		return errors.New("usage: dendrite synapse set-source <id> <alias> local|remote [--ref X] [--remote url] [--module path]")
-	}
-	id, alias, source := positional[0], positional[1], synapse.Source(positional[2])
+// for develop mode, optionally pinning the ref to track (nil pointers leave a field as is).
+// The lock is cleared whenever source or ref change so the next sync re-resolves it.
+func runSynapseSetSource(ctx context.Context, id, alias string, source synapse.Source, ref, remote, module *string, out io.Writer) error {
 	if source != synapse.SourceLocal && source != synapse.SourceRemote {
 		return fmt.Errorf("invalid source %q (want local or remote)", source)
 	}
-
 	st, err := synapse.DefaultStore()
 	if err != nil {
 		return err

@@ -5,7 +5,7 @@ FEAT-048 completes the engineering requirements for:
 1. **macOS PE/EXE Binary Analysis with Pause & Resume**: Allows macOS developer workstations to dissect Windows x86_64 PE binaries (`.EXE`) using local models (`qwen3.5:9b`), pausing at arbitrary checkpoints, persisting intermediate CFG state in remote stores, and resuming seamlessly.
 2. **Multi-Tier Inference Triage**: Local LLMs evaluate control-flow complexity. Simple basic blocks are decompiled locally ($0.00 spend). Obfuscated or high-cyclomatic functions escalate to commercial cloud models.
 3. **Remote Knowledge Storage & Safe Purge (`dendrite rea purge`)**: Persists extracted ASTs, structs, and call graphs in remote Turso/PostgreSQL instances, with safe deletion routines when analysis is concluded.
-4. **Ticket Connection & Priority Skill (`dendrite skill ticket-relate`)**: Provides a manual and automated CLI/MCP skill enabling humans and agents to link blocker relations (`blocked_by`, `blocking`, `relates_to`), update priorities, and ensure Gantt chart dependency arrows render in Plane.
+4. **Ticket Connection & Priority Skill (`dendrite chronos relate`)**: Provides a manual and automated CLI/MCP skill enabling humans and agents to link blocker relations (`blocked_by`, `blocking`, `relates_to`), update priorities, and ensure Gantt chart dependency arrows render in Plane.
 
 ---
 
@@ -27,7 +27,7 @@ flowchart TD
 
     subgraph Tickets["Ticket Connection & Priority Governance"]
         HumanAgent[Human / Autonomous Agent] --> CreateTicket[Ticket Created in Plane]
-        CreateTicket --> SkillRelate["dendrite skill ticket-relate<br/>--ticket <id> --priority <prio> --blocked-by <ids>"]
+        CreateTicket --> SkillRelate["dendrite chronos relate<br/>--ticket <id> --priority <prio> --blocked-by <ids>"]
         SkillRelate --> PlaneAPI[Plane REST API: /api/workspaces/.../issue-relation/]
         PlaneAPI --> GanttArrow[Plane Gantt View Renders Dependency Arrows]
     end
@@ -43,7 +43,7 @@ flowchart TD
 ### 2.2 Ticket Connection & Priority Skill Specification
 - Command signature:
   ```bash
-  dendrite skill ticket-relate \
+  dendrite chronos relate \
     --ticket <ID> \
     [--priority urgent|high|medium|low] \
     [--blocked-by <TICKET_A,TICKET_B>] \
@@ -60,7 +60,7 @@ flowchart TD
 | Ticket ID | Title | Priority | Estimate | Milestone | Start Date | Target Date | Blocked By |
 |:---|:---|:---:|:---:|:---|:---:|:---:|:---|
 | **DEND-501** | [REA]: macOS PE/EXE analysis, pause/resume checkpointing, multi-tier LLM triage & purge | High | 8 SP | Milestone 20 | 2026-12-17 | 2026-12-20 | DEN-039 |
-| **DEND-601** | [Tickets Skill]: Ticket Connection & Priority Updater (`dendrite skill ticket-relate`) | Urgent | 5 SP | Milestone 31 | 2026-10-15 | 2026-10-16 | DEN-001 |
+| **DEND-601** | [Tickets Skill]: Ticket Connection & Priority Updater (`dendrite chronos relate`) | Urgent | 5 SP | Milestone 31 | 2026-10-15 | 2026-10-16 | DEN-001 |
 
 ---
 
@@ -73,7 +73,7 @@ flowchart TD
   2. Execution can be paused mid-analysis, verifying state is written to remote store.
   3. Resume with model switch completes analysis and emits zero-copy safe Rust structs.
   4. `dendrite rea purge` deletes database records and frees scratch memory.
-  5. `dendrite skill ticket-relate` links blockers in Plane and reflects in Gantt timeline arrows.
+  5. `dendrite chronos relate` links blockers in Plane and reflects in Gantt timeline arrows.
 - **Replication & Evaluation Instructions**:
   ```bash
   # 1. Run PE analysis on macOS fixture
@@ -87,7 +87,7 @@ flowchart TD
   dendrite rea purge --id pe-session-1 --force
 
   # 4. Validate Ticket Relation skill
-  dendrite skill ticket-relate \
+  dendrite chronos relate \
     --ticket DEND-601 \
     --priority urgent \
     --blocked-by DEN-001 \

@@ -52,7 +52,7 @@ usage() {
 step_vcs_guard() {
     log_info "1/7 Verifying Git Branch Policy & VCS Guard..."
     if [ -x "./bin/dendrite" ]; then
-        ./bin/dendrite vcs check || {
+        ./bin/dendrite myelin check || {
             log_err "VCS Guard rejected branch state."
             return 1
         }
@@ -73,9 +73,9 @@ step_copilot_sync() {
     if [ ! -f ".github/copilot-instructions.md" ] || [ ! -f ".github/workflows/ci.yml" ]; then
         log_warn "Missing CI/CD or Copilot configuration. Synchronizing environment..."
         if [ -x "./bin/dendrite" ]; then
-            ./bin/dendrite env sync
+            ./bin/dendrite soma prepare
         else
-            go run ./cmd/dendrite env sync
+            go run ./cmd/dendrite soma prepare
         fi
     fi
     log_ok "Copilot instructions (.github/copilot-instructions.md) active."
@@ -114,7 +114,7 @@ step_lint() {
 step_anti_mock() {
     log_info "4/7 Running Dendrite Anti-Mock Audit..."
     if [ -x "./bin/dendrite" ]; then
-        ./bin/dendrite quality audit pkg/env/bootstrap || log_warn "Quality audit reported warnings."
+        ./bin/dendrite allostasis audit pkg/env/bootstrap || log_warn "Quality audit reported warnings."
     else
         log_warn "bin/dendrite not found; skipping anti-mock scan."
     fi
@@ -204,7 +204,7 @@ step_build() {
 step_docs_audit() {
     log_info "8/8 Auditing CLI & MCP Documentation Completeness (--strict)..."
     # Always audit against the current source, never a possibly stale ./bin/dendrite.
-    go run ./cmd/dendrite docs audit --strict
+    go run ./cmd/dendrite codex audit --strict
     log_ok "Documentation reference audit passed (--strict)."
 }
 

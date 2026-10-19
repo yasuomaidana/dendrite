@@ -2,138 +2,100 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
-	"strconv"
+	"io"
 	"strings"
 	"time"
 
 	"Dendrite/pkg/rag"
+
+	"github.com/spf13/cobra"
 )
 
-func handleAskCommand(ctx context.Context, args []string) {
-	if len(args) == 0 {
-		printAskUsage()
-		return
+type askOptions struct {
+	Paid        bool
+	Hybrid      bool
+	UpdateIndex bool
+	Server      string
+	Tier        string
+	Project     string
+	PaidModel   string
+	LocalModel  string
+	TopK        int
+}
+
+// newAskCmd builds `dendrite ask`: questions about a project answered from its RAG index.
+func newAskCmd() *cobra.Command {
+	var o askOptions
+	cmd := &cobra.Command{
+		Use:     "ask <question...>",
+		Aliases: []string{"query-project", "rag-ask", "q"},
+		Short:   "Ask questions to Dendrite about a project with local RAG and interactive paid fallback",
+		Long: "Answers from the project's RAG index with a zero-cost local model first. When the local model\n" +
+			"fails it asks before escalating to the paid model; --yes escalates without asking.",
+		GroupID: "cortex",
+		Args:    minArgs(1),
+		Example: "dendrite ask \"how do I check the available LLMs?\"\n" +
+			"dendrite ask --hybrid \"how does the token gateway work?\"\n" +
+			"dendrite ask --server http://100.84.12.10:3456 \"where is telemetry defined?\"\n" +
+			"dendrite ask --update-index --json \"what does soma prepare write?\"",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			switch strings.ToLower(o.Tier) {
+			case "":
+			case "paid", "cloud":
+				o.Paid = true
+			case "hybrid":
+				o.Hybrid = true
+			case "local":
+			default:
+				return usageErrorf("invalid --tier %q: use local, hybrid or paid", o.Tier)
+			}
+			if o.TopK <= 0 {
+				return usageErrorf("--top-k must be positive")
+			}
+			req := rag.AskRequest{
+				Question:        strings.Join(args, " "),
+				ProjectPath:     o.Project,
+				AutoApprovePaid: globals.Yes,
+				ForcePaid:       o.Paid,
+				HybridMode:      o.Hybrid,
+				UpdateIndex:     o.UpdateIndex,
+				ServerURL:       o.Server,
+				PaidModel:       o.PaidModel,
+				LocalModel:      o.LocalModel,
+				TopK:            o.TopK,
+				Input:           cmd.InOrStdin(),
+				Output:          cmd.OutOrStdout(),
+			}
+			return runAsk(cmd.Context(), req, cmd.OutOrStdout())
+		},
 	}
+	f := cmd.Flags()
+	f.BoolVar(&o.Paid, "paid", false, "Skip the local model and ask the paid model with the RAG context")
+	f.BoolVar(&o.Hybrid, "hybrid", false, "Draft locally, then refine and verify with the paid model")
+	f.BoolVar(&o.UpdateIndex, "update-index", false, "Re-index changed project files before answering")
+	f.StringVar(&o.Server, "server", "", "Ask a central Dendrite RAG service instead (e.g. http://host:3456)")
+	f.StringVar(&o.Tier, "tier", "", "Shortcut for the tier: local, hybrid or paid")
+	addProjectFlag(cmd, &o.Project, ".", "Project directory to index and search")
+	f.StringVar(&o.PaidModel, "paid-model", "gemini-2.5-pro", "Paid fallback model")
+	f.StringVar(&o.LocalModel, "local-model", "", "Preferred local model (default: detected from Ollama/OxiLLaMa)")
+	f.IntVarP(&o.TopK, "top-k", "k", 4, "Context chunks to retrieve")
+	cmd.MarkFlagsMutuallyExclusive("paid", "hybrid")
+	return cmd
+}
 
-	var questionParts []string
-	projectPath := "."
-	autoApprove := false
-	forcePaid := false
-	hybridMode := false
-	updateIndex := false
-	serverURL := ""
-	paidModel := "gemini-2.5-pro"
-	localModel := ""
-	jsonOutput := false
-	topK := 4
-
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch arg {
-		case "-y", "--yes", "--auto-paid":
-			autoApprove = true
-		case "--paid", "--force-paid", "--cloud", "--use-paid":
-			forcePaid = true
-		case "--hybrid", "--local-first-refine":
-			hybridMode = true
-		case "--update-index", "--refresh", "--reindex":
-			updateIndex = true
-		case "--server", "--central":
-			if i+1 < len(args) {
-				serverURL = args[i+1]
-				i++
-			}
-		case "--tier":
-			if i+1 < len(args) {
-				val := strings.ToLower(args[i+1])
-				if val == "paid" || val == "cloud" {
-					forcePaid = true
-				} else if val == "hybrid" {
-					hybridMode = true
-				}
-				i++
-			}
-		case "-p", "--project", "--dir":
-			if i+1 < len(args) {
-				projectPath = args[i+1]
-				i++
-			}
-		case "--paid-model", "--cloud-model":
-			if i+1 < len(args) {
-				paidModel = args[i+1]
-				i++
-			}
-		case "--local-model":
-			if i+1 < len(args) {
-				localModel = args[i+1]
-				i++
-			}
-		case "--top-k", "-k":
-			if i+1 < len(args) {
-				if v, err := strconv.Atoi(args[i+1]); err == nil {
-					topK = v
-				}
-				i++
-			}
-		case "--json":
-			jsonOutput = true
-		case "-h", "--help", "help":
-			printAskUsage()
-			return
-		default:
-			if !strings.HasPrefix(arg, "-") {
-				questionParts = append(questionParts, arg)
-			}
-		}
-	}
-
-	question := strings.TrimSpace(strings.Join(questionParts, " "))
-	if question == "" {
-		fmt.Println("[-] Error: question cannot be empty.")
-		printAskUsage()
-		return
-	}
-
-	engine := rag.NewAskEngine(nil)
-
-	req := rag.AskRequest{
-		Question:        question,
-		ProjectPath:     projectPath,
-		AutoApprovePaid: autoApprove,
-		ForcePaid:       forcePaid,
-		HybridMode:      hybridMode,
-		UpdateIndex:     updateIndex,
-		ServerURL:       serverURL,
-		PaidModel:       paidModel,
-		LocalModel:      localModel,
-		TopK:            topK,
-		Input:           os.Stdin,
-		Output:          os.Stdout,
-	}
-
-	if serverURL != "" {
-		fmt.Printf("[+] Forwarding query to Central RAG Service at %s for: %q\n", serverURL, question)
+func runAsk(ctx context.Context, req rag.AskRequest, out io.Writer) error {
+	if req.ServerURL != "" {
+		fmt.Fprintf(out, "[+] Forwarding query to Central RAG Service at %s for: %q\n", req.ServerURL, req.Question)
 	} else {
-		fmt.Printf("[+] Querying Dendrite RAG index for: %q\n", question)
+		fmt.Fprintf(out, "[+] Querying Dendrite RAG index for: %q\n", req.Question)
 	}
-
-	res, err := engine.Ask(ctx, req)
+	res, err := rag.NewAskEngine(nil).Ask(ctx, req)
 	if err != nil {
-		fmt.Printf("[-] Query failed: %v\n", err)
-		return
+		return fmt.Errorf("query: %w", err)
 	}
-
-	if jsonOutput {
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			fmt.Printf("[-] Failed to serialize JSON output: %v\n", err)
-			return
-		}
-		fmt.Println(string(data))
-		return
+	if globals.JSON {
+		return writeJSON(out, res)
 	}
 
 	tierDisplay := "Zero-Cost Local LLM"
@@ -145,53 +107,28 @@ func handleAskCommand(ctx context.Context, args []string) {
 	case "central-rag":
 		tierDisplay = "Central Shared RAG Service"
 	}
-
 	cacheNote := ""
 	if res.IndexStatus != "" {
 		cacheNote = fmt.Sprintf(" | Index: %s", res.IndexStatus)
 	}
-
-	fmt.Println("\n================================================================================")
-	fmt.Printf("[✓] Answer (%s | Model: %s | Time: %v%s):\n", tierDisplay, res.Model, res.Duration.Round(10*time.Millisecond), cacheNote)
-	fmt.Println("================================================================================")
-	fmt.Println(res.Answer)
-	fmt.Println("================================================================================")
-
+	rule := strings.Repeat("=", 80)
+	fmt.Fprintln(out, "\n"+rule)
+	fmt.Fprintf(out, "[✓] Answer (%s | Model: %s | Time: %v%s):\n", tierDisplay, res.Model, res.Duration.Round(10*time.Millisecond), cacheNote)
+	fmt.Fprintln(out, rule)
+	fmt.Fprintln(out, res.Answer)
+	fmt.Fprintln(out, rule)
 	if res.LocalDraft != "" && res.SourceTier == "hybrid" {
-		fmt.Println("\n[+] Note: Initial draft was synthesized locally at zero cost, then verified and refined via cloud LLM.")
+		fmt.Fprintln(out, "\n[+] Note: Initial draft was synthesized locally at zero cost, then verified and refined via cloud LLM.")
 	}
-
 	if len(res.RetrievedChunks) > 0 {
-		fmt.Println("\n[+] Retrieved Project Documentation & Code Context:")
+		fmt.Fprintln(out, "\n[+] Retrieved Project Documentation & Code Context:")
 		for i, c := range res.RetrievedChunks {
 			heading := ""
 			if c.Heading != "" {
 				heading = fmt.Sprintf(" > %s", c.Heading)
 			}
-			fmt.Printf("    %d. %s (lines %d-%d)%s\n", i+1, c.FilePath, c.LineStart, c.LineEnd, heading)
+			fmt.Fprintf(out, "    %d. %s (lines %d-%d)%s\n", i+1, c.FilePath, c.LineStart, c.LineEnd, heading)
 		}
 	}
-}
-
-func printAskUsage() {
-	fmt.Println("Usage: dendrite ask [flags] \"<question>\"")
-	fmt.Println("\nAsk questions about the project using local RAG retrieval with hybrid refinement or paid cloud fallback.")
-	fmt.Println("\nOptions:")
-	fmt.Println("  --hybrid           Hybrid mode: draft locally at zero cost, then refine & verify with paid cloud model")
-	fmt.Println("  -y, --yes          Automatically escalate to paid cloud model if local LLM fails without interactive prompt")
-	fmt.Println("  --paid, --force-paid Bypass local LLM and directly query the paid cloud model with RAG context")
-	fmt.Println("  --server <url>     Delegate RAG query to a centralized remote Dendrite service (e.g. http://host:3456)")
-	fmt.Println("  --update-index     Force cache invalidation and re-index project files incrementally")
-	fmt.Println("  -p, --project <dir>Target project directory to index and search (default: \".\")")
-	fmt.Println("  --paid-model <name>Paid cloud model fallback (default: \"gemini-2.5-pro\")")
-	fmt.Println("  --local-model <m>  Preferred local model (default: auto-detected from Ollama/OxiLLaMa)")
-	fmt.Println("  -k, --top-k <num>  Number of context chunks to retrieve (default: 4)")
-	fmt.Println("  --json             Emit structured JSON response")
-	fmt.Println("\nExamples:")
-	fmt.Println("  dendrite ask \"I want to know how to check available LLMs\"")
-	fmt.Println("  dendrite ask --hybrid \"I want to know how to check available LLMs\"")
-	fmt.Println("  dendrite ask -y \"I want to know how to check available LLMs\"")
-	fmt.Println("  dendrite ask --paid \"I want to know how to check available LLMs\" (bypasses local LLM)")
-	fmt.Println("  dendrite ask --server http://100.84.12.10:3456 \"How does the token gateway work?\"")
-	fmt.Println("  dendrite ask --update-index \"Where is the telemetry pipeline defined?\"")
+	return nil
 }

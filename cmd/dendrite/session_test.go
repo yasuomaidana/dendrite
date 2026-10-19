@@ -30,22 +30,6 @@ func initTestGitRepo(t *testing.T, dir, branch string) {
 	}
 }
 
-func TestStringFlagSlice(t *testing.T) {
-	var s stringFlagSlice
-	if s.String() != "" {
-		t.Errorf("empty slice String() = %q, want empty", s.String())
-	}
-	if err := s.Set("a"); err != nil {
-		t.Fatalf("Set failed: %v", err)
-	}
-	if err := s.Set("b"); err != nil {
-		t.Fatalf("Set failed: %v", err)
-	}
-	if s.String() != "a, b" {
-		t.Errorf("s.String() = %q, want 'a, b'", s.String())
-	}
-}
-
 func TestSessionCommand_DispatchAndHelp(t *testing.T) {
 	ctx := context.Background()
 	var buf bytes.Buffer
@@ -55,18 +39,18 @@ func TestSessionCommand_DispatchAndHelp(t *testing.T) {
 	if err := runSessionCommand(ctx, []string{}, &buf); err != nil {
 		t.Fatalf("expected nil on empty args, got: %v", err)
 	}
-	if !strings.Contains(buf.String(), "Usage: dendrite session") {
+	if !strings.Contains(buf.String(), "dendrite session [command]") {
 		t.Errorf("expected usage output, got: %s", buf.String())
 	}
 
 	// Help flags
-	helpFlags := [][]string{{"help"}, {"--help"}, {"-h"}}
+	helpFlags := [][]string{{"--help"}, {"-h"}}
 	for _, h := range helpFlags {
 		buf.Reset()
 		if err := runSessionCommand(ctx, h, &buf); err != nil {
 			t.Fatalf("expected nil on %v, got: %v", h, err)
 		}
-		if !strings.Contains(buf.String(), "Usage: dendrite session") {
+		if !strings.Contains(buf.String(), "dendrite session [command]") {
 			t.Errorf("expected usage for %v", h)
 		}
 	}
@@ -77,10 +61,6 @@ func TestSessionCommand_DispatchAndHelp(t *testing.T) {
 		t.Errorf("expected error on unknown command, got nil")
 	}
 
-	// handleSessionCommand integration
-	if err := handleSessionCommand(ctx, []string{}); err != nil {
-		t.Errorf("handleSessionCommand([]) expected nil, got %v", err)
-	}
 }
 
 func TestSessionCommand_CheckpointAndResume_TextAndJSON(t *testing.T) {
@@ -109,7 +89,7 @@ func TestSessionCommand_CheckpointAndResume_TextAndJSON(t *testing.T) {
 		"checkpoint",
 		"--worktree", worktreeDir,
 		"--decision", "Use pure Go handoff capsule",
-		"--decisions", "Support multiple decisions",
+		"--decision", "Support multiple decisions",
 		"--next", "DEN-993",
 		"--next", "DEN-994",
 		"--note", "Orchestrator ready to sleep",
@@ -194,7 +174,7 @@ func TestSessionCommand_CheckpointAndResume_TextAndJSON(t *testing.T) {
 	cpJSONArgs := []string{
 		"checkpoint",
 		"--worktree", worktreeDir,
-		"--notes", "Updated notes via --notes flag",
+		"--note", "Updated notes via --note flag",
 		"--json",
 	}
 	if err := runSessionCommand(ctx, cpJSONArgs, &buf); err != nil {
@@ -204,8 +184,8 @@ func TestSessionCommand_CheckpointAndResume_TextAndJSON(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &cp); err != nil {
 		t.Fatalf("failed to unmarshal checkpoint --json output: %v\nOutput: %s", err, buf.String())
 	}
-	if cp.Notes != "Updated notes via --notes flag" {
-		t.Errorf("cp.Notes = %q, want 'Updated notes via --notes flag'", cp.Notes)
+	if cp.Notes != "Updated notes via --note flag" {
+		t.Errorf("cp.Notes = %q, want 'Updated notes via --note flag'", cp.Notes)
 	}
 
 	// 6b. Repeated --note flags are all kept, as a bullet list
@@ -233,7 +213,7 @@ func TestSessionCommand_CheckpointAndResume_TextAndJSON(t *testing.T) {
 	customFile := filepath.Join(tmpDir, "custom-handoff.md")
 	_ = agentjobs.WriteCheckpoint(customFile, &cp)
 	buf.Reset()
-	if err := runSessionCommand(ctx, []string{"resume", "--file", customFile}, &buf); err != nil {
+	if err := runSessionCommand(ctx, []string{"resume", "--path", customFile}, &buf); err != nil {
 		t.Fatalf("resume --file failed: %v", err)
 	}
 	if !strings.Contains(buf.String(), "# Session Handoff") {
@@ -246,22 +226,22 @@ func TestSessionCommand_Errors(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Flag parse error in checkpoint
-	if err := runSessionCheckpoint(ctx, []string{"--nonexistent-flag"}, &buf); err == nil {
+	if err := runSessionCommand(ctx, []string{"checkpoint", "--nonexistent-flag"}, &buf); err == nil {
 		t.Errorf("expected flag error on checkpoint, got nil")
 	}
 
 	// Flag parse error in resume
-	if err := runSessionResume(ctx, []string{"--nonexistent-flag"}, &buf); err == nil {
+	if err := runSessionCommand(ctx, []string{"resume", "--nonexistent-flag"}, &buf); err == nil {
 		t.Errorf("expected flag error on resume, got nil")
 	}
 
 	// Resume without existing checkpoint
 	tmpDir := t.TempDir()
 	t.Setenv("DENDRITE_STATE_DIR", tmpDir)
-	if err := runSessionResume(ctx, []string{}, &buf); err == nil {
+	if err := runSessionCommand(ctx, []string{"resume"}, &buf); err == nil {
 		t.Errorf("expected error on resume without checkpoint, got nil")
 	}
-	if err := runSessionResume(ctx, []string{"--json"}, &buf); err == nil {
+	if err := runSessionCommand(ctx, []string{"resume", "--json"}, &buf); err == nil {
 		t.Errorf("expected error on resume --json without checkpoint, got nil")
 	}
 
@@ -270,7 +250,7 @@ func TestSessionCommand_Errors(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(badPath, "child"), 0755); err != nil {
 		t.Fatalf("MkdirAll failed: %v", err)
 	}
-	if err := runSessionCheckpoint(ctx, []string{"--path", badPath}, &buf); err == nil {
+	if err := runSessionCommand(ctx, []string{"checkpoint", "--path", badPath}, &buf); err == nil {
 		t.Errorf("expected write error on checkpoint, got nil")
 	}
 }

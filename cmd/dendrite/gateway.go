@@ -2,236 +2,195 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
-	"time"
 
 	"Dendrite/pkg/gateway"
 	"Dendrite/pkg/topology"
+
+	"github.com/spf13/cobra"
 )
 
-func handleGatewayCommand(ctx context.Context, args []string) {
-	if len(args) == 0 {
-		printGatewayUsage()
-		return
-	}
-
-	sub := strings.ToLower(args[0])
-
-	switch sub {
-	case "update", "sync", "refresh":
-		handleGatewayUpdateCommand(ctx, args[1:])
-
-	case "schedule", "daemon", "watch":
-		handleGatewayScheduleCommand(ctx, args[1:])
-
-	case "zero-cost", "zerocost", "models":
-		handleZeroCostCommand(args[1:])
-
-	case "render":
-		scenarioStr := "local-hybrid"
-		if len(args) > 1 {
-			scenarioStr = args[1]
-		}
-		renderGatewayScenario(ctx, scenarioStr)
-
-	default:
-		// If argument looks like a topology scenario (e.g. local-hybrid, full-local)
-		if strings.Contains(sub, "local") || strings.Contains(sub, "hybrid") || strings.Contains(sub, "cloud") {
-			renderGatewayScenario(ctx, sub)
-			return
-		}
-		printGatewayUsage()
-	}
+// newCleftCmd builds `dendrite cleft` (alias gateway): LiteLLM routing table updates and config rendering.
+func newCleftCmd() *cobra.Command {
+	cmd := newGroupCmd("cleft", "LiteLLM token gateway rendering, dynamic routing updater & scheduler", "cleft",
+		"gateway", "synaptic-cleft", "gate")
+	cmd.Example = "dendrite cleft update --dry-run\n" +
+		"dendrite cleft schedule --interval 12h\n" +
+		"dendrite cleft render azure-burst"
+	cmd.AddCommand(newCleftUpdateCmd(), newCleftScheduleCmd(), newCleftRenderCmd())
+	return cmd
 }
 
-func handleGatewayUpdateCommand(ctx context.Context, args []string) {
+// addGatewayConfigFlags registers the flags shared by update and schedule.
+func addGatewayConfigFlags(cmd *cobra.Command, opts *gateway.UpdaterOptions) {
+	addFileFlag(cmd, &opts.ConfigPath, opts.ConfigPath, "LiteLLM config file to rewrite")
+	cmd.Flags().BoolVar(&opts.UseContainerHost, "docker", opts.UseContainerHost, "Rewrite engine hosts for LiteLLM running in Docker (--docker=false for a host install)")
+}
+
+func newCleftUpdateCmd() *cobra.Command {
 	opts := gateway.DefaultUpdaterOptions()
-	outputJSON := false
-
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--file", "-f":
-			if i+1 < len(args) {
-				opts.ConfigPath = args[i+1]
-				i++
-			}
-		case "--dry-run", "-n":
-			opts.DryRun = true
-		case "--docker", "--container":
-			opts.UseContainerHost = true
-		case "--no-docker", "--local-host":
-			opts.UseContainerHost = false
-		case "--json":
-			outputJSON = true
-		}
+	cmd := &cobra.Command{
+		Use:     "update",
+		Aliases: []string{"sync", "refresh"},
+		Short:   "Discover live inference engines and rewrite the LiteLLM routing table",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCleftUpdate(cmd.Context(), opts, cmd.OutOrStdout())
+		},
 	}
+	addGatewayConfigFlags(cmd, &opts)
+	addDryRunFlag(cmd, &opts.DryRun)
+	return cmd
+}
 
-	updater := gateway.NewRoutingTableUpdater(opts)
-	report, err := updater.UpdateNow(ctx)
+func runCleftUpdate(ctx context.Context, opts gateway.UpdaterOptions, out io.Writer) error {
+	report, err := gateway.NewRoutingTableUpdater(opts).UpdateNow(ctx)
 	if err != nil {
-		if outputJSON {
-			data, _ := json.MarshalIndent(map[string]interface{}{
-				"status": "error",
-				"error":  err.Error(),
-			}, "", "  ")
-			fmt.Println(string(data))
-		} else {
-			fmt.Printf("[-] Failed to update LiteLLM routing table: %v\n", err)
-		}
-		return
+		return fmt.Errorf("update LiteLLM routing table: %w", err)
 	}
-
-	if outputJSON {
-		data, err := json.MarshalIndent(report, "", "  ")
-		if err != nil {
-			fmt.Printf("[-] Failed to serialize JSON report: %v\n", err)
-			return
-		}
-		fmt.Println(string(data))
-		return
+	if globals.JSON {
+		return writeJSON(out, report)
 	}
 
 	modeStr := "Updated"
 	if report.DryRun {
 		modeStr = "Simulated Update (Dry-Run)"
 	}
-
-	fmt.Printf("[✓] LiteLLM Routing Table %s Successfully in %v\n", modeStr, report.Duration)
-	fmt.Printf("    * Config Path:             %s\n", report.ConfigPath)
-	fmt.Printf("    * Engines Probed:          %d (Online: %d, Offline: %d)\n",
+	fmt.Fprintf(out, "[✓] LiteLLM Routing Table %s Successfully in %v\n", modeStr, report.Duration)
+	fmt.Fprintf(out, "    * Config Path:             %s\n", report.ConfigPath)
+	fmt.Fprintf(out, "    * Engines Probed:          %d (Online: %d, Offline: %d)\n",
 		report.EnginesProbed, len(report.OnlineEngines), len(report.OfflineEngines))
 	if len(report.OnlineEngines) > 0 {
-		fmt.Printf("    * Online Engines:          %s\n", strings.Join(report.OnlineEngines, ", "))
+		fmt.Fprintf(out, "    * Online Engines:          %s\n", strings.Join(report.OnlineEngines, ", "))
 	}
 	if len(report.OfflineEngines) > 0 {
-		fmt.Printf("    * Offline Engines:         %s\n", strings.Join(report.OfflineEngines, ", "))
+		fmt.Fprintf(out, "    * Offline Engines:         %s\n", strings.Join(report.OfflineEngines, ", "))
 	}
-	fmt.Printf("    * Discovered Local Models: %d\n", len(report.DiscoveredModels))
+	fmt.Fprintf(out, "    * Discovered Local Models: %d\n", len(report.DiscoveredModels))
 	if report.ActiveLocalPrimary != "" {
-		fmt.Printf("    * Active Local Primary:    %s (Score: %d on %s)\n",
+		fmt.Fprintf(out, "    * Active Local Primary:    %s (Score: %d on %s)\n",
 			report.ActiveLocalPrimary, report.ActiveLocalPrimaryScore, report.ActiveLocalPrimaryEngine)
 	}
-	fmt.Printf("    * Total Configured Routes: %d\n", report.TotalModelsConfigured)
+	fmt.Fprintf(out, "    * Total Configured Routes: %d\n", report.TotalModelsConfigured)
 	if !report.DryRun {
-		fmt.Printf("    * Bytes Written:           %d bytes\n", report.BytesWritten)
+		fmt.Fprintf(out, "    * Bytes Written:           %d bytes\n", report.BytesWritten)
 	}
+	return nil
 }
 
-func handleGatewayScheduleCommand(ctx context.Context, args []string) {
+func newCleftScheduleCmd() *cobra.Command {
 	opts := gateway.DefaultUpdaterOptions()
-	daemonMode := false
-
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--interval", "-i":
-			if i+1 < len(args) {
-				if d, err := time.ParseDuration(args[i+1]); err == nil && d > 0 {
-					opts.Interval = d
-				}
-				i++
+	cmd := &cobra.Command{
+		Use:     "schedule",
+		Aliases: []string{"daemon", "watch"},
+		Short:   "Keep the LiteLLM routing table updated on an interval (foreground; Ctrl+C stops it)",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if opts.Interval <= 0 {
+				return usageErrorf("--interval must be positive")
 			}
-		case "--file", "-f":
-			if i+1 < len(args) {
-				opts.ConfigPath = args[i+1]
-				i++
-			}
-		case "--docker", "--container":
-			opts.UseContainerHost = true
-		case "--daemon", "-d":
-			daemonMode = true
-		}
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			return runCleftSchedule(ctx, opts, cmd.OutOrStdout())
+		},
 	}
+	cmd.Flags().DurationVarP(&opts.Interval, "interval", "i", opts.Interval, "Time between updates")
+	addGatewayConfigFlags(cmd, &opts)
+	return cmd
+}
 
-	updater := gateway.NewRoutingTableUpdater(opts)
-	fmt.Printf("[+] Starting LiteLLM Routing Table Scheduler Daemon (Interval: %v)\n", opts.Interval)
-	fmt.Printf("    * Target Configuration: %s\n", opts.ConfigPath)
-	fmt.Printf("    * Container Host Rewriting: %v\n", opts.UseContainerHost)
+// runCleftSchedule prints one line per update until ctx is cancelled.
+func runCleftSchedule(ctx context.Context, opts gateway.UpdaterOptions, out io.Writer) error {
+	fmt.Fprintf(out, "[+] Starting LiteLLM Routing Table Scheduler (Interval: %v)\n", opts.Interval)
+	fmt.Fprintf(out, "    * Target Configuration: %s\n", opts.ConfigPath)
+	fmt.Fprintf(out, "    * Container Host Rewriting: %v\n", opts.UseContainerHost)
 
-	daemonCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	repCh, stopFunc := updater.StartDailyDaemon(daemonCtx)
+	repCh, stopFunc := gateway.NewRoutingTableUpdater(opts).StartDailyDaemon(ctx)
 	defer stopFunc()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-
-	fmt.Println("[+] Daemon active. Monitoring inference engines and keeping routes updated.")
-	if !daemonMode {
-		fmt.Println("    (Press Ctrl+C to terminate)")
-	}
+	fmt.Fprintln(out, "[+] Scheduler active. Press Ctrl+C to stop.")
 
 	for {
 		select {
-		case sig := <-sigCh:
-			fmt.Printf("\n[!] Received signal %v. Terminating LiteLLM routing scheduler...\n", sig)
-			stopFunc()
-			return
+		case <-ctx.Done():
+			fmt.Fprintln(out, "\n[!] Stopping LiteLLM routing scheduler...")
+			return nil
 		case rep, ok := <-repCh:
 			if !ok {
-				return
+				return nil
 			}
 			if rep != nil {
-				fmt.Printf("[%s] [✓] Synced %d routes (%d discovered models). Primary: %s (Score: %d on %s)\n",
-					rep.Timestamp.Format("15:04:05"), rep.TotalModelsConfigured, len(reportModels(rep)),
+				fmt.Fprintf(out, "[%s] [✓] Synced %d routes (%d discovered models). Primary: %s (Score: %d on %s)\n",
+					rep.Timestamp.Format("15:04:05"), rep.TotalModelsConfigured, len(rep.DiscoveredModels),
 					rep.ActiveLocalPrimary, rep.ActiveLocalPrimaryScore, rep.ActiveLocalPrimaryEngine)
 			}
 		}
 	}
 }
 
-func reportModels(rep *gateway.UpdateReport) []gateway.DiscoveredModel {
-	if rep == nil {
-		return nil
+// scenarioNames lists the topology scenarios for help text and completion.
+func scenarioNames() []string {
+	var names []string
+	for _, s := range topology.AllScenarios() {
+		names = append(names, string(s))
 	}
-	return rep.DiscoveredModels
+	return names
 }
 
-func renderGatewayScenario(ctx context.Context, scenarioStr string) {
-	sc, err := topology.ParseScenario(scenarioStr)
+// parseScenarioArg parses an optional scenario argument; an invalid name is a usage error.
+func parseScenarioArg(args []string) (topology.Scenario, error) {
+	name := string(topology.ScenarioLocalHybrid)
+	if len(args) > 0 {
+		name = args[0]
+	}
+	sc, err := topology.ParseScenario(name)
 	if err != nil {
-		fmt.Printf("[-] Invalid scenario '%s': %v\n", scenarioStr, err)
-		return
+		return "", usageErrorf("invalid scenario %q: use %s", name, strings.Join(scenarioNames(), ", "))
 	}
+	return sc, nil
+}
 
-	ctrlIP := os.Getenv("TAILSCALE_CONTROL_PLANE_IP")
-	if ctrlIP == "" {
-		ctrlIP = "100.84.12.10"
+// tailscaleEndpoints reads the control and execution plane addresses, with lab defaults.
+func tailscaleEndpoints() topology.TailscaleEndpoints {
+	ep := topology.TailscaleEndpoints{ControlPlane: "100.84.12.10", ExecutionPlane: "100.84.12.25"}
+	if v := os.Getenv("TAILSCALE_CONTROL_PLANE_IP"); v != "" {
+		ep.ControlPlane = v
 	}
-	execIP := os.Getenv("TAILSCALE_EXECUTION_PLANE_IP")
-	if execIP == "" {
-		execIP = "100.84.12.25"
+	if v := os.Getenv("TAILSCALE_EXECUTION_PLANE_IP"); v != "" {
+		ep.ExecutionPlane = v
 	}
+	return ep
+}
 
-	top, err := topology.NewTopologyConfig(sc, topology.TailscaleEndpoints{
-		ControlPlane:   ctrlIP,
-		ExecutionPlane: execIP,
-	})
+func newCleftRenderCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:       "render [scenario]",
+		Short:     "Render the LiteLLM config for a topology scenario (default local-hybrid)",
+		Args:      maxArgs(1),
+		ValidArgs: scenarioNames(),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			sc, err := parseScenarioArg(args)
+			if err != nil {
+				return err
+			}
+			return runCleftRender(sc, cmd.OutOrStdout())
+		},
+	}
+}
+
+func runCleftRender(sc topology.Scenario, out io.Writer) error {
+	top, err := topology.NewTopologyConfig(sc, tailscaleEndpoints())
 	if err != nil {
-		fmt.Printf("[-] Failed to create topology: %v\n", err)
-		return
+		return fmt.Errorf("create topology: %w", err)
 	}
 	yamlData, err := gateway.RenderForTopology(top)
 	if err != nil {
-		fmt.Printf("[-] Failed to render LiteLLM gateway config: %v\n", err)
-		return
+		return fmt.Errorf("render LiteLLM gateway config: %w", err)
 	}
-	fmt.Printf("[+] Rendered LiteLLM Config for scenario '%s':\n\n%s\n", sc, string(yamlData))
-}
-
-func printGatewayUsage() {
-	fmt.Println("Usage: dendrite gateway <update|schedule|render|zero-cost> [args...]")
-	fmt.Println("\nCommands:")
-	fmt.Println("  update [--file <path>] [--dry-run] [--docker] [--json]")
-	fmt.Println("                        Manually trigger dynamic LiteLLM routing table discovery and update")
-	fmt.Println("  schedule [--interval 24h] [--file <path>] [--daemon]")
-	fmt.Println("                        Run daily background daemon updating LiteLLM routing table once every 24h")
-	fmt.Println("  render [scenario]     Render dynamic LiteLLM configuration for topology scenario")
-	fmt.Println("  zero-cost <list|add|remove|test|reset>")
-	fmt.Println("                        Inspect and manage zero-cost self-hosted models and prefix rules")
+	fmt.Fprintf(out, "[+] Rendered LiteLLM Config for scenario '%s':\n\n%s\n", sc, string(yamlData))
+	return nil
 }

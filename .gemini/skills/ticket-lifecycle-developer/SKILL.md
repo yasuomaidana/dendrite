@@ -30,7 +30,7 @@ description: Guides and executes the end-to-end development lifecycle for projec
 > 6. **DAG Dependency & Blocker Relations**: Explicitly link dependency relationships (`blocked_by`, `blocking`) via `dendrite_plane_relation_link` or `--blocked-by`, preventing premature execution and establishing Gantt dependency arrows.
 > 7. **Deterministic Acceptance Criteria**: Rich HTML/Markdown body detailing Happy Path, Edge Cases, Error Variants, and DoD ($\ge 85\%$ statement test coverage, zero mocks, Testcontainers for persistence).
 > 8. **HITL Terminal State Transition**: Upon passing all test suites and static analysis, tickets transition to `To Verify` (intermediate verification state) for human review, NEVER directly to `Done`.
-> 9. **Zero-Mock Policy Enforcement Gate**: Any attempt to commit or advance a ticket to `To Verify` or `Done` whose associated packages contain mock types or stubs (`type Mock...`, `type Fake...`) is strictly rejected by Dendrite CLI (`dendrite commit`, `dendrite dev ticket set`), Git pre-commit hooks, and Plane API (`client.UpdateStatus`). Real production implementations or Testcontainers are strictly mandatory before entering verification.
+> 9. **Zero-Mock Policy Enforcement Gate**: Any attempt to commit or advance a ticket to `To Verify` or `Done` whose associated packages contain mock types or stubs (`type Mock...`, `type Fake...`) is strictly rejected by Dendrite CLI (`dendrite commit`, `dendrite chronos ticket set`), Git pre-commit hooks, and Plane API (`client.UpdateStatus`). Real production implementations or Testcontainers are strictly mandatory before entering verification.
 
 ## Persona & Operating Role
 You are an Autonomous Senior Systems & AI Architect and Technical Lead. Your mission is to identify the first undone ticket via **Plane v2** and drive it from inception to completion following an 8-phase rigorous engineering workflow:
@@ -240,63 +240,53 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
       - *Example*: `./bin/dendrite mcp call dendrite_canvas_penpot_bridge '{"subaction":"relate","ticket_id":"DEN-807","feature_name":"Canvas Workspace"}'`
 
 ### 2. Dendrite CLI Tools (`./bin/dendrite`)
-- `dendrite session <checkpoint|resume> [--worktree <dir>] [--decision <desc>] [--next <ticket>] [--note <notes>] [--json]`: Session checkpoint and resume protocol for multi-agent coordination; both also delete merged, clean working copies in `dendrite-work/`.
-- `dendrite work <new|list|done|gc|adopt> [flags]`: Model-owned working copies. Use `dendrite work new <ticket>` for every isolated checkout (never a hand-made `git clone` / `git worktree add ../<dir>`); copies live in `dendrite-work/` and are removed once merged and clean. See the `dendrite-workflow` skill.
-- `dendrite agent jobs submit ... --isolate`: Delegate a ticket to Antigravity (AGY) or another model inside its own `dendrite-work/` copy.
-- `dendrite canvas <actions|dispatch|relate|sync|update-state|list> [flags]`: Interactive writing canvas, Penpot UI creative action bridge, and bidirectional project state synchronization.
-- `dendrite env <prepare|sync|update> [--path <dir>] [--tool <name>] [--no-cicd] [--no-skills] [--dry-run] [--json]`: Prepares environment, synchronizes agent rules and skills, and enforces CI/CD with GitHub Copilot as default (alias: `dendrite project <prepare|sync|update>`).
-- `dendrite greeting [--topic <t>] [--milestone <m>] [--event <e>] [--days <d>] [--options <a,b>] [--challenge <c>] [--stress] [--hobby] [--suppress <g1,g2>] [--json]`: Dynamic 10-Style Greeting Matrix resolution with strict cliché suppression.
-- `dendrite move <svc> to --ssh <target> [--dry-run] [--yes] [--no-prune]`: Zero-credential interactive service migration pipeline moving containerized services to a remote SSH server.
-- `dendrite move debian --ssh <target>`: Automatically migrates all services compatible with target Debian server (Plane + LiteLLM + Database within 4 GB RAM / 1 TB Disk budget).
-- `dendrite move plan [--ram <size>] [--disk <size>]`: Capacity evaluation breakdown for target compute node.
-- `dendrite sync-remote`: Pre-flight remote divergence check, automatic rebase on remote fixes, and commit reconciliation.
-- `dendrite quality <audit|hitl-sync>`: Anti-mock quality gate, 100% coverage profiler, and Human-in-the-Loop verification poller.
-- `dendrite audit-changes [--branch <name>] [--dry-run] [--max-tokens <int>] [--model <m>]`: Topological vendor audit and rebase engine for local/* branches.
-- `dendrite vcs <guard|check|status|evacuate>`: Enforce Git branch guardrails, check policy, and evacuate forbidden branches.
-- `dendrite github-sync [--ticket <ID,...>] [--repo <owner/repo>] [--dry-run] [--json]`: Open the HITL verification issue of every Plane To Verify ticket and close issues of tickets Done in Plane. Run it right after moving a ticket to To Verify.
-- `dendrite quality hitl-sync [--ticket <ID,...>] [--dry-run] [--json]`: Poll verification issues; issues closed as completed move their ticket to Done in Plane.
-- `dendrite plane next [--ticket <id>] [--milestone <m>] [--json]`: Smart ticket prioritization & DAG reachability engine (aliases: `dev ticket next`, `stories next`). Selects the optimal unblocked ticket considering priority weighting and downstream critical path, or validates user-requested ticket.
-- `dendrite plane link <ticket-a> <blocking|blocked_by|relates_to> <ticket-b>`: Link ticket relationships in Plane to render Gantt dependency arrows (alias: `dev ticket link`).
-- `dendrite plane relate --ticket <id> [--priority <prio>] [--blocked-by <ids>] [--blocking <ids>] [--relates-to <ids>] [--reason <reason>]`: Update ticket priority and synchronize DAG dependency relations in Plane (alias: `dendrite skill ticket-relate`).
-- `dendrite plane gantt-sync`: Synchronize all milestone modules, ticket schedules, and blocker dependency arrows in Plane so interactive Gantt charts render with full timelines and dependency lines.
-- `dendrite plane create --name "[DEN-XXX] Title" --desc "Detailed context & acceptance criteria" [--milestone "M"] [--priority high] [--estimate 5] [--blocked-by "DEN-A,DEN-B"]`: Create a ticket, link it to milestone modules, compute Gantt dates, and establish blocker relations for the development plan (alias: `dev ticket create`).
-- `dendrite story <start|check-contracts|fork|benchmark|resolve|abort|status>`: Speculative story branching, differential architecture benchmark harness, and Quad-IDE cross-language contract monitoring.
-- `dendrite tokens [status] [--model <m>] [--probe] [--json]`: Inspect Day Window (24h) and Week Window (7d) remaining tokens, quota reset countdown, safety reserve floor, and confirm live AGY access.
-- `dendrite commit [--ticket <id>] [--message <msg>] [--stage-all] [--model <model>] [--local] [--dry-run] [--no-push]`: Autonomous Git commit engine with automatic local model delegation for Conventional Commit message synthesis.
-- `dendrite agent <search|route>`: Search and rank agents with hybrid vector/BM25 search or auto-route tasks to optimal agents with LiteLLM virtual keys.
-- `dendrite test <auto|ui>`: Synthesize table-driven tests with Testcontainers & self-healing convergence, or run Web UI browser journeys & WebSocket telemetry load tests.
-- `dendrite triage [--prompt "..."] [--file <file>] [--tier local|hybrid|cloud] [--local]`: Front-door local agent prompt router, skill injector, and token efficiency optimizer.
-- `dendrite mcp <serve|tools|call>`: Native Model Context Protocol stdio server and testing harness.
-- `dendrite dev inference migrate <model> [--from ollama] [--to oxillama] [--delete-source] [--dry-run]`: Migrate models from Ollama to OxiLLaMa and evict source blobs.
-- `dendrite ui sync --file <path> [--ticket <id>] [--endpoint <url>] [--dry-run]`: Synchronize UI component props and design tokens with Penpot and Plane tickets.
-- `dendrite jetbrains <probe|open|problems|symbols|build|run|setup>`: Probe JetBrains MCP server, trigger IDE builds/runs, and configure IDE toolsets.
-- `dendrite agent run <aider|openhands|opencode|agy|copilot> [flags]`: Launch autonomous agent sessions bound to LiteLLM virtual keys and ephemeral containers.
-- `dendrite inference <list|probe|switch|render|zero-cost>`: Inspect and manage multi-provider inference backends and dynamic zero-cost models.
-- `dendrite dev inference zero-cost <list|add|remove|test|reset>`: Inspect and manage multi-provider inference backends (Ollama Metal, OxiLLaMa, TGI, TEI, vLLM, llama.cpp).
-- `dendrite dev inference <list|probe|switch|render>`: Development inference gateway control and route rendering.
-- `dendrite plane replicate [--file DEV_STATUS.md]`: Replicate `DEV_STATUS.md` from Plane service (Plane owns project status; dev_status is for humans and repo purposes only).
-- `dendrite plane push-status`: Move local markdown content (tickets, milestones, specs) to Plane service.
-- `dendrite plane doc <push|pull|sync> [--dir docs]`: Bidirectional documentation synchronization between Plane and local repository.
-- `dendrite plane <issues|modules|pages>`: Query live Plane issues, milestones/modules, and documentation pages.
-- `dendrite dev ticket <list|set|push-plane|replicate-plane>`: Inspect or mutate ticket status and sync with Plane.
-- `dendrite dev gateway [scenario]`: Render dynamic LiteLLM configuration YAML.
-- `dendrite gateway update [--file <path>] [--dry-run] [--docker] [--json]`: Manually trigger dynamic LiteLLM routing table discovery and update.
-- `dendrite gateway schedule [--interval 24h] [--file <path>] [--daemon]`: Run daily background daemon updating LiteLLM routing table once every 24h.
-- `dendrite topology advisor [--nodes ...]`: Run remote SSH/local hardware discovery and dynamic microservice placement routing.
-- `dendrite telemetry [metrics|status]`: Emit Prometheus exposition metrics or real-time Apple Silicon SoC thermals.
-- `dendrite env <doctor|plan|install|replicate|status>`: Target computer diagnostic and container replication engine.
-- `dendrite dist <sources|resolve|decompose|interop|spawn>`: Manage distributed codebase sources, modular REA, cross-project interop, and parallel project/Plane spawner.
-- `dendrite bench <inference|gateway|matrix|stress>`: Benchmark inference TTFT/TPS velocity, stress-test LiteLLM gateway failover cascades, run multi-engine matrix, or stress budget limiter.
-- `dendrite rea <showcase|list> [target] [--format text|json|markdown]`: Open-source REA cleanroom analysis, evidence extraction, and property test verification suite across 5 target archetypes.
+Commands use Neuro-Lore names; the plain name in parentheses is an alias (`dendrite plane next` and `dendrite chronos next` are the same command). Run `dendrite <command> --help` for flags; every leaf supports it. `--json`, `-y/--yes`, `--state-dir`, `--home`, `--gateway-url` and `--plane-url` are global flags. Exit codes: 0 success, 1 failure, 2 usage error.
 
-- `dendrite pool <add|remove|list|resolve> [--json]`: Autonomous multi-directory project pool manager and deterministic topological DAG solver with cycle detection.
-- `dendrite query [slice] --sources <path> --entrypoint <symbol> [flags] "<intent>"`: Universal intent-driven CFG/AST reachability slicer with golden vector test generation.
-- `dendrite query transpile --sources <artifact> [--to rust] [--no-std] [flags] "<prompt>"`: Safe idiomatic Rust transpiler with differential parity harness.
-- `dendrite query fuse --sources <src1,src2> --name <member> [--target-dir <dir>]`: Multi-artifact architecture fusion and in-process channel synthesizer.
-- `dendrite query reuse --capability <cap> [--lang rust|go|ts|py] [--ticket <id>]`: Evaluates 3-tier library reuse hierarchy and emits ADR.
-- `dendrite ref <list|add|remove> [flags]`: Manages registered Tier 1 source references for library reuse.
-- `dendrite store <status|inspect|rm|chunks|query|commit|purge> [flags]`: Content-addressed persistent segmented store, telemetry inspector, and safe deletion lifecycler.
-- `dendrite analyze <policy|status|pause|resume|run> [flags]`: Token-Aware Hybrid Scheduler policy manager, execution tier dispatcher, and 48h pre-reset cloud sprint governor.
+- `dendrite session <checkpoint|resume> [--worktree <dir>] [--decision <desc>]... [--next <ticket>]... [--note <note>]... [--json]`: Session checkpoint and resume protocol for multi-agent coordination; both also delete merged, clean working copies in `dendrite-work/`.
+- `dendrite work <new|list|done|gc|adopt> [flags]`: Model-owned working copies. Use `dendrite work new <ticket>` for every isolated checkout (never a hand-made `git clone` / `git worktree add ../<dir>`); copies live in `dendrite-work/` and are removed once merged and clean. See the `dendrite-workflow` skill.
+- `dendrite bouton jobs submit ... --isolate` (agent): Delegate a ticket to Antigravity (AGY) or another model inside its own `dendrite-work/` copy. `jobs list|show|tail|wait|retry|cancel|daemon` manage them.
+- `dendrite bouton <run|search|route|sessions>` (agent): Launch agent sessions bound to LiteLLM virtual keys, rank agents with hybrid vector/BM25 search, or auto-route a task to the best agent.
+- `dendrite soma <prepare|plan|replicate|install|status|diagnose>` (env): Prepare a project (agent rules, skills, CI/CD with GitHub Copilot as default), plan and replicate the environment, install agents and services, and run pre-flight diagnostics.
+- `dendrite ganglion <add|switch|list|remove>` (project): Multi-project isolated workspaces.
+- `dendrite chronos next [--ticket <id>] [--milestone <m>] [--json]` (plane): Smart ticket prioritization & DAG reachability engine. Selects the optimal unblocked ticket considering priority weighting and downstream critical path, or validates a requested ticket.
+- `dendrite chronos link <ticket-a> <blocking|blocked_by|relates_to|duplicate> <ticket-b>`: Link ticket relationships in Plane to render Gantt dependency arrows.
+- `dendrite chronos relate --ticket <id> [--priority <prio>] [--blocked-by <ids>] [--blocking <ids>] [--relates-to <ids>] [--reason <reason>]`: Update ticket priority and synchronize DAG dependency relations in Plane.
+- `dendrite chronos gantt-sync`: Synchronize milestone modules, ticket schedules, and blocker dependency arrows so Plane's Gantt charts render with full timelines.
+- `dendrite chronos create --name "[DEN-XXX] Title" (--desc "Detailed context & acceptance criteria" | --desc-file spec.md) [--milestone "M"] [--priority high] [--estimate 5] [--blocked-by "DEN-A,DEN-B"]`: Create a ticket, link it to milestone modules, compute Gantt dates, and establish blocker relations.
+- `dendrite chronos update --ticket <id> [--name ...] (--desc ... | --desc-file ...)`: Rename a ticket or replace its description.
+- `dendrite chronos ticket <list|set>`: Read ticket status from `DEV_STATUS.md` or set it in Plane and `DEV_STATUS.md`.
+- `dendrite chronos <replicate|push|issues|modules|pages|states ensure>`: Replicate `DEV_STATUS.md` from Plane (Plane owns project status), push markdown status to Plane, query issues, modules and pages, and ensure the canonical workflow states.
+- `dendrite codex plane <push|pull|sync> [--dir docs]` (doc): Bidirectional documentation synchronization between Plane pages and the repository.
+- `dendrite codex <generate [--reference]|audit [--strict]|reflect|site <init|share|serve|build>>` (doc, docs): Reference docs from the live command tree, the docs audit CI runs, taxonomy reflection, and the Docusaurus site.
+- `dendrite saga <start|check-contracts|fork|benchmark|resolve|abort|status>` (story): Speculative story branching, differential architecture benchmark harness, and cross-language contract monitoring.
+- `dendrite vesicle <status|estimate>` (tokens): Day (24h) and week (7d) token windows, quota reset countdown, safety reserve floor, live AGY access, and prompt size estimates.
+- `dendrite quantal [--ticket <id>] [--message <msg>] [--files a,b | --all] [--model <model>] [--no-local] [--dry-run] [--no-push]` (commit): Autonomous Git commit engine with local model delegation for Conventional Commit messages; pushes to origin, never to main/master.
+- `dendrite reflex <auto|ui>` (test): Synthesize table-driven tests with Testcontainers & self-healing convergence, or run web UI browser journeys & WebSocket telemetry load tests.
+- `dendrite inhibitory-triage "<prompt>" [--file <file>] [--tier local|hybrid|cloud] [--local] [--rag]` (triage): Front-door prompt router, skill injector, and token efficiency optimizer.
+- `dendrite ask "<question>" [--hybrid|--paid] [--server <url>] [--update-index]`: Questions about a project answered from its RAG index with a paid fallback (`--yes` escalates without asking).
+- `dendrite inter <serve|tools|call> [--synapse <id>]` (mcp): Native Model Context Protocol stdio server and testing harness.
+- `dendrite spike <list|probe|switch|render|migrate|serve|stop>` (inference): Multi-provider inference engines; `probe --endpoint <url>` checks a raw Ollama endpoint, `migrate <model> [--from ollama] [--to oxillama] [--delete-source]` moves model blobs.
+- `dendrite spike zero-cost <list|add|remove|test|reset>`: Zero-cost (self-hosted) model and prefix rules.
+- `dendrite cleft <update|schedule|render [scenario]>` (gateway): LiteLLM routing table discovery and update, the interval scheduler, and config rendering per topology scenario.
+- `dendrite axon <advisor|inspect [scenario]>` (topology): Hardware discovery and microservice placement.
+- `dendrite cortex <serve|sync|canvas>` (ui): The web cockpit, Penpot component sync, and the creative canvas (`canvas <actions|dispatch|relate|sync|update-state|list>`).
+- `dendrite sensory [snapshot|metrics]` (telemetry): Real-time SoC thermals and spend, or Prometheus exposition metrics.
+- `dendrite bridge <probe|open|problems|symbols|build|run|setup>` (jetbrains): JetBrains MCP integration; `setup` writes the IDE configuration without a running IDE.
+- `dendrite greeting [--topic <t>] [--milestone <m>] [--event <e>] [--days <d>] [--options <a,b>] [--challenge <c>] [--stress] [--hobby] [--suppress <g1,g2>] [--json]`: Dynamic 10-style greeting resolution with cliché suppression.
+- `dendrite translocate plan [--ram <size>] [--disk <size>]` (move): Capacity evaluation for a target node.
+- `dendrite translocate run <svc>... --ssh <target> [--dry-run] [--yes] [--no-prune]`: Zero-credential service migration over SSH; `run debian --ssh <target>` moves every service that fits a 4 GB RAM / 1 TB disk Debian server.
+- `dendrite motor <list|start|stop|restart|health>` (service): Manage the Plane, Penpot, Ollama and LiteLLM service stacks.
+- `dendrite myelin <check|evacuate|sync-remote|github-sync [--repo <owner/repo>] [--hitl]>` (vcs): Branch guardrails, remote divergence check and rebase with commit reconciliation, and GitHub Issues sync with the human-in-the-loop verification poll.
+- `dendrite allostasis <audit [pkg]|coverage [--ratchet] [--update]>` (quality): Anti-mock quality gate and the per-package coverage ratchet CI runs.
+- `dendrite prune [--branch <name>] [--dry-run] [--max-tokens <int>] [--model <m>]` (audit-changes): Topological vendor audit and rebase engine for local/* branches.
+- `dendrite mesh <sources|resolve|decompose|interop|spawn>` (dist): Distributed codebase sources, modular decomposition, cross-project interop, and the parallel project/Plane spawner.
+- `dendrite velocity <inference|gateway|matrix|stress>` (bench): TTFT/TPS benchmarks, gateway failover stress tests, the multi-engine matrix, and the budget limiter stress test.
+- `dendrite retro <list|showcase [target]> [--format text|markdown] [--json]` (rea): Open-source REA cleanroom analysis and parity verification across 5 target archetypes.
+- `dendrite plexus <add|remove|list|resolve|switch|split>` (pool): Multi-directory project pool and deterministic topological DAG solver with cycle detection.
+- `dendrite arbor <slice|swap|transpile|fuse|reuse>` (query): Intent-driven reachability slicing, subsystem swaps, safe Rust transpilation, architecture fusion, and the 3-tier library reuse audit.
+- `dendrite afferent <list|add|remove>` (ref): Tier 1 source references for library reuse.
+- `dendrite engram <status|inspect|rm|chunks|query|commit|purge>` (store): Content-addressed persistent segmented store.
+- `dendrite cognition <policy|status|switch|mode|pause|resume|run>` (analyze): Token-aware hybrid scheduler policy and the 48h pre-reset cloud sprint governor.
 
 ### 3. Unified Stacks Environment (`stacks/.env`)
 Dendrite maintains an enterprise-grade multi-service container orchestration stack parameterized via `stacks/.env` (and mirrored in `.env`):
@@ -470,9 +460,9 @@ after each finished ticket and before long waits to persist in-flight and verifi
   - Execute the commit via Dendrite (`./bin/dendrite commit --ticket <ID>` or native MCP tool `dendrite_commit`), delegating commit message generation to local zero-cost models (`local-qwen3-27b` / Ollama Metal) to preserve token budget.
   - `dendrite commit` pushes the new commit to the configured remote (origin preferred) after every successful commit; use `--no-push` or `DENDRITE_COMMIT_PUSH=false` to opt out; it never force-pushes and refuses to push main/master.
 - Mutate the ticket state directly in Plane:
-  - Transition the issue state to `To Verify` in Plane via the Plane API / client or `./bin/dendrite dev ticket set <ID> "To Verify" --push-plane`.
-  - Open its GitHub verification issue with `./bin/dendrite github-sync --ticket <ID>` (preview with `--dry-run`).
-  - Autonomous agents must NEVER mark an issue directly as `Done`; issues remain in `To Verify` until formally signed off through human verification (`dendrite hitl-sync` or Plane web UI).
+  - Transition the issue state to `To Verify` in Plane via the Plane API / client or `./bin/dendrite chronos ticket set <ID> "to verify"`.
+  - Open its GitHub verification issue with `./bin/dendrite myelin github-sync --ticket <ID>` (preview with `--dry-run`).
+  - Autonomous agents must NEVER mark an issue directly as `Done`; issues remain in `To Verify` until formally signed off through human verification (`dendrite allostasis hitl-sync`, `dendrite myelin github-sync --hitl` or the Plane web UI).
   - Advance next ticket to `In Progress` in Plane.
 - Synchronize repository documentation for human readers:
   - Run `dendrite plane replicate` (or native MCP `dendrite_plane_replicate`) so that `DEV_STATUS.md` is updated from Plane for human repo viewers.

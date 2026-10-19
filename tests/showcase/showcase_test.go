@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -110,54 +109,48 @@ func TestShowcase_IndividualTargets(t *testing.T) {
 }
 
 func TestShowcase_CLIIntegration(t *testing.T) {
-	// Locate bin/dendrite or compile if needed
-	binPath, err := filepath.Abs("../../bin/dendrite")
-	if err != nil {
-		t.Fatalf("failed to resolve bin path: %v", err)
+	// Always build a fresh binary so the test never runs a stale bin/dendrite.
+	binPath := filepath.Join(t.TempDir(), "dendrite")
+	buildCmd := exec.Command("go", "build", "-o", binPath, "../../cmd/dendrite")
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to compile dendrite binary: %v (%s)", err, string(out))
 	}
 
-	if _, err := os.Stat(binPath); os.IsNotExist(err) {
-		buildCmd := exec.Command("go", "build", "-o", binPath, "../../cmd/dendrite")
-		if out, err := buildCmd.CombinedOutput(); err != nil {
-			t.Fatalf("failed to compile dendrite binary: %v (%s)", err, string(out))
-		}
-	}
-
-	// 1. Test rea list
-	listCmd := exec.Command(binPath, "rea", "list")
+	// 1. Test retro list
+	listCmd := exec.Command(binPath, "retro", "list")
 	listOut, err := listCmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("dendrite rea list failed: %v (%s)", err, string(listOut))
+		t.Fatalf("dendrite retro list failed: %v (%s)", err, string(listOut))
 	}
 	if !strings.Contains(string(listOut), "Registered Open-Source REA Showcase Targets (5)") {
-		t.Errorf("unexpected rea list output: %s", string(listOut))
+		t.Errorf("unexpected retro list output: %s", string(listOut))
 	}
 
-	// 2. Test rea showcase all
-	allCmd := exec.Command(binPath, "rea", "showcase", "all")
+	// 2. Test retro showcase (all targets)
+	allCmd := exec.Command(binPath, "retro", "showcase", "all")
 	allOut, err := allCmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("dendrite rea showcase all failed: %v (%s)", err, string(allOut))
+		t.Fatalf("dendrite retro showcase all failed: %v (%s)", err, string(allOut))
 	}
 	if !strings.Contains(string(allOut), "DENDRITE REA CLEANROOM VERIFICATION SCORECARD: PASSED") {
-		t.Errorf("unexpected rea showcase all output: %s", string(allOut))
+		t.Errorf("unexpected retro showcase all output: %s", string(allOut))
 	}
 
-	// 3. Test rea showcase markdown
-	mdCmd := exec.Command(binPath, "rea", "showcase", "aegis", "--format", "markdown")
+	// 3. Test retro showcase markdown
+	mdCmd := exec.Command(binPath, "retro", "showcase", "aegis", "--format", "markdown")
 	mdOut, err := mdCmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("dendrite rea showcase markdown failed: %v (%s)", err, string(mdOut))
+		t.Fatalf("dendrite retro showcase markdown failed: %v (%s)", err, string(mdOut))
 	}
 	if !strings.Contains(string(mdOut), "# Open-Source REA Showcase & Cleanroom Parity Scorecard") {
 		t.Errorf("unexpected markdown output: %s", string(mdOut))
 	}
 
-	// 4. Test rea showcase json
-	jsonCmd := exec.Command(binPath, "rea", "showcase", "ctf", "--format", "json")
-	jsonOut, err := jsonCmd.CombinedOutput()
+	// 4. Test retro showcase --json
+	jsonCmd := exec.Command(binPath, "retro", "showcase", "ctf", "--json")
+	jsonOut, err := jsonCmd.Output()
 	if err != nil {
-		t.Fatalf("dendrite rea showcase json failed: %v (%s)", err, string(jsonOut))
+		t.Fatalf("dendrite retro showcase --json failed: %v (%s)", err, string(jsonOut))
 	}
 	if !strings.Contains(string(jsonOut), `"overall_status": "PASSED"`) {
 		t.Errorf("unexpected json output: %s", string(jsonOut))

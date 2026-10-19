@@ -1,39 +1,49 @@
 package main
 
 import (
-	"reflect"
+	"bytes"
+	"context"
+	"strings"
 	"testing"
 )
-
-func TestExtractSynapseFlag(t *testing.T) {
-	cases := []struct {
-		args    []string
-		id      string
-		rest    []string
-		wantErr bool
-	}{
-		{args: []string{"--synapse", "web-api"}, id: "web-api", rest: []string{}},
-		{args: []string{"synapse_info", "--synapse=web-api", "{}"}, id: "web-api", rest: []string{"synapse_info", "{}"}},
-		{args: []string{"x"}, id: "", rest: []string{"x"}},
-		{args: []string{"--synapse"}, wantErr: true},
-	}
-	for _, c := range cases {
-		id, rest, err := extractSynapseFlag(c.args)
-		if (err != nil) != c.wantErr {
-			t.Fatalf("extractSynapseFlag(%v) err = %v", c.args, err)
-		}
-		if c.wantErr {
-			continue
-		}
-		if id != c.id || !reflect.DeepEqual(rest, c.rest) {
-			t.Fatalf("extractSynapseFlag(%v) = %q, %v; want %q, %v", c.args, id, rest, c.id, c.rest)
-		}
-	}
-}
 
 func TestBuildSynapseMCPServerUnknown(t *testing.T) {
 	t.Setenv("DENDRITE_HOME", t.TempDir())
 	if _, err := buildSynapseMCPServer("missing"); err == nil {
 		t.Fatal("expected error for an unknown synapse")
+	}
+}
+
+func TestInter_Commands(t *testing.T) {
+	t.Setenv("DENDRITE_HOME", t.TempDir())
+	if out, code := cliOutput(t, "inter", "tools"); code != ExitOK || !strings.Contains(out, "Registered Dendrite MCP Tools") {
+		t.Fatalf("tools: exit %d\n%s", code, out)
+	}
+	if out, code := cliOutput(t, "mcp", "list", "--json"); code != ExitOK || !strings.HasPrefix(strings.TrimSpace(out), "[") {
+		t.Fatalf("tools --json: exit %d\n%s", code, out)
+	}
+	cases := []struct {
+		args []string
+		code int
+	}{
+		{[]string{"inter", "call", "no_such_tool"}, ExitError},
+		{[]string{"inter", "call", "x", "{not json"}, ExitUsage},
+		{[]string{"inter", "call"}, ExitUsage},
+		{[]string{"inter", "tools", "--synapse", "missing"}, ExitError},
+		{[]string{"inter", "serve", "--synapse=missing"}, ExitError},
+	}
+	for _, c := range cases {
+		if out, code := cliOutput(t, c.args...); code != c.code {
+			t.Errorf("%v: exit %d, want %d\n%s", c.args, code, c.code, out)
+		}
+	}
+}
+
+func TestInter_ServeEOF(t *testing.T) {
+	cmd := newInterCmd()
+	cmd.SetIn(strings.NewReader(""))
+	var buf bytes.Buffer
+	if err := runWith(context.Background(), &buf, cmd, "inter", "serve"); err != nil {
+		t.Fatalf("serve on empty stdin: %v", err)
 	}
 }

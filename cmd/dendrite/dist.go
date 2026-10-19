@@ -3,236 +3,276 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
+	"io"
 	"strings"
 
 	"Dendrite/pkg/distcodebase"
 	"Dendrite/pkg/tracker/plane"
-	"Dendrite/pkg/workspace"
+
+	"github.com/spf13/cobra"
 )
 
-var defaultDistRegistry = distcodebase.NewDefaultRegistry()
-var defaultInteropCoordinator = distcodebase.NewInteropCoordinator(defaultDistRegistry)
+// newMeshCmd builds `dendrite mesh` (alias dist): the distributed codebase registry, decomposer and spawner.
+func newMeshCmd() *cobra.Command {
+	cmd := newGroupCmd("mesh", "Distributed codebase spawner, modular REA, and repo coordinator", "axon",
+		"dist", "distcodebase", "distributed", "neural-mesh")
+	cmd.Example = "dendrite mesh sources\n" +
+		"dendrite mesh resolve totp go\n" +
+		"dendrite mesh decompose my-emulator ./spec.md\n" +
+		"dendrite mesh spawn auth-svc ../auth-svc go --satellite --no-plane"
 
-func handleDistCommand(ctx context.Context, action string, args []string) {
-	switch action {
-	case "sources", "list-sources":
-		sources := defaultDistRegistry.ListSources()
-		libs := defaultDistRegistry.ListLibraries()
-
-		fmt.Printf("[+] Distributed Codebase Sources (%d):\n", len(sources))
-		for _, s := range sources {
-			fmt.Printf("    [%s] Priority %d | %-25s | URL: %s\n", s.Type, s.Priority, s.Name, s.URL)
-		}
-
-		fmt.Printf("\n[+] Registered Ecosystem Libraries & Tools (%d):\n", len(libs))
-		for _, l := range libs {
-			ownedTag := ""
-			if l.IsOwned {
-				ownedTag = " (USER OWNED - Priority 1)"
-			}
-			fmt.Printf("    - %-15s (Lang: %-4s, P%d)%s: %s\n", l.Name, l.Language, l.Priority, ownedTag, l.Description)
-			fmt.Printf("      Capabilities: %s\n", strings.Join(l.Capabilities, ", "))
-		}
-
-	case "resolve":
-		if len(args) == 0 {
-			fmt.Println("[-] Usage: dendrite dist resolve <capability> [language]")
-			return
-		}
-		capQuery := args[0]
-		lang := ""
-		if len(args) > 1 {
-			lang = args[1]
-		}
-		lib, found := defaultDistRegistry.ResolveCapability(capQuery, lang)
-		if !found {
-			fmt.Printf("[-] No matching capability '%s' found in distributed codebase.\n", capQuery)
-			return
-		}
-		fmt.Printf("[+] Highest Priority Match for '%s':\n", capQuery)
-		fmt.Printf("    Library:     %s (Priority %d, Owned: %t)\n", lib.Name, lib.Priority, lib.IsOwned)
-		fmt.Printf("    Package:     %s\n", lib.RegistryPackage)
-		fmt.Printf("    Repository:  %s\n", lib.RepositoryURL)
-		fmt.Printf("    Capabilities: %s\n", strings.Join(lib.Capabilities, ", "))
-
-	case "decompose":
-		if len(args) == 0 {
-			fmt.Println("[-] Usage: dendrite dist decompose <project_name> [target_spec]")
-			return
-		}
-		pName := args[0]
-		target := ""
-		if len(args) > 1 {
-			target = args[1]
-		}
-
-		decomposer := distcodebase.NewDecomposer(defaultDistRegistry)
-		forced := true
-		plan, err := decomposer.DecomposeProject(distcodebase.DecomposeRequest{
-			ProjectName:        pName,
-			TargetBinaryOrSpec: target,
-			Language:           "rust",
-			ForcedModular:      &forced,
-		})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[-] Decomposition failed: %v\n", err)
-			return
-		}
-
-		fmt.Printf("[+] Forced Modular Decomposition Plan for '%s':\n", pName)
-		fmt.Printf("    Total Modules:     %d\n", plan.TotalModules)
-		fmt.Printf("    Reused Libraries:  %d\n", plan.ReusedLibrariesCount)
-		fmt.Printf("    Custom Dev:        %d\n", plan.CustomModulesCount)
-		fmt.Printf("    Satellite Spawns:  %d\n\n", plan.SatelliteProjectsCount)
-
-		for _, m := range plan.Modules {
-			if m.Strategy == distcodebase.StrategyReuseLibrary && m.MatchedLibrary != nil {
-				fmt.Printf("    - Module '%s': REUSE -> %s (Priority %d, Repo: %s)\n",
-					m.Name, m.MatchedLibrary.Name, m.MatchedLibrary.Priority, m.MatchedLibrary.RepositoryURL)
-			} else if m.Strategy == distcodebase.StrategyDevelopCustom {
-				fmt.Printf("    - Module '%s': CUSTOM DEV -> Reason: %s\n", m.Name, m.DevelopCustomReason)
-			} else {
-				fmt.Printf("    - Module '%s': SATELLITE PROJECT -> Spawn as standalone project\n", m.Name)
-			}
-		}
-
-	case "interop":
-		if len(args) == 0 {
-			fmt.Println("[-] Usage: dendrite dist interop <coordinate|complete|reconcile|list> [args...]")
-			return
-		}
-		subAction := args[0]
-		switch subAction {
-		case "coordinate":
-			if len(args) < 4 {
-				fmt.Println("[-] Usage: dendrite dist interop coordinate <requester> <dependency> <feature>")
-				return
-			}
-			coord, err := defaultInteropCoordinator.CoordinateFeature(distcodebase.InteropRequest{
-				RequesterProject:  args[1],
-				DependencyProject: args[2],
-				FeatureRequested:  args[3],
-				AllowFallback:     true,
-			})
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[-] Interop coordination failed: %v\n", err)
-				return
-			}
-			fmt.Printf("[+] Interop Coordination Initialized (%s):\n", coord.ID)
-			fmt.Printf("    Requester:  %s\n", coord.RequesterProject)
-			fmt.Printf("    Dependency: %s (User Owned: %t)\n", coord.DependencyProject, coord.DependencyIsOwned)
-			fmt.Printf("    Feature:    %s\n", coord.FeatureRequested)
-			fmt.Printf("    Status:     %s\n", coord.State)
-			fmt.Printf("    Marker:     %s\n", coord.FallbackTODO)
-
-		case "complete":
-			if len(args) < 2 {
-				fmt.Println("[-] Usage: dendrite dist interop complete <coordination_id>")
-				return
-			}
-			coord, err := defaultInteropCoordinator.CompleteDependencyFeature(args[1])
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[-] Failed to complete feature: %v\n", err)
-				return
-			}
-			fmt.Printf("[+] Dependency feature marked completed for %s. Ready to reconcile.\n", coord.ID)
-
-		case "reconcile":
-			if len(args) < 2 {
-				fmt.Println("[-] Usage: dendrite dist interop reconcile <coordination_id>")
-				return
-			}
-			rec, err := defaultInteropCoordinator.ReconcileProject(args[1])
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "[-] Failed to reconcile project: %v\n", err)
-				return
-			}
-			fmt.Printf("[+] Interop Reconciled Successfully (%s):\n", rec.CoordinationID)
-			fmt.Printf("    Patch applied to %s:\n%s\n", rec.Requester, rec.PatchGenerated)
-
-		case "list":
-			list := defaultInteropCoordinator.ListCoordinations()
-			fmt.Printf("[+] Active Interop Coordinations (%d):\n", len(list))
-			for _, c := range list {
-				fmt.Printf("    - %s: %s -> %s [%s] (Feature: %s)\n", c.ID, c.RequesterProject, c.DependencyProject, c.State, c.FeatureRequested)
-			}
-		}
-
-	case "spawn":
-		if len(args) < 2 {
-			fmt.Println("[-] Usage: dendrite dist spawn <project_name> <target_dir> [language] [--satellite] [--no-plane] [--identifier <PLANE_ID>] [--desc <text>]")
-			return
-		}
-		pName := args[0]
-		targetDir := args[1]
-		lang := "rust"
-		if len(args) > 2 && !strings.HasPrefix(args[2], "--") {
-			lang = args[2]
-		}
-
-		isSat := false
-		createPlane := true
-		identifier := ""
-		description := fmt.Sprintf("Autonomous project %s generated via Dendrite", pName)
-		for i := 0; i < len(args); i++ {
-			switch args[i] {
-			case "--satellite":
-				isSat = true
-			case "--no-plane":
-				createPlane = false
-			case "--identifier", "--id":
-				if i+1 < len(args) {
-					identifier = strings.ToUpper(args[i+1])
-					i++
+	reg := distcodebase.NewDefaultRegistry()
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:     "sources",
+			Aliases: []string{"list-sources"},
+			Short:   "List codebase sources and registered libraries",
+			Args:    noArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return runMeshSources(reg, cmd.OutOrStdout())
+			},
+		},
+		&cobra.Command{
+			Use:   "resolve <capability> [language]",
+			Short: "Find the highest-priority library that provides a capability",
+			Args:  rangeArgs(1, 2),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				lang := ""
+				if len(args) > 1 {
+					lang = args[1]
 				}
-			case "--desc":
-				if i+1 < len(args) {
-					description = args[i+1]
-					i++
+				return runMeshResolve(reg, args[0], lang, cmd.OutOrStdout())
+			},
+		},
+		&cobra.Command{
+			Use:   "decompose <project> [target-spec]",
+			Short: "Plan a forced modular decomposition into reused libraries, custom modules and satellites",
+			Args:  rangeArgs(1, 2),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				target := ""
+				if len(args) > 1 {
+					target = args[1]
 				}
-			}
-		}
+				return runMeshDecompose(reg, args[0], target, cmd.OutOrStdout())
+			},
+		},
+		newMeshInteropCmd(reg),
+		newMeshSpawnCmd(),
+	)
+	return cmd
+}
 
-		var planeClient *plane.Client
-		if createPlane {
-			planeClient, _ = plane.NewClientFromEnv()
-		}
-		wsReg, _ := workspace.NewRegistry("", "")
-		spawner := distcodebase.NewProjectSpawner(planeClient, wsReg)
-
-		res, err := spawner.Spawn(ctx, distcodebase.SpawnRequest{
-			ProjectName:        pName,
-			TargetDir:          targetDir,
-			Language:           lang,
-			IsSatellite:        isSat,
-			CreatePlaneProject: createPlane && planeClient != nil,
-			InitGit:            true,
-			Identifier:         identifier,
-			Description:        description,
-		})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[-] Spawning project failed: %v\n", err)
-			return
-		}
-
-		fmt.Printf("[+] Spawned Project '%s' Successfully:\n", res.ProjectName)
-		fmt.Printf("    Path:            %s\n", res.ProjectPath)
-		fmt.Printf("    Git Initialized: %t\n", res.GitInitialized)
-		if res.PlaneProjectID != "" {
-			fmt.Printf("    Plane Project:   %s\n", res.PlaneProjectID)
-		}
-		if res.PlaneError != "" {
-			fmt.Fprintf(os.Stderr, "[-] Plane project was not created: %s\n", res.PlaneError)
-			os.Exit(ExitError)
-		}
-
-	default:
-		fmt.Println("[+] Dendrite Distributed Codebase & Interoperability Subcommands:")
-		fmt.Println("    dendrite dist sources                          - List registered codebase sources & libraries")
-		fmt.Println("    dendrite dist resolve <capability> [lang]      - Priority-resolve capability in ecosystem")
-		fmt.Println("    dendrite dist decompose <project> [spec]       - Decompose target into reusable modules")
-		fmt.Println("    dendrite dist interop <coordinate|complete|reconcile|list> - Coordinate cross-project dependencies")
-		fmt.Println("    dendrite dist spawn <name> <dir> [lang]        - Spawn parallel/satellite sub-project")
+func runMeshSources(reg *distcodebase.Registry, out io.Writer) error {
+	sources, libs := reg.ListSources(), reg.ListLibraries()
+	if globals.JSON {
+		return writeJSON(out, map[string]any{"sources": sources, "libraries": libs})
 	}
+	fmt.Fprintf(out, "[+] Distributed Codebase Sources (%d):\n", len(sources))
+	for _, s := range sources {
+		fmt.Fprintf(out, "    [%s] Priority %d | %-25s | URL: %s\n", s.Type, s.Priority, s.Name, s.URL)
+	}
+	fmt.Fprintf(out, "\n[+] Registered Ecosystem Libraries & Tools (%d):\n", len(libs))
+	for _, l := range libs {
+		ownedTag := ""
+		if l.IsOwned {
+			ownedTag = " (USER OWNED - Priority 1)"
+		}
+		fmt.Fprintf(out, "    - %-15s (Lang: %-4s, P%d)%s: %s\n", l.Name, l.Language, l.Priority, ownedTag, l.Description)
+		fmt.Fprintf(out, "      Capabilities: %s\n", strings.Join(l.Capabilities, ", "))
+	}
+	return nil
+}
+
+func runMeshResolve(reg *distcodebase.Registry, capability, lang string, out io.Writer) error {
+	lib, found := reg.ResolveCapability(capability, lang)
+	if !found {
+		return fmt.Errorf("no library provides capability '%s'", capability)
+	}
+	if globals.JSON {
+		return writeJSON(out, lib)
+	}
+	fmt.Fprintf(out, "[+] Highest Priority Match for '%s':\n", capability)
+	fmt.Fprintf(out, "    Library:     %s (Priority %d, Owned: %t)\n", lib.Name, lib.Priority, lib.IsOwned)
+	fmt.Fprintf(out, "    Package:     %s\n", lib.RegistryPackage)
+	fmt.Fprintf(out, "    Repository:  %s\n", lib.RepositoryURL)
+	fmt.Fprintf(out, "    Capabilities: %s\n", strings.Join(lib.Capabilities, ", "))
+	return nil
+}
+
+func runMeshDecompose(reg *distcodebase.Registry, project, target string, out io.Writer) error {
+	forced := true
+	plan, err := distcodebase.NewDecomposer(reg).DecomposeProject(distcodebase.DecomposeRequest{
+		ProjectName:        project,
+		TargetBinaryOrSpec: target,
+		Language:           "rust",
+		ForcedModular:      &forced,
+	})
+	if err != nil {
+		return fmt.Errorf("decomposition: %w", err)
+	}
+	if globals.JSON {
+		return writeJSON(out, plan)
+	}
+	fmt.Fprintf(out, "[+] Forced Modular Decomposition Plan for '%s':\n", project)
+	fmt.Fprintf(out, "    Total Modules:     %d\n", plan.TotalModules)
+	fmt.Fprintf(out, "    Reused Libraries:  %d\n", plan.ReusedLibrariesCount)
+	fmt.Fprintf(out, "    Custom Dev:        %d\n", plan.CustomModulesCount)
+	fmt.Fprintf(out, "    Satellite Spawns:  %d\n\n", plan.SatelliteProjectsCount)
+	for _, m := range plan.Modules {
+		switch {
+		case m.Strategy == distcodebase.StrategyReuseLibrary && m.MatchedLibrary != nil:
+			fmt.Fprintf(out, "    - Module '%s': REUSE -> %s (Priority %d, Repo: %s)\n",
+				m.Name, m.MatchedLibrary.Name, m.MatchedLibrary.Priority, m.MatchedLibrary.RepositoryURL)
+		case m.Strategy == distcodebase.StrategyDevelopCustom:
+			fmt.Fprintf(out, "    - Module '%s': CUSTOM DEV -> Reason: %s\n", m.Name, m.DevelopCustomReason)
+		default:
+			fmt.Fprintf(out, "    - Module '%s': SATELLITE PROJECT -> Spawn as standalone project\n", m.Name)
+		}
+	}
+	return nil
+}
+
+// newMeshInteropCmd builds the cross-project feature coordination subtree.
+// Coordinations live in memory, so complete and reconcile only see ones made in the same process.
+func newMeshInteropCmd(reg *distcodebase.Registry) *cobra.Command {
+	cmd := newGroupCmd("interop", "Coordinate a feature an owned dependency is missing", "")
+	coord := distcodebase.NewInteropCoordinator(reg)
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "coordinate <requester> <dependency> <feature>",
+			Short: "Open a coordination and emit an unblocking fallback marker",
+			Args:  exactArgs(3),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				c, err := coord.CoordinateFeature(distcodebase.InteropRequest{
+					RequesterProject:  args[0],
+					DependencyProject: args[1],
+					FeatureRequested:  args[2],
+					AllowFallback:     true,
+				})
+				if err != nil {
+					return fmt.Errorf("interop coordination: %w", err)
+				}
+				out := cmd.OutOrStdout()
+				if globals.JSON {
+					return writeJSON(out, c)
+				}
+				fmt.Fprintf(out, "[+] Interop Coordination Initialized (%s):\n", c.ID)
+				fmt.Fprintf(out, "    Requester:  %s\n", c.RequesterProject)
+				fmt.Fprintf(out, "    Dependency: %s (User Owned: %t)\n", c.DependencyProject, c.DependencyIsOwned)
+				fmt.Fprintf(out, "    Feature:    %s\n", c.FeatureRequested)
+				fmt.Fprintf(out, "    Status:     %s\n", c.State)
+				fmt.Fprintf(out, "    Marker:     %s\n", c.FallbackTODO)
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:   "complete <coordination-id>",
+			Short: "Mark the dependency's feature as delivered",
+			Args:  exactArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				c, err := coord.CompleteDependencyFeature(args[0])
+				if err != nil {
+					return fmt.Errorf("complete feature: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "[+] Dependency feature marked completed for %s. Ready to reconcile.\n", c.ID)
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:   "reconcile <coordination-id>",
+			Short: "Replace the fallback in the requester with the delivered feature",
+			Args:  exactArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				rec, err := coord.ReconcileProject(args[0])
+				if err != nil {
+					return fmt.Errorf("reconcile project: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "[+] Interop Reconciled Successfully (%s):\n", rec.CoordinationID)
+				fmt.Fprintf(cmd.OutOrStdout(), "    Patch applied to %s:\n%s\n", rec.Requester, rec.PatchGenerated)
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:     "list",
+			Aliases: []string{"ls"},
+			Short:   "List coordinations",
+			Args:    noArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				list := coord.ListCoordinations()
+				out := cmd.OutOrStdout()
+				if globals.JSON {
+					return writeJSON(out, list)
+				}
+				fmt.Fprintf(out, "[+] Active Interop Coordinations (%d):\n", len(list))
+				for _, c := range list {
+					fmt.Fprintf(out, "    - %s: %s -> %s [%s] (Feature: %s)\n", c.ID, c.RequesterProject, c.DependencyProject, c.State, c.FeatureRequested)
+				}
+				return nil
+			},
+		},
+	)
+	return cmd
+}
+
+type meshSpawnOptions struct {
+	Satellite   bool
+	NoPlane     bool
+	Identifier  string
+	Description string
+}
+
+func newMeshSpawnCmd() *cobra.Command {
+	var o meshSpawnOptions
+	cmd := &cobra.Command{
+		Use:   "spawn <project> <target-dir> [language]",
+		Short: "Create a parallel or satellite project (git repo, workspace entry and Plane project)",
+		Args:  rangeArgs(2, 3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			lang := "rust"
+			if len(args) > 2 {
+				lang = args[2]
+			}
+			if o.Description == "" {
+				o.Description = fmt.Sprintf("Autonomous project %s generated via Dendrite", args[0])
+			}
+			return runMeshSpawn(cmd.Context(), args[0], args[1], lang, o, cmd.OutOrStdout())
+		},
+	}
+	f := cmd.Flags()
+	f.BoolVar(&o.Satellite, "satellite", false, "Spawn as a satellite of the current project")
+	f.BoolVar(&o.NoPlane, "no-plane", false, "Do not create a Plane project")
+	f.StringVar(&o.Identifier, "identifier", "", "Plane project identifier (e.g. AUTH)")
+	f.StringVar(&o.Description, "desc", "", "Project description")
+	return cmd
+}
+
+func runMeshSpawn(ctx context.Context, project, dir, lang string, o meshSpawnOptions, out io.Writer) error {
+	var planeClient *plane.Client
+	if !o.NoPlane {
+		planeClient, _ = newPlaneClient()
+	}
+	wsReg, _ := newProjectRegistry()
+	res, err := distcodebase.NewProjectSpawner(planeClient, wsReg).Spawn(ctx, distcodebase.SpawnRequest{
+		ProjectName:        project,
+		TargetDir:          dir,
+		Language:           lang,
+		IsSatellite:        o.Satellite,
+		CreatePlaneProject: planeClient != nil,
+		InitGit:            true,
+		Identifier:         strings.ToUpper(o.Identifier),
+		Description:        o.Description,
+	})
+	if err != nil {
+		return fmt.Errorf("spawn project: %w", err)
+	}
+	fmt.Fprintf(out, "[+] Spawned Project '%s' Successfully:\n", res.ProjectName)
+	fmt.Fprintf(out, "    Path:            %s\n", res.ProjectPath)
+	fmt.Fprintf(out, "    Git Initialized: %t\n", res.GitInitialized)
+	if res.PlaneProjectID != "" {
+		fmt.Fprintf(out, "    Plane Project:   %s\n", res.PlaneProjectID)
+	}
+	if res.PlaneError != "" {
+		return fmt.Errorf("Plane project was not created: %s", res.PlaneError)
+	}
+	return nil
 }
