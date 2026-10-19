@@ -462,60 +462,6 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 				"dendrite jetbrains symbols \"Registry\"",
 			},
 		},
-		"dist": {
-			Subcommands: []SubcommandDoc{
-				{Name: "spawn", Description: "Spawn distributed workspace node"},
-				{Name: "interop", Description: "Verify inter-node messaging and RPC contracts"},
-				{Name: "help", Description: "Display distributed codebase command guidance"},
-			},
-			Examples: []string{"dendrite dist help"},
-		},
-		"rea": {
-			Subcommands: []SubcommandDoc{
-				{Name: "showcase", Description: "Open-source cleanroom analysis and parity verification target"},
-				{Name: "list", Description: "List registered open-source showcase targets and metadata"},
-			},
-			Examples: []string{
-				"dendrite rea list",
-				"dendrite rea showcase",
-			},
-		},
-		"pool": {
-			Subcommands: []SubcommandDoc{
-				{Name: "add", Description: "Add repository directory to connectome pool"},
-				{Name: "rm", Description: "Remove directory from pool"},
-				{Name: "list", Description: "List registered directories and dependencies"},
-				{Name: "resolve", Description: "Compute topological DAG execution order across directories"},
-			},
-			Examples: []string{
-				"dendrite pool list",
-				"dendrite pool resolve",
-			},
-		},
-		"query": {
-			Subcommands: []SubcommandDoc{
-				{Name: "slice", Description: "Universal intent-driven CFG/AST reachability slicing and debloater"},
-				{Name: "swap", Description: "AST-aware pattern and framework replacement engine"},
-				{Name: "transpile", Description: "Polyglot cross-language code translation with dual test parity"},
-				{Name: "fuse", Description: "Multi-source AST blending and syntax tree synthesis"},
-				{Name: "reuse-audit", Description: "AST token reuse audit and anti-duplication scanner"},
-			},
-			Examples: []string{
-				"dendrite query slice \"verify docker container mounts\"",
-				"dendrite query reuse-audit",
-			},
-		},
-		"ref": {
-			Subcommands: []SubcommandDoc{
-				{Name: "list", Description: "List registered Tier 1 source references"},
-				{Name: "add", Description: "Add external reference repository"},
-				{Name: "remove", Description: "Remove external reference repository"},
-			},
-			Examples: []string{
-				"dendrite ref list",
-				"dendrite ref add github.com/gin-gonic/gin",
-			},
-		},
 		"store": {
 			Subcommands: []SubcommandDoc{
 				{Name: "status", Description: "Inspect persistent segmented store status and chunk count"},

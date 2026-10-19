@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,11 +11,15 @@ import (
 	"Dendrite/pkg/gateway"
 )
 
-// cliOutput runs the real tree and returns the output and exit code.
+// cliOutput runs the real tree and returns what a user would see (output, then any
+// error the way main prints it) and the exit code.
 func cliOutput(t *testing.T, args ...string) (string, int) {
 	t.Helper()
 	var buf bytes.Buffer
 	err := runCLI(context.Background(), &buf, args...)
+	if err != nil {
+		fmt.Fprintf(&buf, "[-] %v\n", err)
+	}
 	return buf.String(), exitCodeFor(err)
 }
 

@@ -58,6 +58,11 @@ func newRootCmd() *cobra.Command {
 		newVelocityCmd(),
 		newInterCmd(),
 		newAxonCmd(),
+		newArborCmd(),
+		newAfferentCmd(),
+		newPlexusCmd(),
+		newRetroCmd(),
+		newMeshCmd(),
 	)
 	root.AddCommand(legacyCommands()...)
 	return root

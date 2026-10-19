@@ -21,16 +21,43 @@ Dendritic Arbor
 
 | Subcommand | Description |
 | :--- | :--- |
-| `showcase` | Open-source cleanroom analysis and parity verification target |
-| `list` | List registered open-source showcase targets and metadata |
+| `list` | List the open-source showcase targets |
+| `showcase` | Run cleanroom analysis and parity verification for one target or all (all, aegis, dxball, ctf, th04, mattermost) |
 
 ## Flags
 
 None
 
+## Subcommand Reference
+
+### `dendrite retro list`
+
+List the open-source showcase targets
+
+```bash
+dendrite retro list
+```
+
+Aliases: `targets`, `ls`
+
+### `dendrite retro showcase`
+
+Run cleanroom analysis and parity verification for one target or all (all, aegis, dxball, ctf, th04, mattermost)
+
+```bash
+dendrite retro showcase [target] [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--format` | Report format: text or markdown (use --json for JSON) (default: text) |
+| `--output, -o` | Write the report to this file instead of stdout |
+
 ## Examples
 
 ```bash
-dendrite rea list
-dendrite rea showcase
+dendrite retro list
+dendrite retro showcase
+dendrite retro showcase aegis --format markdown --output aegis.md
+dendrite retro showcase ctf --json
 ```
