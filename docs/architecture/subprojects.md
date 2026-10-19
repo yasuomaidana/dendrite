@@ -104,6 +104,95 @@ These Dendrite docs remain here, because generated references and the docs audit
 
 Until a sub-project's extraction umbrella lands, edit the Dendrite copy and re-copy. After extraction, the sub-project copy becomes the source of truth and the Dendrite page should link to it.
 
+`scripts/sync_subproject_docs.py` does the copying. It also regenerates each sub-project's docs index (`docs/README.md`; embedag: `doc/dendrite-integration.md` §7) with working `imported/...` links, and the table below. `--check` reports missing, stale or orphaned copies and broken index links, and exits 1 if it finds any.
+
+```bash
+uv run scripts/sync_subproject_docs.py            # copy, re-index, refresh this table
+uv run scripts/sync_subproject_docs.py --check    # verify only
+```
+
+Which sub-project imports what was reviewed per repository against its `RESPONSIBILITIES` document on 2026-10-19 (DEN-1018).
+
+<!-- sync_subproject_docs:begin -->
+
+71 Dendrite docs are imported. After editing one, run `uv run scripts/sync_subproject_docs.py`.
+
+| Dendrite doc | Imported by |
+|---|---|
+| [`docs/architecture/03-context-intelligence-re.md`](03-context-intelligence-re.md) | dendrite-core-rs |
+| [`docs/architecture/2026-10-quality-audit-execution-plan.md`](2026-10-quality-audit-execution-plan.md) | dendrite-core-rs, dendrite-git-rs, dendrite-mcp-hub, dendrite-rag-rs, embedag |
+| [`docs/cli/analyze.md`](../cli/analyze.md) | dendrite-core-rs |
+| [`docs/cli/ask.md`](../cli/ask.md) | dendrite-rag-rs |
+| [`docs/cli/audit-changes.md`](../cli/audit-changes.md) | dendrite-git-rs |
+| [`docs/cli/canvas.md`](../cli/canvas.md) | dendrite-mcp-hub |
+| [`docs/cli/commit.md`](../cli/commit.md) | dendrite-git-rs |
+| [`docs/cli/jetbrains.md`](../cli/jetbrains.md) | dendrite-mcp-hub |
+| [`docs/cli/mcp.md`](../cli/mcp.md) | dendrite-mcp-hub |
+| [`docs/cli/pool.md`](../cli/pool.md) | embedag |
+| [`docs/cli/query.md`](../cli/query.md) | dendrite-core-rs |
+| [`docs/cli/store.md`](../cli/store.md) | dendrite-rag-rs |
+| [`docs/cli/story.md`](../cli/story.md) | dendrite-git-rs |
+| [`docs/cli/sync-remote.md`](../cli/sync-remote.md) | dendrite-git-rs |
+| [`docs/cli/vcs.md`](../cli/vcs.md) | dendrite-git-rs |
+| [`docs/features/FEAT-003-reverse-engineering-rea.md`](../features/FEAT-003-reverse-engineering-rea.md) | dendrite-mcp-hub |
+| [`docs/features/FEAT-004-repo-intel-ast.md`](../features/FEAT-004-repo-intel-ast.md) | dendrite-core-rs, embedag |
+| [`docs/features/FEAT-010-ai-assisted-token-optimization.md`](../features/FEAT-010-ai-assisted-token-optimization.md) | dendrite-core-rs |
+| [`docs/features/FEAT-011-polyglot-translation-synthesis.md`](../features/FEAT-011-polyglot-translation-synthesis.md) | dendrite-core-rs |
+| [`docs/features/FEAT-014-jetbrains-ide-mcp-integration.md`](../features/FEAT-014-jetbrains-ide-mcp-integration.md) | dendrite-mcp-hub |
+| [`docs/features/FEAT-022-agent-search-and-capability-discovery.md`](../features/FEAT-022-agent-search-and-capability-discovery.md) | dendrite-rag-rs, embedag |
+| [`docs/features/FEAT-026-distributed-codebase-ecosystem.md`](../features/FEAT-026-distributed-codebase-ecosystem.md) | embedag |
+| [`docs/features/FEAT-028-local-agent-triage-gateway-token-efficiency.md`](../features/FEAT-028-local-agent-triage-gateway-token-efficiency.md) | dendrite-mcp-hub |
+| [`docs/features/FEAT-029-autonomous-pool-dag-synchronization.md`](../features/FEAT-029-autonomous-pool-dag-synchronization.md) | embedag |
+| [`docs/features/FEAT-030-universal-query-engine-3tier-library-reuse.md`](../features/FEAT-030-universal-query-engine-3tier-library-reuse.md) | dendrite-core-rs |
+| [`docs/features/FEAT-031-persistent-store-hybrid-token-scheduler.md`](../features/FEAT-031-persistent-store-hybrid-token-scheduler.md) | dendrite-core-rs, dendrite-rag-rs |
+| [`docs/features/FEAT-032-polyglot-speculative-drift-workflows.md`](../features/FEAT-032-polyglot-speculative-drift-workflows.md) | dendrite-git-rs |
+| [`docs/features/FEAT-033-infrastructure-mobility-smart-backup.md`](../features/FEAT-033-infrastructure-mobility-smart-backup.md) | embedag |
+| [`docs/features/FEAT-035-multiprovider-agent-governance.md`](../features/FEAT-035-multiprovider-agent-governance.md) | dendrite-git-rs |
+| [`docs/features/FEAT-036-ticket-milestone-dag-story-prioritization.md`](../features/FEAT-036-ticket-milestone-dag-story-prioritization.md) | embedag |
+| [`docs/features/FEAT-037-penpot-ui-documentation-mcp-integration.md`](../features/FEAT-037-penpot-ui-documentation-mcp-integration.md) | dendrite-mcp-hub |
+| [`docs/features/FEAT-040-turso-offline-cache-outbox-sync.md`](../features/FEAT-040-turso-offline-cache-outbox-sync.md) | embedag |
+| [`docs/features/FEAT-041-agent-security-quality-resilience-guardrails.md`](../features/FEAT-041-agent-security-quality-resilience-guardrails.md) | dendrite-git-rs |
+| [`docs/features/FEAT-042-artifact-package-publisher-mcp.md`](../features/FEAT-042-artifact-package-publisher-mcp.md) | dendrite-mcp-hub |
+| [`docs/features/FEAT-045-code-knowledge-mcp-graphify.md`](../features/FEAT-045-code-knowledge-mcp-graphify.md) | dendrite-mcp-hub, dendrite-rag-rs |
+| [`docs/features/FEAT-046-multi-ide-plugins.md`](../features/FEAT-046-multi-ide-plugins.md) | dendrite-mcp-hub |
+| [`docs/features/FEAT-070-speculative-stacked-branches-and-audit-pipeline.md`](../features/FEAT-070-speculative-stacked-branches-and-audit-pipeline.md) | dendrite-git-rs |
+| [`docs/features/FEAT-098-autonomous-git-commit-engine.md`](../features/FEAT-098-autonomous-git-commit-engine.md) | dendrite-git-rs |
+| [`docs/features/FEAT-100-multi-ide-ecosystem-support.md`](../features/FEAT-100-multi-ide-ecosystem-support.md) | dendrite-mcp-hub |
+| [`docs/features/FEAT-101-personal-context-topic-memory-installer.md`](../features/FEAT-101-personal-context-topic-memory-installer.md) | dendrite-mcp-hub |
+| [`docs/guides/asking-questions-to-dendrite.md`](../guides/asking-questions-to-dendrite.md) | dendrite-rag-rs |
+| [`docs/guides/jetbrains-mcp-and-agents-setup.md`](../guides/jetbrains-mcp-and-agents-setup.md) | dendrite-mcp-hub |
+| [`docs/guides/using-dendrite-tools-with-jetbrains.md`](../guides/using-dendrite-tools-with-jetbrains.md) | dendrite-mcp-hub |
+| [`docs/mcp/dendrite_audit_changes.md`](../mcp/dendrite_audit_changes.md) | dendrite-git-rs |
+| [`docs/mcp/dendrite_canvas_action_dispatch.md`](../mcp/dendrite_canvas_action_dispatch.md) | dendrite-mcp-hub |
+| [`docs/mcp/dendrite_canvas_penpot_bridge.md`](../mcp/dendrite_canvas_penpot_bridge.md) | dendrite-mcp-hub |
+| [`docs/mcp/dendrite_commit.md`](../mcp/dendrite_commit.md) | dendrite-git-rs |
+| [`docs/mcp/dendrite_contract_drift_check.md`](../mcp/dendrite_contract_drift_check.md) | dendrite-mcp-hub |
+| [`docs/mcp/dendrite_jetbrains_setup.md`](../mcp/dendrite_jetbrains_setup.md) | dendrite-mcp-hub |
+| [`docs/mcp/dendrite_local_agent_triage.md`](../mcp/dendrite_local_agent_triage.md) | dendrite-mcp-hub |
+| [`docs/mcp/dendrite_pcontext_greeting_generate.md`](../mcp/dendrite_pcontext_greeting_generate.md) | dendrite-mcp-hub |
+| [`docs/mcp/dendrite_pool_resolve.md`](../mcp/dendrite_pool_resolve.md) | embedag |
+| [`docs/mcp/dendrite_query_slice.md`](../mcp/dendrite_query_slice.md) | dendrite-core-rs |
+| [`docs/mcp/dendrite_query_transpile.md`](../mcp/dendrite_query_transpile.md) | dendrite-core-rs |
+| [`docs/mcp/dendrite_rag_ask.md`](../mcp/dendrite_rag_ask.md) | dendrite-rag-rs |
+| [`docs/mcp/dendrite_rag_retrieve.md`](../mcp/dendrite_rag_retrieve.md) | dendrite-rag-rs |
+| [`docs/mcp/dendrite_rea_showcase.md`](../mcp/dendrite_rea_showcase.md) | dendrite-mcp-hub |
+| [`docs/mcp/dendrite_remote_sync.md`](../mcp/dendrite_remote_sync.md) | dendrite-git-rs |
+| [`docs/mcp/dendrite_store_commit_chunk.md`](../mcp/dendrite_store_commit_chunk.md) | dendrite-rag-rs |
+| [`docs/mcp/dendrite_store_inspect.md`](../mcp/dendrite_store_inspect.md) | dendrite-rag-rs |
+| [`docs/mcp/dendrite_store_query_partial.md`](../mcp/dendrite_store_query_partial.md) | dendrite-rag-rs |
+| [`docs/mcp/dendrite_store_rm.md`](../mcp/dendrite_store_rm.md) | dendrite-rag-rs |
+| [`docs/mcp/dendrite_store_status.md`](../mcp/dendrite_store_status.md) | dendrite-rag-rs |
+| [`docs/mcp/dendrite_story_abort.md`](../mcp/dendrite_story_abort.md) | dendrite-git-rs |
+| [`docs/mcp/dendrite_story_fork.md`](../mcp/dendrite_story_fork.md) | dendrite-git-rs |
+| [`docs/mcp/dendrite_story_resolve.md`](../mcp/dendrite_story_resolve.md) | dendrite-git-rs |
+| [`docs/mcp/dendrite_ticket_smart_select.md`](../mcp/dendrite_ticket_smart_select.md) | embedag |
+| [`docs/mcp/dendrite_ui_penpot_sync.md`](../mcp/dendrite_ui_penpot_sync.md) | dendrite-mcp-hub |
+| [`docs/mcp/dendrite_vcs_guard.md`](../mcp/dendrite_vcs_guard.md) | dendrite-git-rs |
+| [`docs/quality/scrum-and-complexity-scorecard.md`](../quality/scrum-and-complexity-scorecard.md) | dendrite-core-rs |
+| [`docs/reports/2026-10-17-done-ticket-audit.md`](../reports/2026-10-17-done-ticket-audit.md) | dendrite-core-rs |
+
+<!-- sync_subproject_docs:end -->
+
 ## Open boundary questions
 
 Collected from the sub-project responsibility documents. Each is to be resolved in the `proto/*.json` contracts or by a ticket.
