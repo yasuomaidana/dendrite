@@ -3,8 +3,10 @@ package plane
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -104,14 +106,41 @@ func TestClient_EnsureLifecycleStates(t *testing.T) {
 			return
 		}
 
+		if r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/workspaces/test-ws/projects/proj-123/states/") {
+			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/workspaces/test-ws/projects/proj-123/states/"), "/")
+			var body map[string]interface{}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			for i := range statesInProject {
+				if statesInProject[i].ID != id {
+					continue
+				}
+				if v, ok := body["name"].(string); ok {
+					statesInProject[i].Name = v
+				}
+				if v, ok := body["group"].(string); ok {
+					statesInProject[i].Group = v
+				}
+				if v, ok := body["color"].(string); ok {
+					statesInProject[i].Color = v
+				}
+				if v, ok := body["sequence"].(float64); ok {
+					statesInProject[i].Sequence = v
+				}
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/workspaces/test-ws/projects/proj-123/states/" {
 			var body map[string]interface{}
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			createdStates = append(createdStates, body)
 			newState := PlaneState{
-				ID:    "st-verify",
-				Name:  body["name"].(string),
-				Group: body["group"].(string),
+				ID:       "st-" + body["name"].(string),
+				Name:     body["name"].(string),
+				Group:    body["group"].(string),
+				Color:    body["color"].(string),
+				Sequence: body["sequence"].(float64),
 			}
 			statesInProject = append(statesInProject, newState)
 			w.WriteHeader(http.StatusCreated)
@@ -135,19 +164,22 @@ func TestClient_EnsureLifecycleStates(t *testing.T) {
 
 	ctx := context.Background()
 
-	// 1. First call: "To Verify" missing -> creates it
+	// 1. First call: "To Verify" and "Cancelled" missing -> creates them, renames "Todo"
 	created, err := client.EnsureLifecycleStates(ctx, "proj-123")
 	if err != nil {
 		t.Fatalf("expected EnsureLifecycleStates to succeed, got %v", err)
 	}
-	if len(created) != 1 || created[0] != "To Verify" {
-		t.Fatalf("expected ['To Verify'], got %v", created)
+	if len(created) != 2 || created[0] != "To Verify" || created[1] != "Cancelled" {
+		t.Fatalf("expected ['To Verify' 'Cancelled'], got %v", created)
 	}
-	if len(createdStates) != 1 {
-		t.Fatalf("expected 1 POST to create state, got %d", len(createdStates))
+	if len(createdStates) != 2 {
+		t.Fatalf("expected 2 POSTs to create states, got %d", len(createdStates))
 	}
-	if createdStates[0]["name"] != "To Verify" || createdStates[0]["group"] != "started" || createdStates[0]["color"] != "#F59E0B" {
+	if createdStates[0]["name"] != "To Verify" || createdStates[0]["group"] != "started" || createdStates[0]["color"] != "#FCB900" {
 		t.Errorf("unexpected state payload: %+v", createdStates[0])
+	}
+	if statesInProject[1].Name != "To Do" {
+		t.Errorf("expected Todo renamed to To Do, got %q", statesInProject[1].Name)
 	}
 
 	// 2. Second call: "To Verify" already exists -> creates nothing
@@ -158,8 +190,8 @@ func TestClient_EnsureLifecycleStates(t *testing.T) {
 	if len(createdSecond) != 0 {
 		t.Fatalf("expected 0 created on second call, got %v", createdSecond)
 	}
-	if len(createdStates) != 1 {
-		t.Fatalf("expected still 1 POST, got %d", len(createdStates))
+	if len(createdStates) != 2 {
+		t.Fatalf("expected still 2 POSTs, got %d", len(createdStates))
 	}
 
 	// 3. Omitting projectID defaults to c.projectID
@@ -173,10 +205,21 @@ func TestClient_EnsureLifecycleStates(t *testing.T) {
 }
 
 func TestClient_EnsureLifecycleStates_BareListAndErrors(t *testing.T) {
-	// Server returning bare list with lowercase "to verify"
+	// Server returning a bare list where only a lowercase "to verify" is off-canonical
+	var bareWrites []string
 	bareServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			bareWrites = append(bareWrites, r.Method+" "+r.URL.Path)
+		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`[{"id": "st-v", "name": "to verify", "group": "started"}]`))
+		_, _ = w.Write([]byte(`[
+			{"id": "st-b", "name": "Backlog", "group": "backlog", "color": "#A3A3A3", "sequence": 15000},
+			{"id": "st-t", "name": "To Do", "group": "unstarted", "color": "#3A3A3A", "sequence": 25000},
+			{"id": "st-p", "name": "In Progress", "group": "started", "color": "#F59E0B", "sequence": 35000},
+			{"id": "st-v", "name": "to verify", "group": "started", "color": "#fcb900", "sequence": 40000},
+			{"id": "st-d", "name": "Done", "group": "completed", "color": "#16A34A", "sequence": 45000},
+			{"id": "st-c", "name": "Cancelled", "group": "cancelled", "color": "#EF4444", "sequence": 55000}
+		]`))
 	}))
 	defer bareServer.Close()
 
@@ -194,6 +237,9 @@ func TestClient_EnsureLifecycleStates_BareListAndErrors(t *testing.T) {
 	}
 	if len(created) != 0 {
 		t.Fatalf("expected no states created when case-insensitive 'to verify' exists, got %v", created)
+	}
+	if len(bareWrites) != 1 || bareWrites[0] != "PATCH /api/v1/workspaces/ws/projects/p/states/st-v/" {
+		t.Fatalf("expected only the 'to verify' name to be patched, got %v", bareWrites)
 	}
 
 	// Empty project with empty client project
@@ -260,7 +306,7 @@ func TestClient_EnsureLifecycleStates_BareListAndErrors(t *testing.T) {
 		DirectToken:   "tok",
 	}, postUnauthServer.Client())
 
-	if _, err := cPostUnauth.EnsureLifecycleStates(ctx, "p"); err != ErrUnauthorized {
+	if _, err := cPostUnauth.EnsureLifecycleStates(ctx, "p"); !errors.Is(err, ErrUnauthorized) {
 		t.Errorf("expected ErrUnauthorized on POST 401, got: %v", err)
 	}
 

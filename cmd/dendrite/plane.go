@@ -731,37 +731,7 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 		fmt.Printf("    - Live Gantt View URL:   %s/dendrite-ws/projects/%s/issues/ (Layout: Gantt)\n", client.BaseURL(), client.ProjectID())
 
 	case "states":
-		if len(args) == 0 || args[0] != "ensure" {
-			fmt.Println("Usage: dendrite plane states ensure [--project <uuid>]")
-			return
-		}
-		projectID := client.ProjectID()
-		for i := 1; i < len(args); i++ {
-			switch args[i] {
-			case "--project", "-p":
-				if i+1 < len(args) {
-					projectID = args[i+1]
-					i++
-				} else {
-					fmt.Println("Usage: dendrite plane states ensure [--project <uuid>]")
-					return
-				}
-			default:
-				fmt.Println("Usage: dendrite plane states ensure [--project <uuid>]")
-				return
-			}
-		}
-
-		created, err := client.EnsureLifecycleStates(ctx, projectID)
-		if err != nil {
-			fmt.Printf("[-] Failed to ensure lifecycle states: %v\n", err)
-			return
-		}
-		if len(created) == 0 {
-			fmt.Printf("[✓] All lifecycle states already present for project %s (none created)\n", projectID)
-		} else {
-			fmt.Printf("[✓] Created lifecycle states for project %s: %s\n", projectID, strings.Join(created, ", "))
-		}
+		handlePlaneStates(ctx, client, args)
 
 	default:
 		fmt.Printf("[-] Unknown plane action: %s\n", action)
@@ -774,7 +744,7 @@ func handlePlaneCommand(ctx context.Context, action string, args []string) {
 		fmt.Println("  dendrite plane gantt-sync (aligns all milestones, tickets, and Gantt dependency arrows)")
 		fmt.Println("  dendrite plane create --name \"[DEN-XXX] Title\" --desc \"Acceptance criteria and context\" [--milestone \"M1\"] [--priority high] [--estimate 5] [--blocked-by \"DEN-001\"]")
 		fmt.Println("  dendrite plane update --ticket <DEN-XXX> [--name \"[DEN-XXX] Title\"] (--desc \"markdown\" | --desc-file spec.md)")
-		fmt.Println("  dendrite plane states ensure [--project <uuid>]")
+		fmt.Println("  dendrite plane states reconcile [--project <uuid|IDENT>] [--all] [--dry-run]")
 		fmt.Println("  dendrite plane doc <push|pull|sync> [--dir docs]")
 		fmt.Println("  dendrite plane issues")
 		fmt.Println("  dendrite plane modules")

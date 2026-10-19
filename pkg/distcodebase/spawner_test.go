@@ -51,13 +51,19 @@ func TestProjectSpawner_Spawn_WithPlaneLifecycleStates(t *testing.T) {
 			return
 		}
 
-		// 3. States POST (EnsureLifecycleStates -> To Verify)
+		// 3. States PATCH (EnsureLifecycleStates -> Todo renamed / recolored)
+		if r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/v1/workspaces/test-ws/projects/proj-spawn-123/states/") {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// 4. States POST (EnsureLifecycleStates -> To Verify, Cancelled)
 		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/workspaces/test-ws/projects/proj-spawn-123/states/" {
 			var body map[string]interface{}
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			createdStateBodies = append(createdStateBodies, body)
 			newState := plane.PlaneState{
-				ID:    "st-verify",
+				ID:    "st-" + body["name"].(string),
 				Name:  body["name"].(string),
 				Group: body["group"].(string),
 			}
@@ -109,8 +115,8 @@ func TestProjectSpawner_Spawn_WithPlaneLifecycleStates(t *testing.T) {
 	if res.PlaneError != "" {
 		t.Errorf("expected empty PlaneError, got: %s", res.PlaneError)
 	}
-	if len(createdStateBodies) != 1 {
-		t.Fatalf("expected 1 state created, got %d", len(createdStateBodies))
+	if len(createdStateBodies) != 2 {
+		t.Fatalf("expected 2 states created (To Verify, Cancelled), got %d", len(createdStateBodies))
 	}
 	if createdStateBodies[0]["name"] != "To Verify" || createdStateBodies[0]["group"] != "started" {
 		t.Errorf("unexpected created state: %+v", createdStateBodies[0])

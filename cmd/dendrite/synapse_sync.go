@@ -90,11 +90,11 @@ func runSynapseSyncCommand(ctx context.Context, subArgs []string, out io.Writer,
 		fmt.Fprintln(out, string(data))
 		return nil
 	}
-	printSyncReport(out, rep)
+	printSynapseSyncReport(out, rep)
 	return nil
 }
 
-func printSyncReport(out io.Writer, rep *synapse.SyncReport) {
+func printSynapseSyncReport(out io.Writer, rep *synapse.SyncReport) {
 	fmt.Fprintf(out, "[+] Synapse %s: %s\n", rep.Synapse, rep.State)
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "MEMBER\tSOURCE\tTRACKING\tHEAD\tAHEAD/BEHIND\tDIRTY\tSTATUS")

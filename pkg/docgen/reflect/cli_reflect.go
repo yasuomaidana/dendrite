@@ -404,6 +404,7 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 				{Name: "create", Description: "Create a new ticket placed on Plane Gantt development plan"},
 				{Name: "doc", Description: "Synchronize documentation pages between Plane and local repository"},
 				{Name: "issues", Description: "List open issues and milestones from Plane"},
+				{Name: "states", Description: "Reconcile workflow states (names, colors, order) onto the canonical set"},
 			},
 			Examples: []string{
 				"dendrite plane status",
@@ -536,10 +537,34 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 				{Name: "--message", Description: "Explicit commit message (overrides model synthesis)"},
 				{Name: "--dry-run", Description: "Preview staged changes and message without modifying git history"},
 				{Name: "--no-push", Description: "Opt out of automatic remote push"},
+				{Name: "--synapse", Description: "Also review synapse peers with uncommitted changes and offer to commit them"},
+				{Name: "--yes", Description: "With --synapse, commit every dirty peer without prompting"},
 			},
 			Examples: []string{
 				"dendrite commit --ticket DEN-985",
 				"dendrite commit -m \"feat(docs): generate cli reference docs\"",
+				"dendrite commit --synapse",
+			},
+		},
+		"sync": {
+			Flags: []FlagDoc{
+				{Name: "--synapse", Description: "Sync only the members of this synapse"},
+				{Name: "--all", Description: "Sync every non-archived synapse (daemon mode)"},
+				{Name: "--git-only", Description: "Only push git commits"},
+				{Name: "--plane-only", Description: "Only reconcile Plane states and push DEV_STATUS"},
+				{Name: "--plane", Description: "Plane project for a repository that is in no synapse"},
+				{Name: "--force-plane", Description: "Push DEV_STATUS even if unchanged since the last sync"},
+				{Name: "--no-fetch", Description: "Skip fetching remotes before computing ahead/behind"},
+				{Name: "--dry-run", Description: "Report what would happen without pushing or writing"},
+				{Name: "--json", Description: "Emit the report as JSON"},
+				{Name: "--watch", Description: "Keep running and sync every interval (combine with --all for a daemon)"},
+				{Name: "--interval", Description: "Watch period such as 5m (default: DENDRITE_SYNC_INTERVAL or 10m)"},
+			},
+			Examples: []string{
+				"dendrite sync",
+				"dendrite sync --all --watch --interval 10m",
+				"dendrite sync --synapse dendrite-mesh --dry-run",
+				"dendrite sync --all --git-only",
 			},
 		},
 		"skill": {

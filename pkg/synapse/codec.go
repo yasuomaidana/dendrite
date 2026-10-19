@@ -113,6 +113,9 @@ func Marshal(s *Synapse) ([]byte, error) {
 		if !m.LockedAt.IsZero() {
 			fmt.Fprintf(&buf, "locked_at = %s\n", quoteString(m.LockedAt.UTC().Format(time.RFC3339)))
 		}
+		if m.PlaneProject != "" {
+			fmt.Fprintf(&buf, "plane_project = %s\n", quoteString(m.PlaneProject))
+		}
 	}
 
 	// [[contracts]] and [[contracts.consumers]]
@@ -463,6 +466,8 @@ func Unmarshal(data []byte) (*Synapse, error) {
 					return nil, fmt.Errorf("line %d: invalid locked_at timestamp %q: %w", lineNum, val, err)
 				}
 				m.LockedAt = t
+			case "plane_project":
+				m.PlaneProject = val
 			default:
 				return nil, fmt.Errorf("line %d: unknown key %q in [[members]]", lineNum, key)
 			}

@@ -140,7 +140,7 @@ func TestSynapseCommand_StatusAndSync(t *testing.T) {
 
 func TestPrintSyncReportVariants(t *testing.T) {
 	var out bytes.Buffer
-	printSyncReport(&out, &synapse.SyncReport{
+	printSynapseSyncReport(&out, &synapse.SyncReport{
 		Synapse: "s", State: synapse.StateBroken,
 		Members: []synapse.MemberSync{
 			{Alias: "gone", Source: synapse.SourceLocal, Missing: true, Error: "missing"},

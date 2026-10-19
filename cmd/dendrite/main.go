@@ -18,7 +18,6 @@ import (
 	"Dendrite/pkg/docgen/reflect"
 	"Dendrite/pkg/env"
 	"Dendrite/pkg/env/bootstrap"
-	"github.com/yasuomaidana/dendrite-mcp-hub/pkg/jetbrains"
 	"Dendrite/pkg/ollama"
 	"Dendrite/pkg/personalcontext/greeting"
 	"Dendrite/pkg/server"
@@ -32,6 +31,7 @@ import (
 	"Dendrite/pkg/workspace"
 	"encoding/json"
 	"flag"
+	"github.com/yasuomaidana/dendrite-mcp-hub/pkg/jetbrains"
 	"path/filepath"
 )
 
@@ -481,6 +481,17 @@ func buildRegistry() *cli.Registry {
 	})
 
 	reg.Register(&cli.Command{
+		Name:        "sync",
+		Aliases:     []string{"propagate"},
+		Category:    "Terminal Boutons & Vesicles",
+		Description: "Push commits and refresh Plane for this project and its synapse peers",
+		Run: func(ctx context.Context, args []string) error {
+			handleSyncCommand(ctx, args)
+			return nil
+		},
+	})
+
+	reg.Register(&cli.Command{
 		Name:        "skill",
 		Category:    "Postsynaptic Effectors & Actuation",
 		Description: "Execute skill integrations (ticket-relate, gantt-sync)",
@@ -663,6 +674,7 @@ func printUsage() {
 	fmt.Println("  agent session [list]       View agent execution history and commits")
 	fmt.Println("  commit [flags]             Autonomous Git commit with local model message generation")
 	fmt.Println("  work <new|list|done|gc>    Model-owned working copies in dendrite-work/ (auto-removed once merged)")
+	fmt.Println("  sync [flags]               Push commits and refresh Plane for this project and its synapse peers")
 	fmt.Println("  audit-changes [flags]      Topological vendor audit and rebase engine for local/* branches")
 	fmt.Println("  vcs <guard|check|status>   Enforce Git branch guardrails (prohibit main, develop default)")
 	fmt.Println("  github-sync [flags]        Synchronize prioritized tickets and DAG dependencies to GitHub Issues")

@@ -161,7 +161,7 @@ func runDevUpdate(ctx context.Context, o updateOptions, target string, out io.Wr
 					warnings = append(warnings, fmt.Sprintf("saving synapse %s: %v", s.ID, err))
 				}
 			}
-			printSyncReport(out, rep)
+			printSynapseSyncReport(out, rep)
 			for _, m := range rep.Members {
 				if m.Error != "" {
 					warnings = append(warnings, fmt.Sprintf("%s/%s: %s", s.ID, m.Alias, m.Error))

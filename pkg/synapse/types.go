@@ -93,6 +93,8 @@ type Member struct {
 	// LockedSHA and LockedAt record the commit Ref resolved to at the last sync.
 	LockedSHA string    `toml:"locked_sha" json:"locked_sha,omitempty"`
 	LockedAt  time.Time `toml:"locked_at" json:"locked_at,omitempty"`
+	// PlaneProject is the Plane project identifier (e.g. "DGIT") tracking this member\'s tickets.
+	PlaneProject string `toml:"plane_project" json:"plane_project,omitempty"`
 }
 
 // IsRemote reports whether the member is consumed from its remote rather than its local checkout.

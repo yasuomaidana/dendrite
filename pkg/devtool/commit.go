@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -18,6 +19,9 @@ import (
 	"Dendrite/pkg/sidecar"
 	"Dendrite/pkg/tracker/plane"
 )
+
+// ErrNothingToCommit is returned by ExecuteCommit when the working tree has nothing to stage.
+var ErrNothingToCommit = errors.New("no staged changes to commit")
 
 // CommitOptions defines the parameters for an autonomous Git commit.
 type CommitOptions struct {
@@ -673,7 +677,7 @@ func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, erro
 		return nil, fmt.Errorf("failed to check staged files: %w", err)
 	}
 	if strings.TrimSpace(stagedStatus) == "" && !opts.Amend {
-		return nil, fmt.Errorf("no staged changes to commit")
+		return nil, ErrNothingToCommit
 	}
 
 	var stagedFiles []string
@@ -815,68 +819,12 @@ func pushAfterCommit(ctx context.Context, opts CommitOptions, res *CommitResult,
 		return nil
 	}
 
-	remotesOut, err := runGit("remote")
-	if err != nil {
-		res.PushSkipped = true
-		res.PushReason = "no remote configured"
-		return nil
-	}
-
-	var remotes []string
-	for _, r := range strings.Split(remotesOut, "\n") {
-		r = strings.TrimSpace(r)
-		if r != "" {
-			remotes = append(remotes, r)
-		}
-	}
-	if len(remotes) == 0 {
-		res.PushSkipped = true
-		res.PushReason = "no remote configured"
-		return nil
-	}
-
-	branch, _ := runGit("rev-parse", "--abbrev-ref", "HEAD")
-	branch = strings.TrimSpace(branch)
-
-	if branch == "main" || branch == "master" {
-		refuseErr := fmt.Errorf("pushing %s directly is refused (branch guard)", branch)
-		res.PushSkipped = true
-		res.PushReason = refuseErr.Error()
-		res.PushError = refuseErr
-		return refuseErr
-	}
-
-	targetRemote := ""
-	for _, r := range remotes {
-		if r == "origin" {
-			targetRemote = "origin"
-			break
-		}
-	}
-	if targetRemote == "" {
-		targetRemote = remotes[0]
-	}
-
-	hasUpstream := false
-	if _, uErr := runGit("rev-parse", "--abbrev-ref", "@{u}"); uErr == nil {
-		hasUpstream = true
-	}
-
-	var pushErr error
-	if hasUpstream {
-		_, pushErr = runGit("push")
-	} else {
-		_, pushErr = runGit("push", "-u", targetRemote, branch)
-	}
-
-	if pushErr != nil {
-		res.PushError = pushErr
-		res.Pushed = false
-		return pushErr
-	}
-
-	res.Pushed = true
-	return nil
+	out := pushBranch(runGit)
+	res.Pushed = out.Pushed
+	res.PushSkipped = out.Skipped
+	res.PushReason = out.Reason
+	res.PushError = out.Err
+	return out.Err
 }
 
 func truncateString(s string, maxLen int) string {
