@@ -30,12 +30,12 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 | :--- | :--- | :--- |
 | [`chronos`](chronos.md) | `plane`, `chronos-tracker`, `pln` | Sovereign issue tracking, Gantt alignment, and DAG scheduler |
 | [`dev`](dev.md) |  | Developer diagnostics, local Ollama probe, and ticket tools |
-| [`doctor`](doctor.md) | `soma-diagnose`, `probe`, `diag` | Run environment pre-flight diagnostics |
 | [`engram`](engram.md) | `store`, `engram-store`, `gram` | Persistent segmented store, memory checkpointer, and chunk query |
 | [`ganglion`](ganglion.md) | `project`, `ganglion-workspace`, `prj` | Manage multi-project isolated workspaces |
 | [`myelin`](myelin.md) | `vcs`, `hillock-guard`, `myelin-guard`, `guard` | Git branch guardrails prohibiting main pushes and ensuring rebase integrity |
 | [`plexus`](plexus.md) | `pool`, `connectome-pool`, `plexus-pool`, `connectome`, `plx` | Multi-directory dependency inference & topological DAG solver |
 | [`soma`](soma.md) | `env`, `homeostasis`, `soma-homeostasis` | Manage and replicate development environments |
+| [`work`](work.md) | `workcopy`, `wc` | Manage model-owned working copies in dendrite-work/ (create, list, remove, auto-clean merged) |
 
 ### Cortex & Sensory Integration
 
@@ -70,7 +70,6 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 | [`session`](session.md) | `handoff` | Session checkpoint and resume for multi-agent coordination |
 | [`spike`](spike.md) | `inference`, `action-potential`, `inf` | Unified multi-provider inference engine gateway (Ollama, OxiLLaMa, vLLM, TGI) |
 | [`synapse`](synapse.md) | `syn`, `synapses` | Typed cross-project links with scoped MCP servers and self-healing paths |
-| [`work`](work.md) | `workcopy`, `wc` | Manage model-owned working copies in dendrite-work/ (create, list, remove, auto-clean merged) |
 
 ### Axon & Myelin Sheath
 

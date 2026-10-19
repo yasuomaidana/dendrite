@@ -347,36 +347,6 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 		Flags       []FlagDoc
 		Examples    []string
 	}{
-		"version": {
-			Examples: []string{"dendrite version", "dendrite --version", "dendrite -v"},
-		},
-		"doctor": {
-			Examples: []string{"dendrite doctor", "dendrite probe", "dendrite diag"},
-		},
-		"env": {
-			Subcommands: []SubcommandDoc{
-				{Name: "doctor", Description: "Inspect target computer OS, package manager and installed tools"},
-				{Name: "plan", Description: "Generate environment replication plan (--mode container|host|hybrid)"},
-				{Name: "replicate", Description: "Replicate development environment (Docker containers or host tools)"},
-				{Name: "install", Description: "Install tool directly on host computer or spin up container"},
-				{Name: "status", Description: "Query real-time health and status of replicated components"},
-				{Name: "prepare", Description: "Synchronize project environment, agent rules, and CI/CD tooling"},
-			},
-			Flags: []FlagDoc{
-				{Name: "--mode", Description: "Replication execution mode: 'container', 'host', or 'hybrid'", Default: "container"},
-				{Name: "--with-linear", Description: "Include Linear issue tracker container"},
-				{Name: "--with-plane", Description: "Include Plane v2 project management container"},
-				{Name: "--with-penpot", Description: "Include Penpot design system container"},
-				{Name: "--with-grafana", Description: "Include Prometheus & Grafana observability suite"},
-				{Name: "--dry-run", Description: "Simulate actions without modifying local disk or services"},
-			},
-			Examples: []string{
-				"dendrite env doctor",
-				"dendrite env plan --mode hybrid --with-plane --with-penpot",
-				"dendrite env replicate --mode hybrid",
-				"dendrite env status",
-			},
-		},
 		"triage": {
 			Examples: []string{"dendrite triage", "dendrite trg"},
 		},
@@ -411,45 +381,6 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 				"dendrite agent run aider --ticket DEN-030",
 				"dendrite agent search \"refactor AST parser\"",
 				"dendrite agent session list",
-			},
-		},
-		"work": {
-			Subcommands: []SubcommandDoc{
-				{Name: "new", Description: "Create an isolated working copy in dendrite-work/ on branch agent/<name>"},
-				{Name: "list", Description: "List working copies with dirty, unpushed, merged and upstream-gone status"},
-				{Name: "done", Description: "Remove one copy (refuses uncommitted or unpushed work without --force)"},
-				{Name: "gc", Description: "Remove copies that are merged (or whose upstream is gone) and clean"},
-				{Name: "adopt", Description: "Move this repository's worktrees that live outside dendrite-work/ into it"},
-			},
-			Flags: []FlagDoc{
-				{Name: "--branch", Description: "Branch for a new copy (default agent/<name>)"},
-				{Name: "--base", Description: "Commit-ish a new copy starts from (default HEAD)"},
-				{Name: "--force", Description: "Remove a copy even with unsaved work, deleting its branch"},
-				{Name: "--dry-run", Description: "Report what gc or adopt would do without changing anything"},
-				{Name: "--json", Description: "Output the copy list as JSON"},
-			},
-			Examples: []string{
-				"dendrite work new DEN-123",
-				"dendrite work list",
-				"dendrite work gc --dry-run",
-				"dendrite work adopt --dry-run",
-			},
-		},
-		"project": {
-			Subcommands: []SubcommandDoc{
-				{Name: "add", Description: "Register a new workspace and prepare isolated state"},
-				{Name: "switch", Description: "Switch active workspace context (< 50ms)"},
-				{Name: "list", Description: "List all registered workspaces"},
-				{Name: "remove", Description: "Unregister workspace and optionally purge data"},
-			},
-			Flags: []FlagDoc{
-				{Name: "--purge", Description: "Purge persistent data directory when removing workspace"},
-			},
-			Examples: []string{
-				"dendrite project add backend /path/to/repo",
-				"dendrite project switch backend",
-				"dendrite project list",
-				"dendrite project remove backend --purge",
 			},
 		},
 		"doc": {

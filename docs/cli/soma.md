@@ -22,29 +22,121 @@ Soma & Axon Hillock
 
 | Subcommand | Description |
 | :--- | :--- |
-| `doctor` | Inspect target computer OS, package manager and installed tools |
-| `plan` | Generate environment replication plan (--mode container|host|hybrid) |
-| `replicate` | Replicate development environment (Docker containers or host tools) |
-| `install` | Install tool directly on host computer or spin up container |
-| `status` | Query real-time health and status of replicated components |
-| `prepare` | Synchronize project environment, agent rules, and CI/CD tooling |
+| `diagnose` | Run environment pre-flight diagnostics (local Ollama, project status) |
+| `install` | Install an agent (aider, openhands, copilot, agy) or a service (plane, litellm, ollama, ...) |
+| `plan` | Show the replication plan for this host |
+| `prepare` | Sync agent rules and skills, and enforce CI/CD tooling defaults |
+| `replicate` | Execute the replication plan (compose files, services, status) |
+| `status` | Show real-time status of environment components |
 
 ## Flags
 
+None
+
+## Subcommand Reference
+
+### `dendrite soma diagnose`
+
+Run environment pre-flight diagnostics (local Ollama, project status)
+
+```bash
+dendrite soma diagnose
+```
+
+Aliases: `doctor`, `diag`
+
+### `dendrite soma install`
+
+Install an agent (aider, openhands, copilot, agy) or a service (plane, litellm, ollama, ...)
+
+```bash
+dendrite soma install <target> [flags]
+```
+
 | Flag | Description |
 | :--- | :--- |
-| `--mode` | Replication execution mode: 'container', 'host', or 'hybrid' (default: container) |
-| `--with-linear` | Include Linear issue tracker container |
-| `--with-plane` | Include Plane v2 project management container |
-| `--with-penpot` | Include Penpot design system container |
-| `--with-grafana` | Include Prometheus & Grafana observability suite |
-| `--dry-run` | Simulate actions without modifying local disk or services |
+| `--mode, -m` | Install mode: container, host or hybrid (default: container) |
+
+```bash
+dendrite soma install agy --yes
+dendrite soma install litellm --mode host
+```
+
+### `dendrite soma plan`
+
+Show the replication plan for this host
+
+```bash
+dendrite soma plan [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--mode, -m` | Install mode: container, host or hybrid (default: container) |
+| `--no-plane-ui` | Skip the Plane web UI |
+| `--with-grafana` | Include Grafana |
+| `--with-linear` | Include Linear |
+| `--with-penpot` | Include Penpot |
+| `--with-plane` | Include Plane |
+| `--with-plane-ui` | Include the Plane web UI |
+
+```bash
+dendrite soma plan
+dendrite soma plan --mode host --with-plane --with-grafana
+```
+
+### `dendrite soma prepare`
+
+Sync agent rules and skills, and enforce CI/CD tooling defaults
+
+```bash
+dendrite soma prepare [path|project] [flags]
+```
+
+Aliases: `sync`, `update`
+
+| Flag | Description |
+| :--- | :--- |
+| `--dry-run` | Show what would happen without changing anything |
+| `--no-cicd` | Disable CI/CD and Copilot enforcement |
+| `--no-skills` | Disable agent rules and skills synchronization |
+| `--path` | Target project directory or registered project name (default: .) |
+| `--tool` | Default developer and CI/CD assistant tool (default: copilot) |
+
+```bash
+dendrite soma prepare
+dendrite soma prepare ../other-repo --dry-run
+dendrite soma prepare --json
+```
+
+### `dendrite soma replicate`
+
+Execute the replication plan (compose files, services, status)
+
+```bash
+dendrite soma replicate [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--dry-run` | Show what would happen without changing anything |
+| `--mode, -m` | Install mode: container, host or hybrid (default: container) |
+| `--no-linear` | Skip Linear |
+| `--no-plane-ui` | Skip the Plane web UI |
+| `--with-plane` | Include Plane |
+| `--with-plane-ui` | Include the Plane web UI |
+
+```bash
+dendrite soma replicate --dry-run
+dendrite soma replicate --with-plane --no-plane-ui
+```
 
 ## Examples
 
 ```bash
-dendrite env doctor
-dendrite env plan --mode hybrid --with-plane --with-penpot
-dendrite env replicate --mode hybrid
-dendrite env status
+dendrite soma prepare --dry-run
+dendrite soma plan --mode host --with-plane
+dendrite soma install litellm
+dendrite soma status
+dendrite soma diagnose
 ```

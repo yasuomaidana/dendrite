@@ -49,6 +49,9 @@ func newRootCmd() *cobra.Command {
 		newSynapseCmd(),
 		newSessionCmd(),
 		newBoutonCmd(),
+		newSomaCmd(),
+		newGanglionCmd(),
+		newWorkCmd(),
 	)
 	root.AddCommand(legacyCommands()...)
 	return root
@@ -112,7 +115,7 @@ func newGroupCmd(use, short, groupID string, aliases ...string) *cobra.Command {
 
 // runGroup is the RunE of every parent command.
 func runGroup(cmd *cobra.Command, args []string) error {
-	if len(args) == 0 {
+	if len(args) == 0 || (len(args) == 1 && args[0] == "help") {
 		return cmd.Help()
 	}
 	msg := "unknown command %q for %q"

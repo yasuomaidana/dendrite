@@ -37,6 +37,10 @@ func runSynapseCommand(ctx context.Context, args []string, out io.Writer) error 
 }
 
 // runSessionCommand runs `dendrite session <args...>`.
+func runWorkCommand(ctx context.Context, args []string, out io.Writer) error {
+	return runCLI(ctx, out, append([]string{"work"}, args...)...)
+}
+
 func runSessionCommand(ctx context.Context, args []string, out io.Writer) error {
 	return runCLI(ctx, out, append([]string{"session"}, args...)...)
 }
@@ -210,4 +214,25 @@ func TestInvokeCmd(t *testing.T) {
 	if err := invokeCmd(context.Background(), newSessionCmd(), "bogus"); !isUsageError(err) {
 		t.Fatalf("invokeCmd bogus = %v; want usage error", err)
 	}
+}
+
+// TestEveryLeafHasHelp runs `<path> --help` for every runnable command in the tree.
+func TestEveryLeafHasHelp(t *testing.T) {
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		for _, sub := range c.Commands() {
+			if sub.Hidden || sub.Name() == "help" || sub.Name() == "completion" {
+				continue
+			}
+			path := strings.Fields(sub.CommandPath())[1:]
+			var buf bytes.Buffer
+			if err := runCLI(context.Background(), &buf, append(path, "--help")...); err != nil {
+				t.Errorf("%v --help: %v", path, err)
+			} else if !strings.Contains(buf.String(), "Usage:") && !sub.DisableFlagParsing {
+				t.Errorf("%v --help printed no usage: %q", path, buf.String())
+			}
+			walk(sub)
+		}
+	}
+	walk(newRootCmd())
 }

@@ -22,22 +22,46 @@ Soma & Axon Hillock
 
 | Subcommand | Description |
 | :--- | :--- |
-| `add` | Register a new workspace and prepare isolated state |
-| `switch` | Switch active workspace context (< 50ms) |
-| `list` | List all registered workspaces |
-| `remove` | Unregister workspace and optionally purge data |
+| `add` | Register a project and its isolated data directory |
+| `list` | List registered projects (* marks the active one) |
+| `remove` | Unregister a project |
+| `switch` | Make a registered project the active context |
 
 ## Flags
 
+None
+
+## Subcommand Reference
+
+### `dendrite ganglion list`
+
+List registered projects (* marks the active one)
+
+```bash
+dendrite ganglion list
+```
+
+Aliases: `ls`
+
+### `dendrite ganglion remove`
+
+Unregister a project
+
+```bash
+dendrite ganglion remove <name> [flags]
+```
+
+Aliases: `rm`
+
 | Flag | Description |
 | :--- | :--- |
-| `--purge` | Purge persistent data directory when removing workspace |
+| `--purge` | Also delete the project's data directory |
 
 ## Examples
 
 ```bash
-dendrite project add backend /path/to/repo
-dendrite project switch backend
-dendrite project list
-dendrite project remove backend --purge
+dendrite ganglion add dendrite ~/GoLandProjects/Dendrite
+dendrite ganglion switch dendrite
+dendrite ganglion list
+dendrite ganglion remove old-project --purge
 ```

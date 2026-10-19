@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -149,4 +151,14 @@ func addProjectFlag(cmd *cobra.Command, p *string, def, usage string) {
 // addFileFlag registers the shared --file/-f flag.
 func addFileFlag(cmd *cobra.Command, p *string, def, usage string) {
 	cmd.Flags().StringVarP(p, "file", "f", def, usage)
+}
+
+// writeJSON prints v as indented JSON; commands call it when globals.JSON is set.
+func writeJSON(out io.Writer, v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode JSON: %w", err)
+	}
+	_, err = fmt.Fprintln(out, string(data))
+	return err
 }

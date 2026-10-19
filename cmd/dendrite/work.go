@@ -2,96 +2,94 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"Dendrite/pkg/agentjobs"
 	"Dendrite/pkg/workcopy"
+
+	"github.com/spf13/cobra"
 )
 
 // newWorkManager is a seam so tests can point the CLI at a temporary repository.
 var newWorkManager = func() *workcopy.Manager { return workcopy.New(".") }
 
-func handleWorkCommand(ctx context.Context, args []string) error {
-	return runWorkCommand(ctx, args, os.Stdout)
+// newWorkCmd builds `dendrite work`: model-owned working copies in dendrite-work/.
+func newWorkCmd() *cobra.Command {
+	cmd := newGroupCmd("work", "Manage model-owned working copies in dendrite-work/ (create, list, remove, auto-clean merged)", "soma",
+		"workcopy", "wc")
+	cmd.Long = "Model-owned working copies live in dendrite-work/ next to the main checkout ($DENDRITE_WORK_DIR overrides)."
+	cmd.Example = "dendrite work new DEN-123\n" +
+		"dendrite work list --json\n" +
+		"dendrite work done DEN-123 --force\n" +
+		"dendrite work gc --dry-run\n" +
+		"dendrite work adopt"
+
+	var branch, base string
+	newCmd := &cobra.Command{
+		Use:     "new <name>",
+		Aliases: []string{"create"},
+		Short:   "Create an isolated working copy (branch agent/<name>)",
+		Args:    exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runWorkNew(cmd.Context(), args[0], branch, base, cmd.OutOrStdout())
+		},
+	}
+	newCmd.Flags().StringVar(&branch, "branch", "", "Branch to create (default agent/<name>)")
+	newCmd.Flags().StringVar(&base, "base", "", "Commit-ish to start from (default HEAD)")
+
+	list := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List working copies and their cleanup status",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runWorkList(cmd.Context(), cmd.OutOrStdout())
+		},
+	}
+
+	var force bool
+	done := &cobra.Command{
+		Use:     "done <name|path>",
+		Aliases: []string{"remove", "rm"},
+		Short:   "Remove a copy (refuses uncommitted/unpushed work unless --force)",
+		Args:    exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runWorkDone(cmd.Context(), args[0], force, cmd.OutOrStdout())
+		},
+	}
+	done.Flags().BoolVar(&force, "force", false, "Remove even with uncommitted or unpushed work, and delete the branch")
+
+	var gcDryRun bool
+	gc := &cobra.Command{
+		Use:     "gc",
+		Aliases: []string{"prune"},
+		Short:   "Remove copies that are merged (or whose upstream is gone) and clean",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runWorkGC(cmd.Context(), gcDryRun, cmd.OutOrStdout())
+		},
+	}
+	addDryRunFlag(gc, &gcDryRun)
+
+	var adoptDryRun bool
+	adopt := &cobra.Command{
+		Use:   "adopt",
+		Short: "Move this repo's worktrees that live outside dendrite-work/ into it",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runWorkAdopt(cmd.Context(), adoptDryRun, cmd.OutOrStdout())
+		},
+	}
+	addDryRunFlag(adopt, &adoptDryRun)
+
+	cmd.AddCommand(newCmd, list, done, gc, adopt)
+	return cmd
 }
 
-func runWorkCommand(ctx context.Context, args []string, out io.Writer) error {
-	if len(args) < 1 {
-		printWorkUsage(out)
-		return nil
-	}
-
-	switch args[0] {
-	case "new", "create":
-		return runWorkNew(ctx, args[1:], out)
-	case "list", "ls":
-		return runWorkList(ctx, args[1:], out)
-	case "done", "remove", "rm":
-		return runWorkDone(ctx, args[1:], out)
-	case "gc", "prune":
-		return runWorkGC(ctx, args[1:], out)
-	case "adopt":
-		return runWorkAdopt(ctx, args[1:], out)
-	case "help", "--help", "-h":
-		printWorkUsage(out)
-		return nil
-	default:
-		return fmt.Errorf("unknown work command %q. Usage: dendrite work <new|list|done|gc|adopt> [flags...]", args[0])
-	}
-}
-
-func printWorkUsage(out io.Writer) {
-	fmt.Fprintln(out, "Usage: dendrite work <new|list|done|gc|adopt> [flags...]")
-	fmt.Fprintln(out, "\nModel-owned working copies live in dendrite-work/ next to the main checkout ($DENDRITE_WORK_DIR overrides).")
-	fmt.Fprintln(out, "\nCommands:")
-	fmt.Fprintln(out, "  new <name> [--branch b] [--base ref]  Create an isolated working copy (branch agent/<name>)")
-	fmt.Fprintln(out, "  list [--json]                         List working copies and their cleanup status")
-	fmt.Fprintln(out, "  done <name|path> [--force]            Remove a copy (refuses uncommitted/unpushed work unless --force)")
-	fmt.Fprintln(out, "  gc [--dry-run]                        Remove copies that are merged (or whose upstream is gone) and clean")
-	fmt.Fprintln(out, "  adopt [--dry-run]                     Move this repo's worktrees that live outside dendrite-work/ into it")
-}
-
-// splitPositional separates positional arguments from flags so `done NAME --force`
-// and `done --force NAME` both parse. valueFlags take the following argument.
-func splitPositional(args []string, valueFlags ...string) (positional, flags []string) {
-	takesValue := make(map[string]bool, len(valueFlags))
-	for _, f := range valueFlags {
-		takesValue[f] = true
-	}
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if !strings.HasPrefix(a, "-") {
-			positional = append(positional, a)
-			continue
-		}
-		flags = append(flags, a)
-		if takesValue[strings.TrimLeft(a, "-")] && i+1 < len(args) {
-			i++
-			flags = append(flags, args[i])
-		}
-	}
-	return positional, flags
-}
-
-func runWorkNew(ctx context.Context, args []string, out io.Writer) error {
-	fs := flag.NewFlagSet("work-new", flag.ContinueOnError)
-	fs.SetOutput(out)
-	branch := fs.String("branch", "", "Branch to create (default agent/<name>)")
-	base := fs.String("base", "", "Commit-ish to start from (default HEAD)")
-	positional, flags := splitPositional(args, "branch", "base")
-	if err := fs.Parse(flags); err != nil {
-		return err
-	}
-	if len(positional) != 1 {
-		return fmt.Errorf("usage: dendrite work new <name> [--branch b] [--base ref]")
-	}
-
-	path, err := newWorkManager().Create(ctx, positional[0], *branch, *base)
+func runWorkNew(ctx context.Context, name, branch, base string, out io.Writer) error {
+	path, err := newWorkManager().Create(ctx, name, branch, base)
 	if err != nil {
 		return err
 	}
@@ -100,26 +98,17 @@ func runWorkNew(ctx context.Context, args []string, out io.Writer) error {
 	return nil
 }
 
-func runWorkList(ctx context.Context, args []string, out io.Writer) error {
-	fs := flag.NewFlagSet("work-list", flag.ContinueOnError)
-	fs.SetOutput(out)
-	asJSON := fs.Bool("json", false, "Output in JSON format")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
+func runWorkList(ctx context.Context, out io.Writer) error {
 	m := newWorkManager()
 	copies, err := m.List(ctx)
 	if err != nil {
 		return err
 	}
-	if *asJSON {
+	if globals.JSON {
 		if copies == nil {
 			copies = []workcopy.Copy{}
 		}
-		data, _ := json.MarshalIndent(copies, "", "  ")
-		fmt.Fprintln(out, string(data))
-		return nil
+		return writeJSON(out, copies)
 	}
 
 	root, err := m.Root(ctx)
@@ -159,19 +148,8 @@ func copyStatus(c workcopy.Copy) string {
 	return strings.Join(parts, ", ")
 }
 
-func runWorkDone(ctx context.Context, args []string, out io.Writer) error {
-	fs := flag.NewFlagSet("work-done", flag.ContinueOnError)
-	fs.SetOutput(out)
-	force := fs.Bool("force", false, "Remove even with uncommitted or unpushed work, and delete the branch")
-	positional, flags := splitPositional(args)
-	if err := fs.Parse(flags); err != nil {
-		return err
-	}
-	if len(positional) != 1 {
-		return fmt.Errorf("usage: dendrite work done <name|path> [--force]")
-	}
-
-	report, err := newWorkManager().Remove(ctx, positional[0], workcopy.RemoveOptions{Force: *force})
+func runWorkDone(ctx context.Context, target string, force bool, out io.Writer) error {
+	report, err := newWorkManager().Remove(ctx, target, workcopy.RemoveOptions{Force: force})
 	if err != nil {
 		return err
 	}
@@ -179,16 +157,9 @@ func runWorkDone(ctx context.Context, args []string, out io.Writer) error {
 	return nil
 }
 
-func runWorkGC(ctx context.Context, args []string, out io.Writer) error {
-	fs := flag.NewFlagSet("work-gc", flag.ContinueOnError)
-	fs.SetOutput(out)
-	dryRun := fs.Bool("dry-run", false, "Report what would be removed without deleting")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
+func runWorkGC(ctx context.Context, dryRun bool, out io.Writer) error {
 	reports, err := newWorkManager().GC(ctx, workcopy.GCOptions{
-		DryRun: *dryRun,
+		DryRun: dryRun,
 		InUse:  agentjobs.NewLedger("").WorktreeInUse(),
 	})
 	if err != nil {
@@ -198,16 +169,9 @@ func runWorkGC(ctx context.Context, args []string, out io.Writer) error {
 	return nil
 }
 
-func runWorkAdopt(ctx context.Context, args []string, out io.Writer) error {
-	fs := flag.NewFlagSet("work-adopt", flag.ContinueOnError)
-	fs.SetOutput(out)
-	dryRun := fs.Bool("dry-run", false, "Report what would be moved without moving")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-
+func runWorkAdopt(ctx context.Context, dryRun bool, out io.Writer) error {
 	reports, err := newWorkManager().Adopt(ctx, workcopy.GCOptions{
-		DryRun: *dryRun,
+		DryRun: dryRun,
 		InUse:  agentjobs.NewLedger("").WorktreeInUse(),
 	})
 	if err != nil {

@@ -21,30 +21,6 @@ func main() {
 func legacyCommands() []*cobra.Command {
 	return []*cobra.Command{
 		legacyCmd(legacySpec{
-			Name:        "doctor",
-			Aliases:     []string{"soma-diagnose", "probe", "diag"},
-			Category:    "Soma & Axon Hillock",
-			Description: "Run environment pre-flight diagnostics",
-			Run: func(ctx context.Context, args []string) error {
-				runDoctor(ctx)
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "soma",
-			Aliases:     []string{"env", "homeostasis", "soma-homeostasis"},
-			Category:    "Soma & Axon Hillock",
-			Description: "Manage and replicate development environments",
-			Run: func(ctx context.Context, args []string) error {
-				if len(args) < 1 {
-					fmt.Println("Usage: dendrite env <doctor|plan|install|replicate|status> [flags...]")
-					return nil
-				}
-				handleEnvCommand(ctx, args[0], args[1:])
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
 			Name:        "inhibitory-triage",
 			Aliases:     []string{"triage", "trg"},
 			Category:    "Postsynaptic Effectors & Actuation",
@@ -65,20 +41,6 @@ func legacyCommands() []*cobra.Command {
 					return nil
 				}
 				handleTestCommand(ctx, args[0], args[1:])
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "ganglion",
-			Aliases:     []string{"project", "ganglion-workspace", "prj"},
-			Category:    "Soma & Axon Hillock",
-			Description: "Manage multi-project isolated workspaces",
-			Run: func(ctx context.Context, args []string) error {
-				if len(args) < 1 {
-					fmt.Println("Usage: dendrite project <add|switch|list|remove> [args...]")
-					return nil
-				}
-				handleProjectCommand(ctx, args[0], args[1:])
 				return nil
 			},
 		}),
@@ -485,15 +447,6 @@ func legacyCommands() []*cobra.Command {
 			Run: func(ctx context.Context, args []string) error {
 				handleGreetingCommand(ctx, args)
 				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "work",
-			Aliases:     []string{"workcopy", "wc"},
-			Category:    "Synaptic Cleft & Gating",
-			Description: "Manage model-owned working copies in dendrite-work/ (create, list, remove, auto-clean merged)",
-			Run: func(ctx context.Context, args []string) error {
-				return handleWorkCommand(ctx, args)
 			},
 		}),
 	}
