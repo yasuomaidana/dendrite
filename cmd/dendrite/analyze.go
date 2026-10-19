@@ -4,78 +4,279 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"strconv"
+	"io"
 	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
 
 	"Dendrite/pkg/scheduler/governor"
 	"Dendrite/pkg/scheduler/token"
 )
 
 var defaultCLIScheduler = token.NewTokenScheduler(nil, nil, "")
-var defaultCLIGovernor = governor.NewQuotaGovernor(governor.DefaultConfig(), defaultSegmentedStore, defaultCLIScheduler)
+var defaultCLIGovernor = governor.NewQuotaGovernor(governor.DefaultConfig(), nil, defaultCLIScheduler)
 
-func handleAnalyzeCommand(ctx context.Context, action string, args []string) {
-	switch action {
-	case "policy":
-		handleAnalyzePolicy(args)
-	case "status":
-		handleAnalyzeStatus(args)
-	case "switch":
-		handleAnalyzeSwitch(args)
-	case "mode":
-		handleAnalyzeMode(args)
-	case "pause":
-		handleAnalyzePause(ctx, args)
-	case "resume":
-		handleAnalyzeResume(ctx, args)
-	case "run":
-		handleAnalyzeRun(ctx, args)
-	case "tokens", "token":
-		handleTokensCommand(ctx, args)
-	default:
-		printAnalyzeUsage()
+// newCognitionCmd builds `dendrite cognition`: scheduler policy, quota governor, and analysis execution.
+func newCognitionCmd() *cobra.Command {
+	cmd := newGroupCmd("cognition", "Cognitive complexity analyzer, structural anti-pattern scanner, and policy router", "glia",
+		"analyze", "cognitive-analysis", "anlz")
+	cmd.Example = "dendrite cognition status --json\ndendrite cognition policy --night-window 22:00-06:00 --reserve-floor 0.25\ndendrite cognition mode always\ndendrite cognition run --project dendrite --chunk ast-pass-1"
+
+	var policyOpts cognitionPolicyOptions
+	policyCmd := &cobra.Command{
+		Use:     "policy",
+		Short:   "View or set scheduler policy directives",
+		Args:    noArgs,
+		Example: "dendrite cognition policy\ndendrite cognition policy --night-window 23:00-06:00 --sprint-before-reset 48h --reserve-floor 0.20 --mode auto",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runCognitionPolicy(c, policyOpts, globals.JSON, c.OutOrStdout())
+		},
 	}
+	pf := policyCmd.Flags()
+	pf.StringVar(&policyOpts.NightWindow, "night-window", "", "Zero-cost local night window (HH:MM-HH:MM)")
+	pf.StringVar(&policyOpts.WeeklyReset, "weekly-reset", "", "Weekly quota reset schedule (DAY HH:MM)")
+	pf.DurationVar(&policyOpts.SprintBeforeReset, "sprint-before-reset", 0, "Cloud sprint duration before weekly reset")
+	pf.Float64Var(&policyOpts.ReserveFloor, "reserve-floor", 0, "Safety reserve quota floor ratio (0.0-1.0)")
+	pf.BoolVar(&policyOpts.AllowZero, "allow-zero", false, "Allow draining weekly quota down to 0%")
+	pf.StringVar(&policyOpts.Mode, "mode", "", "Operational scheduling mode (auto|always|night|sprint|paused)")
+
+	statusCmd := &cobra.Command{
+		Use:     "status",
+		Short:   "Inspect real-time scheduler state, countdowns, and active tiers",
+		Args:    noArgs,
+		Example: "dendrite cognition status\ndendrite cognition status --json",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runCognitionStatus(globals.JSON, c.OutOrStdout())
+		},
+	}
+
+	var switchAllowZero bool
+	switchCmd := &cobra.Command{
+		Use:     "switch",
+		Short:   "Set runtime quota governor switches",
+		Args:    noArgs,
+		Example: "dendrite cognition switch --allow-zero=true\ndendrite cognition switch --allow-zero=false",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runCognitionSwitch(switchAllowZero, c.OutOrStdout())
+		},
+	}
+	switchCmd.Flags().BoolVar(&switchAllowZero, "allow-zero", false, "Allow draining remaining quota past the 20% safety reserve down to 0%")
+	requireFlags(switchCmd, "allow-zero")
+
+	modeCmd := &cobra.Command{
+		Use:     "mode [always|policy|paused]",
+		Short:   "View or switch operational analysis mode (always|policy|paused)",
+		Args:    maxArgs(1),
+		Example: "dendrite cognition mode\ndendrite cognition mode always\ndendrite cognition mode policy\ndendrite cognition mode paused",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runCognitionMode(args, globals.JSON, c.OutOrStdout())
+		},
+	}
+
+	var pauseOpts cognitionChunkOptions
+	pauseCmd := &cobra.Command{
+		Use:     "pause",
+		Short:   "Pause scheduler analysis and persist active chunk progress",
+		Args:    noArgs,
+		Example: "dendrite cognition pause --project dendrite --chunk chk-001",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runCognitionPause(c.Context(), pauseOpts, c.OutOrStdout())
+		},
+	}
+	addProjectFlag(pauseCmd, &pauseOpts.Project, "", "Active project name")
+	pauseCmd.Flags().StringVar(&pauseOpts.Chunk, "chunk", "", "Active chunk identifier")
+
+	var resumeOpts cognitionChunkOptions
+	resumeCmd := &cobra.Command{
+		Use:     "resume",
+		Short:   "Resume scheduler analysis in active mode",
+		Args:    noArgs,
+		Example: "dendrite cognition resume --project dendrite --chunk chk-001",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runCognitionResume(c.Context(), resumeOpts, c.OutOrStdout())
+		},
+	}
+	addProjectFlag(resumeCmd, &resumeOpts.Project, "", "Active project name")
+	resumeCmd.Flags().StringVar(&resumeOpts.Chunk, "chunk", "", "Active chunk identifier")
+
+	var runOpts cognitionRunOptions
+	runCmd := &cobra.Command{
+		Use:     "run",
+		Short:   "Execute an analysis pass on a target chunk under scheduler governance",
+		Args:    noArgs,
+		Example: "dendrite cognition run --project dendrite --chunk project-ast-chunk\ndendrite cognition run --simulate-night",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runCognitionRun(c.Context(), runOpts, globals.JSON, c.OutOrStdout())
+		},
+	}
+	runCmd.Flags().StringVarP(&runOpts.Chunk, "chunk", "c", "project-ast-chunk", "Target chunk identifier")
+	addProjectFlag(runCmd, &runOpts.Project, "dendrite", "Target project name")
+	runCmd.Flags().BoolVar(&runOpts.SimulateNight, "simulate-night", false, "Simulate execution inside the night window")
+	runCmd.Flags().BoolVar(&runOpts.SimulateSprint, "simulate-sprint", false, "Simulate execution inside the pre-reset cloud sprint window")
+	runCmd.MarkFlagsMutuallyExclusive("simulate-night", "simulate-sprint")
+
+	cmd.AddCommand(policyCmd, statusCmd, switchCmd, modeCmd, pauseCmd, resumeCmd, runCmd)
+	return cmd
 }
 
-func handleAnalyzeSwitch(args []string) {
-	if len(args) == 0 {
-		fmt.Println("Usage: dendrite analyze switch --allow-zero on|off")
-		return
-	}
+type cognitionPolicyOptions struct {
+	NightWindow       string
+	WeeklyReset       string
+	SprintBeforeReset time.Duration
+	ReserveFloor      float64
+	AllowZero         bool
+	Mode              string
+}
 
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--allow-zero" {
-			val := "on"
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
-				val = strings.ToLower(args[i+1])
-				i++
-			}
-			enabled := (val == "on" || val == "true" || val == "1" || val == "enable")
-			if err := defaultCLIGovernor.SetAllowZero(enabled); err != nil {
-				fmt.Printf("[-] Failed to set allow-zero switch: %v\n", err)
-				os.Exit(1)
-			}
-			if enabled {
-				fmt.Println("[✓] Allow-Zero Drain Override: ON (Cloud sprint permitted to drain past 20% down to 0%)")
-			} else {
-				fmt.Println("[✓] Allow-Zero Drain Override: OFF (Cloud calls halt at 20% safety reserve)")
-			}
-			return
+type cognitionChunkOptions struct {
+	Project string
+	Chunk   string
+}
+
+type cognitionRunOptions struct {
+	Chunk          string
+	Project        string
+	SimulateNight  bool
+	SimulateSprint bool
+}
+
+func runCognitionPolicy(cmd *cobra.Command, o cognitionPolicyOptions, asJSON bool, out io.Writer) error {
+	currPolicy := defaultCLIScheduler.GetPolicy()
+	updated := false
+	f := cmd.Flags()
+
+	if f.Changed("night-window") {
+		currPolicy.NightWindow = o.NightWindow
+		updated = true
+	}
+	if f.Changed("weekly-reset") {
+		currPolicy.WeeklyReset = o.WeeklyReset
+		updated = true
+	}
+	if f.Changed("sprint-before-reset") {
+		currPolicy.SprintBeforeReset = o.SprintBeforeReset
+		updated = true
+	}
+	if f.Changed("reserve-floor") {
+		currPolicy.ReserveFloor = o.ReserveFloor
+		updated = true
+	}
+	if f.Changed("allow-zero") {
+		currPolicy.AllowZero = o.AllowZero
+		updated = true
+	}
+	if f.Changed("mode") {
+		mode := strings.ToLower(strings.TrimSpace(o.Mode))
+		switch mode {
+		case "auto", "always", "night", "sprint", "paused":
+			currPolicy.Mode = mode
+			updated = true
+		default:
+			return usageErrorf("invalid mode %q: allowed modes are auto, always, night, sprint, paused", o.Mode)
 		}
 	}
-	fmt.Println("[-] Unrecognized switch flag. Use: dendrite analyze switch --allow-zero on|off")
-}
 
-func handleAnalyzeMode(args []string) {
-	if len(args) == 0 {
-		st := defaultCLIGovernor.GetState()
-		fmt.Printf("Current Operating Mode: %s\n", st.Mode)
-		return
+	if updated {
+		if err := defaultCLIScheduler.SetPolicy(currPolicy); err != nil {
+			return fmt.Errorf("failed to update policy: %w", err)
+		}
 	}
 
-	modeStr := strings.ToLower(args[0])
+	active := defaultCLIScheduler.GetPolicy()
+
+	if asJSON {
+		data, err := json.MarshalIndent(map[string]interface{}{
+			"updated": updated,
+			"policy":  active,
+		}, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal policy: %w", err)
+		}
+		fmt.Fprintln(out, string(data))
+		return nil
+	}
+
+	if updated {
+		fmt.Fprintln(out, "[✓] Successfully updated Token-Aware Hybrid Scheduler policy:")
+	} else {
+		fmt.Fprintln(out, "Token-Aware Hybrid Scheduler Policy:")
+	}
+	fmt.Fprintf(out, "  • Night Window (Zero-Cost Local): %s\n", active.NightWindow)
+	fmt.Fprintf(out, "  • Weekly Quota Reset:             %s\n", active.WeeklyReset)
+	fmt.Fprintf(out, "  • Cloud Sprint Duration:          %v\n", active.SprintBeforeReset)
+	fmt.Fprintf(out, "  • Safety Reserve Quota Floor:     %.1f%%\n", active.ReserveFloor*100)
+	fmt.Fprintf(out, "  • Allow Zero Quota Drain:         %t\n", active.AllowZero)
+	fmt.Fprintf(out, "  • Operational Mode:               %s\n", active.Mode)
+	return nil
+}
+
+func runCognitionStatus(asJSON bool, out io.Writer) error {
+	st, err := defaultCLIScheduler.Status()
+	if err != nil {
+		return fmt.Errorf("failed to evaluate scheduler status: %w", err)
+	}
+
+	govState := defaultCLIGovernor.GetState()
+
+	if asJSON {
+		payload := map[string]interface{}{
+			"scheduler": st,
+			"governor":  govState,
+		}
+		data, err := json.MarshalIndent(payload, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal cognition status: %w", err)
+		}
+		fmt.Fprintln(out, string(data))
+		return nil
+	}
+
+	fmt.Fprintln(out, "=== Token-Aware Hybrid Scheduler & Quota Governor Status ===")
+	fmt.Fprintf(out, "Current Time:           %s\n", st.CurrentTime.Format(time.RFC3339))
+	fmt.Fprintf(out, "Operating Mode:         %s\n", govState.Mode)
+	fmt.Fprintf(out, "Active Execution Tier:  %s\n", st.ActiveTier)
+	fmt.Fprintf(out, "Selected Model:         %s\n", st.SelectedModel)
+	fmt.Fprintf(out, "In Night Window:        %t (%s)\n", st.InNightWindow, st.Policy.NightWindow)
+	fmt.Fprintf(out, "In Cloud Sprint Window: %t (within %v of reset)\n", st.InSprintWindow, st.Policy.SprintBeforeReset)
+	fmt.Fprintf(out, "Next Quota Reset:       %s (in %v)\n", st.NextReset.Format(time.RFC3339), st.TimeUntilReset.Round(time.Minute))
+	if !st.InSprintWindow {
+		fmt.Fprintf(out, "Time Until Next Sprint: %v\n", st.TimeUntilSprint.Round(time.Minute))
+	}
+	fmt.Fprintf(out, "Remaining Quota:        %.1f%%\n", st.RemainingQuotaRatio*100)
+	fmt.Fprintf(out, "Safety Reserve Floor:   %.1f%%\n", govState.ReserveFloor*100)
+	fmt.Fprintf(out, "Allow-Zero Drain:       %t\n", govState.AllowZeroDrain)
+	fmt.Fprintf(out, "Cloud Spend (USD):      $%.2f\n", st.CloudSpendUSD)
+	fmt.Fprintf(out, "Cloud Blocked:          %t\n", govState.IsCloudBlocked)
+	fmt.Fprintf(out, "Status Reason:          %s\n", st.Reason)
+	return nil
+}
+
+func runCognitionSwitch(allowZero bool, out io.Writer) error {
+	if err := defaultCLIGovernor.SetAllowZero(allowZero); err != nil {
+		return fmt.Errorf("failed to set allow-zero switch: %w", err)
+	}
+	if allowZero {
+		fmt.Fprintln(out, "[✓] Allow-Zero Drain Override: ON (Cloud sprint permitted to drain past 20% down to 0%)")
+	} else {
+		fmt.Fprintln(out, "[✓] Allow-Zero Drain Override: OFF (Cloud calls halt at 20% safety reserve)")
+	}
+	return nil
+}
+
+func runCognitionMode(args []string, asJSON bool, out io.Writer) error {
+	if len(args) == 0 {
+		st := defaultCLIGovernor.GetState()
+		if asJSON {
+			data, _ := json.MarshalIndent(map[string]string{"mode": string(st.Mode)}, "", "  ")
+			fmt.Fprintln(out, string(data))
+			return nil
+		}
+		fmt.Fprintf(out, "Current Operating Mode: %s\n", st.Mode)
+		return nil
+	}
+
+	modeStr := strings.ToLower(strings.TrimSpace(args[0]))
 	var mode governor.AnalysisMode
 	switch modeStr {
 	case "always":
@@ -85,221 +286,43 @@ func handleAnalyzeMode(args []string) {
 	case "paused", "pause":
 		mode = governor.ModePaused
 	default:
-		fmt.Printf("[-] Invalid mode '%s'. Allowed modes: always, policy, paused\n", modeStr)
-		os.Exit(1)
+		return usageErrorf("invalid mode %q: allowed modes are always, policy, paused", modeStr)
 	}
 
 	if err := defaultCLIGovernor.SetMode(mode); err != nil {
-		fmt.Printf("[-] Failed to switch operating mode: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to switch operating mode: %w", err)
 	}
-	fmt.Printf("[✓] Switched operational analysis mode to: %s\n", mode)
+	fmt.Fprintf(out, "[✓] Switched operational analysis mode to: %s\n", mode)
+	return nil
 }
 
-func handleAnalyzePolicy(args []string) {
-	currPolicy := defaultCLIScheduler.GetPolicy()
-	updated := false
-	jsonOutput := false
-
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--night-window":
-			if i+1 < len(args) {
-				currPolicy.NightWindow = args[i+1]
-				updated = true
-				i++
-			}
-		case "--weekly-reset":
-			if i+1 < len(args) {
-				currPolicy.WeeklyReset = args[i+1]
-				updated = true
-				i++
-			}
-		case "--sprint-before-reset":
-			if i+1 < len(args) {
-				dur, err := time.ParseDuration(args[i+1])
-				if err != nil {
-					fmt.Printf("[-] Invalid sprint-before-reset duration: %v\n", err)
-					os.Exit(1)
-				}
-				currPolicy.SprintBeforeReset = dur
-				updated = true
-				i++
-			}
-		case "--reserve-floor":
-			if i+1 < len(args) {
-				fl, err := strconv.ParseFloat(args[i+1], 64)
-				if err != nil {
-					fmt.Printf("[-] Invalid reserve-floor: %v\n", err)
-					os.Exit(1)
-				}
-				currPolicy.ReserveFloor = fl
-				updated = true
-				i++
-			}
-		case "--allow-zero":
-			currPolicy.AllowZero = true
-			if i+1 < len(args) && (args[i+1] == "true" || args[i+1] == "on" || args[i+1] == "1") {
-				i++
-			} else if i+1 < len(args) && (args[i+1] == "false" || args[i+1] == "off" || args[i+1] == "0") {
-				currPolicy.AllowZero = false
-				i++
-			}
-			updated = true
-		case "--mode":
-			if i+1 < len(args) {
-				currPolicy.Mode = args[i+1]
-				updated = true
-				i++
-			}
-		case "--json":
-			jsonOutput = true
-		}
+func runCognitionPause(ctx context.Context, o cognitionChunkOptions, out io.Writer) error {
+	if err := defaultCLIGovernor.Pause(ctx, o.Project, o.Chunk); err != nil {
+		return fmt.Errorf("failed to pause scheduler: %w", err)
 	}
-
-	if updated {
-		if err := defaultCLIScheduler.SetPolicy(currPolicy); err != nil {
-			fmt.Printf("[-] Failed to update policy: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	active := defaultCLIScheduler.GetPolicy()
-
-	if jsonOutput {
-		data, _ := json.MarshalIndent(map[string]interface{}{
-			"updated": updated,
-			"policy":  active,
-		}, "", "  ")
-		fmt.Println(string(data))
-		return
-	}
-
-	if updated {
-		fmt.Println("[✓] Successfully updated Token-Aware Hybrid Scheduler policy:")
-	} else {
-		fmt.Println("Token-Aware Hybrid Scheduler Policy:")
-	}
-	fmt.Printf("  • Night Window (Zero-Cost Local): %s\n", active.NightWindow)
-	fmt.Printf("  • Weekly Quota Reset:             %s\n", active.WeeklyReset)
-	fmt.Printf("  • Cloud Sprint Duration:          %v\n", active.SprintBeforeReset)
-	fmt.Printf("  • Safety Reserve Quota Floor:     %.1f%%\n", active.ReserveFloor*100)
-	fmt.Printf("  • Allow Zero Quota Drain:         %t\n", active.AllowZero)
-	fmt.Printf("  • Operational Mode:               %s\n", active.Mode)
+	fmt.Fprintln(out, "[✓] Token-Aware Hybrid Scheduler and Quota Governor paused. Active chunk progress persisted.")
+	return nil
 }
 
-func handleAnalyzeStatus(args []string) {
-	jsonOutput := false
-	for _, a := range args {
-		if a == "--json" {
-			jsonOutput = true
-		}
+func runCognitionResume(ctx context.Context, o cognitionChunkOptions, out io.Writer) error {
+	if err := defaultCLIGovernor.Resume(ctx, o.Project, o.Chunk); err != nil {
+		return fmt.Errorf("failed to resume scheduler: %w", err)
 	}
-
-	st, err := defaultCLIScheduler.Status()
-	if err != nil {
-		fmt.Printf("[-] Failed to evaluate scheduler status: %v\n", err)
-		os.Exit(1)
-	}
-
-	govState := defaultCLIGovernor.GetState()
-
-	if jsonOutput {
-		payload := map[string]interface{}{
-			"scheduler": st,
-			"governor":  govState,
-		}
-		data, _ := json.MarshalIndent(payload, "", "  ")
-		fmt.Println(string(data))
-		return
-	}
-
-	fmt.Println("=== Token-Aware Hybrid Scheduler & Quota Governor Status ===")
-	fmt.Printf("Current Time:           %s\n", st.CurrentTime.Format(time.RFC3339))
-	fmt.Printf("Operating Mode:         %s\n", govState.Mode)
-	fmt.Printf("Active Execution Tier:  %s\n", st.ActiveTier)
-	fmt.Printf("Selected Model:         %s\n", st.SelectedModel)
-	fmt.Printf("In Night Window:        %t (%s)\n", st.InNightWindow, st.Policy.NightWindow)
-	fmt.Printf("In Cloud Sprint Window: %t (within %v of reset)\n", st.InSprintWindow, st.Policy.SprintBeforeReset)
-	fmt.Printf("Next Quota Reset:       %s (in %v)\n", st.NextReset.Format(time.RFC3339), st.TimeUntilReset.Round(time.Minute))
-	if !st.InSprintWindow {
-		fmt.Printf("Time Until Next Sprint: %v\n", st.TimeUntilSprint.Round(time.Minute))
-	}
-	fmt.Printf("Remaining Quota:        %.1f%%\n", st.RemainingQuotaRatio*100)
-	fmt.Printf("Safety Reserve Floor:   %.1f%%\n", govState.ReserveFloor*100)
-	fmt.Printf("Allow-Zero Drain:       %t\n", govState.AllowZeroDrain)
-	fmt.Printf("Cloud Spend (USD):      $%.2f\n", st.CloudSpendUSD)
-	fmt.Printf("Cloud Blocked:          %t\n", govState.IsCloudBlocked)
-	fmt.Printf("Status Reason:          %s\n", st.Reason)
+	fmt.Fprintln(out, "[✓] Token-Aware Hybrid Scheduler and Quota Governor resumed.")
+	return nil
 }
 
-func handleAnalyzePause(ctx context.Context, args []string) {
-	project := ""
-	chunkID := ""
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--project" && i+1 < len(args) {
-			project = args[i+1]
-			i++
-		}
-		if args[i] == "--chunk" && i+1 < len(args) {
-			chunkID = args[i+1]
-			i++
-		}
-	}
-
-	_ = defaultCLIGovernor.Pause(ctx, project, chunkID)
-	fmt.Println("[✓] Token-Aware Hybrid Scheduler and Quota Governor paused. Active chunk progress persisted.")
-}
-
-func handleAnalyzeResume(ctx context.Context, args []string) {
-	project := ""
-	chunkID := ""
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--project" && i+1 < len(args) {
-			project = args[i+1]
-			i++
-		}
-		if args[i] == "--chunk" && i+1 < len(args) {
-			chunkID = args[i+1]
-			i++
-		}
-	}
-
-	_ = defaultCLIGovernor.Resume(ctx, project, chunkID)
-	fmt.Println("[✓] Token-Aware Hybrid Scheduler and Quota Governor resumed.")
-}
-
-func handleAnalyzeRun(ctx context.Context, args []string) {
-	chunkID := "project-ast-chunk"
-	project := "dendrite"
-	simNight := false
-	simSprint := false
-
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--chunk", "-c":
-			if i+1 < len(args) {
-				chunkID = args[i+1]
-				i++
-			}
-		case "--project", "-p":
-			if i+1 < len(args) {
-				project = args[i+1]
-				i++
-			}
-		case "--simulate-night":
-			simNight = true
-		case "--simulate-sprint":
-			simSprint = true
-		}
+func runCognitionRun(ctx context.Context, o cognitionRunOptions, asJSON bool, out io.Writer) error {
+	if o.SimulateNight && o.SimulateSprint {
+		return usageErrorf("--simulate-night and --simulate-sprint are mutually exclusive")
 	}
 
 	sched := defaultCLIScheduler
-	if simNight || simSprint {
+	if o.SimulateNight || o.SimulateSprint {
 		pol := sched.GetPolicy()
-		if simNight {
+		if o.SimulateNight {
 			pol.Mode = "night"
-		} else if simSprint {
+		} else if o.SimulateSprint {
 			pol.Mode = "sprint"
 		}
 		tempSched := token.NewTokenScheduler(nil, nil, "")
@@ -307,47 +330,44 @@ func handleAnalyzeRun(ctx context.Context, args []string) {
 		sched = tempSched
 	}
 
-	res, err := sched.ProcessChunk(ctx, chunkID, func(ctx context.Context, model string) (string, int, float64, error) {
+	res, err := sched.ProcessChunk(ctx, o.Chunk, func(ctx context.Context, model string) (string, int, float64, error) {
 		cost := 0.0
 		if model == "gemini-2.5-pro" {
-			// Check governor safety floor before invoking cloud model
-			allowed, gErr := defaultCLIGovernor.CheckCloudExecution(ctx, project, chunkID)
+			allowed, gErr := defaultCLIGovernor.CheckCloudExecution(ctx, o.Project, o.Chunk)
 			if !allowed {
 				return "", 0, 0, gErr
 			}
 			cost = 0.02
 		}
-		return fmt.Sprintf("Completed semantic AST analysis for %s", chunkID), 1500, cost, nil
+		return fmt.Sprintf("Completed semantic AST analysis for %s", o.Chunk), 1500, cost, nil
 	})
 	if err != nil {
-		fmt.Printf("[-] Failed to process chunk: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to process chunk: %w", err)
 	}
 
-	fmt.Printf("[✓] Chunk Execution Outcome:\n")
-	fmt.Printf("    Chunk ID:       %s\n", res.ChunkID)
-	fmt.Printf("    Execution Tier: %s\n", res.ActiveTier)
-	fmt.Printf("    Selected Model: %s\n", res.SelectedModel)
-	fmt.Printf("    Tokens:         %d\n", res.Tokens)
-	fmt.Printf("    Cost (USD):     $%.4f\n", res.CostUSD)
-	fmt.Printf("    Details:        %s\n", res.Response)
+	if asJSON {
+		data, err := json.MarshalIndent(res, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal chunk result: %w", err)
+		}
+		fmt.Fprintln(out, string(data))
+		return nil
+	}
+
+	fmt.Fprintf(out, "[✓] Chunk Execution Outcome:\n")
+	fmt.Fprintf(out, "    Chunk ID:       %s\n", res.ChunkID)
+	fmt.Fprintf(out, "    Execution Tier: %s\n", res.ActiveTier)
+	fmt.Fprintf(out, "    Selected Model: %s\n", res.SelectedModel)
+	fmt.Fprintf(out, "    Tokens:         %d\n", res.Tokens)
+	fmt.Fprintf(out, "    Cost (USD):     $%.4f\n", res.CostUSD)
+	fmt.Fprintf(out, "    Details:        %s\n", res.Response)
+	return nil
+}
+
+func handleAnalyzeCommand(ctx context.Context, action string, args []string) {
+	_ = invokeCmd(ctx, newCognitionCmd(), append([]string{action}, args...)...)
 }
 
 func printAnalyzeUsage() {
-	fmt.Println("Usage: dendrite analyze <policy|status|switch|mode|pause|resume|run|tokens> [flags...]")
-	fmt.Println("\nCommands:")
-	fmt.Println("  policy   View or set scheduler policy directives")
-	fmt.Println("           Flags: --night-window <HH:MM-HH:MM>")
-	fmt.Println("                  --weekly-reset <DAY HH:MM>")
-	fmt.Println("                  --sprint-before-reset <duration>")
-	fmt.Println("                  --reserve-floor <0.0-1.0>")
-	fmt.Println("                  --allow-zero [true|false]")
-	fmt.Println("                  --mode <auto|always|night|sprint|paused>")
-	fmt.Println("  status   Inspect real-time scheduler state, countdowns, and active tiers")
-	fmt.Println("  tokens   Inspect day window and week window token availability & AGY access confirmation")
-	fmt.Println("  switch   Set runtime feature switches (e.g. --allow-zero on|off)")
-	fmt.Println("  mode     Switch operational analysis mode (always|policy|paused)")
-	fmt.Println("  pause    Pause scheduler analysis (persists chunk progress immediately)")
-	fmt.Println("  resume   Resume scheduler analysis in active mode")
-	fmt.Println("  run      Execute analysis pass on a target chunk under scheduler governance")
+	_ = newCognitionCmd().Help()
 }
