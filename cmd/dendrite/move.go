@@ -3,286 +3,194 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
+	"io"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"Dendrite/pkg/node/migrate"
+
+	"github.com/spf13/cobra"
 )
 
-func printMoveUsage() {
-	fmt.Println("Dendrite Service Migration Engine (Zero-Credential SSH)")
-	fmt.Println("\nUsage:")
-	fmt.Println("  dendrite move <service[,service...]> to --ssh <target> [flags]")
-	fmt.Println("  dendrite move debian --ssh <target> [flags]")
-	fmt.Println("  dendrite move plan [--ram <size>] [--disk <size>]")
-	fmt.Println("\nExamples:")
-	fmt.Println("  dendrite move plane to --ssh user@debian-server")
-	fmt.Println("  dendrite move plane,litellm,database to --ssh user@debian-server --dry-run")
-	fmt.Println("  dendrite move debian --ssh user@debian-server --yes")
-	fmt.Println("  dendrite move plan --ram 4GB --disk 1TB")
-	fmt.Println("\nFlags:")
-	fmt.Println("  --ssh, -s <host>       Target SSH host (e.g. user@debian-server or debian-server)")
-	fmt.Println("  --port, -p <port>      SSH port (default 22)")
-	fmt.Println("  --user, -u <user>      SSH user (default from target host or deployer)")
-	fmt.Println("  --key, -i <path>       Optional SSH identity key path (uses ssh-agent by default)")
-	fmt.Println("  --ram <size>           Target host RAM capacity (e.g. 4GB, 4096MB) [default 4GB]")
-	fmt.Println("  --disk <size>          Target host Disk capacity (e.g. 1TB, 1000GB) [default 1TB]")
-	fmt.Println("  --dry-run              Simulate migration without modifying local or remote containers")
-	fmt.Println("  --yes, -y              Auto-approve migration without interactive terminal prompt")
-	fmt.Println("  --no-prune             Keep local containers running after successful remote deployment")
-	fmt.Println("  --timeout <seconds>    Remote health check timeout (default 120s)")
+// newTranslocateCmd builds `dendrite translocate` (alias move): capacity planning and SSH service migration.
+func newTranslocateCmd() *cobra.Command {
+	cmd := newGroupCmd("translocate", "Zero-credential interactive service migration across SSH nodes", "axon",
+		"move", "axonal-translocation", "mv")
+	cmd.Example = "dendrite translocate plan --ram 4GB --disk 1TB\n" +
+		"dendrite translocate run plane litellm --ssh user@debian-server --dry-run\n" +
+		"dendrite translocate run debian --ssh user@debian-server --yes"
+
+	var ramStr, diskStr string
+	plan := &cobra.Command{
+		Use:   "plan",
+		Short: "Show which services fit on a target server of the given size",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ram, disk, err := parseCapacity(ramStr, diskStr)
+			if err != nil {
+				return err
+			}
+			p := migrate.EvaluateDebianServer(ram, disk)
+			if globals.JSON {
+				return writeJSON(cmd.OutOrStdout(), p)
+			}
+			printDebianCapacityPlan(cmd.OutOrStdout(), p)
+			return nil
+		},
+	}
+	addCapacityFlags(plan, &ramStr, &diskStr)
+	cmd.AddCommand(plan, newTranslocateRunCmd())
+	return cmd
 }
 
-func handleMoveCommand(ctx context.Context, args []string) {
-	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
-		printMoveUsage()
-		return
+func addCapacityFlags(cmd *cobra.Command, ram, disk *string) {
+	cmd.Flags().StringVar(ram, "ram", "4GB", "Target RAM (e.g. 4GB, 4096MB)")
+	cmd.Flags().StringVar(disk, "disk", "1TB", "Target disk (e.g. 1TB, 1000GB)")
+}
+
+// parseCapacity reads --ram and --disk; an unreadable size is a usage error.
+func parseCapacity(ramStr, diskStr string) (ramMB, diskGB uint64, err error) {
+	ramMB, ok := parseSizeToMB(ramStr)
+	if !ok {
+		return 0, 0, usageErrorf("invalid --ram %q: use a size like 4GB or 4096MB", ramStr)
 	}
-
-	// Subcommand: plan
-	if args[0] == "plan" {
-		ramMB := uint64(4096)
-		diskGB := uint64(1000)
-		for i := 1; i < len(args); i++ {
-			if args[i] == "--ram" && i+1 < len(args) {
-				ramMB = parseSizeToMB(args[i+1], 4096)
-				i++
-			} else if args[i] == "--disk" && i+1 < len(args) {
-				diskGB = parseSizeToGB(args[i+1], 1000)
-				i++
-			}
-		}
-
-		plan := migrate.EvaluateDebianServer(ramMB, diskGB)
-		printDebianCapacityPlan(plan)
-		return
+	diskGB, ok = parseSizeToGB(diskStr)
+	if !ok {
+		return 0, 0, usageErrorf("invalid --disk %q: use a size like 1TB or 1000GB", diskStr)
 	}
+	return ramMB, diskGB, nil
+}
 
-	// Parsing migration targets and flags
-	var rawServices []string
-	var targetHost string
-	sshPort := 22
-	var sshUser string
-	var keyPath string
-	targetRAMMB := uint64(4096)
-	targetDiskGB := uint64(1000)
-	dryRun := false
-	autoApprove := false
-	pruneLocal := true
-	timeout := 120 * time.Second
-
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-		switch {
-		case arg == "to":
-			// skip noise token "to" (e.g. "dendrite move plane to --ssh target")
-			i++
-		case arg == "--ssh" || arg == "-s":
-			if i+1 < len(args) {
-				targetHost = args[i+1]
-				i += 2
-			} else {
-				i++
+func newTranslocateRunCmd() *cobra.Command {
+	req := migrate.MigrationRequest{SSHPort: 22, Timeout: 120 * time.Second}
+	var ramStr, diskStr string
+	var noPrune bool
+	cmd := &cobra.Command{
+		Use:   "run <service>...",
+		Short: "Move services (or 'debian' for the full eligible set) to a host over SSH",
+		Args:  minArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ram, disk, err := parseCapacity(ramStr, diskStr)
+			if err != nil {
+				return err
 			}
-		case arg == "--port" || arg == "-p":
-			if i+1 < len(args) {
-				if p, err := strconv.Atoi(args[i+1]); err == nil {
-					sshPort = p
-				}
-				i += 2
-			} else {
-				i++
-			}
-		case arg == "--user" || arg == "-u":
-			if i+1 < len(args) {
-				sshUser = args[i+1]
-				i += 2
-			} else {
-				i++
-			}
-		case arg == "--key" || arg == "-i":
-			if i+1 < len(args) {
-				keyPath = args[i+1]
-				i += 2
-			} else {
-				i++
-			}
-		case arg == "--ram":
-			if i+1 < len(args) {
-				targetRAMMB = parseSizeToMB(args[i+1], 4096)
-				i += 2
-			} else {
-				i++
-			}
-		case arg == "--disk":
-			if i+1 < len(args) {
-				targetDiskGB = parseSizeToGB(args[i+1], 1000)
-				i += 2
-			} else {
-				i++
-			}
-		case arg == "--dry-run":
-			dryRun = true
-			i++
-		case arg == "--yes" || arg == "-y":
-			autoApprove = true
-			i++
-		case arg == "--no-prune":
-			pruneLocal = false
-			i++
-		case arg == "--timeout":
-			if i+1 < len(args) {
-				if sec, err := strconv.Atoi(args[i+1]); err == nil {
-					timeout = time.Duration(sec) * time.Second
-				}
-				i += 2
-			} else {
-				i++
-			}
-		default:
-			if !strings.HasPrefix(arg, "-") {
-				// comma-separated service list
-				parts := strings.Split(arg, ",")
-				for _, p := range parts {
-					trimmed := strings.TrimSpace(p)
-					if trimmed != "" {
-						rawServices = append(rawServices, trimmed)
+			for _, a := range args {
+				for _, s := range strings.Split(a, ",") {
+					if s = strings.TrimSpace(s); s != "" {
+						req.Services = append(req.Services, s)
 					}
 				}
 			}
-			i++
-		}
+			req.TargetRAMMB, req.TargetDiskGB = ram, disk
+			req.PruneLocal = !noPrune
+			req.AutoApprove = globals.Yes
+			req.In, req.Out = cmd.InOrStdin(), cmd.OutOrStdout()
+			return runTranslocate(cmd.Context(), req, cmd.OutOrStdout())
+		},
 	}
-
-	if len(rawServices) == 0 {
-		fmt.Println("[-] Please specify service(s) to move (e.g. plane, litellm, database, or 'debian').")
-		fmt.Println("    Run 'dendrite move --help' for details.")
-		return
-	}
-
-	if targetHost == "" {
-		fmt.Println("[-] Target SSH host is required. Specify with '--ssh user@hostname'.")
-		return
-	}
-
-	migrator := migrate.NewMigrator(nil, nil)
-	req := migrate.MigrationRequest{
-		Services:     rawServices,
-		TargetHost:   targetHost,
-		SSHPort:      sshPort,
-		SSHUser:      sshUser,
-		KeyPath:      keyPath,
-		TargetRAMMB:  targetRAMMB,
-		TargetDiskGB: targetDiskGB,
-		AutoApprove:  autoApprove,
-		DryRun:       dryRun,
-		PruneLocal:   pruneLocal,
-		Timeout:      timeout,
-		In:           os.Stdin,
-		Out:          os.Stdout,
-	}
-
-	fmt.Printf("[+] Initializing Dendrite Service Migration Engine...\n")
-	fmt.Printf("    * Target Host:   %s (Port: %d)\n", targetHost, sshPort)
-	fmt.Printf("    * Services:      %s\n", strings.Join(rawServices, ", "))
-	fmt.Printf("    * Target Node:   RAM: %d MB, Disk: %d GB\n", targetRAMMB, targetDiskGB)
-	fmt.Printf("    * Dry Run Mode:  %v\n", dryRun)
-	fmt.Printf("    * Prune Local:   %v\n", pruneLocal)
-
-	res, err := migrator.Migrate(ctx, req)
-	if err != nil {
-		fmt.Printf("\n[-] Service migration failed: %v\n", err)
-		if res != nil {
-			for _, step := range res.Steps {
-				fmt.Printf("    [%s] %s: %s\n", step.Status, step.Phase, step.Details)
-			}
-		}
-		return
-	}
-
-	fmt.Printf("\n[✓] Service Migration Completed Successfully in %v!\n", res.TotalDuration)
-	for _, step := range res.Steps {
-		fmt.Printf("    [%s] %s: %s (%v)\n", step.Status, step.Phase, step.Details, step.Duration)
-	}
-
-	if len(res.UpdatedEndpoints) > 0 {
-		fmt.Println("\n[+] Updated Cluster Service Endpoints:")
-		for svc, endpoint := range res.UpdatedEndpoints {
-			fmt.Printf("    * %-15s -> %s\n", svc, endpoint)
-		}
-	}
+	f := cmd.Flags()
+	f.StringVarP(&req.TargetHost, "ssh", "s", "", "Target SSH host (user@host or host)")
+	f.IntVarP(&req.SSHPort, "port", "p", req.SSHPort, "SSH port")
+	f.StringVarP(&req.SSHUser, "user", "u", "", "SSH user (default from the host or the deployer)")
+	f.StringVarP(&req.KeyPath, "key", "i", "", "SSH identity file (default: ssh-agent)")
+	addCapacityFlags(cmd, &ramStr, &diskStr)
+	addDryRunFlag(cmd, &req.DryRun)
+	f.BoolVar(&noPrune, "no-prune", false, "Keep the local containers running after the move")
+	f.DurationVar(&req.Timeout, "timeout", req.Timeout, "Remote health check timeout")
+	requireFlags(cmd, "ssh")
+	return cmd
 }
 
-func printDebianCapacityPlan(plan migrate.DebianCapacityPlan) {
-	fmt.Println("==========================================================================================")
-	fmt.Printf("              DENDRITE SERVICE CAPACITY EVALUATION: %s\n", strings.ToUpper(plan.ServerProfile))
-	fmt.Println("==========================================================================================")
-	fmt.Printf("  * Total Server RAM : %d MB (%.1f GB)\n", plan.TotalRAMMB, float64(plan.TotalRAMMB)/1024.0)
-	fmt.Printf("  * Total Server Disk: %d GB (%.1f TB)\n", plan.TotalDiskGB, float64(plan.TotalDiskGB)/1000.0)
-	fmt.Printf("  * OS System Reserve: 1024 MB (Debian Linux kernel, systemd, SSH daemon)\n")
-	fmt.Printf("  * Net Service RAM  : %d MB (Allocated: %d MB, Remaining: %d MB)\n",
-		plan.TotalRAMMB-1024, plan.AllocatedRAMMB, plan.AvailableRAMMB)
-	fmt.Printf("  * Net Service Disk : %d GB (Allocated: %d GB, Remaining: %d GB)\n",
-		plan.TotalDiskGB, plan.AllocatedDiskGB, plan.AvailableDiskGB)
-	fmt.Println("------------------------------------------------------------------------------------------")
+func runTranslocate(ctx context.Context, req migrate.MigrationRequest, out io.Writer) error {
+	fmt.Fprintln(out, "[+] Initializing Dendrite Service Migration Engine...")
+	fmt.Fprintf(out, "    * Target Host:   %s (Port: %d)\n", req.TargetHost, req.SSHPort)
+	fmt.Fprintf(out, "    * Services:      %s\n", strings.Join(req.Services, ", "))
+	fmt.Fprintf(out, "    * Target Node:   RAM: %d MB, Disk: %d GB\n", req.TargetRAMMB, req.TargetDiskGB)
+	fmt.Fprintf(out, "    * Dry Run Mode:  %v\n", req.DryRun)
+	fmt.Fprintf(out, "    * Prune Local:   %v\n", req.PruneLocal)
 
-	fmt.Println("[+] SERVICES ELIGIBLE TO LIVE ON DEBIAN SERVER (CUMULATIVE FIT):")
+	res, err := migrate.NewMigrator(nil, nil).Migrate(ctx, req)
+	if err != nil {
+		if res != nil {
+			for _, step := range res.Steps {
+				fmt.Fprintf(out, "    [%s] %s: %s\n", step.Status, step.Phase, step.Details)
+			}
+		}
+		return fmt.Errorf("service migration: %w", err)
+	}
+	fmt.Fprintf(out, "\n[✓] Service Migration Completed Successfully in %v!\n", res.TotalDuration)
+	for _, step := range res.Steps {
+		fmt.Fprintf(out, "    [%s] %s: %s (%v)\n", step.Status, step.Phase, step.Details, step.Duration)
+	}
+	if len(res.UpdatedEndpoints) > 0 {
+		fmt.Fprintln(out, "\n[+] Updated Cluster Service Endpoints:")
+		for _, svc := range slices.Sorted(maps.Keys(res.UpdatedEndpoints)) {
+			fmt.Fprintf(out, "    * %-15s -> %s\n", svc, res.UpdatedEndpoints[svc])
+		}
+	}
+	return nil
+}
+
+func printDebianCapacityPlan(out io.Writer, plan migrate.DebianCapacityPlan) {
+	fmt.Fprintln(out, "==========================================================================================")
+	fmt.Fprintf(out, "              DENDRITE SERVICE CAPACITY EVALUATION: %s\n", strings.ToUpper(plan.ServerProfile))
+	fmt.Fprintln(out, "==========================================================================================")
+	fmt.Fprintf(out, "  * Total Server RAM : %d MB (%.1f GB)\n", plan.TotalRAMMB, float64(plan.TotalRAMMB)/1024.0)
+	fmt.Fprintf(out, "  * Total Server Disk: %d GB (%.1f TB)\n", plan.TotalDiskGB, float64(plan.TotalDiskGB)/1000.0)
+	fmt.Fprintf(out, "  * OS System Reserve: 1024 MB (Debian Linux kernel, systemd, SSH daemon)\n")
+	fmt.Fprintf(out, "  * Net Service RAM  : %d MB (Allocated: %d MB, Remaining: %d MB)\n",
+		plan.TotalRAMMB-1024, plan.AllocatedRAMMB, plan.AvailableRAMMB)
+	fmt.Fprintf(out, "  * Net Service Disk : %d GB (Allocated: %d GB, Remaining: %d GB)\n",
+		plan.TotalDiskGB, plan.AllocatedDiskGB, plan.AvailableDiskGB)
+	fmt.Fprintln(out, "------------------------------------------------------------------------------------------")
+
+	fmt.Fprintln(out, "[+] SERVICES ELIGIBLE TO LIVE ON DEBIAN SERVER (CUMULATIVE FIT):")
 	for idx, e := range plan.EligibleServices {
-		fmt.Printf("  %d. %-15s [%s]\n", idx+1, e.Service, e.DisplayName)
-		fmt.Printf("     Footprint: %d MB RAM, %d GB Disk\n", e.RAMMB, e.DiskGB)
-		fmt.Printf("     Status   : [✓] %s\n", e.Reason)
+		fmt.Fprintf(out, "  %d. %-15s [%s]\n", idx+1, e.Service, e.DisplayName)
+		fmt.Fprintf(out, "     Footprint: %d MB RAM, %d GB Disk\n", e.RAMMB, e.DiskGB)
+		fmt.Fprintf(out, "     Status   : [✓] %s\n", e.Reason)
 	}
 
 	if len(plan.ExcludedServices) > 0 {
-		fmt.Println("\n[-] SERVICES EXCLUDED / RETAINED ON LOCAL WORKSTATION:")
+		fmt.Fprintln(out, "\n[-] SERVICES EXCLUDED / RETAINED ON LOCAL WORKSTATION:")
 		for idx, e := range plan.ExcludedServices {
-			fmt.Printf("  %d. %-15s [%s]\n", idx+1, e.Service, e.DisplayName)
-			fmt.Printf("     Footprint: %d MB RAM, %d GB Disk\n", e.RAMMB, e.DiskGB)
-			fmt.Printf("     Constraint: [!] %s\n", e.Reason)
+			fmt.Fprintf(out, "  %d. %-15s [%s]\n", idx+1, e.Service, e.DisplayName)
+			fmt.Fprintf(out, "     Footprint: %d MB RAM, %d GB Disk\n", e.RAMMB, e.DiskGB)
+			fmt.Fprintf(out, "     Constraint: [!] %s\n", e.Reason)
 		}
 	}
 
-	fmt.Println("------------------------------------------------------------------------------------------")
-	fmt.Printf("[+] RECOMMENDED EXECUTION COMMAND:\n")
-	fmt.Printf("    %s\n", plan.RecommendedAction)
-	fmt.Println("==========================================================================================")
+	fmt.Fprintln(out, "------------------------------------------------------------------------------------------")
+	fmt.Fprintf(out, "[+] RECOMMENDED EXECUTION COMMAND:\n")
+	fmt.Fprintf(out, "    %s\n", plan.RecommendedAction)
+	fmt.Fprintln(out, "==========================================================================================")
 }
 
-func parseSizeToMB(raw string, defaultMB uint64) uint64 {
-	clean := strings.ToUpper(strings.TrimSpace(raw))
-	if strings.HasSuffix(clean, "GB") {
-		numStr := strings.TrimSuffix(clean, "GB")
-		if n, err := strconv.ParseUint(numStr, 10, 64); err == nil {
-			return n * 1024
-		}
-	} else if strings.HasSuffix(clean, "MB") {
-		numStr := strings.TrimSuffix(clean, "MB")
-		if n, err := strconv.ParseUint(numStr, 10, 64); err == nil {
-			return n
-		}
-	} else if n, err := strconv.ParseUint(clean, 10, 64); err == nil {
-		return n
-	}
-	return defaultMB
+// parseSizeToMB reads sizes like 4GB, 4096MB or a bare number of megabytes.
+func parseSizeToMB(raw string) (uint64, bool) {
+	return parseSize(raw, map[string]uint64{"GB": 1024, "MB": 1})
 }
 
-func parseSizeToGB(raw string, defaultGB uint64) uint64 {
+// parseSizeToGB reads sizes like 1TB, 1000GB or a bare number of gigabytes.
+func parseSizeToGB(raw string) (uint64, bool) {
+	return parseSize(raw, map[string]uint64{"TB": 1000, "GB": 1})
+}
+
+func parseSize(raw string, units map[string]uint64) (uint64, bool) {
 	clean := strings.ToUpper(strings.TrimSpace(raw))
-	if strings.HasSuffix(clean, "TB") {
-		numStr := strings.TrimSuffix(clean, "TB")
-		if n, err := strconv.ParseUint(numStr, 10, 64); err == nil {
-			return n * 1000
+	mult := uint64(1)
+	for unit, m := range units {
+		if strings.HasSuffix(clean, unit) {
+			clean, mult = strings.TrimSuffix(clean, unit), m
+			break
 		}
-	} else if strings.HasSuffix(clean, "GB") {
-		numStr := strings.TrimSuffix(clean, "GB")
-		if n, err := strconv.ParseUint(numStr, 10, 64); err == nil {
-			return n
-		}
-	} else if n, err := strconv.ParseUint(clean, 10, 64); err == nil {
-		return n
 	}
-	return defaultGB
+	n, err := strconv.ParseUint(clean, 10, 64)
+	if err != nil || n == 0 {
+		return 0, false
+	}
+	return n * mult, true
 }

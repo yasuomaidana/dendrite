@@ -3,207 +3,197 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"maps"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
 	"Dendrite/pkg/env"
 	"Dendrite/pkg/node/migrate"
 	"Dendrite/pkg/ui/penpot"
+
+	"github.com/spf13/cobra"
 )
 
-func printServiceUsage() {
-	fmt.Println("Usage: dendrite service <start|stop|restart|health|list|ui-sync> [service] [flags...]")
-	fmt.Println("\nAvailable Subcommands:")
-	fmt.Println("  start [service] [--target local] [--verify-mcp] Provision & start service compose stack (default: penpot)")
-	fmt.Println("  stop [service]                                  Tear down service containers")
-	fmt.Println("  restart [service]                               Restart service containers")
-	fmt.Println("  health [service] [--deep]                       Check real-time health and port responsiveness")
-	fmt.Println("  list                                            List canonical service profiles in catalog")
-	fmt.Println("  ui-sync --file <path> [--ticket <id>]           Synchronize UI components with Penpot & Plane")
+// runCompose is a seam so tests can run the service commands without Docker.
+var runCompose = func(ctx context.Context, out io.Writer, file string, args ...string) error {
+	cmd := exec.CommandContext(ctx, "docker", append([]string{"compose", "-f", file}, args...)...)
+	cmd.Stdout, cmd.Stderr = out, out
+	return cmd.Run()
 }
 
-func handleServiceCommand(ctx context.Context, action string, args []string) {
+// newMotorCmd builds `dendrite motor` (alias service): start, stop and check the local service stacks.
+func newMotorCmd() *cobra.Command {
+	cmd := newGroupCmd("motor", "Manage microservices (Plane, Penpot, Ollama, LiteLLM)", "effectors",
+		"service", "motor-unit", "effector-service", "svc")
+	cmd.Example = "dendrite motor list\n" +
+		"dendrite motor start plane\n" +
+		"dendrite motor health litellm --deep\n" +
+		"dendrite motor stop penpot"
+
 	catalog := migrate.DefaultServiceCatalog()
-
-	switch action {
-	case "list":
-		fmt.Printf("[+] Registered Service Catalog (%d services):\n", len(catalog))
-		for name, p := range catalog {
-			fmt.Printf("  - %-10s: %s (Port: %d, Compose: %s)\n", name, p.DisplayName, p.Port, p.ComposeFile)
-			if len(p.Containers) > 0 {
-				fmt.Printf("      Containers: %s\n", strings.Join(p.Containers, ", "))
-			}
+	names := slices.Sorted(maps.Keys(catalog))
+	profileArg := func(args []string) (migrate.ServiceProfile, error) {
+		name := "penpot"
+		if len(args) == 1 {
+			name = strings.ToLower(args[0])
 		}
-
-	case "start":
-		targetSvc := "penpot"
-		verifyMCP := false
-		targetNode := "local"
-
-		for i := 0; i < len(args); i++ {
-			switch args[i] {
-			case "--verify-mcp":
-				verifyMCP = true
-			case "--target":
-				if i+1 < len(args) {
-					targetNode = args[i+1]
-					i++
-				}
-			default:
-				if !strings.HasPrefix(args[i], "-") {
-					targetSvc = strings.ToLower(args[i])
-				}
-			}
-		}
-
-		profile, ok := catalog[targetSvc]
+		p, ok := catalog[name]
 		if !ok {
-			fmt.Printf("[-] Unknown service '%s'. Available: plane, litellm, database, penpot, grafana, ollama\n", targetSvc)
-			return
+			return p, usageErrorf("unknown service %q: use %s", name, strings.Join(names, ", "))
 		}
-
-		fmt.Printf("[+] Provisioning & Starting Service '%s' (Target: %s)...\n", profile.Name, targetNode)
-		fmt.Printf("    - Display Name: %s\n", profile.DisplayName)
-		fmt.Printf("    - Required RAM: %d MB\n", profile.MinRAMMB)
-		fmt.Printf("    - Primary Port: %d\n", profile.Port)
-
-		if profile.ComposeFile != "" {
-			if _, err := os.Stat(profile.ComposeFile); err == nil {
-				fmt.Printf("[+] Executing docker compose for %s...\n", profile.ComposeFile)
-				cmd := exec.CommandContext(ctx, "docker", "compose", "-f", profile.ComposeFile, "up", "-d")
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				_ = cmd.Run()
-			} else {
-				fmt.Printf("[-] Compose file %s not found; skipping container spinup\n", profile.ComposeFile)
-			}
-		}
-
-		// Health verification
-		isHealthy := checkServiceHealth(ctx, profile)
-		if isHealthy {
-			fmt.Printf("[✓] Service '%s' is ONLINE & responsive on port %d\n", profile.Name, profile.Port)
-		} else {
-			fmt.Printf("[!] Service '%s' started; waiting for initialization on port %d\n", profile.Name, profile.Port)
-		}
-
-		if verifyMCP && targetSvc == "penpot" {
-			fmt.Println("[+] Verifying Penpot MCP Bridge & UI design token extraction...")
-			p := penpot.NewParser()
-			testFile := "web/src/components/Button.svelte"
-			if _, err := os.Stat(testFile); err == nil {
-				spec, err := p.ParseFile(testFile)
-				if err == nil {
-					fmt.Printf("[✓] Penpot MCP Bridge Responsive: parsed %s (%d tokens, %d props)\n", spec.Name, len(spec.Tokens), len(spec.Props))
-				}
-			} else {
-				fmt.Println("[✓] Penpot MCP Bridge Registered & Ready (Tool: dendrite_ui_penpot_sync)")
-			}
-		}
-
-	case "stop":
-		targetSvc := "penpot"
-		if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-			targetSvc = strings.ToLower(args[0])
-		}
-		profile, ok := catalog[targetSvc]
-		if !ok {
-			fmt.Printf("[-] Unknown service '%s'\n", targetSvc)
-			return
-		}
-
-		if profile.ComposeFile != "" {
-			fmt.Printf("[+] Stopping service '%s' via docker compose...\n", profile.Name)
-			cmd := exec.CommandContext(ctx, "docker", "compose", "-f", profile.ComposeFile, "down")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			_ = cmd.Run()
-			fmt.Printf("[✓] Service '%s' stopped cleanly\n", profile.Name)
-		}
-
-	case "restart":
-		targetSvc := "penpot"
-		if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-			targetSvc = strings.ToLower(args[0])
-		}
-		profile, ok := catalog[targetSvc]
-		if !ok {
-			fmt.Printf("[-] Unknown service '%s'\n", targetSvc)
-			return
-		}
-		if profile.ComposeFile != "" {
-			fmt.Printf("[+] Restarting service '%s'...\n", profile.Name)
-			cmd := exec.CommandContext(ctx, "docker", "compose", "-f", profile.ComposeFile, "restart")
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			_ = cmd.Run()
-			fmt.Printf("[✓] Service '%s' restarted\n", profile.Name)
-		}
-
-	case "health":
-		targetSvc := "penpot"
-		deep := false
-		for _, a := range args {
-			if a == "--deep" {
-				deep = true
-			} else if !strings.HasPrefix(a, "-") {
-				targetSvc = strings.ToLower(a)
-			}
-		}
-
-		profile, ok := catalog[targetSvc]
-		if !ok {
-			fmt.Printf("[-] Unknown service '%s'\n", targetSvc)
-			return
-		}
-
-		fmt.Printf("[+] Inspecting Health for Service '%s' (Deep: %v):\n", profile.Name, deep)
-		healthy := checkServiceHealth(ctx, profile)
-		if healthy {
-			fmt.Printf("[✓] Status: HEALTHY & LISTENING on port %d\n", profile.Port)
-		} else {
-			fmt.Printf("[-] Status: OFFLINE / UNREACHABLE on port %d\n", profile.Port)
-		}
-		if deep && len(profile.Containers) > 0 {
-			fmt.Printf("    - Container Invariants (%d):\n", len(profile.Containers))
-			for _, c := range profile.Containers {
-				fmt.Printf("        * %-25s -> ACTIVE\n", c)
-			}
-		}
-
-	case "ui-sync", "sync":
-		_ = invokeCmd(ctx, newCortexCmd(), append([]string{"sync"}, args...)...)
-
-	default:
-		printServiceUsage()
+		return p, nil
 	}
+	serviceCmd := func(use, short string, run func(cmd *cobra.Command, p migrate.ServiceProfile) error) *cobra.Command {
+		return &cobra.Command{
+			Use:       use + " [service]",
+			Short:     short + " (default penpot)",
+			Args:      maxArgs(1),
+			ValidArgs: names,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				p, err := profileArg(args)
+				if err != nil {
+					return err
+				}
+				return run(cmd, p)
+			},
+		}
+	}
+
+	var target string
+	var verifyMCP bool
+	start := serviceCmd("start", "Start a service's compose stack and check its port", func(cmd *cobra.Command, p migrate.ServiceProfile) error {
+		return runMotorStart(cmd.Context(), p, target, verifyMCP, cmd.OutOrStdout())
+	})
+	start.Flags().StringVar(&target, "target", "local", "Node to start on")
+	start.Flags().BoolVar(&verifyMCP, "verify-mcp", false, "For penpot, also check the Penpot MCP bridge")
+
+	var deep bool
+	health := serviceCmd("health", "Check whether a service is listening", func(cmd *cobra.Command, p migrate.ServiceProfile) error {
+		return runMotorHealth(cmd.Context(), p, deep, cmd.OutOrStdout())
+	})
+	health.Flags().BoolVar(&deep, "deep", false, "Also list the service's containers")
+
+	compose := func(verb, done string) func(cmd *cobra.Command, p migrate.ServiceProfile) error {
+		return func(cmd *cobra.Command, p migrate.ServiceProfile) error {
+			out := cmd.OutOrStdout()
+			if p.ComposeFile == "" {
+				return fmt.Errorf("service '%s' has no compose file", p.Name)
+			}
+			if err := runCompose(cmd.Context(), out, p.ComposeFile, verb); err != nil {
+				return fmt.Errorf("docker compose %s for '%s': %w", verb, p.Name, err)
+			}
+			fmt.Fprintf(out, "[✓] Service '%s' %s\n", p.Name, done)
+			return nil
+		}
+	}
+
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:     "list",
+			Aliases: []string{"ls"},
+			Short:   "List the service catalog",
+			Args:    noArgs,
+			RunE: func(cmd *cobra.Command, args []string) error {
+				out := cmd.OutOrStdout()
+				if globals.JSON {
+					return writeJSON(out, catalog)
+				}
+				fmt.Fprintf(out, "[+] Registered Service Catalog (%d services):\n", len(catalog))
+				for _, name := range names {
+					p := catalog[name]
+					fmt.Fprintf(out, "  - %-10s: %s (Port: %d, Compose: %s)\n", name, p.DisplayName, p.Port, p.ComposeFile)
+					if len(p.Containers) > 0 {
+						fmt.Fprintf(out, "      Containers: %s\n", strings.Join(p.Containers, ", "))
+					}
+				}
+				return nil
+			},
+		},
+		start,
+		serviceCmd("stop", "Stop a service's containers", compose("down", "stopped cleanly")),
+		serviceCmd("restart", "Restart a service's containers", compose("restart", "restarted")),
+		health,
+	)
+	return cmd
+}
+
+func runMotorStart(ctx context.Context, p migrate.ServiceProfile, target string, verifyMCP bool, out io.Writer) error {
+	fmt.Fprintf(out, "[+] Provisioning & Starting Service '%s' (Target: %s)...\n", p.Name, target)
+	fmt.Fprintf(out, "    - Display Name: %s\n", p.DisplayName)
+	fmt.Fprintf(out, "    - Required RAM: %d MB\n", p.MinRAMMB)
+	fmt.Fprintf(out, "    - Primary Port: %d\n", p.Port)
+	if p.ComposeFile != "" {
+		if _, err := os.Stat(p.ComposeFile); err != nil {
+			fmt.Fprintf(out, "[-] Compose file %s not found; skipping container spinup\n", p.ComposeFile)
+		} else {
+			fmt.Fprintf(out, "[+] Executing docker compose for %s...\n", p.ComposeFile)
+			if err := runCompose(ctx, out, p.ComposeFile, "up", "-d"); err != nil {
+				return fmt.Errorf("docker compose up for '%s': %w", p.Name, err)
+			}
+		}
+	}
+	if checkServiceHealth(ctx, p) {
+		fmt.Fprintf(out, "[✓] Service '%s' is ONLINE & responsive on port %d\n", p.Name, p.Port)
+	} else {
+		fmt.Fprintf(out, "[!] Service '%s' started; waiting for initialization on port %d\n", p.Name, p.Port)
+	}
+	if verifyMCP && p.Name == "penpot" {
+		fmt.Fprintln(out, "[+] Verifying Penpot MCP Bridge & UI design token extraction...")
+		testFile := "web/src/components/Button.svelte"
+		if spec, err := penpot.NewParser().ParseFile(testFile); err == nil {
+			fmt.Fprintf(out, "[✓] Penpot MCP Bridge Responsive: parsed %s (%d tokens, %d props)\n", spec.Name, len(spec.Tokens), len(spec.Props))
+		} else {
+			fmt.Fprintln(out, "[✓] Penpot MCP Bridge Registered & Ready (Tool: dendrite_ui_penpot_sync)")
+		}
+	}
+	return nil
+}
+
+func runMotorHealth(ctx context.Context, p migrate.ServiceProfile, deep bool, out io.Writer) error {
+	healthy := checkServiceHealth(ctx, p)
+	if globals.JSON {
+		return writeJSON(out, map[string]any{"service": p.Name, "port": p.Port, "healthy": healthy})
+	}
+	fmt.Fprintf(out, "[+] Inspecting Health for Service '%s' (Deep: %v):\n", p.Name, deep)
+	if healthy {
+		fmt.Fprintf(out, "[✓] Status: HEALTHY & LISTENING on port %d\n", p.Port)
+	} else {
+		fmt.Fprintf(out, "[-] Status: OFFLINE / UNREACHABLE on port %d\n", p.Port)
+	}
+	if deep && len(p.Containers) > 0 {
+		fmt.Fprintf(out, "    - Container Invariants (%d):\n", len(p.Containers))
+		for _, c := range p.Containers {
+			fmt.Fprintf(out, "        * %-25s -> ACTIVE\n", c)
+		}
+	}
+	return nil
 }
 
 func checkServiceHealth(ctx context.Context, profile migrate.ServiceProfile) bool {
 	if profile.Name == "penpot" {
 		endpoint := fmt.Sprintf("http://localhost:%d", profile.Port)
 		if profile.Port == 9001 {
-			endpoint = "http://localhost:9000"
+			endpoint = defaultPenpotEndpoint
 		}
 		return env.CheckPenpotHealth(ctx, endpoint, 1500*time.Millisecond)
 	}
-
-	addr := fmt.Sprintf("127.0.0.1:%d", profile.Port)
-	conn, err := net.DialTimeout("tcp", addr, 1*time.Second)
-	if err == nil {
+	if conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", profile.Port), time.Second); err == nil {
 		_ = conn.Close()
 		return true
 	}
-
 	if profile.HealthEndpoint != "" {
 		url := fmt.Sprintf("http://127.0.0.1:%d%s", profile.Port, profile.HealthEndpoint)
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		client := &http.Client{Timeout: 1 * time.Second}
-		resp, err := client.Do(req)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return false
+		}
+		resp, err := (&http.Client{Timeout: time.Second}).Do(req)
 		if err == nil {
 			_ = resp.Body.Close()
 			return resp.StatusCode < 500

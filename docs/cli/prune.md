@@ -27,11 +27,14 @@ None
 
 | Flag | Description |
 | :--- | :--- |
-| `--branch` | Target local branch to audit |
-| `--rebase` | Automatically rebase clean changes onto develop |
+| `--branch, -b` | Audit only this branch (default: every pending local/* branch) |
+| `--dry-run` | Show what would happen without changing anything |
+| `--max-tokens` | Token budget for the audit payload (default: 4096) |
+| `--model` | LLM model name (default: qwen3.8:27b) |
 
 ## Examples
 
 ```bash
-dendrite audit-changes
+dendrite prune --dry-run
+dendrite prune --branch local/module-a --max-tokens 8192
 ```

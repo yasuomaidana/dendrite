@@ -3,150 +3,59 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"Dendrite/pkg/quality/coverage"
 )
 
-func TestHandleQualityCoverage_FlagsAndSuccess(t *testing.T) {
-	origRun := runCoverage
-	origExit := osExit
-	defer func() {
-		runCoverage = origRun
-		osExit = origExit
-	}()
+func useCoverage(t *testing.T, fn func(context.Context, coverage.Options) (*coverage.Result, error)) {
+	t.Helper()
+	prev := runCoverage
+	runCoverage = fn
+	t.Cleanup(func() { runCoverage = prev })
+}
 
-	var capturedOpts coverage.Options
-	runCoverage = func(ctx context.Context, opts coverage.Options) (*coverage.Result, error) {
-		capturedOpts = opts
+func TestAllostasisCoverage(t *testing.T) {
+	var got coverage.Options
+	useCoverage(t, func(_ context.Context, o coverage.Options) (*coverage.Result, error) {
+		got = o
 		return &coverage.Result{Passed: true}, nil
+	})
+	if _, code := cliOutput(t, "allostasis", "coverage", "--ratchet", "--update", "--baseline", "b.json", "pkg/a", "pkg/b"); code != ExitOK {
+		t.Fatalf("coverage: exit %d", code)
+	}
+	if !got.Ratchet || !got.Update || got.BaselinePath != "b.json" || strings.Join(got.Packages, ",") != "pkg/a,pkg/b" {
+		t.Fatalf("options not passed through: %+v", got)
+	}
+	if _, code := cliOutput(t, "quality", "coverage", "--bogus"); code != ExitUsage {
+		t.Fatalf("unknown flag: exit %d", code)
 	}
 
-	exitCalled := false
-	osExit = func(code int) {
-		exitCalled = true
-	}
-
-	ctx := context.Background()
-	args := []string{
-		"--ratchet",
-		"--update",
-		"--baseline",
-		"custom_baseline.json",
-		"--unknown-flag",
-		"pkg/sample",
-	}
-
-	handleQualityCoverage(ctx, args)
-
-	if exitCalled {
-		t.Fatal("expected osExit not to be called on success")
-	}
-	if !capturedOpts.Ratchet {
-		t.Fatal("expected Ratchet to be true")
-	}
-	if !capturedOpts.Update {
-		t.Fatal("expected Update to be true")
-	}
-	if capturedOpts.BaselinePath != "custom_baseline.json" {
-		t.Fatalf("expected custom_baseline.json, got %s", capturedOpts.BaselinePath)
-	}
-	if len(capturedOpts.Packages) != 1 || capturedOpts.Packages[0] != "pkg/sample" {
-		t.Fatalf("expected [pkg/sample], got %v", capturedOpts.Packages)
-	}
-}
-
-func TestHandleQualityCoverage_HelpFlags(t *testing.T) {
-	ctx := context.Background()
-
-	// Should return early and not invoke runCoverage or osExit
-	handleQualityCoverage(ctx, []string{"--help"})
-	handleQualityCoverage(ctx, []string{"-h"})
-}
-
-func TestHandleQualityCoverage_RunError(t *testing.T) {
-	origRun := runCoverage
-	origExit := osExit
-	defer func() {
-		runCoverage = origRun
-		osExit = origExit
-	}()
-
-	runCoverage = func(ctx context.Context, opts coverage.Options) (*coverage.Result, error) {
-		return nil, errors.New("simulated runner failure")
-	}
-
-	exitCode := 0
-	osExit = func(code int) {
-		exitCode = code
-	}
-
-	handleQualityCoverage(context.Background(), []string{"--ratchet"})
-
-	if exitCode != 1 {
-		t.Fatalf("expected exit code 1 on run error, got %d", exitCode)
-	}
-}
-
-func TestHandleQualityCoverage_RatchetFailed(t *testing.T) {
-	origRun := runCoverage
-	origExit := osExit
-	defer func() {
-		runCoverage = origRun
-		osExit = origExit
-	}()
-
-	runCoverage = func(ctx context.Context, opts coverage.Options) (*coverage.Result, error) {
+	useCoverage(t, func(context.Context, coverage.Options) (*coverage.Result, error) {
 		return &coverage.Result{Passed: false}, nil
+	})
+	if out, code := cliOutput(t, "allostasis", "coverage", "--ratchet"); code != ExitError || !strings.Contains(out, "coverage ratchet failed") {
+		t.Fatalf("ratchet failure: exit %d\n%s", code, out)
 	}
-
-	exitCode := 0
-	osExit = func(code int) {
-		exitCode = code
-	}
-
-	handleQualityCoverage(context.Background(), []string{"--ratchet"})
-
-	if exitCode != 1 {
-		t.Fatalf("expected exit code 1 when ratchet fails, got %d", exitCode)
+	useCoverage(t, func(context.Context, coverage.Options) (*coverage.Result, error) {
+		return nil, errors.New("go test crashed")
+	})
+	if out, code := cliOutput(t, "allostasis", "coverage"); code != ExitError || !strings.Contains(out, "go test crashed") {
+		t.Fatalf("run error: exit %d\n%s", code, out)
 	}
 }
 
-func TestHandleQualityCommand(t *testing.T) {
-	origRun := runCoverage
-	origExit := osExit
-	defer func() {
-		runCoverage = origRun
-		osExit = origExit
-	}()
-
-	runCoverage = func(ctx context.Context, opts coverage.Options) (*coverage.Result, error) {
-		return &coverage.Result{Passed: true}, nil
+func TestAllostasisAudit(t *testing.T) {
+	t.Chdir("../..")
+	out, code := cliOutput(t, "allostasis", "audit", "pkg/statedir")
+	if code != ExitOK || !strings.Contains(out, "Statement Coverage") {
+		t.Fatalf("audit: exit %d\n%s", code, out)
 	}
-	osExit = func(code int) {}
-
-	ctx := context.Background()
-
-	// 1. Empty args
-	handleQualityCommand(ctx, []string{})
-
-	// 2. Unknown command
-	handleQualityCommand(ctx, []string{"unrecognized-subcommand"})
-
-	// 3. Coverage command
-	handleQualityCommand(ctx, []string{"coverage", "--ratchet"})
-
-	// 4. Audit command
-	handleQualityCommand(ctx, []string{"audit", "pkg/quality/coverage"})
-
-	// 5. Audit command default pkg
-	handleQualityCommand(ctx, []string{"audit"})
-
-	// 6. HITL sync command
-	handleQualityCommand(ctx, []string{"hitl-sync"})
-}
-
-func TestPrintUsageFunctions(t *testing.T) {
-	printQualityUsage()
-	printCoverageUsage()
+	if _, code := cliOutput(t, "allostasis", "audit", "pkg/does-not-exist"); code == ExitOK {
+		t.Fatal("auditing a missing package should fail")
+	}
+	if _, code := cliOutput(t, "allostasis", "hitl-sync"); code != ExitUsage {
+		t.Fatalf("hitl-sync moved to myelin github-sync --hitl: exit %d", code)
+	}
 }

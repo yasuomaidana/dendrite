@@ -23,15 +23,33 @@ Glial Regulation & Pruning
 
 | Subcommand | Description |
 | :--- | :--- |
-| `audit` | Run anti-mock scan and verify coverage gates |
-| `hitl-sync` | Poll human-in-the-loop verification status |
+| `audit` | Scan a package for mocks and stubs and report statement coverage (default pkg/vcs) |
+| `coverage` | Per-package coverage ratchet: --ratchet fails on a drop, --update raises the baseline |
 
 ## Flags
 
 None
 
+## Subcommand Reference
+
+### `dendrite allostasis coverage`
+
+Per-package coverage ratchet: --ratchet fails on a drop, --update raises the baseline
+
+```bash
+dendrite allostasis coverage [package...] [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--baseline` | Baseline JSON file (default: .dendrite/coverage_baseline.json) |
+| `--ratchet` | Fail when any package drops below its baseline |
+| `--update` | Raise the baseline to the measured coverage and add new packages |
+
 ## Examples
 
 ```bash
-dendrite quality audit
+dendrite allostasis coverage --ratchet
+dendrite allostasis coverage --update pkg/vcs
+dendrite allostasis audit pkg/vcs
 ```

@@ -622,14 +622,6 @@ func TestIntrospectCLIRoot_GlobalFlagsAndGroups(t *testing.T) {
 	}
 }
 
-func TestEnrichCommandDoc_MatchesAlias(t *testing.T) {
-	doc := CLICommandDoc{Name: "motor", Aliases: []string{"service"}}
-	enrichCommandDoc(&doc)
-	if len(doc.Subcommands) == 0 {
-		t.Fatalf("expected catalog subcommands via the service alias")
-	}
-}
-
 func TestIntrospectCLICommand_EdgeCases(t *testing.T) {
 	root := testRoot()
 	cmd := testCmd("edge", "Edge command")

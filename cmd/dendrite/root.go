@@ -75,6 +75,12 @@ func newRootCmd() *cobra.Command {
 		newTriageCmd(),
 		newAskCmd(),
 		newGreetingCmd(),
+		newMyelinCmd(),
+		newPruneCmd(),
+		newAllostasisCmd(),
+		newMotorCmd(),
+		newTranslocateCmd(),
+		newSagaCmd(),
 	)
 	root.AddCommand(legacyCommands()...)
 	return root

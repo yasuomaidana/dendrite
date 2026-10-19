@@ -28,10 +28,8 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 
 | Command | Aliases | Description |
 | :--- | :--- | :--- |
-| [`dev`](dev.md) |  | Developer diagnostics, local Ollama probe, and ticket tools |
 | [`engram`](engram.md) | `store`, `engram-store`, `gram` | Persistent segmented store, memory checkpointer, and chunk query |
 | [`ganglion`](ganglion.md) | `project`, `ganglion-workspace`, `prj` | Manage multi-project isolated workspaces |
-| [`myelin`](myelin.md) | `vcs`, `hillock-guard`, `myelin-guard`, `guard` | Git branch guardrails prohibiting main pushes and ensuring rebase integrity |
 | [`plexus`](plexus.md) | `pool`, `connectome-pool`, `plexus-pool`, `connectome`, `plx` | Multi-directory dependency inference & topological DAG solver |
 | [`soma`](soma.md) | `env`, `homeostasis`, `soma-homeostasis` | Manage and replicate development environments |
 | [`work`](work.md) | `workcopy`, `wc` | Manage model-owned working copies in dendrite-work/ (create, list, remove, auto-clean merged) |
@@ -73,9 +71,8 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 | Command | Aliases | Description |
 | :--- | :--- | :--- |
 | [`axon`](axon.md) | `topology`, `axon-pathway`, `top` | Multi-node placement models and hardware service router |
-| [`github-sync`](github-sync.md) | `sync-github`, `saltatory-sync`, `salt-sync`, `gsync` | Synchronize prioritized tickets and DAG dependencies to GitHub Issues |
 | [`mesh`](mesh.md) | `dist`, `distcodebase`, `distributed`, `neural-mesh`, `syn-mesh` | Distributed codebase spawner, modular REA, and repo coordinator |
-| [`sync-remote`](sync-remote.md) |  | Detect, fetch, and rebase remote fixes with commit reconciliation |
+| [`myelin`](myelin.md) | `vcs`, `hillock-guard`, `myelin-guard`, `guard` | Git branch guardrails prohibiting main pushes and ensuring rebase integrity |
 | [`translocate`](translocate.md) | `move`, `axonal-translocation`, `mv` | Zero-credential interactive service migration across SSH nodes |
 | [`velocity`](velocity.md) | `bench`, `benchmark`, `conduction-velocity`, `bnch` | TTFT, TPS, and gateway resilience benchmarking suite |
 

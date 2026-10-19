@@ -10,7 +10,7 @@ Git branch guardrails prohibiting main pushes and ensuring rebase integrity
 
 ## Category
 
-Soma & Axon Hillock
+Axon & Myelin Sheath
 
 ## Aliases
 
@@ -23,19 +23,56 @@ Soma & Axon Hillock
 
 | Subcommand | Description |
 | :--- | :--- |
-| `check` | Verify active branch complies with guardrails |
-| `guard` | Enforce branch policy and halt if on main/master |
-| `status` | Show current VCS status and branch policy |
-| `sync-remote` | Fetch and rebase remote fixes with commit reconciliation |
-| `evacuate` | Force evacuate working tree to develop branch |
+| `check` | Check the branch policy; on main/master, move to develop and exit 1 |
+| `evacuate` | Check out develop, creating it when missing |
+| `github-sync` | Sync the P0 blocker tickets and their dependencies to GitHub Issues (--hitl polls for human verification) |
+| `sync-remote` | Fetch and rebase remote fixes and reconcile their tickets |
 
 ## Flags
 
 None
 
+## Subcommand Reference
+
+### `dendrite myelin check`
+
+Check the branch policy; on main/master, move to develop and exit 1
+
+```bash
+dendrite myelin check
+```
+
+Aliases: `guard`, `status`
+
+### `dendrite myelin github-sync`
+
+Sync the P0 blocker tickets and their dependencies to GitHub Issues (--hitl polls for human verification)
+
+```bash
+dendrite myelin github-sync [flags]
+```
+
+Aliases: `sync-github`, `saltatory-sync`, `gsync`
+
+| Flag | Description |
+| :--- | :--- |
+| `--hitl` | Then poll the issues for human-in-the-loop approval or feedback |
+| `--repo, -r` | GitHub repository (owner/name) (default: yasuomaidana/dendrite) |
+
+### `dendrite myelin sync-remote`
+
+Fetch and rebase remote fixes and reconcile their tickets
+
+```bash
+dendrite myelin sync-remote
+```
+
+Aliases: `remote-sync`
+
 ## Examples
 
 ```bash
-dendrite vcs check
-dendrite vcs sync-remote
+dendrite myelin check
+dendrite myelin sync-remote
+dendrite myelin github-sync --repo owner/repo --hitl
 ```
