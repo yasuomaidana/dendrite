@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -189,6 +190,11 @@ func planeProjectAudit(rawRoots, owners []string, out io.Writer) error {
 	}
 	if len(roots) == 0 {
 		roots = defaultAuditRoots(syns)
+	}
+	if len(owners) == 0 {
+		owners = projectaudit.GitHubOwners(func(args ...string) ([]byte, error) {
+			return exec.Command("gh", args...).Output()
+		})
 	}
 	if len(owners) == 0 {
 		if cwdRoot, err := plane.FindRepoRoot("."); err == nil {

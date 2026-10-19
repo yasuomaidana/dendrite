@@ -143,3 +143,35 @@ func TestDependencies_ReplacesDuplicatesDepthAndUnreadableDirs(t *testing.T) {
 		t.Errorf("edges = %+v; want one app->lib edge found first through go.mod", edges)
 	}
 }
+
+func TestDiscover_GroupFoldersOneLevelDeep(t *testing.T) {
+	base := t.TempDir()
+	top := gitRepo(t, base, "top", "")
+	nested := gitRepo(t, filepath.Join(base, "classes"), "course", "")
+	gitRepo(t, filepath.Join(base, "a", "b"), "too-deep", "")
+	gitRepo(t, filepath.Join(top), "inner", "") // repositories inside a repository are not separate roots
+	write(t, filepath.Join(base, "classes", "notes.pdf"), "x")
+	gitRepo(t, filepath.Join(base, "node_modules"), "dep", "")
+
+	got := Discover([]string{base})
+	if len(got) != 2 || got[0] != nested || got[1] != top {
+		t.Errorf("Discover = %v; want [%s %s]", got, nested, top)
+	}
+}
+
+func TestGitHubOwners(t *testing.T) {
+	calls := 0
+	owners := GitHubOwners(func(args ...string) ([]byte, error) {
+		calls++
+		if args[1] == "user" {
+			return []byte("me\n"), nil
+		}
+		return []byte("acme\n\nlabs\n"), nil
+	})
+	if len(owners) != 3 || owners[0] != "me" || owners[2] != "labs" || calls != 2 {
+		t.Errorf("owners = %v (calls %d)", owners, calls)
+	}
+	if got := GitHubOwners(func(...string) ([]byte, error) { return nil, os.ErrNotExist }); got != nil {
+		t.Errorf("gh unavailable must yield nil, got %v", got)
+	}
+}
