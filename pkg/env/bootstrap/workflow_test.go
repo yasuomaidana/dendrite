@@ -36,6 +36,8 @@ func TestPrepare_EmitsDendriteFirstRulesForEveryAgentFamily(t *testing.T) {
 		"## Session Start & Handoff",
 		"dendrite session resume",
 		"dendrite session checkpoint",
+		"merge your branch into `develop` and push",
+		"git push origin HEAD:develop",
 	} {
 		if !strings.Contains(string(agents), want) {
 			t.Errorf("AGENTS.md missing %q", want)
@@ -45,6 +47,9 @@ func TestPrepare_EmitsDendriteFirstRulesForEveryAgentFamily(t *testing.T) {
 	rules, _ := os.ReadFile(filepath.Join(root, ".agents", "rules.md"))
 	if !strings.Contains(string(rules), "dendrite work new <ticket>") {
 		t.Error(".agents/rules.md missing the working-copy rule")
+	}
+	if !strings.Contains(string(rules), "merge your branch into `develop`") {
+		t.Error(".agents/rules.md missing the merge-to-develop rule")
 	}
 
 	var first []byte
@@ -61,6 +66,9 @@ func TestPrepare_EmitsDendriteFirstRulesForEveryAgentFamily(t *testing.T) {
 	}
 	if !strings.HasPrefix(string(first), "---\nname: dendrite-workflow\n") {
 		t.Errorf("skill frontmatter missing: %q", string(first[:40]))
+	}
+	if !strings.Contains(string(first), "## Finishing a ticket") || !strings.Contains(string(first), "git merge origin/develop") {
+		t.Error("skill is missing the finish-and-merge-to-develop steps")
 	}
 
 	if data, _ := os.ReadFile(filepath.Join(root, "CLAUDE.md")); string(data) != "# mine\n" {

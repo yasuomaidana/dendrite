@@ -29,8 +29,9 @@ var dendriteWorkflowRules = []string{
 	"Start every session with `dendrite session resume`; it also removes merged, clean working copies.",
 	"Pick work from Plane with `dendrite chronos next` (alias `plane next`, or the `dendrite_ticket_smart_select` MCP tool), never from `DEV_STATUS.md`.",
 	"Every repository we can modify is a Plane project: run `dendrite chronos project ensure` in it (it writes the committed `.dendrite/plane.json` that `dendrite chronos`, `sync` and agents read). Repositories that depend on each other belong to the same synapse (`dendrite synapse create`). `dendrite chronos project audit` lists any repository that breaks this rule.",
-	"Need an isolated checkout? Run `dendrite work new <ticket>`. It creates a git worktree in `dendrite-work/` next to the main checkout. Never hand-make `git clone` or `git worktree add ../<dir>` copies: those mix with human projects and are never cleaned up.",
-	"Commit with `dendrite quantal` (alias `commit`; it references the ticket and pushes to origin, never to main/master).",
+	"Work on your own branch, never directly on `develop`, `main` or `master`: run `dendrite work new <ticket>` for each ticket. It creates a git worktree in `dendrite-work/` next to the main checkout, on branch `agent/<ticket>`. Never hand-make `git clone` or `git worktree add ../<dir>` copies: those mix with human projects and are never cleaned up.",
+	"Commit with `dendrite quantal` (alias `commit`; it references the ticket and pushes your branch to origin, never to main/master).",
+	"When the ticket is finished, merge your branch into `develop` and push, so everyone's work syncs through `develop`: from your copy run `git fetch origin && git merge origin/develop`, fix conflicts and re-run the tests on your branch, then `git push origin HEAD:develop`. If the push is rejected, someone else merged first: fetch, merge and push again. Never merge into or push `main`/`master`.",
 	"Route every LLM call through Dendrite: the LiteLLM gateway (`http://localhost:4000`) for model access and `dendrite bouton jobs submit --isolate` (alias `agent jobs`) to delegate to Antigravity (AGY) or other models. Do not call provider APIs or spawn other agent CLIs directly.",
 	"Run `dendrite session checkpoint` after each finished ticket and before long waits.",
 	"When a copy is finished and merged, `dendrite work gc` (or the next resume/checkpoint) deletes it; `dendrite work done <name>` removes one explicitly.",
@@ -71,6 +72,16 @@ func renderDendriteWorkflowSkill() string {
 	sb.WriteString("dendrite work adopt [--dry-run]    # move legacy sibling worktrees into dendrite-work/\n")
 	sb.WriteString("```\n\n")
 	sb.WriteString("A copy is deleted automatically only when its branch is merged into main/master/develop (or its upstream branch was deleted) **and** it has no uncommitted or unpushed work. Copies used by in-flight agent jobs, the current directory, and story-fork variants are never removed.\n\n")
+	sb.WriteString("## Finishing a ticket\n\n")
+	sb.WriteString("Each agent works on its own branch and merges it into `develop` when the ticket is done; `develop` is where everyone's work meets. From your `dendrite-work/` copy (where `develop` cannot be checked out, because the main checkout holds it):\n\n")
+	sb.WriteString("```bash\n")
+	sb.WriteString("dendrite quantal --ticket DEN-123        # commit and push agent/den-123\n")
+	sb.WriteString("git fetch origin\n")
+	sb.WriteString("git merge origin/develop                 # take in everyone else's work; fix conflicts, re-run the tests\n")
+	sb.WriteString("git push origin HEAD:develop             # fast-forward develop to your branch\n")
+	sb.WriteString("dendrite session checkpoint              # record it; the merged copy is cleaned up later\n")
+	sb.WriteString("```\n\n")
+	sb.WriteString("A rejected push means `develop` moved since your fetch: fetch, merge and push again. Never merge into or push `main`/`master`.\n\n")
 	sb.WriteString("## Delegating to other models\n\n")
 	sb.WriteString("```bash\n")
 	sb.WriteString("dendrite bouton jobs submit --ticket DEN-123 --agent agy --scope pkg/foo --prompt-file prompt.md --isolate\n")
