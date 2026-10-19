@@ -92,7 +92,7 @@ func (s *Syncer) tickets(ctx context.Context) ([]github.VerificationTicket, []st
 		tickets = append(tickets, github.VerificationTicket{
 			ID:          id,
 			Title:       title,
-			Summary:     strings.TrimSpace(iss.DescriptionStripped),
+			Summary:     summaryOf(iss),
 			SequenceID:  iss.SequenceID,
 			State:       verifyState(byID[iss.State]),
 			Module:      scopeOf(title),
@@ -300,4 +300,13 @@ func contains(ids []string, id string) bool {
 		}
 	}
 	return false
+}
+
+// summaryOf prefers the structured HTML description (Plane's list endpoint
+// leaves description_stripped empty) and falls back to the stripped text.
+func summaryOf(iss plane.PlaneIssue) string {
+	if md := htmlToMarkdown(iss.DescriptionHTML); md != "" {
+		return md
+	}
+	return strings.TrimSpace(iss.DescriptionStripped)
 }
