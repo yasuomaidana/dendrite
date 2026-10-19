@@ -20,3 +20,7 @@ cmd/**/.ai/
 go.work
 go.work.sum
 __pycache__/
+# Per-machine runtime state: agent job ledgers, pool switcher state, session handoffs
+.dendrite/jobs/
+.dendrite/pool.json
+.dendrite/session/
