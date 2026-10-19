@@ -128,8 +128,16 @@ func (d *Dispatcher) markProviderExhausted(provider string, until time.Time) err
 
 var retryAfterRegex = regexp.MustCompile(`(?i)retry[-_ ]after["':=\s]+(\d+)`)
 
-// retryAfter extracts a Retry-After hint (seconds) from agent output, defaulting to the cooldown.
+// resetsInRegex matches AGY's quota hint, e.g. "Individual quota reached. ... Resets in 140h4m53s."
+var resetsInRegex = regexp.MustCompile(`(?i)resets in ((?:\d+h)?(?:\d+m)?(?:\d+(?:\.\d+)?s)?)`)
+
+// retryAfter extracts a Retry-After or AGY "Resets in" hint from agent output, defaulting to the cooldown.
 func retryAfter(output string) time.Duration {
+	if m := resetsInRegex.FindStringSubmatch(output); m != nil && m[1] != "" {
+		if d, err := time.ParseDuration(m[1]); err == nil && d > 0 {
+			return d
+		}
+	}
 	if m := retryAfterRegex.FindStringSubmatch(output); m != nil {
 		if secs, err := strconv.Atoi(m[1]); err == nil && secs > 0 {
 			return time.Duration(secs) * time.Second

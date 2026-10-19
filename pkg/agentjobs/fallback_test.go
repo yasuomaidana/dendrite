@@ -174,6 +174,9 @@ func TestRetryAfter(t *testing.T) {
 		{"Retry-After: 0", DefaultProviderCooldown},
 		{"Retry-After: -10", DefaultProviderCooldown},
 		{"no retry hint present", DefaultProviderCooldown},
+		{`"short_error":"RESOURCE_EXHAUSTED (code 429): Individual quota reached. Resets in 140h4m53s."`, 140*time.Hour + 4*time.Minute + 53*time.Second},
+		{"Resets in 45m.", 45 * time.Minute},
+		{"Resets in soon", DefaultProviderCooldown},
 		{"", DefaultProviderCooldown},
 	}
 	for _, tc := range cases {
