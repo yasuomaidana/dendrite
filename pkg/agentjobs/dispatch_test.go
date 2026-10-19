@@ -402,8 +402,8 @@ func TestRunJob_QUOTA_WalksLadderThenParks(t *testing.T) {
 			path = append(path, fmt.Sprint(e.Data["to"]))
 		}
 	}
-	if strings.Join(path, ",") != "aider/copilot-sonnet,oxillama/qwen3-8b-q4_k_m" {
-		t.Errorf("escalation path = %v, want agy -> copilot -> local oxillama", path)
+	if strings.Join(path, ",") != "agy/gemini-4-argon-low,aider/copilot-sonnet,oxillama/qwen3-8b-q4_k_m" {
+		t.Errorf("escalation path = %v, want gemini-3.8 -> argon -> copilot -> local oxillama", path)
 	}
 	if data, err := os.ReadFile(tempLedger.CapsulePath(id)); err != nil || !strings.Contains(string(data), "RESOURCE_EXHAUSTED") && !strings.Contains(string(data), "rate limit") {
 		t.Errorf("capsule must carry the failing output, err=%v", err)

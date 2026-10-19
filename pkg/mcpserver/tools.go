@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/agent"
+	"Dendrite/pkg/agentjobs"
 	"Dendrite/pkg/devtool"
 	"Dendrite/pkg/env"
 	"Dendrite/pkg/gateway"
@@ -426,7 +427,7 @@ func RegisterDefaultTools(s *Server, deps Dependencies) {
 				},
 				"model": map[string]interface{}{
 					"type":        "string",
-					"description": "Target LLM model (default: gemini-3.8-flash-high for agy, the DENDRITE_COPILOT_MODEL default for copilot)",
+					"description": "Target LLM model (default: picked from Gemini 3.8 / Argon by load for agy, the DENDRITE_COPILOT_MODEL default for copilot)",
 				},
 				"spend_limit": map[string]interface{}{
 					"type":        "number",
@@ -452,7 +453,7 @@ func RegisterDefaultTools(s *Server, deps Dependencies) {
 
 		if model == "" {
 			if aType == agent.AgentAGY || aType == agent.AgentAntigravity {
-				model = "gemini-3.8-flash-high"
+				model, _ = agentjobs.DefaultDispatcher.PickAGYModel(0)
 			} else if aType == agent.AgentCopilot || aType == agent.AgentGitHubCopilot {
 				model = gateway.CopilotModel()
 			} else {

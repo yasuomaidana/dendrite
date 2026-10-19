@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/agent"
+	"Dendrite/pkg/agentjobs"
 	"Dendrite/pkg/devtool"
 	"Dendrite/pkg/docgen/reflect"
 	"Dendrite/pkg/env"
@@ -1377,7 +1378,7 @@ func handleAgentCommand(ctx context.Context, action string, args []string) {
 		cwd, _ := os.Getwd()
 		defaultModel := "copilot-sonnet"
 		if agentType == agent.AgentAGY || agentType == agent.AgentAntigravity {
-			defaultModel = "gemini-3.8-flash-high"
+			defaultModel, _ = agentjobs.DefaultDispatcher.PickAGYModel(0)
 		} else if agentType == agent.AgentCopilot || agentType == agent.AgentGitHubCopilot {
 			defaultModel = gateway.CopilotModel()
 		}

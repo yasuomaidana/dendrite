@@ -27,7 +27,6 @@ const (
 	providerCopilot  = "copilot"
 	providerOxillama = "oxillama"
 
-	argonModel    = "gemini-4-argon-medium"
 	copilotModel  = "copilot-sonnet"
 	oxillamaModel = "qwen3-8b-q4_k_m"
 
@@ -40,24 +39,14 @@ type tier struct {
 	Model string
 }
 
-func providerOf(agent string) string {
-	switch agent {
-	case "aider":
-		return providerCopilot
-	case "oxillama":
-		return providerOxillama
-	default:
-		return providerAGY
-	}
-}
-
-// ladder lists the tiers a job may use, in escalation order (design: other cloud, then local, then park).
-func ladder(job *Job, modelScoped bool) []tier {
+// ladder lists the tiers a job may use, in escalation order: the requested AGY model, the other
+// Gemini family's comparable model, then Copilot, then local oxillama for simple jobs.
+func ladder(job *Job) []tier {
 	var tiers []tier
 	if job.Agent == "agy" || job.Agent == "" {
 		tiers = append(tiers, tier{Agent: "agy", Model: job.Model})
-		if modelScoped && job.Model != argonModel {
-			tiers = append(tiers, tier{Agent: "agy", Model: argonModel})
+		if alt := CounterpartModel(job.Model); alt != "" {
+			tiers = append(tiers, tier{Agent: "agy", Model: alt})
 		}
 	}
 	tiers = append(tiers, tier{Agent: "aider", Model: copilotModel})
@@ -67,9 +56,9 @@ func ladder(job *Job, modelScoped bool) []tier {
 	return tiers
 }
 
-// nextTier returns the first tier after the job's current one whose provider is not exhausted.
-func (d *Dispatcher) nextTier(job *Job, modelScoped bool, exhausted map[string]time.Time) (tier, bool) {
-	tiers := ladder(job, modelScoped)
+// nextTier returns the first tier after the job's current one whose quota bucket is not cooling down.
+func (d *Dispatcher) nextTier(job *Job, exhausted map[string]time.Time) (tier, bool) {
+	tiers := ladder(job)
 	current := -1
 	for i, t := range tiers {
 		if t.Agent == job.Agent && (t.Model == job.Model || t.Agent != "agy") {
@@ -77,11 +66,13 @@ func (d *Dispatcher) nextTier(job *Job, modelScoped bool, exhausted map[string]t
 		}
 	}
 	now := d.now()
+	own := providerKey(job.Agent, job.Model)
 	for _, t := range tiers[current+1:] {
-		if until, ok := exhausted[providerOf(t.Agent)]; ok && until.After(now) && providerOf(t.Agent) != providerOf(job.Agent) {
+		key := providerKey(t.Agent, t.Model)
+		if key == own && t.Model == job.Model {
 			continue
 		}
-		if providerOf(t.Agent) == providerOf(job.Agent) && t.Model == job.Model {
+		if key != own && coolingDown(exhausted, key, now) {
 			continue
 		}
 		return t, true
@@ -137,11 +128,10 @@ func retryAfter(output string) time.Duration {
 // so jobs do not waste an attempt on a provider another job already found exhausted.
 func (d *Dispatcher) skipExhaustedInitialTier(job *Job) {
 	exhausted := d.loadExhaustedProviders()
-	until, ok := exhausted[providerOf(job.Agent)]
-	if !ok || !until.After(d.now()) {
+	if !coolingDown(exhausted, providerKey(job.Agent, job.Model), d.now()) {
 		return
 	}
-	if next, found := d.nextTier(job, false, exhausted); found {
+	if next, found := d.nextTier(job, exhausted); found {
 		from := job.Agent + "/" + job.Model
 		job.Agent, job.Model = next.Agent, next.Model
 		job.Tier++
@@ -159,7 +149,7 @@ func (d *Dispatcher) handleQuotaFallback(ctx context.Context, job *Job, prompt, 
 	if timedOut {
 		reason = "throttled (attempt deadline exceeded)"
 	}
-	provider := providerOf(job.Agent)
+	provider := providerKey(job.Agent, job.Model)
 	if err := d.markProviderExhausted(provider, d.now().Add(retryAfter(output))); err != nil {
 		return false, "", fmt.Errorf("agentjobs: failed to record exhausted provider: %w", err)
 	}
@@ -169,8 +159,7 @@ func (d *Dispatcher) handleQuotaFallback(ctx context.Context, job *Job, prompt, 
 		return false, "", fmt.Errorf("agentjobs: failed to write capsule: %w", err)
 	}
 
-	modelScoped := strings.Contains(strings.ToLower(output), "model")
-	next, ok := d.nextTier(job, modelScoped, d.loadExhaustedProviders())
+	next, ok := d.nextTier(job, d.loadExhaustedProviders())
 	if !ok {
 		job.Status = StatusParked
 		job.ResumeAfter = d.earliestReset()
@@ -304,7 +293,7 @@ func (d *Dispatcher) ResumeParked() ([]string, error) {
 		if job.Status != StatusParked || job.ResumeAfter.After(now) {
 			continue
 		}
-		if until, ok := exhausted[providerOf(job.Agent)]; ok && until.After(now) {
+		if coolingDown(exhausted, providerKey(job.Agent, job.Model), now) {
 			continue
 		}
 		if err := d.Retry(job.ID); err != nil {

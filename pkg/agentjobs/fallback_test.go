@@ -12,62 +12,48 @@ import (
 	"time"
 )
 
-func TestProviderOf(t *testing.T) {
+func TestProviderKey(t *testing.T) {
 	tests := []struct {
-		agent    string
-		expected string
+		agent, model string
+		expected     string
 	}{
-		{"aider", providerCopilot},
-		{"oxillama", providerOxillama},
-		{"agy", providerAGY},
-		{"", providerAGY},
-		{"custom_agent", providerAGY},
+		{"aider", copilotModel, providerCopilot},
+		{"oxillama", oxillamaModel, providerOxillama},
+		{"agy", "gemini-3.8-flash-high", "agy:gemini-3.8"},
+		{"agy", "gemini-4-argon-medium", "agy:gemini-4-argon"},
+		{"", "gemini-3.8-flash-low", "agy:gemini-3.8"},
+		{"agy", "claude-sonnet-5-5-high", "agy:claude"},
+		{"custom_agent", "unknown", providerAGY},
 	}
 	for _, tc := range tests {
-		if got := providerOf(tc.agent); got != tc.expected {
-			t.Errorf("providerOf(%q) = %q, want %q", tc.agent, got, tc.expected)
+		if got := providerKey(tc.agent, tc.model); got != tc.expected {
+			t.Errorf("providerKey(%q, %q) = %q, want %q", tc.agent, tc.model, got, tc.expected)
 		}
 	}
 }
 
 func TestLadder(t *testing.T) {
-	// 1. Complexity <= 4 includes oxillama; agy with flash model
+	// 1. Complexity <= 4: requested model, other family, copilot, oxillama
 	j1 := &Job{Agent: "agy", Model: "gemini-3.8-flash-high", Complexity: 3}
-	l1 := ladder(j1, false)
-	if len(l1) != 3 {
-		t.Fatalf("expected 3 tiers, got %d: %+v", len(l1), l1)
+	l1 := ladder(j1)
+	want := []tier{
+		{"agy", "gemini-3.8-flash-high"}, {"agy", "gemini-4-argon-medium"},
+		{"aider", copilotModel}, {"oxillama", oxillamaModel},
 	}
-	if l1[0].Agent != "agy" || l1[0].Model != "gemini-3.8-flash-high" {
-		t.Errorf("tier 0 mismatch: %+v", l1[0])
-	}
-	if l1[1].Agent != "aider" || l1[1].Model != copilotModel {
-		t.Errorf("tier 1 mismatch: %+v", l1[1])
-	}
-	if l1[2].Agent != "oxillama" || l1[2].Model != oxillamaModel {
-		t.Errorf("tier 2 mismatch: %+v", l1[2])
+	if fmt.Sprint(l1) != fmt.Sprint(want) {
+		t.Fatalf("ladder = %+v, want %+v", l1, want)
 	}
 
-	// 2. modelScoped = true adds gemini-4-argon-medium
-	l2 := ladder(j1, true)
-	if len(l2) != 4 {
-		t.Fatalf("expected 4 tiers with modelScoped, got %d: %+v", len(l2), l2)
-	}
-	if l2[1].Agent != "agy" || l2[1].Model != argonModel {
-		t.Errorf("tier 1 mismatch for modelScoped: %+v", l2[1])
+	// 2. Argon falls back to Gemini 3.8
+	lArgon := ladder(&Job{Agent: "agy", Model: "gemini-4-argon-high", Complexity: 3})
+	if lArgon[1].Model != "gemini-3.8-flash-high" {
+		t.Errorf("argon counterpart = %+v, want gemini-3.8-flash-high", lArgon[1])
 	}
 
-	// 3. modelScoped = true when Model is already argonModel -> does not duplicate argonModel
-	jArgon := &Job{Agent: "agy", Model: argonModel, Complexity: 3}
-	lArgon := ladder(jArgon, true)
-	if len(lArgon) != 3 {
-		t.Fatalf("expected 3 tiers when already argonModel, got %d: %+v", len(lArgon), lArgon)
-	}
-
-	// 4. Complexity > 4 (e.g. 8) skips oxillama
-	j8 := &Job{Agent: "agy", Model: "gemini-3.8-flash-high", Complexity: 8}
-	l8 := ladder(j8, false)
-	if len(l8) != 2 {
-		t.Fatalf("expected 2 tiers for complexity 8, got %d: %+v", len(l8), l8)
+	// 3. Complexity > 4 (e.g. 8) skips oxillama
+	l8 := ladder(&Job{Agent: "agy", Model: "gemini-3.8-flash-high", Complexity: 8})
+	if len(l8) != 3 {
+		t.Fatalf("expected 3 tiers for complexity 8, got %d: %+v", len(l8), l8)
 	}
 	for _, tr := range l8 {
 		if tr.Agent == "oxillama" {
@@ -75,18 +61,22 @@ func TestLadder(t *testing.T) {
 		}
 	}
 
-	// 5. Agent == "" defaults to agy tier
-	jEmpty := &Job{Agent: "", Model: "default-model", Complexity: 4}
-	lEmpty := ladder(jEmpty, false)
+	// 4. Unknown model has no counterpart; agent "" defaults to agy
+	lEmpty := ladder(&Job{Agent: "", Model: "default-model", Complexity: 4})
 	if len(lEmpty) != 3 || lEmpty[0].Agent != "agy" {
 		t.Errorf("empty agent must default to agy tier, got %+v", lEmpty)
 	}
 
-	// 6. Agent == "aider" does not include agy
-	jAider := &Job{Agent: "aider", Model: copilotModel, Complexity: 4}
-	lAider := ladder(jAider, false)
+	// 5. Agent == "aider" does not include agy
+	lAider := ladder(&Job{Agent: "aider", Model: copilotModel, Complexity: 4})
 	if len(lAider) != 2 || lAider[0].Agent != "aider" {
 		t.Errorf("aider job ladder mismatch, got %+v", lAider)
+	}
+
+	// 6. A family excluded by DENDRITE_AGY_MODELS is not used as counterpart
+	t.Setenv("DENDRITE_AGY_MODELS", "gemini-3.8-flash-high")
+	if l := ladder(j1); len(l) != 3 || l[1].Agent != "aider" {
+		t.Errorf("disallowed counterpart must be skipped, got %+v", l)
 	}
 }
 
@@ -95,68 +85,65 @@ func TestNextTier_AndProviderMemory(t *testing.T) {
 	d := NewDispatcher(tempLedger)
 	fakeNow := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
 	d.Now = func() time.Time { return fakeNow }
+	cooling := fakeNow.Add(30 * time.Minute)
 
-	// 1. Next tier from agy with empty exhausted map -> aider
+	// 1. Gemini 3.8 -> Argon
 	jAgy := &Job{Agent: "agy", Model: "gemini-3.8-flash-high", Complexity: 3}
-	next, ok := d.nextTier(jAgy, false, nil)
+	next, ok := d.nextTier(jAgy, nil)
+	if !ok || next.Agent != "agy" || next.Model != "gemini-4-argon-medium" {
+		t.Errorf("nextTier from gemini-3.8 want argon, got: %+v, ok=%v", next, ok)
+	}
+
+	// 2. A Gemini 3.8 cooldown does not block Argon
+	next, ok = d.nextTier(jAgy, map[string]time.Time{"agy:gemini-3.8": cooling})
+	if !ok || next.Model != "gemini-4-argon-medium" {
+		t.Errorf("argon must stay available while gemini-3.8 cools down, got: %+v", next)
+	}
+
+	// 3. Argon cooling down -> copilot
+	next, ok = d.nextTier(jAgy, map[string]time.Time{"agy:gemini-4-argon": cooling})
 	if !ok || next.Agent != "aider" || next.Model != copilotModel {
-		t.Errorf("nextTier from agy want aider, got: %+v, ok=%v", next, ok)
+		t.Errorf("nextTier with argon cooling want aider, got: %+v, ok=%v", next, ok)
 	}
 
-	// 2. Next tier from agy with modelScoped=true -> agy/argonModel
-	nextScoped, okScoped := d.nextTier(jAgy, true, nil)
-	if !okScoped || nextScoped.Agent != "agy" || nextScoped.Model != argonModel {
-		t.Errorf("nextTier with modelScoped want agy/argon, got: %+v, ok=%v", nextScoped, okScoped)
+	// 4. Legacy bare "agy" cooldown covers every AGY family
+	next, ok = d.nextTier(jAgy, map[string]time.Time{providerAGY: cooling})
+	if !ok || next.Agent != "aider" {
+		t.Errorf("legacy agy cooldown must skip argon, got: %+v", next)
 	}
 
-	// 3. Next tier from agy/argonModel -> aider
-	jArgon := &Job{Agent: "agy", Model: argonModel, Complexity: 3}
-	nextFromArgon, okArgon := d.nextTier(jArgon, false, nil)
-	if !okArgon || nextFromArgon.Agent != "aider" {
-		t.Errorf("nextTier from argon want aider, got: %+v, ok=%v", nextFromArgon, okArgon)
+	// 5. Argon and copilot cooling down -> oxillama; expired cooldowns are ignored
+	next, ok = d.nextTier(jAgy, map[string]time.Time{"agy:gemini-4-argon": cooling, providerCopilot: cooling})
+	if !ok || next.Agent != "oxillama" || next.Model != oxillamaModel {
+		t.Errorf("want oxillama, got: %+v, ok=%v", next, ok)
+	}
+	next, ok = d.nextTier(jAgy, map[string]time.Time{"agy:gemini-4-argon": fakeNow.Add(-time.Minute)})
+	if !ok || next.Model != "gemini-4-argon-medium" {
+		t.Errorf("expired cooldown must be ignored, got: %+v", next)
 	}
 
-	// 4. Copilot cooling down -> skips aider and returns oxillama
-	exhausted := map[string]time.Time{
-		providerCopilot: fakeNow.Add(30 * time.Minute),
-	}
-	nextSkip, okSkip := d.nextTier(jAgy, false, exhausted)
-	if !okSkip || nextSkip.Agent != "oxillama" || nextSkip.Model != oxillamaModel {
-		t.Errorf("nextTier skipping cooling copilot want oxillama, got: %+v, ok=%v", nextSkip, okSkip)
-	}
-
-	// 5. Copilot cooldown expired in past -> returns aider
-	exhaustedExpired := map[string]time.Time{
-		providerCopilot: fakeNow.Add(-5 * time.Minute),
-	}
-	nextExpired, okExpired := d.nextTier(jAgy, false, exhaustedExpired)
-	if !okExpired || nextExpired.Agent != "aider" {
-		t.Errorf("nextTier with expired cooldown want aider, got: %+v, ok=%v", nextExpired, okExpired)
-	}
-
-	// 6. All remaining tiers cooling down -> returns false
-	exhaustedAll := map[string]time.Time{
-		providerCopilot:  fakeNow.Add(30 * time.Minute),
-		providerOxillama: fakeNow.Add(30 * time.Minute),
-	}
-	_, okNone := d.nextTier(jAgy, false, exhaustedAll)
-	if okNone {
+	// 6. All remaining tiers cooling down -> false
+	all := map[string]time.Time{"agy:gemini-4-argon": cooling, providerCopilot: cooling, providerOxillama: cooling}
+	if _, ok := d.nextTier(jAgy, all); ok {
 		t.Error("expected ok=false when all next tiers cooling down")
 	}
 
-	// 7. Last tier reached (oxillama) -> returns false
-	jOx := &Job{Agent: "oxillama", Model: oxillamaModel, Complexity: 3}
-	_, okLast := d.nextTier(jOx, false, nil)
-	if okLast {
+	// 7. From argon (after an escalation), gemini-3.8 cooling down -> copilot, not back to 3.8
+	jArgon := &Job{Agent: "agy", Model: "gemini-4-argon-medium", Complexity: 3}
+	next, ok = d.nextTier(jArgon, map[string]time.Time{"agy:gemini-3.8": cooling})
+	if !ok || next.Agent != "aider" {
+		t.Errorf("argon with gemini-3.8 cooling want aider, got: %+v", next)
+	}
+
+	// 8. Last tier reached (oxillama) -> false
+	if _, ok := d.nextTier(&Job{Agent: "oxillama", Model: oxillamaModel, Complexity: 3}, nil); ok {
 		t.Error("expected ok=false when at last tier")
 	}
 
-	// 8. Custom agent with same provider and model as first ladder tier
-	// Exercises providerOf(t.Agent) == providerOf(job.Agent) && t.Model == job.Model continue branch
-	jCustom := &Job{Agent: "custom", Model: "gemini-3.8-flash-high", Complexity: 3}
-	nextCustom, okCustom := d.nextTier(jCustom, false, nil)
-	if !okCustom || nextCustom.Agent != "aider" {
-		t.Errorf("expected skip of same model/provider and pick aider, got: %+v, ok=%v", nextCustom, okCustom)
+	// 9. A non-AGY custom agent has no AGY tiers and goes to copilot
+	next, ok = d.nextTier(&Job{Agent: "custom", Model: "gemini-3.8-flash-high", Complexity: 3}, nil)
+	if !ok || next.Agent != "aider" {
+		t.Errorf("custom agent want aider, got: %+v, ok=%v", next, ok)
 	}
 }
 
@@ -322,7 +309,7 @@ func TestHandleQuotaFallback(t *testing.T) {
 
 	ctx := context.Background()
 
-	// 1. Quota fallback escalates from agy to aider
+	// 1. Quota fallback escalates from gemini-3.8 to argon
 	j1, _ := tempLedger.Create(&Job{
 		Ticket:         "DEN-990",
 		Agent:          "agy",
@@ -334,7 +321,7 @@ func TestHandleQuotaFallback(t *testing.T) {
 	if err1 != nil || !ok1 {
 		t.Fatalf("handleQuotaFallback failed: ok=%v, err=%v", ok1, err1)
 	}
-	if j1.Agent != "aider" || j1.Model != copilotModel || j1.Tier != 1 || j1.ConversationID != "" || j1.Status != StatusEscalated {
+	if j1.Agent != "agy" || j1.Model != "gemini-4-argon-medium" || j1.Tier != 1 || j1.ConversationID != "" || j1.Status != StatusEscalated {
 		t.Errorf("job escalation state mismatch: %+v", j1)
 	}
 	if !strings.Contains(prompt1, "Original prompt") || !strings.Contains(prompt1, "## Handover capsule") || !strings.Contains(prompt1, "Reason: quota") {
@@ -360,7 +347,7 @@ func TestHandleQuotaFallback(t *testing.T) {
 		t.Errorf("expected throttled reason in prompt: %s", prompt2)
 	}
 
-	// 3. Model-scoped quota error -> escalates to agy/gemini-4-argon-medium
+	// 3. Any quota error on gemini-3.8 -> escalates to agy/gemini-4-argon-medium
 	j3, _ := tempLedger.Create(&Job{
 		Ticket:     "DEN-990",
 		Agent:      "agy",
@@ -371,8 +358,8 @@ func TestHandleQuotaFallback(t *testing.T) {
 	if err3 != nil || !ok3 {
 		t.Fatalf("handleQuotaFallback modelScoped failed: ok=%v, err=%v", ok3, err3)
 	}
-	if j3.Agent != "agy" || j3.Model != argonModel {
-		t.Errorf("expected escalation to agy/argonModel, got: %s/%s", j3.Agent, j3.Model)
+	if j3.Agent != "agy" || j3.Model != "gemini-4-argon-medium" {
+		t.Errorf("expected escalation to agy/gemini-4-argon-medium, got: %s/%s", j3.Agent, j3.Model)
 	}
 	if !strings.Contains(prompt3, "## Handover capsule") {
 		t.Errorf("expected capsule in prompt: %s", prompt3)

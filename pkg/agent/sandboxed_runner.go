@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"Dendrite/pkg/agentjobs"
 	"Dendrite/pkg/gateway"
 	"Dendrite/pkg/sandbox"
 )
@@ -57,7 +58,7 @@ func (r *SandboxedRunner) Execute(ctx context.Context, cfg AgentConfig) (*Sessio
 	if r.Limiter != nil {
 		targetModel := cfg.Model
 		if targetModel == "" {
-			targetModel = "gemini-3.8-flash-high"
+			targetModel, _ = agentjobs.DefaultDispatcher.PickAGYModel(0)
 		}
 
 		allowed, fallbackModel, err := r.Limiter.CheckBudget(cfg.VirtualAPIKey, targetModel)
@@ -71,6 +72,14 @@ func (r *SandboxedRunner) Execute(ctx context.Context, cfg AgentConfig) (*Sessio
 				cfg.Model = cfg.FallbackModel
 			} else {
 				cfg.Model = fallbackModel
+			}
+			// AGY only runs its own catalog; a LiteLLM-only fallback would fail at once.
+			if (cfg.Type == AgentAGY || cfg.Type == AgentAntigravity) && !agentjobs.IsAGYModel(cfg.Model) {
+				if alt := agentjobs.CounterpartModel(targetModel); alt != "" {
+					cfg.Model = alt
+				} else {
+					cfg.Model = targetModel
+				}
 			}
 		}
 	}

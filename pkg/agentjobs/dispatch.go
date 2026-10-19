@@ -110,12 +110,16 @@ func (d *Dispatcher) Submit(spec SubmitSpec) (string, error) {
 	if spec.Agent == "" {
 		spec.Agent = "agy"
 	}
-	if spec.Model == "" {
-		if spec.Agent == "agy" {
-			spec.Model = "gemini-3.8-flash-high"
-		} else {
-			spec.Model = "default"
+	var modelReason string
+	if spec.Agent == "agy" {
+		if spec.Model == "" || spec.Model == AutoModel {
+			spec.Model, modelReason = d.PickAGYModel(spec.Complexity)
 		}
+		if err := d.validateAGYModel(spec.Model); err != nil {
+			return "", err
+		}
+	} else if spec.Model == "" {
+		spec.Model = "default"
 	}
 	if spec.Worktree == "" && spec.Isolate {
 		wt, err := d.isolatedWorktree(spec.Ticket)
@@ -182,6 +186,12 @@ func (d *Dispatcher) Submit(spec SubmitSpec) (string, error) {
 			"complexity": created.Complexity,
 		},
 	})
+	if modelReason != "" {
+		_ = d.Ledger.Append(created.ID, Event{
+			Type: "model_selected",
+			Data: map[string]any{"model": created.Model, "reason": modelReason},
+		})
+	}
 
 	pid, err := d.spawnRunner(created.ID)
 	if err != nil {
@@ -230,7 +240,16 @@ func (d *Dispatcher) RunJob(ctx context.Context, id string) error {
 		_ = d.Ledger.Save(job)
 		return fmt.Errorf("agentjobs: failed to read prompt for job %q: %w", id, err)
 	}
-	promptText := string(promptBytes)
+	basePrompt := string(promptBytes)
+	promptText := basePrompt
+
+	// Files already dirty before the first attempt are not the agent's edits.
+	if job.Baseline == nil {
+		if baseline, bErr := d.snapshotDirty(ctx, job.Worktree); bErr == nil {
+			job.Baseline = baseline
+			_ = d.Ledger.Save(job)
+		}
+	}
 
 	maxTransientRetries := 3
 	maxOtherRetries := 1
@@ -300,7 +319,7 @@ func (d *Dispatcher) RunJob(ctx context.Context, id string) error {
 		var offendingPaths []string
 		if job.Agent != "oxillama" {
 			var scopeErr error
-			changedInScope, offendingPaths, scopeErr = d.CheckScope(ctx, job.Worktree, job.Scope)
+			changedInScope, offendingPaths, scopeErr = d.checkScopeAgainst(ctx, job.Worktree, job.Scope, job.Baseline)
 			if scopeErr != nil {
 				logTail += "\nscope_check_error: " + scopeErr.Error()
 			}
@@ -391,6 +410,9 @@ func (d *Dispatcher) RunJob(ctx context.Context, id string) error {
 			if transientRetries < maxTransientRetries {
 				transientRetries++
 				job.Status = StatusFailedRetryable
+				if fresh, nextPrompt := d.prepareTransientRetry(ctx, job, basePrompt, logTail, usage, transientRetries); fresh {
+					promptText = nextPrompt
+				}
 				_ = d.Ledger.Save(job)
 				backoff := d.backoffDuration(transientRetries)
 				d.Sleep(backoff)
@@ -487,6 +509,14 @@ func (d *Dispatcher) runAgy(ctx context.Context, job *Job, promptText string, la
 	}
 	_ = json.Unmarshal(stdout.Bytes(), &agyOut)
 	if agyOut.ConversationID == "" {
+		// AGY may print its result envelope followed by an AGY_ERROR line; take the first line that parses.
+		for _, line := range bytes.Split(stdout.Bytes(), []byte("\n")) {
+			if idx := bytes.IndexByte(line, '{'); idx >= 0 && json.Unmarshal(line[idx:], &agyOut) == nil && agyOut.ConversationID != "" {
+				break
+			}
+		}
+	}
+	if agyOut.ConversationID == "" {
 		raw := stdout.Bytes()
 		if idx := bytes.IndexByte(raw, '{'); idx >= 0 {
 			if lastIdx := bytes.LastIndexByte(raw, '}'); lastIdx > idx {
@@ -570,6 +600,11 @@ func (d *Dispatcher) runOxillama(ctx context.Context, job *Job, promptText strin
 // CheckScope executes git status --porcelain in the target worktree and verifies
 // whether modified files are strictly inside the declared scope path prefixes.
 func (d *Dispatcher) CheckScope(ctx context.Context, worktree string, scope []string) (bool, []string, error) {
+	return d.checkScopeAgainst(ctx, worktree, scope, nil)
+}
+
+// checkScopeAgainst is CheckScope that ignores files whose content still matches the pre-dispatch baseline.
+func (d *Dispatcher) checkScopeAgainst(ctx context.Context, worktree string, scope []string, baseline map[string]string) (bool, []string, error) {
 	if worktree == "" {
 		var err error
 		worktree, err = os.Getwd()
@@ -578,34 +613,19 @@ func (d *Dispatcher) CheckScope(ctx context.Context, worktree string, scope []st
 		}
 	}
 
-	gitPath := d.GitPath
-	if gitPath == "" {
-		gitPath = "git"
-	}
-
-	cmd := exec.CommandContext(ctx, gitPath, "-C", worktree, "status", "--porcelain", "--untracked-files=all")
-	out, err := cmd.Output()
+	changedFiles, err := d.dirtyPaths(ctx, worktree)
 	if err != nil {
-		return false, nil, fmt.Errorf("agentjobs: git status failed: %w", err)
+		return false, nil, err
 	}
-
-	lines := strings.Split(string(out), "\n")
-	var changedFiles []string
-	for _, line := range lines {
-		trimmed := strings.TrimRight(line, "\r")
-		if len(trimmed) < 4 {
-			continue
+	if len(baseline) > 0 {
+		kept := changedFiles[:0]
+		for _, f := range changedFiles {
+			if before, ok := baseline[f]; ok && before == d.fileHash(ctx, worktree, f) {
+				continue
+			}
+			kept = append(kept, f)
 		}
-		pathPart := trimmed[3:]
-		if strings.Contains(pathPart, " -> ") {
-			parts := strings.Split(pathPart, " -> ")
-			pathPart = parts[len(parts)-1]
-		}
-		pathPart = strings.TrimSpace(pathPart)
-		pathPart = strings.Trim(pathPart, "\"")
-		if pathPart != "" && !d.isStatePath(worktree, pathPart) {
-			changedFiles = append(changedFiles, filepath.Clean(pathPart))
-		}
+		changedFiles = kept
 	}
 
 	if len(changedFiles) == 0 {
@@ -639,6 +659,90 @@ func (d *Dispatcher) CheckScope(ctx context.Context, worktree string, scope []st
 	}
 
 	return changedInScope, offending, nil
+}
+
+// dirtyPaths lists the worktree's modified and untracked files, excluding Dendrite state.
+func (d *Dispatcher) dirtyPaths(ctx context.Context, worktree string) ([]string, error) {
+	cmd := exec.CommandContext(ctx, d.gitPath(), "-C", worktree, "status", "--porcelain", "--untracked-files=all")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("agentjobs: git status failed: %w", err)
+	}
+
+	var changedFiles []string
+	for _, line := range strings.Split(string(out), "\n") {
+		trimmed := strings.TrimRight(line, "\r")
+		if len(trimmed) < 4 {
+			continue
+		}
+		pathPart := trimmed[3:]
+		if strings.Contains(pathPart, " -> ") {
+			parts := strings.Split(pathPart, " -> ")
+			pathPart = parts[len(parts)-1]
+		}
+		pathPart = strings.TrimSpace(pathPart)
+		pathPart = strings.Trim(pathPart, "\"")
+		if pathPart != "" && !d.isStatePath(worktree, pathPart) {
+			changedFiles = append(changedFiles, filepath.Clean(pathPart))
+		}
+	}
+	return changedFiles, nil
+}
+
+// fileHash is the git blob hash of a worktree file, or "-" when it does not exist.
+func (d *Dispatcher) fileHash(ctx context.Context, worktree, rel string) string {
+	out, err := exec.CommandContext(ctx, d.gitPath(), "-C", worktree, "hash-object", "--", rel).Output()
+	if err != nil {
+		return "-"
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// snapshotDirty records the hash of every file that is dirty before the job's first attempt.
+func (d *Dispatcher) snapshotDirty(ctx context.Context, worktree string) (map[string]string, error) {
+	files, err := d.dirtyPaths(ctx, worktree)
+	if err != nil {
+		return nil, err
+	}
+	baseline := make(map[string]string, len(files))
+	for _, f := range files {
+		baseline[f] = d.fileHash(ctx, worktree, f)
+	}
+	return baseline, nil
+}
+
+// prepareTransientRetry decides how to retry after a transient failure. Resuming the AGY conversation is
+// cheap only while it is small: an oversized conversation (often the cause of the stream EOF) or a second
+// transient starts a fresh conversation with a handover capsule, and the second transient also moves the job
+// to the other Gemini family. It returns true and the new prompt when the conversation is reset.
+func (d *Dispatcher) prepareTransientRetry(ctx context.Context, job *Job, basePrompt, output string, usage map[string]any, retry int) (bool, string) {
+	if job.Agent != "agy" && job.Agent != "" {
+		return false, ""
+	}
+	tokens := inputTokens(usage)
+	if retry < 2 && tokens < resumeTokenLimit() {
+		return false, ""
+	}
+	reason := "transient with oversized conversation"
+	if retry >= 2 {
+		reason = "repeated transient"
+		if alt := CounterpartModel(job.Model); alt != "" &&
+			!coolingDown(d.loadExhaustedProviders(), providerKey("agy", alt), d.now()) {
+			from := job.Agent + "/" + job.Model
+			job.Model = alt
+			_ = d.Ledger.Append(job.ID, Event{Type: "escalated", Data: map[string]any{
+				"from": from, "to": "agy/" + alt, "reason": reason,
+			}})
+		}
+	}
+	capsule := d.buildCapsule(ctx, job, output, reason)
+	_ = os.WriteFile(d.Ledger.CapsulePath(job.ID), []byte(capsule), 0o644)
+	job.ConversationID = ""
+	_ = d.Ledger.Append(job.ID, Event{Type: "conversation_reset", Data: map[string]any{
+		"reason": reason, "input_tokens": tokens,
+	}})
+	return true, basePrompt + "\n\n## Handover capsule\n" + capsule +
+		"\nRepair this partial work; do not re-explore the codebase.\n"
 }
 
 // Retry re-submits a job detached by re-executing `<binary> agent jobs run <id>`.

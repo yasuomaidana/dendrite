@@ -37,7 +37,7 @@ Policy:
 
 - `conversation_id` must be stored in `job.json`.
 - `agy --conversation <id> -p "continue …"` resumes with full memory (verified: the resumed turn recalled its previous answer).
-- The resumed call re-sends history (24,209 input tokens versus 11,995 for a fresh call). It is still far cheaper than re-exploring a codebase, so `TRANSIENT` failures resume the same conversation.
+- The resumed call re-sends history (24,209 input tokens versus 11,995 for a fresh call). It is still far cheaper than re-exploring a codebase, so a first `TRANSIENT` failure resumes the same conversation while it is small (see [AGY models and load spreading](#agy-models-and-load-spreading-den-1017)).
 - Even a trivial call carries about 12k tokens of fixed overhead. Batch small tasks per job instead of firing many tiny jobs.
 - `usage` is recorded per attempt in `events.jsonl` and feeds per-ticket attribution (`dendrite tokens`).
 - In JSON mode the `conversation_id` is printed only when the turn ends, so a killed or stalled job loses it. Bound every headless run with `--print-timeout`, and run long jobs one at a time per workspace.
@@ -72,16 +72,35 @@ stateDiagram-v2
     Running --> Quota: 429 / RESOURCE_EXHAUSTED / RateLimitError
     Running --> EarlyExit: no changes / subagent
     Running --> Permission: auto-denied command
-    Transient --> Running: backoff, resume same conversation (max 3)
+    Transient --> Running: backoff; resume if small, else fresh + capsule; 2nd time other family (max 3)
     EarlyExit --> Running: retry once, no-subagent preamble
     Permission --> Running: retry once, file-tools preamble
-    Quota --> Running: next tier (Copilot, then local if C<=4) + capsule
+    Quota --> Running: next tier (other Gemini family, Copilot, then local if C<=4) + capsule
     Quota --> Parked: no tier left
-    Parked --> Running: resume_after passed and provider has quota
+    Parked --> Running: resume_after passed and its quota bucket has cooled down
     Done --> Verified: watcher: gofmt, build, vet, race tests, coverage
     Done --> Running: verification failed, re-dispatch once with failure capsule
     Verified --> Committed: orchestrator only (dendrite commit, To Verify, HITL issue)
 ```
+
+## AGY models and load spreading (DEN-1017)
+
+AGY signs in with its own Google account and calls Google directly, so LiteLLM never sees AGY traffic. AGY offers its own catalog (`dendrite agent jobs models` refreshes and shows it). Dendrite schedules the Gemini 3.8 Flash and Gemini 4 Argon models by default. `DENDRITE_AGY_MODELS` (comma separated) replaces that list, for example to opt in to the Claude or GPT-OSS models AGY also offers.
+
+- **Model choice.** `--model auto`, or no `--model`, picks by complexity and load:
+
+  | Complexity | Candidates, in preference order |
+  |---|---|
+  | ≤ 3 | `gemini-3.8-flash-medium`, `gemini-4-argon-low` |
+  | 4–6 (or unknown) | `gemini-3.8-flash-high`, `gemini-4-argon-medium` |
+  | ≥ 7 | `gemini-4-argon-high`, `gemini-3.8-flash-high` |
+
+  The family with the fewest active ledger jobs wins, and families that are cooling down are skipped. Concurrent jobs therefore spread across both families. The choice is logged as a `model_selected` event.
+- **Validation.** `submit` rejects a model outside the allowed list, or one missing from a fresh (24h) `agy models` cache. The router (`dendrite agent route`) and the budget fallback only hand AGY models from its catalog.
+- **Quota per family.** Cooldowns in `_providers.json` are keyed `agy:gemini-3.8`, `agy:gemini-4-argon`, `copilot` and `oxillama`, so a Gemini 3.8 quota hit leaves Argon available. A legacy bare `agy` key still covers every AGY family.
+- **Ladder.** The requested model, then the other family's comparable model (3.8 Flash High ↔ Argon Medium), then Copilot, then local oxillama for complexity ≤ 4.
+- **Transient retries.** A conversation is resumed only after a first transient whose attempt used fewer than `DENDRITE_AGY_RESUME_TOKEN_LIMIT` input tokens (default 400,000). Otherwise the retry starts a fresh conversation with the original prompt and a handover capsule. A second transient also moves the job to the other family. Before this, DEN-RELOC resumed a 567k-token conversation that kept dropping its stream: 567k → 812k → 1.06M input tokens over 4 attempts.
+- **Scope baseline.** Files that are dirty before the first attempt are recorded with their blob hash (`job.baseline`). The scope check ignores them unless the agent changes them, so a run in a dirty checkout no longer blames the agent for the human's work. `submit` warns when it runs without `--isolate` in a dirty checkout.
 
 ## End-to-end verification (2026-10-18)
 

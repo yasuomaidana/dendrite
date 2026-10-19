@@ -236,8 +236,10 @@ func TestCoverage_RunJob_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("nil attempts map is initialized", func(t *testing.T) {
+		worktree := createGitRepo(t)
 		binDir := t.TempDir()
 		agyScript := installExecutableScript(t, binDir, "agy", `
+echo done > out.txt
 echo '{"status": "SUCCESS"}'
 exit 0
 `)
@@ -246,7 +248,7 @@ exit 0
 		d.Executable = installExecutableScript(t, t.TempDir(), "dummy", "exit 0\n")
 		d.AgyPath = agyScript
 
-		id, err := d.Submit(SubmitSpec{Prompt: "test"})
+		id, err := d.Submit(SubmitSpec{Prompt: "test", Worktree: worktree, Scope: []string{"."}})
 		if err != nil {
 			t.Fatal(err)
 		}

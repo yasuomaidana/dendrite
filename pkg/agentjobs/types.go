@@ -59,6 +59,9 @@ type Job struct {
 	CreatedAt      time.Time      `json:"created_at"`
 	UpdatedAt      time.Time      `json:"updated_at"`
 	PGID           int            `json:"pgid,omitempty"`
+	// Baseline maps files that were dirty before the first attempt to their git blob hash,
+	// so the scope check does not blame the agent for pre-existing changes.
+	Baseline map[string]string `json:"baseline,omitempty"`
 }
 
 type jobJSON Job

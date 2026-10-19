@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -214,15 +216,17 @@ func handleAgentJobsCommand(ctx context.Context, args []string) error {
 		return handleAgentJobsDaemon(ctx, args[1:])
 	case "run":
 		return handleAgentJobsRun(ctx, args[1:])
+	case "models":
+		return handleAgentJobsModels(ctx)
 	default:
 		return fmt.Errorf("unknown agent jobs action: %s", args[0])
 	}
 }
 
 func printAgentJobsUsage() {
-	fmt.Println("Usage: dendrite agent jobs <submit|list|show|tail|wait|retry|cancel|daemon|run> [flags...]")
+	fmt.Println("Usage: dendrite agent jobs <submit|list|show|tail|wait|retry|cancel|daemon|models|run> [flags...]")
 	fmt.Println("\nSubcommands:")
-	fmt.Println("  submit   --ticket <T> --agent <A> --model <M> --scope <S> --prompt-file <P> [--worktree <W> | --isolate] [--complexity <C>]")
+	fmt.Println("  submit   --ticket <T> --agent <A> --model <M|auto> --scope <S> --prompt-file <P> [--worktree <W> | --isolate] [--complexity <C>]")
 	fmt.Println("  list     [--json]")
 	fmt.Println("  show     <id>")
 	fmt.Println("  tail     <id>")
@@ -230,6 +234,7 @@ func printAgentJobsUsage() {
 	fmt.Println("  retry    <id>")
 	fmt.Println("  cancel   <id>")
 	fmt.Println("  daemon   [--once] [--interval <duration>] [--install]")
+	fmt.Println("  models   refresh the cached `agy models` listing and show the allowed AGY models")
 	fmt.Println("  run      <id> (internal)")
 }
 
@@ -319,12 +324,36 @@ func handleAgentJobsSubmit(ctx context.Context, args []string) error {
 		Isolate:    isolate,
 	}
 
+	if !isolate && worktree == "" {
+		if out, sErr := exec.CommandContext(ctx, "git", "status", "--porcelain").Output(); sErr == nil && len(bytes.TrimSpace(out)) > 0 {
+			fmt.Fprintln(os.Stderr, "[!] Running in a checkout with uncommitted changes. The agent will see them; use --isolate to run in a dendrite-work/ copy.")
+		}
+	}
+
 	id, err := agentjobs.Submit(spec)
 	if err != nil {
 		return fmt.Errorf("failed to submit job: %w", err)
 	}
 
 	fmt.Printf("[✓] Job submitted successfully: %s\n", id)
+	if job, lErr := agentjobs.DefaultDispatcher.Ledger.Load(id); lErr == nil {
+		fmt.Printf("    Agent/Model:     %s/%s\n", job.Agent, job.Model)
+	}
+	return nil
+}
+
+func handleAgentJobsModels(ctx context.Context) error {
+	live, err := agentjobs.DefaultDispatcher.RefreshAGYModels(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[!] %v\n", err)
+	} else {
+		fmt.Printf("[+] AGY offers %d models: %s\n", len(live), strings.Join(live, ", "))
+	}
+	fmt.Printf("[+] Dendrite schedules (DENDRITE_AGY_MODELS): %s\n", strings.Join(agentjobs.AllowedAGYModels(), ", "))
+	for _, c := range []int{2, 5, 8} {
+		m, reason := agentjobs.DefaultDispatcher.PickAGYModel(c)
+		fmt.Printf("    complexity %d -> %s (%s)\n", c, m, reason)
+	}
 	return nil
 }
 
