@@ -4,131 +4,170 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
+	"io"
 	"strings"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"Dendrite/pkg/query/reuse"
 )
 
 var defaultRefMgr = reuse.NewRefManager(".dendrite/refs.json")
 
-func handleRefCommand(ctx context.Context, action string, args []string) {
-	switch action {
-	case "list":
-		handleRefList(args)
-	case "add":
-		handleRefAdd(args)
-	case "remove", "rm":
-		handleRefRemove(args)
-	default:
-		printRefUsage()
+// newAfferentCmd builds `dendrite afferent`: manage Tier 1 source references.
+func newAfferentCmd() *cobra.Command {
+	cmd := newGroupCmd(
+		"afferent",
+		"Manage Tier 1 source references for library reuse and cleanroom synthesis",
+		"arbor",
+		"ref", "dendritic-afferent", "aff",
+	)
+	cmd.Example = strings.Join([]string{
+		"dendrite afferent list",
+		"dendrite afferent add --id ref-gin --name gin --repo https://github.com/gin-gonic/gin --lang go --caps http,routing",
+		"dendrite afferent remove ref-gin",
+	}, "\n")
+
+	cmd.AddCommand(
+		newAfferentListCmd(),
+		newAfferentAddCmd(),
+		newAfferentRemoveCmd(),
+	)
+	return cmd
+}
+
+func newAfferentListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "list",
+		Short:   "List registered Tier 1 source references",
+		Args:    noArgs,
+		Example: "dendrite afferent list --json",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAfferentList(cmd.OutOrStdout())
+		},
 	}
 }
 
-func handleRefList(args []string) {
-	jsonOutput := false
-	for _, a := range args {
-		if a == "--json" {
-			jsonOutput = true
-		}
-	}
-
+func runAfferentList(out io.Writer) error {
 	refs, err := defaultRefMgr.ListRefs()
 	if err != nil {
-		fmt.Printf("[-] Failed to list source references: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to list source references: %w", err)
 	}
 
-	if jsonOutput {
-		data, _ := json.MarshalIndent(refs, "", "  ")
-		fmt.Println(string(data))
-		return
+	if globals.JSON {
+		data, err := json.MarshalIndent(refs, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(out, string(data))
+		return nil
 	}
 
-	fmt.Printf("[+] Registered Source References (Tier 1: %d repos):\n", len(refs))
+	fmt.Fprintf(out, "[+] Registered Source References (Tier 1: %d repos):\n", len(refs))
 	for _, r := range refs {
-		fmt.Printf("  • %-18s [%-10s] %s\n", r.ID, r.Language, r.Repository)
+		fmt.Fprintf(out, "  • %-18s [%-10s] %s\n", r.ID, r.Language, r.Repository)
 		if len(r.Capabilities) > 0 {
-			fmt.Printf("    Capabilities: %s\n", strings.Join(r.Capabilities, ", "))
+			fmt.Fprintf(out, "    Capabilities: %s\n", strings.Join(r.Capabilities, ", "))
 		}
 	}
+	return nil
 }
 
-func handleRefAdd(args []string) {
-	var ref reuse.SourceReference
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--id":
-			if i+1 < len(args) {
-				ref.ID = args[i+1]
-				i++
-			}
-		case "--name":
-			if i+1 < len(args) {
-				ref.Name = args[i+1]
-				i++
-			}
-		case "--repo", "--repository":
-			if i+1 < len(args) {
-				ref.Repository = args[i+1]
-				i++
-			}
-		case "--lang", "--language":
-			if i+1 < len(args) {
-				ref.Language = args[i+1]
-				i++
-			}
-		case "--caps", "--capabilities":
-			if i+1 < len(args) {
-				raw := strings.Split(args[i+1], ",")
-				for _, c := range raw {
-					trimmed := strings.TrimSpace(c)
-					if trimmed != "" {
-						ref.Capabilities = append(ref.Capabilities, trimmed)
-					}
-				}
-				i++
-			}
-		case "--license":
-			if i+1 < len(args) {
-				ref.License = args[i+1]
-				i++
-			}
+type afferentAddOptions struct {
+	ID      string
+	Name    string
+	Repo    string
+	Lang    string
+	Caps    []string
+	License string
+}
+
+func newAfferentAddCmd() *cobra.Command {
+	var o afferentAddOptions
+	cmd := &cobra.Command{
+		Use:     "add",
+		Short:   "Register a Tier 1 source reference",
+		Args:    noArgs,
+		Example: "dendrite afferent add --id ref-gin --name gin --repo https://github.com/gin-gonic/gin --lang go --caps http,routing --license MIT",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAfferentAdd(o, cmd.OutOrStdout())
+		},
+	}
+	f := cmd.Flags()
+	f.SetNormalizeFunc(func(fs *pflag.FlagSet, name string) pflag.NormalizedName {
+		switch name {
+		case "repository":
+			name = "repo"
+		case "language":
+			name = "lang"
+		case "capabilities":
+			name = "caps"
+		}
+		return pflag.NormalizedName(name)
+	})
+	f.StringVar(&o.ID, "id", "", "Reference identifier (required)")
+	f.StringVar(&o.Repo, "repo", "", "Repository URL (required)")
+	f.StringVar(&o.Name, "name", "", "Display name (default: id)")
+	f.StringVar(&o.Lang, "lang", "", "Primary language")
+	f.StringSliceVar(&o.Caps, "caps", nil, "Comma-separated capabilities")
+	f.StringVar(&o.License, "license", "", "SPDX license identifier")
+	requireFlags(cmd, "id", "repo")
+	return cmd
+}
+
+func runAfferentAdd(o afferentAddOptions, out io.Writer) error {
+	var caps []string
+	for _, c := range o.Caps {
+		if trimmed := strings.TrimSpace(c); trimmed != "" {
+			caps = append(caps, trimmed)
 		}
 	}
-
-	if ref.ID == "" || ref.Repository == "" {
-		fmt.Println("[-] Usage: dendrite ref add --id <id> --name <name> --repo <url> [--lang <lang>] [--caps <c1,c2>]")
-		return
+	name := o.Name
+	if name == "" {
+		name = o.ID
 	}
-	if ref.Name == "" {
-		ref.Name = ref.ID
+	ref := reuse.SourceReference{
+		ID:           o.ID,
+		Name:         name,
+		Repository:   o.Repo,
+		Language:     o.Lang,
+		Capabilities: caps,
+		License:      o.License,
 	}
 
 	if err := defaultRefMgr.AddRef(ref); err != nil {
-		fmt.Printf("[-] Failed to register reference: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to register reference: %w", err)
 	}
-	fmt.Printf("[+] Registered Tier 1 Source Reference: %s (%s)\n", ref.Name, ref.Repository)
+	fmt.Fprintf(out, "[+] Registered Tier 1 Source Reference: %s (%s)\n", ref.Name, ref.Repository)
+	return nil
 }
 
-func handleRefRemove(args []string) {
-	if len(args) == 0 {
-		fmt.Println("[-] Usage: dendrite ref remove <id>")
-		return
+func newAfferentRemoveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "remove <id>",
+		Aliases: []string{"rm"},
+		Short:   "Remove a registered Tier 1 source reference",
+		Args:    exactArgs(1),
+		Example: "dendrite afferent remove ref-gin",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAfferentRemove(args[0], cmd.OutOrStdout())
+		},
 	}
-	id := args[0]
+}
+
+func runAfferentRemove(id string, out io.Writer) error {
 	if err := defaultRefMgr.RemoveRef(id); err != nil {
-		fmt.Printf("[-] Failed to remove reference: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to remove reference: %w", err)
 	}
-	fmt.Printf("[+] Removed Tier 1 Source Reference: %s\n", id)
+	fmt.Fprintf(out, "[+] Removed Tier 1 Source Reference: %s\n", id)
+	return nil
+}
+
+func handleRefCommand(ctx context.Context, action string, args []string) {
+	_ = invokeCmd(ctx, newAfferentCmd(), append([]string{action}, args...)...)
 }
 
 func printRefUsage() {
-	fmt.Println("Usage: dendrite ref <list|add|remove> [flags]")
-	fmt.Println("\nCommands:")
-	fmt.Println("  dendrite ref list [--json]")
-	fmt.Println("  dendrite ref add --id <id> --name <name> --repo <url> [--lang <lang>] [--caps <c1,c2>]")
-	fmt.Println("  dendrite ref remove <id>")
+	_ = newAfferentCmd().Help()
 }
