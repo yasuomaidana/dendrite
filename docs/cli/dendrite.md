@@ -28,7 +28,6 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 
 | Command | Aliases | Description |
 | :--- | :--- | :--- |
-| [`chronos`](chronos.md) | `plane`, `chronos-tracker`, `pln` | Sovereign issue tracking, Gantt alignment, and DAG scheduler |
 | [`dev`](dev.md) |  | Developer diagnostics, local Ollama probe, and ticket tools |
 | [`engram`](engram.md) | `store`, `engram-store`, `gram` | Persistent segmented store, memory checkpointer, and chunk query |
 | [`ganglion`](ganglion.md) | `project`, `ganglion-workspace`, `prj` | Manage multi-project isolated workspaces |
@@ -57,7 +56,6 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 | [`motor`](motor.md) | `service`, `motor-unit`, `effector-service`, `svc` | Manage microservices (Plane, Penpot, Ollama, LiteLLM) |
 | [`reflex`](reflex.md) | `test`, `myotatic-reflex`, `tst` | Table-driven test synthesis, Testcontainers & UI tests |
 | [`saga`](saga.md) | `story`, `stories`, `synaptic-saga`, `sty` | Autonomous multi-turn story execution and DAG branching |
-| [`skill`](skill.md) |  | Execute skill integrations (ticket-relate, gantt-sync) |
 
 ### Synaptic Cleft & Gating
 
@@ -102,6 +100,7 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 
 | Command | Aliases | Description |
 | :--- | :--- | :--- |
+| [`chronos`](chronos.md) | `plane`, `chronos-tracker`, `pln` | Sovereign issue tracking, Gantt alignment, and DAG scheduler |
 | [`quantal`](quantal.md) | `commit`, `quantal-commit`, `cmt` | Autonomous Git commit with local model message generation |
 | [`vesicle`](vesicle.md) | `tokens`, `token`, `vesicle-quota`, `quota`, `tok` | Inspect 24h & 7d token consumption windows and tier quotas |
 

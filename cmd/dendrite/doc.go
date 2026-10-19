@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"Dendrite/pkg/docgen/reflect"
 )
@@ -20,7 +21,16 @@ func handleDocCommand(ctx context.Context, action string, args []string) {
 			fmt.Println("Usage: dendrite doc plane <push|pull|sync> [--dir docs]")
 			return
 		}
-		handlePlaneCommand(ctx, "doc", args)
+		dir := "docs"
+		for i := 1; i < len(args); i++ {
+			if (args[i] == "--dir" || args[i] == "-d") && i+1 < len(args) {
+				dir = args[i+1]
+				i++
+			}
+		}
+		if err := runPlaneDocSync(ctx, args[0], dir, os.Stdout); err != nil {
+			fmt.Printf("[-] %v\n", err)
+		}
 
 	case "reflect":
 		refDir := "docs"

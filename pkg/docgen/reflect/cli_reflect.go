@@ -502,23 +502,6 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 				"dendrite inference probe ollama",
 			},
 		},
-		"plane": {
-			Subcommands: []SubcommandDoc{
-				{Name: "status", Description: "Display synchronization status with self-hosted Plane instance"},
-				{Name: "replicate", Description: "Replicate DEV_STATUS.md directly from Plane service state"},
-				{Name: "push-status", Description: "Push local DEV_STATUS.md content into Plane service"},
-				{Name: "next", Description: "Smart select next ticket unblocked by dependencies"},
-				{Name: "link", Description: "Create dependency relationship between tickets for Gantt alignment"},
-				{Name: "create", Description: "Create a new ticket placed on Plane Gantt development plan"},
-				{Name: "doc", Description: "Synchronize documentation pages between Plane and local repository"},
-				{Name: "issues", Description: "List open issues and milestones from Plane"},
-			},
-			Examples: []string{
-				"dendrite plane status",
-				"dendrite plane replicate",
-				"dendrite plane next",
-			},
-		},
 		"mcp": {
 			Subcommands: []SubcommandDoc{
 				{Name: "serve", Description: "Launch Dendrite MCP server listening on stdio"},
@@ -648,16 +631,6 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 			Examples: []string{
 				"dendrite commit --ticket DEN-985",
 				"dendrite commit -m \"feat(docs): generate cli reference docs\"",
-			},
-		},
-		"skill": {
-			Subcommands: []SubcommandDoc{
-				{Name: "ticket-relate", Description: "Link tickets and sync dependencies to Plane"},
-				{Name: "gantt-sync", Description: "Align schedule dates and milestones with Plane Gantt"},
-			},
-			Examples: []string{
-				"dendrite skill ticket-relate DEN-030 depends-on DEN-029",
-				"dendrite skill gantt-sync",
 			},
 		},
 		"audit-changes": {

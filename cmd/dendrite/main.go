@@ -148,20 +148,6 @@ func legacyCommands() []*cobra.Command {
 			},
 		}),
 		legacyCmd(legacySpec{
-			Name:        "chronos",
-			Aliases:     []string{"plane", "chronos-tracker", "pln"},
-			Category:    "Soma & Axon Hillock",
-			Description: "Sovereign issue tracking, Gantt alignment, and DAG scheduler",
-			Run: func(ctx context.Context, args []string) error {
-				if len(args) < 1 {
-					fmt.Println("Usage: dendrite plane <status|replicate|push-status|doc|issues|modules|pages|update|states> [args...]")
-					return nil
-				}
-				handlePlaneCommand(ctx, args[0], args[1:])
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
 			Name:        "inter",
 			Aliases:     []string{"mcp", "interneuron-mcp"},
 			Category:    "Synaptic Cleft & Gating",
@@ -322,27 +308,6 @@ func legacyCommands() []*cobra.Command {
 			Description: "Autonomous Git commit with local model message generation",
 			Run: func(ctx context.Context, args []string) error {
 				handleCommitCommand(ctx, args)
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "skill",
-			Category:    "Postsynaptic Effectors & Actuation",
-			Description: "Execute skill integrations (ticket-relate, gantt-sync)",
-			Run: func(ctx context.Context, args []string) error {
-				if len(args) < 1 {
-					fmt.Println("Usage: dendrite skill <ticket-relate|gantt-sync> [args...]")
-					return nil
-				}
-				if args[0] == "ticket-relate" || args[0] == "relate" {
-					handlePlaneCommand(ctx, "relate", args[1:])
-					return nil
-				}
-				if args[0] == "gantt-sync" || args[0] == "align-gantt" {
-					handlePlaneCommand(ctx, "gantt-sync", args[1:])
-					return nil
-				}
-				fmt.Printf("[-] Unknown skill: %s\n", args[0])
 				return nil
 			},
 		}),
