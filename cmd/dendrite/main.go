@@ -106,44 +106,6 @@ func legacyCommands() []*cobra.Command {
 			},
 		}),
 		legacyCmd(legacySpec{
-			Name:        "engram",
-			Aliases:     []string{"store", "engram-store", "gram"},
-			Category:    "Soma & Axon Hillock",
-			Description: "Persistent segmented store, memory checkpointer, and chunk query",
-			Run: func(ctx context.Context, args []string) error {
-				if len(args) < 1 {
-					printStoreUsage()
-					return nil
-				}
-				handleStoreCommand(ctx, args[0], args[1:])
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "cognition",
-			Aliases:     []string{"analyze", "cognitive-analysis", "anlz"},
-			Category:    "Glial Regulation & Pruning",
-			Description: "Cognitive complexity analyzer, structural anti-pattern scanner, and policy router",
-			Run: func(ctx context.Context, args []string) error {
-				if len(args) < 1 {
-					printAnalyzeUsage()
-					return nil
-				}
-				handleAnalyzeCommand(ctx, args[0], args[1:])
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "vesicle",
-			Aliases:     []string{"tokens", "token", "vesicle-quota", "quota", "tok"},
-			Category:    "Terminal Boutons & Vesicles",
-			Description: "Inspect 24h & 7d token consumption windows and tier quotas",
-			Run: func(ctx context.Context, args []string) error {
-				handleTokensCommand(ctx, args)
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
 			Name:        "saga",
 			Aliases:     []string{"story", "stories", "synaptic-saga", "sty"},
 			Category:    "Postsynaptic Effectors & Actuation",
@@ -158,16 +120,6 @@ func legacyCommands() []*cobra.Command {
 					return nil
 				}
 				handleStoryCommand(ctx, args[0], args[1:])
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "quantal",
-			Aliases:     []string{"commit", "quantal-commit", "cmt"},
-			Category:    "Terminal Boutons & Vesicles",
-			Description: "Autonomous Git commit with local model message generation",
-			Run: func(ctx context.Context, args []string) error {
-				handleCommitCommand(ctx, args)
 				return nil
 			},
 		}),

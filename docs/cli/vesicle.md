@@ -24,15 +24,46 @@ Terminal Boutons & Vesicles
 
 | Subcommand | Description |
 | :--- | :--- |
-| `status` | Display token spend in 24h and 7d sliding windows |
-| `quota` | Display tier quotas and model rates |
+| `estimate` | Estimate a prompt's size in characters, words and tokens |
+| `status` | Show day and week token windows against capacity, and AGY access |
 
 ## Flags
 
 None
 
+## Subcommand Reference
+
+### `dendrite vesicle estimate`
+
+Estimate a prompt's size in characters, words and tokens
+
+```bash
+dendrite vesicle estimate <prompt...>
+```
+
+Aliases: `audit-prompt`
+
+### `dendrite vesicle status`
+
+Show day and week token windows against capacity, and AGY access
+
+```bash
+dendrite vesicle status [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--day-tokens` | Day window capacity in tokens (default: 1000000) |
+| `--model` | LLM model name (default: gemini-3.8-flash-high) |
+| `--policy-file` | Scheduler policy file (default: /Users/yasuomaidana/GoLandProjects/dendrite-work/Dendrite-DEN-1023/.dendrite/scheduler_policy.json) |
+| `--probe` | Send a probe request to confirm AGY access |
+| `--spend-file` | Spend ledger file (default: /Users/yasuomaidana/GoLandProjects/dendrite-work/Dendrite-DEN-1023/.dendrite/spend.json) |
+| `--week-tokens` | Week window capacity in tokens (default: 7000000) |
+
 ## Examples
 
 ```bash
-dendrite tokens status
+dendrite vesicle status
+dendrite vesicle status --probe --json
+dendrite vesicle estimate "Refactor the planner to use the DAG solver"
 ```

@@ -26,14 +26,24 @@ None
 
 | Flag | Description |
 | :--- | :--- |
-| `--ticket` | Target ticket ID (e.g. DEN-098) |
-| `--message` | Explicit commit message (overrides model synthesis) |
-| `--dry-run` | Preview staged changes and message without modifying git history |
-| `--no-push` | Opt out of automatic remote push |
+| `--all, -a` | Stage all modified and untracked files |
+| `--allow-mocks` | Bypass the zero-mock gate (emergencies only) |
+| `--amend` | Amend the previous commit |
+| `--dry-run` | Show what would happen without changing anything |
+| `--files, -f` | Files to stage (comma-separated) |
+| `--local` | Generate the message with the local model (default) (default: true) |
+| `--message, -m` | Commit message (skips message generation) |
+| `--model` | LLM model name (default: qwen3.8:27b) |
+| `--no-local` | Do not use the local model for the message |
+| `--no-push` | Do not push after committing |
+| `--no-smart` | Do not resolve the ticket automatically |
+| `--smart` | Resolve the active ticket from Plane when --ticket is not given (default) (default: true) |
+| `--ticket, -t` | Ticket identifier (e.g. DEN-123) |
 
 ## Examples
 
 ```bash
-dendrite commit --ticket DEN-985
-dendrite commit -m "feat(docs): generate cli reference docs"
+dendrite quantal --ticket DEN-123
+dendrite quantal -t DEN-123 --no-smart -m "fix(cli): handle empty args"
+dendrite quantal --files cmd/a.go,cmd/b.go --dry-run
 ```

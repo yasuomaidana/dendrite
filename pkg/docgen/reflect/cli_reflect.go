@@ -462,37 +462,6 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 				"dendrite jetbrains symbols \"Registry\"",
 			},
 		},
-		"store": {
-			Subcommands: []SubcommandDoc{
-				{Name: "status", Description: "Inspect persistent segmented store status and chunk count"},
-				{Name: "chunks", Description: "List stored memory chunks and vector embeddings"},
-				{Name: "query", Description: "Semantic similarity query over stored code memory"},
-				{Name: "commit", Description: "Checkpoint active workspace state into persistent store"},
-			},
-			Examples: []string{
-				"dendrite store status",
-				"dendrite store chunks",
-			},
-		},
-		"analyze": {
-			Subcommands: []SubcommandDoc{
-				{Name: "repo", Description: "Analyze repository files for cyclomatic and cognitive complexity"},
-				{Name: "complexity", Description: "Detailed function-level complexity breakdown"},
-				{Name: "policy", Description: "Evaluate codebase against enterprise compliance policies"},
-			},
-			Examples: []string{
-				"dendrite analyze repo .",
-			},
-		},
-		"tokens": {
-			Subcommands: []SubcommandDoc{
-				{Name: "status", Description: "Display token spend in 24h and 7d sliding windows"},
-				{Name: "quota", Description: "Display tier quotas and model rates"},
-			},
-			Examples: []string{
-				"dendrite tokens status",
-			},
-		},
 		"story": {
 			Subcommands: []SubcommandDoc{
 				{Name: "next", Description: "Execute next story task from Plane DAG"},
@@ -501,18 +470,6 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 			},
 			Examples: []string{
 				"dendrite story next",
-			},
-		},
-		"commit": {
-			Flags: []FlagDoc{
-				{Name: "--ticket", Description: "Target ticket ID (e.g. DEN-098)"},
-				{Name: "--message", Description: "Explicit commit message (overrides model synthesis)"},
-				{Name: "--dry-run", Description: "Preview staged changes and message without modifying git history"},
-				{Name: "--no-push", Description: "Opt out of automatic remote push"},
-			},
-			Examples: []string{
-				"dendrite commit --ticket DEN-985",
-				"dendrite commit -m \"feat(docs): generate cli reference docs\"",
 			},
 		},
 		"audit-changes": {

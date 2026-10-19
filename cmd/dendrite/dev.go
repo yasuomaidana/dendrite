@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"Dendrite/pkg/devtool"
 	"Dendrite/pkg/tracker"
@@ -96,15 +95,7 @@ func handleDevCommand(ctx context.Context, sub string, args []string) {
 		_ = invokeCmd(ctx, newSpikeCmd(), args...)
 
 	case "audit-prompt":
-		if len(args) == 0 {
-			fmt.Println("[-] Please provide a prompt string to audit")
-			return
-		}
-		input := strings.Join(args, " ")
-		metrics := devtool.AuditPrompt(input)
-		fmt.Printf("[+] Prompt Character Count:  %d\n", metrics.CharacterCount)
-		fmt.Printf("[+] Prompt Word Count:       %d\n", metrics.WordCount)
-		fmt.Printf("[+] Estimated Token Volume:  %d tokens (~4 chars/token)\n", metrics.EstimatedTokens)
+		_ = invokeCmd(ctx, newVesicleCmd(), append([]string{"estimate"}, args...)...)
 
 	default:
 		fmt.Printf("Unknown dev subcommand: %s\n", sub)
