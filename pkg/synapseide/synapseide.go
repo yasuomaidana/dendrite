@@ -73,7 +73,7 @@ func SynapseScopeXML(s *synapse.Synapse, alias string) (string, bool) {
 // SyncSynapseIDE, for every member that resolves (synapse.Resolve), writes
 //
 //	<member>/.idea/scopes/<SynapseScopeName>.xml (only when SynapseScopeXML ok; never touches other scope files)
-//	and upserts mcpServers[SynapseServerName] = {Command: binary, Args: ["mcp","serve","--synapse",id], Env: {"DENDRITE_SYNAPSE": id}}
+//	and upserts mcpServers[SynapseServerName] = {Command: binary, Args: ["inter","serve","--synapse",id], Env: {"DENDRITE_SYNAPSE": id}}
 //	into <member>/.ai/mcp/mcp.json.
 //
 // Unresolved members are skipped and reported. Returns written file paths (sorted) and skipped aliases.
@@ -93,7 +93,7 @@ func SyncSynapseIDE(s *synapse.Synapse, binary string) (written []string, skippe
 
 	mcpEntry := jetbrains.MCPServerEntry{
 		Command: binary,
-		Args:    []string{"mcp", "serve", "--synapse", s.ID},
+		Args:    []string{"inter", "serve", "--synapse", s.ID},
 	}
 
 	for _, m := range s.Members {

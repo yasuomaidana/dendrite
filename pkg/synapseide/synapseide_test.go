@@ -344,7 +344,7 @@ func TestSyncSynapseIDE_Integration(t *testing.T) {
 	if srv1.Command != binaryPath {
 		t.Errorf("expected command %s, got %s", binaryPath, srv1.Command)
 	}
-	if len(srv1.Args) != 4 || srv1.Args[0] != "mcp" || srv1.Args[1] != "serve" || srv1.Args[2] != "--synapse" || srv1.Args[3] != "demo-synapse" {
+	if len(srv1.Args) != 4 || srv1.Args[0] != "inter" || srv1.Args[1] != "serve" || srv1.Args[2] != "--synapse" || srv1.Args[3] != "demo-synapse" {
 		t.Errorf("unexpected args: %v", srv1.Args)
 	}
 	if len(srv1.Env) != 0 {
