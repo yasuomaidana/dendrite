@@ -292,6 +292,7 @@ func (d *Dispatcher) RunJob(ctx context.Context, id string) error {
 		if attemptTimeout <= 0 {
 			attemptTimeout = DefaultAttemptTimeout
 		}
+		attemptStart := d.now()
 		attemptCtx, cancelAttempt := context.WithTimeout(ctx, attemptTimeout)
 
 		var (
@@ -347,8 +348,14 @@ func (d *Dispatcher) RunJob(ctx context.Context, id string) error {
 		}
 		class := Classify(outcome)
 		if timedOut && !changedInScope {
-			class = ClassQuota
-			logTail += "\nthrottled: attempt exceeded deadline with no changes in scope"
+			// One stuck conversation is not a quota signal when the same family served other jobs meanwhile.
+			if d.familyServedSince(job, attemptStart) {
+				class = ClassTransient
+				logTail += "\nstalled: attempt exceeded deadline while other jobs on this model family succeeded"
+			} else {
+				class = ClassQuota
+				logTail += "\nthrottled: attempt exceeded deadline with no changes in scope"
+			}
 		}
 		lastClass = class
 

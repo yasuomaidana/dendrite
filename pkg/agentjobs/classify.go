@@ -39,7 +39,8 @@ func matchQuota(o Outcome) bool {
 	tailLower := strings.ToLower(o.LogTail)
 
 	// Unambiguous quota exhaustion signatures
-	if strings.Contains(tailLower, "resource_exhausted") ||
+	if strings.Contains(o.LogTail, ProviderUnavailable) ||
+		strings.Contains(tailLower, "resource_exhausted") ||
 		strings.Contains(tailLower, "429") ||
 		strings.Contains(tailLower, "exhausted your capacity") ||
 		strings.Contains(tailLower, "ratelimiterror") ||

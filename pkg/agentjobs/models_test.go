@@ -316,3 +316,80 @@ func TestSharedState_SpreadsAndCoolsDownAcrossRepositories(t *testing.T) {
 		t.Error("legacy per-ledger cooldown must still be honoured")
 	}
 }
+
+func TestRunJob_StallWhileFamilyServesOthersIsTransient(t *testing.T) {
+	worktree := createGitRepo(t)
+	binDir := t.TempDir()
+	counter := filepath.Join(binDir, "counter")
+	_ = os.WriteFile(counter, []byte("0"), 0o644)
+	agy := installExecutableScript(t, binDir, "agy", fmt.Sprintf(`
+CNT=$(cat "%[1]s")
+echo $((CNT + 1)) > "%[1]s"
+if [ "$CNT" -eq 0 ]; then
+  exec sleep 30
+fi
+mkdir -p "%[2]s/pkg" && echo ok > "%[2]s/pkg/done.txt"
+echo '{"status":"SUCCESS"}'
+`, counter, worktree))
+	ledger := NewLedger(t.TempDir())
+	d := NewDispatcher(ledger)
+	d.Executable = installExecutableScript(t, t.TempDir(), "dummy_runner", "exit 0\n")
+	d.AgyPath = agy
+	d.Sleep = func(time.Duration) {}
+	d.AttemptTimeout = 2 * time.Second
+
+	id, _ := d.Submit(SubmitSpec{Agent: "agy", Model: "gemini-3.8-flash-high", Worktree: worktree, Scope: []string{"pkg"}, Prompt: "Task"})
+	// Another gemini-3.8 job finishes while this one is stuck.
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		other, _ := ledger.Create(&Job{Ticket: "DEN-2", Agent: "agy", Model: "gemini-3.8-flash-medium", Status: StatusRunning})
+		other.Status = StatusSucceeded
+		_ = ledger.Save(other)
+	}()
+	if err := d.RunJob(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	job, _ := ledger.Load(id)
+	if job.Status != StatusSucceeded || job.Model != "gemini-3.8-flash-high" {
+		t.Errorf("job = %s on %s, want succeeded on gemini-3.8-flash-high after a stall retry", job.Status, job.Model)
+	}
+	if coolingDown(d.loadExhaustedProviders(), "agy:gemini-3.8", time.Now()) {
+		t.Error("a stall while the family serves other jobs must not cool the family down")
+	}
+}
+
+func TestLiteLLMKeyFromDotEnv(t *testing.T) {
+	t.Setenv("LITELLM_MASTER_KEY", "")
+	d := NewDispatcher(NewLedger(t.TempDir()))
+	worktree := t.TempDir()
+	if got := d.liteLLMKey(worktree); got != "" {
+		t.Errorf("no key anywhere, got %q", got)
+	}
+	_ = os.WriteFile(filepath.Join(worktree, ".env"), []byte("FOO=1\nLITELLM_MASTER_KEY=\"sk-from-env-file\"\n"), 0o644)
+	if got := d.liteLLMKey(worktree); got != "sk-from-env-file" {
+		t.Errorf("key from worktree .env = %q", got)
+	}
+	t.Setenv("LITELLM_MASTER_KEY", "sk-process")
+	if got := d.liteLLMKey(worktree); got != "sk-process" {
+		t.Errorf("process env must win, got %q", got)
+	}
+}
+
+func TestRunAider_AuthenticationErrorIsProviderUnavailable(t *testing.T) {
+	worktree := createGitRepo(t)
+	ledger := NewLedger(t.TempDir())
+	d := NewDispatcher(ledger)
+	d.AiderPath = installExecutableScript(t, t.TempDir(), "aider", `
+echo "litellm.AuthenticationError: AuthenticationError: OpenAIException - The api_key client option must be set"
+echo "The API provider is not able to authenticate you. Check your API key."
+exit 0
+`)
+	job, _ := ledger.Create(&Job{Ticket: "DEN-1", Agent: "aider", Model: copilotModel, Worktree: worktree})
+	code, out, _ := d.runAider(context.Background(), job, "prompt")
+	if code == 0 || !strings.Contains(out, ProviderUnavailable) {
+		t.Fatalf("auth failure must be non-zero and marked, got code=%d out=%q", code, out)
+	}
+	if c := Classify(Outcome{ExitCode: code, LogTail: out}); c != ClassQuota {
+		t.Errorf("auth failure classified %q, want QUOTA so copilot is skipped", c)
+	}
+}

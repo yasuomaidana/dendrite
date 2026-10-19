@@ -199,15 +199,7 @@ func (d *Dispatcher) registerLedger() {
 // from different repositories (synapse peers) spread across Gemini 3.8 and Argon too.
 func (d *Dispatcher) modelLoad() map[string]int {
 	load := map[string]int{}
-	roots := []string{d.Ledger.Root()}
-	if own, err := filepath.Abs(d.Ledger.Root()); err == nil {
-		for _, r := range d.registeredLedgers() {
-			if r != own {
-				roots = append(roots, r)
-			}
-		}
-	}
-	for _, root := range roots {
+	for _, root := range d.ledgerRoots() {
 		jobs, err := NewLedger(root).List()
 		if err != nil {
 			continue
@@ -331,6 +323,76 @@ func (d *Dispatcher) validateAGYModel(model string) error {
 		return fmt.Errorf("agentjobs: AGY does not offer %q (from the cached `agy models` listing)", model)
 	}
 	return nil
+}
+
+// ProviderUnavailable marks output from a provider that cannot serve the job (for example a rejected
+// LiteLLM key). The classifier treats it like quota, so the provider cools down and the job escalates.
+const ProviderUnavailable = "DENDRITE_PROVIDER_UNAVAILABLE"
+
+// servedStatuses are job states in which the agent completed a turn.
+var servedStatuses = map[Status]bool{
+	StatusSucceeded: true, StatusVerified: true, StatusCommitted: true, StatusNeedsReview: true, StatusEarlyExit: true,
+}
+
+// ledgerRoots is this dispatcher's ledger plus every other registered one.
+func (d *Dispatcher) ledgerRoots() []string {
+	roots := []string{d.Ledger.Root()}
+	if own, err := filepath.Abs(d.Ledger.Root()); err == nil {
+		for _, r := range d.registeredLedgers() {
+			if r != own {
+				roots = append(roots, r)
+			}
+		}
+	}
+	return roots
+}
+
+// familyServedSince reports whether another job on the same quota bucket finished a turn after since.
+func (d *Dispatcher) familyServedSince(job *Job, since time.Time) bool {
+	key := providerKey(job.Agent, job.Model)
+	for _, root := range d.ledgerRoots() {
+		jobs, err := NewLedger(root).List()
+		if err != nil {
+			continue
+		}
+		for _, j := range jobs {
+			if j.ID != job.ID && servedStatuses[j.Status] && j.UpdatedAt.After(since) && providerKey(j.Agent, j.Model) == key {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// liteLLMKey resolves LITELLM_MASTER_KEY from the environment, then from the .env of the job's worktree
+// and of every registered repository (detached runners do not inherit a shell that sourced .env).
+func (d *Dispatcher) liteLLMKey(worktree string) string {
+	if key := os.Getenv("LITELLM_MASTER_KEY"); key != "" {
+		return key
+	}
+	dirs := []string{worktree}
+	for _, root := range d.ledgerRoots() {
+		if abs, err := filepath.Abs(root); err == nil {
+			dirs = append(dirs, filepath.Dir(filepath.Dir(abs))) // <repo>/.dendrite/jobs -> <repo>
+		}
+	}
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, ".env"))
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if v, ok := strings.CutPrefix(strings.TrimSpace(line), "LITELLM_MASTER_KEY="); ok {
+				if v = strings.Trim(strings.TrimSpace(v), `"'`); v != "" {
+					return v
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // resumeTokenLimit honours DENDRITE_AGY_RESUME_TOKEN_LIMIT.

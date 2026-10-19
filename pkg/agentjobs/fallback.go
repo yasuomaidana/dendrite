@@ -263,12 +263,15 @@ func (d *Dispatcher) runAider(ctx context.Context, job *Job, prompt string) (int
 	}
 	key := d.LiteLLMKey
 	if key == "" {
-		key = os.Getenv("LITELLM_MASTER_KEY")
+		key = d.liteLLMKey(job.Worktree)
 	}
 	args := []string{"--model", "openai/" + job.Model, "--openai-api-base", url, "--openai-api-key", key,
 		"--edit-format", "diff", "--no-auto-commits", "--yes-always", "--no-show-model-warnings",
 		"--no-check-update", "--no-gitignore", "--map-tokens", "0", "--no-stream", "--no-pretty",
-		"--message-file", promptPath}
+		"--message-file", promptPath,
+		// Keep aider's own history files out of the worktree, where they would count as edits.
+		"--chat-history-file", filepath.Join(d.Ledger.JobDir(job.ID), "aider.chat.history.md"),
+		"--input-history-file", filepath.Join(d.Ledger.JobDir(job.ID), "aider.input.history")}
 	for _, s := range job.Scope {
 		if info, err := os.Stat(filepath.Join(job.Worktree, s)); err == nil && !info.IsDir() {
 			args = append(args, "--file", s)
@@ -292,7 +295,15 @@ func (d *Dispatcher) runAider(ctx context.Context, job *Job, prompt string) (int
 			code = exitErr.ExitCode()
 		}
 	}
-	return code, tail(string(out), maxCapsuleOutput), err
+	logTail := tail(string(out), maxCapsuleOutput)
+	// Aider exits 0 after an authentication failure; report it so the provider is skipped, not retried.
+	if strings.Contains(logTail, "AuthenticationError") || strings.Contains(logTail, "not able to authenticate") {
+		if code == 0 {
+			code = 1
+		}
+		logTail += "\n" + ProviderUnavailable + ": LiteLLM rejected the key (set LITELLM_MASTER_KEY)"
+	}
+	return code, logTail, err
 }
 
 func envOr(key, fallback string) string {
