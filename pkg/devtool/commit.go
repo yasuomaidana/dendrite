@@ -650,6 +650,9 @@ func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, erro
 
 	// 1. Staging
 	// Check if there are already staged files in index
+	// pathspec limits the commit to opts.Files: changes the developer staged
+	// separately stay staged instead of being swept into this commit.
+	var pathspec []string
 	alreadyStaged, _ := runGit("diff", "--cached", "--name-only")
 	if strings.TrimSpace(alreadyStaged) != "" && !opts.StageAll && len(opts.Files) == 0 {
 		// Developer or agent already staged specific files; do not clobber with git add -A
@@ -659,6 +662,7 @@ func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, erro
 				if _, err := runGit("add", strings.TrimSpace(f)); err != nil {
 					return nil, err
 				}
+				pathspec = append(pathspec, strings.TrimSpace(f))
 			}
 		}
 	} else if opts.StageAll {
@@ -672,7 +676,13 @@ func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, erro
 	}
 
 	// 2. Query staged files and diff
-	stagedStatus, err := runGit("diff", "--cached", "--name-only")
+	limit := func(args ...string) []string {
+		if len(pathspec) == 0 {
+			return args
+		}
+		return append(append(args, "--"), pathspec...)
+	}
+	stagedStatus, err := runGit(limit("diff", "--cached", "--name-only")...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check staged files: %w", err)
 	}
@@ -690,8 +700,8 @@ func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, erro
 		}
 	}
 
-	diffStat, _ := runGit("diff", "--cached", "--stat")
-	fullDiff, _ := runGit("diff", "--cached")
+	diffStat, _ := runGit(limit("diff", "--cached", "--stat")...)
+	fullDiff, _ := runGit(limit("diff", "--cached")...)
 	if opts.Amend && diffStat == "" {
 		diffStat, _ = runGit("show", "--stat", "HEAD")
 		fullDiff, _ = runGit("show", "HEAD")
@@ -773,7 +783,7 @@ func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, erro
 		gitArgs = append(gitArgs, "--amend")
 	}
 	gitArgs = append(gitArgs, "-m", commitMsg)
-	if _, err := runGit(gitArgs...); err != nil {
+	if _, err := runGit(limit(gitArgs...)...); err != nil {
 		return nil, fmt.Errorf("git commit failed: %w", err)
 	}
 

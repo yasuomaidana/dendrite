@@ -1874,3 +1874,39 @@ func TestGenerateLocalCommitMessage_CannedResponses(t *testing.T) {
 		t.Errorf("unexpected msg: %s", msg)
 	}
 }
+
+func TestExecuteCommit_SpecificFilesLeaveOtherStagedWorkAlone(t *testing.T) {
+	t.Setenv("DENDRITE_COMMIT_PUSH", "false")
+	dir := t.TempDir()
+	for _, args := range [][]string{{"init", "-q"}, {"config", "user.name", "Test"}, {"config", "user.email", "test@example.com"}} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	_ = os.WriteFile(filepath.Join(dir, "base.txt"), []byte("base"), 0644)
+	_ = exec.Command("git", "-C", dir, "add", "base.txt").Run()
+	_ = exec.Command("git", "-C", dir, "commit", "-q", "-m", "base").Run()
+
+	// The developer has work in progress staged; the tool commits only its own file.
+	_ = os.WriteFile(filepath.Join(dir, "wip.go"), []byte("package wip"), 0644)
+	_ = exec.Command("git", "-C", dir, "add", "wip.go").Run()
+	_ = os.WriteFile(filepath.Join(dir, "link.json"), []byte("{}"), 0644)
+
+	res, err := ExecuteCommit(context.Background(), CommitOptions{
+		TicketID: "DEN-1036", Files: []string{"link.json"}, Message: "chore: link", RepoDir: dir,
+	})
+	if err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	if len(res.Files) != 1 || res.Files[0] != "link.json" {
+		t.Errorf("reported files = %v; want only link.json", res.Files)
+	}
+	committed, _ := exec.Command("git", "-C", dir, "show", "--name-only", "--format=", "HEAD").Output()
+	if strings.TrimSpace(string(committed)) != "link.json" {
+		t.Errorf("HEAD contains %q; want only link.json", committed)
+	}
+	staged, _ := exec.Command("git", "-C", dir, "diff", "--cached", "--name-only").Output()
+	if strings.TrimSpace(string(staged)) != "wip.go" {
+		t.Errorf("staged after commit = %q; the developer's wip.go must stay staged", staged)
+	}
+}
