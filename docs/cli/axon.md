@@ -22,19 +22,43 @@ Axon & Myelin Sheath
 
 | Subcommand | Description |
 | :--- | :--- |
-| `advisor` | Run dynamic service placement advisor across compute nodes |
-| `inspect` | Inspect and validate topology scenario placements |
+| `advisor` | Probe compute nodes and recommend a service placement |
+| `inspect` | Show stack placements and compose profiles for a scenario (default local-hybrid) |
 
 ## Flags
 
+None
+
+## Subcommand Reference
+
+### `dendrite axon advisor`
+
+Probe compute nodes and recommend a service placement
+
+```bash
+dendrite axon advisor [flags]
+```
+
+Aliases: `advise`
+
 | Flag | Description |
 | :--- | :--- |
-| `--nodes` | Comma-separated node definitions (e.g. 'local=localhost,worker=10.0.0.2') |
-| `--json` | Output placement plan in JSON format |
+| `--nodes` | Comma-separated nodes as id=host (or just host) (default: local=localhost) |
+
+### `dendrite axon inspect`
+
+Show stack placements and compose profiles for a scenario (default local-hybrid)
+
+```bash
+dendrite axon inspect [scenario]
+```
+
+Aliases: `show`
 
 ## Examples
 
 ```bash
-dendrite topology advisor
-dendrite topology inspect local-hybrid
+dendrite axon advisor --nodes local=localhost,gpu=10.0.0.5
+dendrite axon advisor --json
+dendrite axon inspect distributed
 ```

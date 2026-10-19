@@ -22,19 +22,52 @@ Synaptic Cleft & Gating
 
 | Subcommand | Description |
 | :--- | :--- |
-| `update` | Dynamically discover live inference engines and update LiteLLM routing table |
-| `schedule` | Run dynamic routing table updater on daily background schedule |
+| `render` | Render the LiteLLM config for a topology scenario (default local-hybrid) |
+| `schedule` | Keep the LiteLLM routing table updated on an interval (foreground; Ctrl+C stops it) |
+| `update` | Discover live inference engines and rewrite the LiteLLM routing table |
 
 ## Flags
 
+None
+
+## Subcommand Reference
+
+### `dendrite cleft schedule`
+
+Keep the LiteLLM routing table updated on an interval (foreground; Ctrl+C stops it)
+
+```bash
+dendrite cleft schedule [flags]
+```
+
+Aliases: `daemon`, `watch`
+
 | Flag | Description |
 | :--- | :--- |
-| `--file` | Target litellm_config.yaml path (default: stacks/litellm_config.yaml) |
-| `--dry-run` | Simulate update without modifying disk |
+| `--docker` | Rewrite engine hosts for LiteLLM running in Docker (--docker=false for a host install) (default: true) |
+| `--file, -f` | LiteLLM config file to rewrite (default: stacks/litellm_config.yaml) |
+| `--interval, -i` | Time between updates (default: 24h0m0s) |
+
+### `dendrite cleft update`
+
+Discover live inference engines and rewrite the LiteLLM routing table
+
+```bash
+dendrite cleft update [flags]
+```
+
+Aliases: `sync`, `refresh`
+
+| Flag | Description |
+| :--- | :--- |
+| `--docker` | Rewrite engine hosts for LiteLLM running in Docker (--docker=false for a host install) (default: true) |
+| `--dry-run` | Show what would happen without changing anything |
+| `--file, -f` | LiteLLM config file to rewrite (default: stacks/litellm_config.yaml) |
 
 ## Examples
 
 ```bash
-dendrite gateway update
-dendrite gateway schedule
+dendrite cleft update --dry-run
+dendrite cleft schedule --interval 12h
+dendrite cleft render azure-burst
 ```

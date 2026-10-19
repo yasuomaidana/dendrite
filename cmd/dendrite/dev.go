@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"Dendrite/pkg/devtool"
-	"Dendrite/pkg/ollama"
 	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/plane"
 )
@@ -18,21 +17,11 @@ func handleDevCommand(ctx context.Context, sub string, args []string) {
 		return
 
 	case "ollama":
-		endpoint := ollama.DefaultBaseURL
+		probe := []string{"probe"}
 		if len(args) > 1 && args[0] == "probe" {
-			endpoint = args[1]
+			probe = append(probe, "--endpoint", args[1])
 		}
-		fmt.Printf("[+] Probing Ollama at %s...\n", endpoint)
-		status, models, err := devtool.ProbeOllama(ctx, endpoint)
-		if err != nil {
-			fmt.Printf("[-] Probe failed: %v\n", err)
-			return
-		}
-		fmt.Printf("[✓] Status: Reachable (Latency: %v)\n", status.Latency)
-		fmt.Printf("[✓] Models (%d):\n", len(models))
-		for _, m := range models {
-			fmt.Printf("    - %s\n", m.Name)
-		}
+		_ = invokeCmd(ctx, newSpikeCmd(), probe...)
 
 	case "ticket":
 		filePath := "DEV_STATUS.md"
@@ -98,29 +87,13 @@ func handleDevCommand(ctx context.Context, sub string, args []string) {
 		}
 
 	case "topology":
-		if len(args) > 0 && (args[0] == "advisor" || args[0] == "advise") {
-			runTopologyAdvisor(ctx, args[1:])
-			return
-		}
-		scenarioStr := "local-hybrid"
-		if len(args) > 0 {
-			scenarioStr = args[0]
-		}
-		runTopologyInspect(ctx, scenarioStr)
+		_ = invokeCmd(ctx, newAxonCmd(), args...)
 
 	case "gateway":
-		if len(args) == 0 {
-			handleGatewayCommand(ctx, []string{"local-hybrid"})
-			return
-		}
-		handleGatewayCommand(ctx, args)
+		_ = invokeCmd(ctx, newCleftCmd(), args...)
 
 	case "inference":
-		if len(args) == 0 {
-			handleInferenceCommand(ctx, []string{"list"})
-			return
-		}
-		handleInferenceCommand(ctx, args)
+		_ = invokeCmd(ctx, newSpikeCmd(), args...)
 
 	case "audit-prompt":
 		if len(args) == 0 {

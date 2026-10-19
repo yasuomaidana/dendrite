@@ -2,395 +2,477 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
+	"maps"
 	"os"
 	"os/exec"
+	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 
+	"Dendrite/pkg/devtool"
 	"Dendrite/pkg/gateway"
 	"Dendrite/pkg/inference"
 	"Dendrite/pkg/statedir"
+
+	"github.com/spf13/cobra"
 )
 
-func handleInferenceCommand(ctx context.Context, args []string) {
-	if len(args) == 0 {
-		printInferenceUsage()
-		return
+// newSpikeCmd builds `dendrite spike` (alias inference): the multi-provider inference engine manager.
+func newSpikeCmd() *cobra.Command {
+	cmd := newGroupCmd("spike", "Unified multi-provider inference engine gateway (Ollama, OxiLLaMa, vLLM, TGI)", "cleft",
+		"inference", "action-potential", "inf")
+	cmd.Example = "dendrite spike list\n" +
+		"dendrite spike probe ollama-metal\n" +
+		"dendrite spike probe --endpoint http://10.0.0.5:11434\n" +
+		"dendrite spike migrate qwen2.5-coder:7b --to oxillama --delete-source\n" +
+		"dendrite spike zero-cost add my-model --env"
+	cmd.AddCommand(
+		newSpikeListCmd(),
+		newSpikeProbeCmd(),
+		newSpikeSwitchCmd(),
+		newSpikeRenderCmd(),
+		newSpikeMigrateCmd(),
+		newSpikeServeCmd(),
+		newSpikeStopCmd(),
+		newSpikeZeroCostCmd(),
+	)
+	return cmd
+}
+
+func newSpikeListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List registered engines, their models and the failover cascade",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSpikeList(inference.DefaultManager(), cmd.OutOrStdout())
+		},
 	}
+}
 
-	action := strings.ToLower(args[0])
-	mgr := inference.DefaultManager()
-
-	switch action {
-	case "list":
-		engines := mgr.ListEngines()
-		cascade := mgr.GetCascadeOrder()
-		fmt.Printf("[+] Registered Multi-Provider Inference Engines (%d):\n", len(engines))
+func runSpikeList(mgr *inference.Manager, out io.Writer) error {
+	engines := mgr.ListEngines()
+	cascade := mgr.GetCascadeOrder()
+	if globals.JSON {
+		type engineInfo struct {
+			ID       string   `json:"id"`
+			Type     string   `json:"type"`
+			Endpoint string   `json:"endpoint"`
+			Models   []string `json:"models"`
+			ZeroCost bool     `json:"zero_cost"`
+		}
+		list := make([]engineInfo, 0, len(engines))
 		for _, eng := range engines {
 			cfg := eng.Config()
-			zeroCostTag := ""
-			if inference.IsEngineZeroCost(eng) {
-				zeroCostTag = " [Zero-Cost / Self-Hosted]"
+			list = append(list, engineInfo{eng.ID(), string(eng.Type()), cfg.Endpoint, cfg.Models, inference.IsEngineZeroCost(eng)})
+		}
+		return writeJSON(out, map[string]any{"engines": list, "cascade": cascade})
+	}
+	fmt.Fprintf(out, "[+] Registered Multi-Provider Inference Engines (%d):\n", len(engines))
+	for _, eng := range engines {
+		cfg := eng.Config()
+		zeroCostTag := ""
+		if inference.IsEngineZeroCost(eng) {
+			zeroCostTag = " [Zero-Cost / Self-Hosted]"
+		}
+		modelsStr := strings.Join(cfg.Models, ", ")
+		if modelsStr == "" {
+			modelsStr = "(auto-discover)"
+		}
+		fmt.Fprintf(out, "    [%s] %s (%s)%s\n", eng.Type(), eng.ID(), cfg.Endpoint, zeroCostTag)
+		fmt.Fprintf(out, "        Models: %s\n", modelsStr)
+	}
+	fmt.Fprintln(out, "\n[+] Dynamic Cascade Failover Priority Order:")
+	for i, id := range cascade {
+		fmt.Fprintf(out, "    %d. %s\n", i+1, id)
+	}
+	return nil
+}
+
+func newSpikeProbeCmd() *cobra.Command {
+	var endpoint string
+	cmd := &cobra.Command{
+		Use:   "probe [engine-id]",
+		Short: "Check engine reachability, latency and models (all engines, one engine, or a raw Ollama endpoint)",
+		Args:  maxArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			if endpoint != "" {
+				if len(args) > 0 {
+					return usageErrorf("give either an engine id or --endpoint, not both")
+				}
+				return runSpikeProbeEndpoint(cmd.Context(), endpoint, out)
 			}
-			modelsStr := strings.Join(cfg.Models, ", ")
-			if modelsStr == "" {
-				modelsStr = "(auto-discover)"
+			id := ""
+			if len(args) > 0 {
+				id = args[0]
 			}
-			fmt.Printf("    [%s] %s (%s)%s\n", eng.Type(), eng.ID(), cfg.Endpoint, zeroCostTag)
-			fmt.Printf("        Models: %s\n", modelsStr)
-		}
-		fmt.Printf("\n[+] Dynamic Cascade Failover Priority Order:\n")
-		for i, id := range cascade {
-			fmt.Printf("    %d. %s\n", i+1, id)
-		}
+			return runSpikeProbe(cmd.Context(), inference.DefaultManager(), id, out)
+		},
+	}
+	cmd.Flags().StringVar(&endpoint, "endpoint", "", "Probe an Ollama-compatible endpoint URL instead of a registered engine")
+	return cmd
+}
 
-	case "probe":
-		targetID := ""
-		if len(args) > 1 {
-			targetID = args[1]
-		}
-
-		if targetID != "" {
-			eng, err := mgr.GetEngine(targetID)
-			if err != nil {
-				fmt.Printf("[-] Unknown inference engine: %s\n", targetID)
-				return
-			}
-			fmt.Printf("[+] Probing engine '%s' (%s at %s)...\n", eng.ID(), eng.Type(), eng.Config().Endpoint)
-			h := eng.Health(ctx)
-			printEngineHealth(h)
-			return
-		}
-
-		fmt.Println("[+] Probing all registered inference engines (< 2s concurrent health check)...")
-		results := mgr.PollHealthAll(ctx)
-		for _, h := range results {
-			printEngineHealth(h)
-		}
-
-	case "switch":
-		if len(args) < 2 {
-			fmt.Println("[-] Usage: dendrite dev inference switch <engine_id>")
-			return
-		}
-		primaryID := args[1]
-		if _, err := mgr.GetEngine(primaryID); err != nil {
-			fmt.Printf("[-] Unknown engine '%s': %v\n", primaryID, err)
-			return
-		}
-		// Move primaryID to the front of the cascade
-		current := mgr.GetCascadeOrder()
-		newOrder := []string{primaryID}
-		for _, id := range current {
-			if id != primaryID {
-				newOrder = append(newOrder, id)
-			}
-		}
-		_ = mgr.SetCascadeOrder(newOrder)
-		fmt.Printf("[✓] Successfully updated cascade order. Primary inference engine is now: %s\n", primaryID)
-		fmt.Printf("    New cascade: %s\n", strings.Join(newOrder, " -> "))
-
-	case "render":
-		yamlBytes, err := gateway.RenderForInferenceManager(mgr)
+func runSpikeProbe(ctx context.Context, mgr *inference.Manager, id string, out io.Writer) error {
+	var results []inference.EngineHealth
+	if id != "" {
+		eng, err := mgr.GetEngine(id)
 		if err != nil {
-			fmt.Printf("[-] Failed to render LiteLLM configuration: %v\n", err)
-			return
+			return usageErrorf("unknown inference engine %q", id)
 		}
-		fmt.Printf("[+] Rendered LiteLLM Configuration for Multi-Engine Inference:\n\n%s\n", string(yamlBytes))
-
-	case "migrate", "move":
-		if len(args) < 2 {
-			fmt.Println("[-] Usage: dendrite dev inference migrate <model_name> [--from ollama] [--to oxillama] [--delete-source] [--dry-run]")
-			return
+		if !globals.JSON {
+			fmt.Fprintf(out, "[+] Probing engine '%s' (%s at %s)...\n", eng.ID(), eng.Type(), eng.Config().Endpoint)
 		}
-		modelName := args[1]
-		fromEngine := "ollama"
-		toEngine := "oxillama"
-		deleteSource := false
-		dryRun := false
-
-		for i := 2; i < len(args); i++ {
-			switch args[i] {
-			case "--from":
-				if i+1 < len(args) {
-					fromEngine = args[i+1]
-					i++
-				}
-			case "--to":
-				if i+1 < len(args) {
-					toEngine = args[i+1]
-					i++
-				}
-			case "--delete-source", "--rm-source", "--evict":
-				deleteSource = true
-			case "--dry-run":
-				dryRun = true
-			}
+		results = []inference.EngineHealth{eng.Health(ctx)}
+	} else {
+		if !globals.JSON {
+			fmt.Fprintln(out, "[+] Probing all registered inference engines (< 2s concurrent health check)...")
 		}
-
-		fmt.Printf("[+] Initiating model migration for '%s' (%s -> %s)...\n", modelName, fromEngine, toEngine)
-		migrator := inference.NewModelMigrator("", "", nil)
-		res, err := migrator.Migrate(ctx, inference.ModelMigrationOptions{
-			ModelName:    modelName,
-			SourceEngine: fromEngine,
-			TargetEngine: toEngine,
-			DeleteSource: deleteSource,
-			DryRun:       dryRun,
-		})
-		if err != nil {
-			fmt.Printf("[-] Migration failed: %v\n", err)
-			return
+		all := mgr.PollHealthAll(ctx)
+		for _, id := range slices.Sorted(maps.Keys(all)) {
+			results = append(results, all[id])
 		}
+	}
+	if globals.JSON {
+		return writeJSON(out, results)
+	}
+	for _, h := range results {
+		printEngineHealth(out, h)
+	}
+	return nil
+}
 
-		fmt.Printf("[✓] Successfully migrated model '%s' to %s in %v\n", res.ModelName, res.TargetEngine, res.Duration)
-		fmt.Printf("    * Blobs Migrated:     %d\n", res.BlobsMigrated)
-		fmt.Printf("    * Total Data Size:    %.2f GB (%d bytes)\n", float64(res.TotalBytesMigrated)/(1024*1024*1024), res.TotalBytesMigrated)
-		fmt.Printf("    * Target Manifest:    %s\n", res.TargetManifest)
-		if res.SourceEvicted {
-			fmt.Printf("    * Source Evicted:     YES (Reclaimed %.2f GB memory/disk from %s)\n", float64(res.BytesFreed)/(1024*1024*1024), res.SourceEngine)
-		} else if deleteSource {
-			fmt.Printf("    * Source Evicted:     NO (%s)\n", res.Error)
-		} else {
-			fmt.Println("    * Source Retained:    (pass --delete-source to evict from source and reclaim memory)")
-		}
+func runSpikeProbeEndpoint(ctx context.Context, endpoint string, out io.Writer) error {
+	fmt.Fprintf(out, "[+] Probing Ollama at %s...\n", endpoint)
+	status, models, err := devtool.ProbeOllama(ctx, endpoint)
+	if err != nil {
+		return fmt.Errorf("probe %s: %w", endpoint, err)
+	}
+	fmt.Fprintf(out, "[✓] Status: Reachable (Latency: %v)\n", status.Latency)
+	fmt.Fprintf(out, "[✓] Models (%d):\n", len(models))
+	for _, m := range models {
+		fmt.Fprintf(out, "    - %s\n", m.Name)
+	}
+	return nil
+}
 
-	case "serve", "start":
-		port := 8080
-		daemonMode := false
-		for i := 1; i < len(args); i++ {
-			if args[i] == "--port" && i+1 < len(args) {
-				if p, err := strconv.Atoi(args[i+1]); err == nil {
-					port = p
-				}
-				i++
-			} else if args[i] == "--daemon" || args[i] == "-d" {
-				daemonMode = true
-			}
-		}
-
-		srv := inference.NewOxiLLaMaServer(inference.OxiLLaMaServerConfig{
-			Host: "127.0.0.1",
-			Port: port,
-		})
-
-		if err := srv.Start(); err != nil {
-			fmt.Printf("[-] Failed to start OxiLLaMa server: %v\n", err)
-			return
-		}
-
-		fmt.Printf("[✓] OxiLLaMa Pure-Rust OpenAI Server listening at http://127.0.0.1:%d\n", port)
-		fmt.Printf("    * Models Endpoint:     http://127.0.0.1:%d/v1/models\n", port)
-		fmt.Printf("    * Chat Endpoint:       http://127.0.0.1:%d/v1/chat/completions\n", port)
-		fmt.Printf("    * Storage Directory:   ~/.oxillama/models\n")
-
-		if daemonMode {
-			fmt.Println("[+] Running in daemon mode. Press Ctrl+C to terminate.")
-			select {}
-		}
-
-	case "stop", "kill":
-		port := 8080
-		for i := 1; i < len(args); i++ {
-			if args[i] == "--port" && i+1 < len(args) {
-				if p, err := strconv.Atoi(args[i+1]); err == nil {
-					port = p
-				}
-				i++
-			}
-		}
-
-		fmt.Printf("[+] Stopping OxiLLaMa server on port %d...\n", port)
-		lsofCmd := exec.CommandContext(ctx, "lsof", "-ti", fmt.Sprintf(":%d", port))
-		out, _ := lsofCmd.Output()
-		pids := strings.Fields(string(out))
-		stopped := 0
-		for _, pidStr := range pids {
-			if pid, pErr := strconv.Atoi(pidStr); pErr == nil && pid > 0 {
-				if proc, fErr := os.FindProcess(pid); fErr == nil {
-					_ = proc.Kill()
-					stopped++
-				}
-			}
-		}
-		_ = exec.CommandContext(ctx, "pkill", "-f", "oxillama serve").Run()
-
-		if stopped > 0 {
-			fmt.Printf("[✓] Successfully stopped OxiLLaMa server (terminated %d process(es) on port %d)\n", stopped, port)
-		} else {
-			fmt.Printf("[✓] OxiLLaMa server is not currently running on port %d.\n", port)
-		}
-
-	case "zero-cost", "zerocost", "models":
-		handleZeroCostCommand(args[1:])
-
-	default:
-		printInferenceUsage()
+func newSpikeSwitchCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "switch <engine-id>",
+		Short: "Move an engine to the front of the failover cascade",
+		Args:  exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSpikeSwitch(inference.DefaultManager(), args[0], cmd.OutOrStdout())
+		},
 	}
 }
 
-func handleZeroCostCommand(args []string) {
-	reg := inference.GetZeroCostRegistry()
-
-	if len(args) == 0 || args[0] == "list" || args[0] == "ls" {
-		outputJSON := false
-		for _, a := range args {
-			if a == "--json" {
-				outputJSON = true
-			}
-		}
-
-		details := reg.GetDetails()
-
-		if outputJSON {
-			data, err := json.MarshalIndent(details, "", "  ")
-			if err != nil {
-				fmt.Printf("[-] Failed to serialize JSON: %v\n", err)
-				return
-			}
-			fmt.Println(string(data))
-			return
-		}
-
-		fmt.Printf("[+] Configured Zero-Cost & Self-Hosted Models / Prefixes (%d active):\n", details.Total)
-		fmt.Println("    --------------------------------------------------------------------------------")
-		fmt.Printf("    %-32s %-10s %-12s %s\n", "PATTERN", "KIND", "SOURCE", "STATUS")
-		fmt.Println("    --------------------------------------------------------------------------------")
-
-		for _, m := range details.Models {
-			st := "Active"
-			if !m.Active {
-				st = "Overridden / Disabled"
-			}
-			fmt.Printf("    %-32s %-10s %-12s %s\n", m.Pattern, "Exact", m.Source, st)
-		}
-		for _, p := range details.Prefixes {
-			st := "Active"
-			if !p.Active {
-				st = "Overridden / Disabled"
-			}
-			fmt.Printf("    %-32s %-10s %-12s %s\n", p.Pattern, "Prefix", p.Source, st)
-		}
-		fmt.Println("    --------------------------------------------------------------------------------")
-		fmt.Println("    Commands:")
-		fmt.Println("      add <model|prefix/> [--prefix] [--env]  Register a new zero-cost model/prefix")
-		fmt.Println("      remove <model|prefix/> [--env]          Unregister a model/prefix")
-		fmt.Println("      test <model_name>                       Check zero-cost qualification for model")
-		fmt.Println("      reset                                   Restore factory defaults and .env rules")
-		return
+func runSpikeSwitch(mgr *inference.Manager, primaryID string, out io.Writer) error {
+	if _, err := mgr.GetEngine(primaryID); err != nil {
+		return usageErrorf("unknown inference engine %q", primaryID)
 	}
-
-	sub := strings.ToLower(args[0])
-
-	switch sub {
-	case "add":
-		if len(args) < 2 {
-			fmt.Println("[-] Usage: dendrite dev inference zero-cost add <model_or_prefix> [--prefix] [--env]")
-			return
+	newOrder := []string{primaryID}
+	for _, id := range mgr.GetCascadeOrder() {
+		if id != primaryID {
+			newOrder = append(newOrder, id)
 		}
-		target := args[1]
-		forcePrefix := false
-		syncEnv := false
+	}
+	if err := mgr.SetCascadeOrder(newOrder); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "[✓] Successfully updated cascade order. Primary inference engine is now: %s\n", primaryID)
+	fmt.Fprintf(out, "    New cascade: %s\n", strings.Join(newOrder, " -> "))
+	return nil
+}
 
-		for _, a := range args[2:] {
-			if a == "--prefix" || a == "-p" {
-				forcePrefix = true
-			} else if a == "--env" || a == "-e" {
-				syncEnv = true
+func newSpikeRenderCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "render",
+		Short: "Render the registered engines' model routes as LiteLLM config",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			yamlBytes, err := gateway.RenderForInferenceManager(inference.DefaultManager())
+			if err != nil {
+				return fmt.Errorf("render LiteLLM configuration: %w", err)
 			}
-		}
-
-		var ok, isPrefix bool
-		if forcePrefix {
-			ok = reg.AddPrefix(target)
-			isPrefix = true
-		} else {
-			ok, isPrefix = reg.Add(target)
-		}
-
-		if !ok {
-			fmt.Printf("[-] Failed to register: invalid pattern '%s'\n", target)
-			return
-		}
-
-		_ = reg.SaveToFile(statedir.Resolve(inference.DefaultZeroCostConfigFile))
-
-		kind := "exact model"
-		if isPrefix {
-			kind = "prefix rule"
-		}
-		fmt.Printf("[✓] Registered '%s' as zero-cost %s (editable on the go)\n", target, kind)
-		fmt.Printf("    Saved to dynamic config: %s\n", statedir.Resolve(inference.DefaultZeroCostConfigFile))
-
-		// Check if .env exists and sync if requested or default .env found
-		envPath := ".env"
-		if _, err := os.Stat(envPath); err == nil || syncEnv {
-			if err := reg.SaveToEnvFile(envPath); err == nil {
-				fmt.Printf("    Synchronized with environment file: %s\n", envPath)
-			}
-		}
-
-	case "remove", "rm", "delete":
-		if len(args) < 2 {
-			fmt.Println("[-] Usage: dendrite dev inference zero-cost remove <model_or_prefix> [--env]")
-			return
-		}
-		target := args[1]
-		syncEnv := false
-		for _, a := range args[2:] {
-			if a == "--env" || a == "-e" {
-				syncEnv = true
-			}
-		}
-
-		ok, isPrefix := reg.Remove(target)
-		if !ok {
-			fmt.Printf("[-] Failed to remove: '%s'\n", target)
-			return
-		}
-
-		_ = reg.SaveToFile(statedir.Resolve(inference.DefaultZeroCostConfigFile))
-
-		kind := "exact model"
-		if isPrefix {
-			kind = "prefix rule"
-		}
-		fmt.Printf("[✓] Removed '%s' from zero-cost %s\n", target, kind)
-		fmt.Printf("    Updated dynamic config: %s\n", statedir.Resolve(inference.DefaultZeroCostConfigFile))
-
-		envPath := ".env"
-		if _, err := os.Stat(envPath); err == nil || syncEnv {
-			if err := reg.SaveToEnvFile(envPath); err == nil {
-				fmt.Printf("    Synchronized with environment file: %s\n", envPath)
-			}
-		}
-
-	case "test", "check":
-		if len(args) < 2 {
-			fmt.Println("[-] Usage: dendrite dev inference zero-cost test <model_name>")
-			return
-		}
-		target := args[1]
-		isZeroCost, reason := reg.Test(target)
-		if isZeroCost {
-			fmt.Printf("[✓] Zero-Cost: TRUE\n    Reason: %s\n", reason)
-		} else {
-			fmt.Printf("[-] Zero-Cost: FALSE\n    Reason: %s\n", reason)
-		}
-
-	case "reset":
-		reg.Reset()
-		_ = os.Remove(statedir.Resolve(inference.DefaultZeroCostConfigFile))
-		reg.AutoLoad()
-		fmt.Println("[✓] Successfully reset zero-cost models to defaults + active .env configuration.")
-
-	default:
-		fmt.Printf("[-] Unknown zero-cost command: %s. Use list, add, remove, test, or reset.\n", sub)
+			fmt.Fprintf(cmd.OutOrStdout(), "[+] Rendered LiteLLM Configuration for Multi-Engine Inference:\n\n%s\n", string(yamlBytes))
+			return nil
+		},
 	}
 }
 
-func printEngineHealth(h inference.EngineHealth) {
+func newSpikeMigrateCmd() *cobra.Command {
+	opts := inference.ModelMigrationOptions{SourceEngine: "ollama", TargetEngine: "oxillama"}
+	cmd := &cobra.Command{
+		Use:     "migrate <model>",
+		Aliases: []string{"move"},
+		Short:   "Copy a model's blobs between engines (default Ollama to OxiLLaMa), optionally evicting the source",
+		Args:    exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts.ModelName = args[0]
+			return runSpikeMigrate(cmd.Context(), opts, cmd.OutOrStdout())
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&opts.SourceEngine, "from", opts.SourceEngine, "Source engine")
+	f.StringVar(&opts.TargetEngine, "to", opts.TargetEngine, "Target engine")
+	f.BoolVar(&opts.DeleteSource, "delete-source", false, "Evict the model from the source after copying")
+	addDryRunFlag(cmd, &opts.DryRun)
+	return cmd
+}
+
+func runSpikeMigrate(ctx context.Context, opts inference.ModelMigrationOptions, out io.Writer) error {
+	fmt.Fprintf(out, "[+] Initiating model migration for '%s' (%s -> %s)...\n", opts.ModelName, opts.SourceEngine, opts.TargetEngine)
+	res, err := inference.NewModelMigrator("", "", nil).Migrate(ctx, opts)
+	if err != nil {
+		return fmt.Errorf("migration: %w", err)
+	}
+	fmt.Fprintf(out, "[✓] Successfully migrated model '%s' to %s in %v\n", res.ModelName, res.TargetEngine, res.Duration)
+	fmt.Fprintf(out, "    * Blobs Migrated:     %d\n", res.BlobsMigrated)
+	fmt.Fprintf(out, "    * Total Data Size:    %.2f GB (%d bytes)\n", float64(res.TotalBytesMigrated)/(1024*1024*1024), res.TotalBytesMigrated)
+	fmt.Fprintf(out, "    * Target Manifest:    %s\n", res.TargetManifest)
+	switch {
+	case res.SourceEvicted:
+		fmt.Fprintf(out, "    * Source Evicted:     YES (Reclaimed %.2f GB memory/disk from %s)\n", float64(res.BytesFreed)/(1024*1024*1024), res.SourceEngine)
+	case opts.DeleteSource:
+		fmt.Fprintf(out, "    * Source Evicted:     NO (%s)\n", res.Error)
+	default:
+		fmt.Fprintln(out, "    * Source Retained:    (pass --delete-source to evict from source and reclaim memory)")
+	}
+	return nil
+}
+
+func addPortFlag(cmd *cobra.Command, p *int) {
+	cmd.Flags().IntVar(p, "port", 8080, "OxiLLaMa server port")
+}
+
+func newSpikeServeCmd() *cobra.Command {
+	var port int
+	cmd := &cobra.Command{
+		Use:     "serve",
+		Aliases: []string{"start"},
+		Short:   "Run the OxiLLaMa OpenAI-compatible server in the foreground (Ctrl+C stops it)",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			return runSpikeServe(ctx, port, cmd.OutOrStdout())
+		},
+	}
+	addPortFlag(cmd, &port)
+	return cmd
+}
+
+func runSpikeServe(ctx context.Context, port int, out io.Writer) error {
+	srv := inference.NewOxiLLaMaServer(inference.OxiLLaMaServerConfig{Host: "127.0.0.1", Port: port})
+	if err := srv.Start(); err != nil {
+		return fmt.Errorf("start OxiLLaMa server: %w", err)
+	}
+	defer func() { _ = srv.Stop(context.Background()) }()
+	fmt.Fprintf(out, "[✓] OxiLLaMa Pure-Rust OpenAI Server listening at http://127.0.0.1:%d\n", port)
+	fmt.Fprintf(out, "    * Models Endpoint:     http://127.0.0.1:%d/v1/models\n", port)
+	fmt.Fprintf(out, "    * Chat Endpoint:       http://127.0.0.1:%d/v1/chat/completions\n", port)
+	fmt.Fprintln(out, "    * Storage Directory:   ~/.oxillama/models")
+	fmt.Fprintln(out, "[+] Press Ctrl+C to stop.")
+	<-ctx.Done()
+	return nil
+}
+
+func newSpikeStopCmd() *cobra.Command {
+	var port int
+	cmd := &cobra.Command{
+		Use:     "stop",
+		Aliases: []string{"kill"},
+		Short:   "Stop a running OxiLLaMa server and free its port",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSpikeStop(cmd.Context(), port, cmd.OutOrStdout())
+		},
+	}
+	addPortFlag(cmd, &port)
+	return cmd
+}
+
+func runSpikeStop(ctx context.Context, port int, out io.Writer) error {
+	fmt.Fprintf(out, "[+] Stopping OxiLLaMa server on port %d...\n", port)
+	pidsOut, _ := exec.CommandContext(ctx, "lsof", "-ti", fmt.Sprintf(":%d", port)).Output()
+	stopped := 0
+	for _, pidStr := range strings.Fields(string(pidsOut)) {
+		if pid, err := strconv.Atoi(pidStr); err == nil && pid > 0 {
+			if proc, err := os.FindProcess(pid); err == nil && proc.Kill() == nil {
+				stopped++
+			}
+		}
+	}
+	_ = exec.CommandContext(ctx, "pkill", "-f", "oxillama serve").Run()
+	if stopped > 0 {
+		fmt.Fprintf(out, "[✓] Successfully stopped OxiLLaMa server (terminated %d process(es) on port %d)\n", stopped, port)
+	} else {
+		fmt.Fprintf(out, "[✓] OxiLLaMa server is not currently running on port %d.\n", port)
+	}
+	return nil
+}
+
+func newSpikeZeroCostCmd() *cobra.Command {
+	cmd := newGroupCmd("zero-cost", "Manage the zero-cost (self-hosted) model and prefix rules", "", "zerocost")
+	cmd.Example = "dendrite spike zero-cost list\n" +
+		"dendrite spike zero-cost add local/ --prefix\n" +
+		"dendrite spike zero-cost test qwen2.5-coder:14b"
+
+	list := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List zero-cost models and prefixes",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runZeroCostList(inference.GetZeroCostRegistry(), cmd.OutOrStdout())
+		},
+	}
+
+	var forcePrefix, addEnv bool
+	add := &cobra.Command{
+		Use:   "add <model|prefix/>",
+		Short: "Register a zero-cost model or prefix rule",
+		Args:  exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runZeroCostAdd(inference.GetZeroCostRegistry(), args[0], forcePrefix, addEnv, cmd.OutOrStdout())
+		},
+	}
+	add.Flags().BoolVarP(&forcePrefix, "prefix", "p", false, "Treat the pattern as a prefix rule")
+	add.Flags().BoolVarP(&addEnv, "env", "e", false, "Also write the rules to .env (always done when .env exists)")
+
+	var removeEnv bool
+	remove := &cobra.Command{
+		Use:     "remove <model|prefix/>",
+		Aliases: []string{"rm", "delete"},
+		Short:   "Unregister a zero-cost model or prefix rule",
+		Args:    exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runZeroCostRemove(inference.GetZeroCostRegistry(), args[0], removeEnv, cmd.OutOrStdout())
+		},
+	}
+	remove.Flags().BoolVarP(&removeEnv, "env", "e", false, "Also write the rules to .env (always done when .env exists)")
+
+	test := &cobra.Command{
+		Use:     "test <model>",
+		Aliases: []string{"check"},
+		Short:   "Check whether a model qualifies as zero-cost",
+		Args:    exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ok, reason := inference.GetZeroCostRegistry().Test(args[0])
+			if globals.JSON {
+				return writeJSON(cmd.OutOrStdout(), map[string]any{"model": args[0], "zero_cost": ok, "reason": reason})
+			}
+			mark := "[-]"
+			if ok {
+				mark = "[✓]"
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s Zero-Cost: %s\n    Reason: %s\n", mark, strings.ToUpper(strconv.FormatBool(ok)), reason)
+			return nil
+		},
+	}
+
+	reset := &cobra.Command{
+		Use:   "reset",
+		Short: "Restore the default rules plus the active .env configuration",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			reg := inference.GetZeroCostRegistry()
+			reg.Reset()
+			if err := os.Remove(statedir.Resolve(inference.DefaultZeroCostConfigFile)); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("remove zero-cost config: %w", err)
+			}
+			reg.AutoLoad()
+			fmt.Fprintln(cmd.OutOrStdout(), "[✓] Successfully reset zero-cost models to defaults + active .env configuration.")
+			return nil
+		},
+	}
+
+	cmd.AddCommand(list, add, remove, test, reset)
+	return cmd
+}
+
+func runZeroCostList(reg *inference.ZeroCostRegistry, out io.Writer) error {
+	details := reg.GetDetails()
+	if globals.JSON {
+		return writeJSON(out, details)
+	}
+	rule := "    --------------------------------------------------------------------------------"
+	fmt.Fprintf(out, "[+] Configured Zero-Cost & Self-Hosted Models / Prefixes (%d active):\n", details.Total)
+	fmt.Fprintln(out, rule)
+	fmt.Fprintf(out, "    %-32s %-10s %-12s %s\n", "PATTERN", "KIND", "SOURCE", "STATUS")
+	fmt.Fprintln(out, rule)
+	status := func(active bool) string {
+		if active {
+			return "Active"
+		}
+		return "Overridden / Disabled"
+	}
+	for _, m := range details.Models {
+		fmt.Fprintf(out, "    %-32s %-10s %-12s %s\n", m.Pattern, "Exact", m.Source, status(m.Active))
+	}
+	for _, p := range details.Prefixes {
+		fmt.Fprintf(out, "    %-32s %-10s %-12s %s\n", p.Pattern, "Prefix", p.Source, status(p.Active))
+	}
+	fmt.Fprintln(out, rule)
+	return nil
+}
+
+// saveZeroCost persists the registry to the state dir, and to .env when it exists or syncEnv is set.
+func saveZeroCost(reg *inference.ZeroCostRegistry, syncEnv bool, out io.Writer) error {
+	path := statedir.Resolve(inference.DefaultZeroCostConfigFile)
+	if err := reg.SaveToFile(path); err != nil {
+		return fmt.Errorf("save zero-cost config: %w", err)
+	}
+	fmt.Fprintf(out, "    Saved to dynamic config: %s\n", path)
+	envPath := ".env"
+	if _, err := os.Stat(envPath); err == nil || syncEnv {
+		if err := reg.SaveToEnvFile(envPath); err != nil {
+			return fmt.Errorf("write %s: %w", envPath, err)
+		}
+		fmt.Fprintf(out, "    Synchronized with environment file: %s\n", envPath)
+	}
+	return nil
+}
+
+func zeroCostKind(isPrefix bool) string {
+	if isPrefix {
+		return "prefix rule"
+	}
+	return "exact model"
+}
+
+func runZeroCostAdd(reg *inference.ZeroCostRegistry, target string, forcePrefix, syncEnv bool, out io.Writer) error {
+	var ok, isPrefix bool
+	if forcePrefix {
+		ok, isPrefix = reg.AddPrefix(target), true
+	} else {
+		ok, isPrefix = reg.Add(target)
+	}
+	if !ok {
+		return usageErrorf("invalid zero-cost pattern %q", target)
+	}
+	fmt.Fprintf(out, "[✓] Registered '%s' as zero-cost %s\n", target, zeroCostKind(isPrefix))
+	return saveZeroCost(reg, syncEnv, out)
+}
+
+// runZeroCostRemove disables a pattern; removing a built-in default records an override.
+func runZeroCostRemove(reg *inference.ZeroCostRegistry, target string, syncEnv bool, out io.Writer) error {
+	ok, isPrefix := reg.Remove(target)
+	if !ok {
+		return usageErrorf("invalid zero-cost pattern %q", target)
+	}
+	fmt.Fprintf(out, "[✓] Removed '%s' from zero-cost %s\n", target, zeroCostKind(isPrefix))
+	return saveZeroCost(reg, syncEnv, out)
+}
+
+func printEngineHealth(out io.Writer, h inference.EngineHealth) {
 	status := "Offline"
 	if h.Reachable {
 		status = "Online"
@@ -399,26 +481,12 @@ func printEngineHealth(h inference.EngineHealth) {
 	if h.ZeroCost {
 		costInfo = "zero-cost"
 	}
-
-	fmt.Printf("    * [%s] Engine: %-15s Type: %-18s Status: %-7s Latency: %-8v Cost: %s\n",
-		status, h.EngineID, h.Type, status, h.Latency, costInfo)
+	fmt.Fprintf(out, "    * [%s] Engine: %-15s Type: %-18s Latency: %-8v Cost: %s\n",
+		status, h.EngineID, h.Type, h.Latency, costInfo)
 	if len(h.Models) > 0 {
-		fmt.Printf("        Models: %s\n", strings.Join(h.Models, ", "))
+		fmt.Fprintf(out, "        Models: %s\n", strings.Join(h.Models, ", "))
 	}
 	if h.Error != "" {
-		fmt.Printf("        Error:  %s\n", h.Error)
+		fmt.Fprintf(out, "        Error:  %s\n", h.Error)
 	}
-}
-
-func printInferenceUsage() {
-	fmt.Println("Usage: dendrite dev inference <list|probe|switch|render|migrate|zero-cost> [args...]")
-	fmt.Println("\nCommands:")
-	fmt.Println("  list                          List registered engines, models, and fallback cascade order")
-	fmt.Println("  probe [engine_id]             Check reachability, latency, and available models (<2s)")
-	fmt.Println("  switch <engine_id>            Set primary inference engine at front of fallback cascade")
-	fmt.Println("  render                        Render upstream model routes into litellm_config.yaml")
-	fmt.Println("  serve [--port 8080] [-d]      Start local OxiLLaMa OpenAI-compatible HTTP server")
-	fmt.Println("  stop [--port 8080]            Stop running OxiLLaMa server and free port")
-	fmt.Println("  migrate <model> [flags]       Migrate model from Ollama to OxiLLaMa and evict source blobs")
-	fmt.Println("  zero-cost <list|add|rm|test>  Manage and test zero-cost self-hosted models and prefixes")
 }

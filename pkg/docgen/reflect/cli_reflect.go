@@ -443,34 +443,6 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 				"dendrite dev audit-prompt \"Explain Dendrite architecture\"",
 			},
 		},
-		"gateway": {
-			Subcommands: []SubcommandDoc{
-				{Name: "update", Description: "Dynamically discover live inference engines and update LiteLLM routing table"},
-				{Name: "schedule", Description: "Run dynamic routing table updater on daily background schedule"},
-			},
-			Flags: []FlagDoc{
-				{Name: "--file", Description: "Target litellm_config.yaml path", Default: "stacks/litellm_config.yaml"},
-				{Name: "--dry-run", Description: "Simulate update without modifying disk"},
-			},
-			Examples: []string{
-				"dendrite gateway update",
-				"dendrite gateway schedule",
-			},
-		},
-		"topology": {
-			Subcommands: []SubcommandDoc{
-				{Name: "advisor", Description: "Run dynamic service placement advisor across compute nodes"},
-				{Name: "inspect", Description: "Inspect and validate topology scenario placements"},
-			},
-			Flags: []FlagDoc{
-				{Name: "--nodes", Description: "Comma-separated node definitions (e.g. 'local=localhost,worker=10.0.0.2')"},
-				{Name: "--json", Description: "Output placement plan in JSON format"},
-			},
-			Examples: []string{
-				"dendrite topology advisor",
-				"dendrite topology inspect local-hybrid",
-			},
-		},
 		"jetbrains": {
 			Subcommands: []SubcommandDoc{
 				{Name: "probe", Description: "Discover IDE MCP capabilities and tools"},
@@ -490,30 +462,6 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 				"dendrite jetbrains symbols \"Registry\"",
 			},
 		},
-		"inference": {
-			Subcommands: []SubcommandDoc{
-				{Name: "list", Description: "List registered engines, endpoints, and failover cascade order"},
-				{Name: "probe", Description: "Probe inference engines for reachability, latency, and loaded models"},
-				{Name: "switch", Description: "Set primary inference engine"},
-				{Name: "render", Description: "Render engine configuration"},
-			},
-			Examples: []string{
-				"dendrite inference list",
-				"dendrite inference probe ollama",
-			},
-		},
-		"mcp": {
-			Subcommands: []SubcommandDoc{
-				{Name: "serve", Description: "Launch Dendrite MCP server listening on stdio"},
-				{Name: "tools", Description: "List all registered Dendrite MCP tools"},
-				{Name: "call", Description: "Invoke an MCP tool directly with JSON arguments"},
-			},
-			Examples: []string{
-				"dendrite mcp serve",
-				"dendrite mcp tools",
-				"dendrite mcp call dendrite_env_status",
-			},
-		},
 		"dist": {
 			Subcommands: []SubcommandDoc{
 				{Name: "spawn", Description: "Spawn distributed workspace node"},
@@ -521,18 +469,6 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 				{Name: "help", Description: "Display distributed codebase command guidance"},
 			},
 			Examples: []string{"dendrite dist help"},
-		},
-		"bench": {
-			Subcommands: []SubcommandDoc{
-				{Name: "inference", Description: "Benchmark Time-to-First-Token and tokens/sec generation velocity"},
-				{Name: "gateway", Description: "Stress-test LiteLLM gateway with cascade fault injection"},
-				{Name: "matrix", Description: "Multi-engine comparative benchmark matrix"},
-				{Name: "stress", Description: "Concurrency stress test against sliding window budget limiter"},
-			},
-			Examples: []string{
-				"dendrite bench inference",
-				"dendrite bench gateway",
-			},
 		},
 		"rea": {
 			Subcommands: []SubcommandDoc{

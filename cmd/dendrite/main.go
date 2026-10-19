@@ -92,34 +92,6 @@ func legacyCommands() []*cobra.Command {
 			},
 		}),
 		legacyCmd(legacySpec{
-			Name:        "cleft",
-			Aliases:     []string{"gateway", "synaptic-cleft", "gate"},
-			Category:    "Synaptic Cleft & Gating",
-			Description: "LiteLLM token gateway rendering, dynamic routing updater & scheduler",
-			Run: func(ctx context.Context, args []string) error {
-				if len(args) < 1 {
-					handleGatewayCommand(ctx, []string{"update"})
-					return nil
-				}
-				handleGatewayCommand(ctx, args)
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "axon",
-			Aliases:     []string{"topology", "axon-pathway", "top"},
-			Category:    "Axon & Myelin Sheath",
-			Description: "Multi-node placement models and hardware service router",
-			Run: func(ctx context.Context, args []string) error {
-				if len(args) < 1 {
-					runTopologyAdvisor(ctx, nil)
-					return nil
-				}
-				handleTopologyCommand(ctx, args[0], args[1:])
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
 			Name:        "bridge",
 			Aliases:     []string{"jetbrains", "neuromuscular-bridge", "jb"},
 			Category:    "Synaptic Cleft & Gating",
@@ -134,34 +106,6 @@ func legacyCommands() []*cobra.Command {
 			},
 		}),
 		legacyCmd(legacySpec{
-			Name:        "spike",
-			Aliases:     []string{"inference", "action-potential", "inf"},
-			Category:    "Synaptic Cleft & Gating",
-			Description: "Unified multi-provider inference engine gateway (Ollama, OxiLLaMa, vLLM, TGI)",
-			Run: func(ctx context.Context, args []string) error {
-				if len(args) < 1 {
-					handleInferenceCommand(ctx, []string{"list"})
-					return nil
-				}
-				handleInferenceCommand(ctx, args)
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "inter",
-			Aliases:     []string{"mcp", "interneuron-mcp"},
-			Category:    "Synaptic Cleft & Gating",
-			Description: "Model Context Protocol (MCP) server over stdio",
-			Run: func(ctx context.Context, args []string) error {
-				if len(args) < 1 {
-					handleMCPCommand(ctx, "serve", nil)
-					return nil
-				}
-				handleMCPCommand(ctx, args[0], args[1:])
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
 			Name:        "mesh",
 			Aliases:     []string{"dist", "distcodebase", "distributed", "neural-mesh", "syn-mesh"},
 			Category:    "Axon & Myelin Sheath",
@@ -172,20 +116,6 @@ func legacyCommands() []*cobra.Command {
 					return nil
 				}
 				handleDistCommand(ctx, args[0], args[1:])
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "velocity",
-			Aliases:     []string{"bench", "benchmark", "conduction-velocity", "bnch"},
-			Category:    "Axon & Myelin Sheath",
-			Description: "TTFT, TPS, and gateway resilience benchmarking suite",
-			Run: func(ctx context.Context, args []string) error {
-				if len(args) < 1 {
-					printBenchUsage()
-					return nil
-				}
-				handleBenchCommand(ctx, args[0], args[1:])
 				return nil
 			},
 		}),

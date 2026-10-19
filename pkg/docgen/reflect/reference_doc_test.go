@@ -623,10 +623,10 @@ func TestIntrospectCLIRoot_GlobalFlagsAndGroups(t *testing.T) {
 }
 
 func TestEnrichCommandDoc_MatchesAlias(t *testing.T) {
-	doc := CLICommandDoc{Name: "cleft", Aliases: []string{"gateway"}}
+	doc := CLICommandDoc{Name: "engram", Aliases: []string{"store"}}
 	enrichCommandDoc(&doc)
 	if len(doc.Subcommands) == 0 {
-		t.Fatalf("expected catalog subcommands via the gateway alias")
+		t.Fatalf("expected catalog subcommands via the store alias")
 	}
 }
 

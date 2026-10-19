@@ -3,144 +3,131 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"sort"
 	"strings"
 
 	"Dendrite/pkg/topology"
 	"Dendrite/pkg/topology/advisor"
-	"encoding/json"
+
+	"github.com/spf13/cobra"
 )
 
-func handleTopologyCommand(ctx context.Context, action string, args []string) {
-	switch action {
-	case "docusaurus", "site":
-		handleDocusaurusCommand(ctx, args)
-	case "advisor", "advise":
-		runTopologyAdvisor(ctx, args)
-	case "inspect", "show":
-		scenarioStr := "local-hybrid"
-		if len(args) > 0 {
-			scenarioStr = args[0]
-		}
-		runTopologyInspect(ctx, scenarioStr)
-	default:
-		if _, err := topology.ParseScenario(action); err == nil {
-			runTopologyInspect(ctx, action)
-			return
-		}
-		fmt.Printf("[-] Unknown topology action: %s\n", action)
-		fmt.Println("Usage: dendrite topology <advisor|inspect> [args...]")
+// newAxonCmd builds `dendrite axon` (alias topology): multi-node placement and topology inspection.
+func newAxonCmd() *cobra.Command {
+	cmd := newGroupCmd("axon", "Multi-node placement models and hardware service router", "axon",
+		"topology", "axon-pathway", "top")
+	cmd.Example = "dendrite axon advisor --nodes local=localhost,gpu=10.0.0.5\n" +
+		"dendrite axon advisor --json\n" +
+		"dendrite axon inspect distributed"
+
+	var nodes string
+	advisorCmd := &cobra.Command{
+		Use:     "advisor",
+		Aliases: []string{"advise"},
+		Short:   "Probe compute nodes and recommend a service placement",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAxonAdvisor(cmd.Context(), parseNodeTargets(nodes), cmd.OutOrStdout())
+		},
 	}
+	advisorCmd.Flags().StringVar(&nodes, "nodes", "local=localhost", "Comma-separated nodes as id=host (or just host)")
+
+	inspect := &cobra.Command{
+		Use:       "inspect [scenario]",
+		Aliases:   []string{"show"},
+		Short:     "Show stack placements and compose profiles for a scenario (default local-hybrid)",
+		Args:      maxArgs(1),
+		ValidArgs: scenarioNames(),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			sc, err := parseScenarioArg(args)
+			if err != nil {
+				return err
+			}
+			return runAxonInspect(sc, cmd.OutOrStdout())
+		},
+	}
+
+	cmd.AddCommand(advisorCmd, inspect)
+	return cmd
 }
 
-func runTopologyInspect(_ context.Context, scenarioStr string) {
-	sc, err := topology.ParseScenario(scenarioStr)
+func runAxonInspect(sc topology.Scenario, out io.Writer) error {
+	cfg, err := topology.NewTopologyConfig(sc, tailscaleEndpoints())
 	if err != nil {
-		fmt.Printf("[-] Invalid scenario: %v\n", err)
-		return
+		return fmt.Errorf("construct topology: %w", err)
 	}
-	cfg, err := topology.NewTopologyConfig(sc, topology.TailscaleEndpoints{
-		ControlPlane:   "100.84.12.10",
-		ExecutionPlane: "100.84.12.25",
-	})
-	if err != nil {
-		fmt.Printf("[-] Failed to construct topology: %v\n", err)
-		return
+	if globals.JSON {
+		return writeJSON(out, cfg)
 	}
-	fmt.Printf("[+] Active Scenario: %s\n", cfg.Scenario)
-	fmt.Println("[+] Stack Placements:")
-	for comp, node := range cfg.StackPlacement {
-		fmt.Printf("    - %-15s -> %s\n", comp, node)
+	fmt.Fprintf(out, "[+] Active Scenario: %s\n", cfg.Scenario)
+	fmt.Fprintln(out, "[+] Stack Placements:")
+	comps := make([]string, 0, len(cfg.StackPlacement))
+	for comp := range cfg.StackPlacement {
+		comps = append(comps, string(comp))
 	}
-	fmt.Println("[+] Node Compose Profiles:")
+	sort.Strings(comps)
+	for _, comp := range comps {
+		fmt.Fprintf(out, "    - %-15s -> %s\n", comp, cfg.StackPlacement[topology.StackComponent(comp)])
+	}
+	fmt.Fprintln(out, "[+] Node Compose Profiles:")
 	for _, node := range topology.AllComputeNodes() {
-		profiles := cfg.ActiveComposeProfiles(node)
-		if len(profiles) > 0 {
-			fmt.Printf("    - %-10s: %s\n", node, strings.Join(profiles, ", "))
+		if profiles := cfg.ActiveComposeProfiles(node); len(profiles) > 0 {
+			fmt.Fprintf(out, "    - %-10s: %s\n", node, strings.Join(profiles, ", "))
 		}
 	}
+	return nil
 }
 
-func runTopologyAdvisor(ctx context.Context, args []string) {
-	nodeArgs := "local=localhost"
-	outputJSON := false
-
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--nodes" && i+1 < len(args) {
-			nodeArgs = args[i+1]
-			i++
-		} else if args[i] == "--json" {
-			outputJSON = true
-		}
+func runAxonAdvisor(ctx context.Context, targets []advisor.NodeTarget, out io.Writer) error {
+	// In JSON mode stdout carries only the plan.
+	progress := out
+	if globals.JSON {
+		progress = io.Discard
 	}
-
-	targets := parseNodeTargets(nodeArgs)
-	fmt.Printf("[+] Probing %d compute node(s) for hardware metrics...\n", len(targets))
-	probe := advisor.NewHardwareProbe(nil)
-	hardwareList, err := probe.ProbeAll(ctx, targets)
+	fmt.Fprintf(progress, "[+] Probing %d compute node(s) for hardware metrics...\n", len(targets))
+	hardwareList, err := advisor.NewHardwareProbe(nil).ProbeAll(ctx, targets)
 	if err != nil {
-		fmt.Printf("[-] Failed to probe nodes: %v\n", err)
-		return
+		return fmt.Errorf("probe nodes: %w", err)
 	}
 
-	fmt.Printf("[✓] Discovered %d compute node(s):\n", len(hardwareList))
+	fmt.Fprintf(progress, "[✓] Discovered %d compute node(s):\n", len(hardwareList))
 	for _, hw := range hardwareList {
 		gpuInfo := "None"
 		if hw.HasGPU {
 			gpuInfo = fmt.Sprintf("%s (%d MB VRAM)", hw.GPUType, hw.VRAMMB)
 		}
-		fmt.Printf("    - %-12s: %s/%s, %d CPU cores, %d MB RAM (%d MB free), %d GB disk, GPU: %s\n",
+		fmt.Fprintf(progress, "    - %-12s: %s/%s, %d CPU cores, %d MB RAM (%d MB free), %d GB disk, GPU: %s\n",
 			hw.NodeID, hw.OS, hw.Arch, hw.CPUCores, hw.TotalRAMMB, hw.FreeRAMMB, hw.DiskFreeGB, gpuInfo)
 	}
 
-	adv := advisor.NewPlacementAdvisor()
-	plan, err := adv.Advise(hardwareList, advisor.DefaultDendriteServices())
+	plan, err := advisor.NewPlacementAdvisor().Advise(hardwareList, advisor.DefaultDendriteServices())
 	if err != nil {
-		fmt.Printf("[-] Placement advisor failed: %v\n", err)
-		return
+		return fmt.Errorf("placement advisor: %w", err)
 	}
-
-	if outputJSON {
-		data, err := json.MarshalIndent(plan, "", "  ")
-		if err != nil {
-			fmt.Printf("[-] Failed to serialize JSON: %v\n", err)
-			return
-		}
-		fmt.Println(string(data))
-	} else {
-		fmt.Print(plan.FormatTable())
+	if globals.JSON {
+		return writeJSON(out, plan)
 	}
+	fmt.Fprint(out, plan.FormatTable())
+	return nil
 }
 
 func parseNodeTargets(nodeArgs string) []advisor.NodeTarget {
 	var targets []advisor.NodeTarget
-	tokens := strings.Split(nodeArgs, ",")
-	for _, tok := range tokens {
+	for _, tok := range strings.Split(nodeArgs, ",") {
 		tok = strings.TrimSpace(tok)
 		if tok == "" {
 			continue
 		}
-		var id, host string
-		if strings.Contains(tok, "=") {
-			parts := strings.SplitN(tok, "=", 2)
-			id = strings.TrimSpace(parts[0])
-			host = strings.TrimSpace(parts[1])
-		} else {
-			id = tok
-			host = tok
+		id, host := tok, tok
+		if before, after, ok := strings.Cut(tok, "="); ok {
+			id, host = strings.TrimSpace(before), strings.TrimSpace(after)
 		}
-		isLocal := (host == "localhost" || host == "127.0.0.1" || host == "local")
-		targets = append(targets, advisor.NodeTarget{
-			ID:      id,
-			Host:    host,
-			IsLocal: isLocal,
-		})
+		isLocal := host == "localhost" || host == "127.0.0.1" || host == "local"
+		targets = append(targets, advisor.NodeTarget{ID: id, Host: host, IsLocal: isLocal})
 	}
 	if len(targets) == 0 {
-		targets = append(targets, advisor.NodeTarget{
-			ID:      "local",
-			Host:    "localhost",
-			IsLocal: true,
-		})
+		targets = append(targets, advisor.NodeTarget{ID: "local", Host: "localhost", IsLocal: true})
 	}
 	return targets
 }
