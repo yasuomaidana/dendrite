@@ -31,52 +31,53 @@ func DefaultRoot() string {
 }
 
 // NewLedger returns a new Ledger rooted at the specified directory.
-// If root is empty, DefaultRoot() is used.
+// If root is empty, DefaultRoot() is resolved on each use, so a state directory
+// set after construction (the CLI's --state-dir) is honoured.
 func NewLedger(root string) *Ledger {
-	if root == "" {
-		root = DefaultRoot()
-	}
 	return &Ledger{root: root}
 }
 
 // Root returns the root directory of this ledger.
 func (l *Ledger) Root() string {
+	if l.root == "" {
+		return DefaultRoot()
+	}
 	return l.root
 }
 
 // JobDir returns the directory path for the specified job ID.
 func (l *Ledger) JobDir(id string) string {
-	return filepath.Join(l.root, id)
+	return filepath.Join(l.Root(), id)
 }
 
 // JobPath returns the path to the job.json file for the specified job ID.
 func (l *Ledger) JobPath(id string) string {
-	return filepath.Join(l.root, id, "job.json")
+	return filepath.Join(l.Root(), id, "job.json")
 }
 
 // EventsPath returns the path to the events.jsonl file for the specified job ID.
 func (l *Ledger) EventsPath(id string) string {
-	return filepath.Join(l.root, id, "events.jsonl")
+	return filepath.Join(l.Root(), id, "events.jsonl")
 }
 
 // DoneMarkerPath returns the path to the done marker file for the specified job ID.
 func (l *Ledger) DoneMarkerPath(id string) string {
-	return filepath.Join(l.root, id, "done")
+	return filepath.Join(l.Root(), id, "done")
 }
 
 // PromptPath returns the path to prompt.md for the specified job ID.
 func (l *Ledger) PromptPath(id string) string {
-	return filepath.Join(l.root, id, "prompt.md")
+	return filepath.Join(l.Root(), id, "prompt.md")
 }
 
 // CapsulePath returns the path to capsule.md for the specified job ID.
 func (l *Ledger) CapsulePath(id string) string {
-	return filepath.Join(l.root, id, "capsule.md")
+	return filepath.Join(l.Root(), id, "capsule.md")
 }
 
 // AgentLogPath returns the path to agent.log for the specified job ID.
 func (l *Ledger) AgentLogPath(id string) string {
-	return filepath.Join(l.root, id, "agent.log")
+	return filepath.Join(l.Root(), id, "agent.log")
 }
 
 // randomSuffix returns a random hex string of 2*n characters.
@@ -296,7 +297,7 @@ func (l *Ledger) List() ([]*Job, error) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
-	entries, err := os.ReadDir(l.root)
+	entries, err := os.ReadDir(l.Root())
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []*Job{}, nil
@@ -309,7 +310,7 @@ func (l *Ledger) List() ([]*Job, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		jobPath := filepath.Join(l.root, entry.Name(), "job.json")
+		jobPath := filepath.Join(l.Root(), entry.Name(), "job.json")
 		data, err := os.ReadFile(jobPath)
 		if err != nil {
 			// Subdirectory without a readable job.json is skipped.

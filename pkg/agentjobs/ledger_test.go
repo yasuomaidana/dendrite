@@ -678,3 +678,12 @@ func TestStatusAndClassConstants(t *testing.T) {
 		}
 	}
 }
+
+func TestNewLedger_DefaultRootResolvedLazily(t *testing.T) {
+	l := NewLedger("")
+	dir := t.TempDir()
+	t.Setenv("DENDRITE_STATE_DIR", dir)
+	if got, want := l.Root(), filepath.Join(dir, "jobs"); got != want {
+		t.Fatalf("Root() = %q; want %q (state dir set after construction)", got, want)
+	}
+}
