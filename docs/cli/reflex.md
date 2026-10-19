@@ -22,19 +22,45 @@ Postsynaptic Effectors & Actuation
 
 | Subcommand | Description |
 | :--- | :--- |
-| `auto` | Synthesize table-driven tests with Testcontainers & self-healing |
-| `ui` | Run Web UI browser journeys & WebSocket burst load tests |
+| `auto` | Synthesize table-driven tests for a source file with a self-healing loop |
+| `ui` | Run the web UI browser journeys and a WebSocket telemetry burst test |
 
 ## Flags
 
+None
+
+## Subcommand Reference
+
+### `dendrite reflex auto`
+
+Synthesize table-driven tests for a source file with a self-healing loop
+
+```bash
+dendrite reflex auto [file] [flags]
+```
+
 | Flag | Description |
 | :--- | :--- |
-| `--file` | Target Go source file for table-driven test synthesis |
-| `--base-url` | Base target URL for UI browser test journeys |
+| `--file, -f` | Go source file to cover |
+| `--with-testcontainers` | Generate Testcontainers fixtures for detected dependencies |
+
+### `dendrite reflex ui`
+
+Run the web UI browser journeys and a WebSocket telemetry burst test
+
+```bash
+dendrite reflex ui [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--base-url` | Cockpit URL (see 'cortex serve') (default: http://127.0.0.1:3456) |
+| `--no-headless` | Show the browser |
 
 ## Examples
 
 ```bash
-dendrite test auto --file ./pkg/env/detector.go
-dendrite test ui --base-url http://localhost:3456
+dendrite reflex auto pkg/env/detector.go
+dendrite reflex auto --file pkg/env/detector.go --with-testcontainers
+dendrite reflex ui --base-url http://127.0.0.1:3456
 ```

@@ -71,6 +71,10 @@ func newRootCmd() *cobra.Command {
 		newSensoryCmd(),
 		newCodexCmd(),
 		newBridgeCmd(),
+		newReflexCmd(),
+		newTriageCmd(),
+		newAskCmd(),
+		newGreetingCmd(),
 	)
 	root.AddCommand(legacyCommands()...)
 	return root
@@ -174,25 +178,6 @@ func legacyCmd(s legacySpec) *cobra.Command {
 				return err
 			}
 			return s.Run(cmd.Context(), args)
-		},
-	}
-}
-
-// legacySub adapts one subcommand of a hand-parsed handler, e.g. `bouton run` -> handleAgentCommand(ctx, "run", args).
-func legacySub(name, short string, run func(ctx context.Context, args []string) error) *cobra.Command {
-	return &cobra.Command{
-		Use:                name,
-		Short:              short,
-		DisableFlagParsing: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
-				return cmd.Help()
-			}
-			args = extractGlobalFlags(args)
-			if err := applyGlobals(); err != nil {
-				return err
-			}
-			return run(cmd.Context(), args)
 		},
 	}
 }

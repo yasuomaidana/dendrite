@@ -347,42 +347,6 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 		Flags       []FlagDoc
 		Examples    []string
 	}{
-		"triage": {
-			Examples: []string{"dendrite triage", "dendrite trg"},
-		},
-		"test": {
-			Subcommands: []SubcommandDoc{
-				{Name: "auto", Description: "Synthesize table-driven tests with Testcontainers & self-healing"},
-				{Name: "ui", Description: "Run Web UI browser journeys & WebSocket burst load tests"},
-			},
-			Flags: []FlagDoc{
-				{Name: "--file", Description: "Target Go source file for table-driven test synthesis"},
-				{Name: "--base-url", Description: "Base target URL for UI browser test journeys"},
-			},
-			Examples: []string{
-				"dendrite test auto --file ./pkg/env/detector.go",
-				"dendrite test ui --base-url http://localhost:3456",
-			},
-		},
-		"agent": {
-			Subcommands: []SubcommandDoc{
-				{Name: "run", Description: "Launch an autonomous coding agent (aider, openhands, opencode, agy, copilot)"},
-				{Name: "search", Description: "Search and rank agents with hybrid vector & BM25 search"},
-				{Name: "route", Description: "Auto-route task to optimal agent with LiteLLM virtual key"},
-				{Name: "session", Description: "View agent execution history, token spend, and commits"},
-			},
-			Flags: []FlagDoc{
-				{Name: "--ticket", Description: "Target ticket identifier (e.g. DEN-030)"},
-				{Name: "--model", Description: "Target LLM model name"},
-				{Name: "--spend-cap", Description: "Maximum USD budget ceiling for session"},
-				{Name: "--sandbox", Description: "Execute inside ephemeral container sandbox"},
-			},
-			Examples: []string{
-				"dendrite agent run aider --ticket DEN-030",
-				"dendrite agent search \"refactor AST parser\"",
-				"dendrite agent session list",
-			},
-		},
 		"dev": {
 			Subcommands: []SubcommandDoc{
 				{Name: "ollama", Description: "Probe local Ollama inference engine health, latency, and models"},
@@ -472,26 +436,6 @@ func enrichCommandDoc(doc *CLICommandDoc) {
 			Examples: []string{
 				"dendrite service list",
 				"dendrite service health plane",
-			},
-		},
-		"ask": {
-			Flags: []FlagDoc{
-				{Name: "--paid-fallback", Description: "Fallback to commercial paid model when local model fails"},
-			},
-			Examples: []string{
-				"dendrite ask \"How does token budget governance work in Dendrite?\"",
-			},
-		},
-		"greeting": {
-			Flags: []FlagDoc{
-				{Name: "--topic", Description: "User's current topic or project"},
-				{Name: "--decision", Description: "Decision point being weighed"},
-				{Name: "--milestone", Description: "Milestone achieved or in-flight"},
-				{Name: "--json", Description: "Output greeting result in JSON format"},
-			},
-			Examples: []string{
-				"dendrite greeting --topic \"DEN-985\"",
-				"dendrite greeting --json",
 			},
 		},
 	}

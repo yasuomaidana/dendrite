@@ -3,150 +3,139 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
 	"Dendrite/pkg/agent/triage"
 	"Dendrite/pkg/ollama"
+
+	"github.com/spf13/cobra"
 )
 
-func handleTriageCommand(ctx context.Context, args []string) {
-	prompt := ""
-	filePath := ""
-	forceTierStr := ""
-	targetEngineStr := ""
-	executeLocal := false
-	enableRAG := false
+var triageTiers = map[string]triage.ExecutionTier{
+	"local":  triage.TierLocal,
+	"hybrid": triage.TierHybrid,
+	"cloud":  triage.TierCloud,
+}
 
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--prompt", "-p":
-			if i+1 < len(args) {
-				prompt = args[i+1]
-				i++
+var triageEngines = map[string]triage.SupportedEngine{
+	"ollama":           triage.EngineOllama,
+	"ollama-validated": triage.EngineOllamaValidated,
+	"huggingface":      triage.EngineHuggingFace,
+	"hf":               triage.EngineHuggingFace,
+	"candle":           triage.EngineCandle,
+	"oxillama":         triage.EngineOxiLLaMa,
+}
+
+type triageOptions struct {
+	File   string
+	Tier   string
+	Engine string
+	Local  bool
+	RAG    bool
+}
+
+// newTriageCmd builds `dendrite inhibitory-triage` (alias triage): route a prompt to a local, hybrid or cloud tier.
+func newTriageCmd() *cobra.Command {
+	var o triageOptions
+	cmd := &cobra.Command{
+		Use:     "inhibitory-triage <prompt...>",
+		Aliases: []string{"triage", "trg"},
+		Short:   "Resolve local agent task triage and priority routing",
+		GroupID: "effectors",
+		Args:    minArgs(1),
+		Example: "dendrite inhibitory-triage \"rename this variable\" --file main.go\n" +
+			"dendrite triage \"design a sharded cache\" --tier cloud\n" +
+			"dendrite triage \"summarize the docs\" --rag --local",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			req := triage.TriageRequest{
+				Prompt:       strings.Join(args, " "),
+				ActiveFile:   o.File,
+				ExecuteLocal: o.Local,
+				EnableRAG:    o.RAG,
+				WorkspaceDir: ".",
 			}
-		case "--file", "-f":
-			if i+1 < len(args) {
-				filePath = args[i+1]
-				i++
+			if o.Tier != "" {
+				t, ok := triageTiers[strings.ToLower(o.Tier)]
+				if !ok {
+					return usageErrorf("invalid --tier %q: use local, hybrid or cloud", o.Tier)
+				}
+				req.ForceTier = t
 			}
-		case "--tier", "-t":
-			if i+1 < len(args) {
-				forceTierStr = args[i+1]
-				i++
+			if o.Engine != "" {
+				e, ok := triageEngines[strings.ToLower(o.Engine)]
+				if !ok {
+					return usageErrorf("invalid --engine %q: use ollama, ollama-validated, huggingface, candle or oxillama", o.Engine)
+				}
+				req.TargetEngine = e
 			}
-		case "--engine", "-e":
-			if i+1 < len(args) {
-				targetEngineStr = args[i+1]
-				i++
+			if o.File != "" {
+				data, err := os.ReadFile(o.File)
+				if err != nil {
+					return fmt.Errorf("read %s: %w", o.File, err)
+				}
+				req.FileContent = string(data)
 			}
-		case "--local", "-l":
-			executeLocal = true
-		case "--rag", "-r":
-			enableRAG = true
-		}
+			return runTriage(cmd.Context(), req, cmd.OutOrStdout())
+		},
 	}
+	addFileFlag(cmd, &o.File, "", "Active file whose content is triaged with the prompt")
+	cmd.Flags().StringVar(&o.Tier, "tier", "", "Force a tier: local, hybrid or cloud")
+	cmd.Flags().StringVarP(&o.Engine, "engine", "e", "", "Local engine: ollama, ollama-validated, huggingface, candle or oxillama")
+	cmd.Flags().BoolVarP(&o.Local, "local", "l", false, "Execute on the local engine when the tier allows it")
+	cmd.Flags().BoolVarP(&o.RAG, "rag", "r", false, "Retrieve workspace context (RAG)")
+	return cmd
+}
 
-	if prompt == "" && len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		prompt = strings.Join(args, " ")
-	}
-
-	if prompt == "" {
-		fmt.Println("Usage: dendrite triage --prompt \"<prompt>\" [--file <file>] [--tier local|hybrid|cloud] [--engine ollama|ollama-validated|huggingface|candle|oxillama] [--local] [--rag]")
-		return
-	}
-
-	fileContent := ""
-	if filePath != "" {
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			fmt.Printf("[-] Warning: Failed to read file %s: %v\n", filePath, err)
-		} else {
-			fileContent = string(data)
-		}
-	}
-
-	var forceTier triage.ExecutionTier
-	switch strings.ToLower(forceTierStr) {
-	case "local":
-		forceTier = triage.TierLocal
-	case "hybrid":
-		forceTier = triage.TierHybrid
-	case "cloud":
-		forceTier = triage.TierCloud
-	}
-
-	var targetEngine triage.SupportedEngine
-	switch strings.ToLower(targetEngineStr) {
-	case "ollama":
-		targetEngine = triage.EngineOllama
-	case "ollama-validated":
-		targetEngine = triage.EngineOllamaValidated
-	case "huggingface", "hf":
-		targetEngine = triage.EngineHuggingFace
-	case "candle":
-		targetEngine = triage.EngineCandle
-	case "oxillama":
-		targetEngine = triage.EngineOxiLLaMa
-	}
-
-	engine := triage.NewEngine(ollama.NewClient())
-	req := triage.TriageRequest{
-		Prompt:       prompt,
-		ActiveFile:   filePath,
-		FileContent:  fileContent,
-		ForceTier:    forceTier,
-		TargetEngine: targetEngine,
-		ExecuteLocal: executeLocal,
-		EnableRAG:    enableRAG,
-		WorkspaceDir: ".",
-	}
-
-	res, err := engine.Triage(ctx, req)
+func runTriage(ctx context.Context, req triage.TriageRequest, out io.Writer) error {
+	res, err := triage.NewEngine(ollama.NewClient()).Triage(ctx, req)
 	if err != nil {
-		fmt.Printf("[-] Triage failed: %v\n", err)
-		return
+		return fmt.Errorf("triage: %w", err)
 	}
-
-	fmt.Printf("[+] Local Agent Triage Decision:\n")
-	fmt.Printf("    - Assigned Tier:      %s\n", strings.ToUpper(string(res.Tier)))
-	fmt.Printf("    - Assigned Model:     %s\n", res.AssignedModel)
-	fmt.Printf("    - Assigned Engine:    %s (%s)\n", res.AssignedEngine, res.LocalEngineName)
-	fmt.Printf("    - Local Compute:      %v\n", res.LocalComputeAvailable)
-	fmt.Printf("    - Decision Reason:    %s\n", res.Reason)
+	if globals.JSON {
+		return writeJSON(out, res)
+	}
+	fmt.Fprintln(out, "[+] Local Agent Triage Decision:")
+	fmt.Fprintf(out, "    - Assigned Tier:      %s\n", strings.ToUpper(string(res.Tier)))
+	fmt.Fprintf(out, "    - Assigned Model:     %s\n", res.AssignedModel)
+	fmt.Fprintf(out, "    - Assigned Engine:    %s (%s)\n", res.AssignedEngine, res.LocalEngineName)
+	fmt.Fprintf(out, "    - Local Compute:      %v\n", res.LocalComputeAvailable)
+	fmt.Fprintf(out, "    - Decision Reason:    %s\n", res.Reason)
 	if len(res.SelectedSkills) > 0 {
-		fmt.Printf("    - Matched Skills:     %s\n", strings.Join(res.SelectedSkills, ", "))
+		fmt.Fprintf(out, "    - Matched Skills:     %s\n", strings.Join(res.SelectedSkills, ", "))
 	}
 	if len(res.RetrievedRAGChunks) > 0 {
-		fmt.Printf("    - RAG Context:        %d chunks retrieved (%d tokens)\n", len(res.RetrievedRAGChunks), res.RAGTokens)
+		fmt.Fprintf(out, "    - RAG Context:        %d chunks retrieved (%d tokens)\n", len(res.RetrievedRAGChunks), res.RAGTokens)
 		for i, c := range res.RetrievedRAGChunks {
 			heading := ""
 			if c.Heading != "" {
 				heading = fmt.Sprintf(" (%s)", c.Heading)
 			}
-			fmt.Printf("      * [%d] %s:%d-%d%s\n", i+1, c.FilePath, c.LineStart, c.LineEnd, heading)
+			fmt.Fprintf(out, "      * [%d] %s:%d-%d%s\n", i+1, c.FilePath, c.LineStart, c.LineEnd, heading)
 		}
 	}
-	fmt.Printf("    - Original Tokens:    %d\n", res.OriginalTokens)
-	fmt.Printf("    - Compacted Tokens:   %d\n", res.CompactedTokens)
-	fmt.Printf("    - Token Savings:      %.1f%%\n", res.TokenSavingsPct)
-	fmt.Printf("    - Estimated Cost:     $%.6f (saved $%.6f)\n", res.EstimatedCostUSD, res.CostWithoutTriageUSD-res.EstimatedCostUSD)
+	fmt.Fprintf(out, "    - Original Tokens:    %d\n", res.OriginalTokens)
+	fmt.Fprintf(out, "    - Compacted Tokens:   %d\n", res.CompactedTokens)
+	fmt.Fprintf(out, "    - Token Savings:      %.1f%%\n", res.TokenSavingsPct)
+	fmt.Fprintf(out, "    - Estimated Cost:     $%.6f (saved $%.6f)\n", res.EstimatedCostUSD, res.CostWithoutTriageUSD-res.EstimatedCostUSD)
 	if res.LocalExecutionResult != "" {
-		fmt.Printf("    - Local Execution:    %s\n", res.LocalExecutionResult)
+		fmt.Fprintf(out, "    - Local Execution:    %s\n", res.LocalExecutionResult)
 	}
 	if res.IsDeclarativeOrchestrator && res.DeclarativePlan != nil {
-		fmt.Printf("    - Orchestrator Mode:  Declarative Cloud Orchestrator -> Local Worker\n")
-		fmt.Printf("    - Orchestrator Model: %s\n", res.OrchestratorModel)
-		fmt.Printf("    - Local Worker Model: %s (%s)\n", res.WorkerModel, res.WorkerEngine)
-		fmt.Printf("    - Output Savings:     %.1f%% (%d plan tokens vs %d direct tokens)\n",
+		fmt.Fprintln(out, "    - Orchestrator Mode:  Declarative Cloud Orchestrator -> Local Worker")
+		fmt.Fprintf(out, "    - Orchestrator Model: %s\n", res.OrchestratorModel)
+		fmt.Fprintf(out, "    - Local Worker Model: %s (%s)\n", res.WorkerModel, res.WorkerEngine)
+		fmt.Fprintf(out, "    - Output Savings:     %.1f%% (%d plan tokens vs %d direct tokens)\n",
 			res.DeclarativePlan.OutputTokenSavingsPct,
 			res.DeclarativePlan.EstimatedOrchestratorTokens,
 			res.DeclarativePlan.EstimatedDirectOutputTokens)
-		fmt.Printf("    - Declarative Steps:  %d instructions, %d skill constraints\n",
+		fmt.Fprintf(out, "    - Declarative Steps:  %d instructions, %d skill constraints\n",
 			len(res.DeclarativePlan.Instructions), len(res.DeclarativePlan.Constraints))
 		if res.LocalWorkerExecutionResult != "" {
-			fmt.Printf("    - Local Worker Run:   %s\n", res.LocalWorkerExecutionResult)
+			fmt.Fprintf(out, "    - Local Worker Run:   %s\n", res.LocalWorkerExecutionResult)
 		}
 	}
-	fmt.Printf("    - Triage Latency:     %v\n", res.ExecutionDuration)
+	fmt.Fprintf(out, "    - Triage Latency:     %v\n", res.ExecutionDuration)
+	return nil
 }

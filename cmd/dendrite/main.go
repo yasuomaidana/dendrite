@@ -21,30 +21,6 @@ func main() {
 func legacyCommands() []*cobra.Command {
 	return []*cobra.Command{
 		legacyCmd(legacySpec{
-			Name:        "inhibitory-triage",
-			Aliases:     []string{"triage", "trg"},
-			Category:    "Postsynaptic Effectors & Actuation",
-			Description: "Resolve local agent task triage and priority routing",
-			Run: func(ctx context.Context, args []string) error {
-				handleTriageCommand(ctx, args)
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "reflex",
-			Aliases:     []string{"test", "myotatic-reflex", "tst"},
-			Category:    "Postsynaptic Effectors & Actuation",
-			Description: "Table-driven test synthesis, Testcontainers & UI tests",
-			Run: func(ctx context.Context, args []string) error {
-				if len(args) < 1 {
-					printTestUsage()
-					return nil
-				}
-				handleTestCommand(ctx, args[0], args[1:])
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
 			Name:        "dev",
 			Category:    "Soma & Axon Hillock",
 			Description: "Developer diagnostics, local Ollama probe, and ticket tools",
@@ -145,26 +121,6 @@ func legacyCommands() []*cobra.Command {
 					return nil
 				}
 				handleServiceCommand(ctx, args[0], args[1:])
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "ask",
-			Aliases:     []string{"query-project", "rag-ask", "q"},
-			Category:    "Cortex & Sensory Integration",
-			Description: "Ask questions to Dendrite about a project with local RAG and interactive paid fallback",
-			Run: func(ctx context.Context, args []string) error {
-				handleAskCommand(ctx, args)
-				return nil
-			},
-		}),
-		legacyCmd(legacySpec{
-			Name:        "greeting",
-			Aliases:     []string{"greet", "pcontext-greeting"},
-			Category:    "Synaptic Cleft & Gating",
-			Description: "Generate dynamic 10-style greeting with cliché suppression",
-			Run: func(ctx context.Context, args []string) error {
-				handleGreetingCommand(ctx, args)
 				return nil
 			},
 		}),

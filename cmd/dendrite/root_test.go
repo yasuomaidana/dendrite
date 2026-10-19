@@ -41,6 +41,11 @@ func runWorkCommand(ctx context.Context, args []string, out io.Writer) error {
 	return runCLI(ctx, out, append([]string{"work"}, args...)...)
 }
 
+// handleAgentJobsCommand runs `dendrite bouton jobs args...`, discarding output.
+func handleAgentJobsCommand(ctx context.Context, args []string) error {
+	return runCLI(ctx, io.Discard, append([]string{"bouton", "jobs"}, args...)...)
+}
+
 func runSessionCommand(ctx context.Context, args []string, out io.Writer) error {
 	return runCLI(ctx, out, append([]string{"session"}, args...)...)
 }
