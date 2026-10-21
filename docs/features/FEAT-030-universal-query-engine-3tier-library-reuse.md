@@ -10,6 +10,8 @@ tags: [dendrite-query, cfg-slicing, subsystem-swap, safe-rust, 3-tier-reuse, gol
 
 # FEAT-030: Universal Intent & Query Engine with Strict 3-Tier Library Reuse Auditor
 
+> **Implementation spec:** the engine behind this feature is implemented in **dendrite-core-rs**. Its data model, algorithms and protocol are specified in [dendrite-core-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-core-rs/blob/develop/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
+
 ## 1. Executive Summary & Problem Statement
 
 ### The Problem

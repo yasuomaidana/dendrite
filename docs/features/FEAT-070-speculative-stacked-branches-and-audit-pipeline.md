@@ -10,6 +10,8 @@ tags: [git, guardrails, stacked-branches, token-economy, audit-changes, degraded
 
 # FEAT-070: Speculative Stacked Branches, Git Guardrails, Token-Aware Degraded Mode & Vendor LLM Audit Pipeline
 
+> **Implementation spec:** the engine behind this feature is implemented in **dendrite-git-rs**. Its data model, algorithms and protocol are specified in [dendrite-git-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-git-rs/blob/develop/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
+
 ## 1. Executive Summary & Problem Statement
 
 ### 1.1 The Problem

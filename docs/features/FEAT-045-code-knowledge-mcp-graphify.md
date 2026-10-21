@@ -1,5 +1,7 @@
 # FEAT-045: Code Knowledge MCP, AST Graphify & Local-First RAG Deduplication
 
+> **Implementation spec:** the engine behind this feature is implemented in **dendrite-rag-rs**. Its data model, algorithms and protocol are specified in [dendrite-rag-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-rag-rs/blob/develop/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
+
 ## 1. Executive Summary & Context
 Engineering queries regarding proprietary codebases frequently exhaust expensive cloud tokens. FEAT-045 designs:
 1. **Code Knowledge MCP Server**: A native Model Context Protocol JSON-RPC service providing semantic symbol navigation, call-graph tracing, and structural summaries.

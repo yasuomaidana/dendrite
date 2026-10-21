@@ -10,6 +10,8 @@ tags: [stories-dag, ticket-linker, story-prioritization, plane, jetbrains, conte
 
 # FEAT-036: Ticket-Milestone DAG Linker & Context-Aware Story Prioritization Engine
 
+> **Implementation spec:** the engine behind this feature is implemented in **embedag**. Its data model, algorithms and protocol are specified in [embedag `doc/22_Dependency_Resolution_and_Merkle_Delta_API.md`](https://github.com/yasuomaidana/embedag/blob/develop/doc/22_Dependency_Resolution_and_Merkle_Delta_API.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
+
 ## 1. Executive Summary & Problem Statement
 
 ### The Problem

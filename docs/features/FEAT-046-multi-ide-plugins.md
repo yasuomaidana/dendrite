@@ -1,5 +1,7 @@
 # FEAT-046: Multi-IDE Plugin Suite & Interoperability Architecture
 
+> **Implementation spec:** the engine behind this feature is implemented in **dendrite-mcp-hub**. Its data model, algorithms and protocol are specified in [dendrite-mcp-hub `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-mcp-hub/blob/develop/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
+
 ## 1. Executive Summary & Context
 Developers interact with Dendrite through diverse IDE environments. FEAT-046 standardizes the architecture and implementation roadmap for:
 1. **JetBrains Plugin (`dendrite-jetbrains`)**: Written in Kotlin with Gradle, supporting IntelliJ IDEA, GoLand, and RustRover. Integrates local AI chat, live project DAG status, and inline Graphify community badges.

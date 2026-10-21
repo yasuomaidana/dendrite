@@ -10,6 +10,8 @@ tags: [agent-search, capability-discovery, tei, embeddings, semantic-router, gra
 
 # FEAT-022: Agent Search, Capability Discovery & Semantic Routing Engine
 
+> **Implementation spec:** the engine behind this feature is implemented in **dendrite-rag-rs**. Its data model, algorithms and protocol are specified in [dendrite-rag-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-rag-rs/blob/develop/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
+
 ## 1. User Story & Business Objective
 As a software engineer and AI systems developer operating in multi-agent environments, I need Dendrite to provide an intelligent **Agent Search and Capability Discovery Engine** (`dendrite agent search` and Web UI Agent Explorer). As the platform supports diverse autonomous agents (**Aider**, **OpenHands**, **OpenCode**, and **Google AGY** from [FEAT-013](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/features/FEAT-013-agentic-coding-tools.md)) with distinct strengths, tool schemas, and operational costs, this engine enables querying and matching engineering tasks (e.g., \"refactor Go AST parser\", \"investigate thermal throttling\", \"generate k6 performance scripts\") to the optimal agent tool, prompt strategy, and inference engine tier ([FEAT-020](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/features/FEAT-020-pluggable-inference-engines.md)) using hybrid vector embeddings (Hugging Face TEI) and Graphify AST code knowledge.
 

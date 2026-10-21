@@ -10,6 +10,8 @@ tags: [ai-development, code-translation, polyglot, rust, go, typescript, python]
 
 # FEAT-011: Polyglot Code Translation & Semantic Equivalence Verification
 
+> **Implementation spec:** the engine behind this feature is implemented in **dendrite-core-rs**. Its data model, algorithms and protocol are specified in [dendrite-core-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-core-rs/blob/develop/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
+
 ## 1. User Story & Business Objective
 As a systems engineer migrating legacy codebases or porting high-performance algorithms across languages, I need an automated polyglot translation engine that converts source code from one language to another (e.g. Python $\to$ Rust/Go, TypeScript $\to$ Go, C/C++ $\to$ Rust) while adapting idiomatic design patterns, memory models, and concurrency paradigms, validated by dual-language behavioral tests.
 

@@ -8,6 +8,8 @@ tags: [rag, qa, query, ask, local-llm, hybrid, central-rag, ollama, oxillama, li
 
 # Tutorial: Asking Project Questions with Local RAG & Paid LLM Escalation
 
+> **Implementation spec:** the engine behind this feature is implemented in **dendrite-rag-rs**. Its data model, algorithms and protocol are specified in [dendrite-rag-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-rag-rs/blob/develop/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
+
 This tutorial demonstrates how to use the `dendrite ask` command to ask questions about your codebase, documentation, and infrastructure.
 
 Dendrite implements a **Local-First, Zero-Cost RAG (Retrieval-Augmented Generation)** architecture:

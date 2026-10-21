@@ -10,6 +10,8 @@ tags: [multi-ide, vscode, jetbrains, neovim, zed, lsp, json-rpc, lowest-priority
 
 # FEAT-100: Multi-IDE Ecosystem Support & Decoupled Architecture
 
+> **Implementation spec:** the engine behind this feature is implemented in **dendrite-mcp-hub**. Its data model, algorithms and protocol are specified in [dendrite-mcp-hub `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-mcp-hub/blob/develop/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
+
 ## 1. Executive Summary & Problem Statement
 
 ### The Problem
