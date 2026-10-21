@@ -19,7 +19,7 @@ type Engine struct {
 	OllamaEndpoint       string
 	OxiLLaMaEngine       inference.InferenceEngine
 	OxiLLaMaEndpoint     string
-	RAGIndexer           *rag.Indexer
+	RAGRetriever         *rag.Retriever
 	SkillMatchers        []SkillMatcher
 	LocalModelName       string
 	HybridModelName      string
@@ -42,7 +42,7 @@ func NewEngine(ollamaClient *ollama.Client) *Engine {
 		OllamaClient:      ollamaClient,
 		OllamaEndpoint:    ollamaEndpoint,
 		OxiLLaMaEndpoint:  os.Getenv("DENDRITE_OXILLAMA_ENDPOINT"),
-		RAGIndexer:        rag.NewIndexer(),
+		RAGRetriever:      rag.NewRetriever(),
 		SkillMatchers:     DefaultSkillMatchers(),
 		LocalModelName:    "local-qwen-coder",
 		HybridModelName:   "copilot-sonnet",
@@ -247,20 +247,14 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 		if workspaceRoot == "" {
 			workspaceRoot = "."
 		}
-		if e.RAGIndexer != nil {
-			if e.RAGIndexer.ChunksCount() == 0 {
-				_ = e.RAGIndexer.IndexProject(ctx, workspaceRoot)
+		if e.RAGRetriever != nil {
+			retrieval, err := e.RAGRetriever.Retrieve(ctx, workspaceRoot, req.Prompt, rag.SearchOptions{TopK: topK}, false)
+			if err != nil {
+				return nil, fmt.Errorf("retrieving workspace context: %w", err)
 			}
-			chunks, err := e.RAGIndexer.Retrieve(ctx, req.Prompt, rag.SearchOptions{
-				TopK:      topK,
-				MinScore:  0.01,
-				MaxTokens: 1500,
-			})
-			if err == nil && len(chunks) > 0 {
-				retrievedChunks = chunks
-				for _, c := range chunks {
-					ragTokens += tokenopt.EstimateTokens(c.Content + " " + c.Heading)
-				}
+			retrievedChunks = retrieval.Chunks
+			for _, c := range retrievedChunks {
+				ragTokens += tokenopt.EstimateTokens(c.Content + " " + c.Heading)
 			}
 		}
 	}

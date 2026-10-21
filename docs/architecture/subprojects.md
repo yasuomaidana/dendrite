@@ -35,7 +35,7 @@ Every repository we can modify is a Plane project, and repositories that depend 
   - the server and UI (`pkg/server`, `pkg/ui`)
   - CI and quality gates
 
-  It also keeps an in-process Go fallback for every sidecar.
+  Where a sidecar has fully replaced a Go implementation, Dendrite only coordinates it and has no fallback; this is the case for retrieval (`dendrite-rag`). The other sidecars still have an in-process Go fallback until they reach parity.
 - **dendrite-mcp-hub** owns:
   - the MCP JSON-RPC server and tool registry (`pkg/mcpserver`)
   - the JetBrains bridge (`pkg/jetbrains`)
@@ -59,7 +59,7 @@ Every repository we can modify is a Plane project, and repositories that depend 
   - the content-addressed store
   - the memory sync modes (local-only, edge/WAL, push)
 
-  It replaces `pkg/rag`, the search primitives in `pkg/agentsearch`, and `pkg/store`.
+  Retrieval is complete: `pkg/rag` keeps only the sidecar client (`Retriever`) and the ask orchestration, and the Go indexer is gone. The search primitives in `pkg/agentsearch` and `pkg/store` are still to move.
 - **embedag** owns every graph and DAG algorithm: toposort, levels, reverse dependencies, critical path, Merkle delta trees, AST similarity graphs, and Graph-RAG primitives (RRF, community detection).
   - It is consumed by `dendrite-core-rs` and `dendrite-rag-rs` with `default-features = false, features = ["core", "matcher"]`.
   - New DAG code is not written in Go.
@@ -67,7 +67,7 @@ Every repository we can modify is a Plane project, and repositories that depend 
 ## Interface contract
 
 - Each Rust crate ships a `dendrite-<x>` binary that speaks JSON-RPC 2.0 over stdio. Its schema lives in `proto/*.json`, versioned with semver.
-- The Go side uses a `sidecar.Client` that does a health handshake and falls back to the in-process Go implementation when the binary is missing.
+- The Go side uses a `sidecar.Client` that does a health handshake. Until a sidecar replaces its Go implementation, `sidecar.Call` falls back to that implementation when the binary is missing; once replaced, the Go code is deleted and a missing binary is an error with install instructions (`dendrite-rag` today).
 - `dendrite-mcp-hub` is a Go module (`dendrite.dev/mcphub`).
 
 ## Ticket relocation (2026-10-18)

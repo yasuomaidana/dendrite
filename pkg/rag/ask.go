@@ -16,6 +16,9 @@ import (
 	"Dendrite/pkg/inference"
 )
 
+// AskContextTokens is the context-pack budget for a question.
+const AskContextTokens = 2500
+
 var (
 	// ErrEmptyQuestion is returned when the user question is blank.
 	ErrEmptyQuestion = errors.New("question cannot be empty")
@@ -26,23 +29,20 @@ var (
 // AskEngine manages the end-to-end question answering pipeline with local RAG, hybrid mode, and paid cloud escalation.
 type AskEngine struct {
 	InferenceManager *inference.Manager
-	Indexer          *Indexer
-	Retriever        *Retriever                // sidecar-first retrieval; nil means in-process only
+	Retriever        *Retriever                // the dendrite-rag sidecar
 	LocalEngine      inference.InferenceEngine // Optional override for testing or explicit local engine
 	PaidCaller       PaidCallerFunc            // Optional override for testing or custom cloud caller
 	HTTPClient       *http.Client
 }
 
-// NewAskEngine creates a new AskEngine with default manager and indexer.
+// NewAskEngine creates a new AskEngine with the default manager and retriever.
 func NewAskEngine(mgr *inference.Manager) *AskEngine {
 	if mgr == nil {
 		mgr = inference.DefaultManager()
 	}
-	idx := NewIndexer()
 	return &AskEngine{
 		InferenceManager: mgr,
-		Indexer:          idx,
-		Retriever:        NewRetriever(idx),
+		Retriever:        NewRetriever(),
 		HTTPClient:       &http.Client{Timeout: 60 * time.Second},
 	}
 }
@@ -72,9 +72,6 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 	if req.PaidModel == "" {
 		req.PaidModel = "gemini-2.5-pro"
 	}
-	if req.TopK <= 0 {
-		req.TopK = 4
-	}
 	if req.Input == nil {
 		req.Input = os.Stdin
 	}
@@ -82,21 +79,26 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 		req.Output = os.Stdout
 	}
 
-	// 1-2. Index the project and retrieve context: hybrid retrieval through the
-	// dendrite-rag sidecar when installed, in-process BM25 otherwise.
+	// 1-2. Index the project and retrieve context through the dendrite-rag sidecar: a
+	// token-budgeted context pack, or the top-k hits when TopK is set.
 	retriever := e.Retriever
 	if retriever == nil {
-		retriever = &Retriever{Indexer: e.Indexer, Disabled: true}
+		retriever = NewRetriever()
 	}
-	retrieval, err := retriever.Retrieve(ctx, req.ProjectPath, req.Question, SearchOptions{
-		TopK:      req.TopK,
-		MinScore:  0.01,
-		MaxTokens: 2500,
-	}, req.UpdateIndex)
+	var retrieval Retrieval
+	var err error
+	if req.TopK > 0 {
+		retrieval, err = retriever.Retrieve(ctx, req.ProjectPath, req.Question, SearchOptions{TopK: req.TopK}, req.UpdateIndex)
+	} else {
+		retrieval, err = retriever.Context(ctx, req.ProjectPath, req.Question, AskContextTokens, req.UpdateIndex)
+	}
 	if err != nil {
-		_, _ = fmt.Fprintf(req.Output, "[!] Retrieval notice: %v\n", err)
+		return nil, fmt.Errorf("retrieving project context: %w", err)
 	}
 	chunks, indexStatus := retrieval.Chunks, retrieval.IndexStatus
+	if retrieval.EmbedError != "" {
+		_, _ = fmt.Fprintf(req.Output, "[!] Embeddings unavailable (%s); answering from lexical and symbol matches\n", retrieval.EmbedError)
+	}
 	if retrieval.EmbedPending > 0 {
 		_, _ = fmt.Fprintf(req.Output, "[i] %d chunks are still waiting for embeddings; semantic matches improve as they are added (finish now: dendrite-rag index %s)\n", retrieval.EmbedPending, req.ProjectPath)
 	}
@@ -160,17 +162,17 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 			// If paid refinement fails in hybrid mode, fall back to returning local draft gracefully
 			_, _ = fmt.Fprintf(req.Output, "[-] Paid refinement failed (%v), returning verified local draft.\n", paidErr)
 			return &AskResult{
-				Question:           req.Question,
-				Answer:             localDraft,
-				SourceTier:         "local-rag",
-				Model:              localResp.Model,
-				Engine:             localResp.EngineID,
-				Escalated:          false,
-				RetrievedChunks:    chunks,
-				PromptTokens:       localResp.PromptTokens,
-				OutputTokens:       localResp.OutputTokens,
-				IndexStatus:        indexStatus,
-				Duration:           time.Since(start),
+				Question:        req.Question,
+				Answer:          localDraft,
+				SourceTier:      "local-rag",
+				Model:           localResp.Model,
+				Engine:          localResp.EngineID,
+				Escalated:       false,
+				RetrievedChunks: chunks,
+				PromptTokens:    localResp.PromptTokens,
+				OutputTokens:    localResp.OutputTokens,
+				IndexStatus:     indexStatus,
+				Duration:        time.Since(start),
 			}, nil
 		}
 

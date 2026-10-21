@@ -18,11 +18,11 @@ The first request is always `health`. Its result must be:
 {"name": "dendrite-core", "version": "0.3.1", "protocol": "1.2.0"}
 ```
 
-`protocol` is the semver version of this contract. A client built for protocol major `N` refuses a sidecar with a different major and uses its fallback. Minor versions add methods; patch versions never change shapes.
+`protocol` is the semver version of this contract. A client built for protocol major `N` refuses a sidecar with a different major (and uses its fallback, where one still exists). Minor versions add methods; patch versions never change shapes.
 
 ## Errors
 
-Failures use the standard JSON-RPC `error` object: `{"code": -32601, "message": "method not found: x"}`. Any error makes `sidecar.Call` use the Go fallback and report `origin: fallback` with the reason.
+Failures use the standard JSON-RPC `error` object: `{"code": -32601, "message": "method not found: x"}`. Any error makes `sidecar.Call` use the Go fallback and report `origin: fallback` with the reason. Sidecars without a Go implementation (`dendrite-rag`) return the error to the caller instead.
 
 ## Locating binaries
 

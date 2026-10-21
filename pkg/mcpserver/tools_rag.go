@@ -121,7 +121,7 @@ func registerRAGTools(s *Server, deps Dependencies) {
 				},
 				"min_score": map[string]interface{}{
 					"type":        "number",
-					"description": "Minimum BM25 score threshold (default: 0.01)",
+					"description": "Minimum fused relevance score (default: none)",
 				},
 			},
 			"required": []interface{}{"query"},
@@ -144,15 +144,14 @@ func registerRAGTools(s *Server, deps Dependencies) {
 			topK = tkInt
 		}
 
-		var minScore float32 = 0.01
+		var minScore float32
 		if ms, ok := args["min_score"].(float64); ok && ms > 0 {
 			minScore = float32(ms)
 		}
 
-		retrieval, err := rag.NewRetriever(rag.NewIndexer()).Retrieve(ctx, projectPath, query, rag.SearchOptions{
-			TopK:      topK,
-			MinScore:  minScore,
-			MaxTokens: 2500,
+		retrieval, err := rag.NewRetriever().Retrieve(ctx, projectPath, query, rag.SearchOptions{
+			TopK:     topK,
+			MinScore: minScore,
 		}, false)
 		if err != nil {
 			return nil, fmt.Errorf("rag retrieval failed for %s: %w", projectPath, err)

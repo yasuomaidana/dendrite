@@ -564,14 +564,9 @@ func (s *Server) handleRAGRetrieve(w http.ResponseWriter, r *http.Request) {
 	if body.TopK <= 0 {
 		body.TopK = 4
 	}
-	if body.MinScore <= 0 {
-		body.MinScore = 0.01
-	}
-
-	retrieval, err := rag.NewRetriever(rag.NewIndexer()).Retrieve(r.Context(), body.ProjectPath, body.Query, rag.SearchOptions{
-		TopK:      body.TopK,
-		MinScore:  body.MinScore,
-		MaxTokens: 2500,
+	retrieval, err := rag.NewRetriever().Retrieve(r.Context(), body.ProjectPath, body.Query, rag.SearchOptions{
+		TopK:     body.TopK,
+		MinScore: body.MinScore,
 	}, false)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("retrieval failed: %v", err), http.StatusInternalServerError)

@@ -2,6 +2,7 @@ package rag
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,9 +12,11 @@ import (
 	"Dendrite/pkg/sidecar"
 )
 
-// The dendrite-rag sidecar (repository dendrite-rag-rs) serves hybrid retrieval: code-aware
-// BM25, dense vectors, symbol names and rank fusion over cAST chunks. Retriever uses it when
-// it is installed and falls back to the in-process BM25 Indexer otherwise.
+// Retrieval is served by the dendrite-rag sidecar (repository dendrite-rag-rs): cAST
+// chunking, code-aware BM25, dense vectors from the embedder the project chose
+// (.dendrite/rag.toml), symbol names, rank fusion and token-budgeted context packs.
+// Dendrite only coordinates: it locates the sidecar, brings the index up to date and
+// passes results on.
 const (
 	SidecarBinary = "dendrite-rag"
 	SidecarMajor  = 1
@@ -21,59 +24,76 @@ const (
 	// lexical and symbol indexes are always brought up to date; vectors for the rest of the
 	// project are added by later calls, or all at once by `dendrite-rag index <project>`.
 	DefaultEmbedBudget = 3 * time.Second
-	// SidecarEnv set to 0, off or false disables the sidecar.
-	SidecarEnv = "DENDRITE_RAG_SIDECAR"
+	// InstallHint tells users how to get the sidecar when it is missing.
+	InstallHint = "install it with `cargo install --locked --git https://github.com/yasuomaidana/dendrite-rag-rs` " +
+		"(add `--features candle`, `oxillama` or `model2vec` for in-process embedders) or point DENDRITE_DENDRITE_RAG_BIN at a build"
 )
 
-// Retriever indexes a project and returns the chunks most relevant to a question.
+// ErrSidecarUnavailable means the dendrite-rag binary could not be found or started.
+var ErrSidecarUnavailable = errors.New("dendrite-rag sidecar unavailable")
+
+// Retriever indexes a project through the sidecar and returns the chunks most relevant to
+// a question.
 type Retriever struct {
 	Locator     sidecar.Locator
-	Indexer     *Indexer // in-process fallback
 	EmbedBudget time.Duration
-	Disabled    bool
 }
 
-// Retrieval is the outcome of one Retrieve call.
+// Retrieval is the outcome of one Retrieve or Context call.
 type Retrieval struct {
 	Chunks []Chunk
 	// IndexStatus is "cached", "incremental" or "refreshed".
 	IndexStatus string
-	// Outcome says whether the sidecar or the in-process fallback answered, and why.
-	Outcome sidecar.Outcome
-	// EmbedPending counts sidecar chunks still without vectors (0 when complete).
+	// Sidecar is the binary that answered.
+	Sidecar string
+	// EmbedPending counts chunks still without vectors (0 when complete).
 	EmbedPending int
+	// EmbedError reports why embedding failed in this call (lexical results still apply).
+	EmbedError string
+	// Tokens estimates the size of a context pack (Context only).
+	Tokens int
 }
 
-// NewRetriever returns a Retriever that searches the default sidecar locations and falls
-// back to idx.
-func NewRetriever(idx *Indexer) *Retriever {
-	v := strings.ToLower(strings.TrimSpace(os.Getenv(SidecarEnv)))
-	return &Retriever{
-		Locator:     sidecar.DefaultLocator(),
-		Indexer:     idx,
-		EmbedBudget: DefaultEmbedBudget,
-		Disabled:    v == "0" || v == "off" || v == "false",
-	}
+// NewRetriever returns a Retriever that searches the default sidecar locations.
+func NewRetriever() *Retriever {
+	return &Retriever{Locator: sidecar.DefaultLocator(), EmbedBudget: DefaultEmbedBudget}
 }
 
 // Retrieve brings the index of projectPath up to date (rebuilding it when refresh is set)
-// and returns the best chunks for question.
+// and returns the best opts.TopK chunks for question. A projectPath naming a file
+// searches only that file.
 func (r *Retriever) Retrieve(ctx context.Context, projectPath, question string, opts SearchOptions, refresh bool) (Retrieval, error) {
-	if projectPath == "" {
-		projectPath = "."
-	}
-	reason := "disabled by " + SidecarEnv
-	path := ""
-	if !r.Disabled {
-		got, p, err := r.viaSidecar(ctx, projectPath, question, opts, refresh)
-		if err == nil {
-			return got, nil
+	return r.run(ctx, projectPath, refresh, func(c *sidecar.Client, root string, only []string, out *Retrieval) error {
+		hits, err := search(ctx, c, root, question, only, opts)
+		out.Chunks = toChunks(projectPath, only, hits)
+		return err
+	})
+}
+
+// Context brings the index up to date and returns a context pack for question: the best
+// spans plus their symbol-graph neighbours, packed into tokenBudget estimated tokens. For a
+// single-file projectPath it searches within that file.
+func (r *Retriever) Context(ctx context.Context, projectPath, question string, tokenBudget int, refresh bool) (Retrieval, error) {
+	return r.run(ctx, projectPath, refresh, func(c *sidecar.Client, root string, only []string, out *Retrieval) error {
+		if len(only) > 0 {
+			hits, err := search(ctx, c, root, question, only, DefaultSearchOptions())
+			out.Chunks = toChunks(projectPath, only, hits)
+			return err
 		}
-		reason, path = err.Error(), p
-	}
-	got, err := r.inProcess(ctx, projectPath, question, opts, refresh)
-	got.Outcome = sidecar.Outcome{Origin: sidecar.OriginFallback, Path: path, Reason: reason}
-	return got, err
+		params := map[string]interface{}{"root": root, "query": question}
+		if tokenBudget > 0 {
+			params["token_budget"] = tokenBudget
+		}
+		var res struct {
+			Spans  []sidecarHit `json:"spans"`
+			Tokens int          `json:"tokens"`
+		}
+		if err := c.Call(ctx, "context", params, &res); err != nil {
+			return fmt.Errorf("context: %w", err)
+		}
+		out.Chunks, out.Tokens = toChunks(projectPath, nil, res.Spans), res.Tokens
+		return nil
+	})
 }
 
 type sidecarIndexReport struct {
@@ -93,20 +113,43 @@ type sidecarHit struct {
 	Content   string   `json:"content"`
 }
 
-// viaSidecar runs index then search on one sidecar process. The returned path names the
-// binary that was tried, for the fallback reason.
-func (r *Retriever) viaSidecar(ctx context.Context, projectPath, question string, opts SearchOptions, refresh bool) (Retrieval, string, error) {
-	root, err := filepath.Abs(projectPath)
+func search(ctx context.Context, c *sidecar.Client, root, question string, only []string, opts SearchOptions) ([]sidecarHit, error) {
+	topK := opts.TopK
+	if topK <= 0 {
+		topK = DefaultSearchOptions().TopK
+	}
+	params := map[string]interface{}{"root": root, "query": question, "top_k": topK}
+	if len(only) > 0 {
+		params["paths"] = only
+	}
+	if opts.MinScore > 0 {
+		params["min_score"] = opts.MinScore
+	}
+	var res struct {
+		Hits []sidecarHit `json:"hits"`
+	}
+	if err := c.Call(ctx, "search", params, &res); err != nil {
+		return nil, fmt.Errorf("search: %w", err)
+	}
+	return res.Hits, nil
+}
+
+// run starts the sidecar, indexes the project and hands the client to query.
+func (r *Retriever) run(ctx context.Context, projectPath string, refresh bool, query func(c *sidecar.Client, root string, only []string, out *Retrieval) error) (Retrieval, error) {
+	if projectPath == "" {
+		projectPath = "."
+	}
+	root, only, err := projectRoot(projectPath)
 	if err != nil {
-		return Retrieval{}, "", err
+		return Retrieval{}, err
 	}
 	bin, err := r.Locator.Locate(SidecarBinary)
 	if err != nil {
-		return Retrieval{}, "", err
+		return Retrieval{}, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
 	}
 	c, err := sidecar.Start(ctx, bin, SidecarMajor)
 	if err != nil {
-		return Retrieval{}, bin, err
+		return Retrieval{}, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
 	}
 	defer func() { _ = c.Close() }()
 
@@ -116,23 +159,13 @@ func (r *Retriever) viaSidecar(ctx context.Context, projectPath, question string
 	}
 	var report sidecarIndexReport
 	if err := c.Call(ctx, "index", indexParams, &report); err != nil {
-		return Retrieval{}, bin, fmt.Errorf("index: %w", err)
+		return Retrieval{}, fmt.Errorf("index %s: %w", root, err)
 	}
-	topK := opts.TopK
-	if topK <= 0 {
-		topK = DefaultSearchOptions().TopK
-	}
-	var res struct {
-		Hits []sidecarHit `json:"hits"`
-	}
-	if err := c.Call(ctx, "search", map[string]interface{}{"root": root, "query": question, "top_k": topK}, &res); err != nil {
-		return Retrieval{}, bin, fmt.Errorf("search: %w", err)
-	}
-
 	out := Retrieval{
 		IndexStatus:  "cached",
-		Outcome:      sidecar.Outcome{Origin: sidecar.OriginSidecar, Path: bin},
+		Sidecar:      bin,
 		EmbedPending: report.EmbedPending,
+		EmbedError:   report.EmbedError,
 	}
 	switch {
 	case refresh:
@@ -140,11 +173,41 @@ func (r *Retriever) viaSidecar(ctx context.Context, projectPath, question string
 	case report.FilesChanged > 0 || report.FilesRemoved > 0:
 		out.IndexStatus = "incremental"
 	}
-	for _, h := range res.Hits {
-		out.Chunks = append(out.Chunks, Chunk{
-			ID: h.ChunkID,
-			// Same convention as the in-process Indexer: paths relative to projectPath as given.
-			FilePath:  filepath.Join(projectPath, filepath.FromSlash(h.Path)),
+	if err := query(c, root, only, &out); err != nil {
+		return Retrieval{}, err
+	}
+	return out, nil
+}
+
+// projectRoot returns the absolute directory to index and, when projectPath is a file,
+// the directory-relative path that restricts the search to it.
+func projectRoot(projectPath string) (string, []string, error) {
+	abs, err := filepath.Abs(projectPath)
+	if err != nil {
+		return "", nil, err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", nil, fmt.Errorf("project path: %w", err)
+	}
+	if info.IsDir() {
+		return abs, nil, nil
+	}
+	return filepath.Dir(abs), []string{filepath.Base(abs)}, nil
+}
+
+// toChunks maps sidecar hits to chunks whose FilePath is relative to projectPath as given
+// (or to the directory of a single-file projectPath).
+func toChunks(projectPath string, only []string, hits []sidecarHit) []Chunk {
+	base := projectPath
+	if len(only) > 0 {
+		base = filepath.Dir(projectPath)
+	}
+	chunks := make([]Chunk, 0, len(hits))
+	for _, h := range hits {
+		chunks = append(chunks, Chunk{
+			ID:        h.ChunkID,
+			FilePath:  filepath.Join(base, filepath.FromSlash(h.Path)),
 			Heading:   strings.Join(h.Scope, " › "),
 			Content:   h.Content,
 			LineStart: h.StartLine,
@@ -152,19 +215,5 @@ func (r *Retriever) viaSidecar(ctx context.Context, projectPath, question string
 			Score:     h.Score,
 		})
 	}
-	return out, bin, nil
-}
-
-// inProcess is the BM25 fallback built into Dendrite.
-func (r *Retriever) inProcess(ctx context.Context, projectPath, question string, opts SearchOptions, refresh bool) (Retrieval, error) {
-	idx := r.Indexer
-	if idx == nil {
-		idx = NewIndexer()
-	}
-	status, indexErr := idx.IndexProjectIncremental(ctx, projectPath, refresh)
-	chunks, err := idx.Retrieve(ctx, question, opts)
-	if err == nil && indexErr != nil && len(chunks) == 0 {
-		err = fmt.Errorf("indexing %s: %w", projectPath, indexErr)
-	}
-	return Retrieval{Chunks: chunks, IndexStatus: status}, err
+	return chunks
 }

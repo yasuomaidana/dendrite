@@ -1,15 +1,11 @@
 package server
 
 import (
-	"os"
 	"testing"
 
-	"Dendrite/pkg/rag"
+	"Dendrite/pkg/rag/ragtest"
 )
 
-// TestMain keeps retrieval in-process: the tests must not depend on a dendrite-rag
-// sidecar that happens to be installed on the machine.
-func TestMain(m *testing.M) {
-	_ = os.Setenv(rag.SidecarEnv, "off")
-	os.Exit(m.Run())
-}
+// TestMain serves retrieval from the dendrite-rag stand-in, never from a sidecar that
+// happens to be installed on the machine.
+func TestMain(m *testing.M) { ragtest.Main(m) }

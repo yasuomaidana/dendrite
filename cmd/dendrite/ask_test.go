@@ -9,7 +9,7 @@ func TestAsk_UsageErrors(t *testing.T) {
 	for _, args := range [][]string{
 		{"ask"},
 		{"ask", "q", "--tier", "galactic"},
-		{"ask", "q", "--top-k", "0"},
+		{"ask", "q", "--top-k", "-1"},
 		{"ask", "q", "--paid", "--hybrid"},
 	} {
 		if _, code := cliOutput(t, args...); code != ExitUsage {

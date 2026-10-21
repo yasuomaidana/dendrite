@@ -2,6 +2,7 @@ package triage
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"Dendrite/pkg/inference"
 	"Dendrite/pkg/ollama"
+	"Dendrite/pkg/rag/ragtest"
 )
 
 func TestMain(m *testing.M) {
@@ -36,8 +38,14 @@ func TestMain(m *testing.M) {
 
 	os.Setenv("DENDRITE_OXILLAMA_ENDPOINT", tsOxillama.URL)
 	os.Setenv("DENDRITE_OLLAMA_ENDPOINT", tsOllama.URL)
+	cleanupRag, err := ragtest.Install()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 
 	code := m.Run()
+	cleanupRag()
 	tsOllama.Close()
 	tsOxillama.Close()
 	os.Exit(code)

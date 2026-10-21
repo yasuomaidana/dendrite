@@ -33,7 +33,7 @@ None
 | `--project` | Project directory to index and search (default: .) |
 | `--server` | Ask a central Dendrite RAG service instead (e.g. http://host:3456) |
 | `--tier` | Shortcut for the tier: local, hybrid or paid |
-| `--top-k, -k` | Context chunks to retrieve (default: 4) |
+| `--top-k, -k` | Retrieve the N best chunks instead of a token-budgeted context pack (default: context pack) |
 | `--update-index` | Re-index changed project files before answering |
 
 ## Examples

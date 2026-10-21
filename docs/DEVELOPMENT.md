@@ -116,7 +116,7 @@ Flags:
 
 ## 6. Sidecars
 
-The Rust repositories ship `dendrite-<x>` binaries that speak the [sidecar protocol](architecture/sidecar-protocol.md). Dendrite always has a Go fallback, so a missing or incompatible sidecar only means the slower path. To point at a specific build, set `DENDRITE_DENDRITE_CORE_BIN=/path/to/dendrite-core`. The same pattern works for any sidecar, including `DENDRITE_OXILLAMA_BIN`.
+The Rust repositories ship `dendrite-<x>` binaries that speak the [sidecar protocol](architecture/sidecar-protocol.md). Most sidecars still have a Go fallback, so a missing or incompatible one only means the slower path. `dendrite-rag` has none: retrieval needs it (`cargo install --locked --git https://github.com/yasuomaidana/dendrite-rag-rs`, or `cargo build --release` in a sibling checkout). To point at a specific build, set `DENDRITE_DENDRITE_CORE_BIN=/path/to/dendrite-core`. The same pattern works for any sidecar, including `DENDRITE_OXILLAMA_BIN`.
 
 ## 7. Tests touching git
 

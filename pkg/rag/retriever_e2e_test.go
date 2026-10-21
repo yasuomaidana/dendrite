@@ -28,7 +28,7 @@ func TestRetrieverRealSidecar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Outcome.Origin != sidecar.OriginSidecar || len(got.Chunks) == 0 || got.Chunks[0].FilePath != filepath.Join(dir, "demo.go") {
+	if got.Sidecar != bin || len(got.Chunks) == 0 || got.Chunks[0].FilePath != filepath.Join(dir, "pkg", "demo", "demo.go") {
 		t.Fatalf("got %+v", got)
 	}
 }

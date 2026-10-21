@@ -50,8 +50,8 @@ func newAskCmd() *cobra.Command {
 			default:
 				return usageErrorf("invalid --tier %q: use local, hybrid or paid", o.Tier)
 			}
-			if o.TopK <= 0 {
-				return usageErrorf("--top-k must be positive")
+			if o.TopK < 0 {
+				return usageErrorf("--top-k must not be negative")
 			}
 			req := rag.AskRequest{
 				Question:        strings.Join(args, " "),
@@ -79,7 +79,7 @@ func newAskCmd() *cobra.Command {
 	addProjectFlag(cmd, &o.Project, ".", "Project directory to index and search")
 	f.StringVar(&o.PaidModel, "paid-model", "gemini-2.5-pro", "Paid fallback model")
 	f.StringVar(&o.LocalModel, "local-model", "", "Preferred local model (default: detected from Ollama/OxiLLaMa)")
-	f.IntVarP(&o.TopK, "top-k", "k", 4, "Context chunks to retrieve")
+	f.IntVarP(&o.TopK, "top-k", "k", 0, "Retrieve the N best chunks instead of a token-budgeted context pack")
 	cmd.MarkFlagsMutuallyExclusive("paid", "hybrid")
 	return cmd
 }
