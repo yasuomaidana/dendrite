@@ -482,6 +482,95 @@ func TestServer_RAGEndpoints(t *testing.T) {
 	}
 }
 
+func TestServer_GraphEndpoints(t *testing.T) {
+	tmpDir := t.TempDir()
+	src := "package demo\n\nfunc LocateBinary(name string) string { return name }\n"
+	_ = os.MkdirAll(filepath.Join(tmpDir, "pkg", "demo"), 0755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "pkg", "demo", "demo.go"), []byte(src), 0644)
+
+	cfg := ServerConfig{Port: 0, Host: "127.0.0.1"}
+	s := NewServer(cfg, nil, nil)
+	if err := s.Start(); err != nil {
+		t.Fatalf("failed to start server: %v", err)
+	}
+	defer func() { _ = s.Shutdown(context.Background()) }()
+
+	baseURL := fmt.Sprintf("http://%s", s.listener.Addr().String())
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// 1. POST /api/v1/graph/communities
+	commReq := fmt.Sprintf(`{"project_path": "%s", "limit": 10}`, tmpDir)
+	respComm, err := client.Post(baseURL+"/api/v1/graph/communities", "application/json", strings.NewReader(commReq))
+	if err != nil || respComm.StatusCode != http.StatusOK {
+		t.Fatalf("POST communities failed: %v, status: %v", err, respComm.StatusCode)
+	}
+	var commRes map[string]interface{}
+	if err := json.NewDecoder(respComm.Body).Decode(&commRes); err != nil {
+		t.Fatalf("failed to decode communities response: %v", err)
+	}
+	if _, ok := commRes["communities"]; !ok {
+		t.Errorf("expected 'communities' key in response, got %v", commRes)
+	}
+
+	// 2. POST /api/v1/graph/god_nodes
+	godReq := fmt.Sprintf(`{"project_path": "%s", "min_in_degree": 21}`, tmpDir)
+	respGod, err := client.Post(baseURL+"/api/v1/graph/god_nodes", "application/json", strings.NewReader(godReq))
+	if err != nil || respGod.StatusCode != http.StatusOK {
+		t.Fatalf("POST god_nodes failed: %v, status: %v", err, respGod.StatusCode)
+	}
+	var godRes map[string]interface{}
+	if err := json.NewDecoder(respGod.Body).Decode(&godRes); err != nil {
+		t.Fatalf("failed to decode god_nodes response: %v", err)
+	}
+	if _, ok := godRes["nodes"]; !ok {
+		t.Errorf("expected 'nodes' key in response, got %v", godRes)
+	}
+
+	// 3. POST /api/v1/graph/path
+	pathReq := fmt.Sprintf(`{"project_path": "%s", "from": "Run", "to": "LocateBinary", "kinds": ["call"]}`, tmpDir)
+	respPath, err := client.Post(baseURL+"/api/v1/graph/path", "application/json", strings.NewReader(pathReq))
+	if err != nil || respPath.StatusCode != http.StatusOK {
+		t.Fatalf("POST path failed: %v, status: %v", err, respPath.StatusCode)
+	}
+	var pathRes map[string]interface{}
+	if err := json.NewDecoder(respPath.Body).Decode(&pathRes); err != nil {
+		t.Fatalf("failed to decode path response: %v", err)
+	}
+	if pathRes["found"] != true {
+		t.Errorf("expected found: true, got %v", pathRes["found"])
+	}
+
+	// 4. POST /api/v1/graph/explain
+	explainReq := fmt.Sprintf(`{"project_path": "%s", "target": "LocateBinary"}`, tmpDir)
+	respExplain, err := client.Post(baseURL+"/api/v1/graph/explain", "application/json", strings.NewReader(explainReq))
+	if err != nil || respExplain.StatusCode != http.StatusOK {
+		t.Fatalf("POST explain failed: %v, status: %v", err, respExplain.StatusCode)
+	}
+	var explainRes map[string]interface{}
+	if err := json.NewDecoder(respExplain.Body).Decode(&explainRes); err != nil {
+		t.Fatalf("failed to decode explain response: %v", err)
+	}
+	if _, ok := explainRes["matches"]; !ok {
+		t.Errorf("expected 'matches' key in response, got %v", explainRes)
+	}
+
+	// 5. Bad requests
+	respGet, _ := client.Get(baseURL + "/api/v1/graph/communities")
+	if respGet.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 on GET communities, got: %d", respGet.StatusCode)
+	}
+
+	respBadPath, _ := client.Post(baseURL+"/api/v1/graph/path", "application/json", strings.NewReader(`{"from": ""}`))
+	if respBadPath.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 on empty path targets, got: %d", respBadPath.StatusCode)
+	}
+
+	respBadExplain, _ := client.Post(baseURL+"/api/v1/graph/explain", "application/json", strings.NewReader(`{"target": ""}`))
+	if respBadExplain.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 on empty explain target, got: %d", respBadExplain.StatusCode)
+	}
+}
+
 type testHijackFailRecorder struct {
 	*httptest.ResponseRecorder
 }

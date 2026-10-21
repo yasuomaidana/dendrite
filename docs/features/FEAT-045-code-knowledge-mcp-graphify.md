@@ -42,11 +42,13 @@ flowchart TD
 
 ## 3. Plane Tickets
 
-| Ticket ID | Title | Priority | Estimate | Milestone | Start Date | Target Date | Blocked By |
-|:---|:---|:---:|:---:|:---|:---:|:---:|:---|
-| **DEND-201** | [Code Knowledge MCP]: Local AST query MCP server | High | 5 SP | Milestone 21 | 2026-10-27 | 2026-10-28 | DEN-040 |
-| **DEND-202** | [Graphify Community Graph]: Leiden clustering & god-node dependency index | High | 8 SP | Milestone 21 | 2026-10-29 | 2026-10-30 | DEND-201 |
-| **DEND-203** | [Local-First RAG & Shared Library Deduplication]: Zero-cost nomic embeddings & CAS library store | Urgent | 8 SP | Milestone 21 | 2026-10-31 | 2026-11-01 | DEND-202 |
+> **Status update:** DEND-201 and DEND-202 are delivered natively by `dendrite-rag graph.*` (DRAG-32, protocol 1.1.0) and Dendrite's MCP tools (`dendrite_graph_communities`, `dendrite_graph_god_nodes`, `dendrite_graph_path`, `dendrite_graph_explain`) and HTTP routes (`/api/v1/graph/*`).
+
+| Ticket ID | Title | Priority | Estimate | Milestone | Start Date | Target Date | Blocked By | Status |
+|:---|:---|:---:|:---:|:---|:---:|:---:|:---|:---:|
+| **DEND-201** | [Code Knowledge MCP]: Local AST query MCP server | High | 5 SP | Milestone 21 | 2026-10-27 | 2026-10-28 | DEN-040 | Delivered |
+| **DEND-202** | [Graphify Community Graph]: Leiden clustering & god-node dependency index | High | 8 SP | Milestone 21 | 2026-10-29 | 2026-10-30 | DEND-201 | Delivered |
+| **DEND-203** | [Local-First RAG & Shared Library Deduplication]: Zero-cost nomic embeddings & CAS library store | Urgent | 8 SP | Milestone 21 | 2026-10-31 | 2026-11-01 | DEND-202 | Planned |
 
 ---
 
