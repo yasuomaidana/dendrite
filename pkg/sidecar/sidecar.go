@@ -147,6 +147,9 @@ type Client struct {
 // sidecar's protocol major version to equal major. The process lives until Close.
 func Start(ctx context.Context, path string, major int) (*Client, error) {
 	cmd := exec.Command(path)
+	if home, err := projectid.HomeDir(); err == nil {
+		cmd.Env = append(os.Environ(), ragEnv(os.Getenv, filepath.Join(home, "rag.env"))...)
+	}
 	cmd.Stderr = os.Stderr
 	// The pipe constructors only fail when Stdin/Stdout are already set or the process
 	// has started, neither of which holds for a fresh Cmd.
@@ -168,6 +171,24 @@ func Start(ctx context.Context, path string, major int) (*Client, error) {
 		return nil, fmt.Errorf("%s speaks protocol %q, need major %d: %w", path, c.Health.Protocol, major, ErrIncompatible)
 	}
 	return c, nil
+}
+
+// ragEnv returns the DENDRITE_RAG_* lines of the file at path (written by
+// `dendrite soma prepare`) that the environment does not set: an exported variable wins.
+func ragEnv(getenv func(string) string, path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, line := range strings.Split(string(data), "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok || !strings.HasPrefix(key, "DENDRITE_RAG_") || getenv(key) != "" {
+			continue
+		}
+		out = append(out, key+"="+strings.Trim(value, "\"'"))
+	}
+	return out
 }
 
 // Call sends one request and decodes the result into result (which may be nil).
