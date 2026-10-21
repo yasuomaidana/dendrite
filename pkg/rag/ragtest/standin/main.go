@@ -165,8 +165,8 @@ func main() {
 							"id":    1,
 							"label": "pkg/demo",
 						},
-						"god_node":  true,
-						"in_degree": 25,
+						"god_node":   true,
+						"in_degree":  25,
 						"out_degree": 0,
 						"users": []map[string]interface{}{
 							{
