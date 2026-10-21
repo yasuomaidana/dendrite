@@ -156,6 +156,10 @@ func (r *Replicator) handleRenderAction(action PlanAction) (string, error) {
 		if err := writeStackFileIfAbsent(outPath, yamlContent); err != nil {
 			return "", err
 		}
+		initSqlPath := filepath.Join(filepath.Dir(outPath), "init-rag.sql")
+		if _, err := os.Stat(initSqlPath); os.IsNotExist(err) {
+			_ = os.WriteFile(initSqlPath, []byte(RagInitSQL), 0644)
+		}
 		return outPath, nil
 
 	default:
@@ -254,6 +258,20 @@ func (r *Replicator) AuditComponents(ctx context.Context) []ComponentStatus {
 	return statuses
 }
 
+// RagInitSQL initializes the dendrite_rag database and pgvector extension for the shared tier.
+const RagInitSQL = `-- dendrite-rag shared tier: the dendrite_rag role and database with pgvector.
+-- Runs on a fresh volume through /docker-entrypoint-initdb.d; idempotent, so an existing
+-- stack can apply it too:
+--   docker exec -i dendrite-postgres psql -U dendrite -d postgres < stacks/init-rag.sql
+SELECT 'CREATE ROLE dendrite_rag WITH LOGIN PASSWORD ''dendrite_rag'''
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'dendrite_rag')\gexec
+SELECT 'CREATE DATABASE dendrite_rag OWNER dendrite_rag'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'dendrite_rag')\gexec
+\connect dendrite_rag
+CREATE EXTENSION IF NOT EXISTS vector;
+GRANT ALL ON SCHEMA public TO dendrite_rag;
+`
+
 // GenerateControlCompose returns standard docker compose YAML for the control plane.
 // GenerateControlCompose returns the control-plane stack (Postgres, Redis, LiteLLM).
 // It must stay identical to stacks/compose.control.yaml (guarded by TestGenerateControlComposeMatchesCommittedStack).
@@ -271,7 +289,7 @@ volumes:
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: dendrite-postgres
     restart: unless-stopped
     environment:
@@ -282,6 +300,7 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - dendrite-postgres-data:/var/lib/postgresql/data
+      - ./init-rag.sql:/docker-entrypoint-initdb.d/init-rag.sql:ro
     networks:
       - dendrite-mesh
     healthcheck:

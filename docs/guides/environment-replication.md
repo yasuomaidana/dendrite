@@ -109,6 +109,7 @@ Dendrite maintains pre-configured, production-grade Docker Compose manifests und
   ```bash
   docker compose -f stacks/compose.control.yaml up -d
   ```
+  Its Postgres (`pgvector/pgvector:pg16`) also hosts `dendrite_rag`, the shared tier of dendrite-rag (role and password `dendrite_rag`, with the `vector` extension), created by `stacks/init-rag.sql` on a fresh volume. An existing volume gets it with `docker exec -i dendrite-postgres psql -U dendrite -d postgres < stacks/init-rag.sql` (idempotent). `dendrite soma prepare` writes its URL as `DENDRITE_RAG_PG_URL` to `$DENDRITE_HOME/rag.env`, which the sidecar launcher passes to dendrite-rag unless the variable is already exported.
 
 > 💡 **New to Penpot and Plane?** Check out our friendly, beginner-oriented walkthrough:  
 > [Beginner's Guide to Penpot & Plane](penpot-and-plane-beginner-tutorial.md) for initial account creation, UI navigation, and troubleshooting tips.
