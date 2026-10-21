@@ -264,8 +264,13 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 	sort.Strings(report.OnlineEngines)
 	sort.Strings(report.OfflineEngines)
 
-	// Sort discovered models descending by intelligence score: smartest first!
+	// GPU-accelerated engines first (OxiLLaMa prefills on the CPU), then smartest first.
 	sort.SliceStable(report.DiscoveredModels, func(i, j int) bool {
+		gi := inference.GPUAccelerated(inference.EngineType(report.DiscoveredModels[i].EngineType))
+		gj := inference.GPUAccelerated(inference.EngineType(report.DiscoveredModels[j].EngineType))
+		if gi != gj {
+			return gi
+		}
 		if report.DiscoveredModels[i].IntelligenceScore != report.DiscoveredModels[j].IntelligenceScore {
 			return report.DiscoveredModels[i].IntelligenceScore > report.DiscoveredModels[j].IntelligenceScore
 		}
@@ -504,14 +509,15 @@ func (u *RoutingTableUpdater) buildDynamicConfig(
 		defaultOxillamaEP = opts.OxillamaEndpoint
 	}
 
+	// Offline defaults point at Ollama (GPU); OxiLLaMa keeps only its own alias.
 	if !registeredAliases["local-qwen3-27b"] {
-		addLocalEntry("local-qwen3-27b", "qwen3.8:27b", string(inference.EngineOxiLLaMa), defaultOxillamaEP, 8192)
+		addLocalEntry("local-qwen3-27b", "qwen3.8:27b", string(inference.EngineOllama), defaultOllamaEP, 8192)
 	}
 	if !registeredAliases["local-qwen3-9b"] {
-		addLocalEntry("local-qwen3-9b", "qwen3.5:9b", string(inference.EngineOxiLLaMa), defaultOxillamaEP, 4096)
+		addLocalEntry("local-qwen3-9b", "qwen3.5:9b", string(inference.EngineOllama), defaultOllamaEP, 4096)
 	}
 	if !registeredAliases["local-qwen-coder"] {
-		addLocalEntry("local-qwen-coder", "qwen2.5-coder-7b", string(inference.EngineOxiLLaMa), defaultOxillamaEP, 4096)
+		addLocalEntry("local-qwen-coder", "qwen2.5-coder:14b", string(inference.EngineOllama), defaultOllamaEP, 4096)
 	}
 
 	// Also register backward-compatible engine aliases

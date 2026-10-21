@@ -2,32 +2,15 @@ package gateway
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"Dendrite/pkg/inference"
 	"Dendrite/pkg/topology"
 )
-
-func isOxiLLaMaPresent(endpoint string) bool {
-	client := &http.Client{Timeout: 300 * time.Millisecond}
-	resp, err := client.Get(strings.TrimRight(endpoint, "/") + "/v1/models")
-	if err == nil {
-		resp.Body.Close()
-		return resp.StatusCode == http.StatusOK
-	}
-	resp, err = client.Get(strings.TrimRight(endpoint, "/") + "/health")
-	if err == nil {
-		resp.Body.Close()
-		return resp.StatusCode == http.StatusOK
-	}
-	return false
-}
 
 // DefaultLiteLLMConfig creates a production-grade LiteLLM configuration with the 4-tier model hierarchy.
 func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
@@ -39,7 +22,9 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 	if oxillamaBaseURL == "" {
 		oxillamaBaseURL = "http://127.0.0.1:8080"
 	}
-	oxillamaOnline := isOxiLLaMaPresent(oxillamaBaseURL) || os.Getenv("DENDRITE_GATEWAY_OXILLAMA_ROUTING") == "true"
+	// Local Qwen tiers run on Ollama (GPU). OxiLLaMa prefills on the CPU, so it serves them
+	// only on request.
+	oxillamaOnline := os.Getenv("DENDRITE_GATEWAY_OXILLAMA_ROUTING") == "true"
 
 	qwen27bModel := "ollama/qwen3.8:27b"
 	qwen27bAPIBase := ollamaBaseURL

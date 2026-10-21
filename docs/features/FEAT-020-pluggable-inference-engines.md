@@ -85,16 +85,21 @@ flowchart TD
     end
 
     subgraph Engines["Pluggable Inference Engines (FEAT-020)"]
-        Cascade -->|Primary Local Metal| Ollama["Ollama Metal Engine (:11434)<br/>qwen2.5-coder:14b"]
-        Cascade -->|Pure-Rust GGUF| Oxillama["OxiLLaMa Server (:8080)<br/>Pure Rust zero-FFI"]
-        Cascade -->|High-Throughput| VLLM["vLLM PagedAttention (:8000)<br/>Qwen2.5-Coder-32B"]
-        Cascade -->|Remote GPU| HFTGI["Hugging Face TGI (:8080)<br/>DeepSeek-Coder"]
-        Cascade -->|Lightweight GGUF| LlamaCpp["llama.cpp Server (:8081)<br/>Mistral-Instruct GGUF"]
+        Cascade -->|1. Rust GPU| Candle["Candle (:8083)"]
+        Cascade -->|2. Rust GPU| HFTGI["Hugging Face TGI (:8080)<br/>DeepSeek-Coder"]
+        Cascade -->|3. Local Metal| Ollama["Ollama Metal Engine (:11434)<br/>qwen2.5-coder:14b"]
+        Cascade -->|4. High-Throughput| VLLM["vLLM PagedAttention (:8000)<br/>Qwen2.5-Coder-32B"]
+        Cascade -->|5. Lightweight GGUF| LlamaCpp["llama.cpp Server (:8081)<br/>Mistral-Instruct GGUF"]
+        Cascade -->|6. CPU prefill, on request| Oxillama["OxiLLaMa Server (:8080)<br/>Pure Rust zero-FFI"]
         Cascade -->|Cloud Fallback on 429| Upstream["Commercial Fallback APIs<br/>(Gemini, Copilot, Anthropic)"]
     end
 ```
 
 ---
+
+### Engine priority
+
+Local engines are tried GPU-first (`inference.EnginePreference`): candle and Hugging Face TGI/TEI (Rust), then Ollama, vLLM and llama.cpp, with OxiLLaMa last. oxillama-runtime 0.1.4 offloads only Q4_0 single-token decode to the GPU; prompt prefill and embeddings run on the CPU. The gateway routes the local Qwen aliases to Ollama unless `DENDRITE_GATEWAY_OXILLAMA_ROUTING=true`.
 
 ## 3. Acceptance Criteria & Verification Matrix
 

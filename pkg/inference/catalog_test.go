@@ -117,16 +117,16 @@ func TestCatalog_GetAndTieBreak(t *testing.T) {
 		},
 	}
 
-	// Tie break: oxillama must win when ID matches both engines
+	// Tie break: the GPU engine (Ollama) wins over OxiLLaMa, which prefills on the CPU
 	best, ok := cat.Get("qwen-coder")
 	if !ok {
 		t.Fatalf("expected to find qwen-coder")
 	}
-	if best.Engine != EngineOxiLLaMa {
-		t.Errorf("expected oxillama to win tie break, got %s", best.Engine)
+	if best.Engine != EngineOllama {
+		t.Errorf("expected ollama to win tie break, got %s", best.Engine)
 	}
-	if best.ReasoningTier != 4 {
-		t.Errorf("expected ReasoningTier 4, got %d", best.ReasoningTier)
+	if best.ReasoningTier != 3 {
+		t.Errorf("expected ReasoningTier 3, got %d", best.ReasoningTier)
 	}
 
 	// Scoped get
@@ -250,8 +250,8 @@ func TestCatalog_UpdateThroughput(t *testing.T) {
 	if newMod.TokensPerSec != 33.2 {
 		t.Errorf("expected TokensPerSec 33.2, got %f", newMod.TokensPerSec)
 	}
-	if newMod.Engine != EngineOxiLLaMa {
-		t.Errorf("expected default engine oxillama for new model, got %s", newMod.Engine)
+	if newMod.Engine != EngineOllama {
+		t.Errorf("expected default engine ollama for new model, got %s", newMod.Engine)
 	}
 
 	// Update non-existing model with explicit engine prefix

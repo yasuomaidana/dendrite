@@ -46,7 +46,7 @@ func TestDefaultUpdaterOptions_EnvOverrides(t *testing.T) {
 }
 
 func TestRoutingTableUpdater_DryRun_And_Precedence(t *testing.T) {
-	// Create mock OxiLLaMa server with smart 27B model
+	// OxiLLaMa server with a smart 27B model
 	oxiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/models" {
 			w.Header().Set("Content-Type", "application/json")
@@ -58,7 +58,7 @@ func TestRoutingTableUpdater_DryRun_And_Precedence(t *testing.T) {
 	}))
 	defer oxiServer.Close()
 
-	// Create mock Ollama server with smaller 3B model
+	// Ollama server with a smaller 3B model
 	ollamaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/version" {
 			w.WriteHeader(http.StatusOK)
@@ -106,14 +106,10 @@ func TestRoutingTableUpdater_DryRun_And_Precedence(t *testing.T) {
 	if !report.DryRun {
 		t.Errorf("expected report to be dry run")
 	}
-	if report.ActiveLocalPrimary != "qwen3.8:27b" {
-		t.Errorf("expected smartest model 'qwen3.8:27b' to be active primary, got %s", report.ActiveLocalPrimary)
-	}
-	if report.ActiveLocalPrimaryEngine != "oxillama-rust" {
-		t.Errorf("expected active primary engine to be 'oxillama-rust', got %s", report.ActiveLocalPrimaryEngine)
-	}
-	if report.ActiveLocalPrimaryScore < 85 {
-		t.Errorf("expected score >= 85 for 27B model, got %d", report.ActiveLocalPrimaryScore)
+	// GPU engines take precedence: OxiLLaMa prefills on the CPU, so Ollama's smaller model
+	// is the primary even though OxiLLaMa hosts a smarter one.
+	if report.ActiveLocalPrimaryEngine != "ollama-metal" {
+		t.Errorf("expected active primary engine to be 'ollama-metal', got %s", report.ActiveLocalPrimaryEngine)
 	}
 
 	// Verify rendered YAML content
@@ -122,7 +118,7 @@ func TestRoutingTableUpdater_DryRun_And_Precedence(t *testing.T) {
 		t.Errorf("expected YAML to define local-qwen3-27b")
 	}
 	if !strings.Contains(yamlStr, "openai/qwen3.8:27b") {
-		t.Errorf("expected YAML to map local-qwen3-27b to OxiLLaMa openai/qwen3.8:27b")
+		t.Errorf("expected YAML to map local-qwen3-27b to the only 27B model, OxiLLaMa openai/qwen3.8:27b")
 	}
 	if !strings.Contains(yamlStr, "host.docker.internal") {
 		t.Errorf("expected container host rewrite to host.docker.internal")

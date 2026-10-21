@@ -375,6 +375,7 @@ func TestRunJob_QUOTA_WalksLadderThenParks(t *testing.T) {
 	d.AgyPath = installExecutableScript(t, binDir, "agy", quotaScript)
 	d.AiderPath = installExecutableScript(t, binDir, "aider", quotaScript)
 	d.OxillamaEndpoint = oxillama.URL
+	d.LiteLLMURL, d.LiteLLMKey = oxillama.URL+"/v1", "test-key" // the local tier goes through the gateway
 	d.Sleep = func(time.Duration) { atomic.AddInt64(&sleeps, 1) }
 
 	id, err := d.Submit(SubmitSpec{Ticket: "DEN-990", Worktree: worktree, Prompt: "Hit quota", Complexity: 3})
@@ -402,8 +403,8 @@ func TestRunJob_QUOTA_WalksLadderThenParks(t *testing.T) {
 			path = append(path, fmt.Sprint(e.Data["to"]))
 		}
 	}
-	if strings.Join(path, ",") != "agy/gemini-4-argon-low,aider/copilot-sonnet,oxillama/qwen3-8b-q4_k_m" {
-		t.Errorf("escalation path = %v, want gemini-3.8 -> argon -> copilot -> local oxillama", path)
+	if strings.Join(path, ",") != "agy/gemini-4-argon-low,aider/copilot-sonnet,local/local-qwen3-9b" {
+		t.Errorf("escalation path = %v, want gemini-3.8 -> argon -> copilot -> local GPU model", path)
 	}
 	if data, err := os.ReadFile(tempLedger.CapsulePath(id)); err != nil || !strings.Contains(string(data), "RESOURCE_EXHAUSTED") && !strings.Contains(string(data), "rate limit") {
 		t.Errorf("capsule must carry the failing output, err=%v", err)

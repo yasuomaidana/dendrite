@@ -287,9 +287,10 @@ Because codebases, design documents, and project contexts continuously evolve, D
 2. It calls `index` (incremental, with the 3 s embedding budget), then `context` for `dendrite ask` or `search` for the tools.
 3. There is no fallback. If the binary is missing, the command fails and says how to install it:
    ```bash
-   cargo install --locked --git https://github.com/yasuomaidana/dendrite-rag-rs
-   # in-process embedders: --features candle, oxillama or model2vec
+   cargo install --locked --git https://github.com/yasuomaidana/dendrite-rag-rs --features candle-metal
+   # NVIDIA: --features candle-cuda; CPU only: --features candle (or none, to use Ollama)
    ```
+   With the default `backend = "auto"`, the sidecar embeds with candle on the GPU, else a TEI server (`HF_TEI_ENDPOINT`), else Ollama, else candle on the CPU. OxiLLaMa is never chosen automatically: it runs embeddings on the CPU.
 4. A `--project` that names a single file searches only that file.
 
 ### Choosing the embedding model
@@ -298,7 +299,7 @@ The project chooses its embedding backend and model; Dendrite passes the choice 
 
 ```toml
 [embed]
-backend = "ollama"            # openai (LiteLLM gateway) | ollama | hf | candle | oxillama | model2vec | none
+backend = "ollama"            # auto (default) | openai (LiteLLM gateway) | ollama | hf | candle | oxillama | model2vec | none
 model = "nomic-embed-text"
 ```
 

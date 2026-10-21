@@ -19,6 +19,7 @@ func TestProviderKey(t *testing.T) {
 	}{
 		{"aider", copilotModel, providerCopilot},
 		{"oxillama", oxillamaModel, providerOxillama},
+		{"local", localModel, providerLocal},
 		{"agy", "gemini-3.8-flash-high", "agy:gemini-3.8"},
 		{"agy", "gemini-4-argon-medium", "agy:gemini-4-argon"},
 		{"", "gemini-3.8-flash-low", "agy:gemini-3.8"},
@@ -33,12 +34,12 @@ func TestProviderKey(t *testing.T) {
 }
 
 func TestLadder(t *testing.T) {
-	// 1. Complexity <= 4: requested model, other family, copilot, oxillama
+	// 1. Complexity <= 4: requested model, other family, copilot, local GPU model
 	j1 := &Job{Agent: "agy", Model: "gemini-3.8-flash-high", Complexity: 3}
 	l1 := ladder(j1)
 	want := []tier{
 		{"agy", "gemini-3.8-flash-high"}, {"agy", "gemini-4-argon-medium"},
-		{"aider", copilotModel}, {"oxillama", oxillamaModel},
+		{"aider", copilotModel}, {"local", localModel},
 	}
 	if fmt.Sprint(l1) != fmt.Sprint(want) {
 		t.Fatalf("ladder = %+v, want %+v", l1, want)
@@ -50,14 +51,14 @@ func TestLadder(t *testing.T) {
 		t.Errorf("argon counterpart = %+v, want gemini-3.8-flash-high", lArgon[1])
 	}
 
-	// 3. Complexity > 4 (e.g. 8) skips oxillama
+	// 3. Complexity > 4 (e.g. 8) skips the local tier
 	l8 := ladder(&Job{Agent: "agy", Model: "gemini-3.8-flash-high", Complexity: 8})
 	if len(l8) != 3 {
 		t.Fatalf("expected 3 tiers for complexity 8, got %d: %+v", len(l8), l8)
 	}
 	for _, tr := range l8 {
-		if tr.Agent == "oxillama" {
-			t.Errorf("complexity 8 must skip oxillama, got %+v", l8)
+		if tr.Agent == "local" || tr.Agent == "oxillama" {
+			t.Errorf("complexity 8 must skip local models, got %+v", l8)
 		}
 	}
 
@@ -112,10 +113,10 @@ func TestNextTier_AndProviderMemory(t *testing.T) {
 		t.Errorf("legacy agy cooldown must skip argon, got: %+v", next)
 	}
 
-	// 5. Argon and copilot cooling down -> oxillama; expired cooldowns are ignored
+	// 5. Argon and copilot cooling down -> local GPU tier; expired cooldowns are ignored
 	next, ok = d.nextTier(jAgy, map[string]time.Time{"agy:gemini-4-argon": cooling, providerCopilot: cooling})
-	if !ok || next.Agent != "oxillama" || next.Model != oxillamaModel {
-		t.Errorf("want oxillama, got: %+v, ok=%v", next, ok)
+	if !ok || next.Agent != "local" || next.Model != localModel {
+		t.Errorf("want local, got: %+v, ok=%v", next, ok)
 	}
 	next, ok = d.nextTier(jAgy, map[string]time.Time{"agy:gemini-4-argon": fakeNow.Add(-time.Minute)})
 	if !ok || next.Model != "gemini-4-argon-medium" {
@@ -123,7 +124,7 @@ func TestNextTier_AndProviderMemory(t *testing.T) {
 	}
 
 	// 6. All remaining tiers cooling down -> false
-	all := map[string]time.Time{"agy:gemini-4-argon": cooling, providerCopilot: cooling, providerOxillama: cooling}
+	all := map[string]time.Time{"agy:gemini-4-argon": cooling, providerCopilot: cooling, providerLocal: cooling}
 	if _, ok := d.nextTier(jAgy, all); ok {
 		t.Error("expected ok=false when all next tiers cooling down")
 	}
@@ -135,9 +136,12 @@ func TestNextTier_AndProviderMemory(t *testing.T) {
 		t.Errorf("argon with gemini-3.8 cooling want aider, got: %+v", next)
 	}
 
-	// 8. Last tier reached (oxillama) -> false
-	if _, ok := d.nextTier(&Job{Agent: "oxillama", Model: oxillamaModel, Complexity: 3}, nil); ok {
+	// 8. Last tier reached -> false; an explicitly requested oxillama job is its own last tier
+	if _, ok := d.nextTier(&Job{Agent: "local", Model: localModel, Complexity: 3}, nil); ok {
 		t.Error("expected ok=false when at last tier")
+	}
+	if _, ok := d.nextTier(&Job{Agent: "oxillama", Model: oxillamaModel, Complexity: 3}, nil); ok {
+		t.Error("expected ok=false for an explicit oxillama job")
 	}
 
 	// 9. A non-AGY custom agent has no AGY tiers and goes to copilot
@@ -296,7 +300,7 @@ func TestSkipExhaustedInitialTier(t *testing.T) {
 
 	// 4. All next tiers cooling down -> nextTier returns false -> remains unchanged
 	_ = d.markProviderExhausted(providerCopilot, fakeNow.Add(30*time.Minute))
-	_ = d.markProviderExhausted(providerOxillama, fakeNow.Add(30*time.Minute))
+	_ = d.markProviderExhausted(providerLocal, fakeNow.Add(30*time.Minute))
 	j4, _ := tempLedger.Create(&Job{Ticket: "DEN-4", Agent: "agy", Model: "gemini-3.8-flash-high"})
 	d.skipExhaustedInitialTier(j4)
 	if j4.Agent != "agy" || j4.Tier != 0 {

@@ -25,8 +25,8 @@ const (
 	// project are added by later calls, or all at once by `dendrite-rag index <project>`.
 	DefaultEmbedBudget = 3 * time.Second
 	// InstallHint tells users how to get the sidecar when it is missing.
-	InstallHint = "install it with `cargo install --locked --git https://github.com/yasuomaidana/dendrite-rag-rs` " +
-		"(add `--features candle`, `oxillama` or `model2vec` for in-process embedders) or point DENDRITE_DENDRITE_RAG_BIN at a build"
+	InstallHint = "install it with `cargo install --locked --git https://github.com/yasuomaidana/dendrite-rag-rs --features candle-metal` " +
+		"(Apple GPU; `candle-cuda` on NVIDIA, `candle` for CPU) or point DENDRITE_DENDRITE_RAG_BIN at a build"
 )
 
 // ErrSidecarUnavailable means the dendrite-rag binary could not be found or started.

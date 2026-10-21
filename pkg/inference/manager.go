@@ -306,7 +306,7 @@ func DefaultManager() *Manager {
 		Models:   ollamaModels,
 	}, nil))
 
-	// 2. OxiLLaMa (Pure-Rust GGUF zero-FFI runner)
+	// 2. OxiLLaMa (Pure-Rust GGUF zero-FFI runner; CPU prefill, ordered last in the cascade)
 	_ = mgr.RegisterEngine(NewOxiLLaMaEngine(EngineConfig{
 		ID:       "oxillama-rust",
 		Type:     EngineOxiLLaMa,
@@ -358,13 +358,15 @@ func DefaultManager() *Manager {
 	}, nil))
 
 	// Set baseline default cascade order
+	// Baseline cascade: GPU-capable Rust engines, then Ollama and the other GPU servers,
+	// OxiLLaMa last (CPU prefill; see EnginePreference).
 	_ = mgr.SetCascadeOrder([]string{
-		"oxillama-rust",
-		"ollama-metal",
 		"candle-rust",
-		"vllm-cluster",
 		"hf-tgi-remote",
+		"ollama-metal",
+		"vllm-cluster",
 		"llamacpp-local",
+		"oxillama-rust",
 	})
 
 	// Dynamic Cascade Initialization: run live probing and intelligence ordering

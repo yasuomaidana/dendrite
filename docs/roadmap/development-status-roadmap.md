@@ -139,9 +139,10 @@ To prevent runaway commercial API token expenses while maintaining high architec
 
 #### Model Priority & Local Intelligence Precedence Rules
 
-1. **Smarter Local Models Take Precedence**:
-   - Local models are ranked strictly by capability and parameter scale ($27\text{B}/32\text{B} > 14\text{B} > 9\text{B}/7\text{B} > 3\text{B}$).
-   - **OxiLLaMa vs. Ollama Dynamic Precedence**: If Ollama is running only smaller or less-smart models (e.g. `llama3.2:3b`, `qwen2.5:1.5b`) while OxiLLaMa has a smarter model loaded (e.g. `qwen2.5-coder-7b` or `qwen3.5:9b`), **OxiLLaMa is granted strict precedence over Ollama**. Engines are never prioritized by static name; they are prioritized dynamically by the intelligence of their best loaded model.
+1. **GPU Engines First, Then Smarter Models**:
+   - Engines that run prompts on the GPU come first: candle and Hugging Face TGI/TEI (Rust), then Ollama, vLLM and llama.cpp. OxiLLaMa comes last: oxillama-runtime 0.1.4 offloads only Q4_0 single-token decode to the GPU, so prompt prefill and embeddings run on the CPU (over 3 s per embedded chunk measured, against about 0.1 s on Ollama with Metal).
+   - Within the GPU engines, models are ranked by capability and parameter scale ($27\text{B}/32\text{B} > 14\text{B} > 9\text{B}/7\text{B} > 3\text{B}$); `inference.EnginePreference` breaks ties.
+   - OxiLLaMa serves when it is requested explicitly (`--engine oxillama`, `DENDRITE_GATEWAY_OXILLAMA_ROUTING=true`, an `oxillama` agent job) or when no GPU engine has a model.
 2. **Trial Failures on Smaller Models Do NOT Count**:
    - Fast speculative attempts with smaller/lighter local models that fail are treated as zero-cost trials and are **NOT counted against the failure threshold**.
 3. **Smart Failure Counting**:

@@ -139,14 +139,15 @@ func (c *Catalog) List() []ModelCapability {
 	return out
 }
 
-// Get finds a capability entry by model ID, preferring EngineOxiLLaMa on ties.
+// Get finds a capability entry by model ID; when several engines serve the model, the
+// preferred engine (EnginePreference: GPU-capable first, OxiLLaMa last) wins.
 func (c *Catalog) Get(id string) (ModelCapability, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	clean := strings.ToLower(strings.TrimSpace(id))
-	var fallback ModelCapability
-	foundFallback := false
+	var best ModelCapability
+	found := false
 
 	for _, m := range c.Models {
 		mClean := strings.ToLower(m.ID)
@@ -154,18 +155,15 @@ func (c *Catalog) Get(id string) (ModelCapability, bool) {
 		scoped := engineClean + "/" + mClean
 
 		if mClean == clean || scoped == clean {
-			if m.Engine == EngineOxiLLaMa {
-				return m, true
-			}
-			if !foundFallback {
-				fallback = m
-				foundFallback = true
+			if !found || EnginePreference(m.Engine) < EnginePreference(best.Engine) {
+				best = m
+				found = true
 			}
 		}
 	}
 
-	if foundFallback {
-		return fallback, true
+	if found {
+		return best, true
 	}
 	return ModelCapability{}, false
 }
@@ -230,7 +228,7 @@ func (c *Catalog) UpdateThroughput(id string, tps float64) bool {
 	}
 
 	if !updated {
-		eng := EngineOxiLLaMa
+		eng := EngineOllama
 		if prefixEngine != "" {
 			eng = EngineType(prefixEngine)
 		}

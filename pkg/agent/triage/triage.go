@@ -137,19 +137,21 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 		}
 	}
 
-	// Smart Local Model Precedence: if auto-routing, check whether OxiLLaMa has a smarter model than Ollama
+	// Auto-routing prefers Ollama (GPU). OxiLLaMa prefills on the CPU, so it is chosen only
+	// when it is explicitly targeted or Ollama has no model.
+	oxillamaLive := oxErr == nil && len(oxModels) > 0
 	if req.TargetEngine == "" {
-		if maxOxillamaScore > maxOllamaScore {
-			assignedEngine = EngineOxiLLaMa
-			localEngineName = fmt.Sprintf("OxiLLaMa Pure-Rust Sovereign Engine (%s)", bestOxillamaModel)
-			localAvailable = true
-			if tier == TierLocal {
-				reason = fmt.Sprintf("%s Smarter local model on OxiLLaMa (Score %d) takes precedence over smaller Ollama models (Max Score %d).", reason, maxOxillamaScore, maxOllamaScore)
-			}
-		} else if maxOllamaScore > 0 {
+		if maxOllamaScore > 0 {
 			assignedEngine = EngineOllama
 			localEngineName = fmt.Sprintf("Ollama Metal GPU (%s)", bestOllamaModel)
 			localAvailable = true
+		} else if oxillamaLive {
+			assignedEngine = EngineOxiLLaMa
+			localEngineName = fmt.Sprintf("OxiLLaMa Pure-Rust Engine, CPU (%s)", bestOxillamaModel)
+			localAvailable = true
+			if tier == TierLocal {
+				reason = fmt.Sprintf("%s Ollama has no model; using OxiLLaMa (Score %d), which runs prompts on the CPU.", reason, maxOxillamaScore)
+			}
 		}
 	}
 

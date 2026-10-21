@@ -31,7 +31,7 @@ func registerInferenceTools(s *Server, deps Dependencies) {
 				},
 				"delete_source": map[string]interface{}{
 					"type":        "boolean",
-					"description": "If true, evicts model from source engine upon successful verification (default: true)",
+					"description": "If true, evicts model from source engine upon successful verification (default: false; OxiLLaMa runs prompts on the CPU, so keep the Ollama copy for GPU inference)",
 				},
 				"dry_run": map[string]interface{}{
 					"type":        "boolean",
@@ -53,7 +53,7 @@ func registerInferenceTools(s *Server, deps Dependencies) {
 		if targetEngine == "" {
 			targetEngine = "oxillama"
 		}
-		deleteSource := true
+		deleteSource := false
 		if ds, ok := args["delete_source"].(bool); ok {
 			deleteSource = ds
 		}

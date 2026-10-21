@@ -212,7 +212,7 @@ func newSpikeMigrateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "migrate <model>",
 		Aliases: []string{"move"},
-		Short:   "Copy a model's blobs between engines (default Ollama to OxiLLaMa), optionally evicting the source",
+		Short:   "Copy a model's blobs between engines (default Ollama to OxiLLaMa, which runs prompts on the CPU), optionally evicting the source",
 		Args:    exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.ModelName = args[0]

@@ -108,11 +108,13 @@ func CounterpartModel(model string) string {
 	return ""
 }
 
-// providerKey is the quota bucket of an agent/model pair: one per AGY family, copilot, oxillama.
+// providerKey is the quota bucket of an agent/model pair: one per AGY family, copilot, local, oxillama.
 func providerKey(agent, model string) string {
 	switch agent {
 	case "aider":
 		return providerCopilot
+	case "local":
+		return providerLocal
 	case "oxillama":
 		return providerOxillama
 	}

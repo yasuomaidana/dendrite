@@ -32,7 +32,7 @@ Rules you MUST strictly follow:
 // SubmitSpec specifies the attributes required to submit a new agent job.
 type SubmitSpec struct {
 	Ticket     string
-	Agent      string // "agy" or "oxillama"
+	Agent      string // "agy", "aider", "local" or "oxillama"
 	Model      string
 	Scope      []string
 	Worktree   string
@@ -277,7 +277,7 @@ func (d *Dispatcher) RunJob(ctx context.Context, id string) error {
 		d.skipExhaustedInitialTier(job)
 
 		if key := job.Agent + "/" + job.Model; key != tierKey {
-			if tierKey != "" && job.Agent != "oxillama" {
+			if tierKey != "" && !textAgent(job.Agent) {
 				tierBase, _ = d.snapshotDirty(ctx, job.Worktree)
 			}
 			tierKey = key
@@ -315,6 +315,8 @@ func (d *Dispatcher) RunJob(ctx context.Context, id string) error {
 		)
 
 		switch job.Agent {
+		case "local":
+			exitCode, logTail, usage, execErr = d.runLocal(attemptCtx, job, promptText)
 		case "oxillama":
 			exitCode, logTail, usage, execErr = d.runOxillama(attemptCtx, job, promptText)
 		case "aider":
@@ -330,11 +332,11 @@ func (d *Dispatcher) RunJob(ctx context.Context, id string) error {
 		timedOut := errors.Is(attemptCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil
 		cancelAttempt()
 
-		// Text-generation agents (oxillama) deliver output.md in the job dir; the file-scope check
-		// applies only to agents that edit the worktree.
+		// Text-generation agents (local, oxillama) deliver output.md in the job dir; the
+		// file-scope check applies only to agents that edit the worktree.
 		var changedInScope bool
 		var offendingPaths []string
-		if job.Agent != "oxillama" {
+		if !textAgent(job.Agent) {
 			var scopeErr error
 			changedInScope, offendingPaths, scopeErr = d.checkScopeAgainst(ctx, job.Worktree, job.Scope, job.Baseline)
 			if scopeErr != nil {
@@ -345,7 +347,7 @@ func (d *Dispatcher) RunJob(ctx context.Context, id string) error {
 			}
 		}
 
-		if job.Agent == "oxillama" && exitCode == 0 {
+		if textAgent(job.Agent) && exitCode == 0 {
 			outputPath := filepath.Join(d.Ledger.JobDir(job.ID), "output.md")
 			data, _ := os.ReadFile(outputPath)
 			if len(bytes.TrimSpace(data)) > 0 {
@@ -554,12 +556,38 @@ func (d *Dispatcher) runAgy(ctx context.Context, job *Job, promptText string, la
 	return exitCode, logTail, agyOut.Usage, agyOut.ConversationID, err
 }
 
+// textAgent reports whether an agent answers in output.md instead of editing the worktree.
+func textAgent(agent string) bool {
+	return agent == "local" || agent == "oxillama"
+}
+
+// runLocal runs the local tier: a chat completion through the LiteLLM gateway, whose local
+// aliases are served by GPU engines (Ollama first; OxiLLaMa only on request).
+func (d *Dispatcher) runLocal(ctx context.Context, job *Job, promptText string) (int, string, map[string]any, error) {
+	base := d.LiteLLMURL
+	if base == "" {
+		base = envOr("DENDRITE_LITELLM_URL", "http://localhost:4000/v1")
+	}
+	key := d.LiteLLMKey
+	if key == "" {
+		key = d.liteLLMKey(job.Worktree)
+	}
+	return d.runChat(ctx, job, promptText, strings.TrimRight(base, "/")+"/chat/completions", key, "LiteLLM gateway")
+}
+
+// runOxillama sends the job to an OxiLLaMa server. Only explicitly requested: OxiLLaMa
+// prefills on the CPU.
 func (d *Dispatcher) runOxillama(ctx context.Context, job *Job, promptText string) (int, string, map[string]any, error) {
 	endpoint := d.OxillamaEndpoint
 	if endpoint == "" {
 		endpoint = defaultOxillamaEndpoint()
 	}
-	url := strings.TrimRight(endpoint, "/") + "/v1/chat/completions"
+	return d.runChat(ctx, job, promptText, strings.TrimRight(endpoint, "/")+"/v1/chat/completions", "", "oxillama")
+}
+
+// runChat posts the prompt to an OpenAI-compatible chat endpoint and writes the answer to
+// output.md in the job directory.
+func (d *Dispatcher) runChat(ctx context.Context, job *Job, promptText, url, key, name string) (int, string, map[string]any, error) {
 
 	reqData := map[string]any{
 		"model": job.Model,
@@ -574,6 +602,9 @@ func (d *Dispatcher) runOxillama(ctx context.Context, job *Job, promptText strin
 		return 1, err.Error(), nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
 
 	client := d.HTTPClient
 	if client == nil {
@@ -599,7 +630,7 @@ func (d *Dispatcher) runOxillama(ctx context.Context, job *Job, promptText strin
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return resp.StatusCode, string(respBody), nil, fmt.Errorf("oxillama returned HTTP %d", resp.StatusCode)
+		return resp.StatusCode, string(respBody), nil, fmt.Errorf("%s returned HTTP %d", name, resp.StatusCode)
 	}
 
 	var chatResp struct {

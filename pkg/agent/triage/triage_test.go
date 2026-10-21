@@ -555,7 +555,7 @@ func TestTriageDeclarativeOrchestrator(t *testing.T) {
 	}
 }
 
-func TestTriage_OxiLLaMaPrecedenceOverLessSmartOllamaModel(t *testing.T) {
+func TestTriage_OllamaPrecedenceOverSmarterOxiLLaMaModel(t *testing.T) {
 	// Ollama test server that returns only a small, less-smart model (llama3.2:3b)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/tags" {
@@ -595,16 +595,34 @@ func TestTriage_OxiLLaMaPrecedenceOverLessSmartOllamaModel(t *testing.T) {
 		t.Fatalf("unexpected triage error: %v", err)
 	}
 
-	// Because Ollama only has llama3.2:3b (score 38) and OxiLLaMa has 7b (score 60),
-	// smarter local model rule gives precedence to OxiLLaMa!
-	if res.AssignedEngine != EngineOxiLLaMa {
-		t.Errorf("expected EngineOxiLLaMa to take precedence over less-smart Ollama model, got %s", res.AssignedEngine)
+	// OxiLLaMa hosts a smarter 7b model, but it prefills on the CPU: Ollama (GPU) wins.
+	if res.AssignedEngine != EngineOllama {
+		t.Errorf("expected Ollama (GPU) to take precedence over OxiLLaMa, got %s", res.AssignedEngine)
 	}
-	if res.AssignedModel != "oxillama-rust-qwen7b" {
-		t.Errorf("expected assigned model 'oxillama-rust-qwen7b', got %s", res.AssignedModel)
+	if res.AssignedModel != "llama3.2:3b" {
+		t.Errorf("expected assigned model 'llama3.2:3b', got %s", res.AssignedModel)
 	}
-	if !strings.Contains(res.Reason, "OxiLLaMa") {
-		t.Errorf("expected reason to document OxiLLaMa precedence, got: %s", res.Reason)
+
+	// With no Ollama model, OxiLLaMa serves and the reason says it runs on the CPU.
+	tsEmpty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/tags" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"models":[]}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer tsEmpty.Close()
+	engine.OllamaClient = ollama.NewClient(ollama.WithBaseURL(tsEmpty.URL))
+	res, err = engine.Triage(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected triage error: %v", err)
+	}
+	if res.AssignedEngine != EngineOxiLLaMa || res.AssignedModel != "oxillama-rust-qwen7b" {
+		t.Errorf("expected OxiLLaMa oxillama-rust-qwen7b without Ollama models, got %s %s", res.AssignedEngine, res.AssignedModel)
+	}
+	if !strings.Contains(res.Reason, "CPU") {
+		t.Errorf("expected reason to note OxiLLaMa runs on the CPU, got: %s", res.Reason)
 	}
 }
 
@@ -646,14 +664,12 @@ func TestTriage_DynamicProbingLiveOxiLLaMaAndOllama(t *testing.T) {
 		t.Fatalf("unexpected triage error: %v", err)
 	}
 
-	if res.AssignedEngine != EngineOxiLLaMa {
-		t.Errorf("expected EngineOxiLLaMa to win over Ollama, got %s", res.AssignedEngine)
+	// Ollama (GPU) wins although OxiLLaMa hosts the smarter model.
+	if res.AssignedEngine != EngineOllama {
+		t.Errorf("expected Ollama to win over OxiLLaMa, got %s", res.AssignedEngine)
 	}
-	if res.AssignedModel != "qwen3.8:27b" {
-		t.Errorf("expected assigned model qwen3.8:27b, got %s", res.AssignedModel)
-	}
-	if !strings.Contains(res.Reason, "Score 96") {
-		t.Errorf("expected reason to cite Score 96, got: %s", res.Reason)
+	if res.AssignedModel != "hermes3:8b" {
+		t.Errorf("expected assigned model hermes3:8b, got %s", res.AssignedModel)
 	}
 
 	// 2. Case: Ollama has qwen2.5-coder:32b (score 100), OxiLLaMa has qwen3.5:9b (score 73)
