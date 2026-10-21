@@ -288,6 +288,15 @@ Because codebases, design documents, and project contexts continuously evolve, D
 
 ---
 
+### Retrieval engine: the `dendrite-rag` sidecar
+
+`dendrite ask`, the `dendrite_rag_retrieve` MCP tool and `POST /api/v1/rag/retrieve` all retrieve through `rag.Retriever` (`pkg/rag/retriever.go`):
+
+1. If a `dendrite-rag` binary is found, it serves retrieval. The binary is built by dendrite-rag-rs. Dendrite looks for it via `DENDRITE_DENDRITE_RAG_BIN`, the `target/release` of local synapse members, `$DENDRITE_HOME/bin`, `PATH` and `~/.cargo/bin`.
+2. The sidecar brings the project's index in `<project>/.dendrite/rag/` up to date incrementally. It answers with hybrid retrieval: code-aware BM25, embeddings through the LiteLLM gateway, symbol names, and rank fusion over syntax-aware chunks.
+3. Each call spends at most 3 s embedding new chunks. Keyword and symbol search are always complete, and semantic matches improve as vectors accumulate. `dendrite ask` reports how many chunks are still pending. Run `dendrite-rag index <project>` once to embed everything up front.
+4. If the binary is missing, has an incompatible protocol, or fails, the in-process Go BM25 indexer answers instead. `DENDRITE_RAG_SIDECAR=off` forces that path.
+
 ## 8. CLI Command Reference & Options
 
 ```bash

@@ -149,21 +149,16 @@ func registerRAGTools(s *Server, deps Dependencies) {
 			minScore = float32(ms)
 		}
 
-		indexer := rag.NewIndexer()
-		if err := indexer.IndexProject(ctx, projectPath); err != nil {
-			return nil, fmt.Errorf("failed to index project at %s: %w", projectPath, err)
-		}
-
-		chunks, err := indexer.Retrieve(ctx, query, rag.SearchOptions{
+		retrieval, err := rag.NewRetriever(rag.NewIndexer()).Retrieve(ctx, projectPath, query, rag.SearchOptions{
 			TopK:      topK,
 			MinScore:  minScore,
 			MaxTokens: 2500,
-		})
+		}, false)
 		if err != nil {
-			return nil, fmt.Errorf("rag retrieval failed: %w", err)
+			return nil, fmt.Errorf("rag retrieval failed for %s: %w", projectPath, err)
 		}
 
-		data, err := json.MarshalIndent(chunks, "", "  ")
+		data, err := json.MarshalIndent(retrieval.Chunks, "", "  ")
 		if err != nil {
 			return nil, err
 		}

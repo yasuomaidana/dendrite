@@ -27,6 +27,7 @@ var (
 type AskEngine struct {
 	InferenceManager *inference.Manager
 	Indexer          *Indexer
+	Retriever        *Retriever                // sidecar-first retrieval; nil means in-process only
 	LocalEngine      inference.InferenceEngine // Optional override for testing or explicit local engine
 	PaidCaller       PaidCallerFunc            // Optional override for testing or custom cloud caller
 	HTTPClient       *http.Client
@@ -37,9 +38,11 @@ func NewAskEngine(mgr *inference.Manager) *AskEngine {
 	if mgr == nil {
 		mgr = inference.DefaultManager()
 	}
+	idx := NewIndexer()
 	return &AskEngine{
 		InferenceManager: mgr,
-		Indexer:          NewIndexer(),
+		Indexer:          idx,
+		Retriever:        NewRetriever(idx),
 		HTTPClient:       &http.Client{Timeout: 60 * time.Second},
 	}
 }
@@ -79,20 +82,23 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 		req.Output = os.Stdout
 	}
 
-	// 1. Ensure project files are incrementally indexed or updated
-	indexStatus, err := e.Indexer.IndexProjectIncremental(ctx, req.ProjectPath, req.UpdateIndex)
-	if err != nil {
-		_, _ = fmt.Fprintf(req.Output, "[!] Notice: Project indexing partial or failed: %v\n", err)
+	// 1-2. Index the project and retrieve context: hybrid retrieval through the
+	// dendrite-rag sidecar when installed, in-process BM25 otherwise.
+	retriever := e.Retriever
+	if retriever == nil {
+		retriever = &Retriever{Indexer: e.Indexer, Disabled: true}
 	}
-
-	// 2. Retrieve relevant context chunks via BM25
-	chunks, err := e.Indexer.Retrieve(ctx, req.Question, SearchOptions{
+	retrieval, err := retriever.Retrieve(ctx, req.ProjectPath, req.Question, SearchOptions{
 		TopK:      req.TopK,
 		MinScore:  0.01,
 		MaxTokens: 2500,
-	})
+	}, req.UpdateIndex)
 	if err != nil {
 		_, _ = fmt.Fprintf(req.Output, "[!] Retrieval notice: %v\n", err)
+	}
+	chunks, indexStatus := retrieval.Chunks, retrieval.IndexStatus
+	if retrieval.EmbedPending > 0 {
+		_, _ = fmt.Fprintf(req.Output, "[i] %d chunks are still waiting for embeddings; semantic matches improve as they are added (finish now: dendrite-rag index %s)\n", retrieval.EmbedPending, req.ProjectPath)
 	}
 
 	// 3. Construct Augmented Context Prompt

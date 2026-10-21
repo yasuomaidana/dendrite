@@ -568,22 +568,16 @@ func (s *Server) handleRAGRetrieve(w http.ResponseWriter, r *http.Request) {
 		body.MinScore = 0.01
 	}
 
-	indexer := rag.NewIndexer()
-	if err := indexer.IndexProject(r.Context(), body.ProjectPath); err != nil {
-		http.Error(w, fmt.Sprintf("failed to index project: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	chunks, err := indexer.Retrieve(r.Context(), body.Query, rag.SearchOptions{
+	retrieval, err := rag.NewRetriever(rag.NewIndexer()).Retrieve(r.Context(), body.ProjectPath, body.Query, rag.SearchOptions{
 		TopK:      body.TopK,
 		MinScore:  body.MinScore,
 		MaxTokens: 2500,
-	})
+	}, false)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("retrieval failed: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(chunks)
+	_ = json.NewEncoder(w).Encode(retrieval.Chunks)
 }
