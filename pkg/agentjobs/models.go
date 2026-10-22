@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"Dendrite/pkg/dotenv"
 )
 
 // AGY model families. Quota is tracked per family: a Gemini 3.8 quota hit does not block Argon.
@@ -366,35 +368,13 @@ func (d *Dispatcher) familyServedSince(job *Job, since time.Time) bool {
 	return false
 }
 
-// liteLLMKey resolves LITELLM_MASTER_KEY from the environment, then from the .env of the job's worktree
-// and of every registered repository (detached runners do not inherit a shell that sourced .env).
+// liteLLMKey resolves LITELLM_MASTER_KEY for a job: exported, then the job worktree's own
+// .env, then the global $DENDRITE_HOME/.env (detached runners do not inherit a shell).
 func (d *Dispatcher) liteLLMKey(worktree string) string {
-	if key := os.Getenv("LITELLM_MASTER_KEY"); key != "" {
-		return key
+	if worktree == "" {
+		worktree = "."
 	}
-	dirs := []string{worktree}
-	for _, root := range d.ledgerRoots() {
-		if abs, err := filepath.Abs(root); err == nil {
-			dirs = append(dirs, filepath.Dir(filepath.Dir(abs))) // <repo>/.dendrite/jobs -> <repo>
-		}
-	}
-	for _, dir := range dirs {
-		if dir == "" {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(dir, ".env"))
-		if err != nil {
-			continue
-		}
-		for _, line := range strings.Split(string(data), "\n") {
-			if v, ok := strings.CutPrefix(strings.TrimSpace(line), "LITELLM_MASTER_KEY="); ok {
-				if v = strings.Trim(strings.TrimSpace(v), `"'`); v != "" {
-					return v
-				}
-			}
-		}
-	}
-	return ""
+	return dotenv.Lookup(worktree, "LITELLM_MASTER_KEY")
 }
 
 // resumeTokenLimit honours DENDRITE_AGY_RESUME_TOKEN_LIMIT.

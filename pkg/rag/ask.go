@@ -10,10 +10,10 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"Dendrite/pkg/dotenv"
 	"Dendrite/pkg/sidecar"
 )
 
@@ -132,7 +132,7 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 		copied := *e.Retriever
 		retriever = &copied
 	}
-	gateway := gatewayEnv(req.ProjectPath, retriever.Locator.MemberDirs)
+	gateway := gatewayEnv(req.ProjectPath)
 	retriever.Env = append(retriever.Env, gateway...)
 	engine := "dendrite-rag"
 	// chooseLocal picks a GPU-served local model unless the request or the project's
@@ -241,30 +241,15 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 	}, nil
 }
 
-// gatewayEnv passes the LiteLLM gateway key to the sidecar when the environment does not
-// export it: it is read from the project's .env, then from the .env of the synapse member
-// checkouts (the Dendrite control plane keeps it), as detached agent jobs do (the sidecar
-// calls the gateway for `ask`).
-func gatewayEnv(projectPath string, memberDirs []string) []string {
-	if os.Getenv("LITELLM_MASTER_KEY") != "" {
+// gatewayEnv passes the LiteLLM gateway key to the sidecar (it calls the gateway for
+// `ask`): the asked project's own .env wins over the global $DENDRITE_HOME/.env.
+func gatewayEnv(projectPath string) []string {
+	root, _, err := projectRoot(projectPath)
+	if err != nil {
 		return nil
 	}
-	var dirs []string
-	if root, _, err := projectRoot(projectPath); err == nil {
-		dirs = append(dirs, root)
-	}
-	for _, dir := range append(dirs, memberDirs...) {
-		data, err := os.ReadFile(filepath.Join(dir, ".env"))
-		if err != nil {
-			continue
-		}
-		for _, line := range strings.Split(string(data), "\n") {
-			if v, ok := strings.CutPrefix(strings.TrimSpace(line), "LITELLM_MASTER_KEY="); ok {
-				if v = strings.Trim(strings.TrimSpace(v), `"'`); v != "" {
-					return []string{"LITELLM_MASTER_KEY=" + v}
-				}
-			}
-		}
+	if key := dotenv.Lookup(root, "LITELLM_MASTER_KEY"); key != "" {
+		return []string{"LITELLM_MASTER_KEY=" + key}
 	}
 	return nil
 }

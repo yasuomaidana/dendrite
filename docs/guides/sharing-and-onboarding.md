@@ -94,6 +94,7 @@ Create or decrypt the local environment configuration:
 # Decrypt team environment template using your personal age private key
 sops -d config/secrets.enc.env > .env
 ```
+API keys and vendor settings are configured once, in `$DENDRITE_HOME/.env` (default `~/.dendrite/.env`); every `dendrite` command in every repository reads it. A repository keeps its own `.env` only for what is unique to it, and those values override the global ones; an exported variable overrides both.
 Key required environment variables:
 ```bash
 LITELLM_MASTER_KEY="sk-admin-master-XXXXX"

@@ -125,18 +125,10 @@ func NewZeroCostRegistry(configPath string) *ZeroCostRegistry {
 	return r
 }
 
-// AutoLoad automatically attempts to discover and load .env files and persistent JSON config.
+// AutoLoad loads the environment (the CLI has already applied the project's .env and the
+// global $DENDRITE_HOME/.env, see pkg/dotenv) and the persistent JSON config.
 func (r *ZeroCostRegistry) AutoLoad() {
 	r.LoadFromEnv()
-
-	// Try standard .env locations if environment variables are not set
-	envPaths := []string{".env", "stacks/.env", "../.env"}
-	for _, p := range envPaths {
-		if _, err := os.Stat(p); err == nil {
-			_ = r.LoadFromEnvFile(p)
-			break
-		}
-	}
 
 	if r.configPath != "" {
 		if _, err := os.Stat(r.configPath); err == nil {

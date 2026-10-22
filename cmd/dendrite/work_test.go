@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"Dendrite/pkg/dotenv"
 	"Dendrite/pkg/workcopy"
 )
 
@@ -20,6 +21,8 @@ func TestMain(m *testing.M) {
 	if err == nil {
 		_ = os.Setenv(workcopy.EnvWorkDir, dir)
 	}
+	// Commands must not pick up the developer's real keys from .env files.
+	_ = os.Setenv(dotenv.EnvDisable, "off")
 	code := m.Run()
 	if err == nil {
 		_ = os.RemoveAll(dir)

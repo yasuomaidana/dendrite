@@ -360,14 +360,20 @@ echo '{"status":"SUCCESS"}'
 
 func TestLiteLLMKeyFromDotEnv(t *testing.T) {
 	t.Setenv("LITELLM_MASTER_KEY", "")
+	home := t.TempDir()
+	t.Setenv("DENDRITE_HOME", home)
 	d := NewDispatcher(NewLedger(t.TempDir()))
 	worktree := t.TempDir()
 	if got := d.liteLLMKey(worktree); got != "" {
 		t.Errorf("no key anywhere, got %q", got)
 	}
+	_ = os.WriteFile(filepath.Join(home, ".env"), []byte("LITELLM_MASTER_KEY=sk-global\n"), 0o600)
+	if got := d.liteLLMKey(worktree); got != "sk-global" {
+		t.Errorf("a worktree without .env must use the global key, got %q", got)
+	}
 	_ = os.WriteFile(filepath.Join(worktree, ".env"), []byte("FOO=1\nLITELLM_MASTER_KEY=\"sk-from-env-file\"\n"), 0o644)
 	if got := d.liteLLMKey(worktree); got != "sk-from-env-file" {
-		t.Errorf("key from worktree .env = %q", got)
+		t.Errorf("the worktree's own .env must win over the global one, got %q", got)
 	}
 	t.Setenv("LITELLM_MASTER_KEY", "sk-process")
 	if got := d.liteLLMKey(worktree); got != "sk-process" {

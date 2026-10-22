@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"Dendrite/pkg/dotenv"
 	"github.com/spf13/cobra"
 )
 
@@ -54,7 +55,9 @@ func applyGlobals() error {
 			return fmt.Errorf("set %s: %w", p.env, err)
 		}
 	}
-	return nil
+	// API keys and vendor settings: the project's .env, then $DENDRITE_HOME/.env.
+	_, err := dotenv.Load(".")
+	return err
 }
 
 // gatewayBaseURL returns the LiteLLM gateway URL without a trailing /v1.
