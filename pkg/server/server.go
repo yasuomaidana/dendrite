@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -75,6 +76,10 @@ func NewServer(cfg ServerConfig, reg *workspace.Registry, hub *TelemetryHub) *Se
 	mux.HandleFunc("/api/v1/inference/zero-cost/test", s.handleZeroCostTest)
 	mux.HandleFunc("/api/v1/rag/ask", s.handleRAGAsk)
 	mux.HandleFunc("/api/v1/rag/retrieve", s.handleRAGRetrieve)
+	mux.HandleFunc("/api/v1/graph/communities", s.handleGraphCommunities)
+	mux.HandleFunc("/api/v1/graph/god_nodes", s.handleGraphGodNodes)
+	mux.HandleFunc("/api/v1/graph/path", s.handleGraphPath)
+	mux.HandleFunc("/api/v1/graph/explain", s.handleGraphExplain)
 
 	s.server = &http.Server{
 		Handler:     s.authMiddleware(mux),
@@ -575,4 +580,152 @@ func (s *Server) handleRAGRetrieve(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(retrieval.Chunks)
+}
+
+func (s *Server) handleGraphCommunities(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var body struct {
+		ProjectPath string `json:"project_path"`
+		Limit       int    `json:"limit"`
+		MinSize     int    `json:"min_size"`
+	}
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
+			http.Error(w, fmt.Sprintf("invalid request payload: %v", err), http.StatusBadRequest)
+			return
+		}
+	}
+	if body.ProjectPath == "" {
+		body.ProjectPath = "."
+	}
+
+	communities, err := rag.NewRetriever().Communities(r.Context(), body.ProjectPath, rag.CommunitiesOptions{
+		Limit:   body.Limit,
+		MinSize: body.MinSize,
+	})
+	if err != nil {
+		http.Error(w, fmt.Sprintf("graph communities failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"communities": communities,
+	})
+}
+
+func (s *Server) handleGraphGodNodes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var body struct {
+		ProjectPath string `json:"project_path"`
+		MinInDegree int    `json:"min_in_degree"`
+		Limit       int    `json:"limit"`
+	}
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
+			http.Error(w, fmt.Sprintf("invalid request payload: %v", err), http.StatusBadRequest)
+			return
+		}
+	}
+	if body.ProjectPath == "" {
+		body.ProjectPath = "."
+	}
+
+	nodes, err := rag.NewRetriever().GodNodes(r.Context(), body.ProjectPath, rag.GodNodesOptions{
+		MinInDegree: body.MinInDegree,
+		Limit:       body.Limit,
+	})
+	if err != nil {
+		http.Error(w, fmt.Sprintf("graph god nodes failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"nodes": nodes,
+	})
+}
+
+func (s *Server) handleGraphPath(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var body struct {
+		ProjectPath string   `json:"project_path"`
+		From        string   `json:"from"`
+		To          string   `json:"to"`
+		Kinds       []string `json:"kinds"`
+		MaxHops     int      `json:"max_hops"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request payload: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if strings.TrimSpace(body.From) == "" || strings.TrimSpace(body.To) == "" {
+		http.Error(w, "from and to are required", http.StatusBadRequest)
+		return
+	}
+
+	if body.ProjectPath == "" {
+		body.ProjectPath = "."
+	}
+
+	path, err := rag.NewRetriever().Path(r.Context(), body.ProjectPath, body.From, body.To, rag.PathOptions{
+		Kinds:   body.Kinds,
+		MaxHops: body.MaxHops,
+	})
+	if err != nil {
+		http.Error(w, fmt.Sprintf("graph path failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(path)
+}
+
+func (s *Server) handleGraphExplain(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var body struct {
+		ProjectPath string `json:"project_path"`
+		Target      string `json:"target"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request payload: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if strings.TrimSpace(body.Target) == "" {
+		http.Error(w, "target is required", http.StatusBadRequest)
+		return
+	}
+
+	if body.ProjectPath == "" {
+		body.ProjectPath = "."
+	}
+
+	matches, err := rag.NewRetriever().Explain(r.Context(), body.ProjectPath, body.Target)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("graph explain failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"matches": matches,
+	})
 }

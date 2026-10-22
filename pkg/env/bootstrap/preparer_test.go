@@ -377,3 +377,32 @@ func TestPreparePipeline_EndToEnd(t *testing.T) {
 		t.Fatalf("Update failed: %v", err)
 	}
 }
+
+func TestEnsureRagEnvAddsTheURLOnceAndKeepsEdits(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("DENDRITE_HOME", home)
+	t.Setenv("POSTGRES_PORT", "")
+	project := t.TempDir()
+	if err := os.WriteFile(filepath.Join(project, ".env"), []byte("POSTGRES_PORT=6543\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	created, updated, err := ensureRagEnv(project, false)
+	if err != nil || !created || updated {
+		t.Fatalf("first run: created=%v updated=%v err=%v", created, updated, err)
+	}
+	path := filepath.Join(home, RagEnvFile)
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "@localhost:6543/dendrite_rag") {
+		t.Fatalf("port from the project's .env not used: %s", data)
+	}
+	custom := "DENDRITE_RAG_PG_URL=postgresql://me@db.internal/rag\n"
+	if err := os.WriteFile(path, []byte(custom), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if created, updated, err := ensureRagEnv(project, false); err != nil || created || updated {
+		t.Fatalf("an existing URL must be kept: created=%v updated=%v err=%v", created, updated, err)
+	}
+	if data, _ := os.ReadFile(path); string(data) != custom {
+		t.Fatalf("file changed: %s", data)
+	}
+}

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"Dendrite/pkg/projectid"
 )
 
 // DefaultToolName specifies the default CI/CD and developer tool.
@@ -160,6 +162,17 @@ func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareRe
 		report.FilesCreated = append(report.FilesCreated, created...)
 		report.FilesUpdated = append(report.FilesUpdated, updated...)
 		report.SkillsSynced = skills
+	}
+
+	// 3. The dendrite-rag shared tier: DENDRITE_RAG_PG_URL in $DENDRITE_HOME/rag.env.
+	envCreated, envUpdated, err := ensureRagEnv(opts.ProjectPath, opts.DryRun)
+	if err != nil {
+		return nil, fmt.Errorf("writing %s: %w", RagEnvFile, err)
+	}
+	if envCreated {
+		report.FilesCreated = append(report.FilesCreated, "$DENDRITE_HOME/"+RagEnvFile)
+	} else if envUpdated {
+		report.FilesUpdated = append(report.FilesUpdated, "$DENDRITE_HOME/"+RagEnvFile)
 	}
 
 	report.Duration = time.Since(start)
@@ -594,4 +607,60 @@ func writeOrUpdateFile(path, content string, dryRun bool) (bool, bool, error) {
 	}
 
 	return false, false, err
+}
+
+// RagEnvFile, under the Dendrite home, holds the DENDRITE_RAG_* variables the sidecar
+// launcher passes to dendrite-rag (pkg/sidecar).
+const RagEnvFile = "rag.env"
+
+// ensureRagEnv adds DENDRITE_RAG_PG_URL, the shared-tier database of the control stack, to
+// $DENDRITE_HOME/rag.env when it is missing; an existing value is never changed. The host
+// port follows POSTGRES_PORT (environment, then the project's .env), default 5432.
+func ensureRagEnv(projectRoot string, dryRun bool) (created, updated bool, err error) {
+	home, err := projectid.HomeDir()
+	if err != nil {
+		return false, false, err
+	}
+	path := filepath.Join(home, RagEnvFile)
+	data, readErr := os.ReadFile(path)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return false, false, readErr
+	}
+	if dotEnvValue(string(data), "DENDRITE_RAG_PG_URL") != "" {
+		return false, false, nil
+	}
+	port := strings.TrimSpace(os.Getenv("POSTGRES_PORT"))
+	if port == "" {
+		dotenv, _ := os.ReadFile(filepath.Join(projectRoot, ".env"))
+		port = dotEnvValue(string(dotenv), "POSTGRES_PORT")
+	}
+	if port == "" {
+		port = "5432"
+	}
+	created, updated = readErr != nil, readErr == nil
+	if dryRun {
+		return created, updated, nil
+	}
+	content := string(data)
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	content += fmt.Sprintf("DENDRITE_RAG_PG_URL=postgresql://dendrite_rag:dendrite_rag@localhost:%s/dendrite_rag\n", port)
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		return false, false, err
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		return false, false, err
+	}
+	return created, updated, nil
+}
+
+// dotEnvValue returns key's value in KEY=VALUE text, unquoted; "" when absent.
+func dotEnvValue(text, key string) string {
+	for _, line := range strings.Split(text, "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), key+"="); ok {
+			return strings.Trim(strings.TrimSpace(v), "\"'")
+		}
+	}
+	return ""
 }

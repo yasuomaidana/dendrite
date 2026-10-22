@@ -967,4 +967,6 @@ func RegisterDefaultTools(s *Server, deps Dependencies) {
 	registerCanvasTools(s, deps)
 	// Project RAG & AST Retrieval Tools
 	registerRAGTools(s, deps)
+	// Code Graph & Leiden Community Tools
+	registerGraphTools(s, deps)
 }

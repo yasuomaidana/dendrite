@@ -13,7 +13,7 @@ volumes:
 services:
   # Core Database
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: dendrite-postgres
     restart: unless-stopped
     environment:
@@ -24,6 +24,7 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - dendrite-postgres-data:/var/lib/postgresql/data
+      - ./init-rag.sql:/docker-entrypoint-initdb.d/init-rag.sql:ro
     networks:
       - dendrite-mesh
     healthcheck:

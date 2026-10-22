@@ -37,3 +37,13 @@ Failures use the standard JSON-RPC `error` object: `{"code": -32601, "message": 
 ## Method catalogue
 
 Methods are versioned in each sidecar repository's `proto/*.json` (DEN-972..974). The Go side reaches each method through a `sidecar.Spec{Binary, Major, Method}` together with its fallback.
+
+### Graph methods (`dendrite-rag` 1.1.0, DRAG-32)
+
+`dendrite-rag` serves the typed code graph and Leiden community analysis:
+- `graph.communities`: `{root, limit?, min_size?}` -> `{communities}`
+- `graph.god_nodes`: `{root, min_in_degree?, limit?}` -> `{nodes}`
+- `graph.path`: `{root, from, to, kinds?, max_hops?}` -> `{found, directed, level, steps}`
+- `graph.explain`: `{root, target}` -> `{matches}`
+
+Every graph method returns error kind `not_indexed` before the first index; Dendrite calls `index` first. Surfaced in Dendrite via `pkg/rag`, MCP tools (`dendrite_graph_*`), and HTTP (`/api/v1/graph/*`). DEND-201/202 are delivered natively by `dendrite-rag graph.*` and these tools.

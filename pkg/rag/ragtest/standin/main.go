@@ -23,10 +23,18 @@ type request struct {
 }
 
 type params struct {
-	Root  string   `json:"root"`
-	Query string   `json:"query"`
-	TopK  int      `json:"top_k"`
-	Paths []string `json:"paths"`
+	Root        string   `json:"root"`
+	Query       string   `json:"query"`
+	TopK        int      `json:"top_k"`
+	Paths       []string `json:"paths"`
+	Limit       int      `json:"limit"`
+	MinSize     int      `json:"min_size"`
+	MinInDegree int      `json:"min_in_degree"`
+	From        string   `json:"from"`
+	To          string   `json:"to"`
+	Kinds       []string `json:"kinds"`
+	MaxHops     int      `json:"max_hops"`
+	Target      string   `json:"target"`
 }
 
 type hit struct {
@@ -59,7 +67,7 @@ func main() {
 		resp := map[string]interface{}{"jsonrpc": "2.0", "id": req.ID}
 		switch {
 		case req.Method == "health":
-			resp["result"] = map[string]string{"name": "dendrite-rag", "version": "0.1.0", "protocol": "1.0.0"}
+			resp["result"] = map[string]string{"name": "dendrite-rag", "version": "0.1.0", "protocol": "1.1.0"}
 		case req.Method == os.Getenv("STANDIN_FAIL"):
 			resp["error"] = map[string]interface{}{"code": -32000, "message": "boom", "data": map[string]string{"kind": "index"}}
 		case req.Method == "index":
@@ -73,6 +81,106 @@ func main() {
 				tokens += len(h.Content) / 4
 			}
 			resp["result"] = map[string]interface{}{"spans": hits, "tokens": tokens}
+		case req.Method == "graph.communities":
+			resp["result"] = map[string]interface{}{
+				"communities": []map[string]interface{}{
+					{
+						"id":    1,
+						"label": "pkg/demo · LocateBinary",
+						"size":  1,
+						"files": []string{"pkg/demo/demo.go"},
+						"top_symbols": []map[string]interface{}{
+							{
+								"name":      "LocateBinary",
+								"path":      "pkg/demo/demo.go",
+								"line":      4,
+								"in_degree": 25,
+							},
+						},
+						"summary": "Community pkg/demo · LocateBinary: 1 files in pkg/demo (1).",
+					},
+				},
+			}
+		case req.Method == "graph.god_nodes":
+			resp["result"] = map[string]interface{}{
+				"nodes": []map[string]interface{}{
+					{
+						"symbol":          "LocateBinary",
+						"path":            "pkg/demo/demo.go",
+						"line":            4,
+						"in_degree":       25,
+						"out_degree":      0,
+						"used_from_files": 3,
+						"community": map[string]interface{}{
+							"id":    1,
+							"label": "pkg/demo",
+						},
+						"summary": "Symbol LocateBinary in pkg/demo/demo.go:4 with 25 users.",
+					},
+				},
+			}
+		case req.Method == "graph.path":
+			fromNode := p.From
+			if fromNode == "" {
+				fromNode = "Run"
+			}
+			toNode := p.To
+			if toNode == "" {
+				toNode = "LocateBinary"
+			}
+			resp["result"] = map[string]interface{}{
+				"found":    true,
+				"directed": true,
+				"level":    "symbol",
+				"steps": []map[string]interface{}{
+					{
+						"node":     fromNode,
+						"location": "pkg/demo/from.go:1",
+					},
+					{
+						"node":     toNode,
+						"location": "pkg/demo/to.go:10",
+						"via":      "call",
+					},
+				},
+			}
+		case req.Method == "graph.explain":
+			target := p.Target
+			if target == "" {
+				target = "LocateBinary"
+			}
+			resp["result"] = map[string]interface{}{
+				"matches": []map[string]interface{}{
+					{
+						"kind":   "symbol",
+						"symbol": target,
+						"sites": []map[string]interface{}{
+							{
+								"path":  "pkg/demo/demo.go",
+								"line":  4,
+								"chunk": "pkg/demo/demo.go#1",
+							},
+						},
+						"community": map[string]interface{}{
+							"id":    1,
+							"label": "pkg/demo",
+						},
+						"god_node":   true,
+						"in_degree":  25,
+						"out_degree": 0,
+						"users": []map[string]interface{}{
+							{
+								"symbol": "Run",
+								"path":   "pkg/rag/retriever.go",
+								"line":   45,
+								"kind":   "call",
+							},
+						},
+						"uses":    []map[string]interface{}{},
+						"summary": "Symbol " + target + " in pkg/demo/demo.go:4.",
+					},
+				},
+			}
 		default:
 			resp["error"] = map[string]interface{}{"code": -32601, "message": "method not found"}
 		}
