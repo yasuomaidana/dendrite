@@ -170,9 +170,10 @@ func TestAgentJobs_CLI_Wait(t *testing.T) {
 		t.Fatalf("wait failed for completed job: %v", err)
 	}
 
-	// Test wait with no matching jobs
-	if err := handleAgentJobsCommand(ctx, []string{"wait", "--ticket", "DEN-NO-SUCH-TICKET"}); err != nil {
-		t.Fatalf("wait on non-existent ticket should return nil: %v", err)
+	// A ticket with no job anywhere is an error, so a background wait never mistakes it
+	// for a finished job (DEN-1048).
+	if err := handleAgentJobsCommand(ctx, []string{"wait", "--ticket", "DEN-NO-SUCH-TICKET"}); err == nil {
+		t.Fatalf("wait on a ticket without jobs must fail")
 	}
 }
 

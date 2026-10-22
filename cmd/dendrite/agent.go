@@ -23,7 +23,8 @@ import (
 func newBoutonJobsCmd() *cobra.Command {
 	cmd := newGroupCmd("jobs", "Submit, watch and manage delegated agent jobs", "")
 	cmd.Example = "dendrite bouton jobs submit --ticket DEN-123 --agent agy --scope pkg/foo --prompt-file prompt.md --isolate\n" +
-		"dendrite bouton jobs list --json\n" +
+		"dendrite bouton jobs list --ticket DEN-123\n" +
+		"dendrite bouton jobs show --ticket DEN-123\n" +
 		"dendrite bouton jobs wait --ticket DEN-123 --timeout 2h"
 
 	idCmd := func(use, short string, run func(cmd *cobra.Command, id string) error) *cobra.Command {
@@ -48,18 +49,8 @@ func newBoutonJobsCmd() *cobra.Command {
 
 	cmd.AddCommand(
 		newJobsSubmitCmd(),
-		&cobra.Command{
-			Use:     "list",
-			Aliases: []string{"ls"},
-			Short:   "List jobs",
-			Args:    noArgs,
-			RunE: func(cmd *cobra.Command, args []string) error {
-				return runJobsList(agentjobs.NewLedger(""), cmd.OutOrStdout())
-			},
-		},
-		idCmd("show", "Show a job's specification and event history", func(cmd *cobra.Command, id string) error {
-			return runJobsShow(agentjobs.NewLedger(""), id, cmd.OutOrStdout())
-		}),
+		newJobsListCmd(),
+		newJobsShowCmd(),
 		tail,
 		newJobsWaitCmd(),
 		idCmd("retry", "Re-dispatch a job", func(cmd *cobra.Command, id string) error {
@@ -150,10 +141,36 @@ func newJobsSubmitCmd() *cobra.Command {
 	return cmd
 }
 
-func runJobsList(l *agentjobs.Ledger, out io.Writer) error {
-	jobs, err := l.List()
-	if err != nil {
-		return fmt.Errorf("list jobs: %w", err)
+func newJobsListCmd() *cobra.Command {
+	var ticket string
+	cmd := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List jobs",
+		Args:    noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runJobsList(agentjobs.NewLedger(""), ticket, cmd.OutOrStdout())
+		},
+	}
+	addTicketFlag(cmd, &ticket, "")
+	return cmd
+}
+
+func runJobsList(l *agentjobs.Ledger, ticket string, out io.Writer) error {
+	var jobs []*agentjobs.Job
+	if ticket != "" {
+		resolvedLedger, matches, err := agentjobs.ResolveTicketLedger(l, ticket)
+		if err != nil || len(matches) == 0 {
+			return fmt.Errorf("no matching jobs found for ticket %s", ticket)
+		}
+		_ = resolvedLedger
+		jobs = matches
+	} else {
+		var err error
+		jobs, err = l.List()
+		if err != nil {
+			return fmt.Errorf("list jobs: %w", err)
+		}
 	}
 	if globals.JSON {
 		if jobs == nil {
@@ -171,6 +188,59 @@ func runJobsList(l *agentjobs.Ledger, out io.Writer) error {
 		fmt.Fprintf(out, "  %-38s %-10s %-8s %-16s %s\n", j.ID, j.Ticket, j.Agent, j.Status, j.UpdatedAt.Format(time.RFC3339))
 	}
 	return nil
+}
+
+func newJobsShowCmd() *cobra.Command {
+	var ticket string
+	cmd := &cobra.Command{
+		Use:   "show [<job-id>]",
+		Short: "Show a job's specification and event history",
+		Args:  maxArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var id string
+			if len(args) == 1 {
+				id = args[0]
+			}
+			if id == "" && ticket == "" {
+				return usageErrorf("specify a <job-id> or --ticket")
+			}
+			if id != "" && ticket != "" {
+				return usageErrorf("<job-id> and --ticket are mutually exclusive")
+			}
+			return runJobsShowEntry(agentjobs.NewLedger(""), id, ticket, cmd.OutOrStdout())
+		},
+	}
+	addTicketFlag(cmd, &ticket, "")
+	return cmd
+}
+
+func runJobsShowEntry(l *agentjobs.Ledger, id, ticket string, out io.Writer) error {
+	if ticket != "" {
+		resolvedLedger, matches, err := agentjobs.ResolveTicketLedger(l, ticket)
+		if err != nil || len(matches) == 0 {
+			return fmt.Errorf("no matching jobs found for ticket %s", ticket)
+		}
+		var latest *agentjobs.Job
+		for _, j := range matches {
+			if latest == nil || j.CreatedAt.After(latest.CreatedAt) || (j.CreatedAt.Equal(latest.CreatedAt) && j.ID > latest.ID) {
+				latest = j
+			}
+		}
+		return runJobsShow(resolvedLedger, latest.ID, out)
+	}
+
+	err := runJobsShow(l, id, out)
+	if err != nil {
+		ticketFromID := agentjobs.TicketFromJobID(id)
+		if ticketFromID != "" && ticketFromID != id {
+			if resolvedLedger, _, rErr := agentjobs.ResolveTicketLedger(l, ticketFromID); rErr == nil && resolvedLedger != nil {
+				if rErr2 := runJobsShow(resolvedLedger, id, out); rErr2 == nil {
+					return nil
+				}
+			}
+		}
+	}
+	return err
 }
 
 func runJobsShow(l *agentjobs.Ledger, id string, out io.Writer) error {
@@ -216,11 +286,23 @@ func runJobsTail(l *agentjobs.Ledger, id string, n int, out io.Writer) error {
 	data, err := os.ReadFile(l.AgentLogPath(id))
 	if err != nil {
 		if os.IsNotExist(err) {
+			ticketFromID := agentjobs.TicketFromJobID(id)
+			if ticketFromID != "" && ticketFromID != id {
+				if resolvedLedger, _, rErr := agentjobs.ResolveTicketLedger(l, ticketFromID); rErr == nil && resolvedLedger != nil {
+					if rData, rErr2 := os.ReadFile(resolvedLedger.AgentLogPath(id)); rErr2 == nil {
+						return printTailLines(rData, n, out)
+					}
+				}
+			}
 			fmt.Fprintf(out, "[-] No agent.log found for job %s\n", id)
 			return nil
 		}
 		return fmt.Errorf("read agent.log: %w", err)
 	}
+	return printTailLines(data, n, out)
+}
+
+func printTailLines(data []byte, n int, out io.Writer) error {
 	lines := strings.Split(strings.TrimRight(string(data), "\r\n"), "\n")
 	if len(lines) > n {
 		lines = lines[len(lines)-n:]
@@ -253,24 +335,31 @@ func newJobsWaitCmd() *cobra.Command {
 
 // runJobsWait returns once every matching job has a done marker newer than when waiting began.
 func runJobsWait(ctx context.Context, l *agentjobs.Ledger, ticket string, timeout, interval time.Duration, out io.Writer) error {
-	all, err := l.List()
-	if err != nil {
-		return fmt.Errorf("list jobs: %w", err)
-	}
-	initialDone := make(map[string]time.Time)
 	var targets []*agentjobs.Job
-	for _, j := range all {
-		if ticket != "" && j.Ticket != ticket {
-			continue
+	if ticket != "" {
+		resolvedLedger, matches, err := agentjobs.ResolveTicketLedger(l, ticket)
+		if err != nil || len(matches) == 0 {
+			return fmt.Errorf("no matching jobs found for ticket %s", ticket)
 		}
-		targets = append(targets, j)
+		l = resolvedLedger
+		targets = matches
+	} else {
+		all, err := l.List()
+		if err != nil {
+			return fmt.Errorf("list jobs: %w", err)
+		}
+		targets = all
+		if len(targets) == 0 {
+			fmt.Fprintln(out, "[-] No matching jobs found")
+			return nil
+		}
+	}
+
+	initialDone := make(map[string]time.Time)
+	for _, j := range targets {
 		if fi, err := os.Stat(l.DoneMarkerPath(j.ID)); err == nil {
 			initialDone[j.ID] = fi.ModTime()
 		}
-	}
-	if len(targets) == 0 {
-		fmt.Fprintln(out, "[-] No matching jobs found")
-		return nil
 	}
 	if len(initialDone) == len(targets) {
 		for _, j := range targets {
