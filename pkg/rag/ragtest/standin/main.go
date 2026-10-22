@@ -6,7 +6,8 @@
 // embed_coverage of 0.5. ask answers from those matches without a model: STANDIN_LOCAL=fail
 // makes the local tier fail, so escalation is needed unless paid use is allowed.
 // STANDIN_LOG names a file that records each call's method and params;
-// STANDIN_FAIL=<method> makes that method return an engine error; STANDIN_PROTOCOL sets
+// STANDIN_FAIL=<method> makes that method return an engine error; STANDIN_PAID=fail makes the
+// paid tier fail; STANDIN_PROTOCOL sets
 // the protocol version the handshake reports (default 1.6.0); STANDIN_ASK_LOCAL_MODEL the
 // project's [ask] local_model that settings reports.
 package main
@@ -94,7 +95,11 @@ func main() {
 		case req.Method == "status":
 			resp["result"] = map[string]interface{}{"files": 1, "chunks": 14, "vectors": 7, "embed_coverage": 0.5}
 		case req.Method == "ask":
-			resp["result"] = ask(p)
+			if r, failure := ask(p); failure != "" {
+				resp["error"] = map[string]interface{}{"code": -32000, "message": failure, "data": map[string]string{"kind": "llm"}}
+			} else {
+				resp["result"] = r
+			}
 		case req.Method == "chunks.get":
 			resp["result"] = map[string]interface{}{"hits": chunks(p)}
 		case req.Method == "search":
@@ -269,8 +274,9 @@ func matches(p params) []hit {
 	return hits
 }
 
-// ask answers like dendrite-rag's ask method, without a model.
-func ask(p params) map[string]interface{} {
+// ask answers like dendrite-rag's ask method, without a model; the second result is the
+// error a failed paid model gives (STANDIN_PAID=fail).
+func ask(p params) (map[string]interface{}, string) {
 	topK := p.TopK
 	if topK <= 0 {
 		topK = 4
@@ -284,6 +290,8 @@ func ask(p params) map[string]interface{} {
 		"hits": hits, "prompt_tokens": 100, "output_tokens": 20,
 		"timings": map[string]interface{}{"retrieval": map[string]int{"total_ms": 3}, "local_ms": 120, "paid_ms": 0, "total_ms": 123},
 	}
+	paidFails := os.Getenv("STANDIN_PAID") == "fail"
+	const paidError = "paid model gemini: quota exceeded"
 	paid := func(tier string) map[string]interface{} {
 		out["source_tier"], out["model"], out["escalated"] = tier, p.PaidModel, true
 		out["answer"] = "paid answer for: " + p.Question
@@ -291,24 +299,33 @@ func ask(p params) map[string]interface{} {
 		return out
 	}
 	localFails := os.Getenv("STANDIN_LOCAL") == "fail"
+	localAnswer := func() map[string]interface{} {
+		out["source_tier"], out["model"], out["escalated"] = "local-rag", local, false
+		out["answer"] = "local answer for: " + p.Question
+		return out
+	}
 	switch {
+	case (p.Mode == "paid" || (localFails && p.AllowPaid)) && paidFails:
+		return nil, paidError
 	case p.Mode == "paid":
-		return paid("paid-cloud")
+		return paid("paid-cloud"), ""
 	case localFails && !p.AllowPaid:
 		out["escalation_needed"], out["local_error"], out["model"], out["answer"] = true, "local model down", local, ""
-		return out
+		return out, ""
 	case localFails:
 		out["local_error"] = "local model down"
-		return paid("paid-cloud")
+		return paid("paid-cloud"), ""
+	case p.Mode == "hybrid" && paidFails:
+		// The draft is still an answer when refinement fails.
+		out["local_error"] = "paid refinement failed: " + paidError
+		return localAnswer(), ""
 	case p.Mode == "hybrid":
 		out["local_draft"] = "local draft"
 		r := paid("hybrid")
 		r["model"] = local + " -> " + p.PaidModel
-		return r
+		return r, ""
 	}
-	out["source_tier"], out["model"], out["escalated"] = "local-rag", local, false
-	out["answer"] = "local answer for: " + p.Question
-	return out
+	return localAnswer(), ""
 }
 
 // chunks returns the whole files named by `<path>#1` ids.

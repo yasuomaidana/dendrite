@@ -139,6 +139,9 @@ func TestAsk_LocalFailureAsksBeforePaying(t *testing.T) {
 			if !strings.Contains(asks[len(asks)-1], `"allow_paid":true`) {
 				t.Errorf("paid use not allowed in %s", asks[len(asks)-1])
 			}
+			if len(asks) == 2 && !strings.Contains(asks[1], `"mode":"paid"`) {
+				t.Errorf("after consent the local model must not run again: %s", asks[1])
+			}
 		})
 	}
 }
@@ -313,5 +316,42 @@ func TestAsk_TierMessagesMatchTheOldPipeline(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "[+] Force-paid flag enabled") {
 		t.Errorf("paid: %s", out.String())
+	}
+}
+
+func TestAsk_ForcedPaidCountsAsApproved(t *testing.T) {
+	e, _ := standInAsk(t)
+	res, err := e.Ask(context.Background(), AskRequest{Question: "LocateBinary", ProjectPath: ragProject(t), ForcePaid: true, Output: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.SourceTier != "paid-cloud" || !res.Escalated || !res.EscalationApproved {
+		t.Fatalf("result = %+v", res)
+	}
+}
+
+func TestAsk_HybridKeepsTheDraftWhenRefinementFails(t *testing.T) {
+	e, _ := standInAsk(t)
+	t.Setenv("STANDIN_PAID", "fail")
+	var out bytes.Buffer
+	res, err := e.Ask(context.Background(), AskRequest{Question: "LocateBinary", ProjectPath: ragProject(t), HybridMode: true, Output: &out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.SourceTier != "local-rag" || !strings.HasPrefix(res.Answer, "local answer") || res.Escalated {
+		t.Fatalf("expected the local draft, got %+v", res)
+	}
+	if !strings.Contains(out.String(), "Paid refinement failed (paid refinement failed: paid model gemini: quota exceeded)") {
+		t.Errorf("out = %s", out.String())
+	}
+}
+
+func TestAsk_PaidFailureIsAnError(t *testing.T) {
+	e, _ := standInAsk(t)
+	t.Setenv("STANDIN_LOCAL", "fail")
+	t.Setenv("STANDIN_PAID", "fail")
+	_, err := e.Ask(context.Background(), AskRequest{Question: "LocateBinary", ProjectPath: ragProject(t), AutoApprovePaid: true, Output: &bytes.Buffer{}})
+	if err == nil || !strings.Contains(err.Error(), "quota exceeded") {
+		t.Fatalf("expected the paid model's error, got %v", err)
 	}
 }

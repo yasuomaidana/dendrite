@@ -162,7 +162,8 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 	}
 
 	var answer sidecarAnswer
-	approved := req.AutoApprovePaid
+	// --paid and -y are consent given up front.
+	approved := req.AutoApprovePaid || req.ForcePaid
 	retrieval, err := retriever.run(ctx, req.ProjectPath, req.UpdateIndex, req.Question, func(c *sidecar.Client, root string, only []string, out *Retrieval) error {
 		if minor := protocolMinor(c.Health.Protocol); minor < AskProtocolMinor {
 			return fmt.Errorf("%w: %s speaks protocol %s; dendrite ask needs 1.%d or later; %s",
@@ -186,7 +187,9 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 			return ErrPaidEscalationDeclined
 		}
 		approved = true
-		params.AllowPaid = true
+		// The local model already failed: go straight to the paid one instead of
+		// letting the sidecar try the local model again.
+		params.Mode, params.AllowPaid = "paid", true
 		answer = sidecarAnswer{}
 		if err := c.Call(ctx, "ask", params, &answer); err != nil {
 			return fmt.Errorf("ask: %w", err)
