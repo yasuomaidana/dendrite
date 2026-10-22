@@ -14,11 +14,24 @@ This tutorial demonstrates how to use the `dendrite ask` command to ask question
 
 Dendrite implements a **Local-First, Zero-Cost RAG (Retrieval-Augmented Generation)** architecture:
 1. The `dendrite-rag` sidecar incrementally indexes your project (source code, Markdown, configuration) into `<project>/.dendrite/rag/`. It returns a context pack that combines code-aware BM25, dense vectors from the embedding model your project chose, and symbol names, plus the call-graph neighbours of the best matches.
-2. It first attempts to synthesize answers using your **zero-cost local LLM** (e.g. Ollama or OxiLLaMa).
+   The context comes from your **code**; add **`-d` / `--docs`** for how-to, setup and usage questions, which the documentation answers. On Dendrite's evaluation, code-only answers code questions best and cannot answer documentation questions at all, while code and documentation together answer both, a little less precisely (`dendrite-rag-rs` `eval/RESULTS.md`).
+2. It first attempts to synthesize answers using your **zero-cost local LLM** through the LiteLLM gateway. Unless `--local-model` or `[ask] local_model` in `.dendrite/rag.toml` names one, Dendrite picks the gateway's zero-cost chat model on the most preferred reachable GPU engine (candle, TGI, then Ollama, vLLM, llama.cpp; never OxiLLaMa, whose runtime prefills on the CPU) and prints it as `[i] Local model: local-coder (ollama, GPU)`.
 3. If the local LLM is offline or fails, it **prompts the human** interactively before spending any cloud budget.
 4. You can pass the **`-y` / `--yes`** flag to instruct Dendrite to automatically call the paid cloud model directly upon local failure.
 5. You can use **Hybrid Mode (`--hybrid`)** for local-first drafting with paid cloud refinement and verification.
 6. In team and multi-project environments, queries can be delegated to a **Central RAG Service (`--server`)**.
+
+### Where the time goes
+
+Every local answer ends with a timing line:
+
+```text
+[i] Timing: sidecar start 12 ms, index 80 ms (embedding 1 ms), retrieval 242 ms, local model 30775 ms, paid model 0 ms
+```
+
+Retrieval takes milliseconds; the local model takes most of the time. Two things make an answer slower than it needs to be:
+- **An embedding backlog.** Until every chunk has a vector, each question spends up to 3 s embedding more of them, and Dendrite prints `[!] Dense retrieval covers N% of the project`. Finish once with `dendrite-rag index <project>` (about 7 minutes for Dendrite on Ollama).
+- **Asking again.** The same question about unchanged code is answered from a cache in a fraction of a second (`cached answer` in the header); `--update-index` asks the model again.
 
 ---
 

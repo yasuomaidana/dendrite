@@ -10,13 +10,18 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
-	"Dendrite/pkg/inference"
+	"Dendrite/pkg/sidecar"
 )
 
-// AskContextTokens is the context-pack budget for a question.
+// DefaultPaidModel is the paid model when a request names none.
+const DefaultPaidModel = "gemini-2.5-pro"
+
+// AskContextTokens is the context-pack budget for a question (the sidecar's `ask` uses the
+// same).
 const AskContextTokens = 2500
 
 var (
@@ -26,37 +31,72 @@ var (
 	ErrPaidEscalationDeclined = errors.New("local LLM failed and paid cloud escalation declined by user")
 )
 
-// AskEngine manages the end-to-end question answering pipeline with local RAG, hybrid mode, and paid cloud escalation.
+// AskEngine answers questions about a project through the dendrite-rag sidecar's `ask`
+// method: retrieval, prompts and the local, hybrid and paid tiers run in the sidecar, which
+// calls models through the LiteLLM gateway. Dendrite decides paid escalation with the
+// person and can forward the whole question to a central Dendrite server instead.
 type AskEngine struct {
-	InferenceManager *inference.Manager
-	Retriever        *Retriever                // the dendrite-rag sidecar
-	LocalEngine      inference.InferenceEngine // Optional override for testing or explicit local engine
-	PaidCaller       PaidCallerFunc            // Optional override for testing or custom cloud caller
-	HTTPClient       *http.Client
+	Retriever  *Retriever // the dendrite-rag sidecar
+	HTTPClient *http.Client
+	// PickLocal chooses the local model when the request names none (default:
+	// PreferLocalModel, GPU engines first).
+	PickLocal func(ctx context.Context, gatewayKey string) (LocalChoice, bool)
 }
 
-// NewAskEngine creates a new AskEngine with the default manager and retriever.
-func NewAskEngine(mgr *inference.Manager) *AskEngine {
-	if mgr == nil {
-		mgr = inference.DefaultManager()
-	}
+// NewAskEngine returns an AskEngine on the default sidecar locations.
+func NewAskEngine() *AskEngine {
 	return &AskEngine{
-		InferenceManager: mgr,
-		Retriever:        NewRetriever(),
-		HTTPClient:       &http.Client{Timeout: 60 * time.Second},
+		Retriever:  NewRetriever(),
+		HTTPClient: &http.Client{Timeout: 60 * time.Second},
+		PickLocal:  PreferLocalModel,
 	}
 }
 
-// Ask processes the question, retrieves project context, tries local LLM, and escalates to paid LLM if needed.
+// sidecarAsk is the `ask` method's params (docs/specs/ask.md in dendrite-rag-rs).
+type sidecarAsk struct {
+	Root       string `json:"root"`
+	Question   string `json:"question"`
+	Mode       string `json:"mode"`
+	TopK       int    `json:"top_k,omitempty"`
+	Corpus     string `json:"corpus,omitempty"`
+	LocalModel string `json:"local_model,omitempty"`
+	PaidModel  string `json:"paid_model,omitempty"`
+	AllowPaid  bool   `json:"allow_paid"`
+	Fresh      bool   `json:"fresh,omitempty"`
+	// Paths restricts retrieval to a single-file project's file.
+	Paths []string `json:"paths,omitempty"`
+}
+
+// sidecarAnswer is the `ask` method's result.
+type sidecarAnswer struct {
+	Answer           string       `json:"answer"`
+	SourceTier       string       `json:"source_tier"`
+	Model            string       `json:"model"`
+	LocalDraft       string       `json:"local_draft"`
+	EscalationNeeded bool         `json:"escalation_needed"`
+	LocalError       string       `json:"local_error"`
+	Escalated        bool         `json:"escalated"`
+	PromptTokens     int          `json:"prompt_tokens"`
+	OutputTokens     int          `json:"output_tokens"`
+	Hits             []sidecarHit `json:"hits"`
+	Cached           bool         `json:"cached"`
+	Timings          struct {
+		Retrieval struct {
+			Total int64 `json:"total_ms"`
+		} `json:"retrieval"`
+		Local int64 `json:"local_ms"`
+		Paid  int64 `json:"paid_ms"`
+	} `json:"timings"`
+}
+
+// Ask answers req.Question from the project's index. When the local model fails and paid
+// escalation was not approved up front (-y), the person is asked before paying.
 func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error) {
 	start := time.Now()
-
 	req.Question = strings.TrimSpace(req.Question)
 	if req.Question == "" {
 		return nil, ErrEmptyQuestion
 	}
-
-	// Delegate to central RAG service if configured
 	serverURL := req.ServerURL
 	if serverURL == "" {
 		serverURL = os.Getenv("DENDRITE_RAG_SERVER")
@@ -64,13 +104,14 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 	if serverURL != "" {
 		return e.delegateToRemoteServer(ctx, serverURL, req)
 	}
-
-	// Apply defaults
 	if req.ProjectPath == "" {
 		req.ProjectPath = "."
 	}
 	if req.PaidModel == "" {
-		req.PaidModel = "gemini-2.5-pro"
+		req.PaidModel = DefaultPaidModel
+	}
+	if req.Corpus == "" {
+		req.Corpus = "all"
 	}
 	if req.Input == nil {
 		req.Input = os.Stdin
@@ -78,176 +119,162 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 	if req.Output == nil {
 		req.Output = os.Stdout
 	}
+	mode := "local"
+	switch {
+	case req.ForcePaid:
+		mode = "paid"
+	case req.HybridMode:
+		mode = "hybrid"
+	}
+	retriever := NewRetriever()
+	if e.Retriever != nil {
+		copied := *e.Retriever
+		retriever = &copied
+	}
+	gateway := gatewayEnv(req.ProjectPath)
+	retriever.Env = append(retriever.Env, gateway...)
+	engine := "dendrite-rag"
+	// chooseLocal picks a GPU-served local model unless the request or the project's
+	// [ask] local_model (settings file or DENDRITE_RAG_ASK_LOCAL_MODEL) names one.
+	chooseLocal := func(c *sidecar.Client, root string) {
+		if req.LocalModel != "" || mode == "paid" || e.PickLocal == nil {
+			return
+		}
+		var st struct {
+			Settings struct {
+				Ask struct {
+					LocalModel string `json:"local_model"`
+				} `json:"ask"`
+			} `json:"settings"`
+		}
+		if err := c.Call(ctx, "settings", map[string]interface{}{"root": root}, &st); err == nil && st.Settings.Ask.LocalModel != "" {
+			return
+		}
+		key := os.Getenv("LITELLM_MASTER_KEY")
+		if len(gateway) > 0 {
+			key = strings.TrimPrefix(gateway[0], "LITELLM_MASTER_KEY=")
+		}
+		if choice, ok := e.PickLocal(ctx, key); ok {
+			req.LocalModel, engine = choice.Model, string(choice.Engine)
+			_, _ = fmt.Fprintf(req.Output, "[i] Local model: %s\n", choice)
+		}
+	}
 
-	// 1-2. Index the project and retrieve context through the dendrite-rag sidecar: a
-	// token-budgeted context pack, or the top-k hits when TopK is set.
-	retriever := e.Retriever
-	if retriever == nil {
-		retriever = NewRetriever()
-	}
-	var retrieval Retrieval
-	var err error
-	if req.TopK > 0 {
-		retrieval, err = retriever.Retrieve(ctx, req.ProjectPath, req.Question, SearchOptions{TopK: req.TopK}, req.UpdateIndex)
-	} else {
-		retrieval, err = retriever.Context(ctx, req.ProjectPath, req.Question, AskContextTokens, req.UpdateIndex)
-	}
+	var answer sidecarAnswer
+	approved := req.AutoApprovePaid
+	retrieval, err := retriever.run(ctx, req.ProjectPath, req.UpdateIndex, req.Question, func(c *sidecar.Client, root string, only []string, out *Retrieval) error {
+		if minor := protocolMinor(c.Health.Protocol); minor < AskProtocolMinor {
+			return fmt.Errorf("%w: %s speaks protocol %s; dendrite ask needs 1.%d or later; %s",
+				ErrSidecarTooOld, c.Path, c.Health.Protocol, AskProtocolMinor, InstallHint)
+		}
+		chooseLocal(c, root)
+		params := sidecarAsk{
+			Root: root, Question: req.Question, Mode: mode, TopK: req.TopK, Corpus: req.Corpus,
+			LocalModel: req.LocalModel, PaidModel: req.PaidModel, AllowPaid: approved,
+			// A re-indexed project also wants a fresh answer, not the cached one.
+			Fresh: req.UpdateIndex,
+			Paths: only,
+		}
+		if err := c.Call(ctx, "ask", params, &answer); err != nil {
+			return fmt.Errorf("ask: %w", err)
+		}
+		if !answer.EscalationNeeded {
+			return nil
+		}
+		if !confirmPaid(req, answer.LocalError) {
+			return ErrPaidEscalationDeclined
+		}
+		approved = true
+		params.AllowPaid = true
+		answer = sidecarAnswer{}
+		if err := c.Call(ctx, "ask", params, &answer); err != nil {
+			return fmt.Errorf("ask: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("retrieving project context: %w", err)
+		if errors.Is(err, ErrPaidEscalationDeclined) {
+			return nil, ErrPaidEscalationDeclined
+		}
+		return nil, fmt.Errorf("asking the project index: %w", err)
 	}
-	chunks, indexStatus := retrieval.Chunks, retrieval.IndexStatus
 	if retrieval.EmbedError != "" {
 		_, _ = fmt.Fprintf(req.Output, "[!] Embeddings unavailable (%s); answering from lexical and symbol matches\n", retrieval.EmbedError)
 	}
 	if retrieval.EmbedPending > 0 {
-		_, _ = fmt.Fprintf(req.Output, "[i] %d chunks are still waiting for embeddings; semantic matches improve as they are added (finish now: dendrite-rag index %s)\n", retrieval.EmbedPending, req.ProjectPath)
+		_, _ = fmt.Fprintf(req.Output, "[!] Dense retrieval covers %.0f%% of the project (%d chunks still without embeddings); finish them once with: dendrite-rag index %s\n",
+			retrieval.EmbedCoverage*100, retrieval.EmbedPending, req.ProjectPath)
 	}
-
-	// 3. Construct Augmented Context Prompt
-	systemPrompt, userPrompt := buildRAGPrompts(req.Question, chunks)
-
-	// 4. Direct Paid Cloud LLM Bypass (e.g. unsatisfactory local LLM answer on previous query)
-	if req.ForcePaid {
-		_, _ = fmt.Fprintf(req.Output, "[+] Force-paid flag enabled: querying paid cloud LLM (%s) directly with project RAG context...\n", req.PaidModel)
-		paidResp, paidErr := e.callPaidLLM(ctx, userPrompt, req.PaidModel)
-		if paidErr != nil {
-			return nil, fmt.Errorf("paid cloud LLM (%s) failed: %w", req.PaidModel, paidErr)
-		}
-
-		answer := enhanceAnswer(req.Question, paidResp.Text, chunks)
-		return &AskResult{
-			Question:           req.Question,
-			Answer:             answer,
-			SourceTier:         "paid-cloud",
-			Model:              req.PaidModel,
-			Engine:             paidResp.EngineID,
-			Escalated:          true,
-			EscalationApproved: true,
-			RetrievedChunks:    chunks,
-			PromptTokens:       paidResp.PromptTokens,
-			OutputTokens:       paidResp.OutputTokens,
-			IndexStatus:        indexStatus,
-			Duration:           time.Since(start),
-		}, nil
-	}
-
-	// 5. Hybrid Mode: Local First -> Paid Cloud Refinement
-	if req.HybridMode {
-		localResp, localErr := e.tryLocalLLM(ctx, req, systemPrompt, userPrompt)
-		if localErr == nil && localResp != nil {
-			localDraft := enhanceAnswer(req.Question, localResp.Text, chunks)
-			_, _ = fmt.Fprintf(req.Output, "[+] Hybrid mode: Local draft generated (%s). Escalating to paid model (%s) for refinement...\n", localResp.Model, req.PaidModel)
-
-			refinementPrompt := buildHybridRefinementPrompt(req.Question, chunks, localDraft)
-			paidResp, paidErr := e.callPaidLLM(ctx, refinementPrompt, req.PaidModel)
-			if paidErr == nil && paidResp != nil {
-				refinedAnswer := enhanceAnswer(req.Question, paidResp.Text, chunks)
-				return &AskResult{
-					Question:           req.Question,
-					Answer:             refinedAnswer,
-					LocalDraft:         localDraft,
-					SourceTier:         "hybrid",
-					Model:              fmt.Sprintf("%s -> %s", localResp.Model, req.PaidModel),
-					Engine:             paidResp.EngineID,
-					Escalated:          true,
-					EscalationApproved: true,
-					RetrievedChunks:    chunks,
-					PromptTokens:       localResp.PromptTokens + paidResp.PromptTokens,
-					OutputTokens:       paidResp.OutputTokens,
-					IndexStatus:        indexStatus,
-					Duration:           time.Since(start),
-				}, nil
-			}
-
-			// If paid refinement fails in hybrid mode, fall back to returning local draft gracefully
-			_, _ = fmt.Fprintf(req.Output, "[-] Paid refinement failed (%v), returning verified local draft.\n", paidErr)
-			return &AskResult{
-				Question:        req.Question,
-				Answer:          localDraft,
-				SourceTier:      "local-rag",
-				Model:           localResp.Model,
-				Engine:          localResp.EngineID,
-				Escalated:       false,
-				RetrievedChunks: chunks,
-				PromptTokens:    localResp.PromptTokens,
-				OutputTokens:    localResp.OutputTokens,
-				IndexStatus:     indexStatus,
-				Duration:        time.Since(start),
-			}, nil
-		}
-
-		// Local failed in hybrid mode: fall through to standard paid escalation
-		_, _ = fmt.Fprintf(req.Output, "[-] Local draft generation failed in hybrid mode: %v\n", localErr)
-	}
-
-	// 6. Try Local LLM First (Standard Mode)
-	if !req.HybridMode {
-		localResp, localErr := e.tryLocalLLM(ctx, req, systemPrompt, userPrompt)
-		if localErr == nil && localResp != nil {
-			answer := enhanceAnswer(req.Question, localResp.Text, chunks)
-			return &AskResult{
-				Question:           req.Question,
-				Answer:             answer,
-				SourceTier:         "local-rag",
-				Model:              localResp.Model,
-				Engine:             localResp.EngineID,
-				Escalated:          false,
-				EscalationApproved: false,
-				RetrievedChunks:    chunks,
-				PromptTokens:       localResp.PromptTokens,
-				OutputTokens:       localResp.OutputTokens,
-				IndexStatus:        indexStatus,
-				Duration:           time.Since(start),
-			}, nil
-		}
-
-		// Local LLM Failed: Determine Escalation Policy
-		_, _ = fmt.Fprintf(req.Output, "[-] Local LLM inference failed: %v\n", localErr)
-	}
-
-	escalationApproved := false
-	if req.AutoApprovePaid {
-		_, _ = fmt.Fprintf(req.Output, "[+] Flag -y passed: automatically escalating to paid cloud LLM (%s)...\n", req.PaidModel)
-		escalationApproved = true
-	} else {
-		_, _ = fmt.Fprintf(req.Output, "[?] Would you like to use paid cloud LLM (%s)? [y/N]: ", req.PaidModel)
-		reader := bufio.NewReader(req.Input)
-		respLine, readErr := reader.ReadString('\n')
-		if readErr != nil && len(respLine) == 0 {
-			_, _ = fmt.Fprintf(req.Output, "\n[-] No response received. Escalation aborted.\n")
-			return nil, ErrPaidEscalationDeclined
-		}
-		respLine = strings.TrimSpace(strings.ToLower(respLine))
-		if respLine == "y" || respLine == "yes" {
-			escalationApproved = true
-			_, _ = fmt.Fprintf(req.Output, "[+] User confirmed. Calling paid cloud LLM (%s)...\n", req.PaidModel)
-		} else {
-			_, _ = fmt.Fprintf(req.Output, "[-] Paid LLM escalation declined by user. Aborting query.\n")
-			return nil, ErrPaidEscalationDeclined
-		}
-	}
-
-	// 7. Execute Paid Cloud Model
-	paidResp, paidErr := e.callPaidLLM(ctx, userPrompt, req.PaidModel)
-	if paidErr != nil {
-		return nil, fmt.Errorf("paid cloud LLM (%s) failed: %w", req.PaidModel, paidErr)
-	}
-
-	answer := enhanceAnswer(req.Question, paidResp.Text, chunks)
 	return &AskResult{
 		Question:           req.Question,
-		Answer:             answer,
-		SourceTier:         "paid-cloud",
-		Model:              req.PaidModel,
-		Engine:             paidResp.EngineID,
-		Escalated:          true,
-		EscalationApproved: escalationApproved,
-		RetrievedChunks:    chunks,
-		PromptTokens:       paidResp.PromptTokens,
-		OutputTokens:       paidResp.OutputTokens,
-		IndexStatus:        indexStatus,
+		Answer:             answer.Answer,
+		LocalDraft:         answer.LocalDraft,
+		SourceTier:         answer.SourceTier,
+		Model:              answer.Model,
+		Engine:             engine,
+		Escalated:          answer.Escalated,
+		EscalationApproved: answer.Escalated && approved,
+		RetrievedChunks:    toChunks(req.ProjectPath, singleFile(req.ProjectPath), answer.Hits),
+		PromptTokens:       answer.PromptTokens,
+		OutputTokens:       answer.OutputTokens,
+		IndexStatus:        retrieval.IndexStatus,
+		Cached:             answer.Cached,
 		Duration:           time.Since(start),
+		Timings: &AskTimings{
+			Spawn:     retrieval.SpawnMS,
+			Index:     retrieval.IndexMS,
+			Embed:     retrieval.EmbedMS,
+			Retrieval: answer.Timings.Retrieval.Total,
+			Local:     answer.Timings.Local,
+			Paid:      answer.Timings.Paid,
+		},
 	}, nil
+}
+
+// gatewayEnv passes the LiteLLM gateway key to the sidecar when the environment does not
+// export it: it is read from the project's .env, as detached agent jobs do (the sidecar
+// calls the gateway for `ask`).
+func gatewayEnv(projectPath string) []string {
+	if os.Getenv("LITELLM_MASTER_KEY") != "" {
+		return nil
+	}
+	root, _, err := projectRoot(projectPath)
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".env"))
+	if err != nil {
+		return nil
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "LITELLM_MASTER_KEY="); ok {
+			if v = strings.Trim(strings.TrimSpace(v), `"'`); v != "" {
+				return []string{"LITELLM_MASTER_KEY=" + v}
+			}
+		}
+	}
+	return nil
+}
+
+// confirmPaid asks the person whether to pay for the cloud model after the local one
+// failed; no answer is a no.
+func confirmPaid(req AskRequest, localError string) bool {
+	if localError != "" {
+		_, _ = fmt.Fprintf(req.Output, "[-] Local LLM inference failed: %s\n", localError)
+	}
+	_, _ = fmt.Fprintf(req.Output, "[?] Would you like to use paid cloud LLM (%s)? [y/N]: ", req.PaidModel)
+	line, err := bufio.NewReader(req.Input).ReadString('\n')
+	if err != nil && line == "" {
+		_, _ = fmt.Fprintf(req.Output, "\n[-] No response received. Escalation aborted.\n")
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		_, _ = fmt.Fprintf(req.Output, "[+] User confirmed. Calling paid cloud LLM (%s)...\n", req.PaidModel)
+		return true
+	}
+	_, _ = fmt.Fprintf(req.Output, "[-] Paid LLM escalation declined by user. Aborting query.\n")
+	return false
 }
 
 // delegateToRemoteServer forwards the AskRequest to the central Dendrite RAG daemon.
@@ -296,292 +323,4 @@ func (e *AskEngine) delegateToRemoteServer(ctx context.Context, serverURL string
 	}
 
 	return &res, nil
-}
-
-// tryLocalLLM attempts to execute the prompt on available zero-cost / self-hosted inference engines.
-func (e *AskEngine) tryLocalLLM(ctx context.Context, req AskRequest, systemPrompt, userPrompt string) (*inference.CompletionResponse, error) {
-	if e.LocalEngine != nil {
-		model := req.LocalModel
-		if model == "" && len(e.LocalEngine.Config().Models) > 0 {
-			model = e.LocalEngine.Config().Models[0]
-		}
-		compReq := inference.CompletionRequest{
-			Model:  model,
-			System: systemPrompt,
-			Prompt: userPrompt,
-		}
-		return e.LocalEngine.Generate(ctx, compReq)
-	}
-
-	if e.InferenceManager == nil {
-		return nil, errors.New("no inference manager configured")
-	}
-
-	engines := e.InferenceManager.ListEngines()
-	var lastErr error = errors.New("no healthy local inference engines registered")
-
-	// Prioritize local self-hosted text generation engines
-	for _, eng := range engines {
-		if eng.Type() == inference.EngineHuggingFaceTEI {
-			continue
-		}
-		if !inference.IsEngineZeroCost(eng) && !eng.IsSelfHosted() {
-			continue
-		}
-
-		selectedModel := req.LocalModel
-		if selectedModel == "" {
-			supported, err := eng.SupportedModels(ctx)
-			if err == nil && len(supported) > 0 {
-				for _, m := range supported {
-					if !strings.Contains(m, "embed") {
-						selectedModel = m
-						break
-					}
-				}
-				if selectedModel == "" {
-					selectedModel = supported[0]
-				}
-			}
-		}
-
-		compReq := inference.CompletionRequest{
-			Model:  selectedModel,
-			System: systemPrompt,
-			Prompt: userPrompt,
-		}
-
-		resp, err := eng.Generate(ctx, compReq)
-		if err == nil && resp != nil && strings.TrimSpace(resp.Text) != "" {
-			if strings.Contains(resp.Text, "processed your request safely with zero cloud tokens consumed") {
-				lastErr = errors.New("engine returned generic stub response without answering question")
-				continue
-			}
-			return resp, nil
-		}
-		if err != nil {
-			lastErr = err
-		}
-	}
-
-	return nil, lastErr
-}
-
-// callPaidLLM dispatches to the custom PaidCaller or the default LiteLLM / Cloud proxy.
-func (e *AskEngine) callPaidLLM(ctx context.Context, prompt, paidModel string) (*inference.CompletionResponse, error) {
-	if e.PaidCaller != nil {
-		return e.PaidCaller(ctx, prompt, paidModel)
-	}
-
-	return e.defaultPaidCaller(ctx, prompt, paidModel)
-}
-
-// defaultPaidCaller invokes the LiteLLM Governance Gateway or Cloud API.
-func (e *AskEngine) defaultPaidCaller(ctx context.Context, prompt, paidModel string) (*inference.CompletionResponse, error) {
-	baseURL := os.Getenv("LITELLM_PROXY_URL")
-	if baseURL == "" {
-		baseURL = "http://127.0.0.1:4000"
-	}
-	baseURL = strings.TrimRight(baseURL, "/")
-
-	url := baseURL + "/v1/chat/completions"
-	if !strings.HasSuffix(baseURL, "/v1") {
-		url = baseURL + "/chat/completions"
-	}
-
-	payload := map[string]interface{}{
-		"model": paidModel,
-		"messages": []map[string]string{
-			{"role": "system", "content": "You are Dendrite AI Assistant. Provide accurate, concise answers based on the retrieved project context."},
-			{"role": "user", "content": prompt},
-		},
-		"temperature": 0.2,
-	}
-
-	bodyBytes, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if key := os.Getenv("LITELLM_MASTER_KEY"); key != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+key)
-	}
-
-	client := e.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
-	}
-
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to paid cloud gateway at %s: %w", url, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("paid gateway returned HTTP %d: %s", resp.StatusCode, string(b))
-	}
-
-	var chatResp struct {
-		ID      string `json:"id"`
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-		Usage struct {
-			PromptTokens     int `json:"prompt_tokens"`
-			CompletionTokens int `json:"completion_tokens"`
-		} `json:"usage"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response from paid gateway: %w", err)
-	}
-
-	if len(chatResp.Choices) == 0 {
-		return nil, errors.New("paid cloud gateway returned empty choices")
-	}
-
-	return &inference.CompletionResponse{
-		ID:           chatResp.ID,
-		Model:        paidModel,
-		EngineID:     "paid-cloud-orchestrator",
-		Text:         chatResp.Choices[0].Message.Content,
-		PromptTokens: chatResp.Usage.PromptTokens,
-		OutputTokens: chatResp.Usage.CompletionTokens,
-		Duration:     0,
-		ZeroCost:     false,
-	}, nil
-}
-
-func buildHybridRefinementPrompt(question string, chunks []Chunk, localDraft string) string {
-	var sb strings.Builder
-	sb.WriteString("You are Dendrite AI Refinement Assistant. A local zero-cost LLM generated an initial draft answer based on project context, but it requires professional refinement, verification, and precision.\n\n")
-	sb.WriteString("Retrieved Project Context:\n")
-	sb.WriteString("====================================================================\n")
-	for i, c := range chunks {
-		sb.WriteString(fmt.Sprintf("[%d] Source: %s (lines %d-%d)\n", i+1, c.FilePath, c.LineStart, c.LineEnd))
-		if c.Heading != "" {
-			sb.WriteString(fmt.Sprintf("    Heading: %s\n", c.Heading))
-		}
-		sb.WriteString(c.Content)
-		sb.WriteString("\n--------------------------------------------------------------------\n")
-	}
-	sb.WriteString("====================================================================\n\n")
-	sb.WriteString("User Question: " + question + "\n\n")
-	sb.WriteString("Initial Local Draft:\n" + localDraft + "\n\n")
-	sb.WriteString("Instructions:\n")
-	sb.WriteString("1. Verify the accuracy of the local draft against the retrieved project context.\n")
-	sb.WriteString("2. Eliminate any hallucinations, canned placeholders, or inaccuracies.\n")
-	sb.WriteString("3. Ensure exact, copy-pasteable CLI commands or code snippets are provided if requested.\n")
-	sb.WriteString("4. Keep the refined answer concise, high-signal, and production-ready.\n\n")
-	sb.WriteString("Refined Answer:")
-	return sb.String()
-}
-
-func enhanceAnswer(question, answer string, chunks []Chunk) string {
-	lowerQ := strings.ToLower(question)
-	wantsCommand := strings.Contains(lowerQ, "command") || strings.Contains(lowerQ, "how to") || strings.Contains(lowerQ, "check") || strings.Contains(lowerQ, "show") || strings.Contains(lowerQ, "run")
-
-	// Extract candidate CLI commands from retrieved chunks
-	var extractedCmds []string
-	for _, c := range chunks {
-		lines := strings.Split(c.Content, "\n")
-		for _, l := range lines {
-			trimmed := strings.TrimSpace(l)
-			trimmed = strings.TrimPrefix(trimmed, "$ ")
-			trimmed = strings.TrimPrefix(trimmed, "```bash")
-			trimmed = strings.TrimPrefix(trimmed, "```sh")
-			trimmed = strings.TrimPrefix(trimmed, "```")
-			trimmed = strings.TrimSpace(trimmed)
-			if strings.HasPrefix(trimmed, "dendrite ") && !strings.Contains(trimmed, "<") && !strings.HasPrefix(trimmed, "dendrite ask") {
-				cmd := strings.Trim(trimmed, "`'\"")
-				exists := false
-				for _, ec := range extractedCmds {
-					if ec == cmd {
-						exists = true
-						break
-					}
-				}
-				if !exists && len(extractedCmds) < 5 {
-					extractedCmds = append(extractedCmds, cmd)
-				}
-			}
-		}
-	}
-
-	trimmedAns := strings.TrimSpace(answer)
-	isCanned := strings.Contains(trimmedAns, "processed your request safely with zero cloud tokens consumed") || len(trimmedAns) < 20
-
-	// If answer is canned or empty, build complete structured answer from chunks
-	if isCanned {
-		if strings.Contains(lowerQ, "available llm") || strings.Contains(lowerQ, "check available") || strings.Contains(lowerQ, "list model") {
-			return "To check available LLMs and inference engines in Dendrite, execute the following commands:\n\n" +
-				"1. List all registered engines, models, and fallback cascade order:\n" +
-				"   $ dendrite spike list\n" +
-				"   (alias: dendrite inference list)\n\n" +
-				"2. Inspect configured zero-cost and self-hosted models/prefixes:\n" +
-				"   $ dendrite spike zero-cost list\n\n" +
-				"3. Probe local Ollama service health, latency, and loaded models:\n" +
-				"   $ dendrite spike probe --endpoint http://127.0.0.1:11434\n\n" +
-				"4. Probe real-time reachability and latency across all engines:\n" +
-				"   $ dendrite spike probe"
-		}
-
-		if len(extractedCmds) > 0 {
-			var sb strings.Builder
-			sb.WriteString("Based on the retrieved project documentation, run the following commands:\n\n")
-			for i, cmd := range extractedCmds {
-				sb.WriteString(fmt.Sprintf("%d. `$ %s`\n", i+1, cmd))
-			}
-			return sb.String()
-		}
-	}
-
-	// If user specifically asked for commands and the answer doesn't have explicit CLI commands
-	if wantsCommand && len(extractedCmds) > 0 && !strings.Contains(answer, "dendrite ") {
-		var sb strings.Builder
-		sb.WriteString(trimmedAns)
-		sb.WriteString("\n\n[+] Key Commands from Project Documentation:\n")
-		for _, cmd := range extractedCmds {
-			sb.WriteString(fmt.Sprintf("  $ %s\n", cmd))
-		}
-		return sb.String()
-	}
-
-	return answer
-}
-
-func buildRAGPrompts(question string, chunks []Chunk) (string, string) {
-	systemPrompt := "You are Dendrite, an AI development and infrastructure assistant for this project. " +
-		"Answer the user's question accurately, concisely, and helpfully based on the retrieved project context. " +
-		"Include concrete CLI commands or instructions if requested."
-
-	var sb strings.Builder
-	sb.WriteString("Retrieved Project Context:\n")
-	sb.WriteString("====================================================================\n")
-
-	if len(chunks) == 0 {
-		sb.WriteString("(No specific documentation or code matches retrieved from local index)\n")
-	} else {
-		for i, c := range chunks {
-			sb.WriteString(fmt.Sprintf("[%d] Source: %s (lines %d-%d)\n", i+1, c.FilePath, c.LineStart, c.LineEnd))
-			if c.Heading != "" {
-				sb.WriteString(fmt.Sprintf("    Heading: %s\n", c.Heading))
-			}
-			sb.WriteString(c.Content)
-			sb.WriteString("\n--------------------------------------------------------------------\n")
-		}
-	}
-	sb.WriteString("====================================================================\n\n")
-	sb.WriteString(fmt.Sprintf("User Question: %s\n\nAnswer:", question))
-
-	return systemPrompt, sb.String()
 }

@@ -146,10 +146,18 @@ type Client struct {
 // Start launches the sidecar at path and performs the health handshake, requiring the
 // sidecar's protocol major version to equal major. The process lives until Close.
 func Start(ctx context.Context, path string, major int) (*Client, error) {
+	return StartWith(ctx, path, major, nil)
+}
+
+// StartWith is Start with extra KEY=VALUE lines in the sidecar's environment (after the
+// process environment and rag.env, so they win).
+func StartWith(ctx context.Context, path string, major int, extraEnv []string) (*Client, error) {
 	cmd := exec.Command(path)
+	cmd.Env = os.Environ()
 	if home, err := projectid.HomeDir(); err == nil {
-		cmd.Env = append(os.Environ(), ragEnv(os.Getenv, filepath.Join(home, "rag.env"))...)
+		cmd.Env = append(cmd.Env, ragEnv(os.Getenv, filepath.Join(home, "rag.env"))...)
 	}
+	cmd.Env = append(cmd.Env, extraEnv...)
 	cmd.Stderr = os.Stderr
 	// The pipe constructors only fail when Stdin/Stdout are already set or the process
 	// has started, neither of which holds for a fresh Cmd.

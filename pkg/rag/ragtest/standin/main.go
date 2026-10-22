@@ -1,9 +1,14 @@
 // Command standin speaks the dendrite-rag sidecar protocol for Dendrite's tests, which
 // must not depend on a Rust build. It does no ranking of its own: search and context
 // return the project's text files that contain a query word, one whole-file span each,
-// most matching words first, then by path. index reports files_changed 1 and
-// embed_pending 7. STANDIN_LOG names a file that records each call's method and params;
-// STANDIN_FAIL=<method> makes that method return an engine error.
+// most matching words first, then by path; context with detail "map" returns each file's
+// first line as its outline. index reports files_changed 1 and embed_pending 7, status an
+// embed_coverage of 0.5. ask answers from those matches without a model: STANDIN_LOCAL=fail
+// makes the local tier fail, so escalation is needed unless paid use is allowed.
+// STANDIN_LOG names a file that records each call's method and params;
+// STANDIN_FAIL=<method> makes that method return an engine error; STANDIN_PROTOCOL sets
+// the protocol version the handshake reports (default 1.6.0); STANDIN_ASK_LOCAL_MODEL the
+// project's [ask] local_model that settings reports.
 package main
 
 import (
@@ -35,6 +40,13 @@ type params struct {
 	Kinds       []string `json:"kinds"`
 	MaxHops     int      `json:"max_hops"`
 	Target      string   `json:"target"`
+	Question    string   `json:"question"`
+	Mode        string   `json:"mode"`
+	AllowPaid   bool     `json:"allow_paid"`
+	LocalModel  string   `json:"local_model"`
+	PaidModel   string   `json:"paid_model"`
+	Detail      string   `json:"detail"`
+	IDs         []string `json:"ids"`
 }
 
 type hit struct {
@@ -45,6 +57,7 @@ type hit struct {
 	Scope     []string `json:"scope"`
 	Score     float64  `json:"score"`
 	Content   string   `json:"content"`
+	Outline   bool     `json:"outline,omitempty"`
 }
 
 func main() {
@@ -67,15 +80,33 @@ func main() {
 		resp := map[string]interface{}{"jsonrpc": "2.0", "id": req.ID}
 		switch {
 		case req.Method == "health":
-			resp["result"] = map[string]string{"name": "dendrite-rag", "version": "0.1.0", "protocol": "1.1.0"}
+			protocol := "1.6.0"
+			if v := os.Getenv("STANDIN_PROTOCOL"); v != "" {
+				protocol = v
+			}
+			resp["result"] = map[string]string{"name": "dendrite-rag", "version": "0.1.0", "protocol": protocol}
 		case req.Method == os.Getenv("STANDIN_FAIL"):
 			resp["error"] = map[string]interface{}{"code": -32000, "message": "boom", "data": map[string]string{"kind": "index"}}
 		case req.Method == "index":
-			resp["result"] = map[string]int{"files_scanned": 1, "files_changed": 1, "embed_pending": 7}
+			resp["result"] = map[string]int{"files_scanned": 1, "files_changed": 1, "embed_pending": 7, "embed_ms": 40}
+		case req.Method == "settings":
+			resp["result"] = map[string]interface{}{"settings": map[string]interface{}{"ask": map[string]string{"local_model": os.Getenv("STANDIN_ASK_LOCAL_MODEL")}}}
+		case req.Method == "status":
+			resp["result"] = map[string]interface{}{"files": 1, "chunks": 14, "vectors": 7, "embed_coverage": 0.5}
+		case req.Method == "ask":
+			resp["result"] = ask(p)
+		case req.Method == "chunks.get":
+			resp["result"] = map[string]interface{}{"hits": chunks(p)}
 		case req.Method == "search":
 			resp["result"] = map[string]interface{}{"hits": matches(p)}
 		case req.Method == "context":
 			hits := matches(p)
+			if p.Detail == "map" {
+				for i := range hits {
+					hits[i].Content = strings.SplitN(hits[i].Content, "\n", 2)[0]
+					hits[i].Outline = true
+				}
+			}
 			tokens := 0
 			for _, h := range hits {
 				tokens += len(h.Content) / 4
@@ -236,6 +267,62 @@ func matches(p params) []hit {
 		hits = hits[:p.TopK]
 	}
 	return hits
+}
+
+// ask answers like dendrite-rag's ask method, without a model.
+func ask(p params) map[string]interface{} {
+	topK := p.TopK
+	if topK <= 0 {
+		topK = 4
+	}
+	hits := matches(params{Root: p.Root, Query: p.Question, TopK: topK})
+	local := p.LocalModel
+	if local == "" {
+		local = "local-coder"
+	}
+	out := map[string]interface{}{
+		"hits": hits, "prompt_tokens": 100, "output_tokens": 20,
+		"timings": map[string]interface{}{"retrieval": map[string]int{"total_ms": 3}, "local_ms": 120, "paid_ms": 0, "total_ms": 123},
+	}
+	paid := func(tier string) map[string]interface{} {
+		out["source_tier"], out["model"], out["escalated"] = tier, p.PaidModel, true
+		out["answer"] = "paid answer for: " + p.Question
+		out["timings"].(map[string]interface{})["paid_ms"] = 250
+		return out
+	}
+	localFails := os.Getenv("STANDIN_LOCAL") == "fail"
+	switch {
+	case p.Mode == "paid":
+		return paid("paid-cloud")
+	case localFails && !p.AllowPaid:
+		out["escalation_needed"], out["local_error"], out["model"], out["answer"] = true, "local model down", local, ""
+		return out
+	case localFails:
+		out["local_error"] = "local model down"
+		return paid("paid-cloud")
+	case p.Mode == "hybrid":
+		out["local_draft"] = "local draft"
+		r := paid("hybrid")
+		r["model"] = local + " -> " + p.PaidModel
+		return r
+	}
+	out["source_tier"], out["model"], out["escalated"] = "local-rag", local, false
+	out["answer"] = "local answer for: " + p.Question
+	return out
+}
+
+// chunks returns the whole files named by `<path>#1` ids.
+func chunks(p params) []hit {
+	var out []hit
+	for _, id := range p.IDs {
+		rel := strings.TrimSuffix(id, "#1")
+		data, err := os.ReadFile(filepath.Join(p.Root, filepath.FromSlash(rel)))
+		if err != nil {
+			continue
+		}
+		out = append(out, hit{ChunkID: id, Path: rel, StartLine: 1, EndLine: strings.Count(string(data), "\n") + 1, Content: string(data)})
+	}
+	return out
 }
 
 func contains(list []string, s string) bool {

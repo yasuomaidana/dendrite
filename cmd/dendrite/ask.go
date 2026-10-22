@@ -22,6 +22,7 @@ type askOptions struct {
 	PaidModel   string
 	LocalModel  string
 	TopK        int
+	Docs        bool
 }
 
 // newAskCmd builds `dendrite ask`: questions about a project answered from its RAG index.
@@ -32,13 +33,16 @@ func newAskCmd() *cobra.Command {
 		Aliases: []string{"query-project", "rag-ask", "q"},
 		Short:   "Ask questions to Dendrite about a project with local RAG and interactive paid fallback",
 		Long: "Answers from the project's RAG index with a zero-cost local model first. When the local model\n" +
-			"fails it asks before escalating to the paid model; --yes escalates without asking.",
+			"fails it asks before escalating to the paid model; --yes escalates without asking.\n\n" +
+			"The context comes from the project's code; -d/--docs adds its documentation (Markdown, txt, rst)\n" +
+			"for how-to and setup questions.",
 		GroupID: "cortex",
 		Args:    minArgs(1),
 		Example: "dendrite ask \"how do I check the available LLMs?\"\n" +
 			"dendrite ask --hybrid \"how does the token gateway work?\"\n" +
 			"dendrite ask --server http://100.84.12.10:3456 \"where is telemetry defined?\"\n" +
-			"dendrite ask --update-index --json \"what does soma prepare write?\"",
+			"dendrite ask -d --update-index --json \"what does soma prepare write?\"\n" +
+			"dendrite ask -d \"how do I check the available LLMs?\"",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			switch strings.ToLower(o.Tier) {
 			case "":
@@ -53,7 +57,12 @@ func newAskCmd() *cobra.Command {
 			if o.TopK < 0 {
 				return usageErrorf("--top-k must not be negative")
 			}
+			corpus := "code"
+			if o.Docs {
+				corpus = "all"
+			}
 			req := rag.AskRequest{
+				Corpus:          corpus,
 				Question:        strings.Join(args, " "),
 				ProjectPath:     o.Project,
 				AutoApprovePaid: globals.Yes,
@@ -73,13 +82,14 @@ func newAskCmd() *cobra.Command {
 	f := cmd.Flags()
 	f.BoolVar(&o.Paid, "paid", false, "Skip the local model and ask the paid model with the RAG context")
 	f.BoolVar(&o.Hybrid, "hybrid", false, "Draft locally, then refine and verify with the paid model")
-	f.BoolVar(&o.UpdateIndex, "update-index", false, "Re-index changed project files before answering")
+	f.BoolVar(&o.UpdateIndex, "update-index", false, "Rebuild the project index and ask the model again instead of reusing a cached answer")
 	f.StringVar(&o.Server, "server", "", "Ask a central Dendrite RAG service instead (e.g. http://host:3456)")
 	f.StringVar(&o.Tier, "tier", "", "Shortcut for the tier: local, hybrid or paid")
 	addProjectFlag(cmd, &o.Project, ".", "Project directory to index and search")
 	f.StringVar(&o.PaidModel, "paid-model", "gemini-2.5-pro", "Paid fallback model")
-	f.StringVar(&o.LocalModel, "local-model", "", "Preferred local model (default: detected from Ollama/OxiLLaMa)")
+	f.StringVar(&o.LocalModel, "local-model", "", "Local model on the LiteLLM gateway (default: [ask] local_model in .dendrite/rag.toml, else the gateway's local model on the most preferred reachable GPU engine; never OxiLLaMa, which prefills on the CPU)")
 	f.IntVarP(&o.TopK, "top-k", "k", 0, "Retrieve the N best chunks instead of a token-budgeted context pack")
+	f.BoolVarP(&o.Docs, "docs", "d", false, "Also search the documentation (default: code only)")
 	cmd.MarkFlagsMutuallyExclusive("paid", "hybrid")
 	return cmd
 }
@@ -90,7 +100,7 @@ func runAsk(ctx context.Context, req rag.AskRequest, out io.Writer) error {
 	} else {
 		fmt.Fprintf(out, "[+] Querying Dendrite RAG index for: %q\n", req.Question)
 	}
-	res, err := rag.NewAskEngine(nil).Ask(ctx, req)
+	res, err := rag.NewAskEngine().Ask(ctx, req)
 	if err != nil {
 		return fmt.Errorf("query: %w", err)
 	}
@@ -111,12 +121,19 @@ func runAsk(ctx context.Context, req rag.AskRequest, out io.Writer) error {
 	if res.IndexStatus != "" {
 		cacheNote = fmt.Sprintf(" | Index: %s", res.IndexStatus)
 	}
+	if res.Cached {
+		cacheNote += " | cached answer (--update-index asks again)"
+	}
 	rule := strings.Repeat("=", 80)
 	fmt.Fprintln(out, "\n"+rule)
 	fmt.Fprintf(out, "[✓] Answer (%s | Model: %s | Time: %v%s):\n", tierDisplay, res.Model, res.Duration.Round(10*time.Millisecond), cacheNote)
 	fmt.Fprintln(out, rule)
 	fmt.Fprintln(out, res.Answer)
 	fmt.Fprintln(out, rule)
+	if t := res.Timings; t != nil {
+		fmt.Fprintf(out, "[i] Timing: sidecar start %d ms, index %d ms (embedding %d ms), retrieval %d ms, local model %d ms, paid model %d ms\n",
+			t.Spawn, t.Index, t.Embed, t.Retrieval, t.Local, t.Paid)
+	}
 	if res.LocalDraft != "" && res.SourceTier == "hybrid" {
 		fmt.Fprintln(out, "\n[+] Note: Initial draft was synthesized locally at zero cost, then verified and refined via cloud LLM.")
 	}

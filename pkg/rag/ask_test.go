@@ -8,266 +8,180 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/inference"
 )
 
-// testEngine implements inference.InferenceEngine for zero-mock testing.
-type testEngine struct {
-	id         string
-	engineType inference.EngineType
-	models     []string
-	generateFn func(ctx context.Context, req inference.CompletionRequest) (*inference.CompletionResponse, error)
-	healthFn   func(ctx context.Context) inference.EngineHealth
+// standInAsk returns an AskEngine on the stand-in sidecar and the file its calls go to.
+func standInAsk(t *testing.T) (*AskEngine, string) {
+	t.Helper()
+	r, log := standInRetriever(t)
+	return &AskEngine{Retriever: r}, log // no PickLocal: the stand-in answers with its default
 }
 
-func (m *testEngine) ID() string                 { return m.id }
-func (m *testEngine) Type() inference.EngineType { return m.engineType }
-func (m *testEngine) Config() inference.EngineConfig {
-	return inference.EngineConfig{
-		ID:         m.id,
-		Type:       m.engineType,
-		Models:     m.models,
-		SelfHosted: true,
+func askCalls(t *testing.T, log string) []string {
+	t.Helper()
+	data, _ := os.ReadFile(log)
+	var asks []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "ask ") {
+			asks = append(asks, line)
+		}
 	}
-}
-func (m *testEngine) IsSelfHosted() bool { return true }
-func (m *testEngine) Generate(ctx context.Context, req inference.CompletionRequest) (*inference.CompletionResponse, error) {
-	if m.generateFn != nil {
-		return m.generateFn(ctx, req)
-	}
-	return &inference.CompletionResponse{
-		ID:       "test-resp",
-		Model:    req.Model,
-		EngineID: m.id,
-		Text:     "To check available LLMs, use: dendrite inference list",
-	}, nil
-}
-func (m *testEngine) Stream(ctx context.Context, req inference.CompletionRequest) (<-chan inference.StreamChunk, error) {
-	return nil, nil
-}
-func (m *testEngine) Health(ctx context.Context) inference.EngineHealth {
-	if m.healthFn != nil {
-		return m.healthFn(ctx)
-	}
-	return inference.EngineHealth{EngineID: m.id, Reachable: true}
-}
-func (m *testEngine) SupportedModels(ctx context.Context) ([]string, error) {
-	return m.models, nil
+	return asks
 }
 
 func TestAsk_EmptyQuestion(t *testing.T) {
-	engine := NewAskEngine(nil)
-	_, err := engine.Ask(context.Background(), AskRequest{
-		Question: "   ",
-	})
-	if !errors.Is(err, ErrEmptyQuestion) {
-		t.Fatalf("expected ErrEmptyQuestion, got: %v", err)
+	if _, err := NewAskEngine().Ask(context.Background(), AskRequest{Question: "  "}); !errors.Is(err, ErrEmptyQuestion) {
+		t.Fatalf("err = %v", err)
 	}
 }
 
-func TestAsk_LocalLLM_Success(t *testing.T) {
-	tmpDir := t.TempDir()
-	docFile := filepath.Join(tmpDir, "README.md")
-	_ = os.WriteFile(docFile, []byte("# Dendrite\nRun `dendrite inference list` to check available LLMs.\n"), 0644)
-
-	localEng := &testEngine{
-		id:         "ollama-metal",
-		engineType: inference.EngineOllama,
-		models:     []string{"qwen2.5-coder:14b"},
-		generateFn: func(ctx context.Context, req inference.CompletionRequest) (*inference.CompletionResponse, error) {
-			return &inference.CompletionResponse{
-				ID:           "resp-local",
-				Model:        "qwen2.5-coder:14b",
-				EngineID:     "ollama-metal",
-				Text:         "You can check available LLMs using `dendrite inference list` and `dendrite dev inference zero-cost list`.",
-				PromptTokens: 120,
-				OutputTokens: 35,
-			}, nil
-		},
-	}
-
-	engine := NewAskEngine(nil)
-	engine.LocalEngine = localEng
-
+func TestAsk_LocalAnswerFromTheSidecar(t *testing.T) {
+	e, log := standInAsk(t)
 	var out bytes.Buffer
-	res, err := engine.Ask(context.Background(), AskRequest{
-		Question:    "I want to know how to check available LLMs",
-		ProjectPath: tmpDir,
-		Output:      &out,
-	})
+	res, err := e.Ask(context.Background(), AskRequest{Question: "where is LocateBinary", ProjectPath: ragProject(t), Output: &out})
 	if err != nil {
-		t.Fatalf("Ask failed: %v", err)
+		t.Fatal(err)
 	}
-
-	if res.SourceTier != "local-rag" {
-		t.Errorf("expected SourceTier local-rag, got: %s", res.SourceTier)
+	if res.SourceTier != "local-rag" || res.Model != "local-coder" || !strings.Contains(res.Answer, "LocateBinary") || res.Escalated {
+		t.Fatalf("result = %+v", res)
 	}
-	if res.Escalated {
-		t.Errorf("expected Escalated to be false")
+	if len(res.RetrievedChunks) == 0 || !strings.HasSuffix(res.RetrievedChunks[0].FilePath, "demo.go") {
+		t.Fatalf("chunks = %+v", res.RetrievedChunks)
 	}
-	if !strings.Contains(res.Answer, "dendrite inference list") {
-		t.Errorf("expected answer to contain 'dendrite inference list', got: %s", res.Answer)
+	if tm := res.Timings; tm == nil || tm.Local != 120 || tm.Retrieval != 3 || tm.Embed != 40 {
+		t.Fatalf("timings = %+v", res.Timings)
 	}
-	if len(res.RetrievedChunks) == 0 {
-		t.Errorf("expected retrieved chunks to be populated")
+	asks := askCalls(t, log)
+	if len(asks) != 1 || !strings.Contains(asks[0], `"corpus":"all"`) || !strings.Contains(asks[0], `"mode":"local"`) ||
+		!strings.Contains(asks[0], `"allow_paid":false`) || !strings.Contains(asks[0], `"paid_model":"gemini-2.5-pro"`) {
+		t.Fatalf("ask calls = %v", asks)
+	}
+	calls, _ := os.ReadFile(log)
+	if !strings.Contains(string(calls), `"focus":"where is LocateBinary"`) {
+		t.Errorf("index call does not focus the question:\n%s", calls)
+	}
+	if !strings.Contains(out.String(), "covers 50% of the project") {
+		t.Errorf("no embedding coverage warning:\n%s", out.String())
 	}
 }
 
-func TestAsk_HybridMode_Success(t *testing.T) {
-	tmpDir := t.TempDir()
-	docFile := filepath.Join(tmpDir, "README.md")
-	_ = os.WriteFile(docFile, []byte("# LLM Architecture\nUse `dendrite dev inference list` to check available LLMs.\n"), 0644)
-
-	localEng := &testEngine{
-		id:         "ollama-metal",
-		engineType: inference.EngineOllama,
-		models:     []string{"hermes3:8b"},
-		generateFn: func(ctx context.Context, req inference.CompletionRequest) (*inference.CompletionResponse, error) {
-			return &inference.CompletionResponse{
-				ID:           "local-draft-id",
-				Model:        "hermes3:8b",
-				EngineID:     "ollama-metal",
-				Text:         "Draft answer: list models via dendrite inference list.",
-				PromptTokens: 100,
-				OutputTokens: 20,
-			}, nil
-		},
-	}
-
-	paidCalled := false
-	paidCaller := func(ctx context.Context, prompt string, paidModel string) (*inference.CompletionResponse, error) {
-		paidCalled = true
-		if !strings.Contains(prompt, "Initial Local Draft") {
-			t.Errorf("expected hybrid refinement prompt to include Initial Local Draft")
-		}
-		return &inference.CompletionResponse{
-			ID:           "paid-refined-id",
-			Model:        paidModel,
-			EngineID:     "paid-cloud-orchestrator",
-			Text:         "Refined Answer: To inspect available LLMs in Dendrite, execute `dendrite dev inference list`.",
-			PromptTokens: 250,
-			OutputTokens: 30,
-		}, nil
-	}
-
-	engine := NewAskEngine(nil)
-	engine.LocalEngine = localEng
-	engine.PaidCaller = paidCaller
-
-	var out bytes.Buffer
-	res, err := engine.Ask(context.Background(), AskRequest{
-		Question:    "I want to know how to check available LLMs",
-		ProjectPath: tmpDir,
-		HybridMode:  true,
-		PaidModel:   "gemini-2.5-pro",
-		Output:      &out,
-	})
-	if err != nil {
-		t.Fatalf("Hybrid Ask failed: %v", err)
-	}
-
-	if !paidCalled {
-		t.Errorf("expected paid caller to be invoked for refinement in hybrid mode")
-	}
-	if res.SourceTier != "hybrid" {
-		t.Errorf("expected SourceTier 'hybrid', got: %s", res.SourceTier)
-	}
-	if res.LocalDraft == "" {
-		t.Errorf("expected LocalDraft to be populated in hybrid mode")
-	}
-	if !strings.Contains(res.Answer, "Refined Answer") {
-		t.Errorf("expected refined answer in res.Answer, got: %s", res.Answer)
-	}
-	if !strings.Contains(out.String(), "Hybrid mode: Local draft generated") {
-		t.Errorf("expected hybrid mode output message, got: %s", out.String())
+func TestAsk_ModesAndCorpusReachTheSidecar(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		req  AskRequest
+		want []string
+		tier string
+	}{
+		{"hybrid", AskRequest{HybridMode: true}, []string{`"mode":"hybrid"`}, "hybrid"},
+		{"paid", AskRequest{ForcePaid: true, PaidModel: "gemini-2.5-flash"}, []string{`"mode":"paid"`, `"paid_model":"gemini-2.5-flash"`}, "paid-cloud"},
+		{"code only", AskRequest{Corpus: "code"}, []string{`"corpus":"code"`}, "local-rag"},
+		{"with docs", AskRequest{Corpus: "all", TopK: 3}, []string{`"corpus":"all"`, `"top_k":3`}, "local-rag"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e, log := standInAsk(t)
+			tc.req.Question, tc.req.ProjectPath, tc.req.Output = "LocateBinary", ragProject(t), &bytes.Buffer{}
+			res, err := e.Ask(context.Background(), tc.req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.SourceTier != tc.tier {
+				t.Errorf("tier = %s, want %s", res.SourceTier, tc.tier)
+			}
+			asks := askCalls(t, log)
+			for _, w := range tc.want {
+				if len(asks) != 1 || !strings.Contains(asks[0], w) {
+					t.Errorf("ask calls %v lack %s", asks, w)
+				}
+			}
+		})
 	}
 }
 
-func TestAsk_HybridMode_PaidRefinementFails_FallbackLocalDraft(t *testing.T) {
-	tmpDir := t.TempDir()
-	localEng := &testEngine{
-		id:         "ollama-metal",
-		engineType: inference.EngineOllama,
-		models:     []string{"hermes3:8b"},
-		generateFn: func(ctx context.Context, req inference.CompletionRequest) (*inference.CompletionResponse, error) {
-			return &inference.CompletionResponse{
-				ID:       "local-draft-id",
-				Model:    "hermes3:8b",
-				EngineID: "ollama-metal",
-				Text:     "Local draft answer without refinement.",
-			}, nil
-		},
-	}
-
-	engine := NewAskEngine(nil)
-	engine.LocalEngine = localEng
-	engine.PaidCaller = func(ctx context.Context, prompt string, paidModel string) (*inference.CompletionResponse, error) {
-		return nil, errors.New("network timeout contacting paid cloud API")
-	}
-
-	var out bytes.Buffer
-	res, err := engine.Ask(context.Background(), AskRequest{
-		Question:    "How does the hybrid mode work?",
-		ProjectPath: tmpDir,
-		HybridMode:  true,
-		PaidModel:   "gemini-2.5-pro",
-		Output:      &out,
-	})
-	if err != nil {
-		t.Fatalf("expected fallback to local draft on paid refinement failure, got err: %v", err)
-	}
-
-	if res.SourceTier != "local-rag" {
-		t.Errorf("expected SourceTier fallback to local-rag, got: %s", res.SourceTier)
-	}
-	if !strings.Contains(res.Answer, "Local draft answer") {
-		t.Errorf("expected local draft in answer, got: %s", res.Answer)
-	}
-	if !strings.Contains(out.String(), "Paid refinement failed") {
-		t.Errorf("expected warning message in output, got: %s", out.String())
+func TestAsk_LocalFailureAsksBeforePaying(t *testing.T) {
+	for _, tc := range []struct {
+		name, input string
+		auto        bool
+		asks        int
+		declined    bool
+	}{
+		{"declined", "n\n", false, 1, true},
+		{"no answer", "", false, 1, true},
+		{"accepted", "y\n", false, 2, false},
+		{"approved with -y", "", true, 1, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e, log := standInAsk(t)
+			t.Setenv("STANDIN_LOCAL", "fail")
+			var out bytes.Buffer
+			res, err := e.Ask(context.Background(), AskRequest{
+				Question: "LocateBinary", ProjectPath: ragProject(t), AutoApprovePaid: tc.auto,
+				Input: strings.NewReader(tc.input), Output: &out,
+			})
+			asks := askCalls(t, log)
+			if len(asks) != tc.asks {
+				t.Fatalf("ask calls = %v", asks)
+			}
+			if tc.declined {
+				if !errors.Is(err, ErrPaidEscalationDeclined) || !strings.Contains(out.String(), "local model down") {
+					t.Fatalf("err = %v, out = %s", err, out.String())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.SourceTier != "paid-cloud" || !res.Escalated || !res.EscalationApproved {
+				t.Fatalf("result = %+v", res)
+			}
+			if !strings.Contains(asks[len(asks)-1], `"allow_paid":true`) {
+				t.Errorf("paid use not allowed in %s", asks[len(asks)-1])
+			}
+		})
 	}
 }
 
-func TestAsk_HybridMode_LocalFails_Escalates(t *testing.T) {
-	tmpDir := t.TempDir()
-	localEng := &testEngine{
-		id:         "ollama-metal",
-		engineType: inference.EngineOllama,
-		generateFn: func(ctx context.Context, req inference.CompletionRequest) (*inference.CompletionResponse, error) {
-			return nil, errors.New("ollama offline")
-		},
-	}
-
-	engine := NewAskEngine(nil)
-	engine.LocalEngine = localEng
-	engine.PaidCaller = func(ctx context.Context, prompt string, paidModel string) (*inference.CompletionResponse, error) {
-		return &inference.CompletionResponse{
-			ID:       "paid-esc-id",
-			Model:    paidModel,
-			EngineID: "paid-cloud-orchestrator",
-			Text:     "Paid cloud response after local failure in hybrid mode.",
-		}, nil
-	}
-
-	var out bytes.Buffer
-	res, err := engine.Ask(context.Background(), AskRequest{
-		Question:        "Explain hybrid fallback",
-		ProjectPath:     tmpDir,
-		HybridMode:      true,
-		AutoApprovePaid: true,
-		PaidModel:       "gemini-2.5-pro",
-		Output:          &out,
-	})
+func TestAsk_SingleFileProjectRestrictsRetrievalToIt(t *testing.T) {
+	e, log := standInAsk(t)
+	file := ragProject(t) + "/pkg/demo/demo.go"
+	res, err := e.Ask(context.Background(), AskRequest{Question: "LocateBinary", ProjectPath: file, Output: &bytes.Buffer{}})
 	if err != nil {
-		t.Fatalf("expected escalation in hybrid mode when local fails, got: %v", err)
+		t.Fatal(err)
 	}
+	if asks := askCalls(t, log); len(asks) != 1 || !strings.Contains(asks[0], `"paths":["demo.go"]`) {
+		t.Fatalf("ask calls = %v", asks)
+	}
+	if len(res.RetrievedChunks) == 0 || res.RetrievedChunks[0].FilePath != file {
+		t.Fatalf("chunks = %+v", res.RetrievedChunks)
+	}
+}
 
-	if res.SourceTier != "paid-cloud" {
-		t.Errorf("expected SourceTier paid-cloud, got: %s", res.SourceTier)
+func TestAsk_OldSidecarIsRefusedWithAnInstallHint(t *testing.T) {
+	e, _ := standInAsk(t)
+	t.Setenv("STANDIN_PROTOCOL", "1.4.0")
+	_, err := e.Ask(context.Background(), AskRequest{Question: "LocateBinary", ProjectPath: ragProject(t), Output: &bytes.Buffer{}})
+	if !errors.Is(err, ErrSidecarTooOld) || !strings.Contains(err.Error(), "cargo install") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRetrieverShowReturnsTheTextBehindOutlines(t *testing.T) {
+	r, _ := standInRetriever(t)
+	dir := ragProject(t)
+	pack, err := r.ContextWith(context.Background(), dir, "LocateBinary", 1000, ContextOptions{Corpus: "code", Detail: "map"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pack.Chunks) == 0 || !pack.Chunks[0].Outline || strings.Contains(pack.Chunks[0].Content, "\n") {
+		t.Fatalf("map pack = %+v", pack.Chunks)
+	}
+	full, err := r.Show(context.Background(), dir, []string{pack.Chunks[0].ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(full) != 1 || full[0].Outline || !strings.Contains(full[0].Content, "func LocateBinary") {
+		t.Fatalf("shown = %+v", full)
 	}
 }
 
@@ -299,7 +213,7 @@ func TestAsk_CentralRAG_Delegation(t *testing.T) {
 	}))
 	defer centralServer.Close()
 
-	engine := NewAskEngine(nil)
+	engine := NewAskEngine()
 	res, err := engine.Ask(context.Background(), AskRequest{
 		Question:  "Where does the RAG service live in shared environments?",
 		ServerURL: centralServer.URL,
@@ -322,7 +236,7 @@ func TestAsk_CentralRAG_ErrorResponse(t *testing.T) {
 	}))
 	defer centralServer.Close()
 
-	engine := NewAskEngine(nil)
+	engine := NewAskEngine()
 	_, err := engine.Ask(context.Background(), AskRequest{
 		Question:  "Query central server",
 		ServerURL: centralServer.URL,
@@ -332,353 +246,53 @@ func TestAsk_CentralRAG_ErrorResponse(t *testing.T) {
 	}
 }
 
-func TestAsk_LocalFails_HumanDeclined(t *testing.T) {
-	tmpDir := t.TempDir()
-	localEng := &testEngine{
-		id:         "ollama-metal",
-		engineType: inference.EngineOllama,
-		generateFn: func(ctx context.Context, req inference.CompletionRequest) (*inference.CompletionResponse, error) {
-			return nil, errors.New("connection refused: Ollama daemon is offline")
-		},
+func TestGatewayKeyComesFromTheProjectEnvWhenUnset(t *testing.T) {
+	dir := ragProject(t)
+	if err := os.WriteFile(dir+"/.env", []byte("OTHER=1\nLITELLM_MASTER_KEY=\"sk-test\"\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-
-	engine := NewAskEngine(nil)
-	engine.LocalEngine = localEng
-
-	var out bytes.Buffer
-	in := strings.NewReader("n\n") // Human says 'n'
-
-	_, err := engine.Ask(context.Background(), AskRequest{
-		Question:    "I want to know how to check available LLMs",
-		ProjectPath: tmpDir,
-		Input:       in,
-		Output:      &out,
-	})
-
-	if err == nil {
-		t.Fatalf("expected error when human declines escalation")
+	t.Setenv("LITELLM_MASTER_KEY", "")
+	if got := gatewayEnv(dir); len(got) != 1 || got[0] != "LITELLM_MASTER_KEY=sk-test" {
+		t.Fatalf("gatewayEnv = %v", got)
 	}
-	if !errors.Is(err, ErrPaidEscalationDeclined) {
-		t.Errorf("expected ErrPaidEscalationDeclined, got: %v", err)
-	}
-	if !strings.Contains(out.String(), "Paid LLM escalation declined by user") {
-		t.Errorf("expected cancellation message in output, got: %s", out.String())
+	t.Setenv("LITELLM_MASTER_KEY", "from-shell")
+	if got := gatewayEnv(dir); got != nil {
+		t.Fatalf("an exported key must win, got %v", got)
 	}
 }
 
-func TestAsk_LocalFails_HumanDeclinedEOF(t *testing.T) {
-	tmpDir := t.TempDir()
-	localEng := &testEngine{
-		id:         "ollama-metal",
-		engineType: inference.EngineOllama,
-		generateFn: func(ctx context.Context, req inference.CompletionRequest) (*inference.CompletionResponse, error) {
-			return nil, errors.New("timeout")
-		},
+func TestAsk_ChosenLocalModelReachesTheSidecar(t *testing.T) {
+	e, log := standInAsk(t)
+	e.PickLocal = func(context.Context, string) (LocalChoice, bool) {
+		return LocalChoice{Model: "local-hermes3-8b", Engine: "ollama"}, true
 	}
-
-	engine := NewAskEngine(nil)
-	engine.LocalEngine = localEng
-
 	var out bytes.Buffer
-	in := strings.NewReader("") // EOF immediately
-
-	_, err := engine.Ask(context.Background(), AskRequest{
-		Question:    "I want to know how to check available LLMs",
-		ProjectPath: tmpDir,
-		Input:       in,
-		Output:      &out,
-	})
-
-	if err == nil {
-		t.Fatalf("expected error when input is EOF")
-	}
-	if !errors.Is(err, ErrPaidEscalationDeclined) {
-		t.Errorf("expected ErrPaidEscalationDeclined on EOF, got: %v", err)
-	}
-}
-
-func TestAsk_LocalFails_HumanAccepted(t *testing.T) {
-	tmpDir := t.TempDir()
-	localEng := &testEngine{
-		id:         "ollama-metal",
-		engineType: inference.EngineOllama,
-		generateFn: func(ctx context.Context, req inference.CompletionRequest) (*inference.CompletionResponse, error) {
-			return nil, errors.New("Ollama socket closed")
-		},
-	}
-
-	engine := NewAskEngine(nil)
-	engine.LocalEngine = localEng
-	engine.PaidCaller = func(ctx context.Context, prompt string, paidModel string) (*inference.CompletionResponse, error) {
-		return &inference.CompletionResponse{
-			ID:           "paid-resp-1",
-			Model:        paidModel,
-			EngineID:     "paid-cloud-orchestrator",
-			Text:         "To inspect available LLMs in Dendrite, execute `dendrite dev inference list` or `dendrite inference list`.",
-			PromptTokens: 250,
-			OutputTokens: 40,
-		}, nil
-	}
-
-	var out bytes.Buffer
-	in := strings.NewReader("yes\n") // Human confirms 'yes'
-
-	res, err := engine.Ask(context.Background(), AskRequest{
-		Question:    "I want to know how to check available LLMs",
-		ProjectPath: tmpDir,
-		PaidModel:   "gemini-2.5-pro",
-		Input:       in,
-		Output:      &out,
-	})
-
+	res, err := e.Ask(context.Background(), AskRequest{Question: "LocateBinary", ProjectPath: ragProject(t), Output: &out})
 	if err != nil {
-		t.Fatalf("expected success on accepted escalation, got: %v", err)
+		t.Fatal(err)
 	}
-	if res.SourceTier != "paid-cloud" {
-		t.Errorf("expected SourceTier paid-cloud, got: %s", res.SourceTier)
+	if asks := askCalls(t, log); len(asks) != 1 || !strings.Contains(asks[0], `"local_model":"local-hermes3-8b"`) {
+		t.Fatalf("ask calls = %v", asks)
 	}
-	if !res.Escalated || !res.EscalationApproved {
-		t.Errorf("expected Escalated and EscalationApproved to be true")
+	if res.Engine != "ollama" || !strings.Contains(out.String(), "Local model: local-hermes3-8b (ollama, GPU)") {
+		t.Fatalf("engine = %s, out = %s", res.Engine, out.String())
 	}
-	if res.Model != "gemini-2.5-pro" {
-		t.Errorf("expected model gemini-2.5-pro, got: %s", res.Model)
+	// The project's [ask] local_model, an explicit model or the paid tier skip the choice.
+	t.Setenv("STANDIN_ASK_LOCAL_MODEL", "project-model")
+	called := false
+	e.PickLocal = func(context.Context, string) (LocalChoice, bool) { called = true; return LocalChoice{}, false }
+	if _, err := e.Ask(context.Background(), AskRequest{Question: "x", ProjectPath: ragProject(t), Output: &out}); err != nil || called {
+		t.Fatalf("err = %v, PickLocal called = %v", err, called)
 	}
-	if !strings.Contains(res.Answer, "dendrite inference list") {
-		t.Errorf("expected answer to contain 'dendrite inference list', got: %s", res.Answer)
+	t.Setenv("STANDIN_ASK_LOCAL_MODEL", "")
+	e.PickLocal = func(context.Context, string) (LocalChoice, bool) {
+		t.Fatal("PickLocal called")
+		return LocalChoice{}, false
 	}
-}
-
-func TestAsk_LocalFails_AutoApproveFlag(t *testing.T) {
-	tmpDir := t.TempDir()
-	localEng := &testEngine{
-		id:         "oxillama-rust",
-		engineType: inference.EngineOxiLLaMa,
-		generateFn: func(ctx context.Context, req inference.CompletionRequest) (*inference.CompletionResponse, error) {
-			return nil, errors.New("OxiLLaMa model not loaded")
-		},
+	if _, err := e.Ask(context.Background(), AskRequest{Question: "x", ProjectPath: ragProject(t), LocalModel: "mine", Output: &out}); err != nil {
+		t.Fatal(err)
 	}
-
-	engine := NewAskEngine(nil)
-	engine.LocalEngine = localEng
-
-	paidCalled := false
-	engine.PaidCaller = func(ctx context.Context, prompt string, paidModel string) (*inference.CompletionResponse, error) {
-		paidCalled = true
-		return &inference.CompletionResponse{
-			ID:           "paid-resp-auto",
-			Model:        paidModel,
-			EngineID:     "paid-cloud-orchestrator",
-			Text:         "Execute `dendrite inference list` to see all configured LLMs.",
-			PromptTokens: 180,
-			OutputTokens: 25,
-		}, nil
-	}
-
-	var out bytes.Buffer
-	// With AutoApprovePaid = true (-y flag), input should never be read!
-	res, err := engine.Ask(context.Background(), AskRequest{
-		Question:        "I want to know how to check available LLMs",
-		ProjectPath:     tmpDir,
-		AutoApprovePaid: true, // -y flag
-		PaidModel:       "gemini-2.5-pro",
-		Output:          &out,
-	})
-
-	if err != nil {
-		t.Fatalf("expected success with -y flag, got: %v", err)
-	}
-	if !paidCalled {
-		t.Errorf("expected paid caller to be invoked")
-	}
-	if res.SourceTier != "paid-cloud" {
-		t.Errorf("expected SourceTier paid-cloud, got: %s", res.SourceTier)
-	}
-	if !strings.Contains(out.String(), "Flag -y passed: automatically escalating") {
-		t.Errorf("expected auto-escalating message in output, got: %s", out.String())
-	}
-}
-
-func TestAsk_DefaultPaidCaller_HTTP(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "bad method", http.StatusMethodNotAllowed)
-			return
-		}
-		if r.Header.Get("Authorization") != "Bearer test-master-key" {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		resp := map[string]interface{}{
-			"id": "chatcmpl-test",
-			"choices": []map[string]interface{}{
-				{
-					"message": map[string]string{
-						"role":    "assistant",
-						"content": "You can check available LLMs with `dendrite inference list`.",
-					},
-				},
-			},
-			"usage": map[string]int{
-				"prompt_tokens":     150,
-				"completion_tokens": 30,
-			},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
-
-	os.Setenv("LITELLM_PROXY_URL", server.URL)
-	os.Setenv("LITELLM_MASTER_KEY", "test-master-key")
-	defer os.Unsetenv("LITELLM_PROXY_URL")
-	defer os.Unsetenv("LITELLM_MASTER_KEY")
-
-	engine := NewAskEngine(nil)
-	resp, err := engine.defaultPaidCaller(context.Background(), "How to check available LLMs", "gemini-2.5-pro")
-	if err != nil {
-		t.Fatalf("defaultPaidCaller failed: %v", err)
-	}
-	if resp.Text != "You can check available LLMs with `dendrite inference list`." {
-		t.Errorf("unexpected text: %s", resp.Text)
-	}
-}
-
-func TestAsk_DefaultPaidCaller_ErrorHTTP(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "quota exceeded", http.StatusTooManyRequests)
-	}))
-	defer server.Close()
-
-	os.Setenv("LITELLM_PROXY_URL", server.URL)
-	defer os.Unsetenv("LITELLM_PROXY_URL")
-
-	engine := NewAskEngine(nil)
-	_, err := engine.defaultPaidCaller(context.Background(), "test prompt", "gemini-2.5-pro")
-	if err == nil || !strings.Contains(err.Error(), "HTTP 429") {
-		t.Fatalf("expected HTTP 429 error, got: %v", err)
-	}
-}
-
-func TestAsk_PaidCaller_ErrorHandling(t *testing.T) {
-	engine := NewAskEngine(nil)
-	engine.LocalEngine = &testEngine{
-		id: "err-eng",
-		generateFn: func(ctx context.Context, req inference.CompletionRequest) (*inference.CompletionResponse, error) {
-			return nil, errors.New("local failure")
-		},
-	}
-	engine.PaidCaller = func(ctx context.Context, prompt string, paidModel string) (*inference.CompletionResponse, error) {
-		return nil, errors.New("upstream quota exceeded")
-	}
-
-	var out bytes.Buffer
-	_, err := engine.Ask(context.Background(), AskRequest{
-		Question:        "test question",
-		AutoApprovePaid: true,
-		Output:          &out,
-	})
-	if err == nil || !strings.Contains(err.Error(), "upstream quota exceeded") {
-		t.Fatalf("expected paid LLM failure error, got: %v", err)
-	}
-}
-
-func TestAsk_TryLocalLLM_Manager(t *testing.T) {
-	mgr := inference.NewManager()
-	eng := &testEngine{
-		id:         "local-mock",
-		engineType: inference.EngineOllama,
-		models:     []string{"qwen2.5-coder:14b"},
-		generateFn: func(ctx context.Context, req inference.CompletionRequest) (*inference.CompletionResponse, error) {
-			return &inference.CompletionResponse{
-				ID:   "mgr-resp",
-				Text: "Response from manager",
-			}, nil
-		},
-	}
-	_ = mgr.RegisterEngine(eng)
-
-	engine := NewAskEngine(mgr)
-	resp, err := engine.tryLocalLLM(context.Background(), AskRequest{}, "sys", "prompt")
-	if err != nil {
-		t.Fatalf("tryLocalLLM failed: %v", err)
-	}
-	if resp.Text != "Response from manager" {
-		t.Errorf("unexpected manager text: %s", resp.Text)
-	}
-}
-
-func TestAsk_ForcePaid_DirectEscalation(t *testing.T) {
-	engine := NewAskEngine(nil)
-	engine.LocalEngine = &testEngine{
-		id: "local-stub",
-		generateFn: func(ctx context.Context, req inference.CompletionRequest) (*inference.CompletionResponse, error) {
-			t.Fatal("local engine should NOT be called when ForcePaid is true")
-			return nil, nil
-		},
-	}
-
-	paidCalled := false
-	engine.PaidCaller = func(ctx context.Context, prompt string, paidModel string) (*inference.CompletionResponse, error) {
-		paidCalled = true
-		return &inference.CompletionResponse{
-			ID:       "paid-resp-force",
-			Model:    paidModel,
-			EngineID: "paid-cloud-orchestrator",
-			Text:     "Detailed answer from paid cloud model.",
-		}, nil
-	}
-
-	var out bytes.Buffer
-	res, err := engine.Ask(context.Background(), AskRequest{
-		Question:  "How to check available LLMs?",
-		ForcePaid: true,
-		PaidModel: "gemini-2.5-pro",
-		Output:    &out,
-	})
-	if err != nil {
-		t.Fatalf("expected success with ForcePaid, got: %v", err)
-	}
-	if !paidCalled {
-		t.Errorf("expected paid caller to be invoked")
-	}
-	if res.SourceTier != "paid-cloud" {
-		t.Errorf("expected SourceTier paid-cloud, got: %s", res.SourceTier)
-	}
-	if !strings.Contains(out.String(), "Force-paid flag enabled") {
-		t.Errorf("expected force-paid notification in output, got: %s", out.String())
-	}
-}
-
-func TestEnhanceAnswer_Cases(t *testing.T) {
-	chunks := []Chunk{
-		{
-			FilePath: "docs/guide.md",
-			Content:  "Run the following command:\n```bash\ndendrite inference list\n```\nTo inspect models.",
-		},
-	}
-
-	// 1. Canned response with LLM question
-	ans1 := enhanceAnswer("check available llms", "processed your request safely with zero cloud tokens consumed", chunks)
-	if !strings.Contains(ans1, "dendrite inference list") {
-		t.Errorf("expected ans1 to contain dendrite inference list, got: %s", ans1)
-	}
-
-	// 2. Canned response with general command question
-	ans2 := enhanceAnswer("show me the command to build", "short", chunks)
-	if !strings.Contains(ans2, "dendrite inference list") {
-		t.Errorf("expected ans2 to contain extracted commands, got: %s", ans2)
-	}
-
-	// 3. User specifically requests commands, but answer has no command
-	ans3 := enhanceAnswer("show me the command", "You can easily inspect models in the CLI.", chunks)
-	if !strings.Contains(ans3, "Key Commands from Project Documentation") {
-		t.Errorf("expected Key Commands section in ans3, got: %s", ans3)
-	}
-
-	// 4. Normal answer that already includes command
-	ans4 := enhanceAnswer("how to list", "Execute dendrite inference list to see models.", chunks)
-	if ans4 != "Execute dendrite inference list to see models." {
-		t.Errorf("unexpected change to ans4: %s", ans4)
+	if _, err := e.Ask(context.Background(), AskRequest{Question: "x", ProjectPath: ragProject(t), ForcePaid: true, Output: &out}); err != nil {
+		t.Fatal(err)
 	}
 }
