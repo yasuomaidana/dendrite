@@ -1,11 +1,8 @@
 package rag
 
 import (
-	"context"
 	"io"
 	"time"
-
-	"Dendrite/pkg/inference"
 )
 
 // Chunk represents a segmented unit of document or code text indexed for retrieval.
@@ -17,6 +14,9 @@ type Chunk struct {
 	LineStart int     `json:"line_start"`
 	LineEnd   int     `json:"line_end"`
 	Score     float32 `json:"score,omitempty"`
+	// Outline marks Content that is the chunk's outline (doc comment or heading and
+	// declaration), not its text; Retriever.Show returns the text.
+	Outline bool `json:"outline,omitempty"`
 }
 
 // SearchOptions governs the retrieval parameters.
@@ -24,6 +24,17 @@ type SearchOptions struct {
 	TopK      int     `json:"top_k"`
 	MinScore  float32 `json:"min_score"`
 	MaxTokens int     `json:"max_tokens"`
+	// Corpus is "code", "docs" or "all" (empty: the sidecar's default, "all").
+	Corpus string `json:"corpus,omitempty"`
+}
+
+// ContextOptions shapes a context pack.
+type ContextOptions struct {
+	// Corpus is "code", "docs" or "all" (empty: the sidecar's default, "all").
+	Corpus string `json:"corpus,omitempty"`
+	// Detail is "auto" (text of retrieved spans, outlines of graph neighbours), "full" or
+	// "map" (outlines only, bodies fetched with Retriever.Show); empty means "auto".
+	Detail string `json:"detail,omitempty"`
 }
 
 // DefaultSearchOptions returns sensible defaults for RAG snippet search.
@@ -37,18 +48,21 @@ func DefaultSearchOptions() SearchOptions {
 
 // AskRequest specifies the parameters for querying Dendrite about a project.
 type AskRequest struct {
-	Question        string    `json:"question"`
-	ProjectPath     string    `json:"project_path,omitempty"`
-	AutoApprovePaid bool      `json:"auto_approve_paid"` // -y / --yes flag: bypass interactive human prompt upon failure
-	ForcePaid       bool      `json:"force_paid"`        // --paid / --force-paid: bypass local LLM and query paid model directly
-	HybridMode      bool      `json:"hybrid_mode"`       // --hybrid: local draft first, then paid refinement
-	ServerURL       string    `json:"server_url,omitempty"` // --server: query centralized remote RAG service
-	UpdateIndex     bool      `json:"update_index"`      // --update-index: force refresh of incremental RAG cache
-	PaidModel       string    `json:"paid_model,omitempty"`
-	LocalModel      string    `json:"local_model,omitempty"`
-	TopK            int       `json:"top_k,omitempty"`
-	Input           io.Reader `json:"-"` // for interactive prompting (defaults to os.Stdin)
-	Output          io.Writer `json:"-"` // for interactive messages (defaults to os.Stdout)
+	Question        string `json:"question"`
+	ProjectPath     string `json:"project_path,omitempty"`
+	AutoApprovePaid bool   `json:"auto_approve_paid"`    // -y / --yes flag: bypass interactive human prompt upon failure
+	ForcePaid       bool   `json:"force_paid"`           // --paid / --force-paid: bypass local LLM and query paid model directly
+	HybridMode      bool   `json:"hybrid_mode"`          // --hybrid: local draft first, then paid refinement
+	ServerURL       string `json:"server_url,omitempty"` // --server: query centralized remote RAG service
+	UpdateIndex     bool   `json:"update_index"`         // --update-index: force refresh of incremental RAG cache
+	PaidModel       string `json:"paid_model,omitempty"`
+	LocalModel      string `json:"local_model,omitempty"`
+	TopK            int    `json:"top_k,omitempty"`
+	// Corpus is "code" (dendrite ask without -d), "docs", or "all" (the default: code and
+	// documentation in one ranking).
+	Corpus string    `json:"corpus,omitempty"`
+	Input  io.Reader `json:"-"` // for interactive prompting (defaults to os.Stdin)
+	Output io.Writer `json:"-"` // for interactive messages (defaults to os.Stdout)
 }
 
 // AskResult contains the answer synthesized by the RAG workflow.
@@ -67,7 +81,21 @@ type AskResult struct {
 	Duration           time.Duration `json:"duration"`
 	IndexStatus        string        `json:"index_status,omitempty"` // "cached", "refreshed", "incremental"
 	Error              string        `json:"error,omitempty"`
+	// Cached is set when the answer came from the sidecar's cache of identical prompts.
+	Cached bool `json:"cached,omitempty"`
+	// Timings break Duration down by stage (local runs only).
+	Timings *AskTimings `json:"timings,omitempty"`
 }
 
-// PaidCallerFunc defines the signature for invoking paid cloud LLM models.
-type PaidCallerFunc func(ctx context.Context, prompt string, paidModel string) (*inference.CompletionResponse, error)
+// AskTimings is where an answer spent its time, in milliseconds.
+type AskTimings struct {
+	// Spawn is starting the sidecar; Index is bringing the index up to date, of which
+	// Embed was spent embedding.
+	Spawn int64 `json:"spawn_ms"`
+	Index int64 `json:"index_ms"`
+	Embed int64 `json:"embed_ms"`
+	// Retrieval is finding the context; Local and Paid are the model calls.
+	Retrieval int64 `json:"retrieval_ms"`
+	Local     int64 `json:"local_ms"`
+	Paid      int64 `json:"paid_ms"`
+}

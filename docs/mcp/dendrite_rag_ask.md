@@ -17,6 +17,15 @@ Ask architectural, API, or codebase questions with local RAG retrieval and optio
       "description": "Automatically escalate to paid cloud model if local LLM fails without prompt",
       "type": "boolean"
     },
+    "corpus": {
+      "description": "Corpora searched: all (default: code and documentation in one ranking), code, or docs",
+      "enum": [
+        "all",
+        "code",
+        "docs"
+      ],
+      "type": "string"
+    },
     "local_model": {
       "description": "Preferred local model",
       "type": "string"
@@ -57,6 +66,7 @@ Ask architectural, API, or codebase questions with local RAG retrieval and optio
   "params": {
     "arguments": {
       "auto_approve_paid": false,
+      "corpus": "code and documentation in one ranking), code, or docs",
       "local_model": "sample",
       "paid_model": "'gemini-2.5-pro'",
       "project_path": "'.'",
@@ -71,5 +81,5 @@ Ask architectural, API, or codebase questions with local RAG retrieval and optio
 ### CLI
 
 ```bash
-dendrite mcp call dendrite_rag_ask '{"auto_approve_paid":false,"local_model":"sample","paid_model":"'gemini-2.5-pro'","project_path":"'.'","question":"sample","top_k":1}'
+dendrite mcp call dendrite_rag_ask '{"auto_approve_paid":false,"corpus":"code and documentation in one ranking), code, or docs","local_model":"sample","paid_model":"'gemini-2.5-pro'","project_path":"'.'","question":"sample","top_k":1}'
 ```

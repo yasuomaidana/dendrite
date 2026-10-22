@@ -41,6 +41,11 @@ func registerRAGTools(s *Server, deps Dependencies) {
 					"type":        "integer",
 					"description": "Number of context chunks to retrieve (default: 4)",
 				},
+				"corpus": map[string]interface{}{
+					"type":        "string",
+					"enum":        []interface{}{"all", "code", "docs"},
+					"description": "Corpora searched: all (default: code and documentation in one ranking), code, or docs",
+				},
 			},
 			"required": []interface{}{"question"},
 		},
@@ -69,8 +74,10 @@ func registerRAGTools(s *Server, deps Dependencies) {
 			topK = tkInt
 		}
 
-		engine := rag.NewAskEngine(nil)
+		corpus, _ := args["corpus"].(string)
+		engine := rag.NewAskEngine()
 		req := rag.AskRequest{
+			Corpus:          corpus,
 			Question:        question,
 			ProjectPath:     projectPath,
 			AutoApprovePaid: autoApprove,
@@ -103,7 +110,7 @@ func registerRAGTools(s *Server, deps Dependencies) {
 	// 47. dendrite_rag_retrieve
 	s.RegisterTool(Tool{
 		Name:        "dendrite_rag_retrieve",
-		Description: "Retrieve high-precision AST symbol declarations, complexity metrics, and documentation chunks from the project RAG index for token-efficient prompt synthesis and reasoning",
+		Description: "Retrieve code and documentation chunks from the project RAG index. With detail \"map\" it returns outlines (doc comment or heading and declaration) of a token-budgeted context pack, a few dozen tokens each: read the map, then fetch the bodies you need with dendrite_rag_show",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -122,6 +129,20 @@ func registerRAGTools(s *Server, deps Dependencies) {
 				"min_score": map[string]interface{}{
 					"type":        "number",
 					"description": "Minimum fused relevance score (default: none)",
+				},
+				"corpus": map[string]interface{}{
+					"type":        "string",
+					"enum":        []interface{}{"all", "code", "docs"},
+					"description": "Corpora searched: all (default: code and documentation in one ranking), code, or docs",
+				},
+				"detail": map[string]interface{}{
+					"type":        "string",
+					"enum":        []interface{}{"auto", "full", "map"},
+					"description": "Return a context pack instead of top hits: auto (text of the best spans, outlines of their graph neighbours), full, or map (outlines only)",
+				},
+				"token_budget": map[string]interface{}{
+					"type":        "integer",
+					"description": "Token budget of the context pack when detail is set (default: 2500)",
 				},
 			},
 			"required": []interface{}{"query"},
@@ -149,10 +170,22 @@ func registerRAGTools(s *Server, deps Dependencies) {
 			minScore = float32(ms)
 		}
 
-		retrieval, err := rag.NewRetriever().Retrieve(ctx, projectPath, query, rag.SearchOptions{
-			TopK:     topK,
-			MinScore: minScore,
-		}, false)
+		corpus, _ := args["corpus"].(string)
+		var retrieval rag.Retrieval
+		var err error
+		if detail, _ := args["detail"].(string); detail != "" {
+			budget := rag.AskContextTokens
+			if b, ok := args["token_budget"].(float64); ok && b > 0 {
+				budget = int(b)
+			}
+			retrieval, err = rag.NewRetriever().ContextWith(ctx, projectPath, query, budget, rag.ContextOptions{Corpus: corpus, Detail: detail}, false)
+		} else {
+			retrieval, err = rag.NewRetriever().Retrieve(ctx, projectPath, query, rag.SearchOptions{
+				TopK:     topK,
+				MinScore: minScore,
+				Corpus:   corpus,
+			}, false)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("rag retrieval failed for %s: %w", projectPath, err)
 		}
@@ -170,5 +203,50 @@ func registerRAGTools(s *Server, deps Dependencies) {
 				},
 			},
 		}, nil
+	})
+
+	// 48. dendrite_rag_show
+	s.RegisterTool(Tool{
+		Name:        "dendrite_rag_show",
+		Description: "Full text of chunks by id: the bodies behind the outlines dendrite_rag_retrieve returns with detail \"map\"",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"ids": map[string]interface{}{
+					"type":        "array",
+					"items":       map[string]interface{}{"type": "string"},
+					"description": "Chunk ids from dendrite_rag_retrieve",
+				},
+				"project_path": map[string]interface{}{
+					"type":        "string",
+					"description": "Target project directory (default: '.')",
+				},
+			},
+			"required": []interface{}{"ids"},
+		},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		raw, _ := args["ids"].([]interface{})
+		var ids []string
+		for _, v := range raw {
+			if id, ok := v.(string); ok && id != "" {
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) == 0 {
+			return nil, fmt.Errorf("ids is required")
+		}
+		projectPath := "."
+		if p, ok := args["project_path"].(string); ok && p != "" {
+			projectPath = p
+		}
+		chunks, err := rag.NewRetriever().Show(ctx, projectPath, ids)
+		if err != nil {
+			return nil, fmt.Errorf("rag show failed for %s: %w", projectPath, err)
+		}
+		data, err := json.MarshalIndent(chunks, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
 	})
 }

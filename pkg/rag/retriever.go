@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +38,8 @@ var ErrSidecarUnavailable = errors.New("dendrite-rag sidecar unavailable")
 type Retriever struct {
 	Locator     sidecar.Locator
 	EmbedBudget time.Duration
+	// Env holds extra KEY=VALUE lines for the sidecar's environment.
+	Env []string
 }
 
 // Retrieval is the outcome of one Retrieve or Context call.
@@ -52,7 +55,19 @@ type Retrieval struct {
 	EmbedError string
 	// Tokens estimates the size of a context pack (Context only).
 	Tokens int
+	// EmbedCoverage is the share of chunks with a vector, reported when some are still
+	// waiting (1 otherwise).
+	EmbedCoverage float64
+	// SpawnMS and IndexMS time starting the sidecar and the index call; EmbedMS is the part
+	// of the index call spent embedding.
+	SpawnMS, IndexMS, EmbedMS int64
 }
+
+// AskProtocolMinor is the sidecar protocol minor version `ask` needs (1.6: corpora, focus).
+const AskProtocolMinor = 6
+
+// ErrSidecarTooOld means the dendrite-rag binary predates a method Dendrite needs.
+var ErrSidecarTooOld = errors.New("dendrite-rag sidecar too old")
 
 // NewRetriever returns a Retriever that searches the default sidecar locations.
 func NewRetriever() *Retriever {
@@ -63,7 +78,7 @@ func NewRetriever() *Retriever {
 // and returns the best opts.TopK chunks for question. A projectPath naming a file
 // searches only that file.
 func (r *Retriever) Retrieve(ctx context.Context, projectPath, question string, opts SearchOptions, refresh bool) (Retrieval, error) {
-	return r.run(ctx, projectPath, refresh, func(c *sidecar.Client, root string, only []string, out *Retrieval) error {
+	return r.run(ctx, projectPath, refresh, question, func(c *sidecar.Client, root string, only []string, out *Retrieval) error {
 		hits, err := search(ctx, c, root, question, only, opts)
 		out.Chunks = toChunks(projectPath, only, hits)
 		return err
@@ -74,15 +89,28 @@ func (r *Retriever) Retrieve(ctx context.Context, projectPath, question string, 
 // spans plus their symbol-graph neighbours, packed into tokenBudget estimated tokens. For a
 // single-file projectPath it searches within that file.
 func (r *Retriever) Context(ctx context.Context, projectPath, question string, tokenBudget int, refresh bool) (Retrieval, error) {
-	return r.run(ctx, projectPath, refresh, func(c *sidecar.Client, root string, only []string, out *Retrieval) error {
+	return r.ContextWith(ctx, projectPath, question, tokenBudget, ContextOptions{}, refresh)
+}
+
+// ContextWith is Context with the corpus and detail of opts.
+func (r *Retriever) ContextWith(ctx context.Context, projectPath, question string, tokenBudget int, opts ContextOptions, refresh bool) (Retrieval, error) {
+	return r.run(ctx, projectPath, refresh, question, func(c *sidecar.Client, root string, only []string, out *Retrieval) error {
 		if len(only) > 0 {
-			hits, err := search(ctx, c, root, question, only, DefaultSearchOptions())
+			so := DefaultSearchOptions()
+			so.Corpus = opts.Corpus
+			hits, err := search(ctx, c, root, question, only, so)
 			out.Chunks = toChunks(projectPath, only, hits)
 			return err
 		}
 		params := map[string]interface{}{"root": root, "query": question}
 		if tokenBudget > 0 {
 			params["token_budget"] = tokenBudget
+		}
+		if opts.Corpus != "" {
+			params["corpus"] = opts.Corpus
+		}
+		if opts.Detail != "" {
+			params["detail"] = opts.Detail
 		}
 		var res struct {
 			Spans  []sidecarHit `json:"spans"`
@@ -96,11 +124,29 @@ func (r *Retriever) Context(ctx context.Context, projectPath, question string, t
 	})
 }
 
+// Show returns the full text of chunks by id: the bodies behind a "map" context pack's
+// outlines.
+func (r *Retriever) Show(ctx context.Context, projectPath string, ids []string) ([]Chunk, error) {
+	var chunks []Chunk
+	_, err := r.run(ctx, projectPath, false, "", func(c *sidecar.Client, root string, only []string, out *Retrieval) error {
+		var res struct {
+			Hits []sidecarHit `json:"hits"`
+		}
+		if err := c.Call(ctx, "chunks.get", map[string]interface{}{"root": root, "ids": ids}, &res); err != nil {
+			return fmt.Errorf("chunks.get: %w", err)
+		}
+		chunks = toChunks(projectPath, only, res.Hits)
+		return nil
+	})
+	return chunks, err
+}
+
 type sidecarIndexReport struct {
 	FilesChanged int    `json:"files_changed"`
 	FilesRemoved int    `json:"files_removed"`
 	EmbedPending int    `json:"embed_pending"`
 	EmbedError   string `json:"embed_error"`
+	EmbedMS      int64  `json:"embed_ms"`
 }
 
 type sidecarHit struct {
@@ -111,6 +157,8 @@ type sidecarHit struct {
 	Scope     []string `json:"scope"`
 	Score     float32  `json:"score"`
 	Content   string   `json:"content"`
+	// Outline marks content that is the span's outline, not its text (detail "map").
+	Outline bool `json:"outline"`
 }
 
 func search(ctx context.Context, c *sidecar.Client, root, question string, only []string, opts SearchOptions) ([]sidecarHit, error) {
@@ -125,6 +173,9 @@ func search(ctx context.Context, c *sidecar.Client, root, question string, only 
 	if opts.MinScore > 0 {
 		params["min_score"] = opts.MinScore
 	}
+	if opts.Corpus != "" {
+		params["corpus"] = opts.Corpus
+	}
 	var res struct {
 		Hits []sidecarHit `json:"hits"`
 	}
@@ -134,8 +185,9 @@ func search(ctx context.Context, c *sidecar.Client, root, question string, only 
 	return res.Hits, nil
 }
 
-// run starts the sidecar, indexes the project and hands the client to query.
-func (r *Retriever) run(ctx context.Context, projectPath string, refresh bool, query func(c *sidecar.Client, root string, only []string, out *Retrieval) error) (Retrieval, error) {
+// run starts the sidecar, indexes the project and hands the client to query. Under the
+// embedding budget, the chunks focus (the question) matches are embedded first.
+func (r *Retriever) run(ctx context.Context, projectPath string, refresh bool, focus string, query func(c *sidecar.Client, root string, only []string, out *Retrieval) error) (Retrieval, error) {
 	if projectPath == "" {
 		projectPath = "."
 	}
@@ -147,25 +199,43 @@ func (r *Retriever) run(ctx context.Context, projectPath string, refresh bool, q
 	if err != nil {
 		return Retrieval{}, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
 	}
-	c, err := sidecar.Start(ctx, bin, SidecarMajor)
+	started := time.Now()
+	c, err := sidecar.StartWith(ctx, bin, SidecarMajor, r.Env)
 	if err != nil {
 		return Retrieval{}, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
 	}
 	defer func() { _ = c.Close() }()
+	spawn := time.Since(started).Milliseconds()
 
 	indexParams := map[string]interface{}{"root": root, "full": refresh}
 	if r.EmbedBudget > 0 {
 		indexParams["embed_budget_ms"] = r.EmbedBudget.Milliseconds()
+		if focus != "" && protocolMinor(c.Health.Protocol) >= AskProtocolMinor {
+			indexParams["focus"] = focus
+		}
 	}
+	started = time.Now()
 	var report sidecarIndexReport
 	if err := c.Call(ctx, "index", indexParams, &report); err != nil {
 		return Retrieval{}, fmt.Errorf("index %s: %w", root, err)
 	}
 	out := Retrieval{
-		IndexStatus:  "cached",
-		Sidecar:      bin,
-		EmbedPending: report.EmbedPending,
-		EmbedError:   report.EmbedError,
+		IndexStatus:   "cached",
+		Sidecar:       bin,
+		EmbedPending:  report.EmbedPending,
+		EmbedError:    report.EmbedError,
+		EmbedCoverage: 1,
+		SpawnMS:       spawn,
+		IndexMS:       time.Since(started).Milliseconds(),
+		EmbedMS:       report.EmbedMS,
+	}
+	if report.EmbedPending > 0 {
+		var st struct {
+			EmbedCoverage *float64 `json:"embed_coverage"`
+		}
+		if err := c.Call(ctx, "status", map[string]interface{}{"root": root}, &st); err == nil && st.EmbedCoverage != nil {
+			out.EmbedCoverage = *st.EmbedCoverage
+		}
 	}
 	switch {
 	case refresh:
@@ -177,6 +247,19 @@ func (r *Retriever) run(ctx context.Context, projectPath string, refresh bool, q
 		return Retrieval{}, err
 	}
 	return out, nil
+}
+
+// protocolMinor is the minor version of a semver protocol string (0 when unparsable).
+func protocolMinor(semver string) int {
+	parts := strings.SplitN(semver, ".", 3)
+	if len(parts) < 2 {
+		return 0
+	}
+	n, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // projectRoot returns the absolute directory to index and, when projectPath is a file,
@@ -213,6 +296,7 @@ func toChunks(projectPath string, only []string, hits []sidecarHit) []Chunk {
 			LineStart: h.StartLine,
 			LineEnd:   h.EndLine,
 			Score:     h.Score,
+			Outline:   h.Outline,
 		})
 	}
 	return chunks

@@ -109,7 +109,7 @@ func (s *Server) handleRAGAsk(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Input = strings.NewReader("n\n")
 
-	engine := rag.NewAskEngine(nil)
+	engine := rag.NewAskEngine()
 	res, err := engine.Ask(r.Context(), req)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("rag ask failed: %v", err), http.StatusInternalServerError)

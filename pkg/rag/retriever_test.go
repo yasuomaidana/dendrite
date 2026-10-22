@@ -77,7 +77,7 @@ func TestRetrieveIndexesThenSearchesAndMapsHits(t *testing.T) {
 
 	calls, _ := os.ReadFile(log)
 	abs, _ := filepath.Abs(dir)
-	for _, frag := range []string{`index {"embed_budget_ms":3000,"full":false,"root":"` + abs + `"}`, `search {"query":"where is LocateBinary","root":"` + abs + `","top_k":2}`} {
+	for _, frag := range []string{`index {"embed_budget_ms":3000,"focus":"where is LocateBinary","full":false,"root":"` + abs + `"}`, `search {"query":"where is LocateBinary","root":"` + abs + `","top_k":2}`} {
 		if !strings.Contains(string(calls), frag) {
 			t.Errorf("sidecar calls missing %s:\n%s", frag, calls)
 		}

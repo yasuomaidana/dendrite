@@ -6,15 +6,33 @@ sidebar_label: "dendrite_rag_retrieve"
 
 # dendrite_rag_retrieve
 
-Retrieve high-precision AST symbol declarations, complexity metrics, and documentation chunks from the project RAG index for token-efficient prompt synthesis and reasoning
+Retrieve code and documentation chunks from the project RAG index. With detail "map" it returns outlines (doc comment or heading and declaration) of a token-budgeted context pack, a few dozen tokens each: read the map, then fetch the bodies you need with dendrite_rag_show
 
 ## Input Schema
 
 ```json
 {
   "properties": {
+    "corpus": {
+      "description": "Corpora searched: all (default: code and documentation in one ranking), code, or docs",
+      "enum": [
+        "all",
+        "code",
+        "docs"
+      ],
+      "type": "string"
+    },
+    "detail": {
+      "description": "Return a context pack instead of top hits: auto (text of the best spans, outlines of their graph neighbours), full, or map (outlines only)",
+      "enum": [
+        "auto",
+        "full",
+        "map"
+      ],
+      "type": "string"
+    },
     "min_score": {
-      "description": "Minimum BM25 score threshold (default: 0.01)",
+      "description": "Minimum fused relevance score (default: none)",
       "type": "number"
     },
     "project_path": {
@@ -24,6 +42,10 @@ Retrieve high-precision AST symbol declarations, complexity metrics, and documen
     "query": {
       "description": "Concept, symbol, or question to search within project RAG index",
       "type": "string"
+    },
+    "token_budget": {
+      "description": "Token budget of the context pack when detail is set (default: 2500)",
+      "type": "integer"
     },
     "top_k": {
       "description": "Number of context chunks to retrieve (default: 4)",
@@ -48,9 +70,12 @@ Retrieve high-precision AST symbol declarations, complexity metrics, and documen
   "method": "tools/call",
   "params": {
     "arguments": {
+      "corpus": "code and documentation in one ranking), code, or docs",
+      "detail": "sample",
       "min_score": 1,
       "project_path": "'.'",
       "query": "sample",
+      "token_budget": 1,
       "top_k": 1
     },
     "name": "dendrite_rag_retrieve"
@@ -61,5 +86,5 @@ Retrieve high-precision AST symbol declarations, complexity metrics, and documen
 ### CLI
 
 ```bash
-dendrite mcp call dendrite_rag_retrieve '{"min_score":1,"project_path":"'.'","query":"sample","top_k":1}'
+dendrite mcp call dendrite_rag_retrieve '{"corpus":"code and documentation in one ranking), code, or docs","detail":"sample","min_score":1,"project_path":"'.'","query":"sample","token_budget":1,"top_k":1}'
 ```

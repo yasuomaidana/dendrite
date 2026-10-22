@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,5 +116,32 @@ func (p *PromptEnhancer) Enhance(prompt string) string {
 		}
 	} else if respBadRet.Error == nil {
 		t.Errorf("expected error or IsError on missing query")
+	}
+}
+
+func TestDendriteRAGMapThenShow(t *testing.T) {
+	dir := t.TempDir()
+	src := "package demo\n\n// Locate finds the sidecar.\nfunc Locate() string { return \"x\" }\n"
+	if err := os.WriteFile(filepath.Join(dir, "demo.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(ServerConfig{Name: "dendrite", Version: "1.0.0"})
+	RegisterDefaultTools(srv, Dependencies{})
+	call := func(name, args string) string {
+		t.Helper()
+		resp := srv.HandleRequest(context.Background(), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"`+name+`","arguments":`+args+`}}`))
+		if resp.Error != nil {
+			t.Fatalf("%s: %v", name, resp.Error)
+		}
+		data, _ := json.Marshal(resp.Result)
+		return string(data)
+	}
+	mapped := call("dendrite_rag_retrieve", `{"query":"Locate sidecar","project_path":"`+dir+`","detail":"map","corpus":"code"}`)
+	if !strings.Contains(mapped, `\"outline\": true`) || strings.Contains(mapped, "return") {
+		t.Fatalf("map = %s", mapped)
+	}
+	shown := call("dendrite_rag_show", `{"ids":["demo.go#1"],"project_path":"`+dir+`"}`)
+	if !strings.Contains(shown, "return") {
+		t.Fatalf("show = %s", shown)
 	}
 }
