@@ -123,6 +123,7 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 	switch {
 	case req.ForcePaid:
 		mode = "paid"
+		_, _ = fmt.Fprintf(req.Output, "[+] Force-paid flag enabled: querying paid cloud LLM (%s) directly with project RAG context...\n", req.PaidModel)
 	case req.HybridMode:
 		mode = "hybrid"
 	}
@@ -197,6 +198,12 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 			return nil, ErrPaidEscalationDeclined
 		}
 		return nil, fmt.Errorf("asking the project index: %w", err)
+	}
+	switch {
+	case answer.SourceTier == "hybrid":
+		_, _ = fmt.Fprintf(req.Output, "[+] Hybrid mode: local draft refined by the paid model (%s).\n", req.PaidModel)
+	case req.HybridMode && answer.LocalError != "" && answer.SourceTier == "local-rag":
+		_, _ = fmt.Fprintf(req.Output, "[-] Paid refinement failed (%s), returning verified local draft.\n", answer.LocalError)
 	}
 	if retrieval.EmbedError != "" {
 		_, _ = fmt.Fprintf(req.Output, "[!] Embeddings unavailable (%s); answering from lexical and symbol matches\n", retrieval.EmbedError)

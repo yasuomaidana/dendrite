@@ -75,6 +75,7 @@ func TestAsk_ModesAndCorpusReachTheSidecar(t *testing.T) {
 		tier string
 	}{
 		{"hybrid", AskRequest{HybridMode: true}, []string{`"mode":"hybrid"`}, "hybrid"},
+		{"forced paid", AskRequest{ForcePaid: true}, []string{`"mode":"paid"`}, "paid-cloud"},
 		{"paid", AskRequest{ForcePaid: true, PaidModel: "gemini-2.5-flash"}, []string{`"mode":"paid"`, `"paid_model":"gemini-2.5-flash"`}, "paid-cloud"},
 		{"code only", AskRequest{Corpus: "code"}, []string{`"corpus":"code"`}, "local-rag"},
 		{"with docs", AskRequest{Corpus: "all", TopK: 3}, []string{`"corpus":"all"`, `"top_k":3`}, "local-rag"},
@@ -294,5 +295,23 @@ func TestAsk_ChosenLocalModelReachesTheSidecar(t *testing.T) {
 	}
 	if _, err := e.Ask(context.Background(), AskRequest{Question: "x", ProjectPath: ragProject(t), ForcePaid: true, Output: &out}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAsk_TierMessagesMatchTheOldPipeline(t *testing.T) {
+	e, _ := standInAsk(t)
+	var out bytes.Buffer
+	if _, err := e.Ask(context.Background(), AskRequest{Question: "LocateBinary", ProjectPath: ragProject(t), HybridMode: true, Output: &out}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "[+] Hybrid mode: local draft refined by the paid model (gemini-2.5-pro).") {
+		t.Errorf("hybrid: %s", out.String())
+	}
+	out.Reset()
+	if _, err := e.Ask(context.Background(), AskRequest{Question: "LocateBinary", ProjectPath: ragProject(t), ForcePaid: true, Output: &out}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "[+] Force-paid flag enabled") {
+		t.Errorf("paid: %s", out.String())
 	}
 }
