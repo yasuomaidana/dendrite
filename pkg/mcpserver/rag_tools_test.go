@@ -140,6 +140,10 @@ func TestDendriteRAGMapThenShow(t *testing.T) {
 	if !strings.Contains(mapped, `\"outline\": true`) || strings.Contains(mapped, "return") {
 		t.Fatalf("map = %s", mapped)
 	}
+	resp := srv.HandleRequest(context.Background(), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"dendrite_rag_retrieve","arguments":{"query":"Locate","project_path":"`+dir+`","detail":"auto","docs_share":1.5}}}`))
+	if data, _ := json.Marshal(resp); resp.Error == nil && !strings.Contains(string(data), "docs_share must be from 0 to 1") {
+		t.Fatalf("docs_share 1.5 was accepted: %s", data)
+	}
 	shown := call("dendrite_rag_show", `{"ids":["demo.go#1"],"project_path":"`+dir+`"}`)
 	if !strings.Contains(shown, "return") {
 		t.Fatalf("show = %s", shown)

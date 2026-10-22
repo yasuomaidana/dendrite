@@ -35,6 +35,9 @@ type ContextOptions struct {
 	// Detail is "auto" (text of retrieved spans, outlines of graph neighbours), "full" or
 	// "map" (outlines only, bodies fetched with Retriever.Show); empty means "auto".
 	Detail string `json:"detail,omitempty"`
+	// DocsShare is the share of an "all" pack's budget kept for documentation, 0 to 1 (nil:
+	// the project's [ask] docs_share or DENDRITE_RAG_ASK_DOCS_SHARE, else 0.2).
+	DocsShare *float64 `json:"docs_share,omitempty"`
 }
 
 // DefaultSearchOptions returns sensible defaults for RAG snippet search.
@@ -59,10 +62,13 @@ type AskRequest struct {
 	LocalModel      string `json:"local_model,omitempty"`
 	TopK            int    `json:"top_k,omitempty"`
 	// Corpus is "code" (dendrite ask without -d), "docs", or "all" (the default: code and
-	// documentation in one ranking).
-	Corpus string    `json:"corpus,omitempty"`
-	Input  io.Reader `json:"-"` // for interactive prompting (defaults to os.Stdin)
-	Output io.Writer `json:"-"` // for interactive messages (defaults to os.Stdout)
+	// documentation, with DocsShare of the context pack kept for documentation).
+	Corpus string `json:"corpus,omitempty"`
+	// DocsShare is the share of an "all" context pack kept for documentation, 0 to 1 (nil:
+	// the project's [ask] docs_share or DENDRITE_RAG_ASK_DOCS_SHARE, else 0.2).
+	DocsShare *float64  `json:"docs_share,omitempty"`
+	Input     io.Reader `json:"-"` // for interactive prompting (defaults to os.Stdin)
+	Output    io.Writer `json:"-"` // for interactive messages (defaults to os.Stdout)
 }
 
 // AskResult contains the answer synthesized by the RAG workflow.

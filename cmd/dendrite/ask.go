@@ -23,6 +23,8 @@ type askOptions struct {
 	LocalModel  string
 	TopK        int
 	Docs        bool
+	Corpus      string
+	DocsShare   float64
 }
 
 // newAskCmd builds `dendrite ask`: questions about a project answered from its RAG index.
@@ -35,14 +37,19 @@ func newAskCmd() *cobra.Command {
 		Long: "Answers from the project's RAG index with a zero-cost local model first. When the local model\n" +
 			"fails it asks before escalating to the paid model; --yes escalates without asking.\n\n" +
 			"The context comes from the project's code; -d/--docs adds its documentation (Markdown, txt, rst)\n" +
-			"for how-to and setup questions.",
+			"for how-to and setup questions, and --corpus docs reads only the documentation (design and\n" +
+			"conceptual questions). With both, --docs-share sets how much of the context the documentation\n" +
+			"keeps (default: [ask] docs_share in .dendrite/rag.toml or DENDRITE_RAG_ASK_DOCS_SHARE, e.g. in\n" +
+			"$DENDRITE_HOME/rag.env, else 0.2).",
 		GroupID: "cortex",
 		Args:    minArgs(1),
 		Example: "dendrite ask \"how do I check the available LLMs?\"\n" +
 			"dendrite ask --hybrid \"how does the token gateway work?\"\n" +
 			"dendrite ask --server http://100.84.12.10:3456 \"where is telemetry defined?\"\n" +
 			"dendrite ask -d --update-index --json \"what does soma prepare write?\"\n" +
-			"dendrite ask -d \"how do I check the available LLMs?\"",
+			"dendrite ask -d \"how do I check the available LLMs?\"\n" +
+			"dendrite ask --corpus docs \"what is the design of the session handoff?\"\n" +
+			"dendrite ask -d --docs-share 0.5 \"how do agents start a session?\"",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			switch strings.ToLower(o.Tier) {
 			case "":
@@ -57,12 +64,35 @@ func newAskCmd() *cobra.Command {
 			if o.TopK < 0 {
 				return usageErrorf("--top-k must not be negative")
 			}
-			corpus := "code"
-			if o.Docs {
+			corpus := strings.ToLower(o.Corpus)
+			switch corpus {
+			case "", "code", "all", "docs":
+			default:
+				return usageErrorf("invalid --corpus %q: use code, all or docs", o.Corpus)
+			}
+			shared := cmd.Flags().Changed("docs-share")
+			if o.Docs || (shared && corpus == "") {
+				if corpus != "" && corpus != "all" {
+					return usageErrorf("-d/--docs searches code and documentation; it conflicts with --corpus %s", corpus)
+				}
 				corpus = "all"
+			}
+			if corpus == "" {
+				corpus = "code"
+			}
+			var docsShare *float64
+			if shared {
+				if corpus != "all" {
+					return usageErrorf("--docs-share splits code and documentation; it needs --corpus all (or -d), not %s", corpus)
+				}
+				if o.DocsShare < 0 || o.DocsShare > 1 {
+					return usageErrorf("--docs-share must be from 0 to 1, got %v", o.DocsShare)
+				}
+				docsShare = &o.DocsShare
 			}
 			req := rag.AskRequest{
 				Corpus:          corpus,
+				DocsShare:       docsShare,
 				Question:        strings.Join(args, " "),
 				ProjectPath:     o.Project,
 				AutoApprovePaid: globals.Yes,
@@ -89,7 +119,9 @@ func newAskCmd() *cobra.Command {
 	f.StringVar(&o.PaidModel, "paid-model", "gemini-2.5-pro", "Paid fallback model")
 	f.StringVar(&o.LocalModel, "local-model", "", "Local model on the LiteLLM gateway (default: [ask] local_model in .dendrite/rag.toml, else the gateway's local model on the most preferred reachable GPU engine; never OxiLLaMa, which prefills on the CPU)")
 	f.IntVarP(&o.TopK, "top-k", "k", 0, "Retrieve the N best chunks instead of a token-budgeted context pack")
-	f.BoolVarP(&o.Docs, "docs", "d", false, "Also search the documentation (default: code only)")
+	f.BoolVarP(&o.Docs, "docs", "d", false, "Also search the documentation (default: code only); same as --corpus all")
+	f.StringVar(&o.Corpus, "corpus", "", "Corpora searched: code (default), all (code and documentation) or docs (documentation only, for design and conceptual questions)")
+	f.Float64Var(&o.DocsShare, "docs-share", 0, "Share of the context kept for documentation with --corpus all, 0 to 1 (default: [ask] docs_share in .dendrite/rag.toml or DENDRITE_RAG_ASK_DOCS_SHARE, else 0.2); implies --corpus all")
 	cmd.MarkFlagsMutuallyExclusive("paid", "hybrid")
 	return cmd
 }

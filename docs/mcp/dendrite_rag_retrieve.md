@@ -31,6 +31,12 @@ Retrieve code and documentation chunks from the project RAG index. With detail "
       ],
       "type": "string"
     },
+    "docs_share": {
+      "description": "With corpus all: share of the context pack (when detail is set) kept for documentation, 0 to 1 (default: the project's [ask] docs_share, else 0.2). Lower leans on code, higher on documentation",
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number"
+    },
     "min_score": {
       "description": "Minimum fused relevance score (default: none)",
       "type": "number"
@@ -72,6 +78,7 @@ Retrieve code and documentation chunks from the project RAG index. With detail "
     "arguments": {
       "corpus": "code and documentation in one ranking), code, or docs",
       "detail": "sample",
+      "docs_share": 1,
       "min_score": 1,
       "project_path": "'.'",
       "query": "sample",
@@ -86,5 +93,5 @@ Retrieve code and documentation chunks from the project RAG index. With detail "
 ### CLI
 
 ```bash
-dendrite mcp call dendrite_rag_retrieve '{"corpus":"code and documentation in one ranking), code, or docs","detail":"sample","min_score":1,"project_path":"'.'","query":"sample","token_budget":1,"top_k":1}'
+dendrite mcp call dendrite_rag_retrieve '{"corpus":"code and documentation in one ranking), code, or docs","detail":"sample","docs_share":1,"min_score":1,"project_path":"'.'","query":"sample","token_budget":1,"top_k":1}'
 ```

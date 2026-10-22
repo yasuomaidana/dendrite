@@ -39,12 +39,18 @@ func registerRAGTools(s *Server, deps Dependencies) {
 				},
 				"top_k": map[string]interface{}{
 					"type":        "integer",
-					"description": "Number of context chunks to retrieve (default: 4)",
+					"description": "Number of best chunks to answer from (default: 4); 0 answers from a token-budgeted context pack instead",
 				},
 				"corpus": map[string]interface{}{
 					"type":        "string",
 					"enum":        []interface{}{"all", "code", "docs"},
-					"description": "Corpora searched: all (default: code and documentation in one ranking), code, or docs",
+					"description": "Corpora searched: all (default: code and documentation), code (implementation questions), or docs (documentation only: design and conceptual questions)",
+				},
+				"docs_share": map[string]interface{}{
+					"type":        "number",
+					"minimum":     0,
+					"maximum":     1,
+					"description": "With corpus all: share of the context pack kept for documentation, 0 to 1 (default: the project's [ask] docs_share, else 0.2). Lower leans on code, higher on documentation",
 				},
 			},
 			"required": []interface{}{"question"},
@@ -68,16 +74,25 @@ func registerRAGTools(s *Server, deps Dependencies) {
 
 		localModel, _ := args["local_model"].(string)
 		topK := 4
-		if tk, ok := args["top_k"].(float64); ok && tk > 0 {
+		// An explicit 0 asks for the context pack, which the documentation share applies to.
+		if tk, ok := args["top_k"].(float64); ok && tk >= 0 {
 			topK = int(tk)
-		} else if tkInt, ok := args["top_k"].(int); ok && tkInt > 0 {
+		} else if tkInt, ok := args["top_k"].(int); ok && tkInt >= 0 {
 			topK = tkInt
 		}
 
 		corpus, _ := args["corpus"].(string)
+		docsShare, err := docsShareArg(args)
+		if err != nil {
+			return nil, err
+		}
+		if _, set := args["top_k"]; docsShare != nil && !set {
+			topK = 0 // a share only applies to the context pack
+		}
 		engine := rag.NewAskEngine()
 		req := rag.AskRequest{
 			Corpus:          corpus,
+			DocsShare:       docsShare,
 			Question:        question,
 			ProjectPath:     projectPath,
 			AutoApprovePaid: autoApprove,
@@ -144,6 +159,12 @@ func registerRAGTools(s *Server, deps Dependencies) {
 					"type":        "integer",
 					"description": "Token budget of the context pack when detail is set (default: 2500)",
 				},
+				"docs_share": map[string]interface{}{
+					"type":        "number",
+					"minimum":     0,
+					"maximum":     1,
+					"description": "With corpus all: share of the context pack (when detail is set) kept for documentation, 0 to 1 (default: the project's [ask] docs_share, else 0.2). Lower leans on code, higher on documentation",
+				},
 			},
 			"required": []interface{}{"query"},
 		},
@@ -178,7 +199,11 @@ func registerRAGTools(s *Server, deps Dependencies) {
 			if b, ok := args["token_budget"].(float64); ok && b > 0 {
 				budget = int(b)
 			}
-			retrieval, err = rag.NewRetriever().ContextWith(ctx, projectPath, query, budget, rag.ContextOptions{Corpus: corpus, Detail: detail}, false)
+			docsShare, shareErr := docsShareArg(args)
+			if shareErr != nil {
+				return nil, shareErr
+			}
+			retrieval, err = rag.NewRetriever().ContextWith(ctx, projectPath, query, budget, rag.ContextOptions{Corpus: corpus, Detail: detail, DocsShare: docsShare}, false)
 		} else {
 			retrieval, err = rag.NewRetriever().Retrieve(ctx, projectPath, query, rag.SearchOptions{
 				TopK:     topK,
@@ -249,4 +274,17 @@ func registerRAGTools(s *Server, deps Dependencies) {
 		}
 		return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
 	})
+}
+
+// docsShareArg reads the optional "docs_share" argument: nil when absent, an error outside
+// 0 to 1.
+func docsShareArg(args map[string]interface{}) (*float64, error) {
+	v, ok := args["docs_share"].(float64)
+	if !ok {
+		return nil, nil
+	}
+	if v < 0 || v > 1 {
+		return nil, fmt.Errorf("docs_share must be from 0 to 1, got %v", v)
+	}
+	return &v, nil
 }

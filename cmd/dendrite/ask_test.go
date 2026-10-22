@@ -17,6 +17,10 @@ func TestAsk_UsageErrors(t *testing.T) {
 		{"ask", "q", "--tier", "galactic"},
 		{"ask", "q", "--top-k", "-1"},
 		{"ask", "q", "--paid", "--hybrid"},
+		{"ask", "q", "--corpus", "galactic"},
+		{"ask", "q", "-d", "--corpus", "docs"},
+		{"ask", "q", "--docs-share", "1.5"},
+		{"ask", "q", "--corpus", "code", "--docs-share", "0.5"},
 	} {
 		if _, code := cliOutput(t, args...); code != ExitUsage {
 			t.Errorf("%v: exit %d, want %d", args, code, ExitUsage)
@@ -45,10 +49,15 @@ func TestAsk_CorpusFlagsAndTimings(t *testing.T) {
 	for _, tc := range []struct {
 		flags  []string
 		corpus string
+		share  string
 	}{
-		{nil, "code"},
-		{[]string{"-d"}, "all"},
-		{[]string{"--docs"}, "all"},
+		{nil, "code", ""},
+		{[]string{"-d"}, "all", ""},
+		{[]string{"--docs"}, "all", ""},
+		{[]string{"--corpus", "docs"}, "docs", ""},
+		{[]string{"--corpus", "ALL"}, "all", ""},
+		{[]string{"-d", "--docs-share", "0.5"}, "all", "0.5"},
+		{[]string{"--docs-share", "0"}, "all", "0"},
 	} {
 		log := filepath.Join(t.TempDir(), "calls.log")
 		t.Setenv("STANDIN_LOG", log)
@@ -60,6 +69,10 @@ func TestAsk_CorpusFlagsAndTimings(t *testing.T) {
 		calls, _ := os.ReadFile(log)
 		if !strings.Contains(string(calls), `"corpus":"`+tc.corpus+`"`) {
 			t.Errorf("%v: ask did not send corpus %s:\n%s", tc.flags, tc.corpus, calls)
+		}
+		if sent := strings.Contains(string(calls), `"docs_share":`); sent != (tc.share != "") ||
+			(tc.share != "" && !strings.Contains(string(calls), `"docs_share":`+tc.share)) {
+			t.Errorf("%v: docs_share sent = %v, want %q:\n%s", tc.flags, sent, tc.share, calls)
 		}
 	}
 }

@@ -66,6 +66,10 @@ type Retrieval struct {
 // AskProtocolMinor is the sidecar protocol minor version `ask` needs (1.6: corpora, focus).
 const AskProtocolMinor = 6
 
+// DocsShareProtocolMinor is the first sidecar minor that takes `docs_share` on `context`
+// and `ask`.
+const DocsShareProtocolMinor = 7
+
 // ErrSidecarTooOld means the dendrite-rag binary predates a method Dendrite needs.
 var ErrSidecarTooOld = errors.New("dendrite-rag sidecar too old")
 
@@ -111,6 +115,13 @@ func (r *Retriever) ContextWith(ctx context.Context, projectPath, question strin
 		}
 		if opts.Detail != "" {
 			params["detail"] = opts.Detail
+		}
+		if opts.DocsShare != nil {
+			if protocolMinor(c.Health.Protocol) < DocsShareProtocolMinor {
+				return fmt.Errorf("%w: %s speaks protocol %s; a documentation share needs 1.%d or later; %s",
+					ErrSidecarTooOld, c.Path, c.Health.Protocol, DocsShareProtocolMinor, InstallHint)
+			}
+			params["docs_share"] = *opts.DocsShare
 		}
 		var res struct {
 			Spans  []sidecarHit `json:"spans"`

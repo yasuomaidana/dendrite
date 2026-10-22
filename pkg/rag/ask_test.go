@@ -68,6 +68,7 @@ func TestAsk_LocalAnswerFromTheSidecar(t *testing.T) {
 }
 
 func TestAsk_ModesAndCorpusReachTheSidecar(t *testing.T) {
+	half := 0.5
 	for _, tc := range []struct {
 		name string
 		req  AskRequest
@@ -79,6 +80,8 @@ func TestAsk_ModesAndCorpusReachTheSidecar(t *testing.T) {
 		{"paid", AskRequest{ForcePaid: true, PaidModel: "gemini-2.5-flash"}, []string{`"mode":"paid"`, `"paid_model":"gemini-2.5-flash"`}, "paid-cloud"},
 		{"code only", AskRequest{Corpus: "code"}, []string{`"corpus":"code"`}, "local-rag"},
 		{"with docs", AskRequest{Corpus: "all", TopK: 3}, []string{`"corpus":"all"`, `"top_k":3`}, "local-rag"},
+		{"docs only", AskRequest{Corpus: "docs"}, []string{`"corpus":"docs"`}, "local-rag"},
+		{"docs share", AskRequest{Corpus: "all", DocsShare: &half}, []string{`"corpus":"all"`, `"docs_share":0.5`}, "local-rag"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e, log := standInAsk(t)
@@ -167,6 +170,23 @@ func TestAsk_OldSidecarIsRefusedWithAnInstallHint(t *testing.T) {
 	_, err := e.Ask(context.Background(), AskRequest{Question: "LocateBinary", ProjectPath: ragProject(t), Output: &bytes.Buffer{}})
 	if !errors.Is(err, ErrSidecarTooOld) || !strings.Contains(err.Error(), "cargo install") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestAsk_DocsShareNeedsProtocol17(t *testing.T) {
+	e, log := standInAsk(t)
+	t.Setenv("STANDIN_PROTOCOL", "1.6.0")
+	half := 0.5
+	_, err := e.Ask(context.Background(), AskRequest{Question: "LocateBinary", ProjectPath: ragProject(t), Corpus: "all", DocsShare: &half, Output: &bytes.Buffer{}})
+	if !errors.Is(err, ErrSidecarTooOld) || !strings.Contains(err.Error(), "documentation share") {
+		t.Fatalf("err = %v", err)
+	}
+	if asks := askCalls(t, log); len(asks) != 0 {
+		t.Fatalf("ask was called on an old sidecar: %v", asks)
+	}
+	// Without a share an old sidecar still answers.
+	if _, err := e.Ask(context.Background(), AskRequest{Question: "LocateBinary", ProjectPath: ragProject(t), Corpus: "all", Output: &bytes.Buffer{}}); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -8,7 +8,7 @@
 // STANDIN_LOG names a file that records each call's method and params;
 // STANDIN_FAIL=<method> makes that method return an engine error; STANDIN_PAID=fail makes the
 // paid tier fail; STANDIN_PROTOCOL sets
-// the protocol version the handshake reports (default 1.6.0); STANDIN_ASK_LOCAL_MODEL the
+// the protocol version the handshake reports (default 1.7.0); STANDIN_ASK_LOCAL_MODEL the
 // project's [ask] local_model that settings reports.
 package main
 
@@ -81,7 +81,7 @@ func main() {
 		resp := map[string]interface{}{"jsonrpc": "2.0", "id": req.ID}
 		switch {
 		case req.Method == "health":
-			protocol := "1.6.0"
+			protocol := "1.7.0"
 			if v := os.Getenv("STANDIN_PROTOCOL"); v != "" {
 				protocol = v
 			}

@@ -54,15 +54,16 @@ func NewAskEngine() *AskEngine {
 
 // sidecarAsk is the `ask` method's params (docs/specs/ask.md in dendrite-rag-rs).
 type sidecarAsk struct {
-	Root       string `json:"root"`
-	Question   string `json:"question"`
-	Mode       string `json:"mode"`
-	TopK       int    `json:"top_k,omitempty"`
-	Corpus     string `json:"corpus,omitempty"`
-	LocalModel string `json:"local_model,omitempty"`
-	PaidModel  string `json:"paid_model,omitempty"`
-	AllowPaid  bool   `json:"allow_paid"`
-	Fresh      bool   `json:"fresh,omitempty"`
+	Root       string   `json:"root"`
+	Question   string   `json:"question"`
+	Mode       string   `json:"mode"`
+	TopK       int      `json:"top_k,omitempty"`
+	Corpus     string   `json:"corpus,omitempty"`
+	DocsShare  *float64 `json:"docs_share,omitempty"`
+	LocalModel string   `json:"local_model,omitempty"`
+	PaidModel  string   `json:"paid_model,omitempty"`
+	AllowPaid  bool     `json:"allow_paid"`
+	Fresh      bool     `json:"fresh,omitempty"`
 	// Paths restricts retrieval to a single-file project's file.
 	Paths []string `json:"paths,omitempty"`
 }
@@ -169,9 +170,13 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 			return fmt.Errorf("%w: %s speaks protocol %s; dendrite ask needs 1.%d or later; %s",
 				ErrSidecarTooOld, c.Path, c.Health.Protocol, AskProtocolMinor, InstallHint)
 		}
+		if req.DocsShare != nil && protocolMinor(c.Health.Protocol) < DocsShareProtocolMinor {
+			return fmt.Errorf("%w: %s speaks protocol %s; a documentation share needs 1.%d or later; %s",
+				ErrSidecarTooOld, c.Path, c.Health.Protocol, DocsShareProtocolMinor, InstallHint)
+		}
 		chooseLocal(c, root)
 		params := sidecarAsk{
-			Root: root, Question: req.Question, Mode: mode, TopK: req.TopK, Corpus: req.Corpus,
+			Root: root, Question: req.Question, Mode: mode, TopK: req.TopK, Corpus: req.Corpus, DocsShare: req.DocsShare,
 			LocalModel: req.LocalModel, PaidModel: req.PaidModel, AllowPaid: approved,
 			// A re-indexed project also wants a fresh answer, not the cached one.
 			Fresh: req.UpdateIndex,

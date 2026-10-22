@@ -26,7 +26,9 @@ None
 
 | Flag | Description |
 | :--- | :--- |
-| `--docs, -d` | Also search the documentation (default: code only) |
+| `--corpus` | Corpora searched: code (default), all (code and documentation) or docs (documentation only, for design and conceptual questions) |
+| `--docs, -d` | Also search the documentation (default: code only); same as --corpus all |
+| `--docs-share` | Share of the context kept for documentation with --corpus all, 0 to 1 (default: [ask] docs_share in .dendrite/rag.toml or DENDRITE_RAG_ASK_DOCS_SHARE, else 0.2); implies --corpus all |
 | `--hybrid` | Draft locally, then refine and verify with the paid model |
 | `--local-model` | Local model on the LiteLLM gateway (default: [ask] local_model in .dendrite/rag.toml, else the gateway's local model on the most preferred reachable GPU engine; never OxiLLaMa, which prefills on the CPU) |
 | `--paid` | Skip the local model and ask the paid model with the RAG context |
@@ -45,4 +47,6 @@ dendrite ask --hybrid "how does the token gateway work?"
 dendrite ask --server http://100.84.12.10:3456 "where is telemetry defined?"
 dendrite ask -d --update-index --json "what does soma prepare write?"
 dendrite ask -d "how do I check the available LLMs?"
+dendrite ask --corpus docs "what is the design of the session handoff?"
+dendrite ask -d --docs-share 0.5 "how do agents start a session?"
 ```
