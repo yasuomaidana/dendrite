@@ -249,6 +249,16 @@ func (r *Retriever) run(ctx context.Context, projectPath string, refresh bool, f
 	return out, nil
 }
 
+// singleFile is the directory-relative path a single-file projectPath restricts retrieval
+// to (nil for a directory).
+func singleFile(projectPath string) []string {
+	_, only, err := projectRoot(projectPath)
+	if err != nil {
+		return nil
+	}
+	return only
+}
+
 // protocolMinor is the minor version of a semver protocol string (0 when unparsable).
 func protocolMinor(semver string) int {
 	parts := strings.SplitN(semver, ".", 3)

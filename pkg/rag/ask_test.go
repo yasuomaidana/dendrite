@@ -142,6 +142,21 @@ func TestAsk_LocalFailureAsksBeforePaying(t *testing.T) {
 	}
 }
 
+func TestAsk_SingleFileProjectRestrictsRetrievalToIt(t *testing.T) {
+	e, log := standInAsk(t)
+	file := ragProject(t) + "/pkg/demo/demo.go"
+	res, err := e.Ask(context.Background(), AskRequest{Question: "LocateBinary", ProjectPath: file, Output: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asks := askCalls(t, log); len(asks) != 1 || !strings.Contains(asks[0], `"paths":["demo.go"]`) {
+		t.Fatalf("ask calls = %v", asks)
+	}
+	if len(res.RetrievedChunks) == 0 || res.RetrievedChunks[0].FilePath != file {
+		t.Fatalf("chunks = %+v", res.RetrievedChunks)
+	}
+}
+
 func TestAsk_OldSidecarIsRefusedWithAnInstallHint(t *testing.T) {
 	e, _ := standInAsk(t)
 	t.Setenv("STANDIN_PROTOCOL", "1.4.0")

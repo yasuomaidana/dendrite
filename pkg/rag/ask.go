@@ -63,6 +63,8 @@ type sidecarAsk struct {
 	PaidModel  string `json:"paid_model,omitempty"`
 	AllowPaid  bool   `json:"allow_paid"`
 	Fresh      bool   `json:"fresh,omitempty"`
+	// Paths restricts retrieval to a single-file project's file.
+	Paths []string `json:"paths,omitempty"`
 }
 
 // sidecarAnswer is the `ask` method's result.
@@ -171,6 +173,7 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 			LocalModel: req.LocalModel, PaidModel: req.PaidModel, AllowPaid: approved,
 			// A re-indexed project also wants a fresh answer, not the cached one.
 			Fresh: req.UpdateIndex,
+			Paths: only,
 		}
 		if err := c.Call(ctx, "ask", params, &answer); err != nil {
 			return fmt.Errorf("ask: %w", err)
@@ -211,7 +214,7 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 		Engine:             engine,
 		Escalated:          answer.Escalated,
 		EscalationApproved: answer.Escalated && approved,
-		RetrievedChunks:    toChunks(req.ProjectPath, nil, answer.Hits),
+		RetrievedChunks:    toChunks(req.ProjectPath, singleFile(req.ProjectPath), answer.Hits),
 		PromptTokens:       answer.PromptTokens,
 		OutputTokens:       answer.OutputTokens,
 		IndexStatus:        retrieval.IndexStatus,
