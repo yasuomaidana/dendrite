@@ -16,7 +16,7 @@ import (
 func standInAsk(t *testing.T) (*AskEngine, string) {
 	t.Helper()
 	r, log := standInRetriever(t)
-	return &AskEngine{Retriever: r}, log
+	return &AskEngine{Retriever: r}, log // no PickLocal: the stand-in answers with its default
 }
 
 func askCalls(t *testing.T, log string) []string {
@@ -243,5 +243,41 @@ func TestGatewayKeyComesFromTheProjectEnvWhenUnset(t *testing.T) {
 	t.Setenv("LITELLM_MASTER_KEY", "from-shell")
 	if got := gatewayEnv(dir); got != nil {
 		t.Fatalf("an exported key must win, got %v", got)
+	}
+}
+
+func TestAsk_ChosenLocalModelReachesTheSidecar(t *testing.T) {
+	e, log := standInAsk(t)
+	e.PickLocal = func(context.Context, string) (LocalChoice, bool) {
+		return LocalChoice{Model: "local-hermes3-8b", Engine: "ollama"}, true
+	}
+	var out bytes.Buffer
+	res, err := e.Ask(context.Background(), AskRequest{Question: "LocateBinary", ProjectPath: ragProject(t), Output: &out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asks := askCalls(t, log); len(asks) != 1 || !strings.Contains(asks[0], `"local_model":"local-hermes3-8b"`) {
+		t.Fatalf("ask calls = %v", asks)
+	}
+	if res.Engine != "ollama" || !strings.Contains(out.String(), "Local model: local-hermes3-8b (ollama, GPU)") {
+		t.Fatalf("engine = %s, out = %s", res.Engine, out.String())
+	}
+	// The project's [ask] local_model, an explicit model or the paid tier skip the choice.
+	t.Setenv("STANDIN_ASK_LOCAL_MODEL", "project-model")
+	called := false
+	e.PickLocal = func(context.Context, string) (LocalChoice, bool) { called = true; return LocalChoice{}, false }
+	if _, err := e.Ask(context.Background(), AskRequest{Question: "x", ProjectPath: ragProject(t), Output: &out}); err != nil || called {
+		t.Fatalf("err = %v, PickLocal called = %v", err, called)
+	}
+	t.Setenv("STANDIN_ASK_LOCAL_MODEL", "")
+	e.PickLocal = func(context.Context, string) (LocalChoice, bool) {
+		t.Fatal("PickLocal called")
+		return LocalChoice{}, false
+	}
+	if _, err := e.Ask(context.Background(), AskRequest{Question: "x", ProjectPath: ragProject(t), LocalModel: "mine", Output: &out}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Ask(context.Background(), AskRequest{Question: "x", ProjectPath: ragProject(t), ForcePaid: true, Output: &out}); err != nil {
+		t.Fatal(err)
 	}
 }

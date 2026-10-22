@@ -38,6 +38,9 @@ var (
 type AskEngine struct {
 	Retriever  *Retriever // the dendrite-rag sidecar
 	HTTPClient *http.Client
+	// PickLocal chooses the local model when the request names none (default:
+	// PreferLocalModel, GPU engines first).
+	PickLocal func(ctx context.Context, gatewayKey string) (LocalChoice, bool)
 }
 
 // NewAskEngine returns an AskEngine on the default sidecar locations.
@@ -45,6 +48,7 @@ func NewAskEngine() *AskEngine {
 	return &AskEngine{
 		Retriever:  NewRetriever(),
 		HTTPClient: &http.Client{Timeout: 60 * time.Second},
+		PickLocal:  PreferLocalModel,
 	}
 }
 
@@ -125,7 +129,34 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 		copied := *e.Retriever
 		retriever = &copied
 	}
-	retriever.Env = append(retriever.Env, gatewayEnv(req.ProjectPath)...)
+	gateway := gatewayEnv(req.ProjectPath)
+	retriever.Env = append(retriever.Env, gateway...)
+	engine := "dendrite-rag"
+	// chooseLocal picks a GPU-served local model unless the request or the project's
+	// [ask] local_model (settings file or DENDRITE_RAG_ASK_LOCAL_MODEL) names one.
+	chooseLocal := func(c *sidecar.Client, root string) {
+		if req.LocalModel != "" || mode == "paid" || e.PickLocal == nil {
+			return
+		}
+		var st struct {
+			Settings struct {
+				Ask struct {
+					LocalModel string `json:"local_model"`
+				} `json:"ask"`
+			} `json:"settings"`
+		}
+		if err := c.Call(ctx, "settings", map[string]interface{}{"root": root}, &st); err == nil && st.Settings.Ask.LocalModel != "" {
+			return
+		}
+		key := os.Getenv("LITELLM_MASTER_KEY")
+		if len(gateway) > 0 {
+			key = strings.TrimPrefix(gateway[0], "LITELLM_MASTER_KEY=")
+		}
+		if choice, ok := e.PickLocal(ctx, key); ok {
+			req.LocalModel, engine = choice.Model, string(choice.Engine)
+			_, _ = fmt.Fprintf(req.Output, "[i] Local model: %s\n", choice)
+		}
+	}
 
 	var answer sidecarAnswer
 	approved := req.AutoApprovePaid
@@ -134,6 +165,7 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 			return fmt.Errorf("%w: %s speaks protocol %s; dendrite ask needs 1.%d or later; %s",
 				ErrSidecarTooOld, c.Path, c.Health.Protocol, AskProtocolMinor, InstallHint)
 		}
+		chooseLocal(c, root)
 		params := sidecarAsk{
 			Root: root, Question: req.Question, Mode: mode, TopK: req.TopK, Corpus: req.Corpus,
 			LocalModel: req.LocalModel, PaidModel: req.PaidModel, AllowPaid: approved,
@@ -176,7 +208,7 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 		LocalDraft:         answer.LocalDraft,
 		SourceTier:         answer.SourceTier,
 		Model:              answer.Model,
-		Engine:             "dendrite-rag",
+		Engine:             engine,
 		Escalated:          answer.Escalated,
 		EscalationApproved: answer.Escalated && approved,
 		RetrievedChunks:    toChunks(req.ProjectPath, nil, answer.Hits),

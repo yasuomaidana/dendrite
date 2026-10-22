@@ -28,7 +28,7 @@ None
 | :--- | :--- |
 | `--docs, -d` | Also search the documentation (default: code only) |
 | `--hybrid` | Draft locally, then refine and verify with the paid model |
-| `--local-model` | Local model on the LiteLLM gateway (default: [ask] local_model in .dendrite/rag.toml, else local-coder) |
+| `--local-model` | Local model on the LiteLLM gateway (default: [ask] local_model in .dendrite/rag.toml, else the gateway's local model on the most preferred reachable GPU engine; never OxiLLaMa, which prefills on the CPU) |
 | `--paid` | Skip the local model and ask the paid model with the RAG context |
 | `--paid-model` | Paid fallback model (default: gemini-2.5-pro) |
 | `--project` | Project directory to index and search (default: .) |

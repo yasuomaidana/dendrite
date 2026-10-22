@@ -282,13 +282,13 @@ func getInferenceEnvSliceOrDefault(key string, fallback []string) []string {
 func DefaultManager() *Manager {
 	mgr := NewManager()
 
-	ollamaEndpoint := getInferenceEnvOrDefault("DENDRITE_OLLAMA_ENDPOINT", "http://127.0.0.1:11434")
-	oxillamaEndpoint := getInferenceEnvOrDefault("DENDRITE_OXILLAMA_ENDPOINT", "http://127.0.0.1:8080")
-	vllmEndpoint := getInferenceEnvOrDefault("DENDRITE_VLLM_ENDPOINT", "http://vllm-node:8000")
-	hfTGIEndpoint := getInferenceEnvOrDefault("DENDRITE_HF_TGI_ENDPOINT", "http://tgi-node:8080")
-	hfTEIEndpoint := getInferenceEnvOrDefault("DENDRITE_HF_TEI_ENDPOINT", "http://localhost:8082")
-	candleEndpoint := getInferenceEnvOrDefault("DENDRITE_CANDLE_ENDPOINT", "http://127.0.0.1:8083")
-	llamaCppEndpoint := getInferenceEnvOrDefault("DENDRITE_LLAMACPP_ENDPOINT", "http://localhost:8081")
+	ollamaEndpoint := endpointFor(EngineOllama)
+	oxillamaEndpoint := endpointFor(EngineOxiLLaMa)
+	vllmEndpoint := endpointFor(EngineVLLM)
+	hfTGIEndpoint := endpointFor(EngineHuggingFaceTGI)
+	hfTEIEndpoint := endpointFor(EngineHuggingFaceTEI)
+	candleEndpoint := endpointFor(EngineCandle)
+	llamaCppEndpoint := endpointFor(EngineLlamaCpp)
 
 	ollamaModels := getInferenceEnvSliceOrDefault("DENDRITE_OLLAMA_MODELS", []string{"qwen3.8:27b", "qwen3.5:9b", "qwen2.5-coder:14b", "deepseek-coder:6.7b", "llama3.2:3b"})
 	oxillamaModels := getInferenceEnvSliceOrDefault("DENDRITE_OXILLAMA_MODELS", []string{"qwen3.8:27b", "qwen3.5:9b", "qwen2.5-coder-7b", "mistral-7b-instruct"})

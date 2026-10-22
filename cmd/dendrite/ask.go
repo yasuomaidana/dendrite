@@ -87,7 +87,7 @@ func newAskCmd() *cobra.Command {
 	f.StringVar(&o.Tier, "tier", "", "Shortcut for the tier: local, hybrid or paid")
 	addProjectFlag(cmd, &o.Project, ".", "Project directory to index and search")
 	f.StringVar(&o.PaidModel, "paid-model", "gemini-2.5-pro", "Paid fallback model")
-	f.StringVar(&o.LocalModel, "local-model", "", "Local model on the LiteLLM gateway (default: [ask] local_model in .dendrite/rag.toml, else local-coder)")
+	f.StringVar(&o.LocalModel, "local-model", "", "Local model on the LiteLLM gateway (default: [ask] local_model in .dendrite/rag.toml, else the gateway's local model on the most preferred reachable GPU engine; never OxiLLaMa, which prefills on the CPU)")
 	f.IntVarP(&o.TopK, "top-k", "k", 0, "Retrieve the N best chunks instead of a token-budgeted context pack")
 	f.BoolVarP(&o.Docs, "docs", "d", false, "Also search the documentation (default: code only)")
 	cmd.MarkFlagsMutuallyExclusive("paid", "hybrid")

@@ -7,7 +7,8 @@
 // makes the local tier fail, so escalation is needed unless paid use is allowed.
 // STANDIN_LOG names a file that records each call's method and params;
 // STANDIN_FAIL=<method> makes that method return an engine error; STANDIN_PROTOCOL sets
-// the protocol version the handshake reports (default 1.6.0).
+// the protocol version the handshake reports (default 1.6.0); STANDIN_ASK_LOCAL_MODEL the
+// project's [ask] local_model that settings reports.
 package main
 
 import (
@@ -88,6 +89,8 @@ func main() {
 			resp["error"] = map[string]interface{}{"code": -32000, "message": "boom", "data": map[string]string{"kind": "index"}}
 		case req.Method == "index":
 			resp["result"] = map[string]int{"files_scanned": 1, "files_changed": 1, "embed_pending": 7, "embed_ms": 40}
+		case req.Method == "settings":
+			resp["result"] = map[string]interface{}{"settings": map[string]interface{}{"ask": map[string]string{"local_model": os.Getenv("STANDIN_ASK_LOCAL_MODEL")}}}
 		case req.Method == "status":
 			resp["result"] = map[string]interface{}{"files": 1, "chunks": 14, "vectors": 7, "embed_coverage": 0.5}
 		case req.Method == "ask":
