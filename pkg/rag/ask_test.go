@@ -256,12 +256,30 @@ func TestGatewayKeyComesFromTheProjectEnvWhenUnset(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("LITELLM_MASTER_KEY", "")
-	if got := gatewayEnv(dir); len(got) != 1 || got[0] != "LITELLM_MASTER_KEY=sk-test" {
+	if got := gatewayEnv(dir, nil); len(got) != 1 || got[0] != "LITELLM_MASTER_KEY=sk-test" {
 		t.Fatalf("gatewayEnv = %v", got)
 	}
 	t.Setenv("LITELLM_MASTER_KEY", "from-shell")
-	if got := gatewayEnv(dir); got != nil {
+	if got := gatewayEnv(dir, nil); got != nil {
 		t.Fatalf("an exported key must win, got %v", got)
+	}
+}
+
+func TestGatewayKeyFallsBackToTheSynapseMembers(t *testing.T) {
+	dir := ragProject(t)
+	control := t.TempDir()
+	if err := os.WriteFile(control+"/.env", []byte("LITELLM_MASTER_KEY=sk-control\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LITELLM_MASTER_KEY", "")
+	if got := gatewayEnv(dir, []string{t.TempDir(), control}); len(got) != 1 || got[0] != "LITELLM_MASTER_KEY=sk-control" {
+		t.Fatalf("gatewayEnv = %v", got)
+	}
+	if err := os.WriteFile(dir+"/.env", []byte("LITELLM_MASTER_KEY=sk-project\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := gatewayEnv(dir, []string{control}); len(got) != 1 || got[0] != "LITELLM_MASTER_KEY=sk-project" {
+		t.Fatalf("the project's own key must win, got %v", got)
 	}
 }
 
