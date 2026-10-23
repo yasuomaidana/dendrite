@@ -20,6 +20,7 @@ As a software engineer and AI systems developer operating in multi-agent environ
 ## 2. Technical Boundaries & Specifications
 
 1. **Hybrid Search Architecture (`pkg/agentsearch`)**:
+   - **Retrieval runs in Rust**: `pkg/agentsearch` sends the manifests to the `dendrite-rag` sidecar's `rank` method ([dendrite-rag-rs](../../../dendrite-rag-rs/docs/specs/retrieval.md)), which runs the lexical, dense and fusion stages below with the project's `.dendrite/rag.toml` embedder and fusion weights. Go keeps only the routing policy (history, Leiden affinity, cost filters).
    - **Dense Vector Semantic Search**: Integrates Hugging Face Text Embeddings Inference (TEI, `ghcr.io/huggingface/text-embeddings-inference:1.5` from [FEAT-020](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/features/FEAT-020-pluggable-inference-engines.md)) to generate $< 5\text{ms}$ embeddings (`BAAI/bge-small-en-v1.5` or `nomic-embed-text`) over agent manifests, tool capability schemas, and past session trajectories.
    - **Sparse Lexical Search (BM25)**: Matches exact keywords, function signatures, package names, and CLI flags.
    - **Reciprocal Rank Fusion (RRF)**: Merges sparse and dense search scores into a normalized rank score ($0.0 \le S \le 1.0$).
@@ -47,8 +48,9 @@ flowchart TD
     UserQuery["User Task / Query<br/>('test inference failover')"] --> SearchEngine["Hybrid Agent Search Engine<br/>(pkg/agentsearch)"]
     
     subgraph "Vector & Lexical Indexing"
-        SearchEngine --> TEI["Hugging Face TEI Engine (:8080)<br/>Dense Embedding Vector"]
-        SearchEngine --> BM25["In-Memory BM25 Lexical Index"]
+        SearchEngine --> Sidecar["dendrite-rag sidecar: rank<br/>(Rust, JSON-RPC over stdio)"]
+        Sidecar --> TEI["Project embedder<br/>Dense Embedding Vector"]
+        Sidecar --> BM25["Code-aware BM25"]
         TEI & BM25 --> RRF["Reciprocal Rank Fusion (RRF)"]
     end
 
@@ -71,8 +73,8 @@ flowchart TD
 
 ## 3. Idiomatic Design Patterns & Complexity Guardrails
 
-1. **Strategy Pattern (Embedding & Search Providers)**:
-   - Abstraction `EmbeddingClient` supporting `TEIClient`, `OllamaEmbedClient`, and `InProcessEmbedClient`.
+1. **Strategy Pattern (Ranker)**:
+   - Abstraction `Ranker`, implemented by `rag.Retriever` (the dendrite-rag sidecar); tests run the dendrite-rag protocol stand-in (`pkg/rag/ragtest`).
 2. **Builder Pattern (Search Query)**:
    - Fluent builder for compound agent search queries:
      ```go
@@ -97,7 +99,7 @@ flowchart TD
 ## 4. Acceptance Criteria & Verification Matrix
 
 - [ ] **AC-1**: `dendrite agent search <query>` executes hybrid search and returns ranked matching agents and tools in $< 150\text{ms}$.
-- [ ] **AC-2**: Vector indexing utilizes Hugging Face TEI embedding endpoint from [FEAT-020](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/features/FEAT-020-pluggable-inference-engines.md) when active, falling back gracefully to local lexical index if TEI is offline.
+- [ ] **AC-2**: Vector indexing utilizes Hugging Face TEI embedding endpoint from [FEAT-020](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/features/FEAT-020-pluggable-inference-engines.md) when active, falling back gracefully to local lexical index if TEI is offline (the sidecar's `rank` ranks lexically when the embedder is unreachable).
 - [ ] **AC-3**: Agent capability score factors in historical token spend, task execution duration, and test pass rates from previous sessions.
 - [ ] **AC-4**: Graphify AST integration maps target packages in query to Leiden community clusters and prioritizes agents with matching domain tags.
 - [ ] **AC-5**: Web UI displays searchable agent catalog with real-time capability filtering and 1-click launch buttons.

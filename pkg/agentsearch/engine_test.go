@@ -2,19 +2,19 @@ package agentsearch
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/binary"
-	"encoding/json"
 	"errors"
-	"math"
-	"net/http"
-	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"Dendrite/pkg/agent"
+	"Dendrite/pkg/rag"
+	"Dendrite/pkg/rag/ragtest"
+	"Dendrite/pkg/sidecar"
 )
+
+func TestMain(m *testing.M) { ragtest.Main(m) }
 
 func TestQueryBuilder(t *testing.T) {
 	q := NewQueryBuilder().
@@ -43,129 +43,6 @@ func TestQueryBuilder(t *testing.T) {
 	}
 	if q.MaxResults != 3 {
 		t.Errorf("unexpected max results: %d", q.MaxResults)
-	}
-}
-
-func TestCosineSimilarity(t *testing.T) {
-	v1 := []float32{1.0, 0.0, 0.0}
-	v2 := []float32{1.0, 0.0, 0.0}
-	sim, err := CosineSimilarity(v1, v2)
-	if err != nil || sim < 0.99 {
-		t.Fatalf("expected identical vectors sim ~ 1.0, got %f, err: %v", sim, err)
-	}
-
-	v3 := []float32{0.0, 1.0, 0.0}
-	simOrth, err := CosineSimilarity(v1, v3)
-	if err != nil || simOrth != 0.0 {
-		t.Fatalf("expected orthogonal vectors sim 0.0, got %f", simOrth)
-	}
-
-	_, err = CosineSimilarity([]float32{1.0}, []float32{1.0, 2.0})
-	if err != ErrDimensionMismatch {
-		t.Fatalf("expected ErrDimensionMismatch, got %v", err)
-	}
-
-	simEmpty, err := CosineSimilarity([]float32{}, []float32{})
-	if err != nil || simEmpty != 0 {
-		t.Fatalf("expected 0 for empty vectors, got %f", simEmpty)
-	}
-}
-
-func TestBM25Index(t *testing.T) {
-	idx := NewBM25Index()
-	idx.AddDocument("doc1", "refactor Go AST parser tree-sitter")
-	idx.AddDocument("doc2", "benchmark k6 load test litellm gateway")
-	idx.AddDocument("doc3", "translate python code into idiomatic rust")
-
-	scores := idx.Score("refactor AST parser")
-	if len(scores) == 0 {
-		t.Fatalf("expected non-empty scores")
-	}
-	if scores["doc1"] <= scores["doc2"] {
-		t.Errorf("doc1 should score higher than doc2 for AST query, got %f vs %f", scores["doc1"], scores["doc2"])
-	}
-
-	emptyScores := idx.Score("")
-	if len(emptyScores) != 0 {
-		t.Errorf("expected empty score map for empty query, got %v", emptyScores)
-	}
-}
-
-func TestReciprocalRankFusion(t *testing.T) {
-	dense := map[string]float32{"a": 0.9, "b": 0.5, "c": 0.1}
-	sparse := map[string]float32{"a": 0.8, "b": 0.2, "d": 0.7}
-
-	rrf := ReciprocalRankFusion(dense, sparse, 60.0)
-	if rrf["a"] < rrf["b"] {
-		t.Errorf("expected 'a' to be top ranked in RRF, got %v", rrf)
-	}
-
-	// Test zero/negative k fallback
-	rrfZeroK := ReciprocalRankFusion(dense, sparse, 0)
-	if len(rrfZeroK) != 4 {
-		t.Errorf("expected 4 items in RRF, got %d", len(rrfZeroK))
-	}
-}
-
-func TestTEIEmbeddingClient(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/embed" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		// Return 2 vectors of dim 4
-		resp := [][]float32{
-			{0.1, 0.2, 0.3, 0.4},
-			{0.5, 0.6, 0.7, 0.8},
-		}
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
-
-	client := NewTEIEmbeddingClient(server.URL, server.Client())
-	vecs, err := client.Embed(context.Background(), []string{"test 1", "test 2"})
-	if err != nil {
-		t.Fatalf("failed to embed via TEI: %v", err)
-	}
-	if len(vecs) != 2 || len(vecs[0]) != 4 {
-		t.Fatalf("unexpected vecs shape: %v", vecs)
-	}
-	if client.Dimension() != 4 {
-		t.Errorf("expected dim 4, got %d", client.Dimension())
-	}
-
-	// Test empty text error
-	_, err = client.Embed(context.Background(), []string{})
-	if err != ErrEmptyText {
-		t.Fatalf("expected ErrEmptyText, got %v", err)
-	}
-}
-
-func TestOllamaEmbeddingClient(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/embeddings" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		resp := map[string]interface{}{
-			"embedding": []float32{0.1, 0.2, 0.3},
-		}
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
-
-	client := NewOllamaEmbeddingClient(server.URL, "nomic-embed-text", server.Client())
-	vecs, err := client.Embed(context.Background(), []string{"hello ollama"})
-	if err != nil {
-		t.Fatalf("failed to embed via Ollama: %v", err)
-	}
-	if len(vecs) != 1 || len(vecs[0]) != 3 {
-		t.Fatalf("unexpected ollama vecs: %v", vecs)
-	}
-
-	_, err = client.Embed(context.Background(), nil)
-	if err != ErrEmptyText {
-		t.Fatalf("expected ErrEmptyText, got %v", err)
 	}
 }
 
@@ -214,131 +91,81 @@ func TestScorerWithLedgerAndLeiden(t *testing.T) {
 	}
 }
 
-func computeDeterministicVector(text string, dim int) []float32 {
-	vec := make([]float32, dim)
-	words := strings.Fields(strings.ToLower(text))
-	for _, w := range words {
-		hash := sha256.Sum256([]byte(w))
-		for j := 0; j < dim; j++ {
-			byteIdx := (j * 4) % (len(hash) - 4)
-			val := binary.BigEndian.Uint32(hash[byteIdx : byteIdx+4])
-			flt := (float32(val%10000) / 5000.0) - 1.0
-			vec[j] += flt
-		}
+// standInEngine ranks through the dendrite-rag stand-in, which orders documents by the
+// number of query words they contain.
+func standInEngine(t *testing.T, ledger *agent.SessionLedger) *SearchEngine {
+	t.Helper()
+	if os.Getenv(sidecar.EnvVar(rag.SidecarBinary)) == "" {
+		t.Fatal("TestMain did not install the dendrite-rag stand-in")
 	}
-	var sum float64
-	for _, v := range vec {
-		sum += float64(v * v)
-	}
-	norm := float32(math.Sqrt(sum))
-	if norm == 0 {
-		return vec
-	}
-	res := make([]float32, len(vec))
-	for i, v := range vec {
-		res[i] = v / norm
-	}
-	return res
+	engine := NewSearchEngine(nil, ledger, nil)
+	engine.root = t.TempDir()
+	return engine
 }
 
-func TestSearchEngineEndToEnd(t *testing.T) {
-	teiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var payload struct {
-			Inputs []string `json:"inputs"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		vecs := make([][]float32, len(payload.Inputs))
-		for i, text := range payload.Inputs {
-			vecs[i] = computeDeterministicVector(text, 32)
-		}
-		_ = json.NewEncoder(w).Encode(vecs)
-	}))
-	defer teiServer.Close()
+func TestSearchScoresTheSidecarRanking(t *testing.T) {
+	engine := standInEngine(t, agent.NewSessionLedger(nil, ""))
 
-	teiClient := NewTEIEmbeddingClient(teiServer.URL, teiServer.Client())
-	ledger := agent.NewSessionLedger(nil, "")
-	engine := NewSearchEngine(teiClient, ledger, nil)
-
-	ctx := context.Background()
-
-	// 1. AC-1: Hybrid search completes in < 150ms
-	start := time.Now()
-	query := NewQueryBuilder().
-		WithText("rapid git commits and TDD refactoring").
-		WithTargetPackage("pkg/agent").
-		Build()
-
-	results, err := engine.Search(ctx, query)
-	duration := time.Since(start)
-
+	results, err := engine.Search(context.Background(), NewQueryBuilder().WithText("macro architecture system design security").Build())
 	if err != nil {
-		t.Fatalf("search failed: %v", err)
+		t.Fatal(err)
 	}
-	if len(results) == 0 {
-		t.Fatalf("expected search results, got 0")
+	if len(results) != len(DefaultManifests()) {
+		t.Fatalf("got %d results", len(results))
 	}
-	if duration >= 150*time.Millisecond {
-		t.Errorf("search took %v, must be < 150ms", duration)
+	top := results[0]
+	if top.Manifest.ID != "agy" || top.RRFScore != 1 || top.SparseScore < 4 || top.DenseScore != 0 {
+		t.Fatalf("top result = %+v", top)
 	}
-
-	// Top result should be Aider
-	if results[0].Manifest.ID != "aider" {
-		t.Logf("Top matched agent: %s (score: %.3f)", results[0].Manifest.ID, results[0].FinalScore)
-	}
-
-	// 2. Constraints testing: RequireLocalInference
-	localQuery := NewQueryBuilder().
-		WithText("macro architecture and system design").
-		RequireLocalInference(true).
-		Build()
-
-	localResults, err := engine.Search(ctx, localQuery)
-	if err != nil {
-		t.Fatalf("local search failed: %v", err)
-	}
-	for _, res := range localResults {
-		if !res.Manifest.ZeroCostCandidate {
-			t.Errorf("expected only zero cost candidates, got %s", res.Manifest.ID)
+	for _, r := range results[1:] {
+		if r.RRFScore >= 1 || r.RRFScore <= 0 {
+			t.Fatalf("RRF of %s = %f, want it normalised below the top score", r.Manifest.ID, r.RRFScore)
 		}
 	}
+}
 
-	// 3. Routing decision
-	routeQuery := NewQueryBuilder().
-		WithText("macro architecture system design").
-		Build()
+func TestSearchAppliesConstraints(t *testing.T) {
+	engine := standInEngine(t, nil)
 
-	decision, err := engine.Route(ctx, routeQuery)
+	results, err := engine.Search(context.Background(), NewQueryBuilder().WithText("macro architecture").RequireLocalInference(true).Build())
 	if err != nil {
-		t.Fatalf("route failed: %v", err)
+		t.Fatal(err)
 	}
-	if decision.SelectedAgent.ID == "" || decision.Model == "" {
-		t.Fatalf("invalid routing decision: %+v", decision)
+	for _, r := range results {
+		if !r.Manifest.ZeroCostCandidate {
+			t.Errorf("expected only zero cost candidates, got %s", r.Manifest.ID)
+		}
 	}
-
-	// 4. Fallback test when embedding fails (AC-2)
-	brokenEngine := NewSearchEngine(&brokenEmbedClient{}, ledger, nil)
-	fallbackResults, err := brokenEngine.Search(ctx, query)
-	if err != nil {
-		t.Fatalf("fallback search failed: %v", err)
-	}
-	if len(fallbackResults) == 0 {
-		t.Fatalf("expected fallback search results via BM25")
-	}
-
-	// 5. Empty query error
-	_, err = engine.Search(ctx, SearchQuery{Text: "   "})
-	if err != ErrNoQueryText {
+	if _, err := engine.Search(context.Background(), SearchQuery{Text: "   "}); err != ErrNoQueryText {
 		t.Errorf("expected ErrNoQueryText, got %v", err)
 	}
 }
 
-type brokenEmbedClient struct{}
-
-func (b *brokenEmbedClient) Embed(ctx context.Context, texts []string) ([][]float32, error) {
-	return nil, errors.New("simulated embedding endpoint timeout/offline")
+func TestSearchReportsSidecarFailure(t *testing.T) {
+	engine := standInEngine(t, nil)
+	t.Setenv("STANDIN_FAIL", "rank")
+	if _, err := engine.Search(context.Background(), NewQueryBuilder().WithText("anything").Build()); err == nil || !strings.Contains(err.Error(), "ranking agents") {
+		t.Fatalf("err = %v", err)
+	}
+	t.Setenv(sidecar.EnvVar(rag.SidecarBinary), "")
+	engine.ranker = &rag.Retriever{Locator: sidecar.Locator{LookPath: func(string) (string, error) { return "", errors.New("not on PATH") }}}
+	if _, err := engine.Search(context.Background(), NewQueryBuilder().WithText("anything").Build()); !errors.Is(err, rag.ErrSidecarUnavailable) {
+		t.Fatalf("err = %v, want ErrSidecarUnavailable", err)
+	}
 }
-func (b *brokenEmbedClient) Dimension() int { return 32 }
 
+func TestRouteThroughTheSidecar(t *testing.T) {
+	engine := standInEngine(t, agent.NewSessionLedger(nil, ""))
+
+	start := time.Now()
+	decision, err := engine.Route(context.Background(), NewQueryBuilder().WithText("rapid git commits and TDD refactoring").WithTargetPackage("pkg/agent").Build())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.SelectedAgent.ID != "aider" || decision.Model == "" || decision.EstimatedCost != 0 {
+		t.Fatalf("decision = %+v", decision)
+	}
+	if took := time.Since(start); took >= 2*time.Second {
+		t.Errorf("routing took %v", took)
+	}
+}

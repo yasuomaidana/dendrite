@@ -172,7 +172,7 @@ func newBoutonSearchCmd() *cobra.Command {
 	var maxCost float64
 	cmd := &cobra.Command{
 		Use:   "search <query...>",
-		Short: "Rank agents for a query with hybrid vector and BM25 search",
+		Short: "Rank agents for a query through the dendrite-rag sidecar (BM25, embeddings, RRF)",
 		Args:  minArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			q := agentsearch.NewQueryBuilder().

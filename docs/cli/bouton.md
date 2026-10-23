@@ -36,7 +36,7 @@ Postsynaptic Effectors & Actuation
 | `jobs wait` | Block until the matching jobs finish |
 | `route` | Pick the best agent, tier and model for a task, and optionally run it |
 | `run` | Launch a coding agent (aider, openhands, opencode, agy, copilot) through the gateway |
-| `search` | Rank agents for a query with hybrid vector and BM25 search |
+| `search` | Rank agents for a query through the dendrite-rag sidecar (BM25, embeddings, RRF) |
 | `sessions` | List recorded agent sessions (duration, cost, status) |
 
 ## Flags
@@ -180,7 +180,7 @@ dendrite bouton run <agent> [flags]
 
 ### `dendrite bouton search`
 
-Rank agents for a query with hybrid vector and BM25 search
+Rank agents for a query through the dendrite-rag sidecar (BM25, embeddings, RRF)
 
 ```bash
 dendrite bouton search <query...> [flags]

@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"Dendrite/pkg/agent"
+	"Dendrite/pkg/rag"
 )
 
 var (
@@ -76,15 +76,22 @@ func (b *QueryBuilder) Build() SearchQuery {
 	return b.query
 }
 
-// SearchEngine coordinates hybrid dense/sparse search, scoring, and semantic routing.
+// Ranker orders documents by relevance to a query. rag.Retriever is the implementation:
+// the dendrite-rag sidecar's `rank` (code-aware BM25, the project's embedder and weighted
+// Reciprocal Rank Fusion).
+type Ranker interface {
+	Rank(ctx context.Context, root, query string, docs []rag.RankDocument, topK int) ([]rag.Ranked, error)
+}
+
+// SearchEngine ranks agent manifests through a Ranker, then scores them with routing
+// policy: session history, Leiden community affinity and cost constraints.
 type SearchEngine struct {
-	mu            sync.RWMutex
-	embedClient   EmbeddingClient
-	bm25          *BM25Index
-	scorer        *Scorer
-	manifests     map[AgentID]AgentManifest
-	manifestTexts map[AgentID]string
-	cachedVectors map[AgentID][]float32
+	ranker Ranker
+	// root is the project whose dendrite-rag settings (embedder, fusion weights) apply.
+	root      string
+	scorer    *Scorer
+	manifests map[AgentID]AgentManifest
+	documents []rag.RankDocument
 }
 
 // DefaultManifests returns the pre-registered platform agents.
@@ -183,104 +190,67 @@ func DefaultLeidenClusters() []LeidenCluster {
 	}
 }
 
-// NewSearchEngine creates and indexes a SearchEngine.
-func NewSearchEngine(embedClient EmbeddingClient, ledger *agent.SessionLedger, clusters []LeidenCluster) *SearchEngine {
-	if embedClient == nil {
-		embedClient = NewOllamaEmbeddingClient("", "", nil)
+// NewSearchEngine creates a SearchEngine over the default manifests. A nil ranker uses
+// the dendrite-rag sidecar, with the settings of the current directory's project.
+func NewSearchEngine(ranker Ranker, ledger *agent.SessionLedger, clusters []LeidenCluster) *SearchEngine {
+	if ranker == nil {
+		ranker = rag.NewRetriever()
 	}
 	if len(clusters) == 0 {
 		clusters = DefaultLeidenClusters()
 	}
-
-	bm25 := NewBM25Index()
-	manifests := make(map[AgentID]AgentManifest)
-	manifestTexts := make(map[AgentID]string)
-
-	defaults := DefaultManifests()
-	for _, m := range defaults {
-		manifests[m.ID] = m
-		text := fmt.Sprintf("%s %s %s %s %s",
-			m.Name,
-			m.Description,
-			strings.Join(m.Strengths, " "),
-			strings.Join(m.SupportedTools, " "),
-			strings.Join(m.DomainTags, " "),
-		)
-		manifestTexts[m.ID] = text
-		bm25.AddDocument(string(m.ID), text)
-	}
-
-	scorer := NewScorer(ledger, clusters)
-
 	se := &SearchEngine{
-		embedClient:   embedClient,
-		bm25:          bm25,
-		scorer:        scorer,
-		manifests:     manifests,
-		manifestTexts: manifestTexts,
-		cachedVectors: make(map[AgentID][]float32),
+		ranker:    ranker,
+		root:      ".",
+		scorer:    NewScorer(ledger, clusters),
+		manifests: make(map[AgentID]AgentManifest),
 	}
-
-	// Warm vector cache asynchronously or in-line
-	_ = se.warmVectors(context.Background())
-
+	for _, m := range DefaultManifests() {
+		se.manifests[m.ID] = m
+		se.documents = append(se.documents, rag.RankDocument{
+			ID: string(m.ID),
+			Text: strings.Join([]string{
+				m.Name,
+				m.Description,
+				strings.Join(m.Strengths, " "),
+				strings.Join(m.SupportedTools, " "),
+				strings.Join(m.DomainTags, " "),
+			}, " "),
+		})
+	}
 	return se
 }
 
-func (se *SearchEngine) warmVectors(ctx context.Context) error {
-	texts := make([]string, 0, len(se.manifests))
-	ids := make([]AgentID, 0, len(se.manifests))
-
-	for id, text := range se.manifestTexts {
-		ids = append(ids, id)
-		texts = append(texts, text)
-	}
-
-	vecs, err := se.embedClient.Embed(ctx, texts)
-	if err != nil {
-		return err
-	}
-
-	se.mu.Lock()
-	defer se.mu.Unlock()
-	for i, id := range ids {
-		se.cachedVectors[id] = vecs[i]
-	}
-	return nil
-}
-
-// Search executes hybrid vector + lexical search and scores candidates.
+// Search ranks the manifests for query through the Ranker and scores the candidates.
 func (se *SearchEngine) Search(ctx context.Context, query SearchQuery) ([]SearchResult, error) {
 	if strings.TrimSpace(query.Text) == "" {
 		return nil, ErrNoQueryText
 	}
 
-	// 1. Sparse Lexical Search (BM25)
-	bm25Scores := se.bm25.Score(query.Text)
-
-	// 2. Dense Vector Search (with graceful fallback to BM25 if embedding fails)
-	denseScores := make(map[string]float32, len(se.manifests))
-	queryVecs, err := se.embedClient.Embed(ctx, []string{query.Text})
-	if err == nil && len(queryVecs) > 0 {
-		se.mu.RLock()
-		for id, mVec := range se.cachedVectors {
-			sim, simErr := CosineSimilarity(queryVecs[0], mVec)
-			if simErr == nil {
-				denseScores[string(id)] = sim
-			}
+	ranked, err := se.ranker.Rank(ctx, se.root, query.Text, se.documents, 0)
+	if err != nil {
+		return nil, fmt.Errorf("ranking agents: %w", err)
+	}
+	// Fused scores are normalised to [0, 1] so they weigh against history and affinity.
+	denseScores := make(map[string]float32, len(ranked))
+	bm25Scores := make(map[string]float32, len(ranked))
+	rrfScores := make(map[string]float32, len(ranked))
+	var maxRRF float32
+	for _, r := range ranked {
+		bm25Scores[r.ID] = r.Lexical
+		if r.Dense != nil {
+			denseScores[r.ID] = *r.Dense
 		}
-		se.mu.RUnlock()
-	} else {
-		// Fallback: If TEI/embedding is unreachable, copy normalized BM25 scores
-		for id, s := range bm25Scores {
-			denseScores[id] = s
+		rrfScores[r.ID] = r.Score
+		maxRRF = max(maxRRF, r.Score)
+	}
+	if maxRRF > 0 {
+		for id, s := range rrfScores {
+			rrfScores[id] = s / maxRRF
 		}
 	}
 
-	// 3. Reciprocal Rank Fusion (RRF)
-	rrfScores := ReciprocalRankFusion(denseScores, bm25Scores, 60.0)
-
-	// 4. Score, filter, and rank results
+	// Score, filter, and rank results
 	results := make([]SearchResult, 0, len(se.manifests))
 	for id, manifest := range se.manifests {
 		// Apply constraints

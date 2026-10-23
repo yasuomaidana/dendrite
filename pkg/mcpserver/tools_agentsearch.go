@@ -83,7 +83,7 @@ func registerAgentSearchTools(s *Server, deps Dependencies) {
 
 		query := builder.Build()
 
-		// Construct engine with mock/TEI client
+		// Ranked by the dendrite-rag sidecar
 		engine := agentsearch.NewSearchEngine(nil, nil, nil)
 
 		if routeMode {

@@ -2,7 +2,8 @@
 // must not depend on a Rust build. It does no ranking of its own: search and context
 // return the project's text files that contain a query word, one whole-file span each,
 // most matching words first, then by path; context with detail "map" returns each file's
-// first line as its outline. index reports files_changed 1 and embed_pending 7, status an
+// first line as its outline. rank orders the supplied documents by the number of query
+// words they contain, then by id, with RRF scores 1/(60+rank) and no dense scores. index reports files_changed 1 and embed_pending 7, status an
 // embed_coverage of 0.5. ask answers from those matches without a model: STANDIN_LOCAL=fail
 // makes the local tier fail, so escalation is needed unless paid use is allowed.
 // STANDIN_LOG names a file that records each call's method and params;
@@ -48,6 +49,10 @@ type params struct {
 	PaidModel   string   `json:"paid_model"`
 	Detail      string   `json:"detail"`
 	IDs         []string `json:"ids"`
+	Documents   []struct {
+		ID   string `json:"id"`
+		Text string `json:"text"`
+	} `json:"documents"`
 }
 
 type hit struct {
@@ -100,6 +105,8 @@ func main() {
 			} else {
 				resp["result"] = r
 			}
+		case req.Method == "rank":
+			resp["result"] = map[string]interface{}{"ranked": rank(p)}
 		case req.Method == "chunks.get":
 			resp["result"] = map[string]interface{}{"hits": chunks(p)}
 		case req.Method == "search":
@@ -222,6 +229,39 @@ func main() {
 		}
 		_ = out.Encode(resp)
 	}
+}
+
+func rank(p params) []map[string]interface{} {
+	words := strings.Fields(strings.ToLower(p.Query))
+	type doc struct {
+		id      string
+		lexical int
+	}
+	docs := make([]doc, 0, len(p.Documents))
+	for _, d := range p.Documents {
+		text := strings.ToLower(d.Text)
+		n := 0
+		for _, w := range words {
+			if strings.Contains(text, w) {
+				n++
+			}
+		}
+		docs = append(docs, doc{d.ID, n})
+	}
+	sort.SliceStable(docs, func(i, j int) bool {
+		if docs[i].lexical != docs[j].lexical {
+			return docs[i].lexical > docs[j].lexical
+		}
+		return docs[i].id < docs[j].id
+	})
+	if p.TopK > 0 && len(docs) > p.TopK {
+		docs = docs[:p.TopK]
+	}
+	ranked := make([]map[string]interface{}, 0, len(docs))
+	for i, d := range docs {
+		ranked = append(ranked, map[string]interface{}{"id": d.id, "score": 1 / float64(60+i+1), "lexical": float64(d.lexical)})
+	}
+	return ranked
 }
 
 func matches(p params) []hit {
