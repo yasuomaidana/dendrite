@@ -1,17 +1,17 @@
 model_list:
-    - model_name: gemini-2.5-pro
+    - model_name: gemini-4-argon-medium
       litellm_params:
-        model: gemini/gemini-2.5-pro
+        model: gemini/gemini-4-argon-medium
         api_key: os.environ/GEMINI_API_KEY
         max_tokens: 8192
       model_info:
-        id: gemini-2.5-pro
+        id: gemini-4-argon-medium
         mode: chat
         input_cost_per_token: 1.25e-06
         output_cost_per_token: 5e-06
         max_input_tokens: 1048576
         max_output_tokens: 8192
-        base_model: gemini/gemini-2.5-pro
+        base_model: gemini/gemini-4-argon-medium
     - model_name: copilot-sonnet
       litellm_params:
         model: github_copilot/claude-sonnet-4.6
@@ -29,19 +29,19 @@ model_list:
         max_input_tokens: 200000
         max_output_tokens: 8192
         base_model: claude-sonnet-4.6
-    - model_name: gemini-2.5-flash
+    - model_name: gemini-3.8-flash-medium
       litellm_params:
-        model: gemini/gemini-2.5-flash
+        model: gemini/gemini-3.8-flash-medium
         api_key: os.environ/GEMINI_API_KEY
         max_tokens: 8192
       model_info:
-        id: gemini-2.5-flash
+        id: gemini-3.8-flash-medium
         mode: chat
         input_cost_per_token: 7.5e-08
         output_cost_per_token: 3e-07
         max_input_tokens: 1048576
         max_output_tokens: 8192
-        base_model: gemini/gemini-2.5-flash
+        base_model: gemini/gemini-3.8-flash-medium
     - model_name: local-qwen3-9b
       litellm_params:
         model: ollama/hermes3:8b
@@ -243,9 +243,9 @@ model_list:
         skip_budget_checks: true
 router_settings:
     fallbacks:
-        - gemini-2.5-pro:
+        - gemini-4-argon-medium:
             - copilot-sonnet
-            - gemini-2.5-flash
+            - gemini-3.8-flash-medium
             - local-qwen3-27b
             - local-qwen3-9b
             - local-qwen3-8b-q4_k_m
@@ -260,7 +260,7 @@ router_settings:
             - vllm-cluster
             - local-llama3.2-latest
         - copilot-sonnet:
-            - gemini-2.5-flash
+            - gemini-3.8-flash-medium
             - local-qwen3-27b
             - local-qwen3-9b
             - local-qwen3-8b-q4_k_m
@@ -274,7 +274,7 @@ router_settings:
             - llamacpp-local
             - vllm-cluster
             - local-llama3.2-latest
-        - gemini-2.5-flash:
+        - gemini-3.8-flash-medium:
             - local-qwen3-27b
             - local-qwen3-9b
             - local-qwen3-8b-q4_k_m
@@ -289,20 +289,20 @@ router_settings:
             - vllm-cluster
             - local-llama3.2-latest
     context_window_fallbacks:
-        - local-qwen-coder: gemini-2.5-pro
-        - local-qwen3-27b: gemini-2.5-pro
-        - local-qwen3-9b: gemini-2.5-pro
-        - gemini-2.5-flash: gemini-2.5-pro
-        - local-qwen3-8b-q4_k_m: gemini-2.5-pro
-        - local-hermes3-8b: gemini-2.5-pro
-        - local-coder: gemini-2.5-pro
-        - hf-deepseek: gemini-2.5-pro
-        - local-nomic-embed-text-latest: gemini-2.5-pro
-        - local-tinyllama-latest: gemini-2.5-pro
-        - oxillama-rust: gemini-2.5-pro
-        - llamacpp-local: gemini-2.5-pro
-        - vllm-cluster: gemini-2.5-pro
-        - local-llama3.2-latest: gemini-2.5-pro
+        - local-qwen-coder: gemini-4-argon-medium
+        - local-qwen3-27b: gemini-4-argon-medium
+        - local-qwen3-9b: gemini-4-argon-medium
+        - gemini-3.8-flash-medium: gemini-4-argon-medium
+        - local-qwen3-8b-q4_k_m: gemini-4-argon-medium
+        - local-hermes3-8b: gemini-4-argon-medium
+        - local-coder: gemini-4-argon-medium
+        - hf-deepseek: gemini-4-argon-medium
+        - local-nomic-embed-text-latest: gemini-4-argon-medium
+        - local-tinyllama-latest: gemini-4-argon-medium
+        - oxillama-rust: gemini-4-argon-medium
+        - llamacpp-local: gemini-4-argon-medium
+        - vllm-cluster: gemini-4-argon-medium
+        - local-llama3.2-latest: gemini-4-argon-medium
     routing_strategy: usage-based-routing
     timeout: 120
     enable_pre_call_checks: true

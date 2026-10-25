@@ -55,7 +55,7 @@ func TestAsk_LocalAnswerFromTheSidecar(t *testing.T) {
 	}
 	asks := askCalls(t, log)
 	if len(asks) != 1 || !strings.Contains(asks[0], `"corpus":"all"`) || !strings.Contains(asks[0], `"mode":"local"`) ||
-		!strings.Contains(asks[0], `"allow_paid":false`) || !strings.Contains(asks[0], `"paid_model":"gemini-2.5-pro"`) {
+		!strings.Contains(asks[0], `"allow_paid":false`) || !strings.Contains(asks[0], `"paid_model":"`+DefaultPaidModel+`"`) {
 		t.Fatalf("ask calls = %v", asks)
 	}
 	calls, _ := os.ReadFile(log)
@@ -335,7 +335,7 @@ func TestAsk_TierMessagesMatchTheOldPipeline(t *testing.T) {
 	if _, err := e.Ask(context.Background(), AskRequest{Question: "LocateBinary", ProjectPath: ragProject(t), HybridMode: true, Output: &out}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "[+] Hybrid mode: local draft refined by the paid model (gemini-2.5-pro).") {
+	if !strings.Contains(out.String(), "[+] Hybrid mode: local draft refined by the paid model ("+DefaultPaidModel+").") {
 		t.Errorf("hybrid: %s", out.String())
 	}
 	out.Reset()

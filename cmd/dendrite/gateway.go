@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -79,8 +80,19 @@ func runCleftUpdate(ctx context.Context, opts gateway.UpdaterOptions, out io.Wri
 	fmt.Fprintf(out, "    * Total Configured Routes: %d\n", report.TotalModelsConfigured)
 	if !report.DryRun {
 		fmt.Fprintf(out, "    * Bytes Written:           %d bytes\n", report.BytesWritten)
+
+		// Heal and refresh the running LiteLLM container if active so new routes/config take effect immediately
+		if err := restartRunningLiteLLM(ctx); err == nil {
+			fmt.Fprintln(out, "    * LiteLLM Container:       Healed & reloaded successfully")
+		}
 	}
 	return nil
+}
+
+// restartRunningLiteLLM reloads or restarts the LiteLLM proxy container if running.
+func restartRunningLiteLLM(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "docker", "restart", "dendrite-litellm")
+	return cmd.Run()
 }
 
 func newCleftScheduleCmd() *cobra.Command {

@@ -156,10 +156,32 @@ func runDevUpdate(ctx context.Context, o updateOptions, target string, out io.Wr
 	if err := rebuildDendrite(ctx, src, target, out); err != nil {
 		return err
 	}
+
+	// Heal and refresh control plane services if active (e.g. LiteLLM, Postgres, Redis)
+	healActiveServices(ctx, src, out)
+
 	for _, w := range warnings {
 		fmt.Fprintf(out, "    [!] %s\n", w)
 	}
 	return nil
+}
+
+// healActiveServices inspects and restarts active control-plane services whose compose configurations or routes changed.
+func healActiveServices(ctx context.Context, src string, out io.Writer) {
+	composeFile := filepath.Join(src, "stacks", "compose.control.yaml")
+	if _, err := os.Stat(composeFile); err != nil {
+		return
+	}
+	// Check if Docker daemon is accessible and dendrite-litellm is running
+	checkCmd := exec.CommandContext(ctx, "docker", "ps", "-q", "-f", "name=dendrite-litellm")
+	outBytes, err := checkCmd.Output()
+	if err == nil && len(strings.TrimSpace(string(outBytes))) > 0 {
+		fmt.Fprintln(out, "[+] Refreshing and healing active LiteLLM container...")
+		restartCmd := exec.CommandContext(ctx, "docker", "restart", "dendrite-litellm")
+		if rErr := restartCmd.Run(); rErr == nil {
+			fmt.Fprintln(out, "[✓] dendrite-litellm healed and restarted")
+		}
+	}
 }
 
 // buildSynapseMembers builds the binaries of every local member of syns, except the

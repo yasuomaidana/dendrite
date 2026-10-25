@@ -18,7 +18,7 @@ import (
 )
 
 // DefaultPaidModel is the paid model when a request names none.
-const DefaultPaidModel = "gemini-2.5-pro"
+const DefaultPaidModel = "gemini-4-argon-medium"
 
 // AskContextTokens is the context-pack budget for a question (the sidecar's `ask` uses the
 // same).

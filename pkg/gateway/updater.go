@@ -40,9 +40,9 @@ type UpdaterOptions struct {
 	Manager           *inference.Manager // Source inference manager
 	OllamaEndpoint    string             // Custom Ollama endpoint override
 	OxillamaEndpoint  string             // Custom OxiLLaMa endpoint override
-	PrimaryCloudModel string             // Primary commercial model (default: gemini-2.5-pro)
+	PrimaryCloudModel string             // Primary commercial model (default: gemini-4-argon-medium)
 	BackupCloudModel  string             // Secondary commercial model (default: copilot-sonnet)
-	FastCloudModel    string             // Fast commercial model (default: gemini-2.5-flash)
+	FastCloudModel    string             // Fast commercial model (default: gemini-3.8-flash-medium)
 	Logger            func(format string, args ...interface{})
 }
 
@@ -87,9 +87,9 @@ func DefaultUpdaterOptions() UpdaterOptions {
 		DryRun:            false,
 		OllamaEndpoint:    ollamaEP,
 		OxillamaEndpoint:  oxillamaEP,
-		PrimaryCloudModel: "gemini-2.5-pro",
+		PrimaryCloudModel: "gemini-4-argon-medium",
 		BackupCloudModel:  "copilot-sonnet",
-		FastCloudModel:    "gemini-2.5-flash",
+		FastCloudModel:    "gemini-3.8-flash-medium",
 	}
 }
 

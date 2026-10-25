@@ -165,8 +165,8 @@ func TestRoutingTableUpdater_ActualWriteAndDaemon(t *testing.T) {
 	if rErr != nil {
 		t.Fatalf("failed to read generated config file: %v", rErr)
 	}
-	if !strings.Contains(string(content), "gemini-2.5-pro") {
-		t.Errorf("expected written file to contain gemini-2.5-pro")
+	if !strings.Contains(string(content), "gemini-4-argon-medium") {
+		t.Errorf("expected written file to contain gemini-4-argon-medium")
 	}
 
 	// 2. Test Daily Daemon with short ticker

@@ -13,7 +13,7 @@ volumes:
 services:
   # Core Database
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg18
     container_name: dendrite-postgres
     restart: unless-stopped
     environment:
@@ -23,7 +23,7 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - dendrite-postgres-data:/var/lib/postgresql/data
+      - dendrite-postgres-data:/var/lib/postgresql
       - ./init-rag.sql:/docker-entrypoint-initdb.d/init-rag.sql:ro
     networks:
       - dendrite-mesh
@@ -56,7 +56,7 @@ services:
     image: ghcr.io/berriai/litellm:main-latest
     container_name: dendrite-litellm
     restart: unless-stopped
-    command: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
+    command: ["--config", "/etc/litellm/litellm_config.yaml", "--port", "4000"]
     ports:
       - "${LITELLM_PORT:-4000}:4000"
     environment:
@@ -65,7 +65,7 @@ services:
       LITELLM_MASTER_KEY: "${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY is unset - run 'dendrite env secrets ensure'}"
       LITELLM_SALT_KEY: "${LITELLM_SALT_KEY:?LITELLM_SALT_KEY is unset - run 'dendrite env secrets ensure'}"
     volumes:
-      - ./litellm_config.yaml:/etc/litellm/config.yaml:ro
+      - ./:/etc/litellm:ro
       # GitHub Copilot OAuth token from the one-time device login (dendrite gateway copilot-login)
       - litellm-copilot-auth:/root/.config/litellm/github_copilot
     extra_hosts:

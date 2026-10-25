@@ -50,20 +50,20 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 
 	modelList := []ModelListEntry{
 		{
-			ModelName: "gemini-2.5-pro",
+			ModelName: "gemini-4-argon-medium",
 			LitellmParams: ModelParams{
-				Model:     "gemini/gemini-2.5-pro",
+				Model:     "gemini/gemini-4-argon-medium",
 				APIKey:    "os.environ/GEMINI_API_KEY",
 				MaxTokens: 8192,
 			},
 			ModelInfo: &ModelInfo{
-				ID:                 "gemini-2.5-pro",
+				ID:                 "gemini-4-argon-medium",
 				Mode:               "chat",
 				InputCostPerToken:  0.00000125,
 				OutputCostPerToken: 0.000005,
 				MaxInputTokens:     1048576,
 				MaxOutputTokens:    8192,
-				BaseModel:          "gemini/gemini-2.5-pro",
+				BaseModel:          "gemini/gemini-4-argon-medium",
 			},
 		},
 		{
@@ -89,20 +89,20 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 			},
 		},
 		{
-			ModelName: "gemini-2.5-flash",
+			ModelName: "gemini-3.8-flash-medium",
 			LitellmParams: ModelParams{
-				Model:     "gemini/gemini-2.5-flash",
+				Model:     "gemini/gemini-3.8-flash-medium",
 				APIKey:    "os.environ/GEMINI_API_KEY",
 				MaxTokens: 8192,
 			},
 			ModelInfo: &ModelInfo{
-				ID:                 "gemini-2.5-flash",
+				ID:                 "gemini-3.8-flash-medium",
 				Mode:               "chat",
 				InputCostPerToken:  0.000000075,
 				OutputCostPerToken: 0.0000003,
 				MaxInputTokens:     1048576,
 				MaxOutputTokens:    8192,
-				BaseModel:          "gemini/gemini-2.5-flash",
+				BaseModel:          "gemini/gemini-3.8-flash-medium",
 			},
 		},
 		{
@@ -183,15 +183,15 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 		EnablePreCallChecks: true,
 		// LiteLLM requires one model per fallback entry.
 		Fallbacks: []map[string][]string{
-			{"gemini-2.5-pro": {"copilot-sonnet", "gemini-2.5-flash", "local-qwen3-27b", "local-qwen-coder"}},
-			{"copilot-sonnet": {"gemini-2.5-flash", "local-qwen3-27b", "local-qwen-coder"}},
-			{"gemini-2.5-flash": {"local-qwen3-27b", "local-qwen-coder"}},
+			{"gemini-4-argon-medium": {"copilot-sonnet", "gemini-3.8-flash-medium", "local-qwen3-27b", "local-qwen-coder"}},
+			{"copilot-sonnet": {"gemini-3.8-flash-medium", "local-qwen3-27b", "local-qwen-coder"}},
+			{"gemini-3.8-flash-medium": {"local-qwen3-27b", "local-qwen-coder"}},
 		},
 		ContextWindowFallbacks: []map[string]string{
-			{"local-qwen-coder": "gemini-2.5-pro"},
-			{"local-qwen3-27b": "gemini-2.5-pro"},
-			{"local-qwen3-9b": "gemini-2.5-pro"},
-			{"gemini-2.5-flash": "gemini-2.5-pro"},
+			{"local-qwen-coder": "gemini-4-argon-medium"},
+			{"local-qwen3-27b": "gemini-4-argon-medium"},
+			{"local-qwen3-9b": "gemini-4-argon-medium"},
+			{"gemini-3.8-flash-medium": "gemini-4-argon-medium"},
 		},
 	}
 
@@ -346,9 +346,9 @@ func MultiEngineLiteLLMConfig(engines []inference.InferenceEngine) *LiteLLMConfi
 		sort.SliceStable(engineFallbackNames, func(i, j int) bool {
 			return inference.ModelIntelligenceScore(engineFallbackNames[i]) > inference.ModelIntelligenceScore(engineFallbackNames[j])
 		})
-		cascadeList := append([]string{"copilot-sonnet", "gemini-2.5-flash"}, engineFallbackNames...)
+		cascadeList := append([]string{"copilot-sonnet", "gemini-3.8-flash-medium"}, engineFallbackNames...)
 		cfg.RouterSettings.Fallbacks = []map[string][]string{
-			{"gemini-2.5-pro": cascadeList},
+			{"gemini-4-argon-medium": cascadeList},
 			{"copilot-sonnet": engineFallbackNames},
 		}
 	}
