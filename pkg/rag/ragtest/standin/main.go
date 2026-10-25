@@ -86,11 +86,16 @@ func main() {
 		resp := map[string]interface{}{"jsonrpc": "2.0", "id": req.ID}
 		switch {
 		case req.Method == "health":
-			protocol := "1.7.0"
+			protocol := "1.9.0"
 			if v := os.Getenv("STANDIN_PROTOCOL"); v != "" {
 				protocol = v
 			}
-			resp["result"] = map[string]string{"name": "dendrite-rag", "version": "0.1.0", "protocol": protocol}
+			resp["result"] = map[string]interface{}{
+				"name":     "dendrite-rag",
+				"version":  "0.1.0",
+				"protocol": protocol,
+				"features": []string{"sqlite", "hnsw", "candle-metal"},
+			}
 		case req.Method == os.Getenv("STANDIN_FAIL"):
 			resp["error"] = map[string]interface{}{"code": -32000, "message": "boom", "data": map[string]string{"kind": "index"}}
 		case req.Method == "index":
@@ -99,6 +104,45 @@ func main() {
 			resp["result"] = map[string]interface{}{"settings": map[string]interface{}{"ask": map[string]string{"local_model": os.Getenv("STANDIN_ASK_LOCAL_MODEL")}}}
 		case req.Method == "status":
 			resp["result"] = map[string]interface{}{"files": 1, "chunks": 14, "vectors": 7, "embed_coverage": 0.5}
+		case req.Method == "embedders":
+			resp["result"] = map[string]interface{}{
+				"backends": []map[string]interface{}{
+					{"name": "bge-small-en-v1.5", "kind": "candle-metal", "dimension": 384, "loaded": true},
+				},
+				"active": "bge-small-en-v1.5",
+			}
+		case req.Method == "purge":
+			resp["result"] = map[string]interface{}{"purged": true, "chunks_removed": 14}
+		case req.Method == "symbols.definitions":
+			resp["result"] = map[string]interface{}{
+				"symbols": []map[string]interface{}{
+					{"name": "LocateBinary", "path": "pkg/demo/demo.go", "line": 4, "kind": "function"},
+				},
+			}
+		case req.Method == "symbols.references":
+			resp["result"] = map[string]interface{}{
+				"references": []map[string]interface{}{
+					{"name": "LocateBinary", "path": "pkg/rag/retriever.go", "line": 45, "kind": "call"},
+				},
+			}
+		case req.Method == "grep":
+			resp["result"] = map[string]interface{}{
+				"matches": []map[string]interface{}{
+					{"path": "pkg/demo/demo.go", "line": 4, "content": "func LocateBinary() {"},
+				},
+			}
+		case req.Method == "history.search":
+			resp["result"] = map[string]interface{}{
+				"hits": []map[string]interface{}{
+					{"commit": "649d054", "author": "dev", "date": "2026-10-25", "message": "feat: RAG 1.9.0"},
+				},
+			}
+		case req.Method == "sync":
+			resp["result"] = map[string]interface{}{"pushed": 0, "pulled": 0, "synchronized": true}
+		case req.Method == "pull":
+			resp["result"] = map[string]interface{}{"pulled": 0, "remote": "origin"}
+		case req.Method == "push":
+			resp["result"] = map[string]interface{}{"pushed": 0, "remote": "origin"}
 		case req.Method == "ask":
 			if r, failure := ask(p); failure != "" {
 				resp["error"] = map[string]interface{}{"code": -32000, "message": failure, "data": map[string]string{"kind": "llm"}}
@@ -123,7 +167,14 @@ func main() {
 			for _, h := range hits {
 				tokens += len(h.Content) / 4
 			}
-			resp["result"] = map[string]interface{}{"spans": hits, "tokens": tokens}
+			rem := 8000
+			resp["result"] = map[string]interface{}{
+				"spans":                   hits,
+				"tokens":                  tokens,
+				"abstained":               os.Getenv("STANDIN_ABSTAIN") == "1",
+				"embed_tokens":            12,
+				"budget_tokens_remaining": rem,
+			}
 		case req.Method == "graph.communities":
 			resp["result"] = map[string]interface{}{
 				"communities": []map[string]interface{}{
@@ -329,6 +380,12 @@ func ask(p params) (map[string]interface{}, string) {
 	out := map[string]interface{}{
 		"hits": hits, "prompt_tokens": 100, "output_tokens": 20,
 		"timings": map[string]interface{}{"retrieval": map[string]int{"total_ms": 3}, "local_ms": 120, "paid_ms": 0, "total_ms": 123},
+	}
+	if os.Getenv("STANDIN_ABSTAIN") == "1" {
+		out["abstained"] = true
+		out["source_tier"] = "abstained"
+		out["answer"] = ""
+		return out, ""
 	}
 	paidFails := os.Getenv("STANDIN_PAID") == "fail"
 	const paidError = "paid model gemini: quota exceeded"

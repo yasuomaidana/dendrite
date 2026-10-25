@@ -36,8 +36,9 @@ var ErrSidecarUnavailable = errors.New("dendrite-rag sidecar unavailable")
 // Retriever indexes a project through the sidecar and returns the chunks most relevant to
 // a question.
 type Retriever struct {
-	Locator     sidecar.Locator
-	EmbedBudget time.Duration
+	Locator           sidecar.Locator
+	EmbedBudget       time.Duration
+	EmbedBudgetTokens int
 	// Env holds extra KEY=VALUE lines for the sidecar's environment.
 	Env []string
 }
@@ -51,6 +52,10 @@ type Retrieval struct {
 	Sidecar string
 	// EmbedPending counts chunks still without vectors (0 when complete).
 	EmbedPending int
+	// EmbedTokens counts estimated tokens spent embedding in this run.
+	EmbedTokens int
+	// BudgetTokensRemaining reports tokens left under EmbedBudgetTokens (nil when unlimited).
+	BudgetTokensRemaining *int
 	// EmbedError reports why embedding failed in this call (lexical results still apply).
 	EmbedError string
 	// Tokens estimates the size of a context pack (Context only).
@@ -58,6 +63,10 @@ type Retrieval struct {
 	// EmbedCoverage is the share of chunks with a vector, reported when some are still
 	// waiting (1 otherwise).
 	EmbedCoverage float64
+	// Warnings are index warnings (e.g. low dense coverage) reported by status.
+	Warnings []string
+	// Abstained is true when [rerank] abstain found nothing likely relevant.
+	Abstained bool
 	// SpawnMS and IndexMS time starting the sidecar and the index call; EmbedMS is the part
 	// of the index call spent embedding.
 	SpawnMS, IndexMS, EmbedMS int64
@@ -69,6 +78,13 @@ const AskProtocolMinor = 6
 // DocsShareProtocolMinor is the first sidecar minor that takes `docs_share` on `context`
 // and `ask`.
 const DocsShareProtocolMinor = 7
+
+// AbstainProtocolMinor is the sidecar protocol minor that added `abstained` on `context` and `ask` (1.8).
+const AbstainProtocolMinor = 8
+
+// TokenBudgetProtocolMinor is the sidecar protocol minor that added `embed_budget_tokens`,
+// `embed_tokens`, `budget_tokens_remaining` and `features` (1.9).
+const TokenBudgetProtocolMinor = 9
 
 // ErrSidecarTooOld means the dendrite-rag binary predates a method Dendrite needs.
 var ErrSidecarTooOld = errors.New("dendrite-rag sidecar too old")
@@ -124,13 +140,14 @@ func (r *Retriever) ContextWith(ctx context.Context, projectPath, question strin
 			params["docs_share"] = *opts.DocsShare
 		}
 		var res struct {
-			Spans  []sidecarHit `json:"spans"`
-			Tokens int          `json:"tokens"`
+			Spans     []sidecarHit `json:"spans"`
+			Tokens    int          `json:"tokens"`
+			Abstained bool         `json:"abstained"`
 		}
 		if err := c.Call(ctx, "context", params, &res); err != nil {
 			return fmt.Errorf("context: %w", err)
 		}
-		out.Chunks, out.Tokens = toChunks(projectPath, nil, res.Spans), res.Tokens
+		out.Chunks, out.Tokens, out.Abstained = toChunks(projectPath, nil, res.Spans), res.Tokens, res.Abstained
 		return nil
 	})
 }
@@ -153,11 +170,13 @@ func (r *Retriever) Show(ctx context.Context, projectPath string, ids []string) 
 }
 
 type sidecarIndexReport struct {
-	FilesChanged int    `json:"files_changed"`
-	FilesRemoved int    `json:"files_removed"`
-	EmbedPending int    `json:"embed_pending"`
-	EmbedError   string `json:"embed_error"`
-	EmbedMS      int64  `json:"embed_ms"`
+	FilesChanged          int    `json:"files_changed"`
+	FilesRemoved          int    `json:"files_removed"`
+	EmbedPending          int    `json:"embed_pending"`
+	EmbedTokens           int    `json:"embed_tokens"`
+	BudgetTokensRemaining *int   `json:"budget_tokens_remaining"`
+	EmbedError            string `json:"embed_error"`
+	EmbedMS               int64  `json:"embed_ms"`
 }
 
 type sidecarHit struct {
@@ -225,27 +244,36 @@ func (r *Retriever) run(ctx context.Context, projectPath string, refresh bool, f
 			indexParams["focus"] = focus
 		}
 	}
+	if r.EmbedBudgetTokens > 0 && protocolMinor(c.Health.Protocol) >= TokenBudgetProtocolMinor {
+		indexParams["embed_budget_tokens"] = r.EmbedBudgetTokens
+	}
 	started = time.Now()
 	var report sidecarIndexReport
 	if err := c.Call(ctx, "index", indexParams, &report); err != nil {
 		return Retrieval{}, fmt.Errorf("index %s: %w", root, err)
 	}
 	out := Retrieval{
-		IndexStatus:   "cached",
-		Sidecar:       bin,
-		EmbedPending:  report.EmbedPending,
-		EmbedError:    report.EmbedError,
-		EmbedCoverage: 1,
-		SpawnMS:       spawn,
-		IndexMS:       time.Since(started).Milliseconds(),
-		EmbedMS:       report.EmbedMS,
+		IndexStatus:           "cached",
+		Sidecar:               bin,
+		EmbedPending:          report.EmbedPending,
+		EmbedTokens:           report.EmbedTokens,
+		BudgetTokensRemaining: report.BudgetTokensRemaining,
+		EmbedError:            report.EmbedError,
+		EmbedCoverage:         1,
+		SpawnMS:               spawn,
+		IndexMS:               time.Since(started).Milliseconds(),
+		EmbedMS:               report.EmbedMS,
 	}
-	if report.EmbedPending > 0 {
+	if report.EmbedPending > 0 || protocolMinor(c.Health.Protocol) >= TokenBudgetProtocolMinor {
 		var st struct {
 			EmbedCoverage *float64 `json:"embed_coverage"`
+			Warnings      []string `json:"warnings"`
 		}
-		if err := c.Call(ctx, "status", map[string]interface{}{"root": root}, &st); err == nil && st.EmbedCoverage != nil {
-			out.EmbedCoverage = *st.EmbedCoverage
+		if err := c.Call(ctx, "status", map[string]interface{}{"root": root}, &st); err == nil {
+			if st.EmbedCoverage != nil {
+				out.EmbedCoverage = *st.EmbedCoverage
+			}
+			out.Warnings = st.Warnings
 		}
 	}
 	switch {

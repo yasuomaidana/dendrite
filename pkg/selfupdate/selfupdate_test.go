@@ -151,8 +151,9 @@ func TestDetect(t *testing.T) {
 		"golib":    {map[string]string{"go.mod": "module m\n", "lib.go": "package lib\n"}, Artifact{Kind: KindLibrary}},
 		"rsmain":   {map[string]string{"Cargo.toml": "[package]\n", "src/main.rs": ""}, Artifact{Kind: KindRustBinary}},
 		"rsbindir": {map[string]string{"Cargo.toml": "[package]\n", "src/bin/x.rs": ""}, Artifact{Kind: KindRustBinary}},
-		"rsbin":    {map[string]string{"Cargo.toml": "[package]\n[[bin]]\nname = \"x\"\n"}, Artifact{Kind: KindRustBinary}},
-		"rslib":    {map[string]string{"Cargo.toml": "[package]\n", "src/lib.rs": ""}, Artifact{Kind: KindLibrary}},
+		"rsbin":         {map[string]string{"Cargo.toml": "[package]\n[[bin]]\nname = \"x\"\n"}, Artifact{Kind: KindRustBinary}},
+		"rsworkspace":   {map[string]string{"Cargo.toml": "[workspace]\nmembers = [\"crates/a\"]\n", "crates/a/Cargo.toml": "[package]\n[[bin]]\nname = \"x\"\n"}, Artifact{Kind: KindRustBinary}},
+		"rslib":         {map[string]string{"Cargo.toml": "[package]\n", "src/lib.rs": ""}, Artifact{Kind: KindLibrary}},
 		"empty":    {nil, Artifact{Kind: KindUnknown}},
 	}
 	for name, c := range cases {

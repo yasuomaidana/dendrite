@@ -81,6 +81,7 @@ type sidecarAnswer struct {
 	OutputTokens     int          `json:"output_tokens"`
 	Hits             []sidecarHit `json:"hits"`
 	Cached           bool         `json:"cached"`
+	Abstained        bool         `json:"abstained"`
 	Timings          struct {
 		Retrieval struct {
 			Total int64 `json:"total_ms"`
@@ -208,10 +209,18 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 		return nil, fmt.Errorf("asking the project index: %w", err)
 	}
 	switch {
+	case answer.Abstained:
+		if answer.SourceTier == "" {
+			answer.SourceTier = "abstained"
+		}
+		_, _ = fmt.Fprintf(req.Output, "[!] Abstaining: no project context met the relevance threshold for this question.\n")
 	case answer.SourceTier == "hybrid":
 		_, _ = fmt.Fprintf(req.Output, "[+] Hybrid mode: local draft refined by the paid model (%s).\n", req.PaidModel)
 	case req.HybridMode && answer.LocalError != "" && answer.SourceTier == "local-rag":
 		_, _ = fmt.Fprintf(req.Output, "[-] Paid refinement failed (%s), returning verified local draft.\n", answer.LocalError)
+	}
+	for _, w := range retrieval.Warnings {
+		_, _ = fmt.Fprintf(req.Output, "[!] %s\n", w)
 	}
 	if retrieval.EmbedError != "" {
 		_, _ = fmt.Fprintf(req.Output, "[!] Embeddings unavailable (%s); answering from lexical and symbol matches\n", retrieval.EmbedError)
@@ -229,6 +238,7 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 		Engine:             engine,
 		Escalated:          answer.Escalated,
 		EscalationApproved: answer.Escalated && approved,
+		Abstained:          answer.Abstained,
 		RetrievedChunks:    toChunks(req.ProjectPath, singleFile(req.ProjectPath), answer.Hits),
 		PromptTokens:       answer.PromptTokens,
 		OutputTokens:       answer.OutputTokens,

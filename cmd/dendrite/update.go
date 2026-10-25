@@ -187,6 +187,19 @@ func buildSynapseMembers(ctx context.Context, syns []*synapse.Synapse, src strin
 			case len(outputs) == 0:
 				fmt.Fprintf(out, "    [i] %s: %s, nothing to build\n", m.Alias, art.Kind)
 			default:
+				if userHome, err := os.UserHomeDir(); err == nil {
+					localBin := filepath.Join(userHome, ".local", "bin")
+					if pathContains(localBin) && localBin != binDir {
+						for _, p := range outputs {
+							if filepath.Dir(p) == binDir {
+								dst := filepath.Join(localBin, filepath.Base(p))
+								if err := os.Remove(dst); err == nil || os.IsNotExist(err) {
+									_ = os.Symlink(p, dst)
+								}
+							}
+						}
+					}
+				}
 				fmt.Fprintf(out, "    [✓] %s: built %s\n", m.Alias, strings.Join(outputs, ", "))
 			}
 		}
@@ -313,11 +326,27 @@ func resolveUpdateTarget(explicit string) (string, error) {
 	if gobin := os.Getenv("GOBIN"); gobin != "" {
 		return filepath.Join(gobin, "dendrite"), nil
 	}
+	if userHome, err := os.UserHomeDir(); err == nil {
+		localBin := filepath.Join(userHome, ".local", "bin")
+		if pathContains(localBin) {
+			return filepath.Join(localBin, "dendrite"), nil
+		}
+	}
 	gopath, err := exec.Command("go", "env", "GOPATH").Output()
 	if err != nil || strings.TrimSpace(string(gopath)) == "" {
 		return "", errors.New("cannot determine install target: pass --target")
 	}
 	return filepath.Join(filepath.SplitList(strings.TrimSpace(string(gopath)))[0], "bin", "dendrite"), nil
+}
+
+func pathContains(dir string) bool {
+	cleanDir := filepath.Clean(dir)
+	for _, p := range filepath.SplitList(os.Getenv("PATH")) {
+		if filepath.Clean(p) == cleanDir {
+			return true
+		}
+	}
+	return false
 }
 
 // buildRevision describes the VCS state the binary was built from, e.g.

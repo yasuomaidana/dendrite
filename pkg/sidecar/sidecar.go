@@ -105,18 +105,32 @@ func isExecutable(path string) bool {
 
 // Health is the sidecar's answer to the "health" handshake.
 type Health struct {
-	Name     string `json:"name"`
-	Version  string `json:"version"`
-	Protocol string `json:"protocol"`
+	Name     string   `json:"name"`
+	Version  string   `json:"version"`
+	Protocol string   `json:"protocol"`
+	Features []string `json:"features,omitempty"`
 }
 
 // RPCError is a JSON-RPC error object returned by a sidecar.
 type RPCError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data,omitempty"`
 }
 
 func (e *RPCError) Error() string { return fmt.Sprintf("sidecar error %d: %s", e.Code, e.Message) }
+
+// Kind returns data.kind for -32000 engine errors, or "".
+func (e *RPCError) Kind() string {
+	if len(e.Data) == 0 {
+		return ""
+	}
+	var d struct {
+		Kind string `json:"kind"`
+	}
+	_ = json.Unmarshal(e.Data, &d)
+	return d.Kind
+}
 
 type request struct {
 	JSONRPC string      `json:"jsonrpc"`

@@ -89,6 +89,8 @@ type AskResult struct {
 	Error              string        `json:"error,omitempty"`
 	// Cached is set when the answer came from the sidecar's cache of identical prompts.
 	Cached bool `json:"cached,omitempty"`
+	// Abstained is set when [rerank] abstain found nothing likely relevant.
+	Abstained bool `json:"abstained,omitempty"`
 	// Timings break Duration down by stage (local runs only).
 	Timings *AskTimings `json:"timings,omitempty"`
 }
@@ -104,4 +106,97 @@ type AskTimings struct {
 	Retrieval int64 `json:"retrieval_ms"`
 	Local     int64 `json:"local_ms"`
 	Paid      int64 `json:"paid_ms"`
+}
+
+// IndexOptions configures an index run.
+type IndexOptions struct {
+	Full              bool   `json:"full,omitempty"`
+	EmbedBudgetMS     int64  `json:"embed_budget_ms,omitempty"`
+	EmbedBudgetTokens int    `json:"embed_budget_tokens,omitempty"`
+	Focus             string `json:"focus,omitempty"`
+}
+
+// IndexReport summarizes indexing work.
+type IndexReport struct {
+	FilesScanned          int    `json:"files_scanned"`
+	FilesChanged          int    `json:"files_changed"`
+	FilesRemoved          int    `json:"files_removed"`
+	ChunksAdded           int    `json:"chunks_added"`
+	ChunksRemoved         int    `json:"chunks_removed"`
+	Embedded              int    `json:"embedded"`
+	EmbedPending          int    `json:"embed_pending"`
+	EmbedTokens           int    `json:"embed_tokens"`
+	BudgetTokensRemaining *int   `json:"budget_tokens_remaining,omitempty"`
+	EmbedError            string `json:"embed_error,omitempty"`
+	OpenMS                int64  `json:"open_ms"`
+	WalkMS                int64  `json:"walk_ms"`
+	GraphMS               int64  `json:"graph_ms"`
+	EmbedMS               int64  `json:"embed_ms"`
+	DurationMS            int64  `json:"duration_ms"`
+}
+
+// StatusReport reports project index metrics.
+type StatusReport struct {
+	Files         int      `json:"files"`
+	Chunks        int      `json:"chunks"`
+	Vectors       int      `json:"vectors"`
+	EmbedModel    string   `json:"embed_model"`
+	EmbedCoverage *float64 `json:"embed_coverage,omitempty"`
+	Warnings      []string `json:"warnings,omitempty"`
+	MerkleRoot    string   `json:"merkle_root,omitempty"`
+	IndexDir      string   `json:"index_dir,omitempty"`
+	LastIndexed   *int64   `json:"last_indexed,omitempty"`
+}
+
+// SettingsReport reports the settings in effect for a project.
+type SettingsReport struct {
+	File       string                 `json:"file"`
+	FileExists bool                   `json:"file_exists"`
+	Settings   map[string]interface{} `json:"settings"`
+}
+
+// EmbedderBackend describes a supported embedding backend.
+type EmbedderBackend struct {
+	Backend      string  `json:"backend"`
+	Compiled     bool    `json:"compiled"`
+	DefaultModel *string `json:"default_model,omitempty"`
+	DefaultURL   *string `json:"default_url,omitempty"`
+	Description  string  `json:"description"`
+}
+
+// GrepMatch is one line matching a grep query.
+type GrepMatch struct {
+	Path string `json:"path"`
+	Line int    `json:"line"`
+	Text string `json:"text"`
+}
+
+// HistoryHit is one commit matching a history search.
+type HistoryHit struct {
+	SHA     string  `json:"sha"`
+	Time    int64   `json:"time"`
+	Author  string  `json:"author"`
+	Subject string  `json:"subject"`
+	Path    string  `json:"path"`
+	Diff    string  `json:"diff"`
+	Score   float32 `json:"score"`
+}
+
+// PushReport reports an index push to the shared tier.
+type PushReport struct {
+	DryRun             bool   `json:"dry_run"`
+	Commit             string `json:"commit"`
+	Branch             string `json:"branch"`
+	Files              int    `json:"files"`
+	Chunks             int    `json:"chunks"`
+	EmbeddingsUploaded int    `json:"embeddings_uploaded"`
+	Vectors            int    `json:"vectors"`
+	Compaction         string `json:"compaction"`
+}
+
+// PullReport reports missing embeddings fetched from the shared tier.
+type PullReport struct {
+	Chunks  int `json:"chunks"`
+	Cached  int `json:"cached"`
+	Vectors int `json:"vectors"`
 }

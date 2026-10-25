@@ -307,18 +307,11 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 			}
 		}
 
-		tmpFile := opts.ConfigPath + ".tmp"
-		if wErr := os.WriteFile(tmpFile, yamlBytes, 0644); wErr != nil {
+		// Write directly to preserve the file inode for Docker container bind mounts on macOS/Linux
+		if wErr := os.WriteFile(opts.ConfigPath, yamlBytes, 0644); wErr != nil {
 			report.Error = wErr.Error()
 			report.Duration = time.Since(start)
-			return report, fmt.Errorf("failed to write temporary config %s: %w", tmpFile, wErr)
-		}
-
-		if renErr := os.Rename(tmpFile, opts.ConfigPath); renErr != nil {
-			_ = os.Remove(tmpFile)
-			report.Error = renErr.Error()
-			report.Duration = time.Since(start)
-			return report, fmt.Errorf("failed to replace config %s: %w", opts.ConfigPath, renErr)
+			return report, fmt.Errorf("failed to write config %s: %w", opts.ConfigPath, wErr)
 		}
 
 		report.BytesWritten = len(yamlBytes)

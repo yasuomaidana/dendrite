@@ -148,6 +148,8 @@ func runAsk(ctx context.Context, req rag.AskRequest, out io.Writer) error {
 		tierDisplay = "Hybrid Mode (Local First + Paid Cloud Refinement)"
 	case "central-rag":
 		tierDisplay = "Central Shared RAG Service"
+	case "abstained":
+		tierDisplay = "Abstained (Low Relevance)"
 	}
 	cacheNote := ""
 	if res.IndexStatus != "" {
@@ -158,9 +160,15 @@ func runAsk(ctx context.Context, req rag.AskRequest, out io.Writer) error {
 	}
 	rule := strings.Repeat("=", 80)
 	fmt.Fprintln(out, "\n"+rule)
-	fmt.Fprintf(out, "[✓] Answer (%s | Model: %s | Time: %v%s):\n", tierDisplay, res.Model, res.Duration.Round(10*time.Millisecond), cacheNote)
-	fmt.Fprintln(out, rule)
-	fmt.Fprintln(out, res.Answer)
+	if res.Abstained {
+		fmt.Fprintf(out, "[!] Abstained (%s | Time: %v%s):\n", tierDisplay, res.Duration.Round(10*time.Millisecond), cacheNote)
+		fmt.Fprintln(out, rule)
+		fmt.Fprintln(out, "No project context met the reranker relevance threshold for this question.")
+	} else {
+		fmt.Fprintf(out, "[✓] Answer (%s | Model: %s | Time: %v%s):\n", tierDisplay, res.Model, res.Duration.Round(10*time.Millisecond), cacheNote)
+		fmt.Fprintln(out, rule)
+		fmt.Fprintln(out, res.Answer)
+	}
 	fmt.Fprintln(out, rule)
 	if t := res.Timings; t != nil {
 		fmt.Fprintf(out, "[i] Timing: sidecar start %d ms, index %d ms (embedding %d ms), retrieval %d ms, local model %d ms, paid model %d ms\n",
