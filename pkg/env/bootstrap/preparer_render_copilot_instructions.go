@@ -115,7 +115,7 @@ func renderAgentRules(fp ProjectFingerprint) string {
 	sb.WriteString("# Autonomous Agent Operating Rules\n\n")
 	sb.WriteString("## Authoritative Project Management & Plane Ownership\n")
 	sb.WriteString("- Plane v2 (`http://localhost:8090`) is the authoritative owner of ticket state.\n")
-	sb.WriteString("- NEVER use `DEV_STATUS.md` to decide what to work on; query Plane via `./bin/dendrite chronos next` or `dendrite_ticket_smart_select`.\n")
+	sb.WriteString("- NEVER use `DEV_STATUS.md` to decide what to work on; query Plane via `dendrite chronos next` or `dendrite_ticket_smart_select`.\n")
 	sb.WriteString("- Completed features must transition to `To Verify` (intermediate verification state) for human sign-off, never directly to `Done`.\n\n")
 
 	sb.WriteString("## Architecture & CI/CD Tooling Defaults\n")

@@ -71,7 +71,7 @@ func (p *Preparer) ProbeToolchains() []ToolchainInfo {
 		testCmd    string
 		buildCmd   string
 	}{
-		{"go", "go", "curl -fsSL https://go.dev/dl/ || brew install go", "go test -v -race -cover ./pkg/...", "go build -v -o bin/dendrite ./cmd/dendrite"},
+		{"go", "go", "curl -fsSL https://go.dev/dl/ || brew install go", "go test -v -race -cover ./pkg/...", "go build -v ./..."},
 		{"cargo", "cargo", "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh", "cargo test --verbose", "cargo build --release"},
 		{"bun", "bun", "curl -fsSL https://bun.sh/install | bash", "bun test", "bun run build"},
 		{"uv", "uv", "curl -LsSf https://astral.sh/uv/install.sh | sh", "uv run pytest", "uv build"},

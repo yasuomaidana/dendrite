@@ -48,7 +48,7 @@ func DetectStack(projectPath string) (*ProjectFingerprint, error) {
 			ManifestFile:   "go.mod",
 			LockFile:       goLock,
 			TestCommand:    "go test -v -race -cover ./pkg/...",
-			BuildCommand:   "go build -v -o bin/dendrite ./cmd/dendrite",
+			BuildCommand:   "go build -v ./...",
 			InstallCommand: "curl -fsSL https://go.dev/dl/ || brew install go",
 		}
 
