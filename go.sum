@@ -7,10 +7,8 @@ github.com/spf13/cobra v1.10.2/go.mod h1:7C1pvHqHw5A4vrJfjNwvOdzYu0Gml16OCs2GRiT
 github.com/spf13/pflag v1.0.9/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
 github.com/spf13/pflag v1.0.10 h1:4EBh2KAYBwaONj6b2Ye1GiHfwjqyROoF4RwYO+vPwFk=
 github.com/spf13/pflag v1.0.10/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
-github.com/yasuomaidana/dendrite-mcp-hub v0.0.0-20261018212700-ab95c741b562 h1:r7MMA2bc3Zs94NrFDDdeQYlOqIJ/2lILLqmr6f53tNY=
-github.com/yasuomaidana/dendrite-mcp-hub v0.0.0-20261018212700-ab95c741b562/go.mod h1:HjYG4T2E5OiC3RTpKDNX6MKwXuudxDuj2obigoj6zr0=
-github.com/yasuomaidana/dendrite-mcp-hub v0.0.0-20261019115823-d0404c18353e h1:F+DMkK2wob7N46697hUDzKN+3j7XE5tmPVLNZVhoFzI=
-github.com/yasuomaidana/dendrite-mcp-hub v0.0.0-20261019115823-d0404c18353e/go.mod h1:HjYG4T2E5OiC3RTpKDNX6MKwXuudxDuj2obigoj6zr0=
+github.com/yasuomaidana/dendrite-mcp-hub v0.0.0-20261028060513-27fd9116f441 h1:1Ns7jUiEYaasg6u98+VakF57nMkpoecV02AqAObVlfE=
+github.com/yasuomaidana/dendrite-mcp-hub v0.0.0-20261028060513-27fd9116f441/go.mod h1:HjYG4T2E5OiC3RTpKDNX6MKwXuudxDuj2obigoj6zr0=
 go.yaml.in/yaml/v3 v3.0.4/go.mod h1:DhzuOOF2ATzADvBadXxruRBLzYTpT36CKvDb3+aBEFg=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
