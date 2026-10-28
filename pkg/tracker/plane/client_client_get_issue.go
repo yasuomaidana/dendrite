@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -408,5 +409,46 @@ func findIssueByTicketID(issues []PlaneIssue, id string) *PlaneIssue {
 			return &issues[i]
 		}
 	}
+	return FindUnprefixedIssueBySequence(issues, id)
+}
+
+var (
+	ticketRefPattern   = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*-(\d+)$`)
+	bracketedIDPattern = regexp.MustCompile(`^\s*\[[A-Za-z][A-Za-z0-9]*-\d+\]`)
+)
+
+// FindUnprefixedIssueBySequence resolves "DEN-324" to the issue with Plane sequence 324 when
+// that issue's title has no "[ID]" prefix of its own (a ticket created but not yet renamed).
+// Titled issues are never matched by sequence, because board titles keep legacy ids.
+func FindUnprefixedIssueBySequence(issues []PlaneIssue, id string) *PlaneIssue {
+	m := ticketRefPattern.FindStringSubmatch(id)
+	if m == nil {
+		return nil
+	}
+	seq, err := strconv.Atoi(m[1])
+	if err != nil {
+		return nil
+	}
+	for i := range issues {
+		if issues[i].SequenceID == seq && !bracketedIDPattern.MatchString(issues[i].Name) {
+			return &issues[i]
+		}
+	}
 	return nil
+}
+
+// ResolveIssue is the one way every command and MCP tool maps a user-supplied ticket
+// reference to an issue: a UUID, a bare Plane sequence number, "[ID]"-prefixed titles, whole-token
+// mentions, then the sequence of a not-yet-renamed ticket. It never matches by substring.
+func ResolveIssue(issues []PlaneIssue, ref string) *PlaneIssue {
+	ref = strings.TrimSpace(ref)
+	if n, err := strconv.Atoi(ref); err == nil {
+		for i := range issues {
+			if issues[i].SequenceID == n {
+				return &issues[i]
+			}
+		}
+		return nil
+	}
+	return findIssueByTicketID(issues, ref)
 }

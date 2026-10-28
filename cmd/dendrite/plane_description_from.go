@@ -125,11 +125,10 @@ func runChronosCreate(ctx context.Context, client *plane.Client, o chronosCreate
 				blockerUUIDs = append(blockerUUIDs, b)
 				continue
 			}
-			for _, iss := range existing {
-				if strings.Contains(iss.Name, "["+b+"]") || strings.Contains(iss.Name, b) {
-					blockerUUIDs = append(blockerUUIDs, iss.ID)
-					break
-				}
+			if iss := plane.ResolveIssue(existing, b); iss != nil {
+				blockerUUIDs = append(blockerUUIDs, iss.ID)
+			} else {
+				return fmt.Errorf("blocker %q not found in Plane; nothing was created", b)
 			}
 		}
 	}
@@ -147,6 +146,7 @@ func runChronosCreate(ctx context.Context, client *plane.Client, o chronosCreate
 	if err != nil {
 		return fmt.Errorf("create issue in Plane: %w", err)
 	}
+	created = prefixTicketTitle(ctx, client, created)
 	if globals.JSON {
 		return writeJSON(out, created)
 	}
@@ -197,13 +197,7 @@ func runChronosUpdate(ctx context.Context, client *plane.Client, ticket, name, d
 	if err != nil {
 		return fmt.Errorf("list Plane issues: %w", err)
 	}
-	var target *plane.PlaneIssue
-	for i := range issues {
-		if strings.Contains(issues[i].Name, "["+ticket+"]") {
-			target = &issues[i]
-			break
-		}
-	}
+	target := plane.ResolveIssue(issues, ticket)
 	if target == nil {
 		return fmt.Errorf("ticket %s not found in Plane", ticket)
 	}
@@ -441,4 +435,23 @@ func runPlaneDocSync(ctx context.Context, direction, dir string, out io.Writer) 
 		}
 		return nil
 	})
+}
+
+// prefixTicketTitle gives a new ticket the "[ID-n]" title prefix the board and every resolver
+// key on, using the project's identifier and the sequence number Plane assigned. A failure only
+// leaves the plain title: the ticket still resolves by its sequence number.
+func prefixTicketTitle(ctx context.Context, client *plane.Client, iss *plane.PlaneIssue) *plane.PlaneIssue {
+	link, _, err := plane.LinkForDir(".")
+	if err != nil || link == nil || link.Identifier == "" || iss == nil || iss.SequenceID == 0 {
+		return iss
+	}
+	if strings.HasPrefix(strings.TrimSpace(iss.Name), "[") {
+		return iss
+	}
+	name := fmt.Sprintf("[%s-%d] %s", link.Identifier, iss.SequenceID, iss.Name)
+	updated, err := client.UpdatePlaneIssueWithDetails(ctx, iss.ID, plane.UpdateIssueRequest{Name: name})
+	if err != nil || updated == nil {
+		return iss
+	}
+	return updated
 }

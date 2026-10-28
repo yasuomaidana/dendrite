@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"Dendrite/pkg/tracker/plane"
@@ -18,23 +17,8 @@ func resolvePlaneTicketUUID(ctx context.Context, client *plane.Client, raw strin
 	if err != nil {
 		return "", err
 	}
-	if seq, err := strconv.Atoi(raw); err == nil {
-		for _, iss := range issues {
-			if iss.SequenceID == seq {
-				return iss.ID, nil
-			}
-		}
-	}
-	lower := strings.ToLower(raw)
-	for _, iss := range issues {
-		if strings.Contains(strings.ToLower(iss.Name), "["+lower+"]") {
-			return iss.ID, nil
-		}
-	}
-	for _, iss := range issues {
-		if strings.Contains(strings.ToLower(iss.Name), lower) {
-			return iss.ID, nil
-		}
+	if iss := plane.ResolveIssue(issues, raw); iss != nil {
+		return iss.ID, nil
 	}
 	return "", fmt.Errorf("ticket '%s' not found in Plane", raw)
 }

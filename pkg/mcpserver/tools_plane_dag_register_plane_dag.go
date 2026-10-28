@@ -105,10 +105,8 @@ func registerPlaneDAGTools(s *Server, deps Dependencies) {
 			if err != nil {
 				return "", err
 			}
-			for _, iss := range issues {
-				if strings.Contains(iss.Name, "["+raw+"]") || strings.Contains(iss.Name, raw) {
-					return iss.ID, nil
-				}
+			if iss := plane.ResolveIssue(issues, raw); iss != nil {
+				return iss.ID, nil
 			}
 			return "", fmt.Errorf("ticket '%s' not found in Plane", raw)
 		}
