@@ -58,6 +58,7 @@ func RegisterDefaultTools(s *Server, deps Dependencies) {
 	registerStoryForkTools(s, deps)
 	// Ticket-Milestone DAG Linker, Smart Prioritization & Plane Gantt Tools
 	registerPlaneDAGTools(s, deps)
+	registerPlaneTicketSetTool(s, deps)
 
 	// 55-57: Git Guardrails, Speculative Stacked Branches & Vendor Audit Tools
 	registerAuditTools(s, deps)

@@ -328,7 +328,7 @@ func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tr
 	// Prohibit transitioning issues to review/verify/done if any mocks exist in associated packages
 	if state == tracker.StatusDone || state == tracker.StatusInReview {
 		issueList, _ := c.ListPlaneIssues(ctx)
-		if matchedIssue := findIssueByTicketID(issueList, string(id)); matchedIssue != nil {
+		if matchedIssue := ResolveIssue(issueList, string(id)); matchedIssue != nil {
 			pkgs := quality.ExtractPackages(matchedIssue.Name + " " + matchedIssue.DescriptionHTML)
 			if len(pkgs) > 0 {
 				if hasMocks, mockLocs, _ := quality.ValidateZeroMockGate(".", pkgs); hasMocks {
@@ -340,10 +340,13 @@ func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tr
 
 	issueUUID := string(id)
 	if len(issueUUID) != 36 || strings.Count(issueUUID, "-") != 4 {
+		// When the list cannot be fetched the reference is sent as-is and Plane answers for it.
 		if issues, err := c.ListPlaneIssues(ctx); err == nil {
-			if matched := findIssueByTicketID(issues, string(id)); matched != nil {
-				issueUUID = matched.ID
+			matched := ResolveIssue(issues, string(id))
+			if matched == nil {
+				return fmt.Errorf("%w: no ticket matches %q (use DEN-n, its Plane number, or the issue UUID)", ErrIssueNotFound, id)
 			}
+			issueUUID = matched.ID
 		}
 	}
 
