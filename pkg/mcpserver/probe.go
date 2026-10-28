@@ -36,18 +36,18 @@ const DefaultProbeTimeout = 5 * time.Second
 // are deliberately absent and must be judged from their own tests, never by calling them.
 func DefaultProbeSpecs() []ProbeSpec {
 	return []ProbeSpec{
-		{Tool: "dendrite_rag_retrieve", Args: map[string]any{"query": "register mcp tools", "detail": "map"}, Timeout: 30 * time.Second},
+		{Tool: "dendrite_rag_retrieve", Args: map[string]any{"query": "register mcp tools", "detail": "map"}, Timeout: 15 * time.Second},
 		{Tool: "dendrite_rag_ask", Args: map[string]any{"question": "what does RegisterDefaultTools do?"}, Timeout: 120 * time.Second},
 		{Tool: "dendrite_graph_communities", Args: map[string]any{"limit": 3}, Timeout: 30 * time.Second},
 		{Tool: "dendrite_graph_god_nodes", Args: map[string]any{"limit": 3}, Timeout: 30 * time.Second},
 		{Tool: "dendrite_graph_explain", Args: map[string]any{"target": "RegisterDefaultTools"}, Timeout: 30 * time.Second},
 		{Tool: "dendrite_graph_path", Args: map[string]any{"from": "RegisterDefaultTools", "to": "registerRAGTools"}, Timeout: 30 * time.Second},
 		{Tool: "dendrite_plane_issues"},
-		{Tool: "dendrite_plane_ticket_smart_select", Timeout: 90 * time.Second},
-		{Tool: "dendrite_plane_replicate", Args: map[string]any{"dry_run": true}, Timeout: 45 * time.Second},
-		{Tool: "dendrite_ticket_smart_select", Timeout: 90 * time.Second},
+		{Tool: "dendrite_plane_ticket_smart_select", Timeout: 20 * time.Second},
+		{Tool: "dendrite_plane_replicate", Args: map[string]any{"dry_run": true}, Timeout: 20 * time.Second},
+		{Tool: "dendrite_ticket_smart_select", Timeout: 20 * time.Second},
 		{Tool: "dendrite_ticket_list"},
-		{Tool: "dendrite_hitl_sync", Args: map[string]any{"dry_run": true}, Timeout: 120 * time.Second},
+		{Tool: "dendrite_hitl_sync", Args: map[string]any{"dry_run": true}, Timeout: 30 * time.Second},
 		{Tool: "dendrite_pool_list"},
 		{Tool: "dendrite_ref_list"},
 		{Tool: "dendrite_dist_sources"},
