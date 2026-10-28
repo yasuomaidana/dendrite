@@ -203,13 +203,12 @@ func TestPoolKeepsTheProcessAfterAnRPCError(t *testing.T) {
 
 func TestPoolCallTimeoutKillsTheWedgedProcessWithoutRetrying(t *testing.T) {
 	p := newTestPool(t, func(c *PoolConfig) { c.CallTimeout = 100 * time.Millisecond })
-	start := time.Now()
 	err := p.Call(context.Background(), "sleep", map[string]int{"ms": 2000}, nil)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("err = %v, want a deadline error", err)
 	}
-	if time.Since(start) > time.Second {
-		t.Errorf("took %v: the timed-out call was retried", time.Since(start))
+	if s := p.Stats(); s.Served != 1 {
+		t.Errorf("served %d requests for one timed-out call: it was retried", s.Served)
 	}
 	pid(t, p) // a fresh process serves the next request
 	if s := p.Stats(); s.Starts != 2 {

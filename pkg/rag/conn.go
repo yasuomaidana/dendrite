@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"Dendrite/pkg/sidecar"
 )
@@ -24,7 +25,40 @@ type conn struct {
 }
 
 func (c *conn) Call(ctx context.Context, method string, params, result interface{}) error {
-	return c.pool.Call(ctx, method, params, result)
+	return retryWhileLocked(ctx, lockWait, func() error {
+		return c.pool.Call(ctx, method, params, result)
+	})
+}
+
+// lockWait is how long a call waits for another process to release a project's index lock. The
+// current sidecar waits by itself (and closes idle projects); this covers older binaries that
+// fail at once with "Database already open".
+const lockWait = 12 * time.Second
+
+// isLockError reports the sidecar's failure to open a project another process has locked.
+func isLockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "Database already open") || strings.Contains(msg, "Cannot acquire lock")
+}
+
+// retryWhileLocked runs fn, retrying with a short pause while it fails on a held project lock,
+// until it succeeds, fails otherwise, ctx ends, or wait has passed.
+func retryWhileLocked(ctx context.Context, wait time.Duration, fn func() error) error {
+	deadline := time.Now().Add(wait)
+	for {
+		err := fn()
+		if !isLockError(err) || time.Now().After(deadline) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
 }
 
 func (c *conn) Close() error { return nil }
