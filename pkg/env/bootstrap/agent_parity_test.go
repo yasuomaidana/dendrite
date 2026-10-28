@@ -96,3 +96,15 @@ func TestPrepare_InstallsTheClaudeHookWithoutClobberingSettings(t *testing.T) {
 		t.Errorf("an unparsable settings.json was overwritten: %s", kept)
 	}
 }
+
+func TestWorkflowSkillTeachesDelegationAndEndingThePlan(t *testing.T) {
+	skill := renderDendriteWorkflowSkill()
+	for _, want := range []string{
+		"### What to delegate", "### How to delegate well", "`--scope`", "must not commit",
+		"zero-mock gate", "build tag", "## Ending the plan", "\"to verify\"", "Agents never set `done`",
+	} {
+		if !strings.Contains(skill, want) {
+			t.Errorf("the workflow skill lacks %q", want)
+		}
+	}
+}
