@@ -38,6 +38,7 @@ func newSensoryCmd() *cobra.Command {
 				return runSensorySnapshot(c.Context(), c.OutOrStdout())
 			},
 		},
+		newSensoryUsageCmd(),
 		&cobra.Command{
 			Use:     "metrics",
 			Aliases: []string{"export", "prometheus"},
@@ -69,4 +70,18 @@ func runSensorySnapshot(ctx context.Context, out io.Writer) error {
 		fmt.Fprintf(out, "        * %-10s -> %s\n", node, rep.NodeStatus[node])
 	}
 	return nil
+}
+
+func newSensoryUsageCmd() *cobra.Command {
+	var since time.Duration
+	cmd := &cobra.Command{
+		Use:   "usage",
+		Short: "How agent tool use splits between Dendrite retrieval and raw rg/grep searches",
+		Args:  noArgs,
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSensoryUsage(c.OutOrStdout(), since)
+		},
+	}
+	cmd.Flags().DurationVar(&since, "since", 7*24*time.Hour, "Window to report")
+	return cmd
 }

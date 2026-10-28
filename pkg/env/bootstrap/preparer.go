@@ -342,6 +342,22 @@ Reference criteria for domain isolation, SOLID principles, zero placeholders, an
 		}
 	}
 
+	// 6. Claude Code hook: stops a raw recursive search once and points at Dendrite's retrieval.
+	// An existing settings.json is merged into, never replaced; one that cannot be parsed is left alone.
+	settingsPath := filepath.Join(root, filepath.FromSlash(claudeSettingsPath))
+	existing, _ := os.ReadFile(settingsPath)
+	if merged, changed, err := mergeClaudeHooks(existing); err != nil {
+		fmt.Fprintf(os.Stderr, "[!] %v\n", err)
+	} else if changed {
+		if c, u, err := writeOrUpdateFile(settingsPath, string(merged), dryRun); err != nil {
+			return nil, nil, nil, err
+		} else if c {
+			created = append(created, claudeSettingsPath)
+		} else if u {
+			updated = append(updated, claudeSettingsPath)
+		}
+	}
+
 	// Discover existing skills in every agent family's skill dir
 	skillSet := make(map[string]bool)
 	for _, dir := range skillDirs {

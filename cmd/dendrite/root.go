@@ -25,7 +25,7 @@ func newRootCmd() *cobra.Command {
 		// Soma & Axon Hillock
 		newSomaCmd(), newGanglionCmd(), newWorkCmd(), newPlexusCmd(), newEngramCmd(),
 		// Cortex & Sensory Integration
-		newCortexCmd(), newSensoryCmd(), newCodexCmd(), newAskCmd(), newRagCmd(), newVersionCmd(), newUpdateCmd(), newInstallCmd(),
+		newCortexCmd(), newSensoryCmd(), newHookCmd(), newCodexCmd(), newAskCmd(), newRagCmd(), newVersionCmd(), newUpdateCmd(), newInstallCmd(),
 		// Postsynaptic Effectors & Actuation
 		newBoutonCmd(), newReflexCmd(), newTriageCmd(), newMotorCmd(), newSagaCmd(),
 		// Synaptic Cleft & Gating
