@@ -3,6 +3,7 @@ package devtool
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -412,6 +413,8 @@ func TestFetchPlaneIssues_Errors(t *testing.T) {
 
 	ctx := context.Background()
 
+	t.Setenv("PLANE_API_KEY", "test-token")
+
 	// 1. Status 500
 	t.Setenv("PLANE_BASE_URL", ts.URL+"/500")
 	pClient, _ := plane.NewClientFromEnv()
@@ -436,12 +439,17 @@ func TestFetchPlaneIssues_Errors(t *testing.T) {
 		t.Errorf("expected request creation error on bad URL")
 	}
 
-	// 4. Empty API Key fallback (line 260) & connection error (line 268)
+	// 4. Connection error on a closed port
 	t.Setenv("PLANE_BASE_URL", "http://127.0.0.1:59999")
-	t.Setenv("PLANE_API_KEY", "")
 	pClient4, _ := plane.NewClientFromEnv()
 	_, err4 := fetchPlaneIssues(ctx, pClient4)
 	if err4 == nil {
 		t.Errorf("expected connection error on closed port")
+	}
+
+	// 5. No token configured: the client is refused instead of falling back to a default
+	t.Setenv("PLANE_API_KEY", "")
+	if _, err5 := plane.NewClientFromEnv(); !errors.Is(err5, plane.ErrMissingAPIToken) {
+		t.Errorf("expected ErrMissingAPIToken, got: %v", err5)
 	}
 }

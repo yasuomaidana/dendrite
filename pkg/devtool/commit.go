@@ -278,18 +278,12 @@ type planeIssueLite struct {
 }
 
 func fetchPlaneIssues(ctx context.Context, client *plane.Client) ([]planeIssueLite, error) {
-	url := fmt.Sprintf("%s/api/v1/workspaces/%s/projects/%s/issues/?order_by=-updated_at",
-		client.BaseURL(), client.WorkspaceSlug(), client.ProjectID())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/?order_by=-updated_at",
+		client.WorkspaceSlug(), client.ProjectID())
+	req, err := client.NewRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
-	apiKey := os.Getenv("PLANE_API_KEY")
-	if apiKey == "" {
-		apiKey = "plane_sec_dendrite_token_12345"
-	}
-	req.Header.Set("x-api-key", apiKey)
-	req.Header.Set("Accept", "application/json")
 
 	httpCli := &http.Client{Timeout: 4 * time.Second}
 	resp, err := httpCli.Do(req)

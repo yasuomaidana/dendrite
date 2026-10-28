@@ -60,8 +60,19 @@ func NewClient(cfg Config, httpClient *http.Client) (*Client, error) {
 	}, nil
 }
 
-// NewClientFromEnv constructs a Plane client using system environment variables or sensible local defaults.
-func NewClientFromEnv() (*Client, error) {
+// APIKeyEnv names the environment variable that holds the Plane API token. Dendrite loads it from
+// $DENDRITE_HOME/.env (or the project's .env); it is never defaulted in code.
+const APIKeyEnv = "PLANE_API_KEY"
+
+// ConfigFromEnv builds the Plane client configuration from the environment and the repository's
+// .dendrite/plane.json. The API token has no default: an unset PLANE_API_KEY fails with
+// ErrMissingAPIToken and says where to put it.
+func ConfigFromEnv() (Config, error) {
+	token := strings.TrimSpace(os.Getenv(APIKeyEnv))
+	if token == "" {
+		return Config{}, fmt.Errorf("%w: set %s in $DENDRITE_HOME/.env (create one in the Plane UI under Profile > API tokens) or export it", ErrMissingAPIToken, APIKeyEnv)
+	}
+
 	baseURL := os.Getenv("PLANE_BASE_URL")
 	if baseURL == "" {
 		port := os.Getenv("PLANE_API_PORT")
@@ -93,18 +104,16 @@ func NewClientFromEnv() (*Client, error) {
 		projectID = "e6380603-1428-4a66-995e-e06039915d52"
 	}
 
-	apiKey := os.Getenv("PLANE_API_KEY")
-	if apiKey == "" {
-		apiKey = "plane_sec_dendrite_token_12345"
-	}
+	return Config{BaseURL: baseURL, WorkspaceSlug: workspaceSlug, ProjectID: projectID, DirectToken: token}, nil
+}
 
-	return &Client{
-		baseURL:       strings.TrimRight(baseURL, "/"),
-		workspaceSlug: workspaceSlug,
-		projectID:     projectID,
-		apiKey:        apiKey,
-		httpClient:    &http.Client{Timeout: 15 * time.Second},
-	}, nil
+// NewClientFromEnv constructs a Plane client from ConfigFromEnv.
+func NewClientFromEnv() (*Client, error) {
+	cfg, err := ConfigFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	return NewClient(cfg, &http.Client{Timeout: 15 * time.Second})
 }
 
 // BaseURL returns the configured base URL.
@@ -120,6 +129,12 @@ func (c *Client) WorkspaceSlug() string {
 // ProjectID returns the active project ID.
 func (c *Client) ProjectID() string {
 	return c.projectID
+}
+
+// NewRequest builds an authenticated request for an API path ("/api/v1/...") so callers outside this
+// package can make custom calls without ever reading the token themselves.
+func (c *Client) NewRequest(ctx context.Context, method, endpoint string, body interface{}) (*http.Request, error) {
+	return c.newRequest(ctx, method, endpoint, body)
 }
 
 func (c *Client) newRequest(ctx context.Context, method, endpoint string, body interface{}) (*http.Request, error) {

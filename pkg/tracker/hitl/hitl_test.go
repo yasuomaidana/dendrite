@@ -290,6 +290,7 @@ func TestNewDefaultsAndNewFromEnv(t *testing.T) {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
+	t.Setenv("PLANE_API_KEY", "test-token")
 	s, err := NewFromEnv(ctx, "", repo)
 	if err != nil || s.GitHub.Repo != "acme/widgets" || s.RepoDir != repo {
 		t.Fatalf("detected repo: %+v %v", s, err)

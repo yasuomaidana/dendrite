@@ -125,6 +125,7 @@ func TestNewHITLSyncerUsesServerPlaneClient(t *testing.T) {
 	if _, err := newHITLSyncer(ctx, Dependencies{PlaneClient: ps.Client()}, ""); err == nil {
 		t.Error("expected detection failure outside a git repository")
 	}
+	t.Setenv("PLANE_API_KEY", "test-token")
 	if s, err := newHITLSyncer(ctx, Dependencies{}, "o/r"); err != nil || s.GitHub.Repo != "o/r" {
 		t.Fatalf("env Plane client: %v", err)
 	}

@@ -13,7 +13,9 @@ import (
 	"Dendrite/pkg/env/bootstrap"
 	"Dendrite/pkg/ollama"
 
+	"Dendrite/pkg/tracker/plane"
 	"github.com/spf13/cobra"
+	"time"
 )
 
 // newSomaCmd builds `dendrite soma` (alias env): environment preparation, replication and diagnostics.
@@ -384,6 +386,7 @@ func runSomaDiagnose(ctx context.Context, ollamaURL string, out io.Writer) error
 			fmt.Fprintf(out, "      - %s (size: %.2f GB)\n", m.Name, float64(m.Size)/(1024*1024*1024))
 		}
 	}
+	diagnosePlane(ctx, out)
 	if _, err := os.Stat("DEV_STATUS.md"); err == nil {
 		fmt.Fprintln(out, "  [✓] Project Status: DEV_STATUS.md present")
 	} else {
@@ -391,4 +394,25 @@ func runSomaDiagnose(ctx context.Context, ollamaURL string, out io.Writer) error
 	}
 	fmt.Fprintln(out, "[+] Pre-flight diagnostics complete.")
 	return nil
+}
+
+// diagnosePlane reports whether the Plane token is configured and the service answers with it.
+func diagnosePlane(ctx context.Context, out io.Writer) {
+	cfg, err := plane.ConfigFromEnv()
+	if err != nil {
+		fmt.Fprintf(out, "  [-] Plane: %v\n", err)
+		return
+	}
+	client, err := plane.NewClient(cfg, nil)
+	if err != nil {
+		fmt.Fprintf(out, "  [-] Plane: %v\n", err)
+		return
+	}
+	pctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	if _, err := client.ListStates(pctx); err != nil {
+		fmt.Fprintf(out, "  [-] Plane: token configured but %s did not answer (%v)\n", cfg.BaseURL, err)
+		return
+	}
+	fmt.Fprintf(out, "  [✓] Plane: token configured, %s reachable (workspace %s)\n", cfg.BaseURL, cfg.WorkspaceSlug)
 }

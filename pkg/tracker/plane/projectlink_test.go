@@ -65,6 +65,7 @@ func TestNewClientFromEnv_UsesRepoLink(t *testing.T) {
 	if err := WriteLink(root, ProjectLink{Identifier: "OXI", ProjectID: "proj-oxi", Workspace: "other-ws"}); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("PLANE_API_KEY", "test-token")
 	t.Setenv("PLANE_PROJECT_ID", "")
 	t.Setenv("PLANE_WORKSPACE_SLUG", "")
 	t.Chdir(root)
