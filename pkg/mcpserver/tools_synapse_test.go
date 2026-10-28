@@ -214,3 +214,23 @@ func TestSynapseSyncStatus(t *testing.T) {
 		t.Fatal("expected isError after manifest deletion")
 	}
 }
+
+func TestSynapseSearchToolValidatesInputAndReportsUnsearchableMembers(t *testing.T) {
+	st, _ := synapseFixture(t)
+	s, err := NewSynapseServer(SynapseScope{Store: st, ID: "web-api"}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, ok := s.Handler("synapse_search")
+	if !ok {
+		t.Fatal("synapse_search is not registered on the synapse server")
+	}
+	res, err := h(context.Background(), map[string]any{"query": "  "})
+	if err != nil || !res.IsError || !strings.Contains(res.Content[0].Text, "empty query") {
+		t.Errorf("empty query: %+v, %v", res, err)
+	}
+	res, err = h(context.Background(), map[string]any{"query": "x", "members": []any{"nobody"}})
+	if err != nil || !res.IsError || !strings.Contains(res.Content[0].Text, "not a member") {
+		t.Errorf("unknown member: %+v, %v", res, err)
+	}
+}

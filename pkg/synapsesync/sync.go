@@ -4,6 +4,7 @@
 package synapsesync
 
 import (
+	"Dendrite/pkg/rag"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,7 +12,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"Dendrite/pkg/devtool"
@@ -30,7 +33,9 @@ type Options struct {
 	All       bool
 	GitOnly   bool
 	PlaneOnly bool
-	DryRun    bool
+	// NoRAG skips the code-index refresh of each member.
+	NoRAG  bool
+	DryRun bool
 	// Fetch refreshes remotes before computing ahead/behind.
 	Fetch bool
 	// ForcePlane pushes DEV_STATUS even when it is unchanged since the last sync.
@@ -43,6 +48,18 @@ type Options struct {
 	DefaultPlaneProject string
 	// StateDir holds per-project sync bookkeeping; defaults to $DENDRITE_HOME/sync.
 	StateDir string
+	// Indexer refreshes a repository's RAG index; the default asks the dendrite-rag sidecar for an
+	// incremental index with a short embedding budget. A seam for tests.
+	Indexer func(ctx context.Context, dir string) (RAGResult, error)
+}
+
+// RAGResult describes what the RAG half of the sync did for one member.
+type RAGResult struct {
+	Indexed      bool   `json:"indexed"`
+	FilesChanged int    `json:"files_changed,omitempty"`
+	EmbedPending int    `json:"embed_pending,omitempty"`
+	DurationMS   int64  `json:"duration_ms,omitempty"`
+	Skipped      string `json:"skipped,omitempty"`
 }
 
 // PlaneResult describes what the Plane half of the sync did for one member.
@@ -65,6 +82,7 @@ type MemberReport struct {
 	Repo         *devtool.RepoState   `json:"repo,omitempty"`
 	Push         *devtool.PushOutcome `json:"push,omitempty"`
 	Plane        *PlaneResult         `json:"plane,omitempty"`
+	RAG          *RAGResult           `json:"rag,omitempty"`
 	Errors       []string             `json:"errors,omitempty"`
 }
 
@@ -226,9 +244,17 @@ func syncMember(ctx context.Context, opts Options, t Target) MemberReport {
 	}
 	if t.Synapse != "" {
 		mr.Status = synapse.StatusOf(m)
-		if mr.Status != synapse.StatusOK {
+		switch {
+		case mr.Status == synapse.StatusRemote:
+			// Consumed from its remote: there is no checkout here to push, index or reconcile.
+			return mr
+		case !mr.Status.Healthy():
 			mr.Errors = append(mr.Errors, fmt.Sprintf("member %s; run `dendrite synapse heal`", mr.Status))
 			return mr
+		}
+		// Work on the repository where it is now, which may differ from the manifest's hint.
+		if dir, err := synapse.Resolve(m); err == nil {
+			mr.Dir = dir
 		}
 	}
 
@@ -238,7 +264,82 @@ func syncMember(ctx context.Context, opts Options, t Target) MemberReport {
 	if !opts.GitOnly {
 		syncPlane(ctx, opts, &mr)
 	}
+	if !opts.GitOnly && !opts.PlaneOnly && !opts.NoRAG {
+		syncRAG(ctx, opts, &mr)
+	}
 	return mr
+}
+
+// syncRAG brings the member's code index up to date so every project of a synapse answers
+// retrieval questions about current code. It is skipped while HEAD is the commit last indexed and
+// the working tree is clean: an unchanged repository costs one git call.
+func syncRAG(ctx context.Context, opts Options, mr *MemberReport) {
+	res := &RAGResult{}
+	mr.RAG = res
+	head, err := gitHead(ctx, mr.Dir)
+	if err != nil {
+		res.Skipped = "not a git repository"
+		return
+	}
+	clean := mr.Repo != nil && len(mr.Repo.Dirty) == 0
+	key := stateKey(mr)
+	prev, _ := loadSyncState(opts, key)
+	if clean && prev.RAGHead == head {
+		res.Skipped = "unchanged since the last index"
+		return
+	}
+	if opts.DryRun {
+		res.Skipped = "dry-run: would refresh the index"
+		return
+	}
+	indexer := opts.Indexer
+	if indexer == nil {
+		indexer = defaultIndexer
+	}
+	out, err := indexer(ctx, mr.Dir)
+	if err != nil {
+		res.Skipped = firstLine(err.Error())
+		mr.Errors = append(mr.Errors, "rag index: "+err.Error())
+		return
+	}
+	*res = out
+	res.Indexed = true
+	// Remember the commit only for a clean tree; a dirty one is re-indexed next time.
+	prev.RAGHead = ""
+	if clean {
+		prev.RAGHead = head
+	}
+	prev.RAGAt = time.Now().UTC()
+	if err := saveSyncState(opts, key, prev); err != nil {
+		mr.Errors = append(mr.Errors, err.Error())
+	}
+}
+
+func gitHead(ctx context.Context, dir string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "rev-parse", "HEAD")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	return strings.TrimSpace(string(out)), err
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	return s
+}
+
+// ragEmbedBudget bounds the embedding done per member in one sync pass; vectors for the rest follow
+// on later passes and queries.
+const ragEmbedBudget = 3 * time.Second
+
+// defaultIndexer is a variable so the package tests do not need a dendrite-rag binary.
+var defaultIndexer = func(ctx context.Context, dir string) (RAGResult, error) {
+	rep, err := rag.NewRetriever().Index(ctx, dir, rag.IndexOptions{EmbedBudgetMS: ragEmbedBudget.Milliseconds()})
+	if err != nil {
+		return RAGResult{}, err
+	}
+	return RAGResult{FilesChanged: rep.FilesChanged, EmbedPending: rep.EmbedPending, DurationMS: rep.DurationMS}, nil
 }
 
 func syncGit(ctx context.Context, opts Options, mr *MemberReport) {
@@ -315,7 +416,8 @@ func syncPlane(ctx context.Context, opts Options, mr *MemberReport) {
 	}
 	res.StatusPushed = true
 	res.Tickets = rep.TotalTickets
-	if err := saveSyncState(opts, key, syncState{DevStatusSHA256: hash, SyncedAt: time.Now().UTC()}); err != nil {
+	prev.DevStatusSHA256, prev.SyncedAt = hash, time.Now().UTC()
+	if err := saveSyncState(opts, key, prev); err != nil {
 		mr.Errors = append(mr.Errors, err.Error())
 	}
 }
@@ -326,7 +428,7 @@ func refreshState(s *synapse.Synapse) (SynapseReport, bool) {
 	sr := SynapseReport{ID: s.ID, Before: s.State, After: s.State}
 	healthy := true
 	for _, status := range s.Health() {
-		if status != synapse.StatusOK {
+		if !status.Healthy() {
 			healthy = false
 			break
 		}
@@ -348,6 +450,9 @@ func refreshState(s *synapse.Synapse) (SynapseReport, bool) {
 type syncState struct {
 	DevStatusSHA256 string    `json:"dev_status_sha256"`
 	SyncedAt        time.Time `json:"synced_at"`
+	// RAGHead is the commit whose clean tree was last indexed; RAGAt when.
+	RAGHead string    `json:"rag_head,omitempty"`
+	RAGAt   time.Time `json:"rag_at,omitempty"`
 }
 
 func stateKey(mr *MemberReport) string {

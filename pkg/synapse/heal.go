@@ -288,8 +288,8 @@ func Heal(st *Store, opts HealOptions) ([]HealRow, error) {
 		for _, m := range s.Members {
 			row := HealRow{Synapse: s.ID, Alias: m.Alias, ProjectID: m.ProjectID, OldPath: m.PathHint}
 			status := StatusOf(m)
-			if status == StatusOK {
-				row.Status = StatusOK
+			if status.Healthy() {
+				row.Status = status
 				rows = append(rows, row)
 				continue
 			}

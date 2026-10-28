@@ -68,7 +68,7 @@ type synapseInspectJSON struct {
 func synapseHealth(s *synapse.Synapse) string {
 	unresolved := 0
 	for _, m := range s.Members {
-		if synapse.StatusOf(m) != synapse.StatusOK {
+		if !synapse.StatusOf(m).Healthy() {
 			unresolved++
 		}
 	}

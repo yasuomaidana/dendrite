@@ -1,8 +1,13 @@
 package main
 
 import (
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/synapse"
+	"Dendrite/pkg/synapsesearch"
 	"Dendrite/pkg/ticketindex"
+	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -79,15 +84,22 @@ func newRagIndexCmd() *cobra.Command {
 }
 
 func newRagSearchCmd() *cobra.Command {
-	var project, corpus string
+	var project, corpus, scope, synapseID string
 	var topK int
 	var minScore float64
 	cmd := &cobra.Command{
 		Use:   "search <query...>",
-		Short: "Hybrid search over the project index",
+		Short: "Hybrid search over the project index (or, with --scope synapse, every project of a synapse)",
 		Args:  minArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := strings.Join(args, " ")
+			switch strings.ToLower(scope) {
+			case "", "project":
+			case "synapse":
+				return runSynapseSearch(cmd.Context(), cmd.OutOrStdout(), project, synapseID, query, topK, corpus)
+			default:
+				return usageErrorf("invalid --scope %q: use project or synapse", scope)
+			}
 			searchProject, searchCorpus, err := ticketindex.Resolve(cmd.Context(), project, corpus)
 			if err != nil {
 				return err
@@ -119,6 +131,8 @@ func newRagSearchCmd() *cobra.Command {
 	cmd.Flags().IntVarP(&topK, "top-k", "k", 10, "Maximum number of hits")
 	cmd.Flags().StringVar(&corpus, "corpus", "all", "Corpus filter: all, code, docs, or tickets (the rendered Plane tickets)")
 	cmd.Flags().Float64Var(&minScore, "min-score", 0, "Minimum relevance score filter")
+	cmd.Flags().StringVar(&scope, "scope", "project", "project (this directory) or synapse (every member of a synapse, merged by rank)")
+	cmd.Flags().StringVar(&synapseID, "synapse", "", "With --scope synapse: the synapse to search (default: the one containing this project)")
 	return cmd
 }
 
@@ -304,4 +318,64 @@ func newRagPurgeCmd() *cobra.Command {
 	}
 	addProjectFlag(cmd, &project, ".", "Project directory")
 	return cmd
+}
+
+// runSynapseSearch searches every member of a synapse and prints the merged hits.
+func runSynapseSearch(ctx context.Context, out io.Writer, project, synapseID, query string, topK int, corpus string) error {
+	syn, err := pickSynapse(project, synapseID)
+	if err != nil {
+		return err
+	}
+	if corpus == "all" || corpus == "" {
+		corpus = ""
+	}
+	hits, notes, err := synapsesearch.Search(ctx, syn, query, synapsesearch.Options{TopK: topK, Corpus: corpus}, nil)
+	if err != nil {
+		return err
+	}
+	if globals.JSON {
+		return writeJSON(out, map[string]any{"synapse": syn.ID, "hits": hits, "skipped_members": notes})
+	}
+	fmt.Fprintf(out, "[✓] Hits for %q across synapse %s (%d members, %d hits):\n", query, syn.ID, len(syn.Members), len(hits))
+	for i, h := range hits {
+		scope := ""
+		if h.Heading != "" {
+			scope = "  " + h.Heading
+		}
+		fmt.Fprintf(out, "%2d. %-12s %s:%d-%d%s\n", i+1, h.Member, h.Path, h.LineStart, h.LineEnd, scope)
+	}
+	for _, n := range notes {
+		fmt.Fprintf(out, "[i] %s skipped: %s\n", n.Member, n.Reason)
+	}
+	return nil
+}
+
+// pickSynapse loads the named synapse, or the only one that contains the project.
+func pickSynapse(project, id string) (*synapse.Synapse, error) {
+	st, err := synapse.DefaultStore()
+	if err != nil {
+		return nil, err
+	}
+	if id != "" {
+		return st.Load(id)
+	}
+	pid, err := projectid.Read(project)
+	if err != nil {
+		return nil, usageErrorf("%s has no project id, so its synapse is unknown: pass --synapse <id> (see `dendrite synapse list`)", project)
+	}
+	syns, err := st.ReferencingProject(pid)
+	if err != nil {
+		return nil, err
+	}
+	switch len(syns) {
+	case 0:
+		return nil, usageErrorf("this project is in no synapse: pass --synapse <id> (see `dendrite synapse list`)")
+	case 1:
+		return syns[0], nil
+	}
+	ids := make([]string, 0, len(syns))
+	for _, s := range syns {
+		ids = append(ids, s.ID)
+	}
+	return nil, usageErrorf("this project is in several synapses (%s): pass --synapse <id>", strings.Join(ids, ", "))
 }

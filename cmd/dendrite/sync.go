@@ -36,6 +36,7 @@ type syncFlags struct {
 	All        bool
 	GitOnly    bool
 	PlaneOnly  bool
+	NoRAG      bool
 	ForcePlane bool
 	NoFetch    bool
 	DryRun     bool
@@ -49,6 +50,7 @@ func (f *syncFlags) bind(cmd *cobra.Command) {
 	fs.BoolVar(&f.All, "all", false, "Sync every non-archived synapse (daemon mode)")
 	fs.BoolVar(&f.GitOnly, "git-only", false, "Only push git commits")
 	fs.BoolVar(&f.PlaneOnly, "plane-only", false, "Only reconcile Plane states and push DEV_STATUS")
+	fs.BoolVar(&f.NoRAG, "no-rag", false, "Do not refresh each member's code index")
 	fs.StringVar(&f.Plane, "plane", "", "Plane project for a repository that is in no synapse (default: $PLANE_PROJECT_ID)")
 	fs.BoolVar(&f.ForcePlane, "force-plane", false, "Push DEV_STATUS even if unchanged since the last sync")
 	fs.BoolVar(&f.NoFetch, "no-fetch", false, "Skip fetching remotes before computing ahead/behind")
@@ -62,7 +64,7 @@ func (f *syncFlags) bind(cmd *cobra.Command) {
 func (f syncFlags) options(intervalSet bool) (synapsesync.Options, syncCLI, error) {
 	opts := synapsesync.Options{
 		Fetch: !f.NoFetch, SynapseID: f.Synapse, All: f.All, GitOnly: f.GitOnly,
-		PlaneOnly: f.PlaneOnly, ForcePlane: f.ForcePlane, DryRun: f.DryRun,
+		PlaneOnly: f.PlaneOnly, NoRAG: f.NoRAG, ForcePlane: f.ForcePlane, DryRun: f.DryRun,
 		DefaultPlaneProject: f.Plane,
 	}
 	if opts.DefaultPlaneProject == "" {
@@ -164,7 +166,7 @@ func printSyncReport(out io.Writer, r *synapsesync.Report) {
 		fmt.Fprintln(out, "[i] Dry run: nothing was pushed or written")
 	}
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "MEMBER\tSYNAPSE\tBRANCH\tAHEAD/BEHIND\tDIRTY\tGIT\tPLANE")
+	fmt.Fprintln(tw, "MEMBER\tSYNAPSE\tBRANCH\tAHEAD/BEHIND\tDIRTY\tGIT\tPLANE\tINDEX")
 	for _, m := range r.Members {
 		branch, ab, dirty := "-", "-", "-"
 		if m.Repo != nil {
@@ -176,7 +178,7 @@ func printSyncReport(out io.Writer, r *synapsesync.Report) {
 		if syn == "" {
 			syn = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", m.Alias, syn, branch, ab, dirty, gitSummary(m), planeSummary(m))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", m.Alias, syn, branch, ab, dirty, gitSummary(m), planeSummary(m), ragSummary(m))
 	}
 	_ = tw.Flush()
 
@@ -230,4 +232,19 @@ func planeSummary(m synapsesync.MemberReport) string {
 		parts = append(parts, p.Skipped)
 	}
 	return strings.Join(parts, ": ")
+}
+
+// ragSummary is the INDEX column: what the code-index refresh did for a member.
+func ragSummary(m synapsesync.MemberReport) string {
+	r := m.RAG
+	switch {
+	case r == nil:
+		return "-"
+	case r.Indexed && r.EmbedPending > 0:
+		return fmt.Sprintf("%d file(s) indexed, %d chunks to embed", r.FilesChanged, r.EmbedPending)
+	case r.Indexed:
+		return fmt.Sprintf("%d file(s) indexed", r.FilesChanged)
+	default:
+		return r.Skipped
+	}
 }

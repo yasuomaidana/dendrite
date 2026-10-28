@@ -93,7 +93,7 @@ func runSynapseHeal(ctx context.Context, o synapseHealOptions, jsonMode bool, ou
 		case len(r.Candidates) > 0:
 			path = r.OldPath + " ? " + strings.Join(r.Candidates, " | ")
 			broken++
-		case r.Status != synapse.StatusOK:
+		case !r.Status.Healthy():
 			broken++
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Synapse, r.Alias, r.Status, path)

@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"Dendrite/pkg/synapsesearch"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -120,5 +121,41 @@ func registerSynapseTools(s *Server, sc SynapseScope) {
 		}
 		fetch, _ := args["fetch"].(bool)
 		return jsonResult(synapse.SyncSynapse(ctx, syn, synapse.SyncOptions{NoFetch: !fetch}))
+	})
+
+	s.RegisterTool(Tool{
+		Name: "synapse_search",
+		Description: "Searches the code and documentation of every member of this synapse with one query and merges the answers " +
+			"by rank, each hit tagged with its member. Use it when a question crosses projects (who calls this API, where is " +
+			"this contract implemented). Hits are chunk outlines with paths relative to the member's root",
+		InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{
+			"query":   map[string]interface{}{"type": "string", "description": "What to look for"},
+			"top_k":   map[string]interface{}{"type": "integer", "description": "Merged hits to return (default 10)"},
+			"corpus":  map[string]interface{}{"type": "string", "enum": []interface{}{"all", "code", "docs"}, "description": "Corpora searched (default all)"},
+			"members": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Only these member aliases (default: all)"},
+		}, "required": []interface{}{"query"}},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		query, _ := args["query"].(string)
+		syn, err := sc.load()
+		if err != nil {
+			return errorResult("loading synapse: %v", err), nil
+		}
+		opts := synapsesearch.Options{}
+		if v, ok := args["top_k"].(float64); ok && v > 0 {
+			opts.TopK = int(v)
+		}
+		opts.Corpus, _ = args["corpus"].(string)
+		if list, ok := args["members"].([]interface{}); ok {
+			for _, m := range list {
+				if alias, ok := m.(string); ok {
+					opts.Members = append(opts.Members, alias)
+				}
+			}
+		}
+		hits, notes, err := synapsesearch.Search(ctx, syn, query, opts, nil)
+		if err != nil {
+			return errorResult("%v", err), nil
+		}
+		return jsonResult(map[string]interface{}{"hits": hits, "skipped_members": notes})
 	})
 }
