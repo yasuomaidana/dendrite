@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/dag"
 	"Dendrite/pkg/tracker/plane"
@@ -381,7 +382,7 @@ func runChronosTicketList(ctx context.Context, file string, out io.Writer) error
 func runChronosTicketSet(ctx context.Context, file, id string, st tracker.Status, out io.Writer) error {
 	planeSynced := false
 	if client, err := newPlaneClient(); err == nil && client != nil {
-		if err := client.UpdateStatus(ctx, tracker.TicketID(id), st); err != nil {
+		if _, err := planesvc.Default().SetStatus(ctx, client, tracker.TicketID(id), st); err != nil {
 			return fmt.Errorf("update ticket status in Plane: %w", err)
 		}
 		planeSynced = true

@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/plane"
 )
@@ -131,7 +132,7 @@ func EnsureTicketInProgress(ctx context.Context, repoDir, ticket string, mode Gu
 		res.Note = fmt.Sprintf("would start %s (%s)", ticket, tracker.StatusDisplayName(res.Before))
 		return res, nil
 	}
-	if err := client.UpdateStatus(ctx, tracker.TicketID(issue.ID), tracker.StatusInProgress); err != nil {
+	if _, err := planesvc.Default().SetStatus(ctx, client, tracker.TicketID(issue.ID), tracker.StatusInProgress); err != nil {
 		return res, fmt.Errorf("start %s: %w", ticket, err)
 	}
 	res.After, res.Moved = tracker.StatusInProgress, true

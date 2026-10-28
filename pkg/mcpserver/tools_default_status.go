@@ -9,6 +9,7 @@ import (
 	"Dendrite/pkg/devtool"
 	"Dendrite/pkg/env"
 	"Dendrite/pkg/gateway"
+	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/topology"
 	"Dendrite/pkg/topology/advisor"
 	"Dendrite/pkg/tracker"
@@ -140,7 +141,7 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 				pClient, _ = plane.NewClientFromEnv()
 			}
 			if pClient != nil {
-				if pErr := pClient.UpdateStatus(ctx, tracker.TicketID(tid), st); pErr == nil {
+				if _, pErr := planesvc.Default().SetStatus(ctx, pClient, tracker.TicketID(tid), st); pErr == nil {
 					return &CallToolResult{
 						Content: []ContentItem{
 							{Type: "text", Text: fmt.Sprintf("Successfully updated %s to %s in Plane service", tid, st)},

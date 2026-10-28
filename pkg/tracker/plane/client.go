@@ -328,6 +328,24 @@ func (c *Client) ListStates(ctx context.Context) ([]PlaneState, error) {
 	return paginated.Results, nil
 }
 
+// CheckZeroMockGate enforces the Zero-Mock policy: a ticket cannot move to review or done while
+// mocks or stubs exist in the packages it names. Every path that sets a status runs it first.
+func (c *Client) CheckZeroMockGate(ctx context.Context, id tracker.TicketID, state tracker.Status) error {
+	if state != tracker.StatusDone && state != tracker.StatusInReview {
+		return nil
+	}
+	issueList, _ := c.ListPlaneIssues(ctx)
+	if matchedIssue := ResolveIssue(issueList, string(id)); matchedIssue != nil {
+		pkgs := quality.ExtractPackages(matchedIssue.Name + " " + matchedIssue.DescriptionHTML)
+		if len(pkgs) > 0 {
+			if hasMocks, mockLocs, _ := quality.ValidateZeroMockGate(".", pkgs); hasMocks {
+				return fmt.Errorf("zero-mock policy gate violation: cannot transition ticket %s to %s because mocks/stubs were detected in %v: %s", id, state, pkgs, strings.Join(mockLocs, "; "))
+			}
+		}
+	}
+	return nil
+}
+
 // UpdateStatus moves a Plane issue to the corresponding state.
 func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tracker.Status) error {
 	states, err := c.ListStates(ctx)
@@ -340,18 +358,8 @@ func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tr
 		return ErrStateNotFound
 	}
 
-	// Zero-Mock Policy Enforcement Gate:
-	// Prohibit transitioning issues to review/verify/done if any mocks exist in associated packages
-	if state == tracker.StatusDone || state == tracker.StatusInReview {
-		issueList, _ := c.ListPlaneIssues(ctx)
-		if matchedIssue := ResolveIssue(issueList, string(id)); matchedIssue != nil {
-			pkgs := quality.ExtractPackages(matchedIssue.Name + " " + matchedIssue.DescriptionHTML)
-			if len(pkgs) > 0 {
-				if hasMocks, mockLocs, _ := quality.ValidateZeroMockGate(".", pkgs); hasMocks {
-					return fmt.Errorf("zero-mock policy gate violation: cannot transition ticket %s to %s because mocks/stubs were detected in %v: %s", id, state, pkgs, strings.Join(mockLocs, "; "))
-				}
-			}
-		}
+	if err := c.CheckZeroMockGate(ctx, id, state); err != nil {
+		return err
 	}
 
 	issueUUID := string(id)

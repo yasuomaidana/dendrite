@@ -115,6 +115,27 @@ func (s *Service) Snapshot(ctx context.Context, c *plane.Client, fresh bool) (*S
 	return snap, sidecar.Outcome{Origin: sidecar.OriginFallback, Reason: reason}, err
 }
 
+// SetStatus moves the ticket to state: the Zero-Mock gate runs first, then the sidecar's
+// issue.set_status, then the Go client when the sidecar is missing, disabled or fails (the Go
+// client reports the typed errors).
+func (s *Service) SetStatus(ctx context.Context, c *plane.Client, ref tracker.TicketID, state tracker.Status) (sidecar.Outcome, error) {
+	if err := c.CheckZeroMockGate(ctx, ref, state); err != nil {
+		return sidecar.Outcome{Origin: sidecar.OriginFallback, Reason: "gate"}, err
+	}
+	reason := "sidecar disabled"
+	if s != nil && s.pool != nil && !disabled() {
+		params := target(c)
+		params["ref"] = string(ref)
+		params["status"] = string(state)
+		if err := s.pool.Call(ctx, "issue.set_status", params, nil); err == nil {
+			return sidecar.Outcome{Origin: sidecar.OriginSidecar}, nil
+		} else {
+			reason = err.Error()
+		}
+	}
+	return sidecar.Outcome{Origin: sidecar.OriginFallback, Reason: reason}, c.UpdateStatus(ctx, ref, state)
+}
+
 // InvalidateRelations tells the sidecar that these issues' relations changed (empty: all of the
 // project's). It is best effort: without a running sidecar there is nothing cached to drop.
 func (s *Service) InvalidateRelations(ctx context.Context, c *plane.Client, issueIDs ...string) {

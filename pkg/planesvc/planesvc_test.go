@@ -2,6 +2,7 @@ package planesvc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +25,7 @@ type localPlane struct {
 	mu        sync.Mutex
 	relCalls  []string
 	listCalls int
+	patched   []string
 }
 
 func newLocalPlane(t *testing.T) *localPlane {
@@ -53,6 +55,13 @@ func newLocalPlane(t *testing.T) *localPlane {
 				return
 			}
 			_, _ = w.Write([]byte(`{"blocked_by":[],"blocking":[],"duplicate":[],"relates_to":[]}`))
+		case r.Method == http.MethodPatch && strings.Contains(p, "/issues/"):
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			f.mu.Lock()
+			f.patched = append(f.patched, strings.Split(p, "/")[len(strings.Split(p, "/"))-2]+"="+body["state"])
+			f.mu.Unlock()
+			_, _ = w.Write([]byte(`{}`))
 		case strings.HasSuffix(p, "/issues/"):
 			f.mu.Lock()
 			f.listCalls++
@@ -164,4 +173,25 @@ func relIDs(r plane.IssueRelationsResponse) []string {
 		out = append(out, "|")
 	}
 	return out
+}
+
+func TestSetStatusFallsBackToTheGoClientWhenTheSidecarIsMissing(t *testing.T) {
+	f := newLocalPlane(t)
+	out, err := absentService().SetStatus(context.Background(), f.client(t), "DEN-1", tracker.StatusInProgress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Origin != sidecar.OriginFallback {
+		t.Errorf("origin = %q, want fallback", out.Origin)
+	}
+	if !reflect.DeepEqual(f.patched, []string{"i1=s-prog"}) {
+		t.Errorf("patched = %v, want i1 moved to the In Progress state", f.patched)
+	}
+}
+
+func TestSetStatusUnknownTicketIsAnError(t *testing.T) {
+	f := newLocalPlane(t)
+	if _, err := absentService().SetStatus(context.Background(), f.client(t), "DEN-99", tracker.StatusInProgress); err == nil {
+		t.Fatal("want an error for a ticket that is not on the board")
+	}
 }
