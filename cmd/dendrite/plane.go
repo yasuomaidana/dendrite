@@ -367,7 +367,7 @@ func runChronosRelate(ctx context.Context, client *plane.Client, o chronosRelate
 		if o.TargetDate != "" {
 			req.TargetDate = &o.TargetDate
 		}
-		if _, err := client.UpdatePlaneIssueWithDetails(ctx, uTarget, req); err != nil {
+		if _, err := planesvc.Default().UpdateIssue(ctx, client, uTarget, req); err != nil {
 			errs = append(errs, fmt.Errorf("update ticket metadata: %w", err))
 		} else {
 			fmt.Fprintf(out, "[✓] Updated ticket %s metadata (Priority: %s)\n", o.Ticket, strings.ToUpper(o.Priority))

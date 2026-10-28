@@ -134,7 +134,7 @@ func runChronosCreate(ctx context.Context, client *plane.Client, o chronosCreate
 		}
 	}
 
-	created, err := client.CreatePlaneIssueWithDetails(ctx, plane.CreateIssueRequest{
+	created, _, err := planesvc.Default().CreateIssue(ctx, client, plane.CreateIssueRequest{
 		Name:            o.Name,
 		DescriptionHTML: plane.MarkdownToHTML(o.Desc),
 		Priority:        o.Priority,
@@ -207,7 +207,7 @@ func runChronosUpdate(ctx context.Context, client *plane.Client, ticket, name, d
 	if !plane.IsEmptyContext(desc) {
 		req.DescriptionHTML = plane.MarkdownToHTML(desc)
 	}
-	updated, err := client.UpdatePlaneIssueWithDetails(ctx, target.ID, req)
+	updated, err := planesvc.Default().UpdateIssue(ctx, client, target.ID, req)
 	if err != nil {
 		return fmt.Errorf("update issue in Plane: %w", err)
 	}
@@ -450,7 +450,7 @@ func prefixTicketTitle(ctx context.Context, client *plane.Client, iss *plane.Pla
 		return iss
 	}
 	name := fmt.Sprintf("[%s-%d] %s", link.Identifier, iss.SequenceID, iss.Name)
-	updated, err := client.UpdatePlaneIssueWithDetails(ctx, iss.ID, plane.UpdateIssueRequest{Name: name})
+	updated, err := planesvc.Default().UpdateIssue(ctx, client, iss.ID, plane.UpdateIssueRequest{Name: name})
 	if err != nil || updated == nil {
 		return iss
 	}

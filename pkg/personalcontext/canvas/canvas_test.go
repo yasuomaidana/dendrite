@@ -211,6 +211,10 @@ func TestPenpotUIBridge_RelateAndList(t *testing.T) {
 	// Mock Plane Server
 	planeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/issues/") { // the sidecar resolves DEN-n through the list
+			_, _ = w.Write([]byte(`{"results":[{"id":"11111111-2222-3333-4444-555555555555","name":"[DEN-810] sync","sequence_id":810},{"id":"11111111-2222-3333-4444-666666666666","name":"[DEN-807] sync","sequence_id":807}],"next_page_results":false}`))
+			return
+		}
 		if strings.Contains(r.URL.Path, "/comments/") {
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(map[string]string{"id": "cmt-1"})
@@ -297,6 +301,10 @@ func TestPenpotUIBridge_SyncComponentWithPenpot(t *testing.T) {
 	// Mock Plane Server
 	planeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/issues/") { // the sidecar resolves DEN-n through the list
+			_, _ = w.Write([]byte(`{"results":[{"id":"11111111-2222-3333-4444-555555555555","name":"[DEN-810] sync","sequence_id":810},{"id":"11111111-2222-3333-4444-666666666666","name":"[DEN-807] sync","sequence_id":807}],"next_page_results":false}`))
+			return
+		}
 		if strings.Contains(r.URL.Path, "/comments/") {
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(map[string]string{"id": "cmt-1"})

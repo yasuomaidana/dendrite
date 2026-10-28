@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/env"
+	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/plane"
 	"Dendrite/pkg/ui/penpot"
@@ -150,7 +151,7 @@ func (b *PenpotUIBridge) RelateTicketToFeature(ctx context.Context, rel TicketFe
 	// If planeClient is active, post a status note linking Penpot Frame
 	if b.planeClient != nil && rel.Description != "" {
 		comment := fmt.Sprintf("UI Feature '%s' linked to Penpot Frame: %s", rel.FeatureName, frameURL)
-		_ = b.planeClient.AddComment(ctx, tracker.TicketID(ticketID), comment)
+		_ = planesvc.Default().Comment(ctx, b.planeClient, ticketID, comment)
 	}
 
 	return nil
@@ -241,7 +242,7 @@ func (b *PenpotUIBridge) SyncComponentWithPenpot(ctx context.Context, ticketID, 
 	if !dryRun && b.planeClient != nil && ticketID != "" {
 		comment := fmt.Sprintf("🎨 Penpot UI Canvas Synced: Component '%s' (%s)\nTokens: %d design tokens extracted\nDeep-Link: %s",
 			spec.Name, spec.Framework, len(spec.Tokens), penpotURL)
-		if err := b.planeClient.AddComment(ctx, tracker.TicketID(ticketID), comment); err == nil {
+		if err := planesvc.Default().Comment(ctx, b.planeClient, ticketID, comment); err == nil {
 			result.PlaneUpdated = true
 		}
 	}
@@ -302,7 +303,7 @@ func (b *PenpotUIBridge) UpdateProjectState(ctx context.Context, req ProjectStat
 		}
 
 		if req.Comment != "" {
-			_ = b.planeClient.AddComment(ctx, tracker.TicketID(ticketID), req.Comment)
+			_ = planesvc.Default().Comment(ctx, b.planeClient, ticketID, req.Comment)
 		}
 	}
 
