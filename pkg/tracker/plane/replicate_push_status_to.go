@@ -410,24 +410,7 @@ func (c *Client) ListStatesForProject(ctx context.Context, projectID string) ([]
 	return paginated.Results, nil
 }
 
-func resolvePlaneState(group, name string) tracker.Status {
-	g := strings.ToLower(group)
-	n := strings.ToLower(name)
-	switch {
-	case g == "completed" || strings.Contains(n, "done"):
-		return tracker.StatusDone
-	case strings.Contains(n, "review") || strings.Contains(n, "verif"):
-		return tracker.StatusInReview
-	case g == "started" || strings.Contains(n, "progress") || strings.Contains(n, "active"):
-		return tracker.StatusInProgress
-	case strings.Contains(n, "backlog") || g == "backlog":
-		return tracker.StatusBacklog
-	case g == "unstarted" || strings.Contains(n, "todo") || strings.Contains(n, "to do"):
-		return tracker.StatusTodo
-	default:
-		return tracker.StatusBacklog
-	}
-}
+func resolvePlaneState(group, name string) tracker.Status { return StatusFor(group, name) }
 
 func formatStatusName(st tracker.Status) string {
 	return tracker.StatusDisplayName(st)

@@ -42,20 +42,7 @@ func planeSmartSelectHandler(deps Dependencies) func(context.Context, map[string
 				states, _ := client.ListStates(ctx)
 				stateMap := make(map[string]tracker.Status)
 				for _, st := range states {
-					g := strings.ToLower(st.Group)
-					n := strings.ToLower(st.Name)
-					switch {
-					case g == "completed" || strings.Contains(n, "done"):
-						stateMap[st.ID] = tracker.StatusDone
-					case strings.Contains(n, "review") || strings.Contains(n, "verify"):
-						stateMap[st.ID] = tracker.StatusInReview
-					case g == "started" || strings.Contains(n, "progress") || strings.Contains(n, "active"):
-						stateMap[st.ID] = tracker.StatusInProgress
-					case g == "unstarted" || strings.Contains(n, "todo") || strings.Contains(n, "to do"):
-						stateMap[st.ID] = tracker.StatusTodo
-					default:
-						stateMap[st.ID] = tracker.StatusBacklog
-					}
+					stateMap[st.ID] = plane.StatusFor(st.Group, st.Name)
 				}
 
 				uuidToID := make(map[string]string)

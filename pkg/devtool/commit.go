@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/plane"
 )
 
@@ -113,10 +114,11 @@ func ResolveSmartTicket(ctx context.Context, repoDir string, stagedFiles []strin
 	if pClient, err := plane.NewClientFromEnv(); err == nil {
 		planeIssues, pErr := fetchPlaneIssues(ctx, pClient)
 		if pErr == nil && len(planeIssues) > 0 {
+			stateOf := planeStateResolver(ctx, pClient)
 			// 2a. Look for an In Progress ticket
 			for _, iss := range planeIssues {
 				// State group or slug check for in-progress
-				if iss.StateSlug == "in-progress" || iss.State == "8e46611a-87ed-457f-8be0-3c238b37e6eb" {
+				if stateOf(iss) == tracker.StatusInProgress {
 					tid, title := extractTicketIDAndTitle(iss.Name)
 					if tid != "" {
 						return &SmartTicketInfo{
@@ -159,7 +161,7 @@ func ResolveSmartTicket(ctx context.Context, repoDir string, stagedFiles []strin
 				}
 
 				// Bonus if recently updated
-				if iss.State == "f36249b3-f67a-427a-ab8a-cf1693ebdada" || iss.StateSlug == "to-verify" {
+				if stateOf(iss) == tracker.StatusInReview {
 					score += 10
 				}
 
@@ -188,7 +190,7 @@ func ResolveSmartTicket(ctx context.Context, repoDir string, stagedFiles []strin
 
 			// 2c. Most recent ticket transitioned to "To Verify"
 			for _, iss := range planeIssues {
-				if iss.State == "f36249b3-f67a-427a-ab8a-cf1693ebdada" || iss.StateSlug == "to-verify" {
+				if stateOf(iss) == tracker.StatusInReview {
 					tid, title := extractTicketIDAndTitle(iss.Name)
 					if tid != "" {
 						return &SmartTicketInfo{
@@ -242,6 +244,30 @@ func ResolveSmartTicket(ctx context.Context, repoDir string, stagedFiles []strin
 	}, nil
 }
 
+// planeStateResolver maps an issue to its tracker status through the project's own workflow
+// states, so it works on every board; boards differ in state UUIDs, which must never be hard-coded.
+// An issue whose state cannot be resolved falls back to the legacy state_slug field.
+func planeStateResolver(ctx context.Context, client *plane.Client) func(planeIssueLite) tracker.Status {
+	byID := map[string]tracker.Status{}
+	if states, err := client.ListStates(ctx); err == nil {
+		for _, st := range states {
+			byID[st.ID] = plane.StatusFor(st.Group, st.Name)
+		}
+	}
+	return func(iss planeIssueLite) tracker.Status {
+		if st, ok := byID[iss.State]; ok {
+			return st
+		}
+		switch iss.StateSlug {
+		case "in-progress":
+			return tracker.StatusInProgress
+		case "to-verify":
+			return tracker.StatusInReview
+		}
+		return tracker.StatusBacklog
+	}
+}
+
 type planeIssueLite struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
@@ -286,12 +312,13 @@ func fetchPlaneIssues(ctx context.Context, client *plane.Client) ([]planeIssueLi
 }
 
 func extractTicketIDAndTitle(name string) (string, string) {
-	re := regexp.MustCompile(`\[(DEN-\d+|DEND-\d+)\]\s*(.*)`)
+	re := regexp.MustCompile(`\[([A-Z][A-Z0-9]*-\d+)\]\s*(.*)`)
 	matches := re.FindStringSubmatch(name)
 	if len(matches) >= 3 {
 		return matches[1], strings.TrimSpace(matches[2])
 	}
-	reSolo := regexp.MustCompile(`\b(DEN-\d+|DEND-\d+)\b`)
+	// Unbracketed ids: any project identifier at the start of the title, or a legacy DEN id anywhere.
+	reSolo := regexp.MustCompile(`^[A-Z][A-Z0-9]*-\d+\b|\b(?:DEN|DEND)-\d+\b`)
 	if tid := reSolo.FindString(name); tid != "" {
 		return tid, strings.TrimSpace(strings.ReplaceAll(name, tid, ""))
 	}

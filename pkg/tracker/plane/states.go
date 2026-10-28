@@ -25,6 +25,7 @@ var CanonicalStates = []StateSpec{
 	{Name: "To Do", Group: "unstarted", Color: "#3A3A3A", Sequence: 25000},
 	{Name: "In Progress", Group: "started", Color: "#F59E0B", Sequence: 35000},
 	{Name: "To Verify", Group: "started", Color: "#FCB900", Sequence: 40000},
+	{Name: "Blocked", Group: "started", Color: "#DC2626", Sequence: 42000},
 	{Name: "Done", Group: "completed", Color: "#16A34A", Sequence: 45000},
 	{Name: "Cancelled", Group: "cancelled", Color: "#EF4444", Sequence: 55000},
 }

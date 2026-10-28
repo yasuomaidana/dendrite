@@ -408,9 +408,9 @@ func TestPlaneCommand_States(t *testing.T) {
 		mu.Unlock()
 		t.Errorf("expected project proj-custom-uuid, got: %s", requestedProjectID)
 	}
-	if postCount != 4 {
+	if postCount != 5 {
 		mu.Unlock()
-		t.Fatalf("expected 4 POSTs (In Progress, To Verify, Done, Cancelled), got %d", postCount)
+		t.Fatalf("expected 5 POSTs (In Progress, To Verify, Blocked, Done, Cancelled), got %d", postCount)
 	}
 	mu.Unlock()
 

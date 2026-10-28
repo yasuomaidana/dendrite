@@ -228,6 +228,10 @@ func StatusDisplayName(st Status) string {
 		return "In Progress"
 	case StatusTodo:
 		return "To Do"
+	case StatusBlocked:
+		return "Blocked"
+	case StatusCancelled:
+		return "Cancelled"
 	default:
 		return "Backlog"
 	}

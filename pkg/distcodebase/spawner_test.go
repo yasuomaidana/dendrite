@@ -115,8 +115,8 @@ func TestProjectSpawner_Spawn_WithPlaneLifecycleStates(t *testing.T) {
 	if res.PlaneError != "" {
 		t.Errorf("expected empty PlaneError, got: %s", res.PlaneError)
 	}
-	if len(createdStateBodies) != 2 {
-		t.Fatalf("expected 2 states created (To Verify, Cancelled), got %d", len(createdStateBodies))
+	if len(createdStateBodies) != 3 {
+		t.Fatalf("expected 3 states created (To Verify, Blocked, Cancelled), got %d", len(createdStateBodies))
 	}
 	if createdStateBodies[0]["name"] != "To Verify" || createdStateBodies[0]["group"] != "started" {
 		t.Errorf("unexpected created state: %+v", createdStateBodies[0])

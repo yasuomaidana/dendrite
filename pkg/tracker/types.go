@@ -16,11 +16,13 @@ const (
 	StatusInProgress Status = "IN_PROGRESS"
 	StatusInReview   Status = "IN_REVIEW"
 	StatusDone       Status = "DONE"
+	StatusBlocked    Status = "BLOCKED"
+	StatusCancelled  Status = "CANCELLED"
 )
 
 // ParseStatus parses a human-readable or enum status string into a Status.
 // It accepts backlog; todo/to do; in progress/wip; in review/review/to verify/verify;
-// done/complete/completed — case-insensitive, with '-', '_', or space as equivalent separators.
+// done/complete/completed; blocked; cancelled/canceled — case-insensitive, with '-', '_', or space as equivalent separators.
 func ParseStatus(s string) (Status, error) {
 	norm := strings.ToLower(strings.TrimSpace(s))
 	norm = strings.ReplaceAll(norm, "-", " ")
@@ -38,6 +40,10 @@ func ParseStatus(s string) (Status, error) {
 		return StatusInReview, nil
 	case "done", "complete", "completed":
 		return StatusDone, nil
+	case "blocked":
+		return StatusBlocked, nil
+	case "cancelled", "canceled":
+		return StatusCancelled, nil
 	default:
 		return "", fmt.Errorf("unknown status: %q", s)
 	}

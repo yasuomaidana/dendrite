@@ -167,22 +167,7 @@ func newChronosNextCmd() *cobra.Command {
 }
 
 // planeStatusFor maps a Plane state to a tracker status by group and name.
-func planeStatusFor(st plane.PlaneState) tracker.Status {
-	g := strings.ToLower(st.Group)
-	n := strings.ToLower(st.Name)
-	switch {
-	case g == "completed" || strings.Contains(n, "done"):
-		return tracker.StatusDone
-	case strings.Contains(n, "review") || strings.Contains(n, "verify"):
-		return tracker.StatusInReview
-	case g == "started" || strings.Contains(n, "progress") || strings.Contains(n, "active"):
-		return tracker.StatusInProgress
-	case g == "unstarted" || strings.Contains(n, "todo") || strings.Contains(n, "to do"):
-		return tracker.StatusTodo
-	default:
-		return tracker.StatusBacklog
-	}
-}
+func planeStatusFor(st plane.PlaneState) tracker.Status { return plane.StatusFor(st.Group, st.Name) }
 
 // buildPlaneDAG loads the Plane board into a dependency graph.
 func buildPlaneDAG(ctx context.Context, client *plane.Client, milestone string) (*dag.Graph, error) {

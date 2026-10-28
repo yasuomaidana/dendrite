@@ -268,7 +268,8 @@ func TestPlaneStatusFor(t *testing.T) {
 		"started/In Progress":   tracker.StatusInProgress,
 		"unstarted/Todo":        tracker.StatusTodo,
 		"backlog/Ideas":         tracker.StatusBacklog,
-		"cancelled/In review":   tracker.StatusInReview,
+		"cancelled/Cancelled":   tracker.StatusCancelled,
+		"started/Blocked":       tracker.StatusBlocked,
 		"unstarted/Active work": tracker.StatusInProgress,
 	}
 	for in, want := range cases {

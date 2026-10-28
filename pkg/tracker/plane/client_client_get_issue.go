@@ -350,16 +350,28 @@ func (c *Client) ValidateCredentials(ctx context.Context) error {
 	return nil
 }
 
-func mapPlaneState(group, name string) tracker.Status {
+func mapPlaneState(group, name string) tracker.Status { return StatusFor(group, name) }
+
+// StatusFor maps a Plane workflow state (group and display name) to a tracker status. It is the
+// only such mapping: every command, tool and sync path calls it, so a state means the same thing
+// everywhere. Cancelled and Blocked are matched before the group checks because Plane files
+// Blocked under "started".
+func StatusFor(group, name string) tracker.Status {
 	g := strings.ToLower(group)
 	n := strings.ToLower(name)
 	switch {
+	case g == "cancelled" || strings.Contains(n, "cancel"):
+		return tracker.StatusCancelled
+	case strings.Contains(n, "block"):
+		return tracker.StatusBlocked
 	case g == "completed" || strings.Contains(n, "done"):
 		return tracker.StatusDone
-	case strings.Contains(n, "review") || strings.Contains(n, "verify"):
+	case strings.Contains(n, "review") || strings.Contains(n, "verif"):
 		return tracker.StatusInReview
 	case g == "started" || strings.Contains(n, "progress") || strings.Contains(n, "active"):
 		return tracker.StatusInProgress
+	case g == "backlog" || strings.Contains(n, "backlog"):
+		return tracker.StatusBacklog
 	case g == "unstarted" || strings.Contains(n, "todo") || strings.Contains(n, "to do"):
 		return tracker.StatusTodo
 	default:
