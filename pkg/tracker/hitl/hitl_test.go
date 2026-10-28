@@ -325,3 +325,37 @@ func TestOnlyRestrictsTickets(t *testing.T) {
 		t.Error("filtered sync must not enrich other tickets")
 	}
 }
+
+func TestHITLSyncReadsCommentsFromTheListingWithoutPerIssueCalls(t *testing.T) {
+	ps, gh, s := fixture(t)
+	ctx := context.Background()
+	full := []string{github.LabelToVerify, github.LabelHITL}
+	gh.On("gh issue list", hitltest.IssueListJSON(
+		hitltest.IssueRow{Number: 12, Title: "[DEN-2] labels", State: "OPEN", Labels: full,
+			Comments: []hitltest.IssueComment{{Author: "rev", Body: "please add a test", CreatedAt: "2026-10-28T10:00:00Z"}}},
+		hitltest.IssueRow{Number: 15, Title: "[DEN-5] in sync", State: "OPEN", Labels: full, Comments: []hitltest.IssueComment{}},
+	), nil)
+	// Were it consulted, this would fail the sync: the listing already carries the comments.
+	gh.On("gh issue view", "", errors.New("must not be called"))
+
+	results, err := s.HITLSync(ctx, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]HITLResult{}
+	for _, r := range results {
+		got[r.TicketID] = r
+	}
+	if r := got["DEN-2"]; r.Outcome != OutcomeFeedback || len(r.Feedback) != 1 || r.Feedback[0].Author != "rev" || r.Error != "" {
+		t.Errorf("DEN-2 = %+v, want the reviewer's comment as feedback", r)
+	}
+	if r := got["DEN-5"]; r.Outcome != OutcomeWaiting || r.Error != "" {
+		t.Errorf("DEN-5 = %+v, want waiting with no error", r)
+	}
+	for _, call := range gh.Calls {
+		if strings.HasPrefix(call, "gh issue view") {
+			t.Errorf("per-issue call made: %s", call)
+		}
+	}
+	_ = ps
+}

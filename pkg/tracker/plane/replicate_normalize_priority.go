@@ -114,13 +114,18 @@ func PullStatusFromPlane(ctx context.Context, client *Client) (string, *StatusRe
 
 	moduleNameLookup := make(map[string]string)
 	moduleIssuesMap := make(map[string]string)
-	for _, mod := range modules {
+	// Each module's issue list is independent: fetch them together, then merge in module order so a
+	// ticket in several modules keeps the same (last) module as before.
+	moduleIssues := make([][]PlaneIssue, len(modules))
+	fanOut(len(modules), pullWorkers, func(i int) {
+		if mIssues, err := client.ListModuleIssues(ctx, modules[i].ID); err == nil {
+			moduleIssues[i] = mIssues
+		}
+	})
+	for i, mod := range modules {
 		moduleNameLookup[mod.ID] = mod.Name
-		mIssues, err := client.ListModuleIssues(ctx, mod.ID)
-		if err == nil {
-			for _, mi := range mIssues {
-				moduleIssuesMap[mi.ID] = mod.Name
-			}
+		for _, mi := range moduleIssues[i] {
+			moduleIssuesMap[mi.ID] = mod.Name
 		}
 	}
 
@@ -147,23 +152,31 @@ func PullStatusFromPlane(ctx context.Context, client *Client) (string, *StatusRe
 
 	// State UUIDs are per project, so each sub-project needs its own lookup.
 	projectStateLookup := map[string]map[string]tracker.Status{"DEN": stateNameLookup}
-	for _, ident := range otherProjectNames {
-		p := otherProjectsMap[ident]
+	// The projects are independent: fetch their states and issues together, then assemble in the
+	// sorted project order so the generated file does not depend on which request finished first.
+	type projectData struct {
+		lookup map[string]tracker.Status
+		issues []PlaneIssue
+	}
+	fetched := make([]projectData, len(otherProjectNames))
+	fanOut(len(otherProjectNames), pullWorkers, func(i int) {
+		p := otherProjectsMap[otherProjectNames[i]]
 		lookup := make(map[string]tracker.Status)
 		if pStates, err := client.ListStatesForProject(ctx, p.ID); err == nil {
 			for _, s := range pStates {
 				lookup[s.ID] = resolvePlaneState(s.Group, s.Name)
 			}
 		}
-		projectStateLookup[ident] = lookup
-		pIssues, err := client.ListPlaneIssuesForProject(ctx, p.ID)
-		if err == nil {
-			for _, pi := range pIssues {
-				otherProjectIssues = append(otherProjectIssues, projectIssuePair{
-					projIdent: ident,
-					issue:     pi,
-				})
-			}
+		data := projectData{lookup: lookup}
+		if pIssues, err := client.ListPlaneIssuesForProject(ctx, p.ID); err == nil {
+			data.issues = pIssues
+		}
+		fetched[i] = data
+	})
+	for i, ident := range otherProjectNames {
+		projectStateLookup[ident] = fetched[i].lookup
+		for _, pi := range fetched[i].issues {
+			otherProjectIssues = append(otherProjectIssues, projectIssuePair{projIdent: ident, issue: pi})
 		}
 	}
 

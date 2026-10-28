@@ -267,10 +267,14 @@ func (s *Syncer) pollIssue(ctx context.Context, iss github.Issue, r *HITLResult,
 		r.Applied = true
 		return
 	}
-	comments, err := s.GitHub.IssueComments(ctx, iss.Number)
-	if err != nil {
-		r.Outcome, r.Error = OutcomeWaiting, err.Error()
-		return
+	// The issue listing already carried the comments: no per-issue request (0.65 s each) is needed.
+	comments := iss.Comments
+	if !iss.CommentsKnown {
+		var err error
+		if comments, err = s.GitHub.IssueComments(ctx, iss.Number); err != nil {
+			r.Outcome, r.Error = OutcomeWaiting, err.Error()
+			return
+		}
 	}
 	r.Outcome = OutcomeWaiting
 	if len(comments) > 0 {

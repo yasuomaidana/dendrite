@@ -135,18 +135,35 @@ func IssueListJSON(issues ...IssueRow) string {
 	type label struct {
 		Name string `json:"name"`
 	}
+	type comment struct {
+		Author struct {
+			Login string `json:"login"`
+		} `json:"author"`
+		Body      string `json:"body"`
+		CreatedAt string `json:"createdAt"`
+	}
 	type row struct {
-		Number      int     `json:"number"`
-		Title       string  `json:"title"`
-		State       string  `json:"state"`
-		StateReason string  `json:"stateReason"`
-		Labels      []label `json:"labels"`
+		Number      int        `json:"number"`
+		Title       string     `json:"title"`
+		State       string     `json:"state"`
+		StateReason string     `json:"stateReason"`
+		Labels      []label    `json:"labels"`
+		Comments    *[]comment `json:"comments,omitempty"`
 	}
 	rows := make([]row, 0, len(issues))
 	for _, i := range issues {
 		r := row{Number: i.Number, Title: i.Title, State: i.State, StateReason: i.StateReason, Labels: []label{}}
 		for _, l := range i.Labels {
 			r.Labels = append(r.Labels, label{Name: l})
+		}
+		if i.Comments != nil {
+			cs := make([]comment, 0, len(i.Comments))
+			for _, c := range i.Comments {
+				var cm comment
+				cm.Author.Login, cm.Body, cm.CreatedAt = c.Author, c.Body, c.CreatedAt
+				cs = append(cs, cm)
+			}
+			r.Comments = &cs
 		}
 		rows = append(rows, r)
 	}
@@ -161,4 +178,11 @@ type IssueRow struct {
 	State       string
 	StateReason string
 	Labels      []string
+	// Comments, when non-nil, are included in the listing as `gh issue list --json comments` does.
+	Comments []IssueComment
+}
+
+// IssueComment is one comment of an IssueRow.
+type IssueComment struct {
+	Author, Body, CreatedAt string
 }

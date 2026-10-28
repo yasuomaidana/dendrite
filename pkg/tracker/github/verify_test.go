@@ -71,7 +71,7 @@ func TestTicketIDFromTitle(t *testing.T) {
 	}
 }
 
-const listCmd = "gh issue list --state all --limit 5000 --json number,title,state,stateReason,labels --repo o/r"
+const listCmd = "gh issue list --state all --limit 5000 --json number,title,state,stateReason,labels,comments --repo o/r"
 
 func TestListTicketIssues(t *testing.T) {
 	script := newTestScriptExecutor()
@@ -284,5 +284,27 @@ func TestApplyVerificationActions(t *testing.T) {
 	out := NewGitHubClient("o/r").WithExecutor(failing).ApplyVerificationActions(context.Background(), actions[:2])
 	if out[0].Error == "" || out[1].Error == "" {
 		t.Errorf("errors must be recorded per action: %+v", out)
+	}
+}
+
+func TestListTicketIssuesCarriesCommentsOnlyWhenTheListingDoes(t *testing.T) {
+	script := newTestScriptExecutor()
+	script.calls[listCmd] = `[
+		{"number":1,"title":"[DEN-1] with comments","state":"OPEN","labels":[],"comments":[{"author":{"login":"rev"},"body":"looks wrong","createdAt":"2026-10-28T10:00:00Z"}]},
+		{"number":2,"title":"[DEN-2] none yet","state":"OPEN","labels":[],"comments":[]},
+		{"number":3,"title":"[DEN-3] field absent","state":"OPEN","labels":[]}
+	]`
+	issues, err := NewGitHubClient("o/r").WithExecutor(script).ListTicketIssues(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i := issues["DEN-1"]; !i.CommentsKnown || len(i.Comments) != 1 || i.Comments[0].Author != "rev" || i.Comments[0].Body != "looks wrong" {
+		t.Errorf("DEN-1 = %+v", i)
+	}
+	if i := issues["DEN-2"]; !i.CommentsKnown || len(i.Comments) != 0 {
+		t.Errorf("DEN-2 = %+v: an empty list is known to be empty", i)
+	}
+	if i := issues["DEN-3"]; i.CommentsKnown {
+		t.Errorf("DEN-3 = %+v: a missing field must not read as 'no comments'", i)
 	}
 }
