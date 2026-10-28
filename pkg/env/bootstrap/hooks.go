@@ -14,11 +14,15 @@ const (
 	// preToolMatcher selects the tool calls the hook sees: shell commands (rg, grep -r), the built-in
 	// Grep tool, and Dendrite's own MCP tools (counted, never blocked).
 	preToolMatcher = "Bash|Grep|mcp__dendrite.*"
-	// preToolCommand is the hook entry point. It is the bare program name so it follows whichever
-	// dendrite is installed on PATH; a path inside the project would break the day it moves.
-	preToolCommand = "dendrite hook pre-tool"
-	// dendriteHookPrefix identifies every hook command Dendrite owns, so a rewrite replaces them.
-	dendriteHookPrefix = "dendrite hook "
+	// preToolCommand is the hook entry point. It calls whichever dendrite is on PATH (a path inside the
+	// project would break the day it moves) and fails open: a hook must never stop an agent from working.
+	// With no dendrite, or one that predates `hook`, the call is allowed; only the guard's own message
+	// ("dendrite-first:") with exit 2 blocks. The marker matters because an unknown subcommand also
+	// exits 2, this project's usage-error code, which Claude Code would read as a block.
+	preToolCommand = `command -v dendrite >/dev/null 2>&1 || exit 0; out=$(dendrite hook pre-tool 2>&1); c=$?; ` +
+		`case "$out" in *dendrite-first:*) [ "$c" -eq 2 ] && { printf '%s\n' "$out" >&2; exit 2; };; esac; exit 0`
+	// dendriteHookMarker identifies every hook command Dendrite owns, so a rewrite replaces them.
+	dendriteHookMarker = "dendrite hook pre-tool"
 )
 
 // mergeClaudeHooks adds Dendrite's PreToolUse hook to a Claude Code settings document. Everything
@@ -53,11 +57,15 @@ func mergeClaudeHooks(existing []byte) (merged []byte, changed bool, err error) 
 	hooks["PreToolUse"] = append(kept, ours)
 	doc["hooks"] = hooks
 
-	out, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
+	// No HTML escaping: the hook command contains > and &, which should stay readable in the file.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(doc); err != nil {
 		return nil, false, err
 	}
-	out = append(out, '\n')
+	out := buf.Bytes() // Encode ends the document with a newline
 
 	var before any
 	if len(bytes.TrimSpace(existing)) > 0 && json.Unmarshal(existing, &before) == nil {
@@ -83,7 +91,7 @@ func isDendriteHookEntry(entry any) bool {
 	for _, h := range inner {
 		hm, _ := h.(map[string]any)
 		cmd, _ := hm["command"].(string)
-		if !strings.HasPrefix(strings.TrimSpace(cmd), dendriteHookPrefix) {
+		if !strings.Contains(cmd, dendriteHookMarker) {
 			return false
 		}
 	}

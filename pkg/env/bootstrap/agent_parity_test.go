@@ -70,7 +70,8 @@ func TestPrepare_InstallsTheClaudeHookWithoutClobberingSettings(t *testing.T) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatalf("settings.json is not JSON: %v\n%s", err, data)
 	}
-	if doc["permissions"] == nil || !strings.Contains(string(data), preToolCommand) {
+	pre := doc["hooks"].(map[string]any)["PreToolUse"].([]any)
+	if doc["permissions"] == nil || len(pre) != 1 || hookCommandOf(pre[0].(map[string]any)) != preToolCommand {
 		t.Errorf("settings = %s", data)
 	}
 

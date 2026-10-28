@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "command": "dendrite hook pre-tool",
+            "command": "command -v dendrite >/dev/null 2>&1 || exit 0; out=$(dendrite hook pre-tool 2>&1); c=$?; case \"$out\" in *dendrite-first:*) [ \"$c\" -eq 2 ] && { printf '%s\\n' \"$out\" >&2; exit 2; };; esac; exit 0",
             "type": "command"
           }
         ],
