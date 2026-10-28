@@ -284,7 +284,7 @@ func (c *Client) ListPlaneIssues(ctx context.Context) ([]PlaneIssue, error) {
 		break
 	}
 
-	return allIssues, nil
+	return dedupeIssues(allIssues), nil
 }
 
 // ListStates queries all states configured for the project.

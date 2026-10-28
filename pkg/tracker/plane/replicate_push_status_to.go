@@ -364,7 +364,7 @@ func (c *Client) ListPlaneIssuesForProject(ctx context.Context, projectID string
 		break
 	}
 
-	return allIssues, nil
+	return dedupeIssues(allIssues), nil
 }
 
 // ListStatesForProject queries all states configured for a specific project.

@@ -59,3 +59,62 @@ func TestGetRelationsForRunsConcurrentlyAndSkipsFailures(t *testing.T) {
 		t.Errorf("empty input = %v, %v", empty, err)
 	}
 }
+
+func TestListPlaneIssuesDropsRowsRepeatedAcrossPages(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("cursor") == "c2" {
+			_, _ = w.Write([]byte(`{"results":[{"id":"a","name":"[DEN-1] one"},{"id":"b","name":"[DEN-2] two"}],"next_page_results":false}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"results":[{"id":"a","name":"[DEN-1] one"},{"id":"c","name":"[DEN-3] three"}],"next_page_results":true,"next_cursor":"c2"}`))
+	}))
+	defer srv.Close()
+	c, err := NewClient(Config{BaseURL: srv.URL, WorkspaceSlug: "ws", ProjectID: "p", DirectToken: "k"}, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	issues, err := c.ListPlaneIssues(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, i := range issues {
+		ids = append(ids, i.ID)
+	}
+	if strings.Join(ids, ",") != "a,c,b" {
+		t.Errorf("ids = %v, want a,c,b (first occurrence kept, order kept)", ids)
+	}
+}
+
+func TestRelationWritesNotifyTheRelationsChangedHook(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	c, _ := NewClient(Config{BaseURL: srv.URL, WorkspaceSlug: "ws", ProjectID: "p", DirectToken: "k"}, srv.Client())
+
+	var got [][]string
+	SetRelationsChangedHook(func(_ *Client, ids []string) { got = append(got, ids) })
+	defer SetRelationsChangedHook(nil)
+
+	if err := c.AddIssueRelation(context.Background(), "a", "blocked_by", []string{"b", "c"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.RemoveIssueRelation(context.Background(), "a", "blocked_by", "b"); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || strings.Join(got[0], ",") != "a,b,c" || strings.Join(got[1], ",") != "a,b" {
+		t.Errorf("hook calls = %v, want [a b c] then [a b]", got)
+	}
+
+	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusInternalServerError) }))
+	defer failing.Close()
+	fc, _ := NewClient(Config{BaseURL: failing.URL, WorkspaceSlug: "ws", ProjectID: "p", DirectToken: "k"}, failing.Client())
+	got = nil
+	_ = fc.AddIssueRelation(context.Background(), "a", "blocked_by", []string{"b"})
+	if len(got) != 0 {
+		t.Errorf("a failed write still invalidated caches: %v", got)
+	}
+}

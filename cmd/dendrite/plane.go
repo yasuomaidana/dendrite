@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/pkg/planesvc"
 	"context"
 	"errors"
 	"fmt"
@@ -171,15 +172,11 @@ func planeStatusFor(st plane.PlaneState) tracker.Status { return plane.StatusFor
 
 // buildPlaneDAG loads the Plane board into a dependency graph.
 func buildPlaneDAG(ctx context.Context, client *plane.Client, milestone string) (*dag.Graph, error) {
-	issues, err := client.ListPlaneIssues(ctx)
+	snap, _, err := planesvc.Default().Snapshot(ctx, client, false)
 	if err != nil {
 		return nil, fmt.Errorf("query Plane issues: %w", err)
 	}
-	states, _ := client.ListStates(ctx)
-	stateMap := make(map[string]tracker.Status, len(states))
-	for _, st := range states {
-		stateMap[st.ID] = planeStatusFor(st)
-	}
+	issues := snap.Issues
 
 	graph := dag.NewGraph()
 	uuidToID := make(map[string]string)
@@ -193,7 +190,7 @@ func buildPlaneDAG(ctx context.Context, client *plane.Client, milestone string) 
 		}
 		uuidToID[iss.ID] = id
 
-		st := stateMap[iss.State]
+		st := snap.Statuses[iss.ID]
 		if st == "" {
 			st = tracker.StatusTodo
 		}
@@ -222,20 +219,10 @@ func buildPlaneDAG(ctx context.Context, client *plane.Client, milestone string) 
 		graph.AddNode(node)
 	}
 
-	var relIDs []string
-	for _, iss := range issues {
-		if _, ok := uuidToID[iss.ID]; !ok {
-			continue
-		}
-		if st := stateMap[iss.State]; st != tracker.StatusDone && st != tracker.StatusCancelled {
-			relIDs = append(relIDs, iss.ID)
-		}
-	}
-	relations, _ := client.GetRelationsFor(ctx, relIDs)
 	for _, iss := range issues {
 		currID := uuidToID[iss.ID]
-		rels := relations[iss.ID]
-		if rels == nil {
+		rels, ok := snap.Relations[iss.ID]
+		if !ok {
 			continue
 		}
 		for _, blocked := range rels.BlockedBy {

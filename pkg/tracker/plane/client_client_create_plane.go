@@ -410,5 +410,6 @@ func (c *Client) AddIssueRelation(ctx context.Context, issueID string, relationT
 		return fmt.Errorf("failed to add issue relation: status %d, err: %s", resp.StatusCode, string(errBytes))
 	}
 
+	notifyRelationsChanged(c, append([]string{issueID}, relatedIssueIDs...))
 	return nil
 }

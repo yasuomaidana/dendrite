@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"Dendrite/pkg/tracker"
@@ -72,6 +73,7 @@ func (c *Client) RemoveIssueRelation(ctx context.Context, issueID, relationType,
 		return fmt.Errorf("failed to remove issue relation: status %d", resp.StatusCode)
 	}
 
+	notifyRelationsChanged(c, []string{issueID, relatedIssueID})
 	return nil
 }
 
@@ -513,4 +515,34 @@ func (c *Client) GetRelationsFor(ctx context.Context, issueIDs []string) (map[st
 	close(jobs)
 	wg.Wait()
 	return out, firstErr
+}
+
+var relationsChanged atomic.Pointer[func(*Client, []string)]
+
+// SetRelationsChangedHook registers a function called after this package changes the relations of
+// issues (the issue UUIDs are passed), so caches elsewhere can drop what they hold. Plane does not
+// bump an issue's updated_at when a relation changes, so nothing else would reveal the change.
+func SetRelationsChangedHook(fn func(c *Client, issueIDs []string)) {
+	relationsChanged.Store(&fn)
+}
+
+func notifyRelationsChanged(c *Client, issueIDs []string) {
+	if fn := relationsChanged.Load(); fn != nil && *fn != nil {
+		(*fn)(c, issueIDs)
+	}
+}
+
+// dedupeIssues drops the rows Plane repeats for an issue that belongs to several modules,
+// keeping the first occurrence and the order.
+func dedupeIssues(issues []PlaneIssue) []PlaneIssue {
+	seen := make(map[string]struct{}, len(issues))
+	out := issues[:0:0]
+	for _, iss := range issues {
+		if _, dup := seen[iss.ID]; dup {
+			continue
+		}
+		seen[iss.ID] = struct{}{}
+		out = append(out, iss)
+	}
+	return out
 }

@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"Dendrite/pkg/planesvc"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -37,13 +38,9 @@ func planeSmartSelectHandler(deps Dependencies) func(context.Context, map[string
 		// 1. Try querying authoritative Plane service if reachable
 		planeLoaded := false
 		if client != nil {
-			issues, err := client.ListPlaneIssues(ctx)
-			if err == nil && len(issues) > 0 {
-				states, _ := client.ListStates(ctx)
-				stateMap := make(map[string]tracker.Status)
-				for _, st := range states {
-					stateMap[st.ID] = plane.StatusFor(st.Group, st.Name)
-				}
+			snap, _, err := planesvc.Default().Snapshot(ctx, client, false)
+			if err == nil && len(snap.Issues) > 0 {
+				issues := snap.Issues
 
 				uuidToID := make(map[string]string)
 				for _, iss := range issues {
@@ -54,7 +51,7 @@ func planeSmartSelectHandler(deps Dependencies) func(context.Context, map[string
 					}
 					uuidToID[iss.ID] = id
 
-					st := stateMap[iss.State]
+					st := snap.Statuses[iss.ID]
 					if st == "" {
 						st = tracker.StatusTodo
 					}
@@ -90,19 +87,10 @@ func planeSmartSelectHandler(deps Dependencies) func(context.Context, map[string
 					})
 				}
 
-				// Fetch relations from Plane concurrently; finished tickets cannot be blocked by anything
-				// that matters for selection, so they are skipped.
-				var relIDs []string
-				for _, iss := range issues {
-					if st := stateMap[iss.State]; st != tracker.StatusDone && st != tracker.StatusCancelled {
-						relIDs = append(relIDs, iss.ID)
-					}
-				}
-				relations, _ := client.GetRelationsFor(ctx, relIDs)
 				for _, iss := range issues {
 					currID := uuidToID[iss.ID]
-					rels := relations[iss.ID]
-					if rels != nil {
+					rels, hasRels := snap.Relations[iss.ID]
+					if hasRels {
 						for _, blocked := range rels.BlockedBy {
 							blockerID := uuidToID[blocked.ID]
 							if blockerID == "" {
