@@ -45,14 +45,14 @@ func newInterCmd() *cobra.Command {
 		"dendrite inter call dendrite_ticket_smart_select '{}'"
 	var synapseID, profileFlag string
 	cmd.PersistentFlags().StringVar(&synapseID, "synapse", "", "Expose only the synapse_* tools of this synapse")
-	cmd.PersistentFlags().StringVar(&profileFlag, "profile", "", "Tool profile: core (RAG, graph, Plane) or full (every tool); env "+mcpserver.ProfileEnv+", default full")
+	cmd.PersistentFlags().StringVar(&profileFlag, "profile", "", "Tool profile: core (RAG, graph, Plane: the probed, working set) or full (every tool); env "+mcpserver.ProfileEnv+", default core")
 	server := func() (*mcpserver.Server, error) {
 		if synapseID != "" {
 			return buildSynapseMCPServer(synapseID)
 		}
-		profile, err := mcpserver.ParseProfile(profileFlag, mcpserver.ProfileFull)
+		profile, err := mcpserver.ParseProfile(profileFlag, mcpserver.ProfileCore)
 		if profileFlag == "" {
-			profile, err = mcpserver.ProfileFromEnv(mcpserver.ProfileFull)
+			profile, err = mcpserver.ProfileFromEnv(mcpserver.ProfileCore)
 		}
 		if err != nil {
 			return nil, usageErrorf("%v", err)

@@ -20,6 +20,13 @@ const (
 // ProfileEnv names the environment variable that selects the profile when no flag is given.
 const ProfileEnv = "DENDRITE_MCP_PROFILE"
 
+// The core set was chosen from `dendrite inter probe` (2026-10-28): every read-only RAG, graph and
+// Plane tool answered. The slow ones (Plane smart-select 28s, hitl_sync 50s, replicate 8s on a
+// 360-issue board) are tracked in DEN-338 rather than dropped, because Plane is essential.
+// Writers (issue_create, relation_link, push_status, doc_sync, replicate, ticket_set) are not
+// probed; they are covered by their own tests. Everything outside core is still available with
+// the full profile.
+//
 // coreToolPrefixes and coreToolNames are the control-plane tools in the core profile.
 // Synapse tools are served by the scoped synapse server (NewSynapseServer), which is always
 // confined to the relationship and is not filtered.
