@@ -255,7 +255,7 @@ flowchart TB
 
 ### Installation
 
-Dendrite and its sub-projects (`dendrite-mcp-hub`, `dendrite-core-rs`, `dendrite-git-rs`, `dendrite-rag-rs`, `embedag`) are installed from git. Every repository is cloned next to the others and kept on one branch: `main` for a normal install, `develop` for a dev install.
+Dendrite and its sub-projects (`dendrite-mcp-hub`, `dendrite-core-rs`, `dendrite-git-rs`, `dendrite-rag-rs`, `dendrite-plane-rs`, `embedag`) are installed from git. Every repository is cloned next to the others and kept on one branch: `main` for a normal install, `develop` for a dev install.
 
 ```bash
 # Stable: every repository on main, under ~/dendrite (override with --root)

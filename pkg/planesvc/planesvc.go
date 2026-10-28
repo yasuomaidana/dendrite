@@ -1,11 +1,13 @@
-// Package planesvc is Dendrite's fast path to Plane: it asks the long-lived dendrite-plane
-// sidecar (a pooled process behind a bounded queue) and falls back to the in-process Go client
-// whenever the sidecar is missing, incompatible, busy or fails, so Dendrite works with or
-// without it installed. Both paths return the same Snapshot.
+// Package planesvc is Dendrite's way to Plane: it asks the long-lived dendrite-plane sidecar
+// (a pooled process behind a bounded queue). The sidecar is required: when it is missing or
+// incompatible every call returns ErrSidecarMissing, which names the fix. There is no
+// in-process copy of what the sidecar serves.
 package planesvc
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,8 +25,46 @@ const Protocol = 1
 // BinaryName is the sidecar executable (override its path with DENDRITE_DENDRITE_PLANE_BIN).
 const BinaryName = "dendrite-plane"
 
-// DisableEnv turns the sidecar path off when set to "off", "0" or "false" (tests, debugging).
-const DisableEnv = "DENDRITE_PLANE_SIDECAR"
+// ErrSidecarMissing means the dendrite-plane sidecar could not be started (not installed,
+// not executable, or speaking another protocol major).
+var ErrSidecarMissing = errors.New("dendrite-plane sidecar not available: run `dendrite install` " +
+	"(or `cargo build --release` in dendrite-plane-rs and copy target/release/dendrite-plane to $DENDRITE_HOME/bin)")
+
+// call runs one sidecar method; a sidecar that cannot be started becomes ErrSidecarMissing with
+// the cause attached, any other failure (a Plane error the sidecar reported) is returned as is.
+func (s *Service) call(ctx context.Context, shared bool, method string, params, result interface{}) error {
+	if s == nil || s.pool == nil {
+		return fmt.Errorf("%w: no pool", ErrSidecarMissing)
+	}
+	var err error
+	if shared {
+		err = s.pool.CallShared(ctx, method, params, result)
+	} else {
+		err = s.pool.Call(ctx, method, params, result)
+	}
+	if errors.Is(err, sidecar.ErrUnavailable) {
+		return fmt.Errorf("%w (%v)", ErrSidecarMissing, err)
+	}
+	return typed(err)
+}
+
+// typed gives the sidecar's error kinds the sentinel errors callers already test with errors.Is.
+func typed(err error) error {
+	var rpc *sidecar.RPCError
+	if !errors.As(err, &rpc) {
+		return err
+	}
+	switch rpc.Kind() {
+	case "unauthorized":
+		return fmt.Errorf("%w: %s", plane.ErrUnauthorized, rpc.Message)
+	case "not_found":
+		if strings.HasPrefix(rpc.Message, "no workflow state") {
+			return fmt.Errorf("%w: %s", plane.ErrStateNotFound, rpc.Message)
+		}
+		return fmt.Errorf("%w: %s", plane.ErrIssueNotFound, rpc.Message)
+	}
+	return err
+}
 
 // Snapshot is the whole Plane board in one value: what a scheduler needs.
 type Snapshot struct {
@@ -85,61 +125,39 @@ func Default() *Service {
 	return defaultSvc
 }
 
-func disabled() bool {
-	switch strings.ToLower(os.Getenv(DisableEnv)) {
-	case "off", "0", "false":
-		return true
-	}
-	return false
-}
-
 func target(c *plane.Client) map[string]any {
 	return map[string]any{"base_url": c.BaseURL(), "workspace": c.WorkspaceSlug(), "project_id": c.ProjectID()}
 }
 
 // Snapshot returns the board of c's project. With fresh set, the sidecar's relation cache is
-// bypassed. The Outcome says which implementation answered.
+// bypassed.
 func (s *Service) Snapshot(ctx context.Context, c *plane.Client, fresh bool) (*Snapshot, sidecar.Outcome, error) {
-	reason := "sidecar disabled"
-	if s != nil && s.pool != nil && !disabled() {
-		params := target(c)
-		params["fresh"] = fresh
-		var snap Snapshot
-		err := s.pool.CallShared(ctx, "board.snapshot", params, &snap)
-		if err == nil {
-			return &snap, sidecar.Outcome{Origin: sidecar.OriginSidecar}, nil
-		}
-		reason = err.Error()
+	params := target(c)
+	params["fresh"] = fresh
+	var snap Snapshot
+	if err := s.call(ctx, true, "board.snapshot", params, &snap); err != nil {
+		return nil, sidecar.Outcome{Origin: sidecar.OriginSidecar, Reason: err.Error()}, err
 	}
-	snap, err := goSnapshot(ctx, c)
-	return snap, sidecar.Outcome{Origin: sidecar.OriginFallback, Reason: reason}, err
+	return &snap, sidecar.Outcome{Origin: sidecar.OriginSidecar}, nil
 }
 
 // SetStatus moves the ticket to state: the Zero-Mock gate runs first, then the sidecar's
-// issue.set_status, then the Go client when the sidecar is missing, disabled or fails (the Go
-// client reports the typed errors).
+// issue.set_status.
 func (s *Service) SetStatus(ctx context.Context, c *plane.Client, ref tracker.TicketID, state tracker.Status) (sidecar.Outcome, error) {
+	out := sidecar.Outcome{Origin: sidecar.OriginSidecar}
 	if err := c.CheckZeroMockGate(ctx, ref, state); err != nil {
-		return sidecar.Outcome{Origin: sidecar.OriginFallback, Reason: "gate"}, err
+		return out, err
 	}
-	reason := "sidecar disabled"
-	if s != nil && s.pool != nil && !disabled() {
-		params := target(c)
-		params["ref"] = string(ref)
-		params["status"] = string(state)
-		if err := s.pool.Call(ctx, "issue.set_status", params, nil); err == nil {
-			return sidecar.Outcome{Origin: sidecar.OriginSidecar}, nil
-		} else {
-			reason = err.Error()
-		}
-	}
-	return sidecar.Outcome{Origin: sidecar.OriginFallback, Reason: reason}, c.UpdateStatus(ctx, ref, state)
+	params := target(c)
+	params["ref"] = string(ref)
+	params["status"] = string(state)
+	return out, s.call(ctx, false, "issue.set_status", params, nil)
 }
 
 // InvalidateRelations tells the sidecar that these issues' relations changed (empty: all of the
 // project's). It is best effort: without a running sidecar there is nothing cached to drop.
 func (s *Service) InvalidateRelations(ctx context.Context, c *plane.Client, issueIDs ...string) {
-	if s == nil || s.pool == nil || disabled() {
+	if s == nil || s.pool == nil {
 		return
 	}
 	params := target(c)
@@ -153,45 +171,4 @@ func (s *Service) Close() error {
 		return nil
 	}
 	return s.pool.Close()
-}
-
-// goSnapshot builds the same Snapshot with the in-process client: one deduplicated issue list,
-// the project's states, and concurrent relation requests for the open issues only.
-func goSnapshot(ctx context.Context, c *plane.Client) (*Snapshot, error) {
-	issues, err := c.ListPlaneIssues(ctx)
-	if err != nil {
-		return nil, err
-	}
-	states, _ := c.ListStates(ctx)
-	byState := make(map[string]tracker.Status, len(states))
-	for _, st := range states {
-		byState[st.ID] = plane.StatusFor(st.Group, st.Name)
-	}
-	snap := &Snapshot{
-		Issues:    issues,
-		Statuses:  make(map[string]tracker.Status, len(issues)),
-		Relations: map[string]plane.IssueRelationsResponse{},
-	}
-	var open []string
-	for _, iss := range issues {
-		st, ok := byState[iss.State]
-		if !ok {
-			st = tracker.StatusBacklog
-		}
-		snap.Statuses[iss.ID] = st
-		if st != tracker.StatusDone && st != tracker.StatusCancelled {
-			open = append(open, iss.ID)
-		}
-	}
-	rels, firstErr := c.GetRelationsFor(ctx, open)
-	for id, r := range rels {
-		if r != nil {
-			snap.Relations[id] = *r
-		}
-	}
-	if firstErr != nil {
-		snap.RelationErrors = len(open) - len(snap.Relations)
-	}
-	snap.RelationsFetched = len(snap.Relations)
-	return snap, nil
 }

@@ -3,6 +3,7 @@ package planesvc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -88,6 +89,8 @@ func absentService() *Service {
 	return New(sidecar.Locator{LookPath: func(string) (string, error) { return "", os.ErrNotExist }})
 }
 
+func realService() *Service { return New(sidecar.DefaultLocator()) }
+
 func checkSnapshot(t *testing.T, snap *Snapshot) {
 	t.Helper()
 	var ids []string
@@ -114,17 +117,18 @@ func checkSnapshot(t *testing.T, snap *Snapshot) {
 	}
 }
 
-func TestSnapshotFallsBackToTheGoClientWhenTheSidecarIsMissing(t *testing.T) {
+func TestSnapshotComesFromTheSidecar(t *testing.T) {
+	t.Setenv("PLANE_API_KEY", "k")
 	f := newLocalPlane(t)
-	svc := absentService()
+	svc := realService()
 	defer svc.Close()
 
-	snap, out, err := svc.Snapshot(context.Background(), f.client(t), false)
+	snap, out, err := svc.Snapshot(context.Background(), f.client(t), true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Origin != sidecar.OriginFallback || !strings.Contains(out.Reason, "unavailable") {
-		t.Errorf("outcome = %+v, want a fallback explained as unavailable", out)
+	if out.Origin != sidecar.OriginSidecar {
+		t.Errorf("outcome = %+v", out)
 	}
 	checkSnapshot(t, snap)
 	for _, id := range f.relCalls {
@@ -134,25 +138,52 @@ func TestSnapshotFallsBackToTheGoClientWhenTheSidecarIsMissing(t *testing.T) {
 	}
 }
 
-func TestSnapshotHonorsTheDisableSwitch(t *testing.T) {
-	t.Setenv(DisableEnv, "off")
+func TestMissingSidecarIsAnErrorThatNamesTheFix(t *testing.T) {
+	t.Setenv(sidecar.EnvVar(BinaryName), "")
 	f := newLocalPlane(t)
 	svc := absentService()
 	defer svc.Close()
-	_, out, err := svc.Snapshot(context.Background(), f.client(t), false)
-	if err != nil || out.Origin != sidecar.OriginFallback || out.Reason != "sidecar disabled" {
-		t.Errorf("outcome = %+v, err = %v", out, err)
+	_, _, err := svc.Snapshot(context.Background(), f.client(t), false)
+	if !errors.Is(err, ErrSidecarMissing) || !strings.Contains(err.Error(), "dendrite install") {
+		t.Fatalf("err = %v, want ErrSidecarMissing naming dendrite install", err)
+	}
+	if _, err := svc.SetStatus(context.Background(), f.client(t), "DEN-1", tracker.StatusInProgress); !errors.Is(err, ErrSidecarMissing) {
+		t.Errorf("SetStatus err = %v, want ErrSidecarMissing", err)
 	}
 }
 
-func TestSnapshotReportsPlaneErrorsFromTheFallback(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusInternalServerError) }))
+func TestPlaneErrorsSurfaceWithTheirSentinel(t *testing.T) {
+	t.Setenv("PLANE_API_KEY", "k")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusUnauthorized) }))
 	defer srv.Close()
 	c, _ := plane.NewClient(plane.Config{BaseURL: srv.URL, WorkspaceSlug: "ws", ProjectID: "p", DirectToken: "k"}, srv.Client())
-	svc := absentService()
+	svc := realService()
 	defer svc.Close()
-	if _, _, err := svc.Snapshot(context.Background(), c, false); err == nil {
-		t.Error("expected the Plane failure to surface")
+	if _, _, err := svc.Snapshot(context.Background(), c, false); !errors.Is(err, plane.ErrUnauthorized) {
+		t.Errorf("err = %v, want plane.ErrUnauthorized", err)
+	}
+}
+
+func TestSetStatusMovesTheTicketThroughTheSidecar(t *testing.T) {
+	t.Setenv("PLANE_API_KEY", "k")
+	f := newLocalPlane(t)
+	svc := realService()
+	defer svc.Close()
+	if _, err := svc.SetStatus(context.Background(), f.client(t), "DEN-1", tracker.StatusInProgress); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(f.patched, []string{"i1=s-prog"}) {
+		t.Errorf("patched = %v, want i1 moved to the In Progress state", f.patched)
+	}
+}
+
+func TestSetStatusUnknownTicketIsIssueNotFound(t *testing.T) {
+	t.Setenv("PLANE_API_KEY", "k")
+	f := newLocalPlane(t)
+	svc := realService()
+	defer svc.Close()
+	if _, err := svc.SetStatus(context.Background(), f.client(t), "DEN-99", tracker.StatusInProgress); !errors.Is(err, plane.ErrIssueNotFound) {
+		t.Errorf("err = %v, want plane.ErrIssueNotFound", err)
 	}
 }
 
@@ -173,25 +204,4 @@ func relIDs(r plane.IssueRelationsResponse) []string {
 		out = append(out, "|")
 	}
 	return out
-}
-
-func TestSetStatusFallsBackToTheGoClientWhenTheSidecarIsMissing(t *testing.T) {
-	f := newLocalPlane(t)
-	out, err := absentService().SetStatus(context.Background(), f.client(t), "DEN-1", tracker.StatusInProgress)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out.Origin != sidecar.OriginFallback {
-		t.Errorf("origin = %q, want fallback", out.Origin)
-	}
-	if !reflect.DeepEqual(f.patched, []string{"i1=s-prog"}) {
-		t.Errorf("patched = %v, want i1 moved to the In Progress state", f.patched)
-	}
-}
-
-func TestSetStatusUnknownTicketIsAnError(t *testing.T) {
-	f := newLocalPlane(t)
-	if _, err := absentService().SetStatus(context.Background(), f.client(t), "DEN-99", tracker.StatusInProgress); err == nil {
-		t.Fatal("want an error for a ticket that is not on the board")
-	}
 }
