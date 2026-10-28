@@ -75,3 +75,26 @@ func TestPreferLocalModelAsksTheGateway(t *testing.T) {
 		t.Fatal("an unreachable gateway yields no choice")
 	}
 }
+
+func TestPreferLocalModelAsksTheGatewayOncePerMinute(t *testing.T) {
+	clearEndpoints(t)
+	var asked int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked++
+		_, _ = w.Write([]byte(gatewayInfo))
+	}))
+	defer srv.Close()
+	t.Setenv("LITELLM_PROXY_URL", srv.URL+"/v1")
+	t.Setenv("DENDRITE_OLLAMA_ENDPOINT", "http://host.docker.internal:11434")
+
+	first, ok1 := PreferLocalModel(context.Background(), "sk-cache-test")
+	second, ok2 := PreferLocalModel(context.Background(), "sk-cache-test")
+	if asked != 1 || first != second || ok1 != ok2 {
+		t.Errorf("gateway asked %d times, answers %v/%v then %v/%v: want one request and the same answer", asked, first, ok1, second, ok2)
+	}
+	// A different key is a different caller: it is asked on its own.
+	PreferLocalModel(context.Background(), "sk-other")
+	if asked != 2 {
+		t.Errorf("asked = %d after a second key, want 2", asked)
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"Dendrite/pkg/inference"
@@ -51,6 +52,38 @@ func gatewayURL() string {
 // sidecar's default alias, then coder models. ok is false when the gateway cannot be asked
 // or serves no such model; the sidecar's default applies then.
 func PreferLocalModel(ctx context.Context, key string) (LocalChoice, bool) {
+	cacheKey := gatewayURL() + "\x00" + key
+	localChoiceMu.Lock()
+	if c, ok := localChoices[cacheKey]; ok && time.Since(c.at) < localChoiceTTL {
+		localChoiceMu.Unlock()
+		return c.choice, c.ok
+	}
+	localChoiceMu.Unlock()
+
+	choice, ok := preferLocalModel(ctx, key)
+	localChoiceMu.Lock()
+	localChoices[cacheKey] = cachedChoice{choice: choice, ok: ok, at: time.Now()}
+	localChoiceMu.Unlock()
+	return choice, ok
+}
+
+// localChoiceTTL is how long a gateway answer is reused. Each lookup asks the gateway for its model
+// list and probes engines over TCP (up to 3 s); a process that asks several questions, such as an MCP
+// server, should not repeat that for every one.
+const localChoiceTTL = time.Minute
+
+type cachedChoice struct {
+	choice LocalChoice
+	ok     bool
+	at     time.Time
+}
+
+var (
+	localChoiceMu sync.Mutex
+	localChoices  = map[string]cachedChoice{}
+)
+
+func preferLocalModel(ctx context.Context, key string) (LocalChoice, bool) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, gatewayURL()+"/v1/model/info", nil)

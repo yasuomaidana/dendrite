@@ -441,12 +441,40 @@ func RenderYAML(cfg *LiteLLMConfig) ([]byte, error) {
 		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
 
-	data, err := yaml.Marshal(cfg)
+	data, err := yaml.Marshal(withOllamaDefaults(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal YAML: %w", err)
 	}
 
 	return data, nil
+}
+
+// Ollama settings applied to every Ollama chat model when the configuration is rendered.
+const (
+	// OllamaNumCtx covers the 2500-token context pack of `dendrite ask` plus its answer; Ollama's
+	// default window would cut the prompt without any error.
+	OllamaNumCtx = 8192
+	// OllamaKeepAlive spares the 5-10 s model reload between calls.
+	OllamaKeepAlive = "30m"
+)
+
+// withOllamaDefaults returns cfg with a context window and keep-alive on its Ollama chat models.
+// Embedding models and entries that already set a value are left alone. cfg itself is not changed.
+func withOllamaDefaults(cfg *LiteLLMConfig) *LiteLLMConfig {
+	out := *cfg
+	out.ModelList = make([]ModelListEntry, len(cfg.ModelList))
+	for i, e := range cfg.ModelList {
+		if e.LitellmParams.CustomLLMProvider == "ollama" && !strings.Contains(strings.ToLower(e.ModelName+e.LitellmParams.Model), "embed") {
+			if e.LitellmParams.NumCtx == 0 {
+				e.LitellmParams.NumCtx = OllamaNumCtx
+			}
+			if e.LitellmParams.KeepAlive == "" {
+				e.LitellmParams.KeepAlive = OllamaKeepAlive
+			}
+		}
+		out.ModelList[i] = e
+	}
+	return &out
 }
 
 // RenderForTopology derives the Ollama base URL from an active TopologyConfig and generates the YAML.

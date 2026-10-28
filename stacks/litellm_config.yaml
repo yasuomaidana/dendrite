@@ -42,12 +42,48 @@ model_list:
         max_input_tokens: 1048576
         max_output_tokens: 8192
         base_model: gemini/gemini-3.8-flash-medium
+    - model_name: local-qwen3-27b
+      litellm_params:
+        model: ollama/qwen3.8:27b
+        api_base: http://host.docker.internal:11434
+        custom_llm_provider: ollama
+        max_tokens: 8192
+        num_ctx: 8192
+        keep_alive: 30m
+      model_info:
+        id: local-qwen3-27b
+        mode: chat
+        input_cost_per_token: 0
+        output_cost_per_token: 0
+        max_input_tokens: 32768
+        max_output_tokens: 8192
+        base_model: qwen3.8:27b
+        skip_budget_checks: true
+    - model_name: local-qwen3.8-27b
+      litellm_params:
+        model: ollama/qwen3.8:27b
+        api_base: http://host.docker.internal:11434
+        custom_llm_provider: ollama
+        max_tokens: 4096
+        num_ctx: 8192
+        keep_alive: 30m
+      model_info:
+        id: local-qwen3.8-27b
+        mode: chat
+        input_cost_per_token: 0
+        output_cost_per_token: 0
+        max_input_tokens: 32768
+        max_output_tokens: 4096
+        base_model: qwen3.8:27b
+        skip_budget_checks: true
     - model_name: local-qwen3-9b
       litellm_params:
         model: ollama/hermes3:8b
         api_base: http://host.docker.internal:11434
         custom_llm_provider: ollama
         max_tokens: 4096
+        num_ctx: 8192
+        keep_alive: 30m
       model_info:
         id: local-qwen3-9b
         mode: chat
@@ -63,6 +99,8 @@ model_list:
         api_base: http://host.docker.internal:11434
         custom_llm_provider: ollama
         max_tokens: 4096
+        num_ctx: 8192
+        keep_alive: 30m
       model_info:
         id: local-hermes3-8b
         mode: chat
@@ -93,6 +131,8 @@ model_list:
         api_base: http://host.docker.internal:11434
         custom_llm_provider: ollama
         max_tokens: 4096
+        num_ctx: 8192
+        keep_alive: 30m
       model_info:
         id: local-tinyllama-latest
         mode: chat
@@ -108,6 +148,8 @@ model_list:
         api_base: http://host.docker.internal:11434
         custom_llm_provider: ollama
         max_tokens: 4096
+        num_ctx: 8192
+        keep_alive: 30m
       model_info:
         id: local-llama3.2-latest
         mode: chat
@@ -133,27 +175,14 @@ model_list:
         max_output_tokens: 4096
         base_model: qwen3-8b-q4_k_m
         skip_budget_checks: true
-    - model_name: local-qwen3-27b
-      litellm_params:
-        model: ollama/qwen3.8:27b
-        api_base: http://host.docker.internal:11434
-        custom_llm_provider: ollama
-        max_tokens: 8192
-      model_info:
-        id: local-qwen3-27b
-        mode: chat
-        input_cost_per_token: 0
-        output_cost_per_token: 0
-        max_input_tokens: 32768
-        max_output_tokens: 8192
-        base_model: qwen3.8:27b
-        skip_budget_checks: true
     - model_name: local-qwen-coder
       litellm_params:
         model: ollama/qwen2.5-coder:14b
         api_base: http://host.docker.internal:11434
         custom_llm_provider: ollama
         max_tokens: 4096
+        num_ctx: 8192
+        keep_alive: 30m
       model_info:
         id: local-qwen-coder
         mode: chat
@@ -185,6 +214,8 @@ model_list:
         api_base: http://host.docker.internal:11434
         custom_llm_provider: ollama
         max_tokens: 4096
+        num_ctx: 8192
+        keep_alive: 30m
       model_info:
         id: local-coder
         mode: chat
@@ -247,6 +278,7 @@ router_settings:
             - copilot-sonnet
             - gemini-3.8-flash-medium
             - local-qwen3-27b
+            - local-qwen3.8-27b
             - local-qwen3-9b
             - local-qwen3-8b-q4_k_m
             - local-hermes3-8b
@@ -262,6 +294,7 @@ router_settings:
         - copilot-sonnet:
             - gemini-3.8-flash-medium
             - local-qwen3-27b
+            - local-qwen3.8-27b
             - local-qwen3-9b
             - local-qwen3-8b-q4_k_m
             - local-hermes3-8b
@@ -276,6 +309,7 @@ router_settings:
             - local-llama3.2-latest
         - gemini-3.8-flash-medium:
             - local-qwen3-27b
+            - local-qwen3.8-27b
             - local-qwen3-9b
             - local-qwen3-8b-q4_k_m
             - local-hermes3-8b
@@ -293,6 +327,7 @@ router_settings:
         - local-qwen3-27b: gemini-4-argon-medium
         - local-qwen3-9b: gemini-4-argon-medium
         - gemini-3.8-flash-medium: gemini-4-argon-medium
+        - local-qwen3.8-27b: gemini-4-argon-medium
         - local-qwen3-8b-q4_k_m: gemini-4-argon-medium
         - local-hermes3-8b: gemini-4-argon-medium
         - local-coder: gemini-4-argon-medium
