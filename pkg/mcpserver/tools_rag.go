@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"Dendrite/pkg/ticketindex"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -43,8 +44,8 @@ func registerRAGTools(s *Server, deps Dependencies) {
 				},
 				"corpus": map[string]interface{}{
 					"type":        "string",
-					"enum":        []interface{}{"all", "code", "docs"},
-					"description": "Corpora searched: all (default: code and documentation), code (implementation questions), or docs (documentation only: design and conceptual questions)",
+					"enum":        []interface{}{"all", "code", "docs", "tickets"},
+					"description": "Corpora searched: all (default: code and documentation), code (implementation questions), docs (documentation only: design and conceptual questions), or tickets (the Plane tickets of the project: status, blockers, what a ticket is for)",
 				},
 				"docs_share": map[string]interface{}{
 					"type":        "number",
@@ -82,6 +83,10 @@ func registerRAGTools(s *Server, deps Dependencies) {
 		}
 
 		corpus, _ := args["corpus"].(string)
+		projectPath, corpus, err := ticketindex.Resolve(ctx, projectPath, corpus)
+		if err != nil {
+			return nil, err
+		}
 		docsShare, err := docsShareArg(args)
 		if err != nil {
 			return nil, err
@@ -147,7 +152,7 @@ func registerRAGTools(s *Server, deps Dependencies) {
 				},
 				"corpus": map[string]interface{}{
 					"type":        "string",
-					"enum":        []interface{}{"all", "code", "docs"},
+					"enum":        []interface{}{"all", "code", "docs", "tickets"},
 					"description": "Corpora searched: all (default: code and documentation in one ranking), code, or docs",
 				},
 				"detail": map[string]interface{}{
@@ -193,7 +198,10 @@ func registerRAGTools(s *Server, deps Dependencies) {
 
 		corpus, _ := args["corpus"].(string)
 		var retrieval rag.Retrieval
-		var err error
+		projectPath, corpus, err := ticketindex.Resolve(ctx, projectPath, corpus)
+		if err != nil {
+			return nil, err
+		}
 		if detail, _ := args["detail"].(string); detail != "" {
 			budget := rag.AskContextTokens
 			if b, ok := args["token_budget"].(float64); ok && b > 0 {

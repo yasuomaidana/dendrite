@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/pkg/ticketindex"
 	"context"
 	"fmt"
 	"io"
@@ -66,9 +67,9 @@ func newAskCmd() *cobra.Command {
 			}
 			corpus := strings.ToLower(o.Corpus)
 			switch corpus {
-			case "", "code", "all", "docs":
+			case "", "code", "all", "docs", ticketindex.Corpus:
 			default:
-				return usageErrorf("invalid --corpus %q: use code, all or docs", o.Corpus)
+				return usageErrorf("invalid --corpus %q: use code, all, docs or tickets", o.Corpus)
 			}
 			shared := cmd.Flags().Changed("docs-share")
 			if o.Docs || (shared && corpus == "") {
@@ -90,11 +91,21 @@ func newAskCmd() *cobra.Command {
 				}
 				docsShare = &o.DocsShare
 			}
+			project := o.Project
+			if corpus == ticketindex.Corpus {
+				if o.Docs || shared {
+					return usageErrorf("--corpus tickets searches the rendered tickets only; it conflicts with -d and --docs-share")
+				}
+				var err error
+				if project, corpus, err = ticketindex.Resolve(cmd.Context(), o.Project, corpus); err != nil {
+					return err
+				}
+			}
 			req := rag.AskRequest{
 				Corpus:          corpus,
 				DocsShare:       docsShare,
 				Question:        strings.Join(args, " "),
-				ProjectPath:     o.Project,
+				ProjectPath:     project,
 				AutoApprovePaid: globals.Yes,
 				ForcePaid:       o.Paid,
 				HybridMode:      o.Hybrid,
@@ -120,7 +131,7 @@ func newAskCmd() *cobra.Command {
 	f.StringVar(&o.LocalModel, "local-model", "", "Local model on the LiteLLM gateway (default: [ask] local_model in .dendrite/rag.toml, else the gateway's local model on the most preferred reachable GPU engine; never OxiLLaMa, which prefills on the CPU)")
 	f.IntVarP(&o.TopK, "top-k", "k", 0, "Retrieve the N best chunks instead of a token-budgeted context pack")
 	f.BoolVarP(&o.Docs, "docs", "d", false, "Also search the documentation (default: code only); same as --corpus all")
-	f.StringVar(&o.Corpus, "corpus", "", "Corpora searched: code (default), all (code and documentation) or docs (documentation only, for design and conceptual questions)")
+	f.StringVar(&o.Corpus, "corpus", "", "Corpora searched: code (default), all (code and documentation), tickets (Plane tickets) or docs (documentation only, for design and conceptual questions)")
 	f.Float64Var(&o.DocsShare, "docs-share", 0, "Share of the context kept for documentation with --corpus all, 0 to 1 (default: [ask] docs_share in .dendrite/rag.toml or DENDRITE_RAG_ASK_DOCS_SHARE, else 0.2); implies --corpus all")
 	cmd.MarkFlagsMutuallyExclusive("paid", "hybrid")
 	return cmd

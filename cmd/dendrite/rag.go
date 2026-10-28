@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/pkg/ticketindex"
 	"fmt"
 	"strings"
 	"time"
@@ -87,10 +88,14 @@ func newRagSearchCmd() *cobra.Command {
 		Args:  minArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := strings.Join(args, " ")
-			res, err := rag.NewRetriever().Retrieve(cmd.Context(), project, query, rag.SearchOptions{
+			searchProject, searchCorpus, err := ticketindex.Resolve(cmd.Context(), project, corpus)
+			if err != nil {
+				return err
+			}
+			res, err := rag.NewRetriever().Retrieve(cmd.Context(), searchProject, query, rag.SearchOptions{
 				TopK:     topK,
 				MinScore: float32(minScore),
-				Corpus:   corpus,
+				Corpus:   searchCorpus,
 			}, false)
 			if err != nil {
 				return err
@@ -112,7 +117,7 @@ func newRagSearchCmd() *cobra.Command {
 	}
 	addProjectFlag(cmd, &project, ".", "Project directory to search")
 	cmd.Flags().IntVarP(&topK, "top-k", "k", 10, "Maximum number of hits")
-	cmd.Flags().StringVar(&corpus, "corpus", "all", "Corpus filter: all, code, or docs")
+	cmd.Flags().StringVar(&corpus, "corpus", "all", "Corpus filter: all, code, docs, or tickets (the rendered Plane tickets)")
 	cmd.Flags().Float64Var(&minScore, "min-score", 0, "Minimum relevance score filter")
 	return cmd
 }
@@ -131,8 +136,12 @@ func newRagContextCmd() *cobra.Command {
 			if cmd.Flags().Changed("docs-share") {
 				dsPtr = &docsShare
 			}
-			res, err := rag.NewRetriever().ContextWith(cmd.Context(), project, query, budget, rag.ContextOptions{
-				Corpus:    corpus,
+			ctxProject, ctxCorpus, rerr := ticketindex.Resolve(cmd.Context(), project, corpus)
+			if rerr != nil {
+				return rerr
+			}
+			res, err := rag.NewRetriever().ContextWith(cmd.Context(), ctxProject, query, budget, rag.ContextOptions{
+				Corpus:    ctxCorpus,
 				Detail:    detail,
 				DocsShare: dsPtr,
 			}, false)
@@ -160,7 +169,7 @@ func newRagContextCmd() *cobra.Command {
 	}
 	addProjectFlag(cmd, &project, ".", "Project directory")
 	cmd.Flags().IntVar(&budget, "budget", 2500, "Estimated token budget")
-	cmd.Flags().StringVar(&corpus, "corpus", "all", "Corpus: all, code, or docs")
+	cmd.Flags().StringVar(&corpus, "corpus", "all", "Corpus: all, code, docs, or tickets (the rendered Plane tickets)")
 	cmd.Flags().StringVar(&detail, "detail", "auto", "Detail level: auto, full, or map")
 	cmd.Flags().Float64Var(&docsShare, "docs-share", 0.2, "Share of budget kept for documentation")
 	return cmd
