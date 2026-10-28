@@ -90,11 +90,19 @@ func planeSmartSelectHandler(deps Dependencies) func(context.Context, map[string
 					})
 				}
 
-				// Fetch relations from Plane
+				// Fetch relations from Plane concurrently; finished tickets cannot be blocked by anything
+				// that matters for selection, so they are skipped.
+				var relIDs []string
+				for _, iss := range issues {
+					if st := stateMap[iss.State]; st != tracker.StatusDone && st != tracker.StatusCancelled {
+						relIDs = append(relIDs, iss.ID)
+					}
+				}
+				relations, _ := client.GetRelationsFor(ctx, relIDs)
 				for _, iss := range issues {
 					currID := uuidToID[iss.ID]
-					rels, err := client.GetIssueRelations(ctx, iss.ID)
-					if err == nil && rels != nil {
+					rels := relations[iss.ID]
+					if rels != nil {
 						for _, blocked := range rels.BlockedBy {
 							blockerID := uuidToID[blocked.ID]
 							if blockerID == "" {

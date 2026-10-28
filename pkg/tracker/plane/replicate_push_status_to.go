@@ -314,8 +314,9 @@ func (c *Client) ListPlaneIssuesForProject(ctx context.Context, projectID string
 
 	for {
 		endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/", c.workspaceSlug, projectID)
+		endpoint += "?per_page=100"
 		if cursor != "" {
-			endpoint = fmt.Sprintf("%s?cursor=%s", endpoint, cursor)
+			endpoint = fmt.Sprintf("%s&cursor=%s", endpoint, cursor)
 		}
 		req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {

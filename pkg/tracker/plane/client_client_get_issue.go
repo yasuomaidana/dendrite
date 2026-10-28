@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"Dendrite/pkg/tracker"
@@ -463,4 +464,53 @@ func ResolveIssue(issues []PlaneIssue, ref string) *PlaneIssue {
 		return nil
 	}
 	return findIssueByTicketID(issues, ref)
+}
+
+// RelationFetchWorkers bounds how many issue-relation requests run at once. Plane answers each in
+// about 35ms, so a serial sweep of a few hundred issues takes many seconds while 16 workers finish
+// in about one.
+const RelationFetchWorkers = 16
+
+// GetRelationsFor fetches the relations of the given issues concurrently and returns them keyed by
+// issue UUID. Issues whose request fails are left out of the map, matching the callers' previous
+// "skip on error" behavior; the first error is returned alongside so callers may log it.
+func (c *Client) GetRelationsFor(ctx context.Context, issueIDs []string) (map[string]*IssueRelationsResponse, error) {
+	out := make(map[string]*IssueRelationsResponse, len(issueIDs))
+	if len(issueIDs) == 0 {
+		return out, nil
+	}
+	var (
+		mu       sync.Mutex
+		firstErr error
+		wg       sync.WaitGroup
+		jobs     = make(chan string)
+	)
+	workers := RelationFetchWorkers
+	if len(issueIDs) < workers {
+		workers = len(issueIDs)
+	}
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for id := range jobs {
+				rels, err := c.GetIssueRelations(ctx, id)
+				mu.Lock()
+				if err != nil {
+					if firstErr == nil {
+						firstErr = err
+					}
+				} else if rels != nil {
+					out[id] = rels
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+	for _, id := range issueIDs {
+		jobs <- id
+	}
+	close(jobs)
+	wg.Wait()
+	return out, firstErr
 }
