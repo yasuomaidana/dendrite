@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"time"
 
 	"Dendrite/pkg/mcpserver"
 	"Dendrite/pkg/ollama"
@@ -106,7 +107,34 @@ func newInterCmd() *cobra.Command {
 			return runInterCall(cmd.Context(), srv, args[0], callArgs, cmd.OutOrStdout())
 		},
 	}
-	cmd.AddCommand(serve, tools, call)
+	var probeTimeout time.Duration
+	probe := &cobra.Command{
+		Use:   "probe",
+		Short: "Call every read-only MCP tool once and print a pass/fail matrix",
+		Long: "probe calls only tools that read (never create, update or delete anything) and reports PASS, FAIL or SKIP\n" +
+			"for each. Plane, Ollama and the RAG sidecar must be running for their tools to pass; a FAIL names the\n" +
+			"reason. Run it against the profile you ship: tools outside the profile are SKIP.",
+		Args: noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			srv, err := server()
+			if err != nil {
+				return err
+			}
+			specs := mcpserver.DefaultProbeSpecs()
+			if probeTimeout > 0 {
+				for i := range specs {
+					specs[i].Timeout = probeTimeout
+				}
+			}
+			results := mcpserver.ProbeTools(cmd.Context(), srv, specs)
+			if fails := mcpserver.WriteProbeMatrix(cmd.OutOrStdout(), results); fails > 0 {
+				return fmt.Errorf("%d of %d probed MCP tools failed", fails, len(results))
+			}
+			return nil
+		},
+	}
+	probe.Flags().DurationVar(&probeTimeout, "timeout", 0, "Override every probe's timeout (default: per tool, 5s unless it needs more)")
+	cmd.AddCommand(serve, tools, call, probe)
 	return cmd
 }
 
