@@ -14,7 +14,7 @@ import (
 )
 
 // buildMCPServer constructs the live Dendrite Control Plane MCP server with registered default tools.
-func buildMCPServer() *mcpserver.Server {
+func buildMCPServer(profile mcpserver.Profile) *mcpserver.Server {
 	srv := mcpserver.NewServer(mcpserver.ServerConfig{
 		Name:    "Dendrite Control Plane MCP Server",
 		Version: version,
@@ -23,7 +23,7 @@ func buildMCPServer() *mcpserver.Server {
 		DevStatus: "DEV_STATUS.md",
 		OllamaURL: ollama.DefaultBaseURL,
 	})
-	return srv
+	return mcpserver.ApplyProfile(srv, profile)
 }
 
 // buildSynapseMCPServer constructs a scoped MCP server exposing only the synapse_* tools of one synapse.
@@ -42,13 +42,21 @@ func newInterCmd() *cobra.Command {
 		"dendrite inter serve --synapse web-api\n" +
 		"dendrite inter tools\n" +
 		"dendrite inter call dendrite_ticket_smart_select '{}'"
-	var synapseID string
+	var synapseID, profileFlag string
 	cmd.PersistentFlags().StringVar(&synapseID, "synapse", "", "Expose only the synapse_* tools of this synapse")
+	cmd.PersistentFlags().StringVar(&profileFlag, "profile", "", "Tool profile: core (RAG, graph, Plane) or full (every tool); env "+mcpserver.ProfileEnv+", default full")
 	server := func() (*mcpserver.Server, error) {
 		if synapseID != "" {
 			return buildSynapseMCPServer(synapseID)
 		}
-		return buildMCPServer(), nil
+		profile, err := mcpserver.ParseProfile(profileFlag, mcpserver.ProfileFull)
+		if profileFlag == "" {
+			profile, err = mcpserver.ProfileFromEnv(mcpserver.ProfileFull)
+		}
+		if err != nil {
+			return nil, usageErrorf("%v", err)
+		}
+		return buildMCPServer(profile), nil
 	}
 
 	serve := &cobra.Command{

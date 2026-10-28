@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/pkg/mcpserver"
 	"context"
 	"fmt"
 	"io"
@@ -65,7 +66,7 @@ func newCodexGenerateCmd() *cobra.Command {
 
 func runCodexReference(docsDir string, out io.Writer) error {
 	fmt.Fprintf(out, "[+] Generating reference documentation into '%s'...\n", docsDir)
-	res, err := reflect.GenerateReferenceDocs(docsDir, newRootCmd(), buildMCPServer())
+	res, err := reflect.GenerateReferenceDocs(docsDir, newRootCmd(), buildMCPServer(mcpserver.ProfileFull))
 	if err != nil {
 		return fmt.Errorf("generate reference docs: %w", err)
 	}
@@ -130,7 +131,7 @@ func newCodexAuditCmd() *cobra.Command {
 }
 
 func runCodexReferenceAudit(docsDir string, strict bool, out io.Writer) error {
-	rep, err := reflect.AuditReferenceDocs(docsDir, newRootCmd(), buildMCPServer())
+	rep, err := reflect.AuditReferenceDocs(docsDir, newRootCmd(), buildMCPServer(mcpserver.ProfileFull))
 	if err != nil {
 		return fmt.Errorf("reference audit: %w", err)
 	}
