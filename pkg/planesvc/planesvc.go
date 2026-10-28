@@ -57,6 +57,11 @@ func typed(err error) error {
 	switch rpc.Kind() {
 	case "unauthorized":
 		return fmt.Errorf("%w: %s", plane.ErrUnauthorized, rpc.Message)
+	case "invalid":
+		if rpc.Message == plane.ErrEmptyTicketContext.Error() {
+			return plane.ErrEmptyTicketContext
+		}
+		return errors.New(rpc.Message)
 	case "not_found":
 		if strings.HasPrefix(rpc.Message, "no workflow state") {
 			return fmt.Errorf("%w: %s", plane.ErrStateNotFound, rpc.Message)
