@@ -10,15 +10,20 @@ import (
 	"testing"
 )
 
-// AC-2: FoldSignatures reduces pkg/inference/manager.go tokens by >= 70% and the result still go/parser-parses.
+// managerFixture is a frozen copy of pkg/inference/manager.go (as of 3c87e4f). The fold tests measure
+// this copy: measuring the live file made the reduction drift with unrelated edits to it.
+func managerFixture(t *testing.T) []byte {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join("testdata", "manager_fold_fixture.go.txt"))
+	if err != nil {
+		t.Fatalf("read the manager.go fold fixture: %v", err)
+	}
+	return content
+}
+
+// AC-2: FoldSignatures reduces the manager.go fixture's tokens by >= 70% and the result still go/parser-parses.
 func TestGoASTProvider_FoldSignatures_ManagerAC2(t *testing.T) {
-	content, err := os.ReadFile("../inference/manager.go")
-	if err != nil {
-		content, err = os.ReadFile("pkg/inference/manager.go")
-	}
-	if err != nil {
-		t.Fatalf("failed to read ../inference/manager.go fixture: %v", err)
-	}
+	content := managerFixture(t)
 
 	provider := NewGoASTProvider()
 	folded, err := provider.FoldSignatures(content, nil)
@@ -49,13 +54,7 @@ func TestGoASTProvider_FoldSignatures_ManagerAC2(t *testing.T) {
 }
 
 func TestGoASTProvider_FoldSignatures_KeepSymbols(t *testing.T) {
-	content, err := os.ReadFile("../inference/manager.go")
-	if err != nil {
-		content, err = os.ReadFile("pkg/inference/manager.go")
-	}
-	if err != nil {
-		t.Fatalf("failed to read ../inference/manager.go: %v", err)
-	}
+	content := managerFixture(t)
 
 	provider := NewGoASTProvider()
 	keep := []string{"NewManager", "RegisterEngine"}
