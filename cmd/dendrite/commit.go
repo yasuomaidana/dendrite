@@ -59,6 +59,7 @@ func newQuantalCmd() *cobra.Command {
 	f.BoolVar(&noLocal, "no-local", false, "Do not use the local model for the message")
 	addDryRunFlag(cmd, &opts.DryRun)
 	f.BoolVar(&opts.AllowMocks, "allow-mocks", false, "Bypass the zero-mock gate (emergencies only)")
+	f.BoolVar(&opts.NoTicketGuard, "no-ticket-guard", false, "Skip the ticket lifecycle check (the ticket must exist and be In Progress; env "+devtool.TicketGuardEnv+"=off)")
 	f.StringVar(&synapseID, "synapse", "", "Then check every synapse peer (of this synapse, or every one holding the project): offer to commit dirty peers (-y: without asking), push peers ahead")
 	f.Lookup("synapse").NoOptDefVal = synapseAuto
 	cmd.MarkFlagsMutuallyExclusive("smart", "no-smart")
@@ -132,6 +133,7 @@ func printCommitResult(out io.Writer, res *devtool.CommitResult) bool {
 				fmt.Fprintf(out, "      * Title:          %s\n", res.SmartTicket.Title)
 			}
 		}
+		printGuard(out, res.Guard)
 		fmt.Fprintf(out, "    - Proposed Message:\n%s\n", indentText(res.Message, "      "))
 		fmt.Fprintf(out, "    - Staged Files (%d):\n", len(res.Files))
 		for _, f := range res.Files {
@@ -151,6 +153,7 @@ func printCommitResult(out io.Writer, res *devtool.CommitResult) bool {
 			fmt.Fprintf(out, "      * Title:          %s\n", res.SmartTicket.Title)
 		}
 	}
+	printGuard(out, res.Guard)
 	fmt.Fprintf(out, "    - Message:\n%s\n", indentText(res.Message, "      "))
 	fmt.Fprintf(out, "    - Files Committed (%d):\n", len(res.Files))
 	for _, f := range res.Files {
@@ -176,4 +179,15 @@ func indentText(text, indent string) string {
 		lines[i] = indent + l
 	}
 	return strings.Join(lines, "\n")
+}
+
+// printGuard reports what the ticket lifecycle guard did or why it could not check.
+func printGuard(out io.Writer, g *devtool.GuardResult) {
+	switch {
+	case g == nil:
+	case g.Note != "":
+		fmt.Fprintf(out, "    - Ticket Guard:     %s\n", g.Note)
+	case g.Skipped != "":
+		fmt.Fprintf(out, "    - Ticket Guard:     not checked (%s)\n", g.Skipped)
+	}
 }

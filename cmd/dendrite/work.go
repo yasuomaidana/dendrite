@@ -1,9 +1,11 @@
 package main
 
 import (
+	"Dendrite/pkg/devtool"
 	"context"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 
 	"Dendrite/pkg/agentjobs"
@@ -27,15 +29,17 @@ func newWorkCmd() *cobra.Command {
 		"dendrite work adopt"
 
 	var branch, base string
+	var noTicketGuard bool
 	newCmd := &cobra.Command{
 		Use:     "new <name>",
 		Aliases: []string{"create"},
 		Short:   "Create an isolated working copy (branch agent/<name>)",
 		Args:    exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runWorkNew(cmd.Context(), args[0], branch, base, cmd.OutOrStdout())
+			return runWorkNew(cmd.Context(), args[0], branch, base, noTicketGuard, cmd.OutOrStdout())
 		},
 	}
+	newCmd.Flags().BoolVar(&noTicketGuard, "no-ticket-guard", false, "Do not check or start the ticket in Plane (env "+devtool.TicketGuardEnv+"=off)")
 	newCmd.Flags().StringVar(&branch, "branch", "", "Branch to create (default agent/<name>)")
 	newCmd.Flags().StringVar(&base, "base", "", "Commit-ish to start from (default HEAD)")
 
@@ -88,7 +92,24 @@ func newWorkCmd() *cobra.Command {
 	return cmd
 }
 
-func runWorkNew(ctx context.Context, name, branch, base string, out io.Writer) error {
+// ticketShaped matches names like DEN-123 or KAKEBO-12.
+var ticketShaped = regexp.MustCompile(`^[A-Z][A-Z0-9]*-[0-9]+$`)
+
+func runWorkNew(ctx context.Context, name, branch, base string, noTicketGuard bool, out io.Writer) error {
+	// A working copy named after a ticket starts that ticket: it must exist, and it moves to In Progress
+	// before any code is written, so the board shows the work from its first minute.
+	if ticketShaped.MatchString(name) && !noTicketGuard && devtool.GuardEnabled() {
+		g, err := devtool.EnsureTicketInProgress(ctx, "", name, devtool.GuardStart, false)
+		if err != nil {
+			return err
+		}
+		switch {
+		case g.Note != "":
+			fmt.Fprintf(out, "[✓] %s\n", g.Note)
+		case g.Skipped != "":
+			fmt.Fprintf(out, "[!] ticket %s not checked: %s\n", name, g.Skipped)
+		}
+	}
 	path, err := newWorkManager().Create(ctx, name, branch, base)
 	if err != nil {
 		return err

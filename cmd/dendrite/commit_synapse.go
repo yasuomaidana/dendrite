@@ -89,6 +89,9 @@ func commitSynapsePeers(ctx context.Context, out io.Writer, startDir, synapseID 
 			peerOpts := base
 			peerOpts.RepoDir = m.PathHint
 			peerOpts.TicketID, peerOpts.Message, peerOpts.Files, peerOpts.Amend, peerOpts.SmartTicket = "", "", nil, false, nil
+			// Peers are committed as leftovers without a ticket of their own; the lifecycle guard
+			// applies to the commit the user made, not to these.
+			peerOpts.NoTicketGuard = true
 			fmt.Fprintf(out, "[+] Committing synapse peer %s (%s)...\n", m.Alias, m.PathHint)
 			res, err := devtool.ExecuteCommit(ctx, peerOpts)
 			if err != nil {

@@ -41,6 +41,8 @@ type CommitOptions struct {
 	LiteLLMKey       string           `json:"litellm_key,omitempty"`
 	RepoDir          string           `json:"repo_dir,omitempty"`
 	AllowMocks       bool             `json:"allow_mocks,omitempty"`
+	// NoTicketGuard skips the ticket lifecycle check (see EnsureTicketInProgress).
+	NoTicketGuard bool `json:"no_ticket_guard,omitempty"`
 }
 
 // CommitResult encapsulates the outcome of a commit operation.
@@ -53,11 +55,13 @@ type CommitResult struct {
 	CostUSD     float64          `json:"cost_usd"`
 	DryRun      bool             `json:"dry_run,omitempty"`
 	SmartTicket *SmartTicketInfo `json:"smart_ticket,omitempty"`
-	SmartSource string           `json:"smart_source,omitempty"`
-	Pushed      bool             `json:"pushed,omitempty"`
-	PushSkipped bool             `json:"push_skipped,omitempty"`
-	PushReason  string           `json:"push_reason,omitempty"`
-	PushError   error            `json:"push_error,omitempty"`
+	// Guard is what the ticket lifecycle guard found; nil when it was off.
+	Guard       *GuardResult `json:"guard,omitempty"`
+	SmartSource string       `json:"smart_source,omitempty"`
+	Pushed      bool         `json:"pushed,omitempty"`
+	PushSkipped bool         `json:"push_skipped,omitempty"`
+	PushReason  string       `json:"push_reason,omitempty"`
+	PushError   error        `json:"push_error,omitempty"`
 }
 
 // SmartTicketInfo represents ticket intelligence resolved automatically.

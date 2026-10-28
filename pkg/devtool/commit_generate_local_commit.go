@@ -304,6 +304,16 @@ func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, erro
 		smartSource = smartTicket.Source
 	}
 
+	// 3a. Ticket lifecycle guard: the work must belong to a ticket that is In Progress.
+	var guard *GuardResult
+	if !opts.NoTicketGuard && GuardEnabled() {
+		g, gErr := EnsureTicketInProgress(ctx, opts.RepoDir, opts.TicketID, GuardCommit, opts.DryRun)
+		if gErr != nil {
+			return nil, gErr
+		}
+		guard = &g
+	}
+
 	// 4. Determine commit message
 	commitMsg := strings.TrimSpace(opts.Message)
 	modelUsed := "user-specified"
@@ -346,6 +356,7 @@ func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, erro
 			CostUSD:     0.00,
 			DryRun:      true,
 			SmartTicket: smartTicket,
+			Guard:       guard,
 			SmartSource: smartSource,
 		}
 		_ = pushAfterCommit(ctx, opts, res, runGit)
@@ -377,6 +388,7 @@ func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, erro
 		CostUSD:     0.00,
 		DryRun:      false,
 		SmartTicket: smartTicket,
+		Guard:       guard,
 		SmartSource: smartSource,
 	}
 
