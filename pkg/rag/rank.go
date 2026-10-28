@@ -3,8 +3,6 @@ package rag
 import (
 	"context"
 	"fmt"
-
-	"Dendrite/pkg/sidecar"
 )
 
 // RankProtocolMinor is the first sidecar protocol minor that serves `rank` (1.3).
@@ -42,11 +40,10 @@ func (r *Retriever) Rank(ctx context.Context, root, query string, docs []RankDoc
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
 	}
-	c, err := sidecar.StartWith(ctx, bin, SidecarMajor, r.Env)
+	c, err := r.connect(ctx, bin)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
 	}
-	defer func() { _ = c.Close() }()
 	if protocolMinor(c.Health.Protocol) < RankProtocolMinor {
 		return nil, fmt.Errorf("%w: %s speaks protocol %s; rank needs 1.%d or later; %s",
 			ErrSidecarTooOld, c.Path, c.Health.Protocol, RankProtocolMinor, InstallHint)

@@ -25,6 +25,7 @@ func TestMain(m *testing.M) {
 	}
 	standIn = os.Getenv(sidecar.EnvVar(SidecarBinary))
 	code := m.Run()
+	CloseSidecars()
 	cleanup()
 	os.Exit(code)
 }

@@ -24,7 +24,7 @@ const (
 	// DefaultEmbedBudget bounds the sidecar's embedding work per interactive call. The
 	// lexical and symbol indexes are always brought up to date; vectors for the rest of the
 	// project are added by later calls, or all at once by `dendrite-rag index <project>`.
-	DefaultEmbedBudget = 3 * time.Second
+	DefaultEmbedBudget = 300 * time.Millisecond
 	// InstallHint tells users how to get the sidecar when it is missing.
 	InstallHint = "install it with `cargo install --locked --git https://github.com/yasuomaidana/dendrite-rag-rs --features candle-metal` " +
 		"(Apple GPU; `candle-cuda` on NVIDIA, `candle` for CPU) or point DENDRITE_DENDRITE_RAG_BIN at a build"
@@ -98,7 +98,7 @@ func NewRetriever() *Retriever {
 // and returns the best opts.TopK chunks for question. A projectPath naming a file
 // searches only that file.
 func (r *Retriever) Retrieve(ctx context.Context, projectPath, question string, opts SearchOptions, refresh bool) (Retrieval, error) {
-	return r.run(ctx, projectPath, refresh, question, func(c *sidecar.Client, root string, only []string, out *Retrieval) error {
+	return r.run(ctx, projectPath, refresh, question, func(c *conn, root string, only []string, out *Retrieval) error {
 		hits, err := search(ctx, c, root, question, only, opts)
 		out.Chunks = toChunks(projectPath, only, hits)
 		return err
@@ -114,7 +114,7 @@ func (r *Retriever) Context(ctx context.Context, projectPath, question string, t
 
 // ContextWith is Context with the corpus and detail of opts.
 func (r *Retriever) ContextWith(ctx context.Context, projectPath, question string, tokenBudget int, opts ContextOptions, refresh bool) (Retrieval, error) {
-	return r.run(ctx, projectPath, refresh, question, func(c *sidecar.Client, root string, only []string, out *Retrieval) error {
+	return r.run(ctx, projectPath, refresh, question, func(c *conn, root string, only []string, out *Retrieval) error {
 		if len(only) > 0 {
 			so := DefaultSearchOptions()
 			so.Corpus = opts.Corpus
@@ -156,7 +156,7 @@ func (r *Retriever) ContextWith(ctx context.Context, projectPath, question strin
 // outlines.
 func (r *Retriever) Show(ctx context.Context, projectPath string, ids []string) ([]Chunk, error) {
 	var chunks []Chunk
-	_, err := r.run(ctx, projectPath, false, "", func(c *sidecar.Client, root string, only []string, out *Retrieval) error {
+	_, err := r.run(ctx, projectPath, false, "", func(c *conn, root string, only []string, out *Retrieval) error {
 		var res struct {
 			Hits []sidecarHit `json:"hits"`
 		}
@@ -191,7 +191,7 @@ type sidecarHit struct {
 	Outline bool `json:"outline"`
 }
 
-func search(ctx context.Context, c *sidecar.Client, root, question string, only []string, opts SearchOptions) ([]sidecarHit, error) {
+func search(ctx context.Context, c *conn, root, question string, only []string, opts SearchOptions) ([]sidecarHit, error) {
 	topK := opts.TopK
 	if topK <= 0 {
 		topK = DefaultSearchOptions().TopK
@@ -217,7 +217,7 @@ func search(ctx context.Context, c *sidecar.Client, root, question string, only 
 
 // run starts the sidecar, indexes the project and hands the client to query. Under the
 // embedding budget, the chunks focus (the question) matches are embedded first.
-func (r *Retriever) run(ctx context.Context, projectPath string, refresh bool, focus string, query func(c *sidecar.Client, root string, only []string, out *Retrieval) error) (Retrieval, error) {
+func (r *Retriever) run(ctx context.Context, projectPath string, refresh bool, focus string, query func(c *conn, root string, only []string, out *Retrieval) error) (Retrieval, error) {
 	if projectPath == "" {
 		projectPath = "."
 	}
@@ -230,11 +230,10 @@ func (r *Retriever) run(ctx context.Context, projectPath string, refresh bool, f
 		return Retrieval{}, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
 	}
 	started := time.Now()
-	c, err := sidecar.StartWith(ctx, bin, SidecarMajor, r.Env)
+	c, err := r.connect(ctx, bin)
 	if err != nil {
 		return Retrieval{}, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
 	}
-	defer func() { _ = c.Close() }()
 	spawn := time.Since(started).Milliseconds()
 
 	indexParams := map[string]interface{}{"root": root, "full": refresh}

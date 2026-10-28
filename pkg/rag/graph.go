@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"Dendrite/pkg/sidecar"
 )
 
 // CommunitiesOptions controls Leiden community listing parameters.
@@ -116,7 +114,7 @@ type Explanation struct {
 }
 
 // runGraph locates the sidecar, indexes projectPath if needed, and invokes query.
-func (r *Retriever) runGraph(ctx context.Context, projectPath string, query func(c *sidecar.Client, root string) error) error {
+func (r *Retriever) runGraph(ctx context.Context, projectPath string, query func(c *conn, root string) error) error {
 	if projectPath == "" {
 		projectPath = "."
 	}
@@ -128,11 +126,10 @@ func (r *Retriever) runGraph(ctx context.Context, projectPath string, query func
 	if err != nil {
 		return fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
 	}
-	c, err := sidecar.Start(ctx, bin, SidecarMajor)
+	c, err := r.connect(ctx, bin)
 	if err != nil {
 		return fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
 	}
-	defer func() { _ = c.Close() }()
 
 	indexParams := map[string]interface{}{"root": root, "full": false}
 	if r.EmbedBudget > 0 {
@@ -151,7 +148,7 @@ func (r *Retriever) Communities(ctx context.Context, projectPath string, opts Co
 		r = NewRetriever()
 	}
 	var communities []Community
-	err := r.runGraph(ctx, projectPath, func(c *sidecar.Client, root string) error {
+	err := r.runGraph(ctx, projectPath, func(c *conn, root string) error {
 		params := map[string]interface{}{"root": root}
 		if opts.Limit > 0 {
 			params["limit"] = opts.Limit
@@ -177,7 +174,7 @@ func (r *Retriever) GodNodes(ctx context.Context, projectPath string, opts GodNo
 		r = NewRetriever()
 	}
 	var nodes []GodNode
-	err := r.runGraph(ctx, projectPath, func(c *sidecar.Client, root string) error {
+	err := r.runGraph(ctx, projectPath, func(c *conn, root string) error {
 		params := map[string]interface{}{"root": root}
 		if opts.MinInDegree > 0 {
 			params["min_in_degree"] = opts.MinInDegree
@@ -206,7 +203,7 @@ func (r *Retriever) Path(ctx context.Context, projectPath, from, to string, opts
 		return GraphPath{}, errors.New("from and to are required")
 	}
 	var path GraphPath
-	err := r.runGraph(ctx, projectPath, func(c *sidecar.Client, root string) error {
+	err := r.runGraph(ctx, projectPath, func(c *conn, root string) error {
 		params := map[string]interface{}{
 			"root": root,
 			"from": from,
@@ -235,7 +232,7 @@ func (r *Retriever) Explain(ctx context.Context, projectPath, target string) ([]
 		return nil, errors.New("target is required")
 	}
 	var matches []Explanation
-	err := r.runGraph(ctx, projectPath, func(c *sidecar.Client, root string) error {
+	err := r.runGraph(ctx, projectPath, func(c *conn, root string) error {
 		params := map[string]interface{}{
 			"root":   root,
 			"target": target,

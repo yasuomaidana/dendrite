@@ -27,6 +27,8 @@ type PoolConfig struct {
 	Binary string
 	// Major is the protocol major version the caller speaks.
 	Major int
+	// Path, when set, is the executable to run and Locator is not consulted.
+	Path string
 	// Locator finds the executable; the zero Locator searches PATH only.
 	Locator Locator
 	// ExtraEnv adds KEY=VALUE lines to the sidecar's environment at each (re)start.
@@ -296,9 +298,12 @@ func (p *Pool) ensure(ctx context.Context) (*Client, error) {
 	if p.client != nil {
 		return p.client, nil
 	}
-	path, err := p.cfg.Locator.Locate(p.cfg.Binary)
-	if err != nil {
-		return nil, err
+	path := p.cfg.Path
+	if path == "" {
+		var err error
+		if path, err = p.cfg.Locator.Locate(p.cfg.Binary); err != nil {
+			return nil, err
+		}
 	}
 	var env []string
 	if p.cfg.ExtraEnv != nil {

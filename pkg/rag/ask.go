@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"Dendrite/pkg/dotenv"
-	"Dendrite/pkg/sidecar"
 )
 
 // DefaultPaidModel is the paid model when a request names none.
@@ -139,7 +138,7 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 	engine := "dendrite-rag"
 	// chooseLocal picks a GPU-served local model unless the request or the project's
 	// [ask] local_model (settings file or DENDRITE_RAG_ASK_LOCAL_MODEL) names one.
-	chooseLocal := func(c *sidecar.Client, root string) {
+	chooseLocal := func(c *conn, root string) {
 		if req.LocalModel != "" || mode == "paid" || e.PickLocal == nil {
 			return
 		}
@@ -166,7 +165,7 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 	var answer sidecarAnswer
 	// --paid and -y are consent given up front.
 	approved := req.AutoApprovePaid || req.ForcePaid
-	retrieval, err := retriever.run(ctx, req.ProjectPath, req.UpdateIndex, req.Question, func(c *sidecar.Client, root string, only []string, out *Retrieval) error {
+	retrieval, err := retriever.run(ctx, req.ProjectPath, req.UpdateIndex, req.Question, func(c *conn, root string, only []string, out *Retrieval) error {
 		if minor := protocolMinor(c.Health.Protocol); minor < AskProtocolMinor {
 			return fmt.Errorf("%w: %s speaks protocol %s; dendrite ask needs 1.%d or later; %s",
 				ErrSidecarTooOld, c.Path, c.Health.Protocol, AskProtocolMinor, InstallHint)

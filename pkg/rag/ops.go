@@ -3,8 +3,6 @@ package rag
 import (
 	"context"
 	"fmt"
-
-	"Dendrite/pkg/sidecar"
 )
 
 // Index triggers an explicit project indexing pass through dendrite-rag.
@@ -20,11 +18,10 @@ func (r *Retriever) Index(ctx context.Context, projectPath string, opts IndexOpt
 	if err != nil {
 		return IndexReport{}, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
 	}
-	c, err := sidecar.StartWith(ctx, bin, SidecarMajor, r.Env)
+	c, err := r.connect(ctx, bin)
 	if err != nil {
 		return IndexReport{}, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
 	}
-	defer func() { _ = c.Close() }()
 
 	params := map[string]interface{}{"root": root, "full": opts.Full}
 	if opts.EmbedBudgetMS > 0 {
@@ -56,11 +53,10 @@ func (r *Retriever) Status(ctx context.Context, projectPath string) (StatusRepor
 	if err != nil {
 		return StatusReport{}, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
 	}
-	c, err := sidecar.StartWith(ctx, bin, SidecarMajor, r.Env)
+	c, err := r.connect(ctx, bin)
 	if err != nil {
 		return StatusReport{}, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
 	}
-	defer func() { _ = c.Close() }()
 
 	var st StatusReport
 	if err := c.Call(ctx, "status", map[string]interface{}{"root": root}, &st); err != nil {
@@ -82,11 +78,10 @@ func (r *Retriever) Settings(ctx context.Context, projectPath string) (SettingsR
 	if err != nil {
 		return SettingsReport{}, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
 	}
-	c, err := sidecar.StartWith(ctx, bin, SidecarMajor, r.Env)
+	c, err := r.connect(ctx, bin)
 	if err != nil {
 		return SettingsReport{}, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
 	}
-	defer func() { _ = c.Close() }()
 
 	var s SettingsReport
 	if err := c.Call(ctx, "settings", map[string]interface{}{"root": root}, &s); err != nil {
@@ -101,11 +96,10 @@ func (r *Retriever) Embedders(ctx context.Context) ([]EmbedderBackend, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
 	}
-	c, err := sidecar.StartWith(ctx, bin, SidecarMajor, r.Env)
+	c, err := r.connect(ctx, bin)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
 	}
-	defer func() { _ = c.Close() }()
 
 	var res struct {
 		Backends []EmbedderBackend `json:"backends"`
@@ -129,11 +123,10 @@ func (r *Retriever) Purge(ctx context.Context, projectPath string) error {
 	if err != nil {
 		return fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
 	}
-	c, err := sidecar.StartWith(ctx, bin, SidecarMajor, r.Env)
+	c, err := r.connect(ctx, bin)
 	if err != nil {
 		return fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
 	}
-	defer func() { _ = c.Close() }()
 
 	var res map[string]interface{}
 	if err := c.Call(ctx, "purge", map[string]interface{}{"root": root}, &res); err != nil {
@@ -155,11 +148,10 @@ func (r *Retriever) Symbols(ctx context.Context, projectPath, name string, refs 
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
 	}
-	c, err := sidecar.StartWith(ctx, bin, SidecarMajor, r.Env)
+	c, err := r.connect(ctx, bin)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
 	}
-	defer func() { _ = c.Close() }()
 
 	method := "symbols.definitions"
 	if refs {
@@ -187,11 +179,10 @@ func (r *Retriever) Grep(ctx context.Context, projectPath, pattern string, paths
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
 	}
-	c, err := sidecar.StartWith(ctx, bin, SidecarMajor, r.Env)
+	c, err := r.connect(ctx, bin)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
 	}
-	defer func() { _ = c.Close() }()
 
 	params := map[string]interface{}{"root": root, "pattern": pattern}
 	if len(paths) > 0 {
@@ -222,11 +213,10 @@ func (r *Retriever) History(ctx context.Context, projectPath, query string, topK
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
 	}
-	c, err := sidecar.StartWith(ctx, bin, SidecarMajor, r.Env)
+	c, err := r.connect(ctx, bin)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
 	}
-	defer func() { _ = c.Close() }()
 
 	if topK <= 0 {
 		topK = 10
@@ -253,11 +243,10 @@ func (r *Retriever) Sync(ctx context.Context, projectPath string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
 	}
-	c, err := sidecar.StartWith(ctx, bin, SidecarMajor, r.Env)
+	c, err := r.connect(ctx, bin)
 	if err != nil {
 		return 0, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
 	}
-	defer func() { _ = c.Close() }()
 
 	var res struct {
 		Pending int `json:"pending"`
@@ -281,11 +270,10 @@ func (r *Retriever) Pull(ctx context.Context, projectPath string) (PullReport, e
 	if err != nil {
 		return PullReport{}, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
 	}
-	c, err := sidecar.StartWith(ctx, bin, SidecarMajor, r.Env)
+	c, err := r.connect(ctx, bin)
 	if err != nil {
 		return PullReport{}, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
 	}
-	defer func() { _ = c.Close() }()
 
 	var rep PullReport
 	if err := c.Call(ctx, "pull", map[string]interface{}{"root": root}, &rep); err != nil {
@@ -307,11 +295,10 @@ func (r *Retriever) Push(ctx context.Context, projectPath string, dryRun bool) (
 	if err != nil {
 		return PushReport{}, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
 	}
-	c, err := sidecar.StartWith(ctx, bin, SidecarMajor, r.Env)
+	c, err := r.connect(ctx, bin)
 	if err != nil {
 		return PushReport{}, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
 	}
-	defer func() { _ = c.Close() }()
 
 	var rep PushReport
 	if err := c.Call(ctx, "push", map[string]interface{}{"root": root, "dry_run": dryRun}, &rep); err != nil {
