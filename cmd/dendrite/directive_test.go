@@ -125,9 +125,8 @@ func TestDirectiveReadsUnknownRulesThroughTheModel(t *testing.T) {
 	if _, err := r.run("make it faster"); err == nil || !strings.Contains(err.Error(), "HTTP 503") {
 		t.Errorf("a model failure is reported: %v", err)
 	}
-	directiveChat = func(string) llmchat.Completer {
-		return fakeCompleter{answer: `[{"key":"coverage.min_percent","value":900}]`}
-	}
+	wild := llmchattest.New(t, `[{"key":"coverage.min_percent","value":900}]`)
+	directiveChat = func(string) llmchat.Completer { return wild.Client }
 	if _, err := r.run("make it faster"); err == nil || !strings.Contains(err.Error(), "between 0 and 100") {
 		t.Errorf("a proposal outside the limits is refused: %v", err)
 	}
