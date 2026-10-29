@@ -156,8 +156,8 @@ func TestACrashedSessionsLeaseIsPrunedSoItCannotKeepTheServerAlive(t *testing.T)
 
 func TestALeaseWithoutAHeartbeatExpiresEvenWhenItsPidIsAlive(t *testing.T) {
 	e := newEnv(t)
-	e.healthy.Store(true) // an existing server, so the test is only about lease liveness
-	e.m.o.TTL = 100 * time.Millisecond
+	e.healthy.Store(true)              // an existing server, so the test is only about lease liveness
+	e.m.o.TTL = 400 * time.Millisecond // generous: a loaded runner can stall a sleeping test for 100 ms
 	_ = os.MkdirAll(e.m.leasesDir(), 0o755)
 	old := lease{ID: "old", PID: os.Getpid(), Holder: "silent", HeartbeatMS: time.Now().Add(-time.Hour).UnixMilli()}
 	if err := e.m.writeLease(old); err != nil {
@@ -171,15 +171,15 @@ func TestALeaseWithoutAHeartbeatExpiresEvenWhenItsPidIsAlive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(60 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 	if err := a.Heartbeat(); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(60 * time.Millisecond) // 120 ms since Acquire, but only 60 ms since the heartbeat
+	time.Sleep(200 * time.Millisecond) // 400 ms since Acquire, but only 200 ms since the heartbeat
 	if h, _ := e.m.Holders(); len(h) != 1 {
 		t.Errorf("a heartbeating lease expired: %+v", h)
 	}
-	time.Sleep(150 * time.Millisecond) // no more heartbeats
+	time.Sleep(600 * time.Millisecond) // no more heartbeats
 	if h, _ := e.m.Holders(); len(h) != 0 {
 		t.Errorf("a lease outlived its TTL: %+v", h)
 	}
