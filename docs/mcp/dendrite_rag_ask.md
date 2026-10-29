@@ -18,11 +18,12 @@ Ask architectural, API, or codebase questions with local RAG retrieval and optio
       "type": "boolean"
     },
     "corpus": {
-      "description": "Corpora searched: all (default: code and documentation), code (implementation questions), or docs (documentation only: design and conceptual questions)",
+      "description": "Corpora searched: all (default: code and documentation), code (implementation questions), docs (documentation only: design and conceptual questions), or tickets (the Plane tickets of the project: status, blockers, what a ticket is for)",
       "enum": [
         "all",
         "code",
-        "docs"
+        "docs",
+        "tickets"
       ],
       "type": "string"
     },
@@ -72,7 +73,7 @@ Ask architectural, API, or codebase questions with local RAG retrieval and optio
   "params": {
     "arguments": {
       "auto_approve_paid": false,
-      "corpus": "code and documentation), code (implementation questions), or docs (documentation only: design and conceptual questions",
+      "corpus": "code and documentation), code (implementation questions), docs (documentation only: design and conceptual questions), or tickets (the Plane tickets of the project: status, blockers, what a ticket is for",
       "docs_share": 1,
       "local_model": "sample",
       "paid_model": "'gemini-2.5-pro'",
@@ -88,5 +89,5 @@ Ask architectural, API, or codebase questions with local RAG retrieval and optio
 ### CLI
 
 ```bash
-dendrite mcp call dendrite_rag_ask '{"auto_approve_paid":false,"corpus":"code and documentation), code (implementation questions), or docs (documentation only: design and conceptual questions","docs_share":1,"local_model":"sample","paid_model":"'gemini-2.5-pro'","project_path":"'.'","question":"sample","top_k":1}'
+dendrite mcp call dendrite_rag_ask '{"auto_approve_paid":false,"corpus":"code and documentation), code (implementation questions), docs (documentation only: design and conceptual questions), or tickets (the Plane tickets of the project: status, blockers, what a ticket is for","docs_share":1,"local_model":"sample","paid_model":"'gemini-2.5-pro'","project_path":"'.'","question":"sample","top_k":1}'
 ```

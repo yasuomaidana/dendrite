@@ -87,7 +87,7 @@ dendrite soma plan --mode host --with-plane --with-grafana
 
 ### `dendrite soma prepare`
 
-Sync agent rules and skills, and enforce CI/CD tooling defaults. It also adds `DENDRITE_RAG_PG_URL` (the control stack's `dendrite_rag` database, port from `POSTGRES_PORT`) to `$DENDRITE_HOME/rag.env` when that file does not set it yet; an existing value is kept.
+Sync agent rules and skills, and enforce CI/CD tooling defaults
 
 ```bash
 dendrite soma prepare [path|project] [flags]

@@ -55,9 +55,8 @@ dendrite bouton jobs
 
 ```bash
 dendrite bouton jobs submit --ticket DEN-123 --agent agy --scope pkg/foo --prompt-file prompt.md --isolate
-dendrite bouton jobs show --ticket DRAG-30
-dendrite bouton jobs wait --ticket DRAG-30
-dendrite bouton jobs list --json
+dendrite bouton jobs list --ticket DEN-123
+dendrite bouton jobs show --ticket DEN-123
 dendrite bouton jobs wait --ticket DEN-123 --timeout 2h
 ```
 
@@ -99,7 +98,7 @@ dendrite bouton jobs show [<job-id>] [flags]
 
 | Flag | Description |
 | :--- | :--- |
-| `--ticket, -t` | Ticket identifier (e.g. DEN-123); shows the latest job of the ticket |
+| `--ticket, -t` | Ticket identifier (e.g. DEN-123) |
 
 ### `dendrite bouton jobs submit`
 
@@ -213,6 +212,4 @@ dendrite bouton run aider --ticket DEN-030 --task "fix the parser"
 dendrite bouton search "refactor AST parser" --local
 dendrite bouton route --task "add a CLI flag" --exec
 dendrite bouton jobs submit --ticket DEN-123 --agent agy --scope pkg/foo --prompt-file prompt.md --isolate
-dendrite bouton jobs show --ticket DRAG-30
-dendrite bouton jobs wait --ticket DRAG-30
 ```

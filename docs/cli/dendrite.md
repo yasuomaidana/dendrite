@@ -42,6 +42,7 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 | [`codex`](codex.md) | `doc`, `docs`, `engram-codex` | Docs-as-Code reflection, Docusaurus synthesis and portal |
 | [`cortex`](cortex.md) | `ui`, `cortex-cockpit` | Embedded Web Control Cockpit and telemetry server |
 | [`install`](install.md) | `bootstrap` | Install dendrite and its sub-projects from git: main (stable) or develop (--dev), per-member --ref overrides |
+| [`rag`](rag.md) | `retrieval`, `retriever` | Code & documentation retrieval sidecar orchestration (dendrite-rag) |
 | [`sensory`](sensory.md) | `telemetry`, `afferent-telemetry`, `tel` | Hardware thermal, token spend, and Prometheus telemetry |
 | [`update`](update.md) | `upgrade`, `self-update` | Update dendrite from a release, or rebuild it and its synapse siblings from local sources (--dev) |
 | [`version`](version.md) |  | Print Dendrite CLI version |
@@ -99,6 +100,7 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 | Command | Aliases | Description |
 | :--- | :--- | :--- |
 | [`chronos`](chronos.md) | `plane`, `chronos-tracker`, `pln` | Sovereign issue tracking, Gantt alignment, and DAG scheduler |
+| [`hook`](hook.md) |  | Entry points agent runtimes call around their tools (not for typing by hand) |
 | [`quantal`](quantal.md) | `commit`, `quantal-commit`, `cmt` | Autonomous Git commit with local model message generation |
 | [`sync`](sync.md) | `propagate` | Push commits and refresh Plane for this project and its synapse peers |
 | [`vesicle`](vesicle.md) | `tokens`, `token`, `vesicle-quota`, `quota`, `tok` | Inspect 24h & 7d token consumption windows and tier quotas |

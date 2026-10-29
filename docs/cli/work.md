@@ -97,6 +97,7 @@ Aliases: `create`
 | :--- | :--- |
 | `--base` | Commit-ish to start from (default HEAD) |
 | `--branch` | Branch to create (default agent/<name>) |
+| `--no-ticket-guard` | Do not check or start the ticket in Plane (env DENDRITE_TICKET_GUARD=off) |
 
 ## Examples
 
