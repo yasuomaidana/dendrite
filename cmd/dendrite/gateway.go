@@ -99,10 +99,10 @@ func runCleftUpdate(ctx context.Context, opts gateway.UpdaterOptions, out io.Wri
 	return nil
 }
 
-// restartRunningLiteLLM reloads or restarts the LiteLLM proxy container if running.
-func restartRunningLiteLLM(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, "docker", "restart", "dendrite-litellm")
-	return cmd.Run()
+// restartRunningLiteLLM reloads or restarts the LiteLLM proxy container if running. It is a variable
+// so tests never restart the developer's real gateway.
+var restartRunningLiteLLM = func(ctx context.Context) error {
+	return exec.CommandContext(ctx, "docker", "restart", "dendrite-litellm").Run()
 }
 
 func newCleftScheduleCmd() *cobra.Command {

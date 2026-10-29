@@ -167,6 +167,12 @@ func runDevUpdate(ctx context.Context, o updateOptions, target string, out io.Wr
 	return nil
 }
 
+// dockerCmd runs the docker CLI and returns its output. It is a variable so tests never touch the
+// developer's real containers.
+var dockerCmd = func(ctx context.Context, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, "docker", args...).Output()
+}
+
 // healActiveServices inspects and restarts active control-plane services whose compose configurations or routes changed.
 func healActiveServices(ctx context.Context, src string, out io.Writer) {
 	composeFile := stacks.Path("compose.control.yaml") // the install path, else the checkout it was built from
@@ -177,12 +183,10 @@ func healActiveServices(ctx context.Context, src string, out io.Writer) {
 		}
 	}
 	// Check if Docker daemon is accessible and dendrite-litellm is running
-	checkCmd := exec.CommandContext(ctx, "docker", "ps", "-q", "-f", "name=dendrite-litellm")
-	outBytes, err := checkCmd.Output()
+	outBytes, err := dockerCmd(ctx, "ps", "-q", "-f", "name=dendrite-litellm")
 	if err == nil && len(strings.TrimSpace(string(outBytes))) > 0 {
 		fmt.Fprintln(out, "[+] Refreshing and healing active LiteLLM container...")
-		restartCmd := exec.CommandContext(ctx, "docker", "restart", "dendrite-litellm")
-		if rErr := restartCmd.Run(); rErr == nil {
+		if _, rErr := dockerCmd(ctx, "restart", "dendrite-litellm"); rErr == nil {
 			fmt.Fprintln(out, "[✓] dendrite-litellm healed and restarted")
 		}
 	}

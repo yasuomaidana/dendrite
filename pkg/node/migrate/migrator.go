@@ -400,7 +400,11 @@ func extractHostOnly(raw string) string {
 	return raw
 }
 
-func execCommand(ctx context.Context, cmdStr string) error {
+// execCommand runs a command on this machine (pruning the local stack after a migration). It is a
+// variable so tests can replace it: PruneLocal runs `docker compose down` against the real stack.
+var execCommand = runLocalCommand
+
+func runLocalCommand(ctx context.Context, cmdStr string) error {
 	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
 	return cmd.Run()
 }
