@@ -165,3 +165,30 @@ func TestGateReportListsFailuresBeforeTheTail(t *testing.T) {
 		t.Errorf("failures are capped at %d", maxFailureLines)
 	}
 }
+
+func TestCleanEnvDropsTheLiveServiceVariables(t *testing.T) {
+	got := cleanEnv([]string{"PATH=/bin", "PLANE_API_KEY=k", "DENDRITE_HOME=/h", "LITELLM_MASTER_KEY=m", "HOME=/u", "PLANEX=keep"})
+	if strings.Join(got, " ") != "PATH=/bin HOME=/u PLANEX=keep" {
+		t.Errorf("env = %v", got)
+	}
+}
+
+func TestToolchainGateRunsTestsWithoutTheLiveEnvironment(t *testing.T) {
+	t.Setenv("PLANE_API_KEY", "live-key")
+	t.Setenv("DENDRITE_HOME", "/live/home")
+	dir := goModule(t, "func TestIsolated(t *testing.T) {\n\tif os.Getenv(\"PLANE_API_KEY\") != \"\" || os.Getenv(\"DENDRITE_HOME\") != \"\" {\n\t\tt.Fatal(\"the gate leaked the live environment\")\n\t}\n}\n")
+	writeFile(t, dir, "p_test.go", strings.Replace(mustRead(t, dir, "p_test.go"), "import \"testing\"", "import (\n\t\"os\"\n\t\"testing\"\n)", 1))
+	res, err := toolchainGate(context.Background(), dir)
+	if err != nil || !res.Passed {
+		t.Fatalf("%+v, %v", res, err)
+	}
+}
+
+func mustRead(t *testing.T, dir, rel string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, rel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}

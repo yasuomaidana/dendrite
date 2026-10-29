@@ -45,6 +45,7 @@ func toolchainGate(ctx context.Context, dir string) (GateResult, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
+	cmd.Env = cleanEnv(os.Environ())
 	out, runErr := cmd.CombinedOutput()
 	return GateResult{Passed: runErr == nil, Report: gateReport(argv, string(out), runErr == nil)}, nil
 }
@@ -72,6 +73,25 @@ func gateReport(argv []string, output string, passed bool) string {
 		return head + tail(output, 40)
 	}
 	return head + "Failures:\n" + strings.Join(failures, "\n") + "\n\nEnd of the output:\n" + tail(output, 15)
+}
+
+// cleanEnvPrefixes are the variables a test run must not inherit: the CLI loads them from the user's .env, and a
+// test that sees them reaches the live Plane, gateway and Dendrite state instead of its own fixtures.
+var cleanEnvPrefixes = []string{"PLANE_", "DENDRITE_", "LITELLM_"}
+
+// cleanEnv returns environ without the variables that point at the user's live services.
+func cleanEnv(environ []string) []string {
+	kept := make([]string, 0, len(environ))
+next:
+	for _, kv := range environ {
+		for _, p := range cleanEnvPrefixes {
+			if strings.HasPrefix(kv, p) {
+				continue next
+			}
+		}
+		kept = append(kept, kv)
+	}
+	return kept
 }
 
 func tail(s string, lines int) string {
