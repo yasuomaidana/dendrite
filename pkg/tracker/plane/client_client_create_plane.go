@@ -171,42 +171,7 @@ func (c *Client) UpdatePlaneIssueWithDetails(ctx context.Context, id string, req
 // ListModules queries all modules (milestones) for the project.
 func (c *Client) ListModules(ctx context.Context) ([]PlaneModule, error) {
 	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/modules/", c.workspaceSlug, c.projectID)
-	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to list modules: status %d", resp.StatusCode)
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var paginated struct {
-		Results []PlaneModule `json:"results"`
-	}
-	if err := json.Unmarshal(bodyBytes, &paginated); err == nil && len(paginated.Results) > 0 {
-		return paginated.Results, nil
-	}
-
-	var directList []PlaneModule
-	if err := json.Unmarshal(bodyBytes, &directList); err == nil {
-		return directList, nil
-	}
-
-	return paginated.Results, nil
+	return fetchResourceList[PlaneModule](ctx, c, endpoint, "failed to list modules")
 }
 
 // CreateModule registers a new module (milestone) in Plane (backward compatible).

@@ -2,7 +2,6 @@ package plane
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -343,25 +342,12 @@ func (c *Client) ListPlaneIssuesForProject(ctx context.Context, projectID string
 			return nil, err
 		}
 
-		var paginated struct {
-			NextPageResults bool         `json:"next_page_results"`
-			NextCursor      string       `json:"next_cursor"`
-			Results         []PlaneIssue `json:"results"`
+		pageIssues, nextCursor, hasNext := parseIssuePage(bodyBytes)
+		allIssues = append(allIssues, pageIssues...)
+		if !hasNext {
+			break
 		}
-		if err := json.Unmarshal(bodyBytes, &paginated); err == nil && len(paginated.Results) > 0 {
-			allIssues = append(allIssues, paginated.Results...)
-			if !paginated.NextPageResults || paginated.NextCursor == "" {
-				break
-			}
-			cursor = paginated.NextCursor
-			continue
-		}
-
-		var directList []PlaneIssue
-		if err := json.Unmarshal(bodyBytes, &directList); err == nil {
-			allIssues = append(allIssues, directList...)
-		}
-		break
+		cursor = nextCursor
 	}
 
 	return dedupeIssues(allIssues), nil
@@ -373,42 +359,7 @@ func (c *Client) ListStatesForProject(ctx context.Context, projectID string) ([]
 		projectID = c.projectID
 	}
 	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/states/", c.workspaceSlug, projectID)
-	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to list plane states for project %s: status %d", projectID, resp.StatusCode)
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var paginated struct {
-		Results []PlaneState `json:"results"`
-	}
-	if err := json.Unmarshal(bodyBytes, &paginated); err == nil && len(paginated.Results) > 0 {
-		return paginated.Results, nil
-	}
-
-	var directList []PlaneState
-	if err := json.Unmarshal(bodyBytes, &directList); err == nil {
-		return directList, nil
-	}
-
-	return paginated.Results, nil
+	return fetchResourceList[PlaneState](ctx, c, endpoint, fmt.Sprintf("failed to list plane states for project %s", projectID))
 }
 
 func resolvePlaneState(group, name string) tracker.Status { return StatusFor(group, name) }

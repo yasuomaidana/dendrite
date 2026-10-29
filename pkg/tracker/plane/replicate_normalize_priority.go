@@ -76,13 +76,17 @@ func normalizeMilestoneName(name string) string {
 	return name
 }
 
-func extractMilestone(content string) string {
-	mRegex := regexp.MustCompile(`(?:<strong>)?Milestone:?(?:</strong>)?\s*` + "`?" + `([^` + "`" + `\n<]+)`)
-	m := mRegex.FindStringSubmatch(content)
+func extractRegexField(content, pattern string) string {
+	re := regexp.MustCompile(pattern)
+	m := re.FindStringSubmatch(content)
 	if len(m) > 1 {
 		return strings.TrimSpace(m[1])
 	}
 	return ""
+}
+
+func extractMilestone(content string) string {
+	return extractRegexField(content, `(?:<strong>)?Milestone:?(?:</strong>)?\s*`+"`?"+`([^`+"`"+`\n<]+)`)
 }
 
 func extractProjectIdentifier(ticketID string) string {

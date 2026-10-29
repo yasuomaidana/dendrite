@@ -16,9 +16,7 @@ import (
 	"Dendrite/pkg/tracker"
 )
 
-// GetIssueRelations queries all categorized relations (blocking, blocked_by, duplicate, relates_to) for an issue.
-func (c *Client) GetIssueRelations(ctx context.Context, issueID string) (*IssueRelationsResponse, error) {
-	endpoint := fmt.Sprintf("/api/workspaces/%s/projects/%s/issues/%s/issue-relation/", c.workspaceSlug, c.projectID, issueID)
+func fetchEntity[T any](ctx context.Context, c *Client, endpoint string, notFoundErr error, errPrefix string) (*T, error) {
 	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -34,17 +32,23 @@ func (c *Client) GetIssueRelations(ctx context.Context, issueID string) (*IssueR
 		return nil, ErrUnauthorized
 	}
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrIssueNotFound
+		return nil, notFoundErr
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to get issue relations: status %d", resp.StatusCode)
+		return nil, fmt.Errorf("%s: status %d", errPrefix, resp.StatusCode)
 	}
 
-	var relations IssueRelationsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&relations); err != nil {
+	var entity T
+	if err := json.NewDecoder(resp.Body).Decode(&entity); err != nil {
 		return nil, err
 	}
-	return &relations, nil
+	return &entity, nil
+}
+
+// GetIssueRelations queries all categorized relations (blocking, blocked_by, duplicate, relates_to) for an issue.
+func (c *Client) GetIssueRelations(ctx context.Context, issueID string) (*IssueRelationsResponse, error) {
+	endpoint := fmt.Sprintf("/api/workspaces/%s/projects/%s/issues/%s/issue-relation/", c.workspaceSlug, c.projectID, issueID)
+	return fetchEntity[IssueRelationsResponse](ctx, c, endpoint, ErrIssueNotFound, "failed to get issue relations")
 }
 
 // RemoveIssueRelation removes a specific relationship between two issues.
@@ -121,32 +125,7 @@ func (c *Client) ListPages(ctx context.Context) ([]PlanePage, error) {
 // GetPage retrieves details of a specific page.
 func (c *Client) GetPage(ctx context.Context, pageID string) (*PlanePage, error) {
 	endpoint := fmt.Sprintf("/api/workspaces/%s/projects/%s/pages/%s/", c.workspaceSlug, c.projectID, pageID)
-	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrPageNotFound
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to get page: status %d", resp.StatusCode)
-	}
-
-	var page PlanePage
-	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
-		return nil, err
-	}
-	return &page, nil
+	return fetchEntity[PlanePage](ctx, c, endpoint, ErrPageNotFound, "failed to get page")
 }
 
 // CreatePage publishes a new page document in Plane.

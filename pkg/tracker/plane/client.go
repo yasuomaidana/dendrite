@@ -263,33 +263,35 @@ func (c *Client) ListPlaneIssues(ctx context.Context) ([]PlaneIssue, error) {
 			return nil, err
 		}
 
-		var paginated struct {
-			NextPageResults bool         `json:"next_page_results"`
-			NextCursor      string       `json:"next_cursor"`
-			Results         []PlaneIssue `json:"results"`
+		pageIssues, nextCursor, hasNext := parseIssuePage(bodyBytes)
+		allIssues = append(allIssues, pageIssues...)
+		if !hasNext {
+			break
 		}
-		if err := json.Unmarshal(bodyBytes, &paginated); err == nil && len(paginated.Results) > 0 {
-			allIssues = append(allIssues, paginated.Results...)
-			if !paginated.NextPageResults || paginated.NextCursor == "" {
-				break
-			}
-			cursor = paginated.NextCursor
-			continue
-		}
-
-		var directList []PlaneIssue
-		if err := json.Unmarshal(bodyBytes, &directList); err == nil {
-			allIssues = append(allIssues, directList...)
-		}
-		break
+		cursor = nextCursor
 	}
 
 	return dedupeIssues(allIssues), nil
 }
 
-// ListStates queries all states configured for the project.
-func (c *Client) ListStates(ctx context.Context) ([]PlaneState, error) {
-	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/states/", c.workspaceSlug, c.projectID)
+func parseIssuePage(bodyBytes []byte) (issues []PlaneIssue, nextCursor string, hasNext bool) {
+	var paginated struct {
+		NextPageResults bool         `json:"next_page_results"`
+		NextCursor      string       `json:"next_cursor"`
+		Results         []PlaneIssue `json:"results"`
+	}
+	if err := json.Unmarshal(bodyBytes, &paginated); err == nil && len(paginated.Results) > 0 {
+		return paginated.Results, paginated.NextCursor, paginated.NextPageResults && paginated.NextCursor != ""
+	}
+
+	var directList []PlaneIssue
+	if err := json.Unmarshal(bodyBytes, &directList); err == nil {
+		return directList, "", false
+	}
+	return nil, "", false
+}
+
+func fetchResourceList[T any](ctx context.Context, c *Client, endpoint, errPrefix string) ([]T, error) {
 	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -305,7 +307,7 @@ func (c *Client) ListStates(ctx context.Context) ([]PlaneState, error) {
 		return nil, ErrUnauthorized
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to list plane states: status %d", resp.StatusCode)
+		return nil, fmt.Errorf("%s: status %d", errPrefix, resp.StatusCode)
 	}
 
 	bodyBytes, err := io.ReadAll(resp.Body)
@@ -314,18 +316,24 @@ func (c *Client) ListStates(ctx context.Context) ([]PlaneState, error) {
 	}
 
 	var paginated struct {
-		Results []PlaneState `json:"results"`
+		Results []T `json:"results"`
 	}
 	if err := json.Unmarshal(bodyBytes, &paginated); err == nil && len(paginated.Results) > 0 {
 		return paginated.Results, nil
 	}
 
-	var directList []PlaneState
+	var directList []T
 	if err := json.Unmarshal(bodyBytes, &directList); err == nil {
 		return directList, nil
 	}
 
 	return paginated.Results, nil
+}
+
+// ListStates queries all states configured for the project.
+func (c *Client) ListStates(ctx context.Context) ([]PlaneState, error) {
+	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/states/", c.workspaceSlug, c.projectID)
+	return fetchResourceList[PlaneState](ctx, c, endpoint, "failed to list plane states")
 }
 
 // CheckZeroMockGate enforces the Zero-Mock policy: a ticket cannot move to review or done while

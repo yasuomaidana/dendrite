@@ -48,13 +48,22 @@ func (s Scenario) IsValid() bool {
 	}
 }
 
-// ParseScenario parses and validates a scenario string.
-func ParseScenario(s string) (Scenario, error) {
-	norm := Scenario(strings.ToLower(strings.TrimSpace(s)))
+type validatableString interface {
+	~string
+	IsValid() bool
+}
+
+func parseValidString[T validatableString](s string, errBase error) (T, error) {
+	norm := T(strings.ToLower(strings.TrimSpace(s)))
 	if !norm.IsValid() {
-		return "", fmt.Errorf("%w: '%s'", ErrInvalidScenario, s)
+		return "", fmt.Errorf("%w: '%s'", errBase, s)
 	}
 	return norm, nil
+}
+
+// ParseScenario parses and validates a scenario string.
+func ParseScenario(s string) (Scenario, error) {
+	return parseValidString[Scenario](s, ErrInvalidScenario)
 }
 
 // IsValid checks if compute node is valid.
@@ -69,11 +78,7 @@ func (n ComputeNode) IsValid() bool {
 
 // ParseComputeNode parses and validates a compute node string.
 func ParseComputeNode(s string) (ComputeNode, error) {
-	norm := ComputeNode(strings.ToLower(strings.TrimSpace(s)))
-	if !norm.IsValid() {
-		return "", fmt.Errorf("%w: '%s'", ErrInvalidComputeNode, s)
-	}
-	return norm, nil
+	return parseValidString[ComputeNode](s, ErrInvalidComputeNode)
 }
 
 // IsValid checks if stack component is valid.
@@ -89,11 +94,7 @@ func (c StackComponent) IsValid() bool {
 
 // ParseStackComponent parses and validates a stack component string.
 func ParseStackComponent(s string) (StackComponent, error) {
-	norm := StackComponent(strings.ToLower(strings.TrimSpace(s)))
-	if !norm.IsValid() {
-		return "", fmt.Errorf("%w: '%s'", ErrInvalidComponent, s)
-	}
-	return norm, nil
+	return parseValidString[StackComponent](s, ErrInvalidComponent)
 }
 
 // ValidateEndpointHost checks if a host string is a valid IP, localhost, or .ts.net domain.

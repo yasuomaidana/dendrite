@@ -128,22 +128,7 @@ func renderDevStatusMarkdown(items []ticketItem, report *StatusReplicationReport
 		})
 
 		sb.WriteString(fmt.Sprintf("### %s\n\n", mKey))
-		for _, it := range mTickets {
-			check := " "
-			if it.status == tracker.StatusDone {
-				check = "x"
-			}
-			suffix := ""
-			if it.targetPkg != "" {
-				suffix = fmt.Sprintf(" (`%s`)", it.targetPkg)
-			}
-			prio := it.priority
-			if prio == "" {
-				prio = "Medium"
-			}
-			sb.WriteString(fmt.Sprintf("- [%s] **%s**: %s%s [State: %s, Priority: %s]\n",
-				check, it.id, it.title, suffix, formatStatusName(it.status), prio))
-		}
+		writeDevStatusTickets(&sb, mTickets)
 		sb.WriteString("\n")
 	}
 
@@ -169,28 +154,32 @@ func renderDevStatusMarkdown(items []ticketItem, report *StatusReplicationReport
 			if len(pTickets) == 0 {
 				sb.WriteString("*(No active tickets)*\n\n")
 			} else {
-				for _, it := range pTickets {
-					check := " "
-					if it.status == tracker.StatusDone {
-						check = "x"
-					}
-					suffix := ""
-					if it.targetPkg != "" {
-						suffix = fmt.Sprintf(" (`%s`)", it.targetPkg)
-					}
-					prio := it.priority
-					if prio == "" {
-						prio = "Medium"
-					}
-					sb.WriteString(fmt.Sprintf("- [%s] **%s**: %s%s [State: %s, Priority: %s]\n",
-						check, it.id, it.title, suffix, formatStatusName(it.status), prio))
-				}
+				writeDevStatusTickets(&sb, pTickets)
 				sb.WriteString("\n")
 			}
 		}
 	}
 
 	return sb.String()
+}
+
+func writeDevStatusTickets(sb *strings.Builder, tickets []ticketItem) {
+	for _, it := range tickets {
+		check := " "
+		if it.status == tracker.StatusDone {
+			check = "x"
+		}
+		suffix := ""
+		if it.targetPkg != "" {
+			suffix = fmt.Sprintf(" (`%s`)", it.targetPkg)
+		}
+		prio := it.priority
+		if prio == "" {
+			prio = "Medium"
+		}
+		sb.WriteString(fmt.Sprintf("- [%s] **%s**: %s%s [State: %s, Priority: %s]\n",
+			check, it.id, it.title, suffix, formatStatusName(it.status), prio))
+	}
 }
 
 func buildTicketDescriptionHTML(t ParsedDevTicket) string {
@@ -262,12 +251,7 @@ func buildDevStatusPageHTML(data *DevStatusData) string {
 }
 
 func extractTargetPackage(content string) string {
-	pkgRegex := regexp.MustCompile(`(?:Target Package|package):\s*` + "`?" + `([^` + "`" + `\n<]+)`)
-	m := pkgRegex.FindStringSubmatch(content)
-	if len(m) > 1 {
-		return strings.TrimSpace(m[1])
-	}
-	return ""
+	return extractRegexField(content, `(?:Target Package|package):\s*`+"`?"+`([^`+"`"+`\n<]+)`)
 }
 
 func extractTicketNumber(id string) int {
