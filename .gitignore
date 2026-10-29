@@ -26,3 +26,4 @@ cmd/**/.ai/
 go.work
 go.work.sum
 __pycache__/
+tests/e2e/.state/
