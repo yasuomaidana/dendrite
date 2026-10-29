@@ -13,6 +13,8 @@ import (
 // SubsystemSwapper transforms legacy subsystem calls into clean trait boundaries.
 type SubsystemSwapper struct{}
 
+var generateNodesFunc = generateKinematicNodes
+
 // NewSubsystemSwapper creates a new SubsystemSwapper instance.
 func NewSubsystemSwapper() *SubsystemSwapper {
 	return &SubsystemSwapper{}
@@ -37,7 +39,7 @@ func (s *SubsystemSwapper) Swap(ctx context.Context, req SwapRequest) (*SwapResu
 	traitCode, adapterCode := s.generateCode(lang, req.FromSubsystem, req.ToSubsystem)
 
 	// Verify kinematic matrix parity across property test nodes
-	testNodes := generateKinematicNodes()
+	testNodes := generateNodesFunc()
 	parityValid := s.verifyKinematicsParity(testNodes)
 	if !parityValid {
 		return nil, ErrDomainSimulationCorrupted
