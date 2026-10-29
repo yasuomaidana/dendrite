@@ -119,8 +119,26 @@ func runSessionCheckpoint(ctx context.Context, o sessionCheckpointOptions, out i
 		fmt.Fprintf(out, "    - Next:                 %s\n", strings.Join(cp.Next, ", "))
 	}
 
+	if cp.Ticket != "" {
+		postTicketComment(ctx, out, o.Worktree, "milestone", checkpointSummary(cp))
+	}
 	autoCleanWorkCopies(ctx, out)
 	return nil
+}
+
+// checkpointSummary is the milestone comment of a checkpoint: the decisions, next tickets and notes.
+func checkpointSummary(cp *agentjobs.Checkpoint) string {
+	parts := []string{"Checkpoint on " + cp.Branch}
+	if len(cp.PendingDecisions) > 0 {
+		parts = append(parts, "Decisions:\n- "+strings.Join(cp.PendingDecisions, "\n- "))
+	}
+	if len(cp.Next) > 0 {
+		parts = append(parts, "Next: "+strings.Join(cp.Next, ", "))
+	}
+	if cp.Notes != "" {
+		parts = append(parts, "Notes:\n"+cp.Notes)
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // claimedTicket is the ticket claimed by the working copy in dir ("" is the current directory).

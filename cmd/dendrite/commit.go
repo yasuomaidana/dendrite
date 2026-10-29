@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/ticketlock"
 
 	"github.com/spf13/cobra"
 )
@@ -117,10 +118,42 @@ func runQuantal(ctx context.Context, opts devtool.CommitOptions, out io.Writer) 
 		return fmt.Errorf("commit failed: %w", err)
 	}
 
-	if printCommitResult(out, res) {
+	pushFailed := printCommitResult(out, res)
+	if !res.DryRun {
+		postTicketComment(ctx, out, opts.RepoDir, "progress", commitProgress(res))
+	}
+	if pushFailed {
 		return fmt.Errorf("git push failed: %w", res.PushError)
 	}
 	return nil
+}
+
+// commitProgress is the progress comment of a commit: its subject and short SHA.
+func commitProgress(res *devtool.CommitResult) string {
+	subject, _, _ := strings.Cut(strings.TrimSpace(res.Message), "\n")
+	sha := res.CommitSHA
+	if len(sha) > 7 {
+		sha = sha[:7]
+	}
+	return fmt.Sprintf("%s (%s)", subject, sha)
+}
+
+// postTicketComment tells the ticket the working copy in dir has claimed what just happened. It is best
+// effort: a copy with no claim posts nothing, and a failure is a warning that never undoes the work.
+var postTicketComment = func(ctx context.Context, out io.Writer, dir, kind, body string) {
+	if dir == "" {
+		dir = "."
+	}
+	if _, claimed := ticketlock.NewStore().ClaimOfDir(dir); !claimed {
+		return
+	}
+	client, err := newPlaneClient()
+	if err == nil {
+		_, err = lifecycleIn(client, dir).CommentClaimed(ctx, kind, body)
+	}
+	if err != nil {
+		fmt.Fprintf(out, "[!] ticket comment not posted: %v\n", err)
+	}
 }
 
 // printCommitResult renders a commit outcome and reports whether the push failed.

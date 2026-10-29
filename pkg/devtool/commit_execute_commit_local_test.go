@@ -223,3 +223,38 @@ func TestExecuteCommit_SpecificFilesLeaveOtherStagedWorkAlone(t *testing.T) {
 		t.Errorf("staged after commit = %q; the developer's wip.go must stay staged", staged)
 	}
 }
+
+// The git pre-commit hook honours --no-ticket-guard through the environment ExecuteCommit gives git.
+func TestExecuteCommit_NoTicketGuardReachesTheGitHook(t *testing.T) {
+	isolateEnvironment(t)
+	t.Setenv(TicketGuardEnv, "")
+	repo := t.TempDir()
+	_ = exec.Command("git", "init", "-b", "develop", repo).Run()
+	_ = exec.Command("git", "-C", repo, "config", "user.name", "Tester").Run()
+	_ = exec.Command("git", "-C", repo, "config", "user.email", "test@test.ai").Run()
+	seen := filepath.Join(t.TempDir(), "seen")
+	hook := filepath.Join(repo, ".git", "hooks", "pre-commit")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\necho \"guard=$DENDRITE_TICKET_GUARD\" > "+seen+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		noGuard bool
+		want    string
+	}{{true, "guard=off"}, {false, "guard="}} {
+		if err := os.WriteFile(filepath.Join(repo, "f.txt"), []byte(tc.want), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := ExecuteCommit(context.Background(), CommitOptions{RepoDir: repo, StageAll: true, NoSmart: true, NoPush: true, Message: "chore: x", NoTicketGuard: tc.noGuard})
+		if err != nil && !tc.noGuard {
+			// without the bypass the ticket guard itself may refuse; the hook then never ran for this case
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := os.ReadFile(seen); strings.TrimSpace(string(got)) != tc.want {
+			t.Errorf("noGuard=%v: hook saw %q, want %q", tc.noGuard, strings.TrimSpace(string(got)), tc.want)
+		}
+	}
+}

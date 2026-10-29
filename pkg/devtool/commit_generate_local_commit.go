@@ -219,6 +219,9 @@ func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, erro
 		if opts.RepoDir != "" {
 			cmd.Dir = opts.RepoDir
 		}
+		if opts.NoTicketGuard { // git's pre-commit hook honours the same bypass
+			cmd.Env = append(os.Environ(), TicketGuardEnv+"=off")
+		}
 		var out, errOut bytes.Buffer
 		cmd.Stdout = &out
 		cmd.Stderr = &errOut

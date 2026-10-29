@@ -219,10 +219,10 @@ func TestSavePlanOnTheClaimedTicketOrLocally(t *testing.T) {
 		t.Fatal(err)
 	}
 	msg, err = SavePlan(ctx, s.Lifecycle, s.boardFunc(), in)
-	if err != nil || msg != "plan v1 stored on DEN-377 (2 step(s) left)" {
+	if err != nil || msg != "plan v2 stored on DEN-377 (2 step(s) left)" {
 		t.Errorf("claimed: %q, %v", msg, err)
 	}
-	if got, err := s.GetPlan(ctx, "DEN-377"); err != nil || got.Version != 1 {
+	if got, err := s.GetPlan(ctx, "DEN-377"); err != nil || got.Version != 2 {
 		t.Errorf("plan on the ticket = %+v, %v", got, err)
 	}
 

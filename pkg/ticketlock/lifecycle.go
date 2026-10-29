@@ -152,7 +152,7 @@ func (l *Lifecycle) Claim(ctx context.Context, ref string, o ClaimOptions) (Clai
 	if tier != "" {
 		labels = append(labels, "tier:"+tier)
 	}
-	if _, _, err := l.Board.Svc.PatchLabels(ctx, l.Board.Client, ticket, labels, []string{"agent:", "tier:"}); err != nil {
+	if _, _, err := l.Board.Svc.PatchLabels(ctx, l.Board.Client, ticket, labels, []string{"agent:", "tier:", NeedsInputLabel}); err != nil {
 		return ClaimResult{}, fmt.Errorf("label %s: %w", ticket, err)
 	}
 	claim := Claim{Ticket: ticket, SessionID: tok.SessionID, Agent: agent, ModelTier: tier, Branch: branch, Worktree: l.Dir,
@@ -165,10 +165,40 @@ func (l *Lifecycle) Claim(ctx context.Context, ref string, o ClaimOptions) (Clai
 	}
 
 	res := ClaimResult{Ticket: ticket, State: tracker.StatusDisplayName(tracker.StatusInProgress), Branch: branch, SessionID: tok.SessionID}
-	if p, err := l.GetPlan(ctx, ticket); err == nil {
+	p, err := l.GetPlan(ctx, ticket)
+	if err != nil {
+		p, err = l.adoptUnclaimedPlan(ctx, ticket, now)
+	}
+	if err == nil {
 		res.Plan = &p
 	}
 	return res, nil
+}
+
+// NeedsInputLabel marks a ticket the session-end hook blocked; a new claim clears it.
+const NeedsInputLabel = "needs-input"
+
+// UnclaimedPlanTTL is how long a plan made before any claim waits to be adopted by the next claim.
+const UnclaimedPlanTTL = 6 * time.Hour
+
+// adoptUnclaimedPlan attaches the newest plan saved while nothing was claimed to the ticket that has none,
+// so a plan made before the claim is not lost. Without one it returns ErrNoPlan.
+func (l *Lifecycle) adoptUnclaimedPlan(ctx context.Context, ticket string, now time.Time) (Plan, error) {
+	p, ok := l.Plans.TakeUnclaimed(now.Add(-UnclaimedPlanTTL))
+	if !ok {
+		return Plan{}, ErrNoPlan
+	}
+	return l.UploadPlan(ctx, ticket, p.Markdown)
+}
+
+// CommentClaimed posts a comment on the ticket the working copy has claimed. A copy with no claim has no
+// ticket to comment on, which is not an error: ticket is empty and nothing is posted.
+func (l *Lifecycle) CommentClaimed(ctx context.Context, kind, body string) (ticket string, err error) {
+	claim, cErr := l.Store.ClaimFor(l.Branch(l.Dir))
+	if cErr != nil {
+		return "", nil
+	}
+	return claim.Ticket, l.Comment(ctx, claim.Ticket, kind, body)
 }
 
 // refuseOtherSession fails when a different branch holds a live claim on the ticket, unless steal is set,

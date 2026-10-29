@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"Dendrite/pkg/devtool"
 	"Dendrite/pkg/ticketlock"
 	"Dendrite/pkg/tracker/plane"
 )
@@ -25,7 +26,9 @@ func ticketHookCmds() []*cobra.Command {
 			"the claimed ticket must be In Progress (Plane is asked at most every 10 minutes; an unreachable Plane is\n" +
 			"covered by a cached claim under 24 hours old). Without them it exits 2 and says how to claim. Writes outside\n" +
 			"any repository, in repositories that are not Plane projects, under .dendrite/ and in ~/.claude/plans/ are\n" +
-			"allowed. Malformed input is allowed: only a judged write is ever refused.",
+			"allowed. Malformed input is allowed: only a judged write is ever refused.\n" +
+			"Writes made through the shell (sed -i, redirects) are not seen here; the git pre-commit hook is the backstop.\n" +
+			"The bypass for both hooks is " + devtool.TicketGuardEnv + "=off (quantal --no-ticket-guard sets it for its commit).",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPreEdit(cmd.Context(), cmd.InOrStdin(), hookDeps())
@@ -72,6 +75,9 @@ func runPreEdit(ctx context.Context, stdin io.Reader, d ticketlock.Deps) error {
 
 // runPreCommit refuses a commit whose staged paths the lock does not allow.
 func runPreCommit(ctx context.Context, d ticketlock.Deps, dir string) error {
+	if !devtool.GuardEnabled() { // the deliberate bypass: --no-ticket-guard or DENDRITE_TICKET_GUARD=off
+		return nil
+	}
 	if err := ticketlock.CheckStaged(ctx, d, dir); err != nil {
 		return usageErrorf("%s", err.Error())
 	}

@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"Dendrite/pkg/fsutil"
 	"Dendrite/pkg/store/segmented"
@@ -97,7 +98,12 @@ func (s PlanStore) Save(ticket string, p Plan) error {
 
 // Load reads the stored plan of ticket; ErrNoPlan when there is none.
 func (s PlanStore) Load(ticket string) (Plan, error) {
-	idx, err := readJSON[planIndex](s.indexPath(ticket))
+	return s.loadIndex(s.indexPath(ticket))
+}
+
+// loadIndex reads the plan an index file points at.
+func (s PlanStore) loadIndex(path string) (Plan, error) {
+	idx, err := readJSON[planIndex](path)
 	if errors.Is(err, os.ErrNotExist) {
 		return Plan{}, ErrNoPlan
 	}
@@ -112,3 +118,28 @@ func (s PlanStore) Load(ticket string) (Plan, error) {
 	p.Source = "engram"
 	return p, nil
 }
+
+// TakeUnclaimed removes and returns the newest readable plan kept under unclaimed/<session> that was
+// saved after since. ok is false when there is none.
+func (s PlanStore) TakeUnclaimed(since time.Time) (best Plan, ok bool) {
+	entries, _ := os.ReadDir(filepath.Join(s.Dir, "index"))
+	var bestPath string
+	var bestAt time.Time
+	for _, e := range entries {
+		info, _ := e.Info()
+		if info == nil || !strings.HasPrefix(e.Name(), unclaimedPrefix) || !info.ModTime().After(since) || (ok && !info.ModTime().After(bestAt)) {
+			continue
+		}
+		path := filepath.Join(s.Dir, "index", e.Name())
+		if p, err := s.loadIndex(path); err == nil {
+			best, bestPath, bestAt, ok = p, path, info.ModTime(), true
+		}
+	}
+	if ok {
+		_ = os.Remove(bestPath)
+	}
+	return best, ok
+}
+
+// unclaimedPrefix is the index file prefix of the keys hookSessionKey makes ("unclaimed/<session>").
+const unclaimedPrefix = "unclaimed-"

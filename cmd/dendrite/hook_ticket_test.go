@@ -188,7 +188,7 @@ func TestPlanSavedStoresThePlanOnTheClaimedTicketOrKeepsItLocally(t *testing.T) 
 	if err := runPlanSaved(ctx, r.event("ExitPlanMode", "", "- [ ] one\n- [ ] two"), &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "[✓] plan v1 stored on DEN-377 (2 step(s) left)") {
+	if !strings.Contains(out.String(), "[✓] plan v2 stored on DEN-377 (2 step(s) left)") {
 		t.Errorf("claimed: %s", out.String())
 	}
 	if plan, err := lifecycleIn(mustClient(t), r.repo).GetPlan(ctx, "DEN-377"); err != nil || plan.NextStep != "one" {
