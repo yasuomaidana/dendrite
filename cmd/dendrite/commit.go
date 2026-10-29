@@ -17,7 +17,7 @@ import (
 
 // newQuantalCmd builds `dendrite quantal` (alias commit): ticket-aware commits with generated messages, then push.
 func newQuantalCmd() *cobra.Command {
-	opts := devtool.CommitOptions{UseLocalModel: true, Model: inference.ChatModel(inference.TierChore), Smart: true}
+	opts := devtool.CommitOptions{UseLocalModel: true, Smart: true}
 	var noSmart, noLocal bool
 	var synapseID string
 	cmd := &cobra.Command{
@@ -35,6 +35,9 @@ func newQuantalCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.Smart, opts.NoSmart = !noSmart, noSmart
 			opts.UseLocalModel = !noLocal
+			if opts.Model == "" { // the local model of the chore tier, resolved when the command runs
+				opts.Model = inference.ChatModel(inference.TierChore)
+			}
 			if strings.EqualFold(os.Getenv("DENDRITE_COMMIT_PUSH"), "false") {
 				opts.NoPush = true
 			}

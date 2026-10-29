@@ -15,7 +15,7 @@ import (
 
 // newPruneCmd builds `dendrite prune` (alias audit-changes): audit and merge the queued local/* branches.
 func newPruneCmd() *cobra.Command {
-	opts := audit.AuditOptions{MaxTokens: 4096, Model: inference.ChatModel(inference.TierAsk)}
+	opts := audit.AuditOptions{MaxTokens: 4096}
 	cmd := &cobra.Command{
 		Use:     "prune",
 		Aliases: []string{"audit-changes", "microglial-prune", "synaptic-pruning", "prn"},
@@ -26,6 +26,9 @@ func newPruneCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.MaxTokens <= 0 {
 				return usageErrorf("--max-tokens must be positive")
+			}
+			if opts.Model == "" { // the local model of the ask tier, resolved when the command runs
+				opts.Model = inference.ChatModel(inference.TierAsk)
 			}
 			return runPrune(cmd.Context(), opts, cmd.OutOrStdout())
 		},
