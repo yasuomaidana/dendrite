@@ -28,6 +28,7 @@ Synaptic Cleft & Gating
 | `migrate` | Copy a model's blobs between engines (default Ollama to OxiLLaMa, which runs prompts on the CPU), optionally evicting the source |
 | `models` | List the local models installed on Ollama and OxiLLaMa and whether each fits this machine's memory |
 | `probe` | Check engine reachability, latency and models (all engines, one engine, or a raw Ollama endpoint) |
+| `prune` | List the installed Ollama models nothing uses and remove them to reclaim disk |
 | `render` | Render the registered engines' model routes as LiteLLM config |
 | `serve` | Run the OxiLLaMa OpenAI-compatible server in the foreground (Ctrl+C stops it) |
 | `status` | Show whether the OxiLLaMa server runs, who started it and which sessions hold it |
@@ -140,6 +141,24 @@ dendrite spike probe [engine-id] [flags]
 | Flag | Description |
 | :--- | :--- |
 | `--endpoint` | Probe an Ollama-compatible endpoint URL instead of a registered engine |
+
+### `dendrite spike prune`
+
+List the installed Ollama models nothing uses and remove them to reclaim disk
+
+```bash
+dendrite spike prune [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--keep` | Models to keep besides the ones in use (comma-separated) |
+| `--ollama` | Ollama base URL (default: http://localhost:11434) |
+
+```bash
+dendrite spike prune
+dendrite spike prune --keep gpt-oss:20b -y
+```
 
 ### `dendrite spike serve`
 

@@ -45,6 +45,7 @@ func newSpikeCmd() *cobra.Command {
 		newSpikeHoldCmd(),
 		newSpikeZeroCostCmd(),
 		newSpikeBenchCmd(),
+		newSpikePruneCmd(),
 	)
 	return cmd
 }
