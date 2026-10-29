@@ -139,3 +139,40 @@ func TestAScopedRstestOnlyReportsTouchedFiles(t *testing.T) {
 		t.Errorf("%+v", c)
 	}
 }
+
+func TestAMergedTicketsScopeUsesHeadsLineNumbers(t *testing.T) {
+	dir := t.TempDir()
+	gitIn(t, dir, "init", "-q", "-b", "develop")
+	write(t, dir, "f.go", "package f\n")
+	gitIn(t, dir, "add", ".")
+	gitIn(t, dir, "commit", "-q", "-m", "base")
+	write(t, dir, "f.go", "package f\n\nfunc A() {}\n") // the ticket adds lines 2-3
+	gitIn(t, dir, "add", ".")
+	gitIn(t, dir, "commit", "-q", "-m", "[DEN-8] add A")
+	write(t, dir, "f.go", "package f\n\nvar top = 1\nvar more = 2\n\nfunc A() {}\n") // the ticket again, above A
+	gitIn(t, dir, "add", ".")
+	gitIn(t, dir, "commit", "-q", "-m", "[DEN-8] add vars above A")
+	write(t, dir, "g.go", "package g\n")
+	gitIn(t, dir, "add", ".")
+	gitIn(t, dir, "commit", "-q", "-m", "[DEN-9] someone else's file")
+
+	s := ChangesOfTicket(dir, "DEN-8")
+	if !reflect.DeepEqual(s.Files(), []string{"f.go"}) {
+		t.Fatalf("files = %v", s.Files())
+	}
+	// In HEAD, func A sits on line 6 and the vars on 3-4: the first commit's own numbering (2-3) is stale.
+	if !s.Touches("f.go", 6, 6) || !s.Touches("f.go", 3, 4) || s.Touches("f.go", 1, 1) {
+		t.Errorf("the scope must follow HEAD's lines")
+	}
+}
+
+func TestATicketWhoseFirstCommitIsTheRootCommitStillHasAScope(t *testing.T) {
+	dir := t.TempDir()
+	gitIn(t, dir, "init", "-q", "-b", "develop")
+	write(t, dir, "f.go", "package f\n")
+	gitIn(t, dir, "add", ".")
+	gitIn(t, dir, "commit", "-q", "-m", "[DEN-1] the very first commit")
+	if s := ChangesOfTicket(dir, "DEN-1"); !s.HasFile("f.go") {
+		t.Errorf("files = %v", s.Files())
+	}
+}

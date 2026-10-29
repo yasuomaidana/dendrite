@@ -141,3 +141,21 @@ func TestEnsureDirectivesKeepsHandWrittenFilesAndHonoursDryRun(t *testing.T) {
 		t.Error("directives that cannot be written are an error")
 	}
 }
+
+func TestIsDendriteHookEntryOnlyAcceptsEntriesRunningOurHooks(t *testing.T) {
+	ours := map[string]any{"hooks": []any{map[string]any{"type": "command", "command": editLockCommand}}}
+	for name, tc := range map[string]struct {
+		entry any
+		want  bool
+	}{
+		"not an object":  {"just a string", false},
+		"no hooks":       {map[string]any{"matcher": "Edit"}, false},
+		"empty hooks":    {map[string]any{"hooks": []any{}}, false},
+		"someone else's": {map[string]any{"hooks": []any{map[string]any{"type": "command", "command": "./lint.sh"}}}, false},
+		"ours":           {ours, true},
+	} {
+		if got := isDendriteHookEntry(tc.entry); got != tc.want {
+			t.Errorf("%s: %v", name, got)
+		}
+	}
+}

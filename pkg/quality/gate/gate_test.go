@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"Dendrite/pkg/directive"
+	"Dendrite/pkg/fsutil"
 	"Dendrite/pkg/rag"
 	"Dendrite/pkg/rag/ragtest"
 	"Dendrite/pkg/sidecar"
@@ -16,11 +17,7 @@ import (
 
 func write(t *testing.T, dir, rel, body string) {
 	t.Helper()
-	p := filepath.Join(dir, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+	if err := fsutil.WriteFileAtomic(filepath.Join(dir, filepath.FromSlash(rel)), []byte(body)); err != nil {
 		t.Fatal(err)
 	}
 }

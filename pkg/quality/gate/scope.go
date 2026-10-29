@@ -102,10 +102,29 @@ func ChangesOfTicket(dir, ticket string) *Scope {
 		}
 	}
 	shas, _ := TicketCommits(dir, ticket)
+	if len(shas) == 0 {
+		return s
+	}
+	// The line numbers of an old commit's patch are those of that commit's files, and later commits shift
+	// them. Everything is expressed in HEAD's numbering instead: the diff from before the ticket's first commit
+	// to HEAD, limited to the files its commits touched.
+	files := map[string]bool{}
 	for _, sha := range shas {
-		if patch, err := git(dir, "show", "-U0", "--no-color", "--format=", "--patch", sha); err == nil {
-			s.addDiff(patch)
+		if names, err := git(dir, "show", "--name-only", "--format=", sha); err == nil {
+			for _, f := range strings.Fields(names) {
+				files[f] = true
+			}
 		}
+	}
+	args := []string{"diff", "-U0", "--no-color", shas[0] + "^", "HEAD", "--"}
+	for f := range files {
+		args = append(args, f)
+	}
+	if patch, err := git(dir, args...); err == nil {
+		s.addDiff(patch)
+	} else { // the first commit has no parent
+		patch, _ := git(dir, "show", "-U0", "--no-color", "--format=", "--patch", shas[0])
+		s.addDiff(patch)
 	}
 	return s
 }
