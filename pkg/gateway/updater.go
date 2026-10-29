@@ -29,6 +29,9 @@ type DiscoveredModel struct {
 	IntelligenceScore int    `json:"intelligence_score"`
 	Endpoint          string `json:"endpoint"`
 	ZeroCost          bool   `json:"zero_cost"`
+	// FitsMachine is false for a model too large to stay resident in this machine's memory; such a
+	// model is still registered as a route but is never chosen as the active local primary.
+	FitsMachine bool `json:"fits_machine"`
 }
 
 // UpdaterOptions configures the LiteLLM routing table updater.
@@ -43,6 +46,7 @@ type UpdaterOptions struct {
 	PrimaryCloudModel string             // Primary commercial model (default: gemini-4-argon-medium)
 	BackupCloudModel  string             // Secondary commercial model (default: copilot-sonnet)
 	FastCloudModel    string             // Fast commercial model (default: gemini-3.8-flash-medium)
+	RAMGB             float64            // Machine memory for the fit check (0: detect)
 	Logger            func(format string, args ...interface{})
 }
 
@@ -179,6 +183,10 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 	mgr := u.mgr
 	u.mu.RUnlock()
 
+	ramGB, fraction := opts.RAMGB, inference.FitFraction()
+	if ramGB <= 0 {
+		ramGB = inference.MachineRAMGB()
+	}
 	report := &UpdateReport{
 		Timestamp:        start,
 		ConfigPath:       opts.ConfigPath,
@@ -253,6 +261,7 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 					IntelligenceScore: score,
 					Endpoint:          r.endpoint,
 					ZeroCost:          true,
+					FitsMachine:       inference.Fits(cleanModel, ramGB, fraction),
 				})
 			}
 		} else {
@@ -270,6 +279,10 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 		gj := inference.GPUAccelerated(inference.EngineType(report.DiscoveredModels[j].EngineType))
 		if gi != gj {
 			return gi
+		}
+		// A model that fits comes before one that would swap, however smart the latter is.
+		if fi, fj := report.DiscoveredModels[i].FitsMachine, report.DiscoveredModels[j].FitsMachine; fi != fj {
+			return fi
 		}
 		if report.DiscoveredModels[i].IntelligenceScore != report.DiscoveredModels[j].IntelligenceScore {
 			return report.DiscoveredModels[i].IntelligenceScore > report.DiscoveredModels[j].IntelligenceScore

@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"Dendrite/pkg/audit"
+	"Dendrite/pkg/inference"
 	"Dendrite/pkg/tracker/github"
 	"Dendrite/pkg/vcs"
 
@@ -14,7 +15,7 @@ import (
 
 // newPruneCmd builds `dendrite prune` (alias audit-changes): audit and merge the queued local/* branches.
 func newPruneCmd() *cobra.Command {
-	opts := audit.AuditOptions{MaxTokens: 4096, Model: "qwen3.8:27b"}
+	opts := audit.AuditOptions{MaxTokens: 4096, Model: inference.ChatModel(inference.TierAsk)}
 	cmd := &cobra.Command{
 		Use:     "prune",
 		Aliases: []string{"audit-changes", "microglial-prune", "synaptic-pruning", "prn"},

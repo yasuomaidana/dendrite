@@ -9,13 +9,14 @@ import (
 	"strings"
 
 	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/inference"
 
 	"github.com/spf13/cobra"
 )
 
 // newQuantalCmd builds `dendrite quantal` (alias commit): ticket-aware commits with generated messages, then push.
 func newQuantalCmd() *cobra.Command {
-	opts := devtool.CommitOptions{UseLocalModel: true, Model: "qwen3.8:27b", Smart: true}
+	opts := devtool.CommitOptions{UseLocalModel: true, Model: inference.ChatModel(inference.TierChore), Smart: true}
 	var noSmart, noLocal bool
 	var synapseID string
 	cmd := &cobra.Command{

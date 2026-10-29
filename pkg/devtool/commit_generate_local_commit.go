@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"Dendrite/pkg/inference"
 	"Dendrite/pkg/quality"
 	"Dendrite/pkg/sidecar"
 )
@@ -19,7 +20,7 @@ import (
 // GenerateLocalCommitMessageWithContext synthesizes Conventional Commit with active ticket context.
 func GenerateLocalCommitMessageWithContext(ctx context.Context, diffStat, fullDiff, ticketID string, smartTicket *SmartTicketInfo, model string, ollamaURL, litellmURL, litellmKey string, stagedFiles []string) (string, string, error) {
 	if model == "" {
-		model = "qwen3.8:27b"
+		model = inference.ChatModel(inference.TierChore)
 	}
 
 	ticketContext := ""
@@ -57,7 +58,8 @@ Git Diff Content (truncated):
 	if tryOxillama {
 		oxModel := strings.TrimPrefix(model, "oxillama/")
 		if oxModel == "" || !strings.Contains(oxModel, "qwen") {
-			oxModel = "qwen3.8:27b"
+			// OxiLLaMa serves the one model it was started with; name it in DENDRITE_OXILLAMA_MODEL.
+			oxModel = oxillamaServedModel()
 		}
 		oxPayload := map[string]interface{}{
 			"model": oxModel,
@@ -442,4 +444,13 @@ func cleanCommitText(raw string) string {
 		cleanedLines = append(cleanedLines, l)
 	}
 	return strings.TrimSpace(strings.Join(cleanedLines, "\n"))
+}
+
+// oxillamaServedModel is the model name sent to an OxiLLaMa server when the requested one is not a Qwen
+// model. It is the server's own model, not the Ollama chat model, so it has its own setting.
+func oxillamaServedModel() string {
+	if v := strings.TrimSpace(os.Getenv("DENDRITE_OXILLAMA_MODEL")); v != "" {
+		return v
+	}
+	return "qwen3.8:27b"
 }
