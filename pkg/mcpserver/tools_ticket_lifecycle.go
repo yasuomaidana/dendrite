@@ -99,6 +99,43 @@ func registerTicketLifecycleTools(s *Server, deps Dependencies) {
 			return map[string]interface{}{"ok": true}, nil
 		})
 
+	register("dendrite_ticket_decision",
+		"Record a question you asked the user and the answer you got, or a decision you took, on a ticket. Do it for every decision that shapes the work; Claude Code's AskUserQuestion is recorded by a hook, other agents call this.",
+		objectSchema([]string{"ticket", "question", "answer"}, map[string]interface{}{
+			"ticket": ticketProp, "worktree": worktreeProp,
+			"question": map[string]interface{}{"type": "string", "description": "The question that was asked"},
+			"answer":   map[string]interface{}{"type": "string", "description": "The answer or decision"},
+			"options":  map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Options that were on the table"},
+			"note":     map[string]interface{}{"type": "string", "description": "Why, or what follows from it"},
+		}),
+		func(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
+			d := ticketlock.Decision{Question: stringArg(a, "question"), Answer: stringArg(a, "answer"), Note: stringArg(a, "note")}
+			if raw, ok := a["options"].([]interface{}); ok {
+				for _, o := range raw {
+					if text, ok := o.(string); ok {
+						d.Options = append(d.Options, text)
+					}
+				}
+			}
+			if err := l.RecordDecisions(ctx, stringArg(a, "ticket"), []ticketlock.Decision{d}, ""); err != nil {
+				return nil, err
+			}
+			return map[string]interface{}{"ok": true}, nil
+		})
+
+	register("dendrite_ticket_comments",
+		"Read the comments of a ticket: claims, progress, decisions, handoffs and plans. Filter by kind, or take only the last N. Use it to read a handoff or the decisions already taken before you start.",
+		objectSchema([]string{"ticket"}, map[string]interface{}{
+			"ticket": ticketProp, "worktree": worktreeProp,
+			"kind": map[string]interface{}{"type": "string", "description": "claim, progress, milestone, note, handoff, decision or plan"},
+			"last": map[string]interface{}{"type": "number", "description": "Only the last N comments"},
+		}),
+		func(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
+			last, _ := a["last"].(float64)
+			rows, err := l.Comments(ctx, stringArg(a, "ticket"), stringArg(a, "kind"), int(last))
+			return map[string]interface{}{"comments": rows}, err
+		})
+
 	register("dendrite_ticket_upload_plan",
 		"Store the plan of a ticket (markdown with `- [ ]` / `- [x]` steps) in Plane, as one comment edited in place, and in the local plan store. Call it when the plan changes so a resumed session continues from the next unchecked step.",
 		objectSchema([]string{"ticket", "markdown"}, map[string]interface{}{

@@ -180,3 +180,78 @@ func TestChronosFinishCommandIsRegistered(t *testing.T) {
 		t.Errorf("command = %s", cmd.Name())
 	}
 }
+
+func (r *hookRig) askEvent() *strings.Reader {
+	return strings.NewReader(`{"session_id":"s-1","cwd":"` + r.repo + `","tool_name":"AskUserQuestion",` +
+		`"tool_input":{"questions":[{"question":"Which model?","options":[{"label":"Keep"},{"label":"Merge"}]}]},` +
+		`"tool_response":{"answers":{"Which model?":"Keep"}}}`)
+}
+
+func TestDecisionHookRecordsOnTheClaimedTicketOrKeepsThemUntilAClaim(t *testing.T) {
+	ctx := context.Background()
+	r := newHookRig(t, "To Do")
+	var out bytes.Buffer
+
+	if err := runDecision(ctx, r.askEvent(), &out); err != nil || !strings.Contains(out.String(), "1 decision(s) kept locally") {
+		t.Fatalf("unclaimed: %q, %v", out.String(), err)
+	}
+	r.claim()
+	if !lastCommentHas(r, "[dendrite:decision] Decisions made before this ticket was claimed:") {
+		t.Errorf("the claim posts what was decided before it: %v", r.board.Comments("DEN-377"))
+	}
+	out.Reset()
+	if err := runDecision(ctx, r.askEvent(), &out); err != nil || !strings.Contains(out.String(), "[✓] 1 decision(s) recorded on DEN-377") {
+		t.Fatalf("claimed: %q, %v", out.String(), err)
+	}
+	if !lastCommentHas(r, "[dendrite:decision] Q: Which model?") {
+		t.Errorf("comments = %v", r.board.Comments("DEN-377"))
+	}
+	out.Reset()
+	if err := runDecision(ctx, strings.NewReader("{broken"), &out); err != nil || out.Len() != 0 {
+		t.Errorf("malformed input is allowed: %v %q", err, out.String())
+	}
+}
+
+func TestChronosDecisionAndCommentsCommands(t *testing.T) {
+	ctx := context.Background()
+	r := newHookRig(t, "To Do")
+	r.claim()
+
+	cmd := newChronosDecisionCmd()
+	cmd.SetArgs([]string{"DEN-377", "--question", "Done rights?", "--answer", "Agents may", "--option", "Human", "--option", "Agents may", "--note", "user said so", "--worktree", r.repo})
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetContext(ctx)
+	if err := cmd.Execute(); err != nil || !strings.Contains(out.String(), "Recorded the decision on DEN-377") {
+		t.Fatalf("%q, %v", out.String(), err)
+	}
+	if !lastCommentHas(r, "[dendrite:decision] Q: Done rights?") {
+		t.Errorf("comments = %v", r.board.Comments("DEN-377"))
+	}
+	bad := newChronosDecisionCmd()
+	bad.SetArgs([]string{"DEN-377", "--question", "only a question"})
+	bad.SetOut(&bytes.Buffer{})
+	bad.SetErr(&bytes.Buffer{})
+	if err := bad.Execute(); err == nil {
+		t.Error("an answer is required")
+	}
+
+	read := newChronosCommentsCmd()
+	read.SetArgs([]string{"DEN-377", "--kind", "decision", "--last", "1", "--worktree", r.repo})
+	out.Reset()
+	read.SetOut(&out)
+	read.SetContext(ctx)
+	if err := read.Execute(); err != nil || !strings.Contains(out.String(), "A: Agents may") || strings.Contains(out.String(), "claim") {
+		t.Fatalf("comments output = %q, %v", out.String(), err)
+	}
+	var empty bytes.Buffer
+	if err := printComments(&empty, nil); err != nil || !strings.Contains(empty.String(), "(no comments)") {
+		t.Errorf("empty: %q, %v", empty.String(), err)
+	}
+	jsonOutput(t, true)
+	var asJSON bytes.Buffer
+	if err := printComments(&asJSON, []ticketlock.CommentView{{ID: "c1", Text: "hi"}}); err != nil || !strings.Contains(asJSON.String(), `"id": "c1"`) {
+		t.Errorf("json: %q, %v", asJSON.String(), err)
+	}
+	jsonOutput(t, false)
+}

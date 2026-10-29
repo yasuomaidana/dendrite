@@ -39,7 +39,8 @@ func TestMergeCreatesTheHookInAnEmptySettingsFile(t *testing.T) {
 	}
 	_ = json.Unmarshal(out, &doc)
 	post, end := doc.Hooks["PostToolUse"], doc.Hooks["SessionEnd"]
-	if len(post) != 1 || post[0]["matcher"] != planSavedMatcher || hookCommandOf(post[0]) != planSavedCommand {
+	if len(post) != 2 || post[0]["matcher"] != planSavedMatcher || hookCommandOf(post[0]) != planSavedCommand ||
+		post[1]["matcher"] != decisionMatcher || hookCommandOf(post[1]) != decisionCommand {
 		t.Errorf("PostToolUse = %v", post)
 	}
 	if len(end) != 1 || end[0]["matcher"] != nil || hookCommandOf(end[0]) != sessionEndCommand {
@@ -73,7 +74,7 @@ func TestMergeKeepsEverythingElseAndIsIdempotent(t *testing.T) {
 		t.Errorf("the user's own hook was disturbed: %s", out)
 	}
 	post := doc["hooks"].(map[string]any)["PostToolUse"].([]any)
-	if len(post) != 2 || post[0].(map[string]any)["matcher"] != "Write" {
+	if len(post) != 3 || post[0].(map[string]any)["matcher"] != "Write" {
 		t.Errorf("the user's own PostToolUse hook was disturbed: %s", out)
 	}
 

@@ -281,3 +281,75 @@ func runChronosFinish(ctx context.Context, l *ticketlock.Lifecycle, ticket strin
 	}
 	return nil
 }
+
+func newChronosDecisionCmd() *cobra.Command {
+	var d ticketlock.Decision
+	var options []string
+	var worktree string
+	cmd := &cobra.Command{
+		Use:   "decision <ticket>",
+		Short: "Record a question and the answer it got (or a decision you took) on a ticket",
+		Long: "Posts a decision comment: the question, the answer and, optionally, the options that were on the table.\n" +
+			"Claude Code's AskUserQuestion is recorded automatically by `dendrite hook decision`; use this for every\n" +
+			"other agent, and for a question asked in plain chat.",
+		Example: "dendrite chronos decision DEN-377 --question \"Done rights?\" --answer \"Agents may set Done\" --option \"Human sign-off\" --option \"Agents may set Done\"",
+		Args:    exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			d.Options = options
+			return planeRun(func(c *plane.Client) error {
+				if err := lifecycleIn(c, worktree).RecordDecisions(cmd.Context(), args[0], []ticketlock.Decision{d}, ""); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "[✓] Recorded the decision on %s\n", args[0])
+				return nil
+			})
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&d.Question, "question", "", "The question that was asked")
+	f.StringVar(&d.Answer, "answer", "", "The answer or decision")
+	f.StringArrayVar(&options, "option", nil, "An option that was on the table (repeatable)")
+	f.StringVar(&d.Note, "note", "", "Why, or what follows from it")
+	f.StringVar(&worktree, "worktree", "", "Working copy the decision belongs to (default: the current directory)")
+	_ = cmd.MarkFlagRequired("question")
+	_ = cmd.MarkFlagRequired("answer")
+	return cmd
+}
+
+func newChronosCommentsCmd() *cobra.Command {
+	var kind, worktree string
+	var last int
+	cmd := &cobra.Command{
+		Use:     "comments <ticket>",
+		Short:   "Read the comments of a ticket: claims, progress, decisions, handoffs and plans",
+		Example: "dendrite chronos comments DEN-396 --kind handoff --last 1",
+		Args:    exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return planeRun(func(c *plane.Client) error {
+				rows, err := lifecycleIn(c, worktree).Comments(cmd.Context(), args[0], kind, last)
+				if err != nil {
+					return err
+				}
+				return printComments(cmd.OutOrStdout(), rows)
+			})
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&kind, "kind", "", "Only comments of this dendrite kind (claim, progress, milestone, note, handoff, decision, plan)")
+	f.IntVar(&last, "last", 0, "Only the last N (default: all)")
+	f.StringVar(&worktree, "worktree", "", "Working copy to read from (default: the current directory)")
+	return cmd
+}
+
+func printComments(out io.Writer, rows []ticketlock.CommentView) error {
+	if globals.JSON {
+		return writeJSON(out, rows)
+	}
+	for _, r := range rows {
+		fmt.Fprintf(out, "--- %s %s\n%s\n", firstOr(r.Created, "-"), firstOr(r.Kind, "comment"), r.Text)
+	}
+	if len(rows) == 0 {
+		fmt.Fprintln(out, "(no comments)")
+	}
+	return nil
+}

@@ -34,6 +34,10 @@ const (
 	// session-end hook it fails open and never fails the agent.
 	planSavedMatcher = "ExitPlanMode"
 	planSavedCommand = `command -v dendrite >/dev/null 2>&1 || exit 0; dendrite hook plan-saved; exit 0`
+	// decisionMatcher and decisionCommand record the user's answers to an AskUserQuestion on the claimed ticket.
+	// Like the plan hook it fails open and never fails the agent.
+	decisionMatcher = "AskUserQuestion"
+	decisionCommand = `command -v dendrite >/dev/null 2>&1 || exit 0; dendrite hook decision; exit 0`
 	// sessionEndCommand hands a ticket that is still In Progress over when the session ends.
 	sessionEndCommand = `command -v dendrite >/dev/null 2>&1 || exit 0; dendrite hook session-end; exit 0`
 
@@ -51,6 +55,7 @@ var dendriteHooks = []hookSpec{
 	{"PreToolUse", preToolMatcher, preToolCommand},
 	{"PreToolUse", editLockMatcher, editLockCommand},
 	{"PostToolUse", planSavedMatcher, planSavedCommand},
+	{"PostToolUse", decisionMatcher, decisionCommand},
 	{"SessionEnd", "", sessionEndCommand},
 }
 

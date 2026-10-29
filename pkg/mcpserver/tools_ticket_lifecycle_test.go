@@ -13,7 +13,7 @@ import (
 
 var lifecycleTools = []string{
 	"dendrite_ticket_claim", "dendrite_ticket_comment", "dendrite_ticket_upload_plan",
-	"dendrite_ticket_get_plan", "dendrite_ticket_transition", "dendrite_ticket_finish", "dendrite_query_context",
+	"dendrite_ticket_get_plan", "dendrite_ticket_transition", "dendrite_ticket_finish", "dendrite_ticket_decision", "dendrite_ticket_comments", "dendrite_query_context",
 }
 
 func TestLifecycleToolsAreInTheCoreProfile(t *testing.T) {
@@ -197,5 +197,27 @@ func TestFinishToolBlocksATicketWhoseGateCannotRun(t *testing.T) {
 	}
 	if got := out["gate"].(map[string]any)["report"]; !strings.Contains(got.(string), "could not run") {
 		t.Errorf("gate = %v", out["gate"])
+	}
+}
+
+func TestDecisionAndCommentsTools(t *testing.T) {
+	r := newLifecycleRig(t, map[string]string{"DEN-377": "To Do"})
+	if _, err := r.call("dendrite_ticket_claim", map[string]any{"ticket": "DEN-377"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.call("dendrite_ticket_decision", map[string]any{"ticket": "DEN-377", "question": "Which?", "answer": "A", "note": "n", "options": []any{"A", "B", 7}}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := r.call("dendrite_ticket_comments", map[string]any{"ticket": "DEN-377", "kind": "decision", "last": float64(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := out["comments"].([]any)
+	text := rows[0].(map[string]any)["text"].(string)
+	if len(rows) != 1 || !strings.Contains(text, "Options: A | B") || !strings.Contains(text, "Note: n") {
+		t.Errorf("comments = %v", out)
+	}
+	if _, err := r.call("dendrite_ticket_decision", map[string]any{"ticket": "DEN-999", "question": "q", "answer": "a"}); err == nil {
+		t.Error("an unknown ticket is an error")
 	}
 }

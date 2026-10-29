@@ -24,8 +24,10 @@ Terminal Boutons & Vesicles
 | :--- | :--- |
 | `claim` | Claim a ticket for this session: In Progress, assigned, labelled, and the edit lock opened for this working copy |
 | `comment` | Post a structured progress, milestone, note or handoff comment on a ticket |
+| `comments` | Read the comments of a ticket: claims, progress, decisions, handoffs and plans |
 | `context` | Everything needed to start on a ticket: description, acceptance criteria, plan and the files it names |
 | `create` | Create a ticket, place it on the Gantt plan and link its blockers |
+| `decision` | Record a question and the answer it got (or a decision you took) on a ticket |
 | `finish` | Finish a ticket: quality gate, acceptance review, then Done, To Verify or Blocked with a handoff |
 | `gantt-sync` | Align milestone dates, ticket schedules and dependency arrows on the Plane Gantt view |
 | `handoff` | Block a ticket with the account the next session needs: what is done, what got in the way, what is missing |
@@ -99,6 +101,24 @@ dendrite chronos comment <ticket> [flags]
 dendrite chronos comment DEN-377 --kind milestone --body "lock done, 100% coverage"
 ```
 
+### `dendrite chronos comments`
+
+Read the comments of a ticket: claims, progress, decisions, handoffs and plans
+
+```bash
+dendrite chronos comments <ticket> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--kind` | Only comments of this dendrite kind (claim, progress, milestone, note, handoff, decision, plan) |
+| `--last` | Only the last N (default: all) |
+| `--worktree` | Working copy to read from (default: the current directory) |
+
+```bash
+dendrite chronos comments DEN-396 --kind handoff --last 1
+```
+
 ### `dendrite chronos create`
 
 Create a ticket, place it on the Gantt plan and link its blockers
@@ -120,6 +140,26 @@ dendrite chronos create [flags]
 ```bash
 dendrite chronos create --name "[DEN-123] Title" --desc-file spec.md
 dendrite chronos create --name "[DEN-124] Title" --desc "Goal and acceptance criteria" --milestone M3 --priority high --estimate 5 --blocked-by DEN-100,DEN-101
+```
+
+### `dendrite chronos decision`
+
+Record a question and the answer it got (or a decision you took) on a ticket
+
+```bash
+dendrite chronos decision <ticket> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--answer` | The answer or decision |
+| `--note` | Why, or what follows from it |
+| `--option` | An option that was on the table (repeatable) |
+| `--question` | The question that was asked |
+| `--worktree` | Working copy the decision belongs to (default: the current directory) |
+
+```bash
+dendrite chronos decision DEN-377 --question "Done rights?" --answer "Agents may set Done" --option "Human sign-off" --option "Agents may set Done"
 ```
 
 ### `dendrite chronos finish`

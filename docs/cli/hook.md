@@ -20,6 +20,7 @@ None
 
 | Subcommand | Description |
 | :--- | :--- |
+| `decision` | Post-AskUserQuestion hook: record the questions and the user's answers on the claimed ticket (kept locally until a claim) |
 | `plan-saved` | Post-ExitPlanMode hook: store the plan on the claimed ticket (kept locally when there is none) |
 | `pre-commit` | Git pre-commit hook: the same guard for every staged path, so agents cannot bypass it through git |
 | `pre-edit` | Pre-edit hook: refuse a file change unless this working copy has a claimed, In Progress ticket |

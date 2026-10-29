@@ -58,7 +58,15 @@ func ticketHookCmds() []*cobra.Command {
 			return runSessionEnd(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
 		},
 	}
-	return []*cobra.Command{preEdit, preCommit, planSaved, sessionEnd}
+	decision := &cobra.Command{
+		Use:   "decision",
+		Short: "Post-AskUserQuestion hook: record the questions and the user's answers on the claimed ticket (kept locally until a claim)",
+		Args:  noArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDecision(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
+		},
+	}
+	return []*cobra.Command{preEdit, preCommit, planSaved, sessionEnd, decision}
 }
 
 // runPreEdit refuses a write the lock does not allow. Anything it cannot judge is allowed.
@@ -123,6 +131,17 @@ func runSessionEnd(ctx context.Context, stdin io.Reader, out io.Writer) error {
 	}
 	l := ticketlock.NewLifecycle(ticketlock.Board{}, hookDir(in))
 	msg, err := ticketlock.AutoHandoff(ctx, l, boardOfDir(l.Dir), in)
+	reportHook(out, msg, err)
+	return nil
+}
+
+func runDecision(ctx context.Context, stdin io.Reader, out io.Writer) error {
+	in, ok := ticketlock.ParseHookInput(stdin)
+	if !ok {
+		return nil
+	}
+	l := ticketlock.NewLifecycle(ticketlock.Board{}, hookDir(in))
+	msg, err := ticketlock.SaveDecisions(ctx, l, boardOfDir(l.Dir), in)
 	reportHook(out, msg, err)
 	return nil
 }

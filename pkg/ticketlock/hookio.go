@@ -24,7 +24,16 @@ type HookInput struct {
 		FilePath     string `json:"file_path"`
 		NotebookPath string `json:"notebook_path"`
 		Plan         string `json:"plan"`
+		// Questions are what an AskUserQuestion call put to the user.
+		Questions []struct {
+			Question string `json:"question"`
+			Options  []struct {
+				Label string `json:"label"`
+			} `json:"options"`
+		} `json:"questions"`
 	} `json:"tool_input"`
+	// ToolResponse is what the tool answered: for AskUserQuestion an object with the user's answers.
+	ToolResponse json.RawMessage `json:"tool_response"`
 }
 
 // ParseHookInput reads one hook event from r; ok is false for empty or malformed input, which a hook must

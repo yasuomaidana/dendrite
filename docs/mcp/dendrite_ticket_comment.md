@@ -18,7 +18,7 @@ Post a structured progress, milestone, note or handoff comment on a ticket (mark
       "type": "string"
     },
     "kind": {
-      "description": "progress, milestone, note, handoff",
+      "description": "progress, milestone, note, handoff, decision",
       "type": "string"
     },
     "ticket": {

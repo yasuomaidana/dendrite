@@ -172,6 +172,7 @@ func (l *Lifecycle) Claim(ctx context.Context, ref string, o ClaimOptions) (Clai
 	if err == nil {
 		res.Plan = &p
 	}
+	l.adoptPendingDecisions(ctx, ticket, now)
 	return res, nil
 }
 
@@ -220,7 +221,7 @@ func (l *Lifecycle) refuseOtherSession(ticket, branch string, now time.Time, ste
 }
 
 // CommentKinds are the kinds `Comment` accepts.
-var CommentKinds = []string{"progress", "milestone", "note", "handoff"}
+var CommentKinds = []string{"progress", "milestone", "note", "handoff", "decision"}
 
 // Comment posts a structured comment on the ticket: a visible [dendrite:<kind>] marker, the text, and a
 // footer naming the session, agent, tier, branch and commit.
