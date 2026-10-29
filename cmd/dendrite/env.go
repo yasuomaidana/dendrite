@@ -255,7 +255,7 @@ func newSomaReplicateCmd() *cobra.Command {
 
 func runSomaReplicate(ctx context.Context, req env.ReplicationRequest, out io.Writer) error {
 	if !req.DryRun { // compose refuses to start without these keys
-		res, err := env.EnsureSecrets(env.SecretsOptions{Dir: dotenv.ProjectRoot(".")})
+		res, err := env.EnsureSecrets(env.SecretsOptions{Dir: dotenv.ProjectRoot("."), GlobalPath: globalEnvPath()})
 		if err != nil {
 			return fmt.Errorf("prepare .env: %w", err)
 		}

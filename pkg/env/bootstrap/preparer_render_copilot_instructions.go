@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"Dendrite/pkg/dotenv"
 	"Dendrite/pkg/projectid"
 )
 
@@ -226,8 +227,7 @@ func ensureRagEnv(projectRoot string, dryRun bool) (created, updated bool, err e
 	}
 	port := strings.TrimSpace(os.Getenv("POSTGRES_PORT"))
 	if port == "" {
-		dotenv, _ := os.ReadFile(filepath.Join(projectRoot, ".env"))
-		port = dotEnvValue(string(dotenv), "POSTGRES_PORT")
+		port = dotenv.Lookup(projectRoot, "POSTGRES_PORT") // .env.local, then the global file, then the committed .env
 	}
 	if port == "" {
 		port = "5432"

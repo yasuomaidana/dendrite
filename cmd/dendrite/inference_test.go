@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -105,7 +106,13 @@ func TestSpike_ServeUntilCancelled(t *testing.T) {
 
 func TestSpike_ZeroCost(t *testing.T) {
 	t.Chdir(t.TempDir())
-	if err := os.WriteFile(".env", []byte("FOO=bar\n"), 0o600); err != nil {
+	// Zero-cost rules are machine-wide: they sync to $DENDRITE_HOME/.env, never to the current directory.
+	home := t.TempDir()
+	t.Setenv("DENDRITE_HOME", home)
+	if err := os.WriteFile(filepath.Join(home, ".env"), []byte("FOO=bar\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(".env", []byte("UNTOUCHED=1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = cliOutput(t, "spike", "zero-cost", "reset") })
@@ -121,7 +128,7 @@ func TestSpike_ZeroCost(t *testing.T) {
 		{[]string{"spike", "zerocost", "check", "gpt-9-ultra", "--json"}, ExitOK, `"zero_cost": false`},
 		{[]string{"spike", "zero-cost", "list"}, ExitOK, "acme-local-7b"},
 		{[]string{"spike", "zero-cost", "ls", "--json"}, ExitOK, `"acme-local-7b"`},
-		{[]string{"spike", "zero-cost", "rm", "acme-local-7b"}, ExitOK, "Synchronized with environment file: .env"},
+		{[]string{"spike", "zero-cost", "rm", "acme-local-7b"}, ExitOK, "Synchronized with environment file: " + filepath.Join(home, ".env")},
 		{[]string{"spike", "zero-cost", "remove", "never-added"}, ExitOK, "Removed 'never-added'"},
 		{[]string{"spike", "zero-cost", "remove", " "}, ExitUsage, ""},
 		{[]string{"spike", "zero-cost", "add", " "}, ExitUsage, ""},
@@ -135,6 +142,12 @@ func TestSpike_ZeroCost(t *testing.T) {
 	}
 	if ok, _ := inference.GetZeroCostRegistry().Test("acme-local-7b"); ok {
 		t.Error("reset should drop the added model")
+	}
+	if raw, _ := os.ReadFile(".env"); string(raw) != "UNTOUCHED=1\n" {
+		t.Errorf("the working directory's .env was modified: %q", raw)
+	}
+	if raw, _ := os.ReadFile(filepath.Join(home, ".env")); !strings.Contains(string(raw), "FOO=bar") {
+		t.Errorf("the global .env lost its other settings: %q", raw)
 	}
 }
 
