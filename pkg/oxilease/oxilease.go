@@ -80,6 +80,12 @@ type Manager struct{ o Options }
 
 // New fills in the defaults.
 func New(o Options) *Manager {
+	if o.IdleGrace <= 0 {
+		o.IdleGrace = envDuration("DENDRITE_OXILLAMA_IDLE_GRACE")
+	}
+	if o.TTL <= 0 {
+		o.TTL = envDuration("DENDRITE_OXILLAMA_LEASE_TTL")
+	}
 	if o.Dir == "" {
 		if home, err := projectid.HomeDir(); err == nil {
 			o.Dir = filepath.Join(home, "run", "oxillama")
@@ -113,6 +119,14 @@ func New(o Options) *Manager {
 		o.Fits = func(Request) error { return nil }
 	}
 	return &Manager{o: o}
+}
+
+func envDuration(name string) time.Duration {
+	d, err := time.ParseDuration(os.Getenv(name))
+	if err != nil || d <= 0 {
+		return 0
+	}
+	return d
 }
 
 func healthy(port int) bool {
@@ -253,6 +267,12 @@ func (m *Manager) waitHealthy(ctx context.Context) error {
 	}
 	return nil
 }
+
+// TTL is how long a heartbeat keeps a lease live.
+func (m *Manager) TTL() time.Duration { return m.o.TTL }
+
+// Running reports whether a server answers right now.
+func (m *Manager) Running() bool { return m.o.Healthy() }
 
 // Heartbeat keeps a long-running holder's lease live past the TTL.
 func (l *Lease) Heartbeat() error {
@@ -397,4 +417,32 @@ func newID() string {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// Status is a snapshot for `dendrite spike status`.
+type Status struct {
+	Running   bool     `json:"running"`
+	Managed   bool     `json:"managed"` // Dendrite started it and will stop it when idle
+	Model     string   `json:"model,omitempty"`
+	ChildPID  int      `json:"child_pid,omitempty"`
+	Holders   []Holder `json:"holders"`
+	IdleGrace string   `json:"idle_grace"`
+	LeaseTTL  string   `json:"lease_ttl"`
+}
+
+// Status reports the server and who holds it.
+func (m *Manager) Status() (Status, error) {
+	unlock, err := m.lock()
+	if err != nil {
+		return Status{}, err
+	}
+	defer unlock()
+	st := Status{Running: m.o.Healthy(), IdleGrace: m.o.IdleGrace.String(), LeaseTTL: m.o.TTL.String(), Holders: []Holder{}}
+	if own := m.readOwner(); own != nil && m.o.Alive(own.SupervisorPID) {
+		st.Managed, st.Model, st.ChildPID = true, own.Model, own.ChildPID
+	}
+	for _, l := range m.liveLeases() {
+		st.Holders = append(st.Holders, Holder{l.Holder, l.PID})
+	}
+	return st, nil
 }

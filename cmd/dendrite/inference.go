@@ -6,7 +6,6 @@ import (
 	"io"
 	"maps"
 	"os"
-	"os/exec"
 	"os/signal"
 	"slices"
 	"strconv"
@@ -40,6 +39,9 @@ func newSpikeCmd() *cobra.Command {
 		newSpikeMigrateCmd(),
 		newSpikeServeCmd(),
 		newSpikeStopCmd(),
+		newSpikeSuperviseCmd(),
+		newSpikeStatusCmd(),
+		newSpikeHoldCmd(),
 		newSpikeZeroCostCmd(),
 	)
 	return cmd
@@ -299,26 +301,6 @@ func newSpikeStopCmd() *cobra.Command {
 	}
 	addPortFlag(cmd, &port)
 	return cmd
-}
-
-func runSpikeStop(ctx context.Context, port int, out io.Writer) error {
-	fmt.Fprintf(out, "[+] Stopping OxiLLaMa server on port %d...\n", port)
-	pidsOut, _ := exec.CommandContext(ctx, "lsof", "-ti", fmt.Sprintf(":%d", port)).Output()
-	stopped := 0
-	for _, pidStr := range strings.Fields(string(pidsOut)) {
-		if pid, err := strconv.Atoi(pidStr); err == nil && pid > 0 {
-			if proc, err := os.FindProcess(pid); err == nil && proc.Kill() == nil {
-				stopped++
-			}
-		}
-	}
-	_ = exec.CommandContext(ctx, "pkill", "-f", "oxillama serve").Run()
-	if stopped > 0 {
-		fmt.Fprintf(out, "[✓] Successfully stopped OxiLLaMa server (terminated %d process(es) on port %d)\n", stopped, port)
-	} else {
-		fmt.Fprintf(out, "[✓] OxiLLaMa server is not currently running on port %d.\n", port)
-	}
-	return nil
 }
 
 func newSpikeZeroCostCmd() *cobra.Command {

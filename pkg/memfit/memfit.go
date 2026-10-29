@@ -320,3 +320,23 @@ func ResolveOllama(ctx context.Context, endpoint, requested string) string {
 	}
 	return requested
 }
+
+// CheckStart reports whether a model of sizeBytes can be started on engine without starving the
+// machine, counting what the other engine already holds in memory. A nil error means it may start.
+func CheckStart(ctx context.Context, engine string, sizeBytes int64) error {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv(EnvGuard)), "off") {
+		return nil
+	}
+	hc := &http.Client{Timeout: 3 * time.Second}
+	var others uint64
+	if engine != "ollama" {
+		loaded, _ := ollamaLoaded(ctx, hc, DefaultOllamaEndpoint)
+		for _, sz := range loaded {
+			others += uint64(sz)
+		}
+	}
+	if ok, why := Fits(sizeBytes, BudgetBytes(), others); !ok {
+		return fmt.Errorf("%w: %s", ErrTooLarge, why)
+	}
+	return nil
+}
