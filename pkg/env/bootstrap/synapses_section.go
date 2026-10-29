@@ -8,24 +8,34 @@ import (
 	"Dendrite/pkg/synapse"
 )
 
-// renderSynapsesSection describes the synapses the repository at root belongs to and how to ask a
-// peer for a feature. AGENTS.md is committed, so it names peers and their Plane projects but never
-// filesystem paths. It returns "" when the repository has no project ID or is in no synapse.
-func renderSynapsesSection(root string) string {
+// peerGroupsOf lists the synapses the repository at root belongs to, with its peers in each. It is empty when
+// the repository has no project ID or is in no synapse. A seam for tests.
+var peerGroupsOf = func(root string) []synapse.PeerGroup {
 	id, err := projectid.Read(root)
 	if err != nil {
-		return ""
+		return nil
 	}
 	st, err := synapse.DefaultStore()
 	if err != nil {
-		return ""
+		return nil
 	}
 	var ix *projectid.Index
 	if p, err := projectid.DefaultIndexPath(); err == nil {
 		ix, _ = projectid.LoadIndex(p)
 	}
 	groups, err := synapse.PeersOf(st, ix, id)
-	if err != nil || len(groups) == 0 {
+	if err != nil {
+		return nil
+	}
+	return groups
+}
+
+// renderSynapsesSection describes the synapses the repository at root belongs to and how to ask a
+// peer for a feature. AGENTS.md is committed, so it names peers and their Plane projects but never
+// filesystem paths. It returns "" when the repository has no project ID or is in no synapse.
+func renderSynapsesSection(root string) string {
+	groups := peerGroupsOf(root)
+	if len(groups) == 0 {
 		return ""
 	}
 

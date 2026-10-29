@@ -358,6 +358,23 @@ Reference criteria for domain isolation, SOLID principles, zero placeholders, an
 		}
 	}
 
+	// 7. Git pre-commit hook: the ticket lock for agents that do not go through Claude Code.
+	gitCreated, gitUpdated, gitNote, gitErr := installGitHook(root, dryRun)
+	created, updated = append(created, gitCreated...), append(updated, gitUpdated...)
+	if gitErr != nil {
+		fmt.Fprintf(os.Stderr, "[!] git pre-commit hook: %v\n", gitErr)
+	}
+	if gitNote != "" {
+		fmt.Fprintf(os.Stderr, "[!] %s\n", gitNote)
+	}
+
+	// 8. MCP configs for Claude, AGY and JetBrains: dendrite (core profile) and one server per synapse.
+	mcpCreated, mcpUpdated, mcpErr := writeMCPConfigs(root, dryRun)
+	created, updated = append(created, mcpCreated...), append(updated, mcpUpdated...)
+	if mcpErr != nil {
+		fmt.Fprintf(os.Stderr, "[!] MCP config left alone: %v\n", mcpErr)
+	}
+
 	// Discover existing skills in every agent family's skill dir
 	skillSet := make(map[string]bool)
 	for _, dir := range skillDirs {

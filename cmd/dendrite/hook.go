@@ -42,6 +42,7 @@ func newHookCmd() *cobra.Command {
 			return runPreTool(cmd.InOrStdin(), searchguard.New(searchGuardDir()))
 		},
 	})
+	cmd.AddCommand(ticketHookCmds()...)
 	return cmd
 }
 

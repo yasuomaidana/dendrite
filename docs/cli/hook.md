@@ -20,7 +20,11 @@ None
 
 | Subcommand | Description |
 | :--- | :--- |
+| `plan-saved` | Post-ExitPlanMode hook: store the plan on the claimed ticket (kept locally when there is none) |
+| `pre-commit` | Git pre-commit hook: the same guard for every staged path, so agents cannot bypass it through git |
+| `pre-edit` | Pre-edit hook: refuse a file change unless this working copy has a claimed, In Progress ticket |
 | `pre-tool` | Pre-tool hook: stop a raw recursive search once, point at the Dendrite equivalent, and log tool use |
+| `session-end` | Session-end hook: a ticket still In Progress gets an automatic handoff and is blocked (needs-input) |
 
 ## Flags
 

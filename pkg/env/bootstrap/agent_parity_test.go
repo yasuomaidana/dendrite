@@ -70,9 +70,13 @@ func TestPrepare_InstallsTheClaudeHookWithoutClobberingSettings(t *testing.T) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatalf("settings.json is not JSON: %v\n%s", err, data)
 	}
-	pre := doc["hooks"].(map[string]any)["PreToolUse"].([]any)
-	if doc["permissions"] == nil || len(pre) != 1 || hookCommandOf(pre[0].(map[string]any)) != preToolCommand {
+	hooks := doc["hooks"].(map[string]any)
+	pre := hooks["PreToolUse"].([]any)
+	if doc["permissions"] == nil || len(pre) != 2 || hookCommandOf(pre[0].(map[string]any)) != preToolCommand || hookCommandOf(pre[1].(map[string]any)) != editLockCommand {
 		t.Errorf("settings = %s", data)
+	}
+	if hooks["PostToolUse"] == nil || hooks["SessionEnd"] == nil {
+		t.Errorf("the plan and session-end hooks are missing: %s", data)
 	}
 
 	// A second prepare leaves the file untouched.
