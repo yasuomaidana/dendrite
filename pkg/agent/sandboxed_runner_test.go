@@ -1,52 +1,15 @@
 package agent_test
 
 import (
+	"Dendrite/pkg/sandbox/sandboxtest"
 	"context"
 	"errors"
-	"sync"
 	"testing"
 	"time"
 
 	"Dendrite/pkg/agent"
 	"Dendrite/pkg/gateway"
 )
-
-type mockCmdRunner struct {
-	mu      sync.Mutex
-	calls   [][]string
-	output  []byte
-	err     error
-	blockCh chan struct{}
-}
-
-func (m *mockCmdRunner) Run(ctx context.Context, command string, args ...string) ([]byte, error) {
-	m.mu.Lock()
-	call := append([]string{command}, args...)
-	m.calls = append(m.calls, call)
-	m.mu.Unlock()
-
-	// Only block if this is the "run" command and blockCh is set
-	if len(args) > 0 && args[0] == "run" && m.blockCh != nil {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-m.blockCh:
-		}
-	}
-
-	return m.output, m.err
-}
-
-func (m *mockCmdRunner) HasCall(predicate func(args []string) bool) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, call := range m.calls {
-		if predicate(call) {
-			return true
-		}
-	}
-	return false
-}
 
 func TestNewSandboxedRunner_Defaults(t *testing.T) {
 	sbRunner := agent.NewSandboxedRunner(nil, nil)
@@ -90,7 +53,7 @@ func TestSandboxedRunner_ExecuteSuccess(t *testing.T) {
 		},
 	})
 
-	runner := &mockCmdRunner{output: []byte("agent completed task"), err: nil}
+	runner := &sandboxtest.RecordingRunner{Output: []byte("agent completed task"), Err: nil}
 	sbRunner := agent.NewSandboxedRunner(limiter, runner)
 
 	cfg := agent.AgentConfig{
@@ -140,7 +103,7 @@ func TestSandboxedRunner_ExecuteAGYSuccess(t *testing.T) {
 		},
 	})
 
-	runner := &mockCmdRunner{output: []byte("agy task executed"), err: nil}
+	runner := &sandboxtest.RecordingRunner{Output: []byte("agy task executed"), Err: nil}
 	sbRunner := agent.NewSandboxedRunner(limiter, runner)
 
 	cfg := agent.AgentConfig{
@@ -178,84 +141,42 @@ func TestSandboxedRunner_ExecuteAGYSuccess(t *testing.T) {
 	}
 }
 
-func TestSandboxedRunner_BudgetCapFallback(t *testing.T) {
-	limiter := gateway.NewBudgetLimiter()
-	limiter.RegisterKey(gateway.VirtualKeyConfig{
-		KeyAlias: "key-capped",
-		BudgetLimits: []gateway.BudgetLimit{
-			{Duration: gateway.Window24h, MaxBudgetUSD: 1.00},
-		},
-		Fallbacks: map[string][]string{
-			"gemini-2.5-pro": {"local-qwen-coder"},
-		},
-	})
-	// Exhaust budget immediately ($2.00 > $1.00)
-	limiter.RecordSpend("key-capped", "gemini-2.5-pro", 5000, 2.00)
+func TestSandboxedRunner_BudgetCapFallsBackToAZeroCostModel(t *testing.T) {
+	for name, tc := range map[string]struct {
+		key, exhausted, fallback string
+		cfg                      agent.AgentConfig
+	}{
+		"configured fallback": {"key-capped", "gemini-2.5-pro", "local-qwen-coder", agent.AgentConfig{Model: "gemini-2.5-pro", FallbackModel: "local-qwen-coder"}},
+		// No model and no FallbackModel on the config: the limiter's default model and its fallback apply.
+		"limiter default": {"key-auto-fallback", "gemini-3.8-flash-high", "local-qwen3-27b", agent.AgentConfig{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			limiter := gateway.NewBudgetLimiter()
+			limiter.RegisterKey(gateway.VirtualKeyConfig{
+				KeyAlias:     tc.key,
+				BudgetLimits: []gateway.BudgetLimit{{Duration: gateway.Window24h, MaxBudgetUSD: 1.00}},
+				Fallbacks:    map[string][]string{tc.exhausted: {tc.fallback}},
+			})
+			limiter.RecordSpend(tc.key, tc.exhausted, 5000, 2.00) // $2.00 > $1.00: the budget is gone
 
-	runner := &mockCmdRunner{output: []byte("ok"), err: nil}
-	sbRunner := agent.NewSandboxedRunner(limiter, runner)
-
-	cfg := agent.AgentConfig{
-		Type:           agent.AgentOpenCode,
-		LiteLLMBaseURL: "http://localhost:4000",
-		VirtualAPIKey:  "key-capped",
-		WorkspaceDir:   "/tmp/workspace",
-		Model:          "gemini-2.5-pro",
-		FallbackModel:  "local-qwen-coder",
-		Sandbox:        true,
-	}
-
-	ctx := context.Background()
-	summary, err := sbRunner.Execute(ctx, cfg)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Zero-cost model should be selected due to budget cap
-	if summary.EstimatedCostUSD != 0.0 {
-		t.Errorf("expected $0.00 cost for local-qwen-coder fallback, got %.4f", summary.EstimatedCostUSD)
-	}
-}
-
-func TestSandboxedRunner_BudgetCapLimiterDefaultFallback(t *testing.T) {
-	limiter := gateway.NewBudgetLimiter()
-	limiter.RegisterKey(gateway.VirtualKeyConfig{
-		KeyAlias: "key-auto-fallback",
-		BudgetLimits: []gateway.BudgetLimit{
-			{Duration: gateway.Window24h, MaxBudgetUSD: 1.00},
-		},
-		Fallbacks: map[string][]string{
-			"gemini-3.8-flash-high": {"local-qwen3-27b"},
-		},
-	})
-	limiter.RecordSpend("key-auto-fallback", "gemini-3.8-flash-high", 5000, 2.00)
-
-	runner := &mockCmdRunner{output: []byte("ok"), err: nil}
-	sbRunner := agent.NewSandboxedRunner(limiter, runner)
-
-	// Model is empty so it defaults to gemini-3.8-flash-high, and no FallbackModel on cfg
-	cfg := agent.AgentConfig{
-		Type:           agent.AgentOpenCode,
-		LiteLLMBaseURL: "http://localhost:4000",
-		VirtualAPIKey:  "key-auto-fallback",
-		WorkspaceDir:   "/tmp/workspace",
-		Sandbox:        true,
-	}
-
-	ctx := context.Background()
-	summary, err := sbRunner.Execute(ctx, cfg)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if summary.EstimatedCostUSD != 0.0 {
-		t.Errorf("expected $0.00 cost for local-qwen3-27b, got %.4f", summary.EstimatedCostUSD)
+			cfg := tc.cfg
+			cfg.Type, cfg.LiteLLMBaseURL, cfg.VirtualAPIKey, cfg.WorkspaceDir, cfg.Sandbox = agent.AgentOpenCode, "http://localhost:4000", tc.key, "/tmp/workspace", true
+			sbRunner := agent.NewSandboxedRunner(limiter, &sandboxtest.RecordingRunner{Output: []byte("ok")})
+			summary, err := sbRunner.Execute(context.Background(), cfg)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if summary.EstimatedCostUSD != 0.0 {
+				t.Errorf("expected $0.00 cost for %s, got %.4f", tc.fallback, summary.EstimatedCostUSD)
+			}
+		})
 	}
 }
 
 func TestSandboxedRunner_BudgetLimiterError(t *testing.T) {
 	limiter := gateway.NewBudgetLimiter()
 	// Unregistered key causes CheckBudget to fail
-	runner := &mockCmdRunner{output: []byte("ok"), err: nil}
+	runner := &sandboxtest.RecordingRunner{Output: []byte("ok"), Err: nil}
 	sbRunner := agent.NewSandboxedRunner(limiter, runner)
 
 	cfg := agent.AgentConfig{
@@ -283,7 +204,7 @@ func TestSandboxedRunner_InvalidConfig(t *testing.T) {
 
 func TestSandboxedRunner_ContextCancellationAndCurfew(t *testing.T) {
 	blockCh := make(chan struct{})
-	runner := &mockCmdRunner{blockCh: blockCh}
+	runner := &sandboxtest.RecordingRunner{BlockCh: blockCh}
 	sbRunner := agent.NewSandboxedRunner(nil, runner)
 
 	cfg := agent.AgentConfig{
@@ -318,7 +239,7 @@ func TestSandboxedRunner_ContextCancellationAndCurfew(t *testing.T) {
 }
 
 func TestSandboxedRunner_HostExecution(t *testing.T) {
-	runner := &mockCmdRunner{output: []byte("host run ok"), err: nil}
+	runner := &sandboxtest.RecordingRunner{Output: []byte("host run ok"), Err: nil}
 	sbRunner := agent.NewSandboxedRunner(nil, runner)
 
 	cfg := agent.AgentConfig{
@@ -339,46 +260,26 @@ func TestSandboxedRunner_HostExecution(t *testing.T) {
 	}
 }
 
-func TestSandboxedRunner_HostExecutionFailure(t *testing.T) {
-	runner := &mockCmdRunner{err: errors.New("host command failed")}
-	sbRunner := agent.NewSandboxedRunner(nil, runner)
-
-	cfg := agent.AgentConfig{
-		Type:           agent.AgentOpenCode,
-		LiteLLMBaseURL: "http://localhost:4000",
-		VirtualAPIKey:  "key-host-fail",
-		WorkspaceDir:   "/tmp/workspace",
-		Sandbox:        false,
-	}
-
-	ctx := context.Background()
-	summary, err := sbRunner.Execute(ctx, cfg)
-	if err == nil {
-		t.Fatal("expected error on host command failure")
-	}
-	if summary == nil || summary.Status != "failed" {
-		t.Errorf("expected failed status, got %v", summary)
-	}
-}
-
-func TestSandboxedRunner_ExecutionFailure(t *testing.T) {
-	runner := &mockCmdRunner{err: errors.New("container process crashed")}
-	sbRunner := agent.NewSandboxedRunner(nil, runner)
-
-	cfg := agent.AgentConfig{
-		Type:           agent.AgentAider,
-		LiteLLMBaseURL: "http://localhost:4000",
-		VirtualAPIKey:  "key-err",
-		WorkspaceDir:   "/tmp/workspace",
-		Sandbox:        true,
-	}
-
-	ctx := context.Background()
-	summary, err := sbRunner.Execute(ctx, cfg)
-	if err == nil {
-		t.Errorf("expected error on failed execution")
-	}
-	if summary == nil || summary.Status != "failed" {
-		t.Errorf("expected status 'failed', got %v", summary)
+func TestSandboxedRunner_ACommandFailureIsAFailedRun(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err     string
+		agent   agent.AgentType
+		sandbox bool
+	}{
+		"on the host":    {"host command failed", agent.AgentOpenCode, false},
+		"in the sandbox": {"container process crashed", agent.AgentAider, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			sbRunner := agent.NewSandboxedRunner(nil, &sandboxtest.RecordingRunner{Err: errors.New(tc.err)})
+			summary, err := sbRunner.Execute(context.Background(), agent.AgentConfig{
+				Type: tc.agent, LiteLLMBaseURL: "http://localhost:4000", VirtualAPIKey: "key", WorkspaceDir: "/tmp/workspace", Sandbox: tc.sandbox,
+			})
+			if err == nil {
+				t.Fatal("expected an error on a failed command")
+			}
+			if summary == nil || summary.Status != "failed" {
+				t.Errorf("expected status 'failed', got %v", summary)
+			}
+		})
 	}
 }
