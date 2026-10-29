@@ -27,6 +27,7 @@ func TestPrepare_EveryAgentFamilyGetsTheSameSearchAndLifecycleRules(t *testing.T
 		"`dendrite chronos finish <ticket>`",            // the gate decides done, to verify or blocked
 		"`dendrite chronos decision <ticket>",           // questions and answers go on the ticket
 		"`dendrite directive \"<rule>\"`",               // quality limits are changed through the directive command
+		"`dendrite allostasis gate`",                    // the one command that checks the directives
 		"`blocked` with a handoff",                      // a failed finish leaves the diagnosis
 		"`dendrite hook pre-edit` refuses file changes", // the write lock
 		"--no-ticket-guard",                             // the deliberate bypass

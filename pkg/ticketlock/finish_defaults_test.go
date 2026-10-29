@@ -2,6 +2,7 @@ package ticketlock
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,8 @@ import (
 	"testing"
 
 	"Dendrite/pkg/directive"
+	"Dendrite/pkg/rag/ragtest"
+	"Dendrite/pkg/sidecar"
 )
 
 func writeFile(t *testing.T, dir, rel, content string) {
@@ -211,17 +214,6 @@ func TestBranchDiffOfAMergedTicketIsItsOwnCommitsWithoutLockfiles(t *testing.T) 
 	}
 }
 
-func TestTicketCommitsMatchOnTheSubjectPrefix(t *testing.T) {
-	repo := repoWithMergedWork(t)
-	shas, lines := ticketCommits(repo, "DEN-9")
-	if len(shas) != 2 || len(lines) != 2 || !strings.HasSuffix(lines[0], " [DEN-9] feat: json output") || !strings.HasSuffix(lines[1], "github annotations") {
-		t.Errorf("%v %v", shas, lines)
-	}
-	if s, l := ticketCommits(t.TempDir(), "DEN-9"); s != nil || l != nil {
-		t.Error("not a repository")
-	}
-}
-
 func TestCompletedWorkListsTheTicketsCommitsOnceMerged(t *testing.T) {
 	s := newSession(t, map[string]string{"DEN-377": "To Do"})
 	repo := repoWithMergedWork(t)
@@ -248,4 +240,78 @@ func TestBranchDiffLeavesOutGeneratedDocsAndAgentFiles(t *testing.T) {
 	if !strings.Contains(got, "real.go") || strings.Contains(got, "docs/cli/x.md") || strings.Contains(got, ".claude/skills") {
 		t.Errorf("generated files are not shown:\n%s", got)
 	}
+}
+
+// moduleBranch is a Go module on develop with one tested function, and a ticket branch that adds another.
+func moduleBranch(t *testing.T, directives string) string {
+	t.Helper()
+	repo := t.TempDir()
+	writeFile(t, repo, "go.mod", "module probe\n\ngo 1.22\n")
+	writeFile(t, repo, "p.go", "package probe\n\nfunc Add(a, b int) int { return a + b }\n")
+	writeFile(t, repo, "p_test.go", "package probe\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) {\n\tif Add(1, 2) != 3 {\n\t\tt.Fatal(\"add\")\n\t}\n}\n")
+	if directives != "" {
+		writeFile(t, repo, directive.Path, directives)
+	}
+	run := func(args ...string) {
+		t.Helper()
+		if out, err := gitCommand(repo, args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q", "-b", "develop")
+	run("add", ".")
+	run("-c", "user.name=t", "-c", "user.email=t@e.x", "commit", "-q", "-m", "base")
+	run("checkout", "-q", "-b", "agent/den-5")
+	writeFile(t, repo, "p.go", "package probe\n\nfunc Add(a, b int) int { return a + b }\n\nfunc Sub(a, b int) int { return a - b }\n")
+	writeFile(t, repo, "p_test.go", "package probe\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) {\n\tif Add(1, 2) != 3 || Sub(3, 1) != 2 {\n\t\tt.Fatal(\"math\")\n\t}\n}\n")
+	run("add", ".")
+	run("-c", "user.name=t", "-c", "user.email=t@e.x", "commit", "-q", "-m", "[DEN-5] add Sub")
+	return repo
+}
+
+func TestQualityGateRunsTheTestsAndThenTheDirectivesOnTheTicketsChanges(t *testing.T) {
+	useStandinSidecar(t)
+	ok := moduleBranch(t, "")
+	res, err := qualityGate(context.Background(), ok, "DEN-5")
+	if err != nil || !res.Passed || !strings.Contains(res.Report, "go test") || !strings.Contains(res.Report, "Quality gate (changes): **passed**") {
+		t.Fatalf("a tested change within the limits: %+v, %v", res, err)
+	}
+
+	strict := moduleBranch(t, "schema = 1\n[loc]\nmax_production_lines = 50\nwarn_at = 40\n")
+	var vars strings.Builder
+	for i := 0; i < 60; i++ {
+		fmt.Fprintf(&vars, "var v%d = %d\n", i, i)
+	}
+	writeFile(t, strict, "p.go", "package probe\n\nfunc Add(a, b int) int { return a + b }\n\nfunc Sub(a, b int) int { return a - b }\n"+vars.String())
+	res, err = qualityGate(context.Background(), strict, "DEN-5")
+	if err != nil || res.Passed || !strings.Contains(res.Report, "p.go: 63 production lines, the limit is 50") || !strings.Contains(res.Report, "Quality gate (changes): **failed**") {
+		t.Errorf("a touched file over the limit fails the gate: %+v, %v", res, err)
+	}
+
+	broken := moduleBranch(t, "[loc\n")
+	res, err = qualityGate(context.Background(), broken, "DEN-5")
+	if err != nil || res.Passed || !strings.Contains(res.Report, "could not read the directives") {
+		t.Errorf("unreadable directives fail the gate and say why: %+v, %v", res, err)
+	}
+
+	failing := moduleBranch(t, "")
+	writeFile(t, failing, "p_test.go", "package probe\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) { t.Fatal(\"broken\") }\n")
+	res, err = qualityGate(context.Background(), failing, "DEN-5")
+	if err != nil || res.Passed || strings.Contains(res.Report, "Quality gate") {
+		t.Errorf("when the tests fail the quality gate is not run: %+v, %v", res, err)
+	}
+	if _, err := qualityGate(context.Background(), t.TempDir(), "DEN-5"); err == nil {
+		t.Error("a directory with no toolchain cannot be gated")
+	}
+}
+
+// useStandinSidecar answers the quality gates with the stand-in sidecar.
+func useStandinSidecar(t *testing.T) {
+	t.Helper()
+	bin, err := ragtest.Build(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(sidecar.EnvVar("dendrite-rag"), bin)
+	t.Setenv("STANDIN_PROTOCOL", "1.11.0")
 }

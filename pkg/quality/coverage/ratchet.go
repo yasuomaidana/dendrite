@@ -45,10 +45,14 @@ type Result struct {
 
 // Options configures the coverage ratchet runner.
 type Options struct {
-	RepoDir       string
-	BaselinePath  string
-	Ratchet       bool
-	Update        bool
+	RepoDir      string
+	BaselinePath string
+	Ratchet      bool
+	Update       bool
+	// MinPercent, when above 0, replaces the baseline comparison with a floor: a package below it fails.
+	MinPercent float64
+	// ExemptGlobs are package globs left out of the floor (test helpers always are).
+	ExemptGlobs   []string
 	Packages      []string
 	CommandRunner func(ctx context.Context, dir string, name string, args ...string) ([]byte, error)
 	Stdout        io.Writer
@@ -352,6 +356,9 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	fmt.Fprintf(opts.Stdout, "[+] Coverage Ratchet Progress: %d/%d packages at 100.0%% (Global Average: %.1f%%)\n", at100, total, globalCov)
 
 	offenders, newBaseline := CompareAndRatchet(current, baseline, baselineExists, opts.Update)
+	if opts.MinPercent > 0 {
+		offenders = Floor(current, opts.MinPercent, func(pkg string) bool { return IsExempt(pkg, opts.ExemptGlobs) })
+	}
 
 	if opts.Update {
 		if saveErr := SaveBaseline(baselineFullPath, newBaseline); saveErr != nil {
@@ -376,7 +383,13 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		}
 	}
 
-	if opts.Ratchet && len(offenders) > 0 {
+	if opts.MinPercent > 0 && len(offenders) > 0 {
+		passed = false
+		fmt.Fprintf(opts.Stderr, "[-] Coverage floor violation: %d package(s) below %.1f%%:\n", len(offenders), opts.MinPercent)
+		for _, off := range offenders {
+			fmt.Fprintf(opts.Stderr, "    * %s: %.1f%%\n", off.Package, off.CurrentPct)
+		}
+	} else if opts.Ratchet && len(offenders) > 0 {
 		passed = false
 		fmt.Fprintf(opts.Stderr, "[-] Coverage ratchet violation: %d package(s) dropped below baseline:\n", len(offenders))
 		for _, off := range offenders {

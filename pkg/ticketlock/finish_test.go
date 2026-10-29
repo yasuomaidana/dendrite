@@ -21,7 +21,7 @@ func newFinishRig(t *testing.T, state, description string) *finishRig {
 	s.board.SetDescription("DEN-377", description)
 	r := &finishRig{session: s}
 	r.checks = FinishChecks{
-		Gate: func(context.Context, string) (GateResult, error) {
+		Gate: func(context.Context, string, string) (GateResult, error) {
 			return GateResult{Passed: true, Report: "tests ok"}, nil
 		},
 		Review: func(_ context.Context, in ReviewInput) ([]ACVerdict, error) {
@@ -113,12 +113,14 @@ func TestFinishBlocksWithAHandoffWhenAStageFails(t *testing.T) {
 		want    []string
 	}{
 		"the gate fails": {func(r *finishRig) {
-			r.checks.Gate = func(context.Context, string) (GateResult, error) {
+			r.checks.Gate = func(context.Context, string, string) (GateResult, error) {
 				return GateResult{Report: "FAIL pkg/x"}, nil
 			}
 		}, []string{"The quality gate failed.", "FAIL pkg/x"}},
 		"the gate cannot run": {func(r *finishRig) {
-			r.checks.Gate = func(context.Context, string) (GateResult, error) { return GateResult{}, errors.New("no toolchain") }
+			r.checks.Gate = func(context.Context, string, string) (GateResult, error) {
+				return GateResult{}, errors.New("no toolchain")
+			}
 		}, []string{"the quality gate could not run: no toolchain"}},
 	}
 	for name, tc := range cases {

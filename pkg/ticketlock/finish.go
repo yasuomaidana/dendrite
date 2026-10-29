@@ -37,8 +37,8 @@ type ReviewInput struct {
 
 // FinishChecks are the two stages `finish` runs and the policy it applies to the result.
 type FinishChecks struct {
-	// Gate runs tests, coverage and the quality gates in dir.
-	Gate func(ctx context.Context, dir string) (GateResult, error)
+	// Gate runs the tests and the quality gates on the working copy in dir, for the work done for ticket.
+	Gate func(ctx context.Context, dir, ticket string) (GateResult, error)
 	// Review judges the diff against every acceptance criterion.
 	Review func(ctx context.Context, in ReviewInput) ([]ACVerdict, error)
 	// Diff is the whole patch of the work done for the ticket; Review picks the parts it needs.
@@ -74,7 +74,7 @@ func (l *Lifecycle) Finish(ctx context.Context, ref string, c FinishChecks) (Fin
 	}
 	res := FinishResult{Ticket: ticket}
 
-	gate, gErr := c.Gate(ctx, l.Dir)
+	gate, gErr := c.Gate(ctx, l.Dir, ticket)
 	if gErr != nil {
 		gate = GateResult{Report: "the quality gate could not run: " + gErr.Error()}
 	}

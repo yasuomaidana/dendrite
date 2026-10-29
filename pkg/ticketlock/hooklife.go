@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"Dendrite/pkg/quality/gate"
 	"Dendrite/pkg/tracker"
 )
 
@@ -85,7 +86,7 @@ func (l *Lifecycle) completedWork(ctx context.Context, c Claim) string {
 		}
 	}
 	if len(parts) == 0 { // the branch is merged: its commits are the ones that name the ticket
-		if _, lines := ticketCommits(dir, c.Ticket); len(lines) > 0 {
+		if _, lines := gate.TicketCommits(dir, c.Ticket); len(lines) > 0 {
 			parts = append(parts, "Commits for "+c.Ticket+" (already merged):\n"+strings.Join(lines[max(0, len(lines)-15):], "\n"))
 		}
 	}

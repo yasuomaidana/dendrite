@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"Dendrite/pkg/directive"
 	"Dendrite/pkg/quality"
 	"Dendrite/pkg/quality/coverage"
 	"Dendrite/pkg/tracker/hitl"
@@ -20,7 +21,8 @@ var runCoverage = coverage.Run
 func newAllostasisCmd() *cobra.Command {
 	cmd := newGroupCmd("allostasis", "Anti-mock scan, 100% coverage profiler, and HITL verification poller", "glia",
 		"quality", "homeostatic-audit", "allostasis-audit", "qlty")
-	cmd.Example = "dendrite allostasis coverage --ratchet\n" +
+	cmd.Example = "dendrite allostasis gate\n" +
+		"dendrite allostasis coverage --ratchet\n" +
 		"dendrite allostasis coverage --update pkg/vcs\n" +
 		"dendrite allostasis audit pkg/vcs"
 	cmd.AddCommand(
@@ -37,6 +39,7 @@ func newAllostasisCmd() *cobra.Command {
 			},
 		},
 		newAllostasisCoverageCmd(),
+		newAllostasisGateCmd(),
 		newAllostasisHITLSyncCmd(),
 	)
 	return cmd
@@ -81,15 +84,26 @@ func runAllostasisAudit(ctx context.Context, pkg string, out io.Writer) error {
 
 func newAllostasisCoverageCmd() *cobra.Command {
 	opts := coverage.Options{BaselinePath: ".github/coverage_baseline.json"}
+	var floor bool
 	cmd := &cobra.Command{
 		Use:   "coverage [package...]",
-		Short: "Per-package coverage ratchet: --ratchet fails on a drop, --update raises the baseline",
+		Short: "Per-package coverage: --ratchet fails on a drop, --update raises the baseline, --floor or --min fails below a minimum",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.Packages = args
+			if floor {
+				set, err := directive.Load(".")
+				if err != nil {
+					return err
+				}
+				opts.MinPercent, opts.ExemptGlobs = set.Coverage.MinPercent, set.Coverage.Exclude
+			}
 			res, err := runCoverage(cmd.Context(), opts)
 			if err != nil {
 				return fmt.Errorf("coverage: %w", err)
+			}
+			if !res.Passed && opts.MinPercent > 0 {
+				return fmt.Errorf("coverage floor failed: a package is below %.1f%%", opts.MinPercent)
 			}
 			if !res.Passed {
 				return fmt.Errorf("coverage ratchet failed: a package dropped below its baseline")
@@ -100,6 +114,9 @@ func newAllostasisCoverageCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.Ratchet, "ratchet", false, "Fail when any package drops below its baseline")
 	cmd.Flags().BoolVar(&opts.Update, "update", false, "Raise the baseline to the measured coverage and add new packages")
 	cmd.Flags().StringVar(&opts.BaselinePath, "baseline", opts.BaselinePath, "Baseline JSON file")
+	cmd.Flags().Float64Var(&opts.MinPercent, "min", 0, "Fail when a package is below this coverage percent (test helpers are exempt)")
+	cmd.Flags().BoolVar(&floor, "floor", false, "Use the minimum and the exemptions of "+directive.Path)
+	cmd.MarkFlagsMutuallyExclusive("min", "floor")
 	return cmd
 }
 

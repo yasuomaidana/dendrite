@@ -12,6 +12,8 @@ import (
 	"Dendrite/pkg/assert"
 	"Dendrite/pkg/directive"
 	"Dendrite/pkg/llmchat"
+	"Dendrite/pkg/quality/gate"
+	"Dendrite/pkg/rag"
 )
 
 // gateTimeout bounds the test run of the default gate.
@@ -21,7 +23,23 @@ const gateTimeout = 30 * time.Minute
 // and coverage run as the gate, the local model behind the LiteLLM gateway as the acceptance reviewer, the
 // branch's diff against develop, and the project's `[done] auto_done` directive (on when unset).
 func DefaultFinishChecks(dir string) FinishChecks {
-	return FinishChecks{Gate: toolchainGate, Review: proofReviewer(dir).Review, Diff: branchDiff, AutoDone: AutoDone(dir)}
+	return FinishChecks{Gate: qualityGate, Review: proofReviewer(dir).Review, Diff: branchDiff, AutoDone: AutoDone(dir)}
+}
+
+// qualityGate is stage 1 of a finish: the project's tests, then the quality gates of its directives judged on what
+// the ticket changed, so a ticket is held to the directives for its own work and not failed for the debt of files
+// it did not touch. The repository-wide gate is what CI runs.
+func qualityGate(ctx context.Context, dir, ticket string) (GateResult, error) {
+	tests, err := toolchainGate(ctx, dir)
+	if err != nil || !tests.Passed {
+		return tests, err
+	}
+	set, err := directive.Load(dir)
+	if err != nil {
+		return GateResult{Report: tests.Report + "\n\nThe quality gate could not read the directives: " + err.Error()}, nil
+	}
+	rep := gate.Run(ctx, gate.Options{Dir: dir, Set: set, Sidecar: rag.NewRetriever(), Scope: gate.ChangesOfTicket(dir, ticket)})
+	return GateResult{Passed: rep.Passed, Report: tests.Report + "\n\n" + rep.Markdown()}, nil
 }
 
 // toolchainGate runs the tests of the detected toolchain. It is the floor of the quality gate: the directive
@@ -116,7 +134,7 @@ func branchDiff(dir, ticket string) string {
 		}
 	}
 	var b strings.Builder
-	shas, _ := ticketCommits(dir, ticket)
+	shas, _ := gate.TicketCommits(dir, ticket)
 	for _, sha := range shas {
 		args := append([]string{"show", "--format=", "--patch", sha, "--", "."}, generatedPaths...)
 		if out, err := gitBytes(dir, args...); err == nil {
@@ -124,22 +142,6 @@ func branchDiff(dir, ticket string) string {
 		}
 	}
 	return b.String()
-}
-
-// ticketCommits lists, oldest first, the commits whose subject starts with [TICKET]: their hashes and
-// "short-hash subject" lines.
-func ticketCommits(dir, ticket string) (shas, lines []string) {
-	out, err := gitBytes(dir, "log", "--reverse", "--no-merges", "--format=%H %s", "--fixed-strings", "--grep=["+ticket+"]")
-	if err != nil {
-		return nil, nil
-	}
-	for _, l := range strings.Split(string(out), "\n") {
-		sha, subject, ok := strings.Cut(strings.TrimSpace(l), " ")
-		if ok && strings.HasPrefix(subject, "["+ticket+"]") {
-			shas, lines = append(shas, sha), append(lines, sha[:min(7, len(sha))]+" "+subject)
-		}
-	}
-	return shas, lines
 }
 
 // proofReviewer is the reviewer for the project at dir: the gateway's model, asked for a JSON object, and the

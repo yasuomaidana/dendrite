@@ -128,7 +128,7 @@ func lastCommentHas(r *hookRig, prefix string) bool {
 
 func finishChecks(gatePasses bool) ticketlock.FinishChecks {
 	return ticketlock.FinishChecks{
-		Gate: func(context.Context, string) (ticketlock.GateResult, error) {
+		Gate: func(context.Context, string, string) (ticketlock.GateResult, error) {
 			return ticketlock.GateResult{Passed: gatePasses, Report: "gate report"}, nil
 		},
 		Review:   func(context.Context, ticketlock.ReviewInput) ([]ticketlock.ACVerdict, error) { return nil, nil },
