@@ -137,3 +137,31 @@ func TestDefaultFinishChecksUseTheGatewayAndTheDirective(t *testing.T) {
 		t.Errorf("review through the gateway: %v, %v", v, err)
 	}
 }
+
+func TestGateReportListsFailuresBeforeTheTail(t *testing.T) {
+	argv := []string{"go", "test", "./..."}
+	var lines []string
+	lines = append(lines, "ok  \tx/a\t0.1s", "--- FAIL: TestBad (0.00s)", "WARNING: DATA RACE", "FAIL\tx/b\t0.2s")
+	for i := 0; i < 60; i++ {
+		lines = append(lines, "ok  \tx/pkg"+string(rune('a'+i%26))+"\t0.1s")
+	}
+	failed := gateReport(argv, strings.Join(lines, "\n"), false)
+	for _, want := range []string{"`go test ./...`", "Failures:", "--- FAIL: TestBad", "WARNING: DATA RACE", "FAIL\tx/b", "End of the output:"} {
+		if !strings.Contains(failed, want) {
+			t.Errorf("report lacks %q:\n%s", want, failed)
+		}
+	}
+	if strings.Count(failed, "\n") > 60 {
+		t.Errorf("the tail is short: %d lines", strings.Count(failed, "\n"))
+	}
+	if passed := gateReport(argv, strings.Join(lines, "\n"), true); strings.Contains(passed, "Failures:") {
+		t.Error("a passing run lists no failures")
+	}
+	if noMatch := gateReport(argv, "exit status 2", false); !strings.Contains(noMatch, "exit status 2") || strings.Contains(noMatch, "Failures:") {
+		t.Errorf("a failure with no recognisable line keeps the tail: %q", noMatch)
+	}
+	many := strings.Repeat("--- FAIL: TestX\n", maxFailureLines+10)
+	if got := gateReport(argv, many, false); strings.Count(got, "--- FAIL: TestX") < maxFailureLines || strings.Count(got, "Failures:") != 1 {
+		t.Errorf("failures are capped at %d", maxFailureLines)
+	}
+}

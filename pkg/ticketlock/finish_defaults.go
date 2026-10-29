@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -45,8 +46,32 @@ func toolchainGate(ctx context.Context, dir string) (GateResult, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
 	out, runErr := cmd.CombinedOutput()
-	report := "`" + strings.Join(argv, " ") + "`\n" + tail(string(out), 40)
-	return GateResult{Passed: runErr == nil, Report: report}, nil
+	return GateResult{Passed: runErr == nil, Report: gateReport(argv, string(out), runErr == nil)}, nil
+}
+
+// failureLine matches what test runners print for a failure, whatever the language.
+var failureLine = regexp.MustCompile(`(?i)^(FAIL\b|--- FAIL|panic:|error[:\[]|FAILED)|DATA RACE|\bFAILED\b`)
+
+// maxFailureLines bounds the failures a report lists.
+const maxFailureLines = 30
+
+// gateReport describes a gate run. A passing run is the command and the last lines. A failing run lists the
+// failing lines first, because the last lines of a long run are usually the packages that passed.
+func gateReport(argv []string, output string, passed bool) string {
+	head := "`" + strings.Join(argv, " ") + "`\n"
+	if passed {
+		return head + tail(output, 40)
+	}
+	var failures []string
+	for _, line := range strings.Split(output, "\n") {
+		if failureLine.MatchString(strings.TrimSpace(line)) && len(failures) < maxFailureLines {
+			failures = append(failures, line)
+		}
+	}
+	if len(failures) == 0 {
+		return head + tail(output, 40)
+	}
+	return head + "Failures:\n" + strings.Join(failures, "\n") + "\n\nEnd of the output:\n" + tail(output, 15)
 }
 
 func tail(s string, lines int) string {
