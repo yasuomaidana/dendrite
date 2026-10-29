@@ -4,7 +4,8 @@
 website/docs/
 bin/
 .aider*
-.env
+.env.local
+stacks/.env
 coverage.out
 *.tmp
 .venv/

@@ -20,81 +20,90 @@ GRAFANA_ADMIN_PASSWORD=grafana_default
 LITELLM_PORT=4000
 `
 
-func project(t *testing.T, envFile string) string {
+// project builds a checkout: the template, optionally the committed .env and a .env.local.
+func project(t *testing.T, committed, local string) string {
 	t.Helper()
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "stacks"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, TemplatePath), []byte(tmpl), 0o644); err != nil {
-		t.Fatal(err)
+	files := map[string]string{TemplatePath: tmpl}
+	if committed != "" {
+		files[".env"] = committed
 	}
-	if envFile != "" {
-		if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(envFile), 0o600); err != nil {
+	if local != "" {
+		files[LocalFile] = local
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	return dir
 }
 
-func read(t *testing.T, dir string) map[string]string {
+func readFile(t *testing.T, dir, name string) string {
 	t.Helper()
-	lines, err := readLines(filepath.Join(dir, ".env"))
+	b, err := os.ReadFile(filepath.Join(dir, name))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return parseKV(lines)
+	return string(b)
 }
 
-func TestEnsureCreatesEnvFromTheTemplateWithOwnerOnlyPermissions(t *testing.T) {
-	dir := project(t, "")
+func local(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	return parseKV(strings.Split(readFile(t, dir, LocalFile), "\n"))
+}
+
+func TestEnsureWithTheCommittedDefaultsWritesNothing(t *testing.T) {
+	dir := project(t, tmpl, "")
 	res, err := EnsureSecrets(SecretsOptions{Dir: dir})
-	if err != nil || !res.Created {
-		t.Fatalf("res=%+v err=%v", res, err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := read(t, dir)["LITELLM_MASTER_KEY"]; got != "sk-default-master" {
-		t.Errorf("master key = %q, want the published default", got)
-	}
-	info, _ := os.Stat(filepath.Join(dir, ".env"))
-	if info.Mode().Perm() != 0o600 {
-		t.Errorf(".env mode = %v, want 0600", info.Mode().Perm())
+	if _, err := os.Stat(filepath.Join(dir, LocalFile)); err == nil || res.Created {
+		t.Error(".env.local was created although nothing needed changing")
 	}
 	if len(res.StillDefault) != len(ManagedSecrets) {
 		t.Errorf("still default = %v, want all %d", res.StillDefault, len(ManagedSecrets))
 	}
 }
 
-func TestEnsureKeepsCustomValuesAndAddsKeysTheTemplateIntroduced(t *testing.T) {
-	// A .env from before LITELLM_SALT_KEY existed, with a password the user chose.
-	dir := project(t, "POSTGRES_PASSWORD=mine\nLITELLM_MASTER_KEY=sk-mine\nEXTRA=keep\n")
-	res, err := EnsureSecrets(SecretsOptions{Dir: dir})
-	if err != nil {
+func TestEnsureCreatesTheCommittedEnvOnlyWhenMissing(t *testing.T) {
+	dir := project(t, "", "")
+	if _, err := EnsureSecrets(SecretsOptions{Dir: dir}); err != nil {
 		t.Fatal(err)
 	}
-	got := read(t, dir)
-	if got["POSTGRES_PASSWORD"] != "mine" || got["LITELLM_MASTER_KEY"] != "sk-mine" || got["EXTRA"] != "keep" {
-		t.Errorf("custom values changed: %v", got)
-	}
-	if got["LITELLM_SALT_KEY"] != "sk-default-salt" {
-		t.Errorf("salt key = %q, want the default added", got["LITELLM_SALT_KEY"])
-	}
-	if res.Created || !contains(res.Added, "LITELLM_SALT_KEY") || contains(res.Added, "POSTGRES_PASSWORD") {
-		t.Errorf("result = %+v", res)
-	}
-	if contains(res.StillDefault, "POSTGRES_PASSWORD") {
-		t.Error("a custom password was reported as default")
+	if readFile(t, dir, ".env") != strings.TrimRight(tmpl, "\n")+"\n" {
+		t.Error(".env was not created from the template")
 	}
 }
 
-func TestEnsureSetChangesOnlyTheNamedKeysAndRejectsUnknownOnes(t *testing.T) {
-	dir := project(t, "")
-	res, err := EnsureSecrets(SecretsOptions{Dir: dir, Set: map[string]string{"POSTGRES_PASSWORD": "chosen", "LITELLM_PORT": "4100"}})
-	if err != nil {
+func TestTheCommittedEnvIsNeverModified(t *testing.T) {
+	dir := project(t, tmpl, "")
+	before := readFile(t, dir, ".env")
+	if _, err := EnsureSecrets(SecretsOptions{Dir: dir, Generate: true, Set: map[string]string{"POSTGRES_PASSWORD": "x"}}); err != nil {
 		t.Fatal(err)
 	}
-	got := read(t, dir)
-	if got["POSTGRES_PASSWORD"] != "chosen" || got["LITELLM_PORT"] != "4100" || got["PLANE_DB_PASSWORD"] != "plane_default" {
-		t.Errorf("env = %v", got)
+	if readFile(t, dir, ".env") != before {
+		t.Error("the tracked .env was edited; user values must go to .env.local")
+	}
+}
+
+func TestSetWritesOnlyToTheLocalFileWithOwnerOnlyPermissions(t *testing.T) {
+	dir := project(t, tmpl, "")
+	res, err := EnsureSecrets(SecretsOptions{Dir: dir, Set: map[string]string{"POSTGRES_PASSWORD": "chosen", "LITELLM_PORT": "4100"}})
+	if err != nil || !res.Created {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	got := local(t, dir)
+	if got["POSTGRES_PASSWORD"] != "chosen" || got["LITELLM_PORT"] != "4100" || len(got) != 2 {
+		t.Errorf(".env.local = %v, want exactly the two set keys", got)
+	}
+	info, _ := os.Stat(filepath.Join(dir, LocalFile))
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf(".env.local mode = %v, want 0600", info.Mode().Perm())
 	}
 	if contains(res.StillDefault, "POSTGRES_PASSWORD") {
 		t.Error("changed key still reported as default")
@@ -104,20 +113,40 @@ func TestEnsureSetChangesOnlyTheNamedKeysAndRejectsUnknownOnes(t *testing.T) {
 	}
 }
 
+func TestEnsureKeepsLocalValuesAndAddsKeysTheTemplateIntroduced(t *testing.T) {
+	// A checkout from before LITELLM_SALT_KEY existed: neither file defines it.
+	old := strings.ReplaceAll(tmpl, "LITELLM_SALT_KEY=sk-default-salt\n", "")
+	dir := project(t, old, "POSTGRES_PASSWORD=mine\n")
+	res, err := EnsureSecrets(SecretsOptions{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := local(t, dir)
+	if got["POSTGRES_PASSWORD"] != "mine" || got["LITELLM_SALT_KEY"] != "sk-default-salt" {
+		t.Errorf(".env.local = %v", got)
+	}
+	if !contains(res.Added, "LITELLM_SALT_KEY") || contains(res.Added, "POSTGRES_PASSWORD") {
+		t.Errorf("added = %v", res.Added)
+	}
+	if contains(res.StillDefault, "POSTGRES_PASSWORD") {
+		t.Error("a custom password was reported as default")
+	}
+}
+
 func TestGenerateReplacesDefaultsButNotCustomValuesUnlessRotating(t *testing.T) {
-	dir := project(t, "POSTGRES_PASSWORD=mine\n")
+	dir := project(t, tmpl, "POSTGRES_PASSWORD=mine\n")
 	res, err := EnsureSecrets(SecretsOptions{Dir: dir, Generate: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := read(t, dir)
+	got := local(t, dir)
 	if got["POSTGRES_PASSWORD"] != "mine" {
 		t.Error("--generate overwrote a custom value")
 	}
 	if !strings.HasPrefix(got["LITELLM_MASTER_KEY"], "sk-") || got["LITELLM_MASTER_KEY"] == "sk-default-master" {
 		t.Errorf("master key = %q, want a generated sk- key", got["LITELLM_MASTER_KEY"])
 	}
-	if got["PLANE_SECRET_KEY"] == "plane_secret_default" || len(got["PLANE_SECRET_KEY"]) < 32 {
+	if len(got["PLANE_SECRET_KEY"]) < 32 || got["PLANE_SECRET_KEY"] == "plane_secret_default" {
 		t.Errorf("plane secret not generated: %q", got["PLANE_SECRET_KEY"])
 	}
 	if len(res.StillDefault) != 0 {
@@ -127,13 +156,13 @@ func TestGenerateReplacesDefaultsButNotCustomValuesUnlessRotating(t *testing.T) 
 	if _, err := EnsureSecrets(SecretsOptions{Dir: dir, Generate: true, Rotate: true}); err != nil {
 		t.Fatal(err)
 	}
-	if read(t, dir)["POSTGRES_PASSWORD"] == "mine" {
+	if local(t, dir)["POSTGRES_PASSWORD"] == "mine" {
 		t.Error("--rotate left a custom value in place")
 	}
 }
 
 func TestPromptIsAskedOnlyForKeysNotSetExplicitlyAndEmptyKeepsTheCurrentValue(t *testing.T) {
-	dir := project(t, "")
+	dir := project(t, tmpl, "")
 	var asked []string
 	_, err := EnsureSecrets(SecretsOptions{
 		Dir: dir,
@@ -152,30 +181,41 @@ func TestPromptIsAskedOnlyForKeysNotSetExplicitlyAndEmptyKeepsTheCurrentValue(t 
 	if contains(asked, "POSTGRES_PASSWORD") {
 		t.Error("prompted for a key that --set already decided")
 	}
-	got := read(t, dir)
-	if got["GRAFANA_ADMIN_PASSWORD"] != "typed" || got["PLANE_DB_PASSWORD"] != "plane_default" {
-		t.Errorf("env = %v", got)
+	got := local(t, dir)
+	if got["GRAFANA_ADMIN_PASSWORD"] != "typed" || hasKey(got, "PLANE_DB_PASSWORD") {
+		t.Errorf(".env.local = %v", got)
 	}
 }
 
 func TestReRunningEnsureChangesNothing(t *testing.T) {
-	dir := project(t, "")
+	dir := project(t, tmpl, "")
 	if _, err := EnsureSecrets(SecretsOptions{Dir: dir, Generate: true}); err != nil {
 		t.Fatal(err)
 	}
-	before, _ := os.ReadFile(filepath.Join(dir, ".env"))
+	before := readFile(t, dir, LocalFile)
 	res, err := EnsureSecrets(SecretsOptions{Dir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, _ := os.ReadFile(filepath.Join(dir, ".env"))
-	if string(before) != string(after) || len(res.Added)+len(res.Changed) != 0 {
+	if readFile(t, dir, LocalFile) != before || len(res.Added)+len(res.Changed) != 0 || res.Created {
 		t.Errorf("a second run changed the file or reported changes: %+v", res)
 	}
 }
 
-func TestSecretStateNeverReturnsValues(t *testing.T) {
-	dir := project(t, "POSTGRES_PASSWORD=mine\nLITELLM_MASTER_KEY=sk-default-master\n")
+func TestWarnsWhenTheProjectLayerShadowsAGlobalCredential(t *testing.T) {
+	dir := project(t, tmpl, "")
+	res, err := EnsureSecrets(SecretsOptions{Dir: dir, Global: map[string]string{"LITELLM_MASTER_KEY": "sk-from-global", "POSTGRES_PASSWORD": "pg_default"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.ShadowsGlobal) != 1 || res.ShadowsGlobal[0] != "LITELLM_MASTER_KEY" {
+		t.Errorf("shadows = %v, want only LITELLM_MASTER_KEY (the postgres value matches)", res.ShadowsGlobal)
+	}
+}
+
+func TestSecretStateNeverReturnsValuesAndSeesTheLocalLayer(t *testing.T) {
+	old := strings.ReplaceAll(tmpl, "LITELLM_SALT_KEY=sk-default-salt\n", "")
+	dir := project(t, old, "POSTGRES_PASSWORD=mine\n")
 	st, err := SecretState(dir)
 	if err != nil {
 		t.Fatal(err)

@@ -29,12 +29,17 @@ var ManagedSecrets = []string{
 	"GRAFANA_ADMIN_PASSWORD",
 }
 
-// SecretsOptions says how .env is created or updated.
+// LocalFile is where a user's own values live: untracked, owner-only, highest precedence.
+const LocalFile = ".env.local"
+
+// SecretsOptions says how the local overrides are created or updated.
 type SecretsOptions struct {
-	Dir      string            // project root holding .env and TemplatePath
+	Dir      string            // project root holding .env, .env.local and TemplatePath
 	Set      map[string]string // explicit values, always applied
 	Generate bool              // random values for managed keys still at their default
 	Rotate   bool              // with Generate: replace every managed key, custom ones included
+	// Global is the parsed $DENDRITE_HOME/.env, used only to warn when the project layer shadows it.
+	Global map[string]string
 	// Prompt, when set, is asked for each managed key that is not set explicitly; it returns the
 	// new value, or "" to keep the current one. It receives only the key, never a value.
 	Prompt func(key string, isDefault bool) (string, error)
@@ -42,16 +47,19 @@ type SecretsOptions struct {
 
 // SecretsResult names what happened. It never carries a value.
 type SecretsResult struct {
-	Path    string
-	Created bool
-	Added   []string // keys a newer template introduced
+	Path    string // the local overrides file
+	Created bool   // .env.local did not exist and was written
+	Added   []string
 	Changed []string // keys whose value was replaced
 	// StillDefault lists managed keys that remain at their published default.
 	StillDefault []string
+	// ShadowsGlobal lists managed keys the global .env sets differently from what applies here.
+	ShadowsGlobal []string
 }
 
-// EnsureSecrets creates <Dir>/.env from the template when missing and keeps every existing value,
-// so re-running it is safe. It then applies Set, Generate and Prompt, in that order of precedence.
+// EnsureSecrets keeps three layers apart. The committed .env holds the published defaults and is
+// never edited here (it is created from the template only when missing). A user's own values go to
+// .env.local, which outranks it. Existing values are never overwritten, so re-running is safe.
 func EnsureSecrets(opts SecretsOptions) (*SecretsResult, error) {
 	tmplLines, err := readLines(filepath.Join(opts.Dir, TemplatePath))
 	if err != nil {
@@ -64,42 +72,54 @@ func EnsureSecrets(opts SecretsOptions) (*SecretsResult, error) {
 		}
 	}
 
-	path := filepath.Join(opts.Dir, ".env")
-	res := &SecretsResult{Path: path}
-	lines, err := readLines(path)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		lines, res.Created = append([]string(nil), tmplLines...), true
-	case err != nil:
+	projPath := filepath.Join(opts.Dir, ".env")
+	projLines, err := readLines(projPath)
+	if errors.Is(err, os.ErrNotExist) { // a checkout without the committed defaults
+		projLines = append([]string(nil), tmplLines...)
+		err = os.WriteFile(projPath, []byte(strings.Join(projLines, "\n")+"\n"), 0o644)
+	}
+	if err != nil {
 		return nil, err
 	}
-	current := parseKV(lines)
 
-	// Keys the template has and .env lacks (a newer template, or a .env written by hand).
-	for _, l := range tmplLines {
-		if k, v, ok := splitKV(l); ok {
-			if _, have := current[k]; !have {
-				lines = append(lines, k+"="+v)
-				current[k] = v
-				if !res.Created {
-					res.Added = append(res.Added, k)
-				}
-			}
+	localPath := filepath.Join(opts.Dir, LocalFile)
+	res := &SecretsResult{Path: localPath}
+	localLines, err := readLines(localPath)
+	localExisted := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	local := parseKV(localLines)
+	effective := map[string]string{}
+	for _, m := range []map[string]string{defaults, parseKV(projLines), local} {
+		for k, v := range m {
+			effective[k] = v
 		}
 	}
-
+	dirty := false
 	set := func(k, v string) {
-		if current[k] == v {
+		if effective[k] == v && hasKey(local, k) {
 			return
 		}
-		lines = setLine(lines, k, v)
-		current[k] = v
-		if !res.Created && !contains(res.Added, k) {
+		if effective[k] != v {
 			res.Changed = append(res.Changed, k)
 		}
+		localLines = setLine(localLines, k, v)
+		local[k], effective[k], dirty = v, v, true
 	}
+
+	// Keys the template has that neither .env nor .env.local defines (an older checkout).
+	proj := parseKV(projLines)
+	for _, l := range tmplLines {
+		if k, v, ok := splitKV(l); ok && !hasKey(proj, k) && !hasKey(local, k) {
+			localLines = setLine(localLines, k, v)
+			local[k], effective[k], dirty = v, v, true
+			res.Added = append(res.Added, k)
+		}
+	}
+
 	for _, k := range ManagedSecrets {
-		isDefault := current[k] == defaults[k]
+		isDefault := effective[k] == defaults[k]
 		switch {
 		case hasKey(opts.Set, k):
 			set(k, opts.Set[k])
@@ -121,32 +141,53 @@ func EnsureSecrets(opts SecretsOptions) (*SecretsResult, error) {
 		}
 	}
 
+	if dirty {
+		if !localExisted {
+			localLines = append([]string{"# Local overrides: untracked, owner-only, outrank .env. Written by `dendrite soma secrets ensure`."}, localLines...)
+			res.Created = true
+		}
+		if err := writeLines(localPath, localLines); err != nil {
+			return nil, err
+		}
+	}
+
 	for _, k := range ManagedSecrets {
-		if current[k] == defaults[k] {
+		if effective[k] == defaults[k] {
 			res.StillDefault = append(res.StillDefault, k)
+		}
+		if g := opts.Global[k]; g != "" && g != effective[k] {
+			res.ShadowsGlobal = append(res.ShadowsGlobal, k)
 		}
 	}
 	sort.Strings(res.Added)
 	sort.Strings(res.Changed)
-	return res, writeLines(path, lines)
+	return res, nil
 }
 
-// SecretState says, for each managed key, whether it is the published default, custom or missing.
+// SecretState says, for each managed key, whether the value that applies is the published default,
+// custom or missing. It never returns a value.
 func SecretState(dir string) (map[string]string, error) {
 	tmplLines, err := readLines(filepath.Join(dir, TemplatePath))
 	if err != nil {
 		return nil, err
 	}
 	defaults := parseKV(tmplLines)
-	envLines, err := readLines(filepath.Join(dir, ".env"))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
+	effective := map[string]string{}
+	for _, name := range []string{".env", LocalFile} {
+		lines, err := readLines(filepath.Join(dir, name))
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		for k, v := range parseKV(lines) {
+			if v != "" || name == LocalFile {
+				effective[k] = v
+			}
+		}
 	}
-	current := parseKV(envLines)
 	out := make(map[string]string, len(ManagedSecrets))
 	for _, k := range ManagedSecrets {
-		switch v, ok := current[k]; {
-		case !ok || v == "":
+		switch v := effective[k]; {
+		case v == "":
 			out[k] = "missing"
 		case v == defaults[k]:
 			out[k] = "default"

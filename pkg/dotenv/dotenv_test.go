@@ -107,3 +107,23 @@ func TestDisabled(t *testing.T) {
 		t.Fatalf("loaded %v", found)
 	}
 }
+
+func TestLocalFileOutranksTheCommittedProjectEnvAndGlobal(t *testing.T) {
+	dir := setup(t, "DOTENV_T_A=global\nDOTENV_T_B=global\nDOTENV_T_C=global\n", "DOTENV_T_A=project\nDOTENV_T_B=project\n")
+	root := ProjectRoot(dir)
+	write(t, filepath.Join(root, LocalFileName), "DOTENV_T_A=local\n")
+	for _, k := range []string{"DOTENV_T_A", "DOTENV_T_B", "DOTENV_T_C"} {
+		t.Setenv(k, "")
+	}
+	if _, err := Load(dir); err != nil {
+		t.Fatal(err)
+	}
+	for k, want := range map[string]string{"DOTENV_T_A": "local", "DOTENV_T_B": "project", "DOTENV_T_C": "global"} {
+		if got := os.Getenv(k); got != want {
+			t.Fatalf("%s = %q, want %q", k, got, want)
+		}
+	}
+	if got := Lookup(dir, "DOTENV_T_A"); got != "local" {
+		t.Fatalf("Lookup = %q, want the .env.local value", got)
+	}
+}

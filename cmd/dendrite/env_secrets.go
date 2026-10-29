@@ -28,13 +28,13 @@ func newSomaSecretsEnsureCmd() *cobra.Command {
 	var generate, rotate bool
 	cmd := &cobra.Command{
 		Use:   "ensure",
-		Short: "Create .env from stacks/.env.example and optionally change credentials",
-		Long: "Creates .env (owner-only, never committed) from the committed defaults in stacks/.env.example and adds any key\n" +
-			"a newer template introduced. Existing values are never overwritten, so re-running is safe.\n\n" +
-			"The defaults are local-development values, published on purpose. Change them with --set KEY=VALUE, answer the\n" +
-			"prompts (in a terminal), or use --generate for random values on every key still at its default. --rotate also\n" +
-			"replaces custom values. Docker publishes Postgres, Redis, LiteLLM and Plane on all interfaces, so change the\n" +
-			"defaults on any machine other people can reach.",
+		Short: "Change credentials in .env.local; the committed .env keeps the published defaults",
+		Long: "The committed .env holds the published defaults (local-development values, public on purpose; stacks/.env.example\n" +
+			"is the template). This command never edits it. Your own values go to .env.local (untracked, owner-only), which\n" +
+			"outranks .env. Existing values are never overwritten, so re-running is safe.\n\n" +
+			"Change a value with --set KEY=VALUE, answer the prompts (in a terminal), or use --generate for random values on\n" +
+			"every key still at its default. --rotate also replaces custom values. Docker publishes Postgres, Redis, LiteLLM\n" +
+			"and Plane on all interfaces, so change the defaults on any machine other people can reach.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			set := map[string]string{}
@@ -45,7 +45,7 @@ func newSomaSecretsEnsureCmd() *cobra.Command {
 				}
 				set[strings.TrimSpace(k)] = v
 			}
-			opts := env.SecretsOptions{Dir: dotenv.ProjectRoot("."), Set: set, Generate: generate, Rotate: rotate}
+			opts := env.SecretsOptions{Dir: dotenv.ProjectRoot("."), Set: set, Generate: generate, Rotate: rotate, Global: globalEnv()}
 			if len(set) == 0 && !generate && !globals.Yes && stdinIsTerminal() {
 				opts.Prompt = promptSecret(os.Stdin, cmd.OutOrStdout())
 			}
@@ -87,11 +87,11 @@ func reportSecrets(out io.Writer, res *env.SecretsResult) error {
 	}
 	switch {
 	case res.Created:
-		fmt.Fprintf(out, "[✓] Created %s from %s\n", res.Path, env.TemplatePath)
-	case len(res.Added)+len(res.Changed) == 0:
-		fmt.Fprintf(out, "[✓] %s is up to date\n", res.Path)
-	default:
+		fmt.Fprintf(out, "[✓] Wrote %s (untracked, owner-only)\n", res.Path)
+	case len(res.Added)+len(res.Changed) > 0:
 		fmt.Fprintf(out, "[✓] Updated %s\n", res.Path)
+	default:
+		fmt.Fprintln(out, "[✓] Nothing to change: the committed .env defaults and any .env.local already apply")
 	}
 	if len(res.Added) > 0 {
 		fmt.Fprintf(out, "    added:   %s\n", strings.Join(res.Added, ", "))
@@ -99,12 +99,28 @@ func reportSecrets(out io.Writer, res *env.SecretsResult) error {
 	if len(res.Changed) > 0 {
 		fmt.Fprintf(out, "    changed: %s\n", strings.Join(res.Changed, ", "))
 	}
+	if len(res.ShadowsGlobal) > 0 {
+		fmt.Fprintf(out, "[!] Your global .env sets %s differently, but the project value applies here; move it into .env.local to use it.\n", strings.Join(res.ShadowsGlobal, ", "))
+	}
 	if len(res.StillDefault) > 0 {
 		fmt.Fprintf(out, "[!] %d credential(s) still use the published defaults (see %s): %s\n",
 			len(res.StillDefault), env.TemplatePath, strings.Join(res.StillDefault, ", "))
 		fmt.Fprintln(out, "    Fine while only you can reach this machine; otherwise run `dendrite soma secrets ensure --generate`.")
 	}
 	return nil
+}
+
+// globalEnv parses $DENDRITE_HOME/.env, or returns nil when there is none.
+func globalEnv() map[string]string {
+	p, err := dotenv.GlobalPath()
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return nil
+	}
+	return dotenv.Parse(string(data))
 }
 
 func newSomaSecretsStatusCmd() *cobra.Command {

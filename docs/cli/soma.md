@@ -28,7 +28,7 @@ Soma & Axon Hillock
 | `prepare` | Sync agent rules and skills, and enforce CI/CD tooling defaults |
 | `replicate` | Execute the replication plan (compose files, services, status) |
 | `secrets` | Create .env from the published defaults and change them at install |
-| `secrets ensure` | Create .env from stacks/.env.example and optionally change credentials |
+| `secrets ensure` | Change credentials in .env.local; the committed .env keeps the published defaults |
 | `secrets status` | Show which credentials are the published default, custom or missing (never prints values) |
 | `status` | Show real-time status of environment components |
 
@@ -151,7 +151,7 @@ dendrite soma secrets status
 
 ### `dendrite soma secrets ensure`
 
-Create .env from stacks/.env.example and optionally change credentials
+Change credentials in .env.local; the committed .env keeps the published defaults
 
 ```bash
 dendrite soma secrets ensure [flags]
