@@ -89,7 +89,7 @@ func newChronosProjectCmd() *cobra.Command {
 	audit.Flags().StringSliceVar(&roots, "roots", nil, "Directories to scan (default: parents of every known project and synapse member)")
 	audit.Flags().StringSliceVar(&owners, "owner", nil, "Git remote owners whose repositories are editable (default: this repository's owner)")
 
-	cmd.AddCommand(ensure, show, audit)
+	cmd.AddCommand(ensure, show, audit, newChronosProjectRefreshCmd())
 	return cmd
 }
 
@@ -180,6 +180,7 @@ func planeProjectShow(dir string, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(out, "%s -> %s (%s) project_id=%s workspace=%s\n", root, link.Identifier, link.Name, link.ProjectID, link.Workspace)
+	refreshIndexPathOf(root)
 	return nil
 }
 
