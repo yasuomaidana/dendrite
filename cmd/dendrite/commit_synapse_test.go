@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/projectid"
 )
 
 func TestCommitSynapsePeers(t *testing.T) {
@@ -107,4 +108,43 @@ func TestLinePrompter(t *testing.T) {
 		t.Errorf("expected 3 prompts, got %q", out.String())
 	}
 	_ = stdinIsTerminal()
+}
+
+// A peer that moved since the manifest was written (stale path_hint, known to the project index)
+// must be committed where it now lives, not at its old path.
+func TestCommitSynapsePeers_ActsOnTheResolvedDirectoryOfAMovedPeer(t *testing.T) {
+	t.Setenv("DENDRITE_HOME", t.TempDir())
+	t.Setenv("DENDRITE_COMMIT_PUSH", "")
+	t.Setenv("PLANE_BASE_URL", "http://127.0.0.1:1")
+	base := devtool.CommitOptions{UseLocalModel: false, NoSmart: true, TicketID: "DEN-1", Message: "feat: only for current"}
+
+	den, _ := syncTestRepo(t, "den")
+	gitDir, _ := syncTestRepo(t, "git")
+	saveTestSynapse(t, "mesh", map[string]string{"den": den, "git": gitDir})
+
+	moved := filepath.Join(t.TempDir(), "relocated-git")
+	if err := os.Rename(gitDir, moved); err != nil {
+		t.Fatal(err)
+	}
+	indexPath, _ := projectid.DefaultIndexPath()
+	ix, _ := projectid.LoadIndex(indexPath)
+	if _, err := ix.Register(moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := ix.Save(); err != nil {
+		t.Fatal(err)
+	}
+	syncTestFile(t, moved, "change.txt", false)
+	before := runGitT(t, moved, "rev-parse", "HEAD")
+
+	var out bytes.Buffer
+	if err := commitSynapsePeers(context.Background(), &out, den, "", base, linePrompter(strings.NewReader("a\n"), &out)); err != nil {
+		t.Fatalf("moved peer: %v\n%s", err, out.String())
+	}
+	if runGitT(t, moved, "rev-parse", "HEAD") == before {
+		t.Errorf("the moved peer was not committed at its new location:\n%s", out.String())
+	}
+	if _, err := os.Stat(gitDir); !os.IsNotExist(err) {
+		t.Errorf("the old path must stay gone: %v", err)
+	}
 }
