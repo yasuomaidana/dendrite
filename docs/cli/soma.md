@@ -27,6 +27,9 @@ Soma & Axon Hillock
 | `plan` | Show the replication plan for this host |
 | `prepare` | Sync agent rules and skills, and enforce CI/CD tooling defaults |
 | `replicate` | Execute the replication plan (compose files, services, status) |
+| `secrets` | Create .env from the published defaults and change them at install |
+| `secrets ensure` | Create .env from stacks/.env.example and optionally change credentials |
+| `secrets status` | Show which credentials are the published default, custom or missing (never prints values) |
 | `status` | Show real-time status of environment components |
 
 ## Flags
@@ -130,6 +133,35 @@ dendrite soma replicate [flags]
 dendrite soma replicate --dry-run
 dendrite soma replicate --with-plane --no-plane-ui
 ```
+
+### `dendrite soma secrets`
+
+Create .env from the published defaults and change them at install
+
+```bash
+dendrite soma secrets
+```
+
+```bash
+dendrite soma secrets ensure
+dendrite soma secrets ensure --set POSTGRES_PASSWORD=mine --set LITELLM_MASTER_KEY=sk-mine
+dendrite soma secrets ensure --generate
+dendrite soma secrets status
+```
+
+### `dendrite soma secrets ensure`
+
+Create .env from stacks/.env.example and optionally change credentials
+
+```bash
+dendrite soma secrets ensure [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--generate` | Random values for every managed key still at its published default |
+| `--rotate` | With --generate: replace custom values too |
+| `--set` | Set KEY=VALUE (repeatable) |
 
 ## Examples
 

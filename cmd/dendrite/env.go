@@ -9,6 +9,7 @@ import (
 
 	"Dendrite/pkg/agent"
 	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/dotenv"
 	"Dendrite/pkg/env"
 	"Dendrite/pkg/env/bootstrap"
 	"Dendrite/pkg/ollama"
@@ -36,6 +37,7 @@ func newSomaCmd() *cobra.Command {
 		newSomaInstallCmd(),
 		newSomaStatusCmd(),
 		newSomaDiagnoseCmd(),
+		newSomaSecretsCmd(),
 	)
 	return cmd
 }
@@ -251,6 +253,15 @@ func newSomaReplicateCmd() *cobra.Command {
 }
 
 func runSomaReplicate(ctx context.Context, req env.ReplicationRequest, out io.Writer) error {
+	if !req.DryRun { // compose refuses to start without these keys
+		res, err := env.EnsureSecrets(env.SecretsOptions{Dir: dotenv.ProjectRoot(".")})
+		if err != nil {
+			return fmt.Errorf("prepare .env: %w", err)
+		}
+		if res.Created || len(res.Added) > 0 {
+			_ = reportSecrets(out, res)
+		}
+	}
 	planner, replicator, err := envTools(ctx)
 	if err != nil {
 		return err
