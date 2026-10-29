@@ -235,7 +235,10 @@ func TestRequireRefusesWhenTheCheckCannotBeRecorded(t *testing.T) {
 func TestRequireAllowsClaudePlansAndPathsOutsideGit(t *testing.T) {
 	w := newWorld(t)
 	d := w.deps()
-	d.RepoTop = func(string) (string, error) { t.Fatal("a plan file must not even look for a repository"); return "", nil }
+	d.RepoTop = func(string) (string, error) {
+		t.Fatal("a plan file must not even look for a repository")
+		return "", nil
+	}
 	if err := Require(context.Background(), d, filepath.Join(w.home, ".claude", "plans", "p.md")); err != nil {
 		t.Errorf("plan file: %v", err)
 	}

@@ -22,13 +22,20 @@ Terminal Boutons & Vesicles
 
 | Subcommand | Description |
 | :--- | :--- |
+| `claim` | Claim a ticket for this session: In Progress, assigned, labelled, and the edit lock opened for this working copy |
+| `comment` | Post a structured progress, milestone, note or handoff comment on a ticket |
+| `context` | Everything needed to start on a ticket: description, acceptance criteria, plan and the files it names |
 | `create` | Create a ticket, place it on the Gantt plan and link its blockers |
 | `gantt-sync` | Align milestone dates, ticket schedules and dependency arrows on the Plane Gantt view |
+| `handoff` | Block a ticket with the account the next session needs: what is done, what got in the way, what is missing |
 | `issues` | List the project's Plane issues |
 | `link` | Add one relation between two tickets (blocking, blocked_by, relates_to, duplicate, start_before, start_after, finish_before, finish_after) |
 | `modules` | List Plane modules (milestones) |
 | `next` | Pick the next ticket by priority and DAG reachability |
 | `pages` | List Plane documentation pages |
+| `plan` | Store and read the plan of a ticket (kept in Plane and in the local plan store) |
+| `plan get` | Print the plan of a ticket, from Plane or the local plan store |
+| `plan push` | Store the plan of a ticket: markdown with `- [ ]` / `- [x]` steps (--file, - for standard input) |
 | `project` | Link the repository to its Plane project and audit the project rule |
 | `project audit` | Check that every editable repository is a Plane project and related repositories share a synapse |
 | `project ensure` | Adopt or create the repository's Plane project, converge its states, and write .dendrite/plane.json |
@@ -52,6 +59,45 @@ None
 
 ## Subcommand Reference
 
+### `dendrite chronos claim`
+
+Claim a ticket for this session: In Progress, assigned, labelled, and the edit lock opened for this working copy
+
+```bash
+dendrite chronos claim <ticket> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--agent` | claude, agy, copilot, ... (default: detected) |
+| `--steal` | Take the ticket over from another live session |
+| `--tier` | Model tier of this session (default: DENDRITE_MODEL_TIER) |
+| `--worktree` | Working copy to claim for (default: the current directory) |
+
+```bash
+dendrite chronos claim DEN-377
+dendrite chronos claim DEN-377 --worktree ../dendrite-work/Dendrite-DEN-377 --agent claude --tier 8
+```
+
+### `dendrite chronos comment`
+
+Post a structured progress, milestone, note or handoff comment on a ticket
+
+```bash
+dendrite chronos comment <ticket> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--body` | The comment text |
+| `--body-file` | Read the text from a file (- for standard input) |
+| `--kind` | progress, milestone, note or handoff (default: progress) |
+| `--worktree` | Working copy the comment is about (default: the current directory) |
+
+```bash
+dendrite chronos comment DEN-377 --kind milestone --body "lock done, 100% coverage"
+```
+
 ### `dendrite chronos create`
 
 Create a ticket, place it on the Gantt plan and link its blockers
@@ -73,6 +119,25 @@ dendrite chronos create [flags]
 ```bash
 dendrite chronos create --name "[DEN-123] Title" --desc-file spec.md
 dendrite chronos create --name "[DEN-124] Title" --desc "Goal and acceptance criteria" --milestone M3 --priority high --estimate 5 --blocked-by DEN-100,DEN-101
+```
+
+### `dendrite chronos handoff`
+
+Block a ticket with the account the next session needs: what is done, what got in the way, what is missing
+
+```bash
+dendrite chronos handoff <ticket> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--challenges` | What got in the way |
+| `--completed` | What is done |
+| `--missing` | What is missing against the acceptance criteria |
+| `--worktree` | Working copy (default: the current directory) |
+
+```bash
+dendrite chronos handoff DEN-377 --completed "lock + tools" --challenges "Plane drops HTML comments" --missing "AC-3: round trip"
 ```
 
 ### `dendrite chronos issues`
@@ -126,6 +191,23 @@ dendrite chronos next [flags]
 dendrite chronos next
 dendrite chronos next --ticket DEN-123 --json
 dendrite chronos next --milestone M3
+```
+
+### `dendrite chronos plan push`
+
+Store the plan of a ticket: markdown with `- [ ]` / `- [x]` steps (--file, - for standard input)
+
+```bash
+dendrite chronos plan push <ticket> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--file` | File with the plan (- for standard input) |
+| `--worktree` | Working copy (default: the current directory) |
+
+```bash
+dendrite chronos plan push DEN-377 --file ~/.claude/plans/my-plan.md
 ```
 
 ### `dendrite chronos project audit`

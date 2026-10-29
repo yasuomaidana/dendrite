@@ -64,6 +64,11 @@ func newChronosCmd() *cobra.Command {
 		newChronosProjectCmd(),
 		newChronosTicketCmd(),
 		newChronosRequestCmd(),
+		newChronosClaimCmd(),
+		newChronosCommentCmd(),
+		newChronosPlanCmd(),
+		newChronosHandoffCmd(),
+		newChronosContextCmd(),
 	)
 	return cmd
 }

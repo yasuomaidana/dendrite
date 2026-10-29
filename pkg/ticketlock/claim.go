@@ -54,6 +54,18 @@ func (s *Store) ClaimFor(branch string) (Claim, error) {
 	return c, err
 }
 
+// ClaimsOf returns every claim on ticket, whichever branch holds it. Unreadable claim files are skipped.
+func (s *Store) ClaimsOf(ticket string) []Claim {
+	entries, _ := os.ReadDir(filepath.Join(s.Dir, "claims"))
+	var out []Claim
+	for _, e := range entries {
+		if c, err := readJSON[Claim](filepath.Join(s.Dir, "claims", e.Name())); err == nil && strings.EqualFold(c.Ticket, ticket) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // ReleaseClaim removes the claim of a branch; releasing a branch with no claim is not an error.
 func (s *Store) ReleaseClaim(branch string) error {
 	if err := os.Remove(s.claimPath(branch)); err != nil && !errors.Is(err, os.ErrNotExist) {
