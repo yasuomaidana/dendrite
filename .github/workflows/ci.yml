@@ -30,18 +30,32 @@ jobs:
           ref: ${{ vars.DENDRITE_PLANE_REF || 'develop' }}
           path: .ci/dendrite-plane-rs
 
+      - name: Check out the dendrite-rag sidecar
+        uses: actions/checkout@v4
+        with:
+          repository: yasuomaidana/dendrite-rag-rs
+          ref: ${{ vars.DENDRITE_RAG_REF || 'develop' }}
+          path: .ci/dendrite-rag-rs
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache the sidecar build
+      - name: Cache the sidecar builds
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: .ci/dendrite-plane-rs
+          workspaces: |
+            .ci/dendrite-plane-rs
+            .ci/dendrite-rag-rs
 
-      - name: Build the dendrite-plane sidecar
+      - name: Build the sidecars
         run: |
           cargo build --release --manifest-path .ci/dendrite-plane-rs/Cargo.toml
-          echo "DENDRITE_PLANE_TEST_BIN=$GITHUB_WORKSPACE/.ci/dendrite-plane-rs/target/release/dendrite-plane" >> "$GITHUB_ENV"
+          cargo build --release --manifest-path .ci/dendrite-rag-rs/Cargo.toml -p dendrite-rag
+          {
+            echo "DENDRITE_PLANE_TEST_BIN=$GITHUB_WORKSPACE/.ci/dendrite-plane-rs/target/release/dendrite-plane"
+            echo "DENDRITE_DENDRITE_PLANE_BIN=$GITHUB_WORKSPACE/.ci/dendrite-plane-rs/target/release/dendrite-plane"
+            echo "DENDRITE_DENDRITE_RAG_BIN=$GITHUB_WORKSPACE/.ci/dendrite-rag-rs/target/release/dendrite-rag"
+          } >> "$GITHUB_ENV"
 
       - name: Run Tests (race detector)
         run: |
