@@ -98,15 +98,16 @@ func tail(s string, lines int) string {
 	return strings.Join(parts, "\n")
 }
 
-// diffExcludes leave out of a review diff what is large and says nothing about the work.
-var diffExcludes = []string{":(exclude)*.lock", ":(exclude)go.sum", ":(exclude)package-lock.json", ":(exclude)pnpm-lock.yaml", ":(exclude)bun.lockb"}
-
 // branchDiff is the work done for a ticket: the branch's changes against develop while they are not merged, and
 // the ticket's own commits (their subject starts with [TICKET]) once they are, so finishing after the merge
 // still shows the work.
 func branchDiff(dir, ticket string) string {
+	return reviewView(rawBranchDiff(dir, ticket), MaxReviewDiff)
+}
+
+func rawBranchDiff(dir, ticket string) string {
 	for _, base := range []string{"origin/develop", "develop"} {
-		args := append([]string{"diff", base + "...HEAD", "--", "."}, diffExcludes...)
+		args := append([]string{"diff", base + "...HEAD", "--", "."}, generatedPaths...)
 		if out, err := gitBytes(dir, args...); err == nil && len(strings.TrimSpace(string(out))) > 0 {
 			return string(out)
 		}
@@ -114,7 +115,7 @@ func branchDiff(dir, ticket string) string {
 	var b strings.Builder
 	shas, _ := ticketCommits(dir, ticket)
 	for _, sha := range shas {
-		args := append([]string{"show", "--format=", "--patch", sha, "--", "."}, diffExcludes...)
+		args := append([]string{"show", "--format=", "--patch", sha, "--", "."}, generatedPaths...)
 		if out, err := gitBytes(dir, args...); err == nil {
 			b.Write(out)
 		}

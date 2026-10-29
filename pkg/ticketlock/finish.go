@@ -13,7 +13,7 @@ import (
 const HumanReviewLabel = "needs-human-review"
 
 // MaxReviewDiff is how much of the branch's diff the acceptance review is shown.
-const MaxReviewDiff = 60000
+const MaxReviewDiff = 16000
 
 // GateResult is the outcome of the deterministic quality gate, the first stage of `finish`.
 type GateResult struct {
