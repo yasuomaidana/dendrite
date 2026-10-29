@@ -91,24 +91,30 @@ func Gateway(dir string) Client {
 var thinkBlock = regexp.MustCompile(`(?s)<think>.*?</think>`)
 
 // JSON cuts the JSON value out of a model's answer, which may wrap it in prose, a code fence or a <think>
-// block, and may mention brackets before it ("[AC-1] holds: [...]"). open and closeCh are '[' and ']' for an
-// array, '{' and '}' for an object. It returns the first span that starts at an open bracket, ends at a close
-// bracket and is valid JSON, longest first.
+// block, and may mention brackets around it ("[AC-1] holds", "returns []"). open and closeCh are '[' and ']'
+// for an array, '{' and '}' for an object. It returns the longest span that starts at an open bracket, ends
+// at a close bracket and is valid JSON, so the answer wins over a stray empty pair before it.
 func JSON(content string, open, closeCh byte) (string, error) {
 	content = thinkBlock.ReplaceAllString(content, "")
-	for start := strings.IndexByte(content, open); start >= 0; {
-		for end := strings.LastIndexByte(content, closeCh); end > start; end = strings.LastIndexByte(content[:end], closeCh) {
-			if candidate := content[start : end+1]; json.Valid([]byte(candidate)) {
-				return candidate, nil
-			}
-		}
-		next := strings.IndexByte(content[start+1:], open)
-		if next < 0 {
+	best := ""
+	for from := 0; ; {
+		i := strings.IndexByte(content[from:], open)
+		if i < 0 {
 			break
 		}
-		start += 1 + next
+		start := from + i
+		for end := strings.LastIndexByte(content, closeCh); end > start && end+1-start > len(best); end = strings.LastIndexByte(content[:end], closeCh) {
+			if candidate := content[start : end+1]; json.Valid([]byte(candidate)) {
+				best = candidate
+				break
+			}
+		}
+		from = start + 1
 	}
-	return "", fmt.Errorf("the answer holds no JSON %s (it starts: %q)", map[byte]string{'[': "array", '{': "object"}[open], head(content))
+	if best == "" {
+		return "", fmt.Errorf("the answer holds no JSON %s (it starts: %q)", map[byte]string{'[': "array", '{': "object"}[open], head(content))
+	}
+	return best, nil
 }
 
 func head(s string) string {

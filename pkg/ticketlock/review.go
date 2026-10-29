@@ -25,7 +25,7 @@ func (g GatewayReviewer) Review(ctx context.Context, in ReviewInput) ([]ACVerdic
 	if err != nil {
 		return nil, err
 	}
-	verdicts, readErr := parseVerdicts(answer)
+	verdicts, readErr := readVerdicts(answer, len(in.Criteria))
 	if readErr == nil {
 		return verdicts, nil
 	}
@@ -34,7 +34,17 @@ func (g GatewayReviewer) Review(ctx context.Context, in ReviewInput) ([]ACVerdic
 	if answer, err = g.Chat.Complete(ctx, reviewPrompt, retry); err != nil {
 		return nil, err
 	}
-	return parseVerdicts(answer)
+	return readVerdicts(answer, len(in.Criteria))
+}
+
+// readVerdicts reads an answer and refuses an empty list when there are criteria to judge: a model that
+// answers [] has not reviewed anything.
+func readVerdicts(answer string, criteria int) ([]ACVerdict, error) {
+	verdicts, err := parseVerdicts(answer)
+	if err == nil && criteria > 0 && len(verdicts) == 0 {
+		return nil, fmt.Errorf("the review answered with an empty list for %d criteria", criteria)
+	}
+	return verdicts, err
 }
 
 // parseVerdicts reads the JSON array out of a model's answer, which may wrap it in prose or a code fence.

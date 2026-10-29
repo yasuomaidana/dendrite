@@ -69,3 +69,18 @@ func TestGatewayReviewerAsksOnceMoreWhenTheFirstAnswerCannotBeRead(t *testing.T)
 		t.Errorf("a failure of the retry is reported: %v", err)
 	}
 }
+
+func TestGatewayReviewerDoesNotAcceptAnEmptyVerdictList(t *testing.T) {
+	gw := llmchattest.Sequence(t, "[]", `[{"ac":"AC-1","pass":true}]`)
+	got, err := GatewayReviewer{Chat: gw.Client}.Review(context.Background(), ReviewInput{Ticket: "DEN-1", Criteria: []string{"[AC-1] a"}})
+	if err != nil || len(got) != 1 || gw.Requests() != 2 || !strings.Contains(gw.Last().User, "empty list for 1 criteria") {
+		t.Fatalf("an empty list is asked again: %+v, %v, %d requests", got, err, gw.Requests())
+	}
+	none := llmchattest.New(t, "[]")
+	if _, err := (GatewayReviewer{Chat: none.Client}).Review(context.Background(), ReviewInput{Ticket: "DEN-1", Criteria: []string{"[AC-1] a"}}); err == nil || !strings.Contains(err.Error(), "empty list") {
+		t.Errorf("still empty after the retry: %v", err)
+	}
+	if got, err := (GatewayReviewer{Chat: none.Client}).Review(context.Background(), ReviewInput{Ticket: "DEN-1"}); err != nil || len(got) != 0 {
+		t.Errorf("with no criteria an empty list is right: %+v, %v", got, err)
+	}
+}

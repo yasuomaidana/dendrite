@@ -100,8 +100,9 @@ func TestJSONCutsTheValueOutOfAChattyAnswer(t *testing.T) {
 		"think block":                     {"<think>maybe [wrong] here</think>\n[3]", '[', ']', `[3]`},
 		"object":                          {`Result: {"k":"v"} ok`, '{', '}', `{"k":"v"}`},
 		"prose brackets before the array": {"The [AC-1] criterion holds. Result: [{\"ac\":\"AC-1\",\"pass\":true}] done [x]", '[', ']', `[{"ac":"AC-1","pass":true}]`},
-		"nested arrays":                   {`ok [1,[2,3]] fine`, '[', ']', `[1,[2,3]]`},
-		"multiline think":                 {"<think>\nstep [1]\nstep 2\n</think>[4]", '[', ']', `[4]`},
+		"the answer beats a stray empty pair before it": {"It returns [] when idle. Verdicts: [{\"ac\":\"AC-1\",\"pass\":true}]", '[', ']', `[{"ac":"AC-1","pass":true}]`},
+		"nested arrays":   {`ok [1,[2,3]] fine`, '[', ']', `[1,[2,3]]`},
+		"multiline think": {"<think>\nstep [1]\nstep 2\n</think>[4]", '[', ']', `[4]`},
 	} {
 		got, err := JSON(tc.in, tc.open, tc.shut)
 		if err != nil || got != tc.want {
