@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"Dendrite/pkg/dotenv"
+	"Dendrite/pkg/planesvc/planetest"
 	"Dendrite/pkg/workcopy"
 )
 
@@ -23,7 +25,14 @@ func TestMain(m *testing.M) {
 	}
 	// Commands must not pick up the developer's real keys from .env files.
 	_ = os.Setenv(dotenv.EnvDisable, "off")
+	// The dendrite-plane sidecar is required: tests that reach Plane run the real binary.
+	stopPlane, planeErr := planetest.Install()
+	if planeErr != nil {
+		fmt.Fprintln(os.Stderr, planeErr)
+		os.Exit(1)
+	}
 	code := m.Run()
+	stopPlane()
 	if err == nil {
 		_ = os.RemoveAll(dir)
 	}
