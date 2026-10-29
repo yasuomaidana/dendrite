@@ -80,7 +80,7 @@
   "pkg/topology/advisor": 88.7,
   "pkg/topology/network": 86.7,
   "pkg/tracker": 100,
-  "pkg/tracker/dag": 96.3,
+  "pkg/tracker/dag": 99.5,
   "pkg/tracker/github": 100,
   "pkg/tracker/jira": 89,
   "pkg/tracker/linear": 89.7,
