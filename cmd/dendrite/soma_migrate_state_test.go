@@ -22,7 +22,16 @@ func migrateGit(t *testing.T, dir string, args ...string) string {
 	return string(out)
 }
 
+// plainOutput makes the command print its human report whatever an earlier test left in globals.
+func plainOutput(t *testing.T) {
+	t.Helper()
+	prev := globals.JSON
+	globals.JSON = false
+	t.Cleanup(func() { globals.JSON = prev })
+}
+
 func TestSomaMigrateState_UntracksDendriteAndRecordsIdentity(t *testing.T) {
+	plainOutput(t)
 	t.Setenv("DENDRITE_HOME", t.TempDir())
 	repo := t.TempDir()
 	migrateGit(t, repo, "init", "-q")
@@ -82,6 +91,7 @@ func TestSomaMigrateState_UntracksDendriteAndRecordsIdentity(t *testing.T) {
 }
 
 func TestSomaMigrateState_SkipsMissingPathsAndHonoursDryRun(t *testing.T) {
+	plainOutput(t)
 	t.Setenv("DENDRITE_HOME", t.TempDir())
 	ixPath, _ := projectid.DefaultIndexPath()
 	ix, _ := projectid.LoadIndex(ixPath)
