@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"Dendrite/pkg/mcpserver"
 )
@@ -201,5 +202,19 @@ func TestIntrospectCLICommand_EdgeCases(t *testing.T) {
 	}
 	if got := formatAliases([]string{"a", "b"}); got != "`a`, `b`" {
 		t.Errorf("formatAliases = %q", got)
+	}
+}
+
+func TestFlagDocs_PathsArePortable(t *testing.T) {
+	wd, _ := os.Getwd()
+	home, _ := os.UserHomeDir()
+	fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
+	fs.String("policy", wd+"/.dendrite/p.json", "policy file (default: "+wd+"/.dendrite/p.json)")
+	fs.String("cfg", home+"/.dendrite/c.yaml", "config in "+home)
+	docs := flagDocs(fs)
+	for _, d := range docs {
+		if strings.Contains(d.Default+d.Description, "/Users/") || strings.Contains(d.Default+d.Description, wd) {
+			t.Errorf("%s still names this machine: default %q, description %q", d.Name, d.Default, d.Description)
+		}
 	}
 }

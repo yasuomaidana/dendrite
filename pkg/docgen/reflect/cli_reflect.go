@@ -2,6 +2,7 @@ package reflect
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -163,14 +164,26 @@ func flagDocs(fs *pflag.FlagSet) []FlagDoc {
 		if f.Shorthand != "" {
 			name += ", -" + f.Shorthand
 		}
-		def := f.DefValue
+		def := portable(f.DefValue)
 		switch def {
 		case "false", "[]", "0", "0s":
 			def = ""
 		}
-		out = append(out, FlagDoc{Name: name, Type: f.Value.Type(), Description: f.Usage, Default: def})
+		out = append(out, FlagDoc{Name: name, Type: f.Value.Type(), Description: portable(f.Usage), Default: def})
 	})
 	return out
+}
+
+// portable writes the working directory as "." and the home directory as "~" in flag text, so the
+// reference docs read the same on every machine (the audit compares them with a fresh generation).
+func portable(s string) string {
+	if wd, err := os.Getwd(); err == nil && wd != "" && wd != "/" {
+		s = strings.ReplaceAll(s, wd, ".")
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" && home != "/" {
+		s = strings.ReplaceAll(s, home, "~")
+	}
+	return s
 }
 
 // exampleLines splits a cobra Example block into trimmed, non-empty lines.
