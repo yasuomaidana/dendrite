@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"Dendrite/pkg/agentjobs"
 	"Dendrite/pkg/statedir"
+	"Dendrite/pkg/ticketlock"
 )
 
 // newSessionCmd builds `dendrite session`: orchestrator checkpoint and resume.
@@ -74,6 +77,7 @@ func runSessionCheckpoint(ctx context.Context, o sessionCheckpointOptions, out i
 
 	opts := agentjobs.CheckpointOptions{
 		Worktree:         o.Worktree,
+		Ticket:           claimedTicket(o.Worktree),
 		PendingDecisions: o.Decisions,
 		Next:             o.Next,
 		Notes:            combinedNotes,
@@ -119,8 +123,39 @@ func runSessionCheckpoint(ctx context.Context, o sessionCheckpointOptions, out i
 	return nil
 }
 
+// claimedTicket is the ticket claimed by the working copy in dir ("" is the current directory).
+func claimedTicket(dir string) string {
+	if dir == "" {
+		dir = "."
+	}
+	c, _ := ticketlock.NewStore().ClaimOfDir(dir)
+	return c.Ticket
+}
+
+// mintSessionToken prunes expired session tokens and writes the token of this session, which the
+// write lock (`dendrite hook pre-edit`) requires. It returns a one-line summary for the user.
+func mintSessionToken() (string, error) {
+	store, now := ticketlock.NewStore(), time.Now()
+	store.PruneTokens(now)
+	cwd, _ := os.Getwd()
+	tok, err := store.MintToken(ticketlock.TokenOptions{Worktree: cwd}, now)
+	if err != nil {
+		return "", err
+	}
+	line := fmt.Sprintf("session: %s (agent %s", tok.SessionID, tok.Agent)
+	if tok.ModelTier != "" {
+		line += ", tier " + tok.ModelTier
+	}
+	line += ")"
+	if t := claimedTicket(""); t != "" {
+		line += ", claimed ticket " + t
+	}
+	return line, nil
+}
+
 func runSessionResume(ctx context.Context, targetPath string, asJSON bool, out io.Writer) error {
 	ledger := agentjobs.NewLedger("")
+	session, tokErr := mintSessionToken()
 	if asJSON {
 		report, err := agentjobs.ResumeState(targetPath, ledger)
 		if err != nil {
@@ -141,6 +176,11 @@ func runSessionResume(ctx context.Context, targetPath string, asJSON bool, out i
 	}
 
 	fmt.Fprint(out, text)
+	if tokErr != nil {
+		fmt.Fprintf(out, "[!] session token not written: %v\n", tokErr)
+	} else {
+		fmt.Fprintf(out, "[i] %s\n", session)
+	}
 	autoCleanWorkCopies(ctx, out)
 	warnStaleIndex(out)
 	printSynapsePeers(".", out)
