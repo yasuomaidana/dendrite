@@ -122,26 +122,13 @@ func (d *Dispatcher) checkScopeAgainst(ctx context.Context, worktree string, sco
 		return false, nil, nil
 	}
 
-	cleanScopes := make([]string, 0, len(scope))
-	for _, s := range scope {
-		s = strings.TrimSpace(s)
-		if s != "" {
-			cleanScopes = append(cleanScopes, filepath.Clean(s))
-		}
-	}
+	cleanScopes := cleanScopeList(scope)
 
 	var offending []string
 	changedInScope := false
 
 	for _, file := range changedFiles {
-		inScope := false
-		for _, s := range cleanScopes {
-			if s == "." || file == s || strings.HasPrefix(file, s+string(filepath.Separator)) || strings.HasPrefix(file, s+"/") {
-				inScope = true
-				break
-			}
-		}
-		if inScope {
+		if fileMatchesScope(file, cleanScopes) {
 			changedInScope = true
 		} else {
 			offending = append(offending, file)

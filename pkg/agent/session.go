@@ -82,15 +82,14 @@ func (l *SessionLedger) GetSession(sessionID string) (*SessionSummary, bool) {
 	return &cpy, true
 }
 
-// ListSessionsByTicket returns all agent sessions associated with a specific ticket ID.
-func (l *SessionLedger) ListSessionsByTicket(ticketID string) []*SessionSummary {
+func (l *SessionLedger) filterSessions(predicate func(*SessionSummary) bool) []*SessionSummary {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
 	res := make([]*SessionSummary, 0)
 	for _, id := range l.order {
 		s := l.sessions[id]
-		if s != nil && s.TicketID == ticketID {
+		if s != nil && predicate(s) {
 			cpy := *s
 			res = append(res, &cpy)
 		}
@@ -98,20 +97,18 @@ func (l *SessionLedger) ListSessionsByTicket(ticketID string) []*SessionSummary 
 	return res
 }
 
+// ListSessionsByTicket returns all agent sessions associated with a specific ticket ID.
+func (l *SessionLedger) ListSessionsByTicket(ticketID string) []*SessionSummary {
+	return l.filterSessions(func(s *SessionSummary) bool {
+		return s.TicketID == ticketID
+	})
+}
+
 // ListSessionsByAgent returns all sessions driven by a specific agent type.
 func (l *SessionLedger) ListSessionsByAgent(agentType AgentType) []*SessionSummary {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-
-	res := make([]*SessionSummary, 0)
-	for _, id := range l.order {
-		s := l.sessions[id]
-		if s != nil && s.AgentType == agentType {
-			cpy := *s
-			res = append(res, &cpy)
-		}
-	}
-	return res
+	return l.filterSessions(func(s *SessionSummary) bool {
+		return s.AgentType == agentType
+	})
 }
 
 // TotalSpendUSD returns the cumulative monetary cost of all recorded sessions.

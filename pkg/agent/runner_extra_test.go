@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -31,6 +29,24 @@ func TestEnsureAgentInstalled(t *testing.T) {
 	if err := EnsureAgentInstalled(context.Background(), AgentOpenCode); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+func newEchoHostRunner(interactive, customStreams bool, echoMsg string) *HostRunner {
+	r := &HostRunner{
+		Interactive: interactive,
+		LookPath: func(file string) (string, error) {
+			return "/usr/bin/echo", nil
+		},
+		CommandFunc: func(ctx context.Context, name string, arg ...string) *exec.Cmd {
+			return exec.CommandContext(ctx, "echo", echoMsg)
+		},
+	}
+	if customStreams {
+		r.Stdin = bytes.NewBufferString("")
+		r.Stdout = &bytes.Buffer{}
+		r.Stderr = &bytes.Buffer{}
+	}
+	return r
 }
 
 func TestHostRunner_ExecutionPaths(t *testing.T) {
@@ -82,76 +98,43 @@ func TestHostRunner_ExecutionPaths(t *testing.T) {
 	})
 
 	t.Run("Interactive mode with custom and default streams", func(t *testing.T) {
-		var stdin bytes.Buffer
-		var stdout bytes.Buffer
-		var stderr bytes.Buffer
-		runnerCustom := &HostRunner{
-			Interactive: true,
-			Stdin:       &stdin,
-			Stdout:      &stdout,
-			Stderr:      &stderr,
-			LookPath: func(file string) (string, error) {
-				return "/usr/bin/echo", nil
-			},
-			CommandFunc: func(ctx context.Context, name string, arg ...string) *exec.Cmd {
-				return exec.CommandContext(ctx, "echo", "interactive")
-			},
-		}
 		cfg := AgentConfig{
 			Type:           AgentAGY,
 			LiteLLMBaseURL: "http://localhost:4000/v1",
 			VirtualAPIKey:  "sk-test",
 			WorkspaceDir:   "/tmp",
 		}
-		_, err := runnerCustom.Execute(ctx, cfg)
-		if err != nil {
+		runnerCustom := newEchoHostRunner(true, true, "interactive")
+		if _, err := runnerCustom.Execute(ctx, cfg); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		runnerDefault := &HostRunner{
-			Interactive: true,
-			LookPath: func(file string) (string, error) {
-				return "/usr/bin/echo", nil
-			},
-			CommandFunc: func(ctx context.Context, name string, arg ...string) *exec.Cmd {
-				return exec.CommandContext(ctx, "echo", "interactive-default")
-			},
-		}
-		_, err = runnerDefault.Execute(ctx, cfg)
-		if err != nil {
+		runnerDefault := newEchoHostRunner(true, false, "interactive-default")
+		if _, err := runnerDefault.Execute(ctx, cfg); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 
 	t.Run("Non-interactive mode with custom streams", func(t *testing.T) {
-		var stdin bytes.Buffer
-		var stdout bytes.Buffer
-		var stderr bytes.Buffer
-		runner := &HostRunner{
-			Interactive: false,
-			Stdin:       &stdin,
-			Stdout:      &stdout,
-			Stderr:      &stderr,
-			LookPath: func(file string) (string, error) {
-				return "/usr/bin/echo", nil
-			},
-			CommandFunc: func(ctx context.Context, name string, arg ...string) *exec.Cmd {
-				return exec.CommandContext(ctx, "echo", "piped")
-			},
-		}
+		runner := newEchoHostRunner(false, true, "piped")
 		cfg := AgentConfig{
 			Type:           AgentOpenHands,
 			LiteLLMBaseURL: "http://localhost:4000/v1",
 			VirtualAPIKey:  "sk-test",
 			WorkspaceDir:   "/tmp",
 		}
-		_, err := runner.Execute(ctx, cfg)
-		if err != nil {
+		if _, err := runner.Execute(ctx, cfg); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 
 	t.Run("Process execution error paths (failed vs curfew)", func(t *testing.T) {
+		cfg := AgentConfig{
+			Type:           AgentAider,
+			LiteLLMBaseURL: "http://localhost:4000/v1",
+			VirtualAPIKey:  "sk-test",
+			WorkspaceDir:   "/tmp",
+		}
 		runnerFail := &HostRunner{
 			LookPath: func(file string) (string, error) {
 				return "/usr/bin/false", nil
@@ -160,19 +143,7 @@ func TestHostRunner_ExecutionPaths(t *testing.T) {
 				return exec.CommandContext(ctx, "false")
 			},
 		}
-		cfg := AgentConfig{
-			Type:           AgentAider,
-			LiteLLMBaseURL: "http://localhost:4000/v1",
-			VirtualAPIKey:  "sk-test",
-			WorkspaceDir:   "/tmp",
-		}
-		summaryFail, err := runnerFail.Execute(ctx, cfg)
-		if err == nil {
-			t.Fatal("expected error on failed process")
-		}
-		if summaryFail.Status != "failed" {
-			t.Errorf("expected status 'failed', got %s", summaryFail.Status)
-		}
+		assertHostRunnerExecute(t, ctx, runnerFail, cfg, true, "failed")
 
 		ctxCancel, cancel := context.WithCancel(context.Background())
 		cancel()
@@ -184,22 +155,12 @@ func TestHostRunner_ExecutionPaths(t *testing.T) {
 				return exec.CommandContext(ctxCancel, "sleep", "1")
 			},
 		}
-		summaryCurfew, err := runnerCurfew.Execute(ctxCancel, cfg)
-		if err == nil {
-			t.Fatal("expected error on cancelled process")
-		}
-		if summaryCurfew.Status != "curfew_interrupted" {
-			t.Errorf("expected status 'curfew_interrupted', got %s", summaryCurfew.Status)
-		}
+		assertHostRunnerExecute(t, ctxCancel, runnerCurfew, cfg, true, "curfew_interrupted")
 	})
 
 	t.Run("Nil LookPath and CommandFunc fall back to exec defaults", func(t *testing.T) {
 		tempDir := t.TempDir()
-		dummyBin := filepath.Join(tempDir, "aider")
-		scriptContent := "#!/bin/sh\nexit 0\n"
-		if err := os.WriteFile(dummyBin, []byte(scriptContent), 0755); err != nil {
-			t.Fatalf("failed to write dummy script: %v", err)
-		}
+		writeTestExecutableScript(t, tempDir, "aider", "#!/bin/sh\nexit 0\n")
 
 		t.Setenv("PATH", tempDir)
 
@@ -213,21 +174,12 @@ func TestHostRunner_ExecutionPaths(t *testing.T) {
 			VirtualAPIKey:  "sk-test",
 			WorkspaceDir:   tempDir,
 		}
-		summary, err := runner.Execute(ctxDeadline, cfg)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if summary == nil || summary.Status != "completed" {
-			t.Errorf("expected completed status, got %+v", summary)
-		}
+		assertHostRunnerExecute(t, ctxDeadline, runner, cfg, false, "completed")
 	})
 
 	t.Run("Invalid config returns error", func(t *testing.T) {
 		runner := &HostRunner{}
-		_, err := runner.Execute(ctx, AgentConfig{})
-		if err == nil {
-			t.Fatal("expected error for invalid config")
-		}
+		assertHostRunnerExecute(t, ctx, runner, AgentConfig{}, true, "")
 	})
 }
 

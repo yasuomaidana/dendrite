@@ -10,6 +10,31 @@ import (
 	"testing"
 )
 
+func writeTestExecutableScript(t *testing.T, dir, name, script string) string {
+	t.Helper()
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to write executable: %v", err)
+	}
+	return p
+}
+
+func assertHostRunnerExecute(t *testing.T, ctx context.Context, runner *HostRunner, cfg AgentConfig, wantErr bool, wantStatus string) *SessionSummary {
+	t.Helper()
+	summary, err := runner.Execute(ctx, cfg)
+	if wantErr {
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	} else if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if wantStatus != "" && (summary == nil || summary.Status != wantStatus) {
+		t.Fatalf("expected status %q, got %+v", wantStatus, summary)
+	}
+	return summary
+}
+
 func TestHostRunner(t *testing.T) {
 	ctx := context.Background()
 
@@ -22,10 +47,7 @@ func TestHostRunner(t *testing.T) {
 
 	t.Run("invalid config returns error", func(t *testing.T) {
 		runner := NewHostRunner(false)
-		_, err := runner.Execute(ctx, AgentConfig{})
-		if err == nil {
-			t.Fatal("expected error for invalid config")
-		}
+		assertHostRunnerExecute(t, ctx, runner, AgentConfig{}, true, "")
 	})
 
 	t.Run("executable not found in PATH returns actionable error", func(t *testing.T) {
@@ -40,19 +62,12 @@ func TestHostRunner(t *testing.T) {
 			VirtualAPIKey:  "sk-test",
 			WorkspaceDir:   "/tmp",
 		}
-		_, err := runner.Execute(ctx, cfg)
-		if err == nil {
-			t.Fatal("expected error for missing executable, got nil")
-		}
+		assertHostRunnerExecute(t, ctx, runner, cfg, true, "")
 	})
 
 	t.Run("successful host execution with temp-dir executable", func(t *testing.T) {
 		tmpDir := t.TempDir()
-		binPath := filepath.Join(tmpDir, "agy")
-		script := "#!/bin/sh\necho \"executed agy\"\nexit 0\n"
-		if err := os.WriteFile(binPath, []byte(script), 0755); err != nil {
-			t.Fatalf("failed to write executable: %v", err)
-		}
+		binPath := writeTestExecutableScript(t, tmpDir, "agy", "#!/bin/sh\necho \"executed agy\"\nexit 0\n")
 
 		var stdoutBuf, stderrBuf bytes.Buffer
 		runner := &HostRunner{
@@ -73,13 +88,7 @@ func TestHostRunner(t *testing.T) {
 			TaskDescription: "test task",
 			TicketID:        "DEN-024",
 		}
-		summary, err := runner.Execute(ctx, cfg)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if summary == nil || summary.Status != "completed" {
-			t.Fatalf("expected completed status, got %v", summary)
-		}
+		summary := assertHostRunnerExecute(t, ctx, runner, cfg, false, "completed")
 		if summary.EstimatedCostUSD != 0.0 {
 			t.Errorf("expected 0 cost for local-qwen-coder, got %f", summary.EstimatedCostUSD)
 		}
@@ -106,13 +115,7 @@ func TestHostRunner(t *testing.T) {
 			VirtualAPIKey:  "sk-test",
 			WorkspaceDir:   tmpDir,
 		}
-		summary, err := runner.Execute(ctx, cfg)
-		if err == nil {
-			t.Fatal("expected error from false command")
-		}
-		if summary == nil || summary.Status != "failed" {
-			t.Fatalf("expected failed status, got %+v", summary)
-		}
+		assertHostRunnerExecute(t, ctx, runner, cfg, true, "failed")
 	})
 
 	t.Run("curfew interrupted context cancellation", func(t *testing.T) {
@@ -132,12 +135,6 @@ func TestHostRunner(t *testing.T) {
 			VirtualAPIKey:  "sk-test",
 			WorkspaceDir:   t.TempDir(),
 		}
-		summary, err := runner.Execute(cctx, cfg)
-		if err == nil {
-			t.Fatal("expected context canceled error")
-		}
-		if summary == nil || summary.Status != "curfew_interrupted" {
-			t.Fatalf("expected curfew_interrupted status, got %+v", summary)
-		}
+		assertHostRunnerExecute(t, cctx, runner, cfg, true, "curfew_interrupted")
 	})
 }
