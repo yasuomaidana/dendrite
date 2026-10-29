@@ -2,7 +2,7 @@ name: Dendrite CI/CD
 
 on:
   push:
-    branches: [ develop, main ]
+    branches: [ develop, main, 'agent/den-407' ]
   pull_request:
     branches: [ develop, main ]
 
@@ -19,6 +19,29 @@ jobs:
         with:
           go-version: '1.25'
           cache: true
+
+      # Dendrite's tests run against the real dendrite-plane sidecar (there is no Go stand-in for it), so the runner
+      # builds it. planetest finds it through DENDRITE_PLANE_TEST_BIN. The sidecar is taken from the ref named by
+      # DENDRITE_PLANE_REF (default: its develop branch).
+      - name: Check out the dendrite-plane sidecar
+        uses: actions/checkout@v4
+        with:
+          repository: yasuomaidana/dendrite-plane-rs
+          ref: ${{ vars.DENDRITE_PLANE_REF || 'develop' }}
+          path: .ci/dendrite-plane-rs
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache the sidecar build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .ci/dendrite-plane-rs
+
+      - name: Build the dendrite-plane sidecar
+        run: |
+          cargo build --release --manifest-path .ci/dendrite-plane-rs/Cargo.toml
+          echo "DENDRITE_PLANE_TEST_BIN=$GITHUB_WORKSPACE/.ci/dendrite-plane-rs/target/release/dendrite-plane" >> "$GITHUB_ENV"
 
       - name: Run Tests (race detector)
         run: |
