@@ -189,16 +189,11 @@ func (b *Board) addComment(issueID, commentHTML string) *BoardComment {
 	return c
 }
 
+// issueJSON is an issue as the self-hosted Plane sends it: the state is a bare id, with no state_detail
+// (the sidecar resolves it through the states list), and the lists are [] and never null.
 func (b *Board) issueJSON(i *boardIssue) map[string]any {
-	st := boardState{}
-	for _, s := range b.states {
-		if s.ID == i.State {
-			st = s
-		}
-	}
 	return map[string]any{
 		"id": i.ID, "name": i.Name, "sequence_id": i.Seq, "state": i.State,
-		"state_detail":     map[string]string{"name": st.Name, "group": st.Group},
 		"description_html": i.Description, "description_stripped": strings.TrimSpace(htmlTag.ReplaceAllString(i.Description, " ")),
 		"labels": append([]string{}, i.Labels...), "assignees": append([]string{}, i.Assignees...),
 	}
@@ -231,11 +226,12 @@ func (b *Board) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p := strings.TrimPrefix(r.URL.Path, "/api/v1/")
-	if p == "users/me/" {
+	// The self-hosted Plane serves the current user only here; /api/v1/users/me/ is a 404 (the sidecar falls back).
+	if r.URL.Path == "/api/users/me/" {
 		reply(w, map[string]string{"id": "u-1", "email": "agent@example.com", "display_name": "Agent"})
 		return
 	}
+	p := strings.TrimPrefix(r.URL.Path, "/api/v1/")
 	rest, ok := strings.CutPrefix(p, "workspaces/"+BoardWorkspace+"/projects/"+BoardProject+"/")
 	if !ok {
 		http.NotFound(w, r)

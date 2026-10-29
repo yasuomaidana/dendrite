@@ -315,3 +315,20 @@ func TestCanonicalAndFirstNonEmpty(t *testing.T) {
 		t.Errorf("firstNonEmpty() = %q", got)
 	}
 }
+
+// The real Plane returns only a state id; if the states cannot be read the state is unknown, and unknown must
+// never be taken for Backlog, which would make a finished ticket claimable.
+func TestAnUnreadableStateIsNeverTakenForBacklog(t *testing.T) {
+	s := newSession(t, map[string]string{"DEN-377": "Done"})
+	s.board.Fail("states/", 0)
+	ctx := context.Background()
+	if _, _, err := s.Board.Status(ctx, "DEN-377"); err == nil || !strings.Contains(err.Error(), "did not report the workflow state of DEN-377") {
+		t.Errorf("Status: %v", err)
+	}
+	if _, err := s.Claim(ctx, "DEN-377", ClaimOptions{}); err == nil {
+		t.Error("a ticket whose state cannot be read must not be claimable")
+	}
+	if got := s.board.State("DEN-377"); got != "Done" {
+		t.Errorf("state = %s: the ticket must not have been touched", got)
+	}
+}

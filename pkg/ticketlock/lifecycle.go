@@ -35,6 +35,10 @@ func (b Board) Status(ctx context.Context, ref string) (tracker.Status, *plane.P
 	if err != nil {
 		return "", nil, err
 	}
+	// An unreadable state must never be taken for Backlog: that would let a Done ticket be claimed.
+	if issue.StateDetail.Name == "" && issue.StateDetail.Group == "" {
+		return "", nil, fmt.Errorf("Plane did not report the workflow state of %s", ref)
+	}
 	return plane.StatusFor(issue.StateDetail.Group, issue.StateDetail.Name), issue, nil
 }
 
