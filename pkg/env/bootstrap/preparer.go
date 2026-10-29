@@ -392,11 +392,17 @@ func ensureGitignoreEntries(root string, dryRun bool) (bool, bool) {
 		"bin/",
 		".venv/",
 		"node_modules/",
+		// .dendrite/ is local tool state (project identity, Plane link, caches): never committed.
+		".dendrite/",
 	}
 
+	lines := map[string]bool{}
+	for _, l := range strings.Split(existing, "\n") {
+		lines[strings.TrimSpace(l)] = true
+	}
 	var toAppend []string
 	for _, n := range needed {
-		if !strings.Contains(existing, n) {
+		if !lines[n] && !(n == ".dendrite/" && lines[".dendrite"]) {
 			toAppend = append(toAppend, n)
 		}
 	}
@@ -426,4 +432,32 @@ func ensureGitignoreEntries(root string, dryRun bool) (bool, bool) {
 		return true, false
 	}
 	return false, true
+}
+
+// EnsureGitignoreLine appends line to root/.gitignore unless a line equal to it is already
+// there. It reports whether the file changed, or would change when dryRun is set.
+func EnsureGitignoreLine(root, line string, dryRun bool) (bool, error) {
+	path := filepath.Join(root, ".gitignore")
+	var existing string
+	if data, err := os.ReadFile(path); err == nil {
+		existing = string(data)
+	}
+	for _, l := range strings.Split(existing, "\n") {
+		if strings.TrimSpace(l) == line {
+			return false, nil
+		}
+	}
+	if dryRun {
+		return true, nil
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	if existing != "" && !strings.HasSuffix(existing, "\n") {
+		line = "\n" + line
+	}
+	_, err = f.WriteString(line + "\n")
+	return err == nil, err
 }

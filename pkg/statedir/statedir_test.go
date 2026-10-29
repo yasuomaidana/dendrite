@@ -2,6 +2,7 @@ package statedir
 
 import (
 	"errors"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -95,5 +96,31 @@ func TestResolve_RepositoryAndCWDFallbacks(t *testing.T) {
 	gitTopLevel = func() ([]byte, error) { return nil, errors.New("not a git repository") }
 	if got := Resolve(".dendrite/a.json"); got != ".dendrite/a.json" {
 		t.Errorf("outside a repository: Resolve = %q; want the CWD-relative path unchanged", got)
+	}
+}
+
+func TestMainCheckout_LinkedWorktreeResolvesToTheMainCheckout(t *testing.T) {
+	run := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	main := t.TempDir()
+	run(main, "init", "-q")
+	run(main, "commit", "-q", "--allow-empty", "-m", "root")
+	wt := filepath.Join(t.TempDir(), "wt")
+	run(main, "worktree", "add", "-q", "-b", "agent/x", wt)
+
+	t.Chdir(wt)
+	out, err := mainCheckout()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := filepath.EvalSymlinks(strings.TrimSpace(string(out)))
+	want, _ := filepath.EvalSymlinks(main)
+	if got != want {
+		t.Errorf("mainCheckout() from a worktree = %q; want the main checkout %q", got, want)
 	}
 }

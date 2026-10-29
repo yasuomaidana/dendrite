@@ -36,6 +36,7 @@ func newSomaCmd() *cobra.Command {
 		newSomaInstallCmd(),
 		newSomaStatusCmd(),
 		newSomaDiagnoseCmd(),
+		newSomaMigrateStateCmd(),
 	)
 	return cmd
 }

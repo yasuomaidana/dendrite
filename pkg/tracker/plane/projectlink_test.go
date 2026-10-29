@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"Dendrite/pkg/projectid"
 )
 
 func TestProjectLink_RoundTripAndRepoRoot(t *testing.T) {
@@ -140,5 +142,35 @@ func TestEnsureProject_AdoptsOrCreatesAndProvisionsStates(t *testing.T) {
 	// The board starts with only "Todo", so each ensure creates the 5 other canonical states.
 	if want := 2 * (len(CanonicalStates) - 1); statePosts != want {
 		t.Errorf("created %d states; want %d (canonical states minus the existing one, per ensure)", statePosts, want)
+	}
+}
+
+func TestLinkForDir_FallsBackToTheIndexBinding(t *testing.T) {
+	t.Setenv("DENDRITE_HOME", t.TempDir())
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := LinkForDir(root); err == nil {
+		t.Fatal("a repository with neither plane.json nor an indexed binding has no link")
+	}
+
+	idxPath, _ := projectid.DefaultIndexPath()
+	ix, _ := projectid.LoadIndex(idxPath)
+	e, err := ix.Register(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ix.SetPlane(e.ID, &projectid.PlaneBinding{Identifier: "APP", ProjectID: "uuid-1", Workspace: "ws"})
+	if err := ix.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	l, got, err := LinkForDir(root)
+	if err != nil {
+		t.Fatalf("LinkForDir: %v", err)
+	}
+	if l.Identifier != "APP" || l.ProjectID != "uuid-1" || got != root {
+		t.Fatalf("got %+v at %q", l, got)
 	}
 }
