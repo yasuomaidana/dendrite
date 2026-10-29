@@ -12,20 +12,19 @@ import (
 // HumanReviewLabel on a ticket keeps `finish` from setting Done: a person verifies it.
 const HumanReviewLabel = "needs-human-review"
 
-// MaxReviewDiff is how much of the branch's diff the acceptance review is shown.
-const MaxReviewDiff = 16000
-
 // GateResult is the outcome of the deterministic quality gate, the first stage of `finish`.
 type GateResult struct {
 	Passed bool   `json:"passed"`
 	Report string `json:"report"`
 }
 
-// ACVerdict is the acceptance review's judgement of one acceptance criterion.
+// ACVerdict is the acceptance review's judgement of one acceptance criterion: met (with evidence found in the
+// change), not met, or unproven (no verifiable evidence either way).
 type ACVerdict struct {
-	AC     string `json:"ac"`
-	Pass   bool   `json:"pass"`
-	Reason string `json:"reason,omitempty"`
+	AC       string `json:"ac"`
+	Status   string `json:"status"`
+	Evidence string `json:"evidence,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 // ReviewInput is what the acceptance review sees.
@@ -42,7 +41,7 @@ type FinishChecks struct {
 	Gate func(ctx context.Context, dir string) (GateResult, error)
 	// Review judges the diff against every acceptance criterion.
 	Review func(ctx context.Context, in ReviewInput) ([]ACVerdict, error)
-	// Diff is the work done for the ticket, as shown to Review (it is cut to MaxReviewDiff).
+	// Diff is the whole patch of the work done for the ticket; Review picks the parts it needs.
 	Diff func(dir, ticket string) string
 	// AutoDone lets a clean finish set Done; without it every clean finish waits in To Verify.
 	AutoDone bool
@@ -96,15 +95,18 @@ func (l *Lifecycle) Finish(ctx context.Context, ref string, c FinishChecks) (Fin
 	case len(qc.AcceptanceCriteria) == 0:
 		res.Notes = append(res.Notes, "the ticket lists no [AC-n] criteria, so there was nothing to review")
 	default:
-		verdicts, rErr := c.Review(ctx, ReviewInput{Ticket: ticket, Description: qc.Description, Criteria: qc.AcceptanceCriteria, Diff: cutDiff(c.Diff(l.Dir, ticket))})
+		verdicts, rErr := c.Review(ctx, ReviewInput{Ticket: ticket, Description: qc.Description, Criteria: qc.AcceptanceCriteria, Diff: c.Diff(l.Dir, ticket)})
 		if rErr != nil {
 			human = true
 			res.Notes = append(res.Notes, "the acceptance review could not run ("+rErr.Error()+"), so a person has to verify")
 			break
 		}
 		res.Verdicts = verdicts
-		if failed := failedCriteria(qc.AcceptanceCriteria, verdicts); len(failed) > 0 {
-			return l.blockFinish(ctx, res, "The acceptance review failed:\n"+strings.Join(failed, "\n"), "Acceptance criteria not met:\n"+strings.Join(failed, "\n"))
+		// The review can fail to prove a criterion, or doubt it, but only the quality gate blocks a ticket: a small
+		// model cannot prove an absence, so its doubt goes to a person with its reason.
+		if unproven := judgeCriteria(qc.AcceptanceCriteria, verdicts); len(unproven) > 0 {
+			human = true
+			res.Notes = append(res.Notes, "no verifiable evidence in the change for:\n"+strings.Join(unproven, "\n"))
 		}
 	}
 
@@ -143,23 +145,25 @@ func (l *Lifecycle) blockFinish(ctx context.Context, res FinishResult, challenge
 	return res, err
 }
 
-// failedCriteria lists the criteria with no passing verdict. A verdict matches a criterion by its AC-n id.
-func failedCriteria(criteria []string, verdicts []ACVerdict) []string {
+// judgeCriteria lists the criteria the review did not prove: the ones it doubts (with its reason), the ones it
+// found no verifiable evidence for, and the ones it gave no verdict. A verdict matches a criterion by its AC-n id.
+func judgeCriteria(criteria []string, verdicts []ACVerdict) (unproven []string) {
 	byID := map[string]ACVerdict{}
 	for _, v := range verdicts {
 		byID[acID(v.AC)] = v
 	}
-	var failed []string
 	for _, c := range criteria {
 		v, ok := byID[acID(acItem.FindString(c))]
 		switch {
 		case !ok:
-			failed = append(failed, "- "+c+": the review gave no verdict")
-		case !v.Pass:
-			failed = append(failed, "- "+c+": "+firstNonEmpty(v.Reason, "not met"))
+			unproven = append(unproven, "- "+c+": the review gave no verdict")
+		case v.Status == StatusNotMet:
+			unproven = append(unproven, "- "+c+": the review believes it is not met: "+firstNonEmpty(v.Reason, "no reason given"))
+		case v.Status != StatusMet:
+			unproven = append(unproven, "- "+c+": "+firstNonEmpty(v.Reason, "unproven"))
 		}
 	}
-	return failed
+	return unproven
 }
 
 // acID normalises "[AC-1]", "AC-1" and "ac-1" to "AC-1".
@@ -176,40 +180,15 @@ func hasLabel(labels []string, want string) bool {
 	return false
 }
 
-// cutDiff keeps a diff within MaxReviewDiff by keeping the start of every file, so one large file does not hide
-// the rest from the review.
-func cutDiff(diff string) string {
-	if len(diff) <= MaxReviewDiff {
-		return diff
-	}
-	files := strings.Split(diff, "\ndiff --git ")
-	per := max(2000, MaxReviewDiff/len(files))
-	var b strings.Builder
-	for i, f := range files {
-		if i > 0 {
-			f = "\ndiff --git " + f
-		}
-		if len(f) > per {
-			f = f[:per] + "\n[file cut]\n"
-		}
-		b.WriteString(f)
-	}
-	out := b.String()
-	if len(out) > MaxReviewDiff {
-		out = out[:MaxReviewDiff]
-	}
-	return out + "\n[diff cut at " + fmt.Sprint(MaxReviewDiff) + " bytes]"
-}
-
 // finishReport is the comment a clean finish leaves: the gate report, one line per criterion and the notes.
 func finishReport(res FinishResult) string {
 	lines := []string{"Finished: the quality gate passed.", strings.TrimSpace(res.Gate.Report)}
 	for _, v := range res.Verdicts {
-		mark := "pass"
-		if !v.Pass {
-			mark = "FAIL"
+		line := fmt.Sprintf("- %s %s: %s", v.AC, v.Status, v.Reason)
+		if v.Evidence != "" {
+			line += " | evidence: " + v.Evidence
 		}
-		lines = append(lines, fmt.Sprintf("- %s %s %s", v.AC, mark, v.Reason))
+		lines = append(lines, line)
 	}
 	for _, n := range res.Notes {
 		lines = append(lines, "Note: "+n)

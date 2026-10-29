@@ -21,7 +21,7 @@ const gateTimeout = 30 * time.Minute
 // and coverage run as the gate, the local model behind the LiteLLM gateway as the acceptance reviewer, the
 // branch's diff against develop, and the project's `[done] auto_done` directive (on when unset).
 func DefaultFinishChecks(dir string) FinishChecks {
-	return FinishChecks{Gate: toolchainGate, Review: gatewayReviewer(dir).Review, Diff: branchDiff, AutoDone: AutoDone(dir)}
+	return FinishChecks{Gate: toolchainGate, Review: proofReviewer(dir).Review, Diff: branchDiff, AutoDone: AutoDone(dir)}
 }
 
 // toolchainGate runs the tests of the detected toolchain. It is the floor of the quality gate: the directive
@@ -98,14 +98,17 @@ func tail(s string, lines int) string {
 	return strings.Join(parts, "\n")
 }
 
+// generatedPaths are left out of the patch the review reads: files Dendrite or a package manager writes, which say
+// nothing about the work.
+var generatedPaths = []string{
+	":(exclude)*.lock", ":(exclude)go.sum", ":(exclude)package-lock.json", ":(exclude)pnpm-lock.yaml", ":(exclude)bun.lockb",
+	":(exclude)docs/cli/**", ":(exclude)docs/mcp/**", ":(exclude).agents/**", ":(exclude).claude/**", ":(exclude).gemini/**",
+}
+
 // branchDiff is the work done for a ticket: the branch's changes against develop while they are not merged, and
 // the ticket's own commits (their subject starts with [TICKET]) once they are, so finishing after the merge
 // still shows the work.
 func branchDiff(dir, ticket string) string {
-	return reviewView(rawBranchDiff(dir, ticket), MaxReviewDiff)
-}
-
-func rawBranchDiff(dir, ticket string) string {
 	for _, base := range []string{"origin/develop", "develop"} {
 		args := append([]string{"diff", base + "...HEAD", "--", "."}, generatedPaths...)
 		if out, err := gitBytes(dir, args...); err == nil && len(strings.TrimSpace(string(out))) > 0 {
@@ -139,8 +142,12 @@ func ticketCommits(dir, ticket string) (shas, lines []string) {
 	return shas, lines
 }
 
-func gatewayReviewer(dir string) GatewayReviewer {
-	return GatewayReviewer{Chat: llmchat.Gateway(dir)}
+// proofReviewer is the reviewer for the project at dir: the gateway's model, asked for a JSON object, and the
+// project's sidecar to find the hunks that matter to each criterion.
+func proofReviewer(dir string) ProofReviewer {
+	chat := llmchat.Gateway(dir)
+	chat.JSON = true
+	return ProofReviewer{Chat: chat, Rank: sidecarRanker(dir)}
 }
 
 // AutoDone says whether a clean finish may set Done: the `[done] auto_done` directive of the project, on when

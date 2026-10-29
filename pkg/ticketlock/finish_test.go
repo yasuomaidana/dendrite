@@ -3,7 +3,6 @@ package ticketlock
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -28,7 +27,7 @@ func newFinishRig(t *testing.T, state, description string) *finishRig {
 		Review: func(_ context.Context, in ReviewInput) ([]ACVerdict, error) {
 			var out []ACVerdict
 			for _, c := range in.Criteria {
-				out = append(out, ACVerdict{AC: acItem.FindString(c), Pass: true, Reason: "seen in the diff"})
+				out = append(out, ACVerdict{AC: acItem.FindString(c), Status: StatusMet, Evidence: "a line of the diff", Reason: "seen in the diff"})
 			}
 			return out, nil
 		},
@@ -64,7 +63,7 @@ func TestFinishSetsDoneWhenEveryCheckPasses(t *testing.T) {
 	if _, err := r.Store.ClaimFor("agent/den-377"); !errors.Is(err, ErrNoClaim) {
 		t.Errorf("a finished ticket releases its claim: %v", err)
 	}
-	if c := r.lastComment(); !strings.HasPrefix(c, "[dendrite:milestone] Finished: the quality gate passed.") || !strings.Contains(c, "[AC-1] pass") {
+	if c := r.lastComment(); !strings.HasPrefix(c, "[dendrite:milestone] Finished: the quality gate passed.") || !strings.Contains(c, "[AC-1] met: seen in the diff | evidence: a line of the diff") {
 		t.Errorf("report comment = %q", c)
 	}
 }
@@ -121,11 +120,6 @@ func TestFinishBlocksWithAHandoffWhenAStageFails(t *testing.T) {
 		"the gate cannot run": {func(r *finishRig) {
 			r.checks.Gate = func(context.Context, string) (GateResult, error) { return GateResult{}, errors.New("no toolchain") }
 		}, []string{"the quality gate could not run: no toolchain"}},
-		"a criterion is not met and one has no verdict": {func(r *finishRig) {
-			r.checks.Review = func(context.Context, ReviewInput) ([]ACVerdict, error) {
-				return []ACVerdict{{AC: "ac-1", Pass: false, Reason: "nothing calls it"}}, nil
-			}
-		}, []string{"The acceptance review failed", "[AC-1] it works: nothing calls it", "[AC-2] it is tested: the review gave no verdict"}},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -173,26 +167,7 @@ func TestFinishFailuresOfTheBoardAreReported(t *testing.T) {
 	}
 }
 
-func TestCutDiffAndACID(t *testing.T) {
-	if got := cutDiff("short"); got != "short" {
-		t.Errorf("short diffs pass: %q", got)
-	}
-	if got := cutDiff(strings.Repeat("x", MaxReviewDiff+10)); !strings.HasSuffix(got, "bytes]") || len(got) > MaxReviewDiff+60 {
-		t.Errorf("long diffs are cut: %d", len(got))
-	}
-	var big strings.Builder
-	for i := 0; i < 6; i++ {
-		big.WriteString("\ndiff --git a/f" + fmt.Sprint(i) + " b/f" + fmt.Sprint(i) + "\n+" + strings.Repeat("y", 30000))
-	}
-	cut := cutDiff(big.String())
-	if len(cut) > MaxReviewDiff+60 {
-		t.Errorf("the cut diff is %d bytes", len(cut))
-	}
-	for i := 0; i < 5; i++ {
-		if !strings.Contains(cut, "diff --git a/f"+fmt.Sprint(i)+" ") {
-			t.Errorf("file %d is missing from the cut diff: every file keeps its start", i)
-		}
-	}
+func TestACIDAndLabels(t *testing.T) {
 	for _, in := range []string{"[AC-1]", "AC-1", " ac-1 "} {
 		if acID(in) != "AC-1" {
 			t.Errorf("acID(%q) = %q", in, acID(in))
@@ -229,9 +204,60 @@ func TestFinishReportMarksAnExtraFailingVerdict(t *testing.T) {
 	inner := r.checks.Review
 	r.checks.Review = func(ctx context.Context, in ReviewInput) ([]ACVerdict, error) {
 		v, _ := inner(ctx, in)
-		return append(v, ACVerdict{AC: "AC-9", Pass: false, Reason: "not a criterion of this ticket"}), nil
+		return append(v, ACVerdict{AC: "AC-9", Status: StatusNotMet, Reason: "not a criterion of this ticket"}), nil
 	}
-	if res, err := r.finish(); err != nil || res.State != "Done" || !strings.Contains(r.lastComment(), "AC-9 FAIL") {
+	if res, err := r.finish(); err != nil || res.State != "Done" || !strings.Contains(r.lastComment(), "AC-9 not_met") {
 		t.Fatalf("%+v, %v, %q", res, err, r.lastComment())
+	}
+}
+
+func TestFinishSendsUnprovenCriteriaToAPersonAndNamesThem(t *testing.T) {
+	cases := map[string][]ACVerdict{
+		"unclear with a reason":      {{AC: "[AC-1]", Status: StatusMet, Evidence: "x"}, {AC: "[AC-2]", Status: StatusUnproven, Reason: "the excerpts do not show it"}},
+		"unproven without a reason":  {{AC: "[AC-1]", Status: StatusUnproven}, {AC: "[AC-2]", Status: StatusMet}},
+		"no verdict for a criterion": {{AC: "[AC-1]", Status: StatusMet}},
+		"an unknown status":          {{AC: "[AC-1]", Status: StatusMet}, {AC: "[AC-2]", Status: "maybe"}},
+	}
+	for name, verdicts := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := newFinishRig(t, "To Do", twoCriteria)
+			r.checks.Review = func(context.Context, ReviewInput) ([]ACVerdict, error) { return verdicts, nil }
+			res, err := r.finish()
+			if err != nil || res.State != "To Verify" || r.board.State("DEN-377") != "To Verify" {
+				t.Fatalf("nothing is proven wrong, so a person verifies: %+v, %v", res, err)
+			}
+			if note := strings.Join(res.Notes, "\n"); !strings.Contains(note, "no verifiable evidence in the change for:") || !strings.Contains(note, "- [AC-") {
+				t.Errorf("the criteria without proof are named: %q", note)
+			}
+		})
+	}
+}
+
+func TestAReviewThatDoubtsACriterionSendsTheTicketToAPersonWithItsReason(t *testing.T) {
+	r := newFinishRig(t, "To Do", twoCriteria)
+	r.checks.Review = func(context.Context, ReviewInput) ([]ACVerdict, error) {
+		return []ACVerdict{{AC: "[AC-1]", Status: StatusNotMet, Reason: "nothing calls it"}, {AC: "[AC-2]", Status: StatusMet, Evidence: "x"}}, nil
+	}
+	res, err := r.finish()
+	if err != nil || res.State != "To Verify" || r.board.State("DEN-377") != "To Verify" {
+		t.Fatalf("only the quality gate blocks: %+v, %v", res, err)
+	}
+	if note := strings.Join(res.Notes, "\n"); !strings.Contains(note, "[AC-1] it works: the review believes it is not met: nothing calls it") {
+		t.Errorf("the doubt and its reason reach the ticket: %q", note)
+	}
+}
+
+func TestJudgeCriteriaListsWhatTheReviewDidNotProve(t *testing.T) {
+	criteria := []string{"[AC-1] a", "[AC-2] b", "[AC-3] c", "[AC-4] d", "[AC-5] e"}
+	got := judgeCriteria(criteria, []ACVerdict{
+		{AC: "ac-1", Status: StatusMet}, {AC: "AC-2", Status: StatusNotMet, Reason: "missing"}, {AC: "[AC-3]", Status: StatusUnproven, Reason: "unclear"},
+		{AC: "AC-5", Status: StatusNotMet},
+	})
+	want := []string{"- [AC-2] b: the review believes it is not met: missing", "- [AC-3] c: unclear", "- [AC-4] d: the review gave no verdict", "- [AC-5] e: the review believes it is not met: no reason given"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("got %q", got)
+	}
+	if got := judgeCriteria([]string{"[AC-1] a"}, []ACVerdict{{AC: "AC-1", Status: StatusUnproven}}); got[0] != "- [AC-1] a: unproven" {
+		t.Errorf("a missing reason reads: %v", got)
 	}
 }

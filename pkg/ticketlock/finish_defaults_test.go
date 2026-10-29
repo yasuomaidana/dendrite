@@ -107,8 +107,8 @@ func TestDefaultFinishChecksAreWiredToTheProject(t *testing.T) {
 	if checks.AutoDone || checks.Gate == nil || checks.Diff == nil || checks.Review == nil {
 		t.Fatalf("checks = %+v", checks)
 	}
-	if g := gatewayReviewer(dir); g.Chat == nil {
-		t.Error("the reviewer talks to the gateway")
+	if r := proofReviewer(dir); r.Chat == nil || r.Rank == nil {
+		t.Error("the reviewer talks to the gateway and ranks hunks")
 	}
 }
 
@@ -228,5 +228,24 @@ func TestCompletedWorkListsTheTicketsCommitsOnceMerged(t *testing.T) {
 	got := s.completedWork(context.Background(), Claim{Ticket: "DEN-9", Worktree: repo, Branch: "develop"})
 	if !strings.Contains(got, "Commits for DEN-9 (already merged):") || !strings.Contains(got, "feat: json output") || !strings.Contains(got, "feat: github annotations") || strings.Contains(got, "unrelated") {
 		t.Errorf("completed work = %q", got)
+	}
+}
+
+func TestBranchDiffLeavesOutGeneratedDocsAndAgentFiles(t *testing.T) {
+	repo := repoWithMergedWork(t)
+	writeFile(t, repo, "docs/cli/x.md", "generated reference\n")
+	writeFile(t, repo, ".claude/skills/s/SKILL.md", "generated skill\n")
+	writeFile(t, repo, "real.go", "package real\n")
+	run := func(args ...string) {
+		t.Helper()
+		if out, err := gitCommand(repo, args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("add", ".")
+	run("-c", "user.name=t", "-c", "user.email=t@e.x", "commit", "-q", "-m", "[DEN-9] generated files too")
+	got := branchDiff(repo, "DEN-9")
+	if !strings.Contains(got, "real.go") || strings.Contains(got, "docs/cli/x.md") || strings.Contains(got, ".claude/skills") {
+		t.Errorf("generated files are not shown:\n%s", got)
 	}
 }
