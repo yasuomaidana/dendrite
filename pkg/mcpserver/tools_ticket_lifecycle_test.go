@@ -13,7 +13,7 @@ import (
 
 var lifecycleTools = []string{
 	"dendrite_ticket_claim", "dendrite_ticket_comment", "dendrite_ticket_upload_plan",
-	"dendrite_ticket_get_plan", "dendrite_ticket_transition", "dendrite_query_context",
+	"dendrite_ticket_get_plan", "dendrite_ticket_transition", "dendrite_ticket_finish", "dendrite_query_context",
 }
 
 func TestLifecycleToolsAreInTheCoreProfile(t *testing.T) {
@@ -180,5 +180,22 @@ func TestLifecycleToolsNeedAPlaneClient(t *testing.T) {
 	h, _ := s.Handler("dendrite_ticket_get_plan")
 	if _, err := h(context.Background(), map[string]any{"ticket": "DEN-1"}); err == nil || !strings.Contains(err.Error(), "plane client error") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func TestFinishToolBlocksATicketWhoseGateCannotRun(t *testing.T) {
+	r := newLifecycleRig(t, map[string]string{"DEN-377": "To Do"})
+	if _, err := r.call("dendrite_ticket_claim", map[string]any{"ticket": "DEN-377"}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := r.call("dendrite_ticket_finish", map[string]any{"ticket": "DEN-377"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["state"] != "Blocked" || r.board.State("DEN-377") != "Blocked" {
+		t.Errorf("a working copy with no toolchain has no passing gate: %v, Plane %s", out, r.board.State("DEN-377"))
+	}
+	if got := out["gate"].(map[string]any)["report"]; !strings.Contains(got.(string), "could not run") {
+		t.Errorf("gate = %v", out["gate"])
 	}
 }

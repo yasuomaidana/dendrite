@@ -237,3 +237,47 @@ func newChronosContextCmd() *cobra.Command {
 		},
 	}
 }
+
+func newChronosFinishCmd() *cobra.Command {
+	var worktree string
+	cmd := &cobra.Command{
+		Use:   "finish <ticket>",
+		Short: "Finish a ticket: quality gate, acceptance review, then Done, To Verify or Blocked with a handoff",
+		Long: "Runs the quality gate in the working copy, then has the local model check the branch's diff against every [AC-n]\n" +
+			"of the ticket. A failed check blocks the ticket and writes the handoff (completed, challenges, missing). A clean\n" +
+			"finish sets Done when the project allows it (`[done] auto_done` in " + ticketlock.DirectivesPath + ", on by default)\n" +
+			"and the ticket has no " + ticketlock.HumanReviewLabel + " label; otherwise, or when the review could not run,\n" +
+			"it sets To Verify with the report as a comment. Exits non-zero when the ticket ended Blocked.",
+		Example: "dendrite chronos finish DEN-379",
+		Args:    exactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return planeRun(func(c *plane.Client) error {
+				l := lifecycleIn(c, worktree)
+				return runChronosFinish(cmd.Context(), l, args[0], ticketlock.DefaultFinishChecks(l.Dir), cmd.OutOrStdout())
+			})
+		},
+	}
+	cmd.Flags().StringVar(&worktree, "worktree", "", "Working copy to finish in (default: the current directory)")
+	return cmd
+}
+
+func runChronosFinish(ctx context.Context, l *ticketlock.Lifecycle, ticket string, checks ticketlock.FinishChecks, out io.Writer) error {
+	res, err := l.Finish(ctx, ticket, checks)
+	if err != nil {
+		return err
+	}
+	if globals.JSON {
+		if err := writeJSON(out, res); err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintf(out, "[✓] %s is now %s\n", res.Ticket, res.State)
+		for _, n := range res.Notes {
+			fmt.Fprintf(out, "    - %s\n", n)
+		}
+	}
+	if res.State == "Blocked" {
+		return usageErrorf("%s was blocked: the handoff on the ticket says what failed", res.Ticket)
+	}
+	return nil
+}

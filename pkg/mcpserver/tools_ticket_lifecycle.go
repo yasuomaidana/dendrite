@@ -142,6 +142,13 @@ func registerTicketLifecycleTools(s *Server, deps Dependencies) {
 			return l.Transition(ctx, stringArg(a, "ticket"), stringArg(a, "outcome"), h)
 		})
 
+	register("dendrite_ticket_finish",
+		"Finish a ticket: run the quality gate and check the branch's diff against each [AC-n]. Sets Done when the project allows it and the ticket has no needs-human-review label, To Verify otherwise, and Blocked with a handoff when a check fails.",
+		objectSchema([]string{"ticket"}, map[string]interface{}{"ticket": ticketProp, "worktree": worktreeProp}),
+		func(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
+			return l.Finish(ctx, stringArg(a, "ticket"), ticketlock.DefaultFinishChecks(l.Dir))
+		})
+
 	register("dendrite_query_context",
 		"Everything needed to start on a ticket: description, acceptance criteria, plan, state and the files it names. Call it right after claiming.",
 		objectSchema([]string{"ticket"}, map[string]interface{}{"ticket": ticketProp, "worktree": worktreeProp}),

@@ -12,6 +12,7 @@ import (
 
 	"Dendrite/pkg/agentjobs"
 	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/ticketlock"
 	"Dendrite/pkg/tracker/plane"
 )
 
@@ -123,4 +124,59 @@ func TestQuantalAndCheckpointCommentOnTheClaimedTicket(t *testing.T) {
 func lastCommentHas(r *hookRig, prefix string) bool {
 	c := r.board.Comments("DEN-377")
 	return len(c) > 0 && strings.HasPrefix(c[len(c)-1].Text(), prefix)
+}
+
+func finishChecks(gatePasses bool) ticketlock.FinishChecks {
+	return ticketlock.FinishChecks{
+		Gate: func(context.Context, string) (ticketlock.GateResult, error) {
+			return ticketlock.GateResult{Passed: gatePasses, Report: "gate report"}, nil
+		},
+		Review:   func(context.Context, ticketlock.ReviewInput) ([]ticketlock.ACVerdict, error) { return nil, nil },
+		Diff:     func(string) string { return "" },
+		AutoDone: true,
+	}
+}
+
+func TestChronosFinishReportsTheOutcome(t *testing.T) {
+	ctx := context.Background()
+	r := newHookRig(t, "To Do")
+	r.claim()
+	var out bytes.Buffer
+	if err := runChronosFinish(ctx, lifecycleIn(mustClient(t), r.repo), "DEN-377", finishChecks(true), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "[✓] DEN-377 is now Done") || !strings.Contains(out.String(), "no [AC-n] criteria") {
+		t.Errorf("output = %q", out.String())
+	}
+
+	r2 := newHookRig(t, "To Do")
+	r2.claim()
+	jsonOutput(t, true)
+	out.Reset()
+	if err := runChronosFinish(ctx, lifecycleIn(mustClient(t), r2.repo), "DEN-377", finishChecks(true), &out); err != nil || !strings.Contains(out.String(), `"state": "Done"`) {
+		t.Errorf("json output = %q, %v", out.String(), err)
+	}
+	jsonOutput(t, false)
+}
+
+func TestChronosFinishExitsNonZeroWhenBlockedAndRefusesAWrongState(t *testing.T) {
+	ctx := context.Background()
+	r := newHookRig(t, "To Do")
+	r.claim()
+	var out bytes.Buffer
+	err := runChronosFinish(ctx, lifecycleIn(mustClient(t), r.repo), "DEN-377", finishChecks(false), &out)
+	var usage *usageError
+	if !errors.As(err, &usage) || !strings.Contains(err.Error(), "DEN-377 was blocked") {
+		t.Fatalf("a blocked finish is a usage error: %v", err)
+	}
+	if err := runChronosFinish(ctx, lifecycleIn(mustClient(t), r.repo), "DEN-999", finishChecks(true), &out); err == nil {
+		t.Error("an unknown ticket is an error")
+	}
+}
+
+func TestChronosFinishCommandIsRegistered(t *testing.T) {
+	cmd := newChronosFinishCmd()
+	if cmd.Name() != "finish" || cmd.Flags().Lookup("worktree") == nil {
+		t.Errorf("command = %s", cmd.Name())
+	}
 }

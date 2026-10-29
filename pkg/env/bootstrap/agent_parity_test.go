@@ -20,12 +20,14 @@ func TestPrepare_EveryAgentFamilyGetsTheSameSearchAndLifecycleRules(t *testing.T
 	}
 
 	needles := []string{
-		"dendrite rag search",                   // retrieval first
-		"`rg`/`grep`/`find` only when",          // raw search last
-		"`dendrite rag grep`",                   // the indexed exact-pattern fallback
-		"`dendrite work new <ticket>`",          // start moves the ticket to In Progress
-		"`to verify` when the work is finished", // never straight to done
-		"--no-ticket-guard",                     // the deliberate bypass
+		"dendrite rag search",                           // retrieval first
+		"`rg`/`grep`/`find` only when",                  // raw search last
+		"`dendrite rag grep`",                           // the indexed exact-pattern fallback
+		"`dendrite work new <ticket>`",                  // start moves the ticket to In Progress
+		"`dendrite chronos finish <ticket>`",            // the gate decides done, to verify or blocked
+		"`blocked` with a handoff",                      // a failed finish leaves the diagnosis
+		"`dendrite hook pre-edit` refuses file changes", // the write lock
+		"--no-ticket-guard",                             // the deliberate bypass
 	}
 	files := []string{
 		"AGENTS.md",

@@ -26,6 +26,7 @@ Terminal Boutons & Vesicles
 | `comment` | Post a structured progress, milestone, note or handoff comment on a ticket |
 | `context` | Everything needed to start on a ticket: description, acceptance criteria, plan and the files it names |
 | `create` | Create a ticket, place it on the Gantt plan and link its blockers |
+| `finish` | Finish a ticket: quality gate, acceptance review, then Done, To Verify or Blocked with a handoff |
 | `gantt-sync` | Align milestone dates, ticket schedules and dependency arrows on the Plane Gantt view |
 | `handoff` | Block a ticket with the account the next session needs: what is done, what got in the way, what is missing |
 | `issues` | List the project's Plane issues |
@@ -119,6 +120,22 @@ dendrite chronos create [flags]
 ```bash
 dendrite chronos create --name "[DEN-123] Title" --desc-file spec.md
 dendrite chronos create --name "[DEN-124] Title" --desc "Goal and acceptance criteria" --milestone M3 --priority high --estimate 5 --blocked-by DEN-100,DEN-101
+```
+
+### `dendrite chronos finish`
+
+Finish a ticket: quality gate, acceptance review, then Done, To Verify or Blocked with a handoff
+
+```bash
+dendrite chronos finish <ticket> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--worktree` | Working copy to finish in (default: the current directory) |
+
+```bash
+dendrite chronos finish DEN-379
 ```
 
 ### `dendrite chronos handoff`
