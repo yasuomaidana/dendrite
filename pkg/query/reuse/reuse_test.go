@@ -112,9 +112,9 @@ func TestAuditor_Tier3EcosystemRegistry(t *testing.T) {
 	auditor := NewAuditor(s, refMgr, filepath.Join(tempDir, "nonexistent-pool.json"))
 
 	tests := []struct {
-		name       string
-		capability string
-		language   string
+		name        string
+		capability  string
+		language    string
 		expectedPkg string
 	}{
 		{"Rust nalgebra", "matrix", "rust", "nalgebra"},

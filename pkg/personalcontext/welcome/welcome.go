@@ -11,22 +11,22 @@ import (
 
 // Typed error hierarchy for the Welcome Prompt Suite and Dispatcher.
 var (
-	ErrNoDataSources          = errors.New("no connected data sources provided")
-	ErrBannedClicheInWelcome  = errors.New("welcome prompt starts with a banned cliché opener")
-	ErrInvasiveDataDetected   = errors.New("invasive medical or emotional data prohibited in welcome prompt")
-	ErrMechanicalExposition   = errors.New("synthesizer response contains mechanical source exposition")
-	ErrMissingTrifectaDomain  = errors.New("showcase of possibilities requires all three life domains (productivity, passion, curiosity)")
+	ErrNoDataSources             = errors.New("no connected data sources provided")
+	ErrBannedClicheInWelcome     = errors.New("welcome prompt starts with a banned cliché opener")
+	ErrInvasiveDataDetected      = errors.New("invasive medical or emotional data prohibited in welcome prompt")
+	ErrMechanicalExposition      = errors.New("synthesizer response contains mechanical source exposition")
+	ErrMissingTrifectaDomain     = errors.New("showcase of possibilities requires all three life domains (productivity, passion, curiosity)")
 	ErrMissingChoiceCallToAction = errors.New("showcase of possibilities requires explicit choice call-to-action closing")
-	ErrInvalidTransparencyQnA = errors.New("trustworthy guide requires all three mandatory privacy Q&A entries")
+	ErrInvalidTransparencyQnA    = errors.New("trustworthy guide requires all three mandatory privacy Q&A entries")
 )
 
 // Persona identifier constants.
 type Persona string
 
 const (
-	PersonaProductivityPartner Persona = "z2vix5_pcontext_testing_helpful_productivity_partner"
-	PersonaCreativeMuse        Persona = "creative_muse"
-	PersonaTrustworthyGuide    Persona = "transparent_trustworthy_guide"
+	PersonaProductivityPartner   Persona = "z2vix5_pcontext_testing_helpful_productivity_partner"
+	PersonaCreativeMuse          Persona = "creative_muse"
+	PersonaTrustworthyGuide      Persona = "transparent_trustworthy_guide"
 	PersonaInsightfulSynthesizer Persona = "z2vix5_pcontext_testing_insightful_synthesizer"
 	PersonaShowcasePossibilities Persona = "z2vix5_pcontext_testing_showcase_of_possibilities"
 )
@@ -64,13 +64,13 @@ type SynthesisRequest struct {
 
 // WelcomeResponse represents the synthesized welcome output.
 type WelcomeResponse struct {
-	Persona   Persona    `json:"persona"`
-	Header    string     `json:"header"`
-	Greeting  string     `json:"greeting"`
-	Body      string     `json:"body"`
-	Actions   []string   `json:"actions"`
+	Persona   Persona      `json:"persona"`
+	Header    string       `json:"header"`
+	Greeting  string       `json:"greeting"`
+	Body      string       `json:"body"`
+	Actions   []string     `json:"actions"`
 	Sources   []SourceType `json:"sources"`
-	Timestamp time.Time  `json:"timestamp"`
+	Timestamp time.Time    `json:"timestamp"`
 }
 
 // Dispatcher coordinates persona selection and cross-source synthesis.

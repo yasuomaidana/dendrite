@@ -41,15 +41,15 @@ type SliceRequest struct {
 
 // SliceResult summarizes reachability traversal and dead-code reduction metrics.
 type SliceResult struct {
-	SourcesPath           string             `json:"sources_path"`
-	EntryPoint            string             `json:"entrypoint"`
-	Intent                string             `json:"intent"`
-	OriginalSymbolsCount  int                `json:"original_symbols_count"`
-	RetainedSymbolsCount  int                `json:"retained_symbols_count"`
-	PruneRatio            float64            `json:"prune_ratio"` // e.g. 0.85 = 85% debloated
-	RetainedSymbols       []string           `json:"retained_symbols"`
-	PrunedSymbols         []string           `json:"pruned_symbols"`
-	GoldenVectors         []GoldenTestVector `json:"golden_vectors"`
-	EmittedProjectPath    string             `json:"emitted_project_path,omitempty"`
-	Timestamp             time.Time          `json:"timestamp"`
+	SourcesPath          string             `json:"sources_path"`
+	EntryPoint           string             `json:"entrypoint"`
+	Intent               string             `json:"intent"`
+	OriginalSymbolsCount int                `json:"original_symbols_count"`
+	RetainedSymbolsCount int                `json:"retained_symbols_count"`
+	PruneRatio           float64            `json:"prune_ratio"` // e.g. 0.85 = 85% debloated
+	RetainedSymbols      []string           `json:"retained_symbols"`
+	PrunedSymbols        []string           `json:"pruned_symbols"`
+	GoldenVectors        []GoldenTestVector `json:"golden_vectors"`
+	EmittedProjectPath   string             `json:"emitted_project_path,omitempty"`
+	Timestamp            time.Time          `json:"timestamp"`
 }

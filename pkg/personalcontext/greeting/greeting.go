@@ -12,27 +12,27 @@ import (
 
 // Typed error definitions
 var (
-	ErrBannedCliche         = errors.New("greeting contains a banned cliché opener")
+	ErrBannedCliche            = errors.New("greeting contains a banned cliché opener")
 	ErrInvalidGreetingHeadline = errors.New("greeting must be a single-sentence headline starting with '# '")
 	ErrUnresolvedTemplateToken = errors.New("greeting contains unresolved template tokens")
-	ErrNoMatchingStyle      = errors.New("no matching greeting style found for context")
-	ErrHeadlineTooLong      = errors.New("greeting headline exceeds maximum length of 120 characters")
+	ErrNoMatchingStyle         = errors.New("no matching greeting style found for context")
+	ErrHeadlineTooLong         = errors.New("greeting headline exceeds maximum length of 120 characters")
 )
 
 // StyleID represents one of the 10 canonical dynamic greeting styles.
 type StyleID string
 
 const (
-	StyleThoughtfulCheckIn      StyleID = "G-01" // Thoughtful check-in
-	StyleProgressCelebration    StyleID = "G-02" // Progress celebration
-	StyleReflectionPrompt       StyleID = "G-03" // Reflection prompt
-	StyleCallbackToDetail       StyleID = "G-04" // Callback to specific detail
-	StyleInvitationToContinue   StyleID = "G-05" // Invitation to continue
-	StyleAnticipationBuilder    StyleID = "G-06" // Anticipation builder
-	StyleGentleNudge            StyleID = "G-07" // Gentle nudge
-	StyleCuriositySpark         StyleID = "G-08" // Curiosity spark
-	StyleEmpatheticAck          StyleID = "G-09" // Empathetic acknowledgment
-	StyleLowPressureOpener      StyleID = "G-10" // Low-pressure opener
+	StyleThoughtfulCheckIn    StyleID = "G-01" // Thoughtful check-in
+	StyleProgressCelebration  StyleID = "G-02" // Progress celebration
+	StyleReflectionPrompt     StyleID = "G-03" // Reflection prompt
+	StyleCallbackToDetail     StyleID = "G-04" // Callback to specific detail
+	StyleInvitationToContinue StyleID = "G-05" // Invitation to continue
+	StyleAnticipationBuilder  StyleID = "G-06" // Anticipation builder
+	StyleGentleNudge          StyleID = "G-07" // Gentle nudge
+	StyleCuriositySpark       StyleID = "G-08" // Curiosity spark
+	StyleEmpatheticAck        StyleID = "G-09" // Empathetic acknowledgment
+	StyleLowPressureOpener    StyleID = "G-10" // Low-pressure opener
 )
 
 // BannedCliches lists prohibited openers and cliché phrases.
@@ -55,39 +55,39 @@ var BannedCliches = []string{
 
 // UserJourneyContext provides factual signals about the user's ongoing journey.
 type UserJourneyContext struct {
-	Topic                string   `json:"topic"`
-	Decision             string   `json:"decision,omitempty"`
-	Milestone            string   `json:"milestone,omitempty"`
-	Event                string   `json:"event,omitempty"`
-	DaysUntilEvent       int      `json:"days_until_event,omitempty"`
-	Options              []string `json:"options,omitempty"`
-	UnfinishedStep       string   `json:"unfinished_step,omitempty"`
-	SpecificChallenge    string   `json:"specific_challenge,omitempty"`
-	CuriosityAngle       string   `json:"curiosity_angle,omitempty"`
-	DaysSinceLastActive  int      `json:"days_since_last_active,omitempty"`
-	TurnCount            int      `json:"turn_count,omitempty"`
-	MilestoneAchieved    bool     `json:"milestone_achieved,omitempty"`
-	HighStress           bool     `json:"high_stress,omitempty"`
-	LowPressureHobby     bool     `json:"low_pressure_hobby,omitempty"`
+	Topic               string   `json:"topic"`
+	Decision            string   `json:"decision,omitempty"`
+	Milestone           string   `json:"milestone,omitempty"`
+	Event               string   `json:"event,omitempty"`
+	DaysUntilEvent      int      `json:"days_until_event,omitempty"`
+	Options             []string `json:"options,omitempty"`
+	UnfinishedStep      string   `json:"unfinished_step,omitempty"`
+	SpecificChallenge   string   `json:"specific_challenge,omitempty"`
+	CuriosityAngle      string   `json:"curiosity_angle,omitempty"`
+	DaysSinceLastActive int      `json:"days_since_last_active,omitempty"`
+	TurnCount           int      `json:"turn_count,omitempty"`
+	MilestoneAchieved   bool     `json:"milestone_achieved,omitempty"`
+	HighStress          bool     `json:"high_stress,omitempty"`
+	LowPressureHobby    bool     `json:"low_pressure_hobby,omitempty"`
 }
 
 // StyleDefinition encapsulates metadata, templates, and trigger scoring for a style.
 type StyleDefinition struct {
-	ID             StyleID  `json:"id"`
-	Name           string   `json:"name"`
-	OptimalContext string   `json:"optimal_context"`
-	Templates      []string `json:"templates"`
+	ID             StyleID                          `json:"id"`
+	Name           string                           `json:"name"`
+	OptimalContext string                           `json:"optimal_context"`
+	Templates      []string                         `json:"templates"`
 	EvaluateScore  func(ctx UserJourneyContext) int `json:"-"`
 }
 
 // GeneratedGreeting represents the outcome of the greeting matrix resolution.
 type GeneratedGreeting struct {
-	StyleID        StyleID `json:"style_id"`
-	StyleName      string  `json:"style_name"`
-	Headline       string  `json:"headline"`
-	CleanText      string  `json:"clean_text"`
-	TemplateUsed   string  `json:"template_used"`
-	SuppressedHits []string`json:"suppressed_hits,omitempty"`
+	StyleID        StyleID  `json:"style_id"`
+	StyleName      string   `json:"style_name"`
+	Headline       string   `json:"headline"`
+	CleanText      string   `json:"clean_text"`
+	TemplateUsed   string   `json:"template_used"`
+	SuppressedHits []string `json:"suppressed_hits,omitempty"`
 }
 
 // Engine coordinates the 10-Style Greeting Matrix and Cliché Suppression Engine.

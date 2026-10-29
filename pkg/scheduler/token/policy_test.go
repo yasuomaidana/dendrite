@@ -37,7 +37,7 @@ func TestDefaultPolicy(t *testing.T) {
 
 func TestParseNightWindow(t *testing.T) {
 	tests := []struct {
-		input     string
+		input      string
 		wantStartH int
 		wantStartM int
 		wantEndH   int
