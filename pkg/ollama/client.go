@@ -1,6 +1,7 @@
 package ollama
 
 import (
+	"Dendrite/pkg/memfit"
 	"bufio"
 	"bytes"
 	"context"
@@ -127,6 +128,9 @@ func (c *Client) ListModels(ctx context.Context) ([]ModelInfo, error) {
 // Generate sends a text generation request and returns the aggregated response.
 func (c *Client) Generate(ctx context.Context, req GenerateRequest) (*GenerateResponse, error) {
 	req.Stream = false
+	if err := memfit.GuardOllama(ctx, c.baseURL, string(req.Model)); err != nil {
+		return nil, err
+	}
 	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode generate request: %w", err)

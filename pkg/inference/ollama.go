@@ -1,6 +1,7 @@
 package inference
 
 import (
+	"Dendrite/pkg/memfit"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -49,6 +50,9 @@ func (e *OllamaEngine) Generate(ctx context.Context, req CompletionRequest) (*Co
 	}
 	if model == "" {
 		model = "qwen3.8:27b"
+	}
+	if err := memfit.GuardOllama(ctx, e.cfg.Endpoint, model); err != nil {
+		return nil, err
 	}
 
 	payload := map[string]interface{}{

@@ -217,3 +217,51 @@ func TestRoutingTableUpdater_DirectoryCreationAndErrorHandling(t *testing.T) {
 		t.Errorf("expected SetOptions to update PrimaryCloudModel")
 	}
 }
+
+func TestRoutingTableUpdater_RoutesOnlyModelsThatFitMemory(t *testing.T) {
+	t.Setenv("DENDRITE_MODEL_MEM_BUDGET_GB", "12")
+	ollamaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/version":
+			_, _ = w.Write([]byte(`{"version":"0.5.4"}`))
+		case "/api/tags":
+			_, _ = w.Write([]byte(`{"models":[{"name":"giant-coder:30b","size":19327352832},{"name":"hermes3:8b","size":5033164800},{"name":"nomic-embed-text:latest","size":274000000}]}`))
+		case "/api/ps":
+			_, _ = w.Write([]byte(`{"models":[]}`))
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer ollamaServer.Close()
+
+	mgr := inference.NewManager()
+	_ = mgr.RegisterEngine(inference.NewOllamaEngine(inference.EngineConfig{
+		ID: "ollama-metal", Type: inference.EngineOllama, Endpoint: ollamaServer.URL,
+	}, ollamaServer.Client()))
+
+	report, err := NewRoutingTableUpdater(UpdaterOptions{ConfigPath: "/tmp/test_litellm_fit.yaml", DryRun: true, Manager: mgr}).UpdateNow(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.ActiveLocalPrimary != "hermes3:8b" {
+		t.Errorf("primary = %q, want hermes3:8b (the 30B coder is too large)", report.ActiveLocalPrimary)
+	}
+	if len(report.TooLargeModels) != 1 || report.TooLargeModels[0] != "giant-coder:30b" {
+		t.Errorf("too large = %v", report.TooLargeModels)
+	}
+	y := report.YAMLContent
+	if strings.Contains(y, "giant-coder") {
+		t.Error("a model that does not fit got a route")
+	}
+	for _, alias := range []string{"local-reason", "local-coder", "local-fast", "local-embed"} {
+		if !strings.Contains(y, "model_name: "+alias) {
+			t.Errorf("role alias %s missing", alias)
+		}
+	}
+	for _, invented := range []string{"qwen3.8:27b", "tinyllama", "hf-deepseek", "mistral-7b-instruct-q4", "qwen2.5-coder:14b"} {
+		if strings.Contains(y, invented) {
+			t.Errorf("YAML routes to %s, which is not installed", invented)
+		}
+	}
+}

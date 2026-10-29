@@ -26,12 +26,14 @@ func newSpikeCmd() *cobra.Command {
 	cmd := newGroupCmd("spike", "Unified multi-provider inference engine gateway (Ollama, OxiLLaMa, vLLM, TGI)", "cleft",
 		"inference", "action-potential", "inf")
 	cmd.Example = "dendrite spike list\n" +
+		"dendrite spike models\n" +
 		"dendrite spike probe ollama-metal\n" +
 		"dendrite spike probe --endpoint http://10.0.0.5:11434\n" +
 		"dendrite spike migrate qwen2.5-coder:7b --to oxillama --delete-source\n" +
 		"dendrite spike zero-cost add my-model --env"
 	cmd.AddCommand(
 		newSpikeListCmd(),
+		newSpikeModelsCmd(),
 		newSpikeProbeCmd(),
 		newSpikeSwitchCmd(),
 		newSpikeRenderCmd(),

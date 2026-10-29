@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/pkg/memfit"
 	"context"
 	"fmt"
 	"io"
@@ -73,6 +74,12 @@ func runCleftUpdate(ctx context.Context, opts gateway.UpdaterOptions, out io.Wri
 		fmt.Fprintf(out, "    * Offline Engines:         %s\n", strings.Join(report.OfflineEngines, ", "))
 	}
 	fmt.Fprintf(out, "    * Discovered Local Models: %d\n", len(report.DiscoveredModels))
+	if report.MemoryBudgetBytes > 0 {
+		fmt.Fprintf(out, "    * Memory Budget:           %s for local models\n", memfit.GB(report.MemoryBudgetBytes))
+	}
+	if len(report.TooLargeModels) > 0 {
+		fmt.Fprintf(out, "    * Too Large (no route):    %s\n", strings.Join(report.TooLargeModels, ", "))
+	}
 	if report.ActiveLocalPrimary != "" {
 		fmt.Fprintf(out, "    * Active Local Primary:    %s (Score: %d on %s)\n",
 			report.ActiveLocalPrimary, report.ActiveLocalPrimaryScore, report.ActiveLocalPrimaryEngine)
