@@ -78,6 +78,8 @@ jobs:
       - name: Run Bun Tests & Build
         run: |
           if [ -d "website" ]; then
+            # website/docs is generated (git-ignored) from the canonical docs/
+            go run ./cmd/dendrite codex generate --docs docs --out website
             cd website && bun install --frozen-lockfile && bun run build
           else
             bun test
