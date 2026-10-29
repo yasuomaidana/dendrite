@@ -201,28 +201,9 @@ func runSynapseCreate(ctx context.Context, id string, o synapseCreateOptions, ou
 		return err
 	}
 
-	var members []synapse.Member
-	for _, spec := range strings.Split(membersRaw, ",") {
-		spec = strings.TrimSpace(spec)
-		if spec == "" {
-			continue
-		}
-		spec, planeProject := splitPlaneSuffix(spec)
-		absDir, alias, role, err := parseMemberSpec(spec)
-		if err != nil {
-			return err
-		}
-		entry, err := idx.Register(absDir)
-		if err != nil {
-			return fmt.Errorf("register project %s: %w", absDir, err)
-		}
-		members = append(members, synapse.Member{
-			ProjectID:    entry.ID,
-			Alias:        alias,
-			Role:         role,
-			PathHint:     absDir,
-			PlaneProject: planeProject,
-		})
+	members, err := buildMembers(idx, membersRaw)
+	if err != nil {
+		return err
 	}
 
 	var contracts []synapse.Contract

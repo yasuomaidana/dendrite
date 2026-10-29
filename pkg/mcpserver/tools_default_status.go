@@ -339,13 +339,13 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 	// dendrite_gateway_update
 	s.RegisterTool(Tool{
 		Name:        "dendrite_gateway_update",
-		Description: "Dynamically discover live inference engines (Ollama, OxiLLaMa, etc.), score loaded models by intelligence, and update LiteLLM routing table (default: stacks/litellm_config.yaml)",
+		Description: "Dynamically discover live inference engines (Ollama, OxiLLaMa, etc.), score loaded models by intelligence, and update LiteLLM routing table (default: ~/.dendrite/stacks/litellm_config.yaml)",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"file": map[string]interface{}{
 					"type":        "string",
-					"description": "Target litellm_config.yaml path (default: stacks/litellm_config.yaml)",
+					"description": "Target litellm_config.yaml path (default: ~/.dendrite/stacks/litellm_config.yaml)",
 				},
 				"dry_run": map[string]interface{}{
 					"type":        "boolean",
@@ -353,7 +353,7 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 				},
 				"use_container_host": map[string]interface{}{
 					"type":        "boolean",
-					"description": "Use host.docker.internal for container networking (default: true for stacks/)",
+					"description": "Use host.docker.internal for container networking (default: true for the stacks directory)",
 				},
 			},
 		},

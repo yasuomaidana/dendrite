@@ -257,3 +257,28 @@ func TestSecretStateNeverReturnsValuesAndSeesEveryLayer(t *testing.T) {
 		}
 	}
 }
+
+func TestEmbeddedDefaultsMatchTheCommittedTemplate(t *testing.T) {
+	committed, err := os.ReadFile(filepath.Join("..", "..", TemplatePath))
+	if err != nil {
+		t.Skipf("not running inside the repository: %v", err)
+	}
+	if string(committed) != embeddedDefaults {
+		t.Fatal("pkg/env/defaults.env drifted from stacks/.env.example: copy the template over it")
+	}
+}
+
+func TestOutsideACheckoutTheEmbeddedDefaultsApplyAndNoCommittedEnvIsCreated(t *testing.T) {
+	dir := t.TempDir() // an arbitrary directory: no stacks/.env.example, no .env
+	global := filepath.Join(t.TempDir(), ".env")
+	res, err := EnsureSecrets(SecretsOptions{Dir: dir, GlobalPath: global})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists(filepath.Join(dir, ".env")) {
+		t.Error("a .env was created in an arbitrary directory")
+	}
+	if !contains(res.Added, "LITELLM_SALT_KEY") || kvOf(t, global)["LITELLM_MASTER_KEY"] == "" {
+		t.Errorf("the published defaults were not applied to the global file: %+v", res)
+	}
+}

@@ -39,6 +39,7 @@ func newSomaCmd() *cobra.Command {
 		newSomaDiagnoseCmd(),
 		newSomaMigrateStateCmd(),
 		newSomaSecretsCmd(),
+		newSomaStacksCmd(),
 	)
 	return cmd
 }
@@ -254,6 +255,9 @@ func newSomaReplicateCmd() *cobra.Command {
 }
 
 func runSomaReplicate(ctx context.Context, req env.ReplicationRequest, out io.Writer) error {
+	if !req.DryRun {
+		adoptCheckoutStacks(out)
+	}
 	if !req.DryRun { // compose refuses to start without these keys
 		res, err := env.EnsureSecrets(env.SecretsOptions{Dir: dotenv.ProjectRoot("."), GlobalPath: globalEnvPath()})
 		if err != nil {
