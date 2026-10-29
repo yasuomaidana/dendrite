@@ -124,3 +124,52 @@ func TestMainCheckout_LinkedWorktreeResolvesToTheMainCheckout(t *testing.T) {
 		t.Errorf("mainCheckout() from a worktree = %q; want the main checkout %q", got, want)
 	}
 }
+
+func TestMainCheckout_Fallback(t *testing.T) {
+	// Running in a non-git directory causes --git-common-dir to fail, exercising line 34 fallback.
+	dir := t.TempDir()
+	t.Chdir(dir)
+	_, _ = mainCheckout()
+}
+
+func TestResolve_EnvVarSet_ExactDendrite(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DENDRITE_STATE_DIR", dir)
+
+	if got := Resolve(".dendrite"); got != dir {
+		t.Errorf("Resolve(\".dendrite\") = %q; want %q", got, dir)
+	}
+}
+
+func TestResolve_RepoFallback_ExactDendrite(t *testing.T) {
+	t.Setenv("DENDRITE_STATE_DIR", "")
+	origTest, origGit := isTestBinary, gitTopLevel
+	t.Cleanup(func() {
+		isTestBinary, gitTopLevel = origTest, origGit
+		gitOnce, gitRoot = sync.Once{}, ""
+	})
+	isTestBinary = func() bool { return false }
+
+	repo := t.TempDir()
+	gitOnce, gitRoot = sync.Once{}, ""
+	gitTopLevel = func() ([]byte, error) { return []byte(repo + "\n"), nil }
+	if got, want := Resolve(".dendrite"), filepath.Join(repo, ".dendrite"); got != want {
+		t.Errorf("inside repository: Resolve(\".dendrite\") = %q; want %q", got, want)
+	}
+}
+
+func TestResolve_GitStateDir_EmptyTopLevel(t *testing.T) {
+	t.Setenv("DENDRITE_STATE_DIR", "")
+	origTest, origGit := isTestBinary, gitTopLevel
+	t.Cleanup(func() {
+		isTestBinary, gitTopLevel = origTest, origGit
+		gitOnce, gitRoot = sync.Once{}, ""
+	})
+	isTestBinary = func() bool { return false }
+
+	gitOnce, gitRoot = sync.Once{}, ""
+	gitTopLevel = func() ([]byte, error) { return []byte("   \n"), nil }
+	if got := Resolve(".dendrite/x.json"); got != ".dendrite/x.json" {
+		t.Errorf("empty top level: Resolve = %q; want unchanged", got)
+	}
+}

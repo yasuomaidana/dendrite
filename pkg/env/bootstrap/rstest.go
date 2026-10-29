@@ -112,7 +112,6 @@ func hasRustTests(dir string) bool {
 	return found
 }
 
-
 // rstestDeclared says whether a manifest declares rstest at the required version or later; inherited is true
 // when it takes the version from the workspace.
 func rstestDeclared(manifest []byte) (ok, inherited bool) {

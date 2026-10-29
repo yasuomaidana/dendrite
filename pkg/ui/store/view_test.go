@@ -51,3 +51,26 @@ func TestStoreUI_RenderStorageBarAndDashboard(t *testing.T) {
 		t.Fatalf("dashboard output malformed:\n%s", dashboard)
 	}
 }
+
+func TestStoreUI_CapacityCapAndEmptyReport(t *testing.T) {
+	// Test capacity cap (>100% used)
+	overflowReport := &status.StoreStatusReport{
+		TotalCompBytes: 2000,
+	}
+	cappedBar := RenderStorageBar(overflowReport, 1000)
+	if !strings.Contains(cappedBar, "width: 100.0%") {
+		t.Fatalf("expected capped 100.0%% width, got:\n%s", cappedBar)
+	}
+
+	// Test empty report
+	emptyReport := &status.StoreStatusReport{}
+	emptyBar := RenderStorageBar(emptyReport, 5000)
+	if !strings.Contains(emptyBar, "width: 0.0%") {
+		t.Fatalf("expected 0.0%% width, got:\n%s", emptyBar)
+	}
+
+	emptyDashboard := RenderDashboard(emptyReport)
+	if !strings.Contains(emptyDashboard, "table") || strings.Contains(emptyDashboard, "<tr style=\"border-bottom") {
+		t.Fatalf("unexpected content in empty dashboard:\n%s", emptyDashboard)
+	}
+}

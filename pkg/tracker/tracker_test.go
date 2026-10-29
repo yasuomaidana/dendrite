@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 var sampleMarkdown = "# Dendrite Status\n\n" +
@@ -119,5 +120,89 @@ func TestMemoryTracker_Errors(t *testing.T) {
 
 	if err := tr.LoadFromMarkdown("nonexistent-path.md"); err == nil {
 		t.Error("expected load error with bad path, got nil")
+	}
+}
+
+func TestRewriteStatus_StateMarkerAndLegacy(t *testing.T) {
+	// 1. With state marker
+	lineWithMarker := "- [ ] **DEN-101**: Title [State: To Do, Priority: High]"
+	doneLine := rewriteStatus(lineWithMarker, StatusDone)
+	if doneLine != "- [x] **DEN-101**: Title [State: Done, Priority: High]" {
+		t.Errorf("unexpected rewritten done line: %s", doneLine)
+	}
+
+	reviewLine := rewriteStatus(lineWithMarker, StatusInReview)
+	if reviewLine != "- [ ] **DEN-101**: Title [State: To Verify, Priority: High]" {
+		t.Errorf("unexpected rewritten review line: %s", reviewLine)
+	}
+
+	// 2. Legacy status suffix
+	legacyLine := "- [ ] **DEN-102**: Legacy Title *(IN PROGRESS)*"
+	todoLine := rewriteStatus(legacyLine, StatusTodo)
+	if todoLine != "- [ ] **DEN-102**: Legacy Title" {
+		t.Errorf("unexpected rewritten todo line: %s", todoLine)
+	}
+
+	inProgLine := rewriteStatus("- [ ] **DEN-103**: New Task", StatusInProgress)
+	if inProgLine != "- [ ] **DEN-103**: New Task *(IN PROGRESS)*" {
+		t.Errorf("unexpected in-progress line: %s", inProgLine)
+	}
+}
+
+func TestMemoryTracker_DuplicateAndNonZeroCreatedAt(t *testing.T) {
+	mdWithDup := "# Status\n" +
+		"- [x] **DEN-001**: First Version (`pkg/tracker`)\n" +
+		"- [ ] **DEN-001**: Duplicate Version (`pkg/other`)\n" +
+		"- [ ] **DEN-002**: Plain Ticket Without Target Package\n"
+
+	tmpDir := t.TempDir()
+	mdPath := filepath.Join(tmpDir, "DEV_STATUS.md")
+	if err := os.WriteFile(mdPath, []byte(mdWithDup), 0644); err != nil {
+		t.Fatalf("failed to write md: %v", err)
+	}
+
+	tr := NewMemoryTracker(mdPath)
+	if err := tr.LoadFromMarkdown(mdPath); err != nil {
+		t.Fatalf("LoadFromMarkdown failed: %v", err)
+	}
+
+	ctx := context.Background()
+	t1, err := tr.GetTicket(ctx, "DEN-001")
+	if err != nil {
+		t.Fatalf("expected DEN-001 to exist: %v", err)
+	}
+	if t1.Title != "First Version" {
+		t.Errorf("expected duplicate to preserve first version, got %q", t1.Title)
+	}
+
+	t2, err := tr.GetTicket(ctx, "DEN-002")
+	if err != nil {
+		t.Fatalf("expected DEN-002 to exist: %v", err)
+	}
+	if t2.TargetPackage != "" {
+		t.Errorf("expected empty target package for DEN-002, got %q", t2.TargetPackage)
+	}
+
+	// CreateTicket with explicitly set CreatedAt
+	customTime := t1.CreatedAt.Add(-time.Hour)
+	newT := Ticket{
+		ID:        "DEN-005",
+		Title:     "Explicit Time",
+		Status:    StatusTodo,
+		CreatedAt: customTime,
+	}
+	if err := tr.CreateTicket(ctx, newT); err != nil {
+		t.Fatalf("CreateTicket failed: %v", err)
+	}
+	gotT, _ := tr.GetTicket(ctx, "DEN-005")
+	if !gotT.CreatedAt.Equal(customTime) {
+		t.Errorf("expected CreatedAt preserved: %v vs %v", customTime, gotT.CreatedAt)
+	}
+
+	// Sync failure when file is deleted
+	_ = os.Remove(mdPath)
+	_ = tr.UpdateStatus(ctx, "DEN-001", StatusInProgress)
+	if err := tr.Sync(ctx); err == nil {
+		t.Error("expected Sync error when file was deleted, got nil")
 	}
 }

@@ -325,6 +325,104 @@ func TestSynapseValidate(t *testing.T) {
 			t.Fatalf("expected error when parity command key is not a member alias, got nil")
 		}
 	})
+
+	t.Run("channel_validation", func(t *testing.T) {
+		s := validSynapseFixture()
+		s.Channel = Channel("invalid-chan")
+		if err := s.Validate(); err == nil {
+			t.Fatalf("expected error for invalid channel, got nil")
+		}
+
+		s.Channel = ChannelDev
+		if err := s.Validate(); err != nil {
+			t.Fatalf("expected ChannelDev to pass, got: %v", err)
+		}
+
+		s.Channel = ChannelStable
+		if err := s.Validate(); err != nil {
+			t.Fatalf("expected ChannelStable to pass, got: %v", err)
+		}
+	})
+
+	t.Run("member_source_validation", func(t *testing.T) {
+		s := validSynapseFixture()
+		s.Members[0].Source = SourceRemote
+		s.Members[0].Remote = ""
+		if err := s.Validate(); err == nil {
+			t.Fatalf("expected error for remote member without remote URL, got nil")
+		}
+
+		s.Members[0].Remote = "https://github.com/example/repo"
+		if err := s.Validate(); err != nil {
+			t.Fatalf("expected valid remote member to pass, got: %v", err)
+		}
+
+		s.Members[0].Source = Source("unsupported")
+		if err := s.Validate(); err == nil {
+			t.Fatalf("expected error for unsupported source, got nil")
+		}
+	})
+}
+
+func TestChannel(t *testing.T) {
+	if got := ChannelStable.DefaultRef(); got != "main" {
+		t.Errorf("expected main, got %s", got)
+	}
+	if got := ChannelDev.DefaultRef(); got != "develop" {
+		t.Errorf("expected develop, got %s", got)
+	}
+	if got := Channel("").DefaultRef(); got != "" {
+		t.Errorf("expected empty, got %s", got)
+	}
+
+	validCases := []struct {
+		input    string
+		expected Channel
+	}{
+		{"stable", ChannelStable},
+		{"main", ChannelStable},
+		{"dev", ChannelDev},
+		{"develop", ChannelDev},
+	}
+	for _, tc := range validCases {
+		c, err := ParseChannel(tc.input)
+		if err != nil || c != tc.expected {
+			t.Errorf("ParseChannel(%q) = (%v, %v); want (%v, nil)", tc.input, c, err, tc.expected)
+		}
+	}
+
+	if _, err := ParseChannel("other"); err == nil {
+		t.Error("expected error for ParseChannel(\"other\"), got nil")
+	}
+}
+
+func TestMemberExtensions(t *testing.T) {
+	mRemote := Member{Source: SourceRemote}
+	if !mRemote.IsRemote() {
+		t.Error("expected IsRemote to be true")
+	}
+	mLocal := Member{Source: SourceLocal}
+	if mLocal.IsRemote() {
+		t.Error("expected IsRemote to be false for SourceLocal")
+	}
+	mDefault := Member{}
+	if mDefault.IsRemote() {
+		t.Error("expected IsRemote to be false for empty source")
+	}
+
+	mRef := Member{Ref: "feature/test"}
+	if got := mRef.TrackedRef(ChannelDev); got != "feature/test" {
+		t.Errorf("expected feature/test, got %s", got)
+	}
+	if got := mDefault.TrackedRef(ChannelDev); got != "develop" {
+		t.Errorf("expected develop, got %s", got)
+	}
+	if got := mDefault.TrackedRef(ChannelStable); got != "main" {
+		t.Errorf("expected main, got %s", got)
+	}
+	if got := mDefault.TrackedRef(Channel("")); got != "" {
+		t.Errorf("expected empty, got %s", got)
+	}
 }
 
 func TestSynapseMemberLookup(t *testing.T) {
