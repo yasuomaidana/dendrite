@@ -3,9 +3,12 @@ package coverage
 import (
 	"bytes"
 	"context"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"Dendrite/pkg/fsutil"
 )
 
 func TestFloorListsPackagesBelowTheMinimumWorstFirst(t *testing.T) {
@@ -76,5 +79,24 @@ func TestRunAppliesTheFloorInsteadOfTheBaseline(t *testing.T) {
 	}
 	if res, _ := run(70); !res.Passed || len(res.Offenders) != 0 {
 		t.Errorf("above the floor: %+v", res)
+	}
+}
+
+func TestTheRatchetDoesNotDemandAHundredPercentFromANewHelperPackage(t *testing.T) {
+	output := "ok  \tmod/pkg/a\t0.1s\tcoverage: 100.0% of statements\nok  \tmod/pkg/atest\t0.1s\tcoverage: 0.0% of statements\nok  \tmod/pkg/b\t0.1s\tcoverage: 40.0% of statements\nok  \tmod/gen/c\t0.1s\tcoverage: 10.0% of statements\n"
+	var out, errBuf bytes.Buffer
+	dir := t.TempDir()
+	if err := fsutil.WriteFileAtomic(filepath.Join(dir, ".github", "coverage_baseline.json"), []byte(`{"mod/pkg/a": 100.0}`)); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Run(context.Background(), Options{
+		RepoDir: dir, Ratchet: true, ExemptGlobs: []string{"mod/gen/**"}, Stdout: &out, Stderr: &errBuf,
+		CommandRunner: func(context.Context, string, string, ...string) ([]byte, error) { return []byte(output), nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Offenders) != 1 || res.Offenders[0].Package != "mod/pkg/b" || !res.Offenders[0].IsNewPackage {
+		t.Errorf("only the new package that is not a helper must start at 100%%: %+v", res.Offenders)
 	}
 }

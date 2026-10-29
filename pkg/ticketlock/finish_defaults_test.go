@@ -11,7 +11,6 @@ import (
 
 	"Dendrite/pkg/directive"
 	"Dendrite/pkg/rag/ragtest"
-	"Dendrite/pkg/sidecar"
 )
 
 func writeFile(t *testing.T, dir, rel, content string) {
@@ -143,13 +142,6 @@ func TestGateReportListsFailuresBeforeTheTail(t *testing.T) {
 	}
 }
 
-func TestCleanEnvDropsTheLiveServiceVariables(t *testing.T) {
-	got := cleanEnv([]string{"PATH=/bin", "PLANE_API_KEY=k", "DENDRITE_HOME=/h", "LITELLM_MASTER_KEY=m", "HOME=/u", "PLANEX=keep"})
-	if strings.Join(got, " ") != "PATH=/bin HOME=/u PLANEX=keep" {
-		t.Errorf("env = %v", got)
-	}
-}
-
 func TestToolchainGateRunsTestsWithoutTheLiveEnvironment(t *testing.T) {
 	t.Setenv("PLANE_API_KEY", "live-key")
 	t.Setenv("DENDRITE_HOME", "/live/home")
@@ -270,10 +262,10 @@ func moduleBranch(t *testing.T, directives string) string {
 }
 
 func TestQualityGateRunsTheTestsAndThenTheDirectivesOnTheTicketsChanges(t *testing.T) {
-	useStandinSidecar(t)
+	ragtest.UseStandin(t, "1.11.0")
 	ok := moduleBranch(t, "")
 	res, err := qualityGate(context.Background(), ok, "DEN-5")
-	if err != nil || !res.Passed || !strings.Contains(res.Report, "go test") || !strings.Contains(res.Report, "Quality gate (changes): **passed**") {
+	if err != nil || !res.Passed || !strings.Contains(res.Report, "go test -race") || !strings.Contains(res.Report, " passed.\n\nQuality gate (changes): **passed**") || strings.Contains(res.Report, "coverage:") {
 		t.Fatalf("a tested change within the limits: %+v, %v", res, err)
 	}
 
@@ -303,15 +295,4 @@ func TestQualityGateRunsTheTestsAndThenTheDirectivesOnTheTicketsChanges(t *testi
 	if _, err := qualityGate(context.Background(), t.TempDir(), "DEN-5"); err == nil {
 		t.Error("a directory with no toolchain cannot be gated")
 	}
-}
-
-// useStandinSidecar answers the quality gates with the stand-in sidecar.
-func useStandinSidecar(t *testing.T) {
-	t.Helper()
-	bin, err := ragtest.Build(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(sidecar.EnvVar("dendrite-rag"), bin)
-	t.Setenv("STANDIN_PROTOCOL", "1.11.0")
 }

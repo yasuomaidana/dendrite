@@ -23,18 +23,8 @@ func qualityProject(t *testing.T) string {
 	return dir
 }
 
-func useStandin(t *testing.T, protocol string) {
-	t.Helper()
-	bin, err := ragtest.Build(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(sidecar.EnvVar("dendrite-rag"), bin)
-	t.Setenv("STANDIN_PROTOCOL", protocol)
-}
-
 func TestQualityRunsEachGateThroughTheSidecar(t *testing.T) {
-	useStandin(t, "1.11.0")
+	ragtest.UseStandin(t, "1.11.0")
 	dir := qualityProject(t)
 	r := NewRetriever()
 	ctx := context.Background()
@@ -90,7 +80,7 @@ func TestQualityRefusesWhatItCannotRunAndSaysHowToFixIt(t *testing.T) {
 		t.Error("an empty root is the current directory, and the method is still unknown")
 	}
 
-	useStandin(t, "1.10.0")
+	ragtest.UseStandin(t, "1.10.0")
 	err := NewRetriever().Quality(ctx, dir, "quality.clones", nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "needs 1.11") || !strings.Contains(err.Error(), InstallHint) {
 		t.Errorf("a sidecar that predates the method: %v", err)

@@ -356,6 +356,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	fmt.Fprintf(opts.Stdout, "[+] Coverage Ratchet Progress: %d/%d packages at 100.0%% (Global Average: %.1f%%)\n", at100, total, globalCov)
 
 	offenders, newBaseline := CompareAndRatchet(current, baseline, baselineExists, opts.Update)
+	offenders = withoutExempt(offenders, opts.ExemptGlobs)
 	if opts.MinPercent > 0 {
 		offenders = Floor(current, opts.MinPercent, func(pkg string) bool { return IsExempt(pkg, opts.ExemptGlobs) })
 	}

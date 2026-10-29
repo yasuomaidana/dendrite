@@ -64,3 +64,15 @@ func globRegexp(glob string) *regexp.Regexp {
 	b.WriteString("$")
 	return regexp.MustCompile(b.String())
 }
+
+// withoutExempt drops the offenders that are exempt from measuring (test helpers and the directive's globs): a
+// helper package is not a package that must start at 100%.
+func withoutExempt(offenders []Regression, globs []string) []Regression {
+	kept := offenders[:0:0]
+	for _, o := range offenders {
+		if !IsExempt(o.Package, globs) {
+			kept = append(kept, o)
+		}
+	}
+	return kept
+}

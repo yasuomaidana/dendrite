@@ -102,3 +102,33 @@ func TestCoverageIsSkippedOrFailedWhenItCannotRun(t *testing.T) {
 		t.Errorf("a broken baseline is an error: %+v", c)
 	}
 }
+
+func TestTheCoverageRunWhereNoRunnerIsGivenDoesNotSeeTheLiveEnvironment(t *testing.T) {
+	t.Setenv("PLANE_API_KEY", "live-key")
+	t.Setenv("DENDRITE_HOME", "/live/home")
+	t.Setenv("LITELLM_MASTER_KEY", "live")
+	t.Setenv("KEEP_ME", "yes")
+	out, err := cleanRunner(context.Background(), t.TempDir(), "sh", "-c", `printf "%s|%s|%s|%s" "$PLANE_API_KEY" "$DENDRITE_HOME" "$LITELLM_MASTER_KEY" "$KEEP_ME"`)
+	if err != nil || string(out) != "|||yes" {
+		t.Errorf("child saw %q, %v", out, err)
+	}
+	got := CleanEnv([]string{"PATH=/bin", "PLANE_API_KEY=k", "DENDRITE_HOME=/h", "LITELLM_MASTER_KEY=m", "HOME=/u", "PLANEX=keep"})
+	if strings.Join(got, " ") != "PATH=/bin HOME=/u PLANEX=keep" {
+		t.Errorf("env = %v", got)
+	}
+}
+
+func TestCoverageRunsTheRealGoTestWhenNoRunnerIsGiven(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "go.mod", "module probe\n\ngo 1.22\n")
+	write(t, dir, "p.go", "package probe\n\nfunc Add(a, b int) int { return a + b }\n")
+	write(t, dir, "p_test.go", "package probe\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) {\n\tif Add(1, 2) != 3 {\n\t\tt.Fatal(\"add\")\n\t}\n}\n")
+	c := coverageOf(Options{Dir: dir, Set: directive.Defaults()})
+	if c.Status != Pass || !strings.Contains(c.Summary, "floor of 100%") {
+		t.Errorf("a fully covered module meets the floor: %+v", c)
+	}
+	write(t, dir, "q.go", "package probe\n\nfunc Sub(a, b int) int { return a - b }\n")
+	if c := coverageOf(Options{Dir: dir, Set: directive.Defaults()}); c.Status != Fail || len(c.Findings) != 1 {
+		t.Errorf("an uncovered function breaks it: %+v", c)
+	}
+}

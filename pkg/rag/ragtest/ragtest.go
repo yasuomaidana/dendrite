@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"Dendrite/pkg/sidecar"
@@ -48,4 +49,27 @@ func Main(m *testing.M) {
 	code := m.Run()
 	cleanup()
 	os.Exit(code)
+}
+
+var (
+	builtOnce sync.Once
+	builtBin  string
+	builtErr  error
+)
+
+// UseStandin points the dendrite-rag locator at the stand-in sidecar for the duration of a test, and has it
+// report the given protocol version (for example "1.11.0"). The stand-in is built once per test binary.
+func UseStandin(t testing.TB, protocol string) {
+	t.Helper()
+	builtOnce.Do(func() {
+		var dir string
+		if dir, builtErr = os.MkdirTemp("", "ragtest"); builtErr == nil {
+			builtBin, builtErr = Build(dir)
+		}
+	})
+	if builtErr != nil {
+		t.Fatal(builtErr)
+	}
+	t.Setenv(sidecar.EnvVar("dendrite-rag"), builtBin)
+	t.Setenv("STANDIN_PROTOCOL", protocol)
 }

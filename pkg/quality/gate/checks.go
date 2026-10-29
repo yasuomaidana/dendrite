@@ -144,7 +144,11 @@ func checkCoverage(ctx context.Context, o Options) Check {
 			return Check{Name: "coverage", Status: Skipped, Summary: "no Go package changed"}
 		}
 	}
-	opts := coverage.Options{RepoDir: o.Dir, Packages: packages, Stdout: io.Discard, Stderr: io.Discard, CommandRunner: o.CoverageRunner}
+	run := o.CoverageRunner
+	if run == nil {
+		run = cleanRunner
+	}
+	opts := coverage.Options{RepoDir: o.Dir, Packages: packages, Stdout: io.Discard, Stderr: io.Discard, CommandRunner: run}
 	mode := fmt.Sprintf("floor of %.0f%%", o.Set.Coverage.MinPercent)
 	_, baselineErr := os.Stat(filepath.Join(o.Dir, baselineFile))
 	if o.Scope != nil && baselineErr == nil {

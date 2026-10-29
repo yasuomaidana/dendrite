@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"Dendrite/pkg/directive"
@@ -14,30 +13,6 @@ import (
 	"Dendrite/pkg/rag/ragtest"
 	"Dendrite/pkg/sidecar"
 )
-
-var (
-	standinOnce sync.Once
-	standinBin  string
-	standinErr  error
-)
-
-// useStandin points the dendrite-rag locator at the stand-in sidecar, built once for the package.
-func useStandin(t *testing.T) {
-	t.Helper()
-	standinOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "gatestandin")
-		if err != nil {
-			standinErr = err
-			return
-		}
-		standinBin, standinErr = ragtest.Build(dir)
-	})
-	if standinErr != nil {
-		t.Fatal(standinErr)
-	}
-	t.Setenv(sidecar.EnvVar("dendrite-rag"), standinBin)
-	t.Setenv("STANDIN_PROTOCOL", "1.11.0")
-}
 
 func write(t *testing.T, dir, rel, body string) {
 	t.Helper()
@@ -78,7 +53,7 @@ func byName(r Report, name string) Check {
 }
 
 func TestRunReportsEveryCheckOfARepository(t *testing.T) {
-	useStandin(t)
+	ragtest.UseStandin(t, "1.11.0")
 	dir := t.TempDir()
 	write(t, dir, "a.go", lines(12))
 	write(t, dir, "b.go", lines(12))
@@ -104,7 +79,7 @@ func TestRunReportsEveryCheckOfARepository(t *testing.T) {
 }
 
 func TestRunPassesACleanRepositoryAndOnlyRunsWhatWasAskedFor(t *testing.T) {
-	useStandin(t)
+	ragtest.UseStandin(t, "1.11.0")
 	dir := t.TempDir()
 	write(t, dir, "a.go", lines(2))
 	write(t, dir, "b.go", lines(3))
@@ -144,7 +119,7 @@ func TestACheckThatCannotRunFailsTheGate(t *testing.T) {
 }
 
 func TestRunWithinTheDuplicationAllowancePasses(t *testing.T) {
-	useStandin(t)
+	ragtest.UseStandin(t, "1.11.0")
 	dir := t.TempDir()
 	write(t, dir, "a.go", lines(12))
 	write(t, dir, "b.go", lines(12))

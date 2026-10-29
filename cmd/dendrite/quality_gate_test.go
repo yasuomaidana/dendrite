@@ -11,18 +11,12 @@ import (
 	"Dendrite/pkg/directive"
 	"Dendrite/pkg/quality/coverage"
 	"Dendrite/pkg/rag/ragtest"
-	"Dendrite/pkg/sidecar"
 )
 
 // gateProject is a directory with a few files; dir is also the --path of the command.
 func gateProject(t *testing.T, files map[string]string) string {
 	t.Helper()
-	bin, err := ragtest.Build(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(sidecar.EnvVar("dendrite-rag"), bin)
-	t.Setenv("STANDIN_PROTOCOL", "1.11.0")
+	ragtest.UseStandin(t, "1.11.0")
 	dir := t.TempDir()
 	for rel, body := range files {
 		p := filepath.Join(dir, filepath.FromSlash(rel))
