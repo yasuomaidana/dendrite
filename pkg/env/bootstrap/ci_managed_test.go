@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"Dendrite/pkg/directive"
 )
 
 // prepareCI runs Prepare with the CI/CD step only, in a Go project at root.
@@ -92,5 +94,50 @@ func TestWriteManagedFileDryRunWritesNothing(t *testing.T) {
 	}
 	if _, statErr := os.Stat(path); statErr == nil {
 		t.Error("a dry run must not create the file")
+	}
+}
+
+func TestPrepareGivesAProjectItsDefaultDirectivesOnce(t *testing.T) {
+	root := t.TempDir()
+	first := prepareCI(t, root)
+	for _, want := range []string{filepath.FromSlash(directive.Path), "codecov.yml", ".jscpd.json"} {
+		if !contains(first.FilesCreated, want) {
+			t.Errorf("first run did not create %s: %v", want, first.FilesCreated)
+		}
+	}
+	set, err := directive.Load(root)
+	if err != nil || set.Loc.MaxProductionLines != 500 {
+		t.Fatalf("%+v, %v", set, err)
+	}
+	if again := prepareCI(t, root); contains(again.FilesCreated, filepath.FromSlash(directive.Path)) || contains(again.FilesCreated, "codecov.yml") {
+		t.Errorf("a project that has directives keeps them: %v", again.FilesCreated)
+	}
+}
+
+func TestEnsureDirectivesKeepsHandWrittenFilesAndHonoursDryRun(t *testing.T) {
+	root := t.TempDir()
+	created, notes, err := ensureDirectives(root, true)
+	if err != nil || len(created) != 1 || len(notes) != 0 || directive.Exists(root) {
+		t.Fatalf("a dry run only plans: %v %v %v", created, notes, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "codecov.yml"), []byte("coverage: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	created, notes, err = ensureDirectives(root, false)
+	if err != nil || contains(created, "codecov.yml") || len(notes) != 1 || !strings.Contains(notes[0], "hand-written codecov.yml") {
+		t.Fatalf("%v %v %v", created, notes, err)
+	}
+	if body, _ := os.ReadFile(filepath.Join(root, "codecov.yml")); string(body) != "coverage: {}\n" {
+		t.Error("the hand-written codecov.yml must stay")
+	}
+	blocked := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(blocked, ".github"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(blocked, ".github", "dendrite"), []byte("a file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ensureDirectives(blocked, false); err == nil {
+		t.Error("directives that cannot be written are an error")
 	}
 }

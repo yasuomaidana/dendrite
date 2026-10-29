@@ -98,7 +98,7 @@ func newSomaPrepareCmd() *cobra.Command {
 	var o somaPrepareOptions
 	cmd := &cobra.Command{
 		Use:     "prepare [path|project]",
-		Aliases: []string{"sync", "update"},
+		Aliases: []string{"sync", "update", "configure"},
 		Short:   "Sync agent rules and skills, and enforce CI/CD tooling defaults",
 		Args:    maxArgs(1),
 		Example: "dendrite soma prepare\ndendrite soma prepare ../other-repo --dry-run\ndendrite soma prepare --json",

@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"Dendrite/pkg/directive"
 	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/ticketlock"
 	"Dendrite/pkg/tracker/plane"
@@ -245,7 +246,7 @@ func newChronosFinishCmd() *cobra.Command {
 		Short: "Finish a ticket: quality gate, acceptance review, then Done, To Verify or Blocked with a handoff",
 		Long: "Runs the quality gate in the working copy, then has the local model check the branch's diff against every [AC-n]\n" +
 			"of the ticket. A failed check blocks the ticket and writes the handoff (completed, challenges, missing). A clean\n" +
-			"finish sets Done when the project allows it (`[done] auto_done` in " + ticketlock.DirectivesPath + ", on by default)\n" +
+			"finish sets Done when the project allows it (`[done] auto_done` in " + directive.Path + ", on by default)\n" +
 			"and the ticket has no " + ticketlock.HumanReviewLabel + " label; otherwise, or when the review could not run,\n" +
 			"it sets To Verify with the report as a comment. Exits non-zero when the ticket ended Blocked.",
 		Example: "dendrite chronos finish DEN-379",

@@ -2,15 +2,13 @@ package ticketlock
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"Dendrite/pkg/rag"
+	"Dendrite/pkg/directive"
 )
 
 func writeFile(t *testing.T, dir, rel, content string) {
@@ -24,21 +22,21 @@ func writeFile(t *testing.T, dir, rel, content string) {
 	}
 }
 
-func TestAutoDoneReadsTheDoneTable(t *testing.T) {
+func TestAutoDoneFollowsTheDirectives(t *testing.T) {
 	for name, tc := range map[string]struct {
 		toml string
 		want bool
 	}{
-		"no file":             {"", true},
-		"off":                 {"[loc]\nauto_done = false\n[done]\nauto_done = false # humans sign off\n", false},
-		"on":                  {"[done]\nauto_done = true\n", true},
-		"other table only":    {"[loc]\nauto_done = false\n", true},
-		"done without key":    {"[done]\nhuman_review_labels = []\n", true},
-		"later table ignored": {"[done]\nx = 1\n[other]\nauto_done = false\n", true},
+		"no file":               {"", true},
+		"on":                    {"[done]\nauto_done = true\n", true},
+		"off":                   {"[done]\nauto_done = false\n", false},
+		"table left out":        {"[loc]\nmax_production_lines = 300\nwarn_at = 250\n", true},
+		"unreadable directives": {"[done\n", false},
+		"invalid directive":     {"[coverage]\nmin_percent = 250.0\n", false},
 	} {
 		dir := t.TempDir()
 		if tc.toml != "" {
-			writeFile(t, dir, DirectivesPath, tc.toml)
+			writeFile(t, dir, directive.Path, tc.toml)
 		}
 		if got := AutoDone(dir); got != tc.want {
 			t.Errorf("%s: AutoDone = %v, want %v", name, got, tc.want)
@@ -102,39 +100,15 @@ func TestBranchDiffIsAgainstDevelop(t *testing.T) {
 	}
 }
 
-func TestDefaultFinishChecksUseTheGatewayAndTheDirective(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/model/info"):
-			_, _ = w.Write([]byte(`{"data":[]}`))
-		default:
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"[]"}}]}`))
-		}
-	}))
-	defer srv.Close()
-	t.Setenv("LITELLM_PROXY_URL", srv.URL+"/v1/")
-	t.Setenv("LITELLM_MASTER_KEY", "sk-test")
+func TestDefaultFinishChecksAreWiredToTheProject(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, dir, DirectivesPath, "[done]\nauto_done = false\n")
-
+	writeFile(t, dir, directive.Path, "[done]\nauto_done = false\n")
 	checks := DefaultFinishChecks(dir)
 	if checks.AutoDone || checks.Gate == nil || checks.Diff == nil || checks.Review == nil {
 		t.Fatalf("checks = %+v", checks)
 	}
-	g := gatewayReviewer(dir)
-	if g.URL != srv.URL+"/v1/chat/completions" || g.Key != "sk-test" || g.Model == "" {
-		t.Errorf("reviewer = %+v", g)
-	}
-	prev := preferLocalModel
-	preferLocalModel = func(context.Context, string) (rag.LocalChoice, bool) {
-		return rag.LocalChoice{Model: "local-smart"}, true
-	}
-	defer func() { preferLocalModel = prev }()
-	if g := gatewayReviewer(dir); g.Model != "local-smart" {
-		t.Errorf("the gateway's preferred local model is used: %q", g.Model)
-	}
-	if v, err := checks.Review(context.Background(), ReviewInput{Ticket: "DEN-1"}); err != nil || len(v) != 0 {
-		t.Errorf("review through the gateway: %v, %v", v, err)
+	if g := gatewayReviewer(dir); g.Chat == nil {
+		t.Error("the reviewer talks to the gateway")
 	}
 }
 

@@ -93,6 +93,7 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 | :--- | :--- | :--- |
 | [`allostasis`](allostasis.md) | `quality`, `homeostatic-audit`, `allostasis-audit`, `qlty` | Anti-mock scan, 100% coverage profiler, and HITL verification poller |
 | [`cognition`](cognition.md) | `analyze`, `cognitive-analysis`, `anlz` | Cognitive complexity analyzer, structural anti-pattern scanner, and policy router |
+| [`directive`](directive.md) | `directives` | Change what CI, the quality gate and the agents enforce: lines per file, coverage, duplication, who sets Done |
 | [`prune`](prune.md) | `audit-changes`, `microglial-prune`, `synaptic-pruning`, `prn` | Topological vendor audit and rebase engine for local/* branches |
 
 ### Terminal Boutons & Vesicles

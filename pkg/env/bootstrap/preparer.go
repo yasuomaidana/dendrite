@@ -150,6 +150,14 @@ func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareRe
 		report.FilesCreated = append(report.FilesCreated, created...)
 		report.FilesUpdated = append(report.FilesUpdated, updated...)
 		report.Notes = append(report.Notes, notes...)
+
+		// A project without quality directives gets the defaults and the files derived from them.
+		dirCreated, dirNotes, err := ensureDirectives(opts.ProjectPath, opts.DryRun)
+		if err != nil {
+			return nil, fmt.Errorf("quality directives failed: %w", err)
+		}
+		report.FilesCreated = append(report.FilesCreated, dirCreated...)
+		report.Notes = append(report.Notes, dirNotes...)
 	}
 
 	// 2. Agent Rules & Skills Synchronization

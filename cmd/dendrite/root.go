@@ -35,7 +35,7 @@ func newRootCmd() *cobra.Command {
 		// Dendritic Arbor
 		newArborCmd(), newAfferentCmd(), newRetroCmd(),
 		// Glial Regulation & Pruning
-		newCognitionCmd(), newPruneCmd(), newAllostasisCmd(),
+		newCognitionCmd(), newPruneCmd(), newAllostasisCmd(), newDirectiveCmd(),
 		// Terminal Boutons & Vesicles
 		newChronosCmd(), newVesicleCmd(), newQuantalCmd(), newSyncCmd(),
 	)

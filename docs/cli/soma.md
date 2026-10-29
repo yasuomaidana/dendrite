@@ -117,7 +117,7 @@ Sync agent rules and skills, and enforce CI/CD tooling defaults
 dendrite soma prepare [path|project] [flags]
 ```
 
-Aliases: `sync`, `update`
+Aliases: `sync`, `update`, `configure`
 
 | Flag | Description |
 | :--- | :--- |

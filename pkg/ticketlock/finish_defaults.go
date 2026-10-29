@@ -1,7 +1,6 @@
 package ticketlock
 
 import (
-	"bufio"
 	"context"
 	"os"
 	"os/exec"
@@ -11,12 +10,9 @@ import (
 	"time"
 
 	"Dendrite/pkg/assert"
-	"Dendrite/pkg/dotenv"
-	"Dendrite/pkg/rag"
+	"Dendrite/pkg/directive"
+	"Dendrite/pkg/llmchat"
 )
-
-// DirectivesPath is the tracked file that holds a project's quality directives.
-const DirectivesPath = ".github/dendrite/directives.toml"
 
 // gateTimeout bounds the test run of the default gate.
 const gateTimeout = 30 * time.Minute
@@ -142,38 +138,14 @@ func ticketCommits(dir, ticket string) (shas, lines []string) {
 	return shas, lines
 }
 
-// preferLocalModel is a seam for the choice of the review model.
-var preferLocalModel = rag.PreferLocalModel
-
 func gatewayReviewer(dir string) GatewayReviewer {
-	base := strings.TrimSuffix(strings.TrimRight(firstNonEmpty(os.Getenv("LITELLM_PROXY_URL"), "http://localhost:4000"), "/"), "/v1")
-	key := dotenv.Lookup(dir, "LITELLM_MASTER_KEY")
-	model := rag.DefaultLocalModel
-	if choice, ok := preferLocalModel(context.Background(), key); ok {
-		model = choice.Model
-	}
-	return GatewayReviewer{URL: base + "/v1/chat/completions", Key: key, Model: model, HTTP: nil}
+	return GatewayReviewer{Chat: llmchat.Gateway(dir)}
 }
 
-// AutoDone reads `auto_done` from the `[done]` table of the project's directives; Done is automatic unless
-// the file says `auto_done = false`.
+// AutoDone says whether a clean finish may set Done: the `[done] auto_done` directive of the project, on when
+// the project has no directives or they cannot be read (a broken file must not silently hand Done to agents,
+// so an unreadable file turns it off).
 func AutoDone(dir string) bool {
-	f, err := os.Open(filepath.Join(dir, filepath.FromSlash(DirectivesPath)))
-	if err != nil {
-		return true
-	}
-	defer f.Close()
-	inDone := false
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		switch {
-		case strings.HasPrefix(line, "["):
-			inDone = line == "[done]"
-		case inDone && strings.HasPrefix(line, "auto_done"):
-			_, value, _ := strings.Cut(line, "=")
-			return strings.TrimSpace(strings.SplitN(value, "#", 2)[0]) != "false"
-		}
-	}
-	return true
+	set, err := directive.Load(dir)
+	return err == nil && set.Done.AutoDone
 }
