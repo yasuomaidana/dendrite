@@ -2,7 +2,7 @@ name: Dendrite CI/CD
 
 on:
   push:
-    branches: [ develop, main, 'agent/den-407' ]
+    branches: [ develop, main ]
   pull_request:
     branches: [ develop, main ]
 
