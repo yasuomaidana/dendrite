@@ -439,7 +439,7 @@ func TestSynapseCommand_UnknownActionAndUsage(t *testing.T) {
 	if err := runSynapseCommand(context.Background(), []string{}, &buf); err != nil {
 		t.Fatalf("expected help for empty args, got: %v", err)
 	}
-	for _, sub := range []string{"create", "list", "inspect", "heal", "locate", "move", "ide-sync"} {
+	for _, sub := range []string{"create", "add", "remove-member", "delete", "list", "inspect", "heal", "locate", "move", "ide-sync"} {
 		if !strings.Contains(buf.String(), sub) {
 			t.Errorf("synapse help missing subcommand %q, got:\n%s", sub, buf.String())
 		}

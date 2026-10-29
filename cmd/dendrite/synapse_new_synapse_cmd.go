@@ -37,6 +37,41 @@ func newSynapseCmd() *cobra.Command {
 	cf.StringArrayVar(&create.Parity, "parity", nil, "Parity command alias=cmd (repeatable)")
 	requireFlags(createCmd, "members")
 
+	var addMembers string
+	addCmd := &cobra.Command{
+		Use:     "add <id>",
+		Short:   "Add member projects to a synapse",
+		Args:    exactArgs(1),
+		Example: "dendrite synapse add billing --members ../analytics=analytics:consumer\ndendrite synapse add billing --members ../web=web:consumer@PLANE",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseAdd(c.Context(), args[0], addMembers, c.OutOrStdout())
+		},
+	}
+	addCmd.Flags().StringVar(&addMembers, "members", "", "Members as <dir>[=alias][:role][@PLANE],...")
+	requireFlags(addCmd, "members")
+
+	removeMemberCmd := &cobra.Command{
+		Use:     "remove-member <id> <alias|project-id>",
+		Aliases: []string{"rm-member"},
+		Short:   "Remove a member project from a synapse",
+		Args:    exactArgs(2),
+		Example: "dendrite synapse remove-member billing web\ndendrite synapse remove-member billing proj_abc123",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseRemoveMember(c.Context(), args[0], args[1], c.OutOrStdout())
+		},
+	}
+
+	deleteCmd := &cobra.Command{
+		Use:     "delete <id>",
+		Aliases: []string{"rm"},
+		Short:   "Delete a synapse manifest",
+		Args:    exactArgs(1),
+		Example: "dendrite synapse delete billing --yes\ndendrite synapse delete billing",
+		RunE: func(c *cobra.Command, args []string) error {
+			return runSynapseDelete(c.Context(), args[0], c.InOrStdin(), c.OutOrStdout())
+		},
+	}
+
 	listCmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
@@ -143,7 +178,7 @@ func newSynapseCmd() *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(createCmd, listCmd, inspectCmd, healCmd, locateCmd, moveCmd, ideSyncCmd,
+	cmd.AddCommand(createCmd, addCmd, removeMemberCmd, deleteCmd, listCmd, inspectCmd, healCmd, locateCmd, moveCmd, ideSyncCmd,
 		setPlaneCmd, setSourceCmd, channelCmd, newSynapseStatusCmd(), newSynapseSyncCmd())
 	return cmd
 }
