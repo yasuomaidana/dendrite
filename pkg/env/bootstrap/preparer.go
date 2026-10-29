@@ -264,7 +264,7 @@ func (p *Preparer) syncAgentRulesAndSkills(root string, fp ProjectFingerprint, d
 
 	// 2. AGENTS.md in project root
 	agentsMDPath := filepath.Join(root, "AGENTS.md")
-	agentsMDContent := renderAgentsOverview(fp)
+	agentsMDContent := renderAgentsOverview(fp) + renderSynapsesSection(root)
 	c, u, err = writeOrUpdateFile(agentsMDPath, agentsMDContent, dryRun)
 	if err != nil {
 		return nil, nil, nil, err

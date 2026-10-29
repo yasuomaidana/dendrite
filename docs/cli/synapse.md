@@ -98,14 +98,10 @@ dendrite synapse create billing --members ../api=api:producer,../web=web:consume
 Delete a synapse manifest
 
 ```bash
-dendrite synapse delete <id> [flags]
+dendrite synapse delete <id>
 ```
 
 Aliases: `rm`
-
-| Flag | Description |
-| :--- | :--- |
-| `-y, --yes` | Assume yes for every interactive prompt |
 
 ```bash
 dendrite synapse delete billing --yes

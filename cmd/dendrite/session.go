@@ -143,5 +143,6 @@ func runSessionResume(ctx context.Context, targetPath string, asJSON bool, out i
 	fmt.Fprint(out, text)
 	autoCleanWorkCopies(ctx, out)
 	warnStaleIndex(out)
+	printSynapsePeers(".", out)
 	return nil
 }

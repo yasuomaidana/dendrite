@@ -33,10 +33,12 @@ Terminal Boutons & Vesicles
 | `project audit` | Check that every editable repository is a Plane project and related repositories share a synapse |
 | `project ensure` | Adopt or create the repository's Plane project, converge its states, and write .dendrite/plane.json |
 | `project refresh` | Relocate or prune the entries of the global project index whose directory moved or vanished |
+| `project remove` | Archive (default) or permanently delete Plane projects, keeping the local directories |
 | `project show` | Print the Plane project linked to the repository |
 | `push` | Push DEV_STATUS.md to Plane with Gantt timelines and dependencies |
 | `relate` | Set a ticket's priority and dates and add several relations at once |
 | `replicate` | Rewrite DEV_STATUS.md from the Plane board |
+| `request` | Ask a synapse peer for a feature by creating a ticket in its Plane project |
 | `states` | Manage the project's workflow states |
 | `states reconcile` | Converge workflow states (names, colors, order) onto the canonical set |
 | `ticket` | Read or set ticket status in DEV_STATUS.md and Plane |
@@ -124,32 +126,7 @@ dendrite chronos next [flags]
 dendrite chronos next
 dendrite chronos next --ticket DEN-123 --json
 dendrite chronos next --milestone M3
-dendrite chronos next --synapse kakebo
 ```
-
-### `dendrite chronos request`
-
-Ask a synapse peer for a feature by creating a ticket in its Plane project
-
-The target must be a peer of this repository: a member of a synapse the repository belongs to, referred to by alias, Plane identifier or project ID. A peer outside every shared synapse is refused. When the peer shares several synapses with this repository, `--synapse` says which one the request belongs to; the ticket records it as its external source (`dendrite-synapse:<id>`), which is what `chronos next --synapse` filters on. Asking twice with the same name returns the existing ticket. `--from` blocks a ticket of this project on the request, when Plane accepts a relation across projects (otherwise the request's description names the ticket).
-
-```bash
-dendrite chronos request <peer-alias|IDENT> [flags]
-```
-
-| Flag | Description |
-| :--- | :--- |
-| `--desc` | What is needed and why (goal and acceptance criteria) |
-| `--from` | Ticket in this project that depends on the request |
-| `--name` | Title of the request |
-| `--synapse` | The synapse the request belongs to (required when several are shared) |
-
-```bash
-dendrite chronos request oxipix --name "Expose a batch resize API" --desc "docula needs ..." --from DOC-12
-dendrite chronos request oxipix --synapse kakebo --name "..." --desc "..."
-```
-
-`chronos link` also accepts `IDENT-N` for a ticket of another project of the workspace, e.g. `dendrite chronos link DOC-12 blocked_by OXI-3`.
 
 ### `dendrite chronos project audit`
 
@@ -207,6 +184,25 @@ dendrite chronos project refresh [flags]
 ```bash
 dendrite chronos project refresh --dry-run
 dendrite chronos project refresh --prune --roots ~/work
+```
+
+### `dendrite chronos project remove`
+
+Archive (default) or permanently delete Plane projects, keeping the local directories
+
+```bash
+dendrite chronos project remove <IDENT|name|dir>... [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--force` | Also remove projects that are members of a synapse |
+| `--keep-local` | Leave the local Plane binding and index entry alone |
+| `--purge` | Delete permanently instead of archiving |
+
+```bash
+dendrite chronos project remove OLDPROJ
+dendrite chronos project remove ~/work/old-repo --purge --yes
 ```
 
 ### `dendrite chronos project show`
@@ -272,6 +268,25 @@ Aliases: `pull`, `status`, `pull-status`
 | :--- | :--- |
 | `--dry-run` | Show what would happen without changing anything |
 | `--file, -f` | Status file to write (default: DEV_STATUS.md) |
+
+### `dendrite chronos request`
+
+Ask a synapse peer for a feature by creating a ticket in its Plane project
+
+```bash
+dendrite chronos request <peer-alias|IDENT> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--desc` | What is needed and why (goal and acceptance criteria) |
+| `--from` | Ticket in this project that depends on the request |
+| `--name` | Title of the request |
+| `--synapse` | The synapse the request belongs to (required when several are shared) |
+
+```bash
+dendrite chronos request oxipix --name "Expose a batch resize API" --desc "docula needs ..." --from DOC-12
+```
 
 ### `dendrite chronos states reconcile`
 

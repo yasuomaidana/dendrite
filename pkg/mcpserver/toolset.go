@@ -32,7 +32,7 @@ const ProfileEnv = "DENDRITE_MCP_PROFILE"
 // confined to the relationship and is not filtered.
 var (
 	coreToolPrefixes = []string{"dendrite_rag_", "dendrite_graph_", "dendrite_plane_"}
-	coreToolNames    = map[string]bool{"dendrite_ticket_smart_select": true}
+	coreToolNames    = map[string]bool{"dendrite_ticket_smart_select": true, "dendrite_synapse_peers": true}
 )
 
 // ParseProfile validates a profile name; an empty name means defaultProfile.
