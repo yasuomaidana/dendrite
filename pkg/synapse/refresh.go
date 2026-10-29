@@ -66,6 +66,11 @@ func RefreshIndex(st *Store, ix *projectid.Index, opts RefreshOptions) ([]Refres
 		}
 		stale = append(stale, e)
 	}
+	if opts.Apply {
+		if _, err := BackfillPlane(ix); err != nil {
+			return rows, fmt.Errorf("saving project index: %w", err)
+		}
+	}
 	if len(stale) == 0 {
 		return rows, nil
 	}

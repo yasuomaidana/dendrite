@@ -26,7 +26,7 @@ type PeerGroup struct {
 
 // PeersOf lists, per synapse that contains projectID, the other members. Archived synapses are
 // skipped. A peer without a Plane identifier in the manifest takes the one the global index
-// records for it (ix may be nil). A project in several synapses appears in several groups, which
+// records for it (ix may be nil), and failing that the one in its own checkout. A project in several synapses appears in several groups, which
 // is how a shared project knows which synapse a request or a ticket belongs to.
 func PeersOf(st *Store, ix *projectid.Index, projectID string) ([]PeerGroup, error) {
 	syns, err := st.ReferencingProject(projectID)
@@ -51,6 +51,11 @@ func PeersOf(st *Store, ix *projectid.Index, projectID string) ([]PeerGroup, err
 			if p.PlaneProject == "" && ix != nil {
 				if e, ok := ix.Lookup(m.ProjectID); ok && e.Plane != nil {
 					p.PlaneProject = e.Plane.Identifier
+				}
+			}
+			if p.PlaneProject == "" && p.Path != "" { // the checkout knows its own Plane project
+				if b := readPlaneLink(p.Path); b != nil {
+					p.PlaneProject = b.Identifier
 				}
 			}
 			g.Peers = append(g.Peers, p)
