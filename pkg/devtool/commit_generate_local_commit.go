@@ -1,6 +1,7 @@
 package devtool
 
 import (
+	"Dendrite/pkg/memfit"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -18,6 +19,11 @@ import (
 
 // GenerateLocalCommitMessageWithContext synthesizes Conventional Commit with active ticket context.
 func GenerateLocalCommitMessageWithContext(ctx context.Context, diffStat, fullDiff, ticketID string, smartTicket *SmartTicketInfo, model string, ollamaURL, litellmURL, litellmKey string, stagedFiles []string) (string, string, error) {
+	// A default that is not installed, or too large for this machine, is replaced by the smartest
+	// installed model that fits; an unreachable Ollama keeps the old default.
+	if !strings.Contains(strings.ToLower(model), "oxillama") {
+		model = memfit.ResolveOllama(ctx, ollamaURL, model)
+	}
 	if model == "" {
 		model = "qwen3.8:27b"
 	}

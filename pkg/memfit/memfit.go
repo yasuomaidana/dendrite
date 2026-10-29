@@ -302,3 +302,21 @@ func ggufSize(id string) int64 {
 	}
 	return 0
 }
+
+// ResolveOllama turns a requested (often default) chat model into one this machine can run: the
+// request itself when it is installed and fits, otherwise the smartest installed model that fits.
+// When Ollama is unreachable or nothing fits it returns requested unchanged, so callers keep their
+// own fallback and error handling.
+func ResolveOllama(ctx context.Context, endpoint, requested string) string {
+	r := Assess(ctx, endpoint, "")
+	if !r.OllamaReachable {
+		return requested
+	}
+	if m, ok := r.Find("ollama", requested); ok && m.Fits {
+		return requested
+	}
+	if alt := r.BestFitting(""); alt != "" {
+		return alt
+	}
+	return requested
+}

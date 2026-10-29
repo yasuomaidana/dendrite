@@ -51,6 +51,9 @@ func (e *OllamaEngine) Generate(ctx context.Context, req CompletionRequest) (*Co
 	if model == "" {
 		model = "qwen3.8:27b"
 	}
+	if req.Model == "" { // a default, not the caller's choice: swap in a model that fits
+		model = memfit.ResolveOllama(ctx, e.cfg.Endpoint, model)
+	}
 	if err := memfit.GuardOllama(ctx, e.cfg.Endpoint, model); err != nil {
 		return nil, err
 	}

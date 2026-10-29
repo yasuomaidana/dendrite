@@ -145,3 +145,21 @@ func TestUnreachableEnginesContributeNothing(t *testing.T) {
 		t.Errorf("guard must not block when Ollama is down: %v", err)
 	}
 }
+
+func TestResolveOllamaKeepsAFittingRequestAndReplacesAStaleDefault(t *testing.T) {
+	t.Setenv(EnvBudgetGB, "12")
+	withGGUF(t, 1)
+	ollama, _ := fakeEngines(t, "")
+	ctx := context.Background()
+	if got := ResolveOllama(ctx, ollama, "small:4b"); got != "small:4b" {
+		t.Errorf("a fitting request changed to %q", got)
+	}
+	for _, stale := range []string{"big:27b", "never-installed:7b", ""} {
+		if got := ResolveOllama(ctx, ollama, stale); got != "mid:14b" {
+			t.Errorf("ResolveOllama(%q) = %q, want the smartest model that fits (mid:14b)", stale, got)
+		}
+	}
+	if got := ResolveOllama(ctx, "http://127.0.0.1:1", "big:27b"); got != "big:27b" {
+		t.Errorf("an unreachable Ollama must leave the request alone, got %q", got)
+	}
+}
