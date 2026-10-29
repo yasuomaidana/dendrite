@@ -46,3 +46,20 @@ Orchestrators run `dendrite session checkpoint` after each finished ticket and b
 ```bash
 dendrite session checkpoint [--worktree dir] [--decision "..."]... [--next "DEN-XXX"]... [--note "..."]
 ```
+
+## Synapses
+This project belongs to the synapses below. Its peers are other repositories it depends on or is used by; ask a peer for a feature instead of editing its code.
+
+### dendrite-ecosystem (you are `control`)
+- **core-rs** (producer) - Plane project unknown
+- **embedag** (producer) - Plane project unknown
+- **git-rs** (producer) - Plane project unknown
+- **mcp-hub** (peer) - Plane project unknown
+- **plane-rs** (producer) - Plane project DPLANE
+- **rag-rs** (producer) - Plane project unknown
+
+To ask a peer for a feature, file a ticket in its Plane project:
+```bash
+dendrite chronos request <peer-alias> --name "..." --desc "goal and acceptance criteria" [--synapse <id>] [--from <TICKET>]
+```
+A peer that is in several synapses with this project needs `--synapse`, which records where the request came from; the peer works through them with `dendrite chronos next --synapse <id>`.
