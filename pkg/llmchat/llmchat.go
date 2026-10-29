@@ -29,15 +29,32 @@ type Client struct {
 	URL, Key, Model string
 	// HTTP is the client to use; nil means http.DefaultClient.
 	HTTP *http.Client
+	// JSON asks the gateway to answer with a JSON object. The answer must then be an object, not an array.
+	JSON bool
 }
 
-// Complete asks the model at temperature 0 and returns its answer.
+// Complete asks the model at temperature 0 and returns its answer. With JSON set it asks the gateway for a JSON
+// object (response_format); a gateway or model that refuses the option (HTTP 400 or 422) is asked again without
+// it, so the option never makes a working call fail.
 func (c Client) Complete(ctx context.Context, system, user string) (string, error) {
-	body, _ := json.Marshal(map[string]any{"model": c.Model, "temperature": 0, "messages": []map[string]string{
-		{"role": "system", "content": system}, {"role": "user", "content": user}}})
+	answer, status, err := c.post(ctx, system, user, c.JSON)
+	if c.JSON && (status == http.StatusBadRequest || status == http.StatusUnprocessableEntity) {
+		answer, _, err = c.post(ctx, system, user, false)
+	}
+	return answer, err
+}
+
+// post sends one request and returns the answer, the HTTP status (0 when none came back) and an error.
+func (c Client) post(ctx context.Context, system, user string, jsonMode bool) (string, int, error) {
+	payload := map[string]any{"model": c.Model, "temperature": 0, "messages": []map[string]string{
+		{"role": "system", "content": system}, {"role": "user", "content": user}}}
+	if jsonMode {
+		payload["response_format"] = map[string]string{"type": "json_object"}
+	}
+	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL, bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.Key != "" {
@@ -49,12 +66,12 @@ func (c Client) Complete(ctx context.Context, system, user string) (string, erro
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("the gateway answered HTTP %d", resp.StatusCode)
+		return "", resp.StatusCode, fmt.Errorf("the gateway answered HTTP %d", resp.StatusCode)
 	}
 	var chat struct {
 		Choices []struct {
@@ -64,9 +81,9 @@ func (c Client) Complete(ctx context.Context, system, user string) (string, erro
 		} `json:"choices"`
 	}
 	if json.Unmarshal(raw, &chat) != nil || len(chat.Choices) == 0 {
-		return "", errors.New("the gateway sent no answer")
+		return "", resp.StatusCode, errors.New("the gateway sent no answer")
 	}
-	return chat.Choices[0].Message.Content, nil
+	return chat.Choices[0].Message.Content, resp.StatusCode, nil
 }
 
 // preferLocalModel is a seam for the choice of the model.

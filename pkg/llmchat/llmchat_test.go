@@ -120,3 +120,44 @@ func TestJSONCutsTheValueOutOfAChattyAnswer(t *testing.T) {
 		t.Errorf("object error: %v", err)
 	}
 }
+
+// optionalJSONGateway answers HTTP `refuse` to a request that carries response_format and 200 to one that does not.
+func optionalJSONGateway(t *testing.T, refuse int, seen *[]bool) Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, has := body["response_format"]
+		*seen = append(*seen, has)
+		if has {
+			w.WriteHeader(refuse)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": "{}"}}}})
+	}))
+	t.Cleanup(srv.Close)
+	return Client{URL: srv.URL, JSON: true}
+}
+
+func TestJSONModeAsksForAnObjectAndFallsBackWhenTheGatewayRefuses(t *testing.T) {
+	for _, refuse := range []int{http.StatusBadRequest, http.StatusUnprocessableEntity} {
+		var seen []bool
+		got, err := optionalJSONGateway(t, refuse, &seen).Complete(context.Background(), "s", "u")
+		if err != nil || got != "{}" || len(seen) != 2 || !seen[0] || seen[1] {
+			t.Errorf("HTTP %d: %q, %v, response_format per request %v: ask with it, then without", refuse, got, err, seen)
+		}
+	}
+	var seen []bool
+	if _, err := optionalJSONGateway(t, http.StatusInternalServerError, &seen).Complete(context.Background(), "s", "u"); err == nil || len(seen) != 1 {
+		t.Errorf("a server error is not a refusal of the option: %v after %d requests", err, len(seen))
+	}
+	var plain map[string]any
+	c := gateway(t, 200, "ok", &plain)
+	if _, err := c.Complete(context.Background(), "s", "u"); err != nil || plain["response_format"] != nil {
+		t.Errorf("without JSON no response_format is sent: %v", plain)
+	}
+	c.JSON = true
+	if _, err := c.Complete(context.Background(), "s", "u"); err != nil || plain["response_format"] == nil {
+		t.Errorf("with JSON it is sent: %v", plain)
+	}
+}
