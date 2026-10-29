@@ -97,77 +97,19 @@ func (e *HuggingFaceTEIEngine) Generate(ctx context.Context, req CompletionReque
 }
 
 func (e *HuggingFaceTEIEngine) Stream(ctx context.Context, req CompletionRequest) (<-chan StreamChunk, error) {
-	resp, err := e.Generate(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	ch := make(chan StreamChunk, 1)
-	ch <- StreamChunk{
-		Text:         resp.Text,
-		Done:         true,
-		OutputTokens: resp.OutputTokens,
-	}
-	close(ch)
-	return ch, nil
+	return streamUnaryGenerate(ctx, req, e.Generate)
 }
 
 func (e *HuggingFaceTEIEngine) Health(ctx context.Context) EngineHealth {
-	start := time.Now()
-	h := EngineHealth{
+	return checkHTTPHealth(ctx, e.httpClient, EngineHealth{
 		EngineID:   e.cfg.ID,
 		Type:       EngineHuggingFaceTEI,
 		Endpoint:   e.cfg.Endpoint,
 		SelfHosted: e.cfg.SelfHosted,
 		ZeroCost:   e.cfg.SelfHosted,
-		LastCheck:  time.Now(),
-	}
-
-	url := fmt.Sprintf("%s/info", strings.TrimRight(e.cfg.Endpoint, "/"))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		h.Error = err.Error()
-		return h
-	}
-
-	resp, err := e.httpClient.Do(req)
-	h.Latency = time.Since(start)
-	if err != nil {
-		h.Error = err.Error()
-		return h
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK {
-		h.Reachable = true
-		models, _ := e.SupportedModels(ctx)
-		h.Models = models
-	} else {
-		h.Error = fmt.Sprintf("HTTP status %d", resp.StatusCode)
-	}
-
-	return h
+	}, "/info", e.SupportedModels)
 }
 
 func (e *HuggingFaceTEIEngine) SupportedModels(ctx context.Context) ([]string, error) {
-	url := fmt.Sprintf("%s/info", strings.TrimRight(e.cfg.Endpoint, "/"))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return e.cfg.Models, nil
-	}
-
-	resp, err := e.httpClient.Do(req)
-	if err != nil {
-		return e.cfg.Models, nil
-	}
-	defer resp.Body.Close()
-
-	var res struct {
-		ModelID string `json:"model_id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err == nil && res.ModelID != "" {
-		return []string{res.ModelID}, nil
-	}
-
-	return e.cfg.Models, nil
+	return fetchHFInfoModelID(ctx, e.httpClient, e.cfg.Endpoint, e.cfg.Models)
 }

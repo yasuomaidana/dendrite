@@ -22,14 +22,7 @@ type OxiLLaMaEngine struct {
 
 // NewOxiLLaMaEngine creates an OxiLLaMa pure-Rust inference engine adapter.
 func NewOxiLLaMaEngine(cfg EngineConfig, client *http.Client) *OxiLLaMaEngine {
-	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
-	}
-	if cfg.Endpoint == "" {
-		cfg.Endpoint = "http://127.0.0.1:8080"
-	}
-	cfg.Type = EngineOxiLLaMa
-	cfg.SelfHosted = true
+	cfg, client = initSelfHostedEngine(cfg, client, EngineOxiLLaMa, "http://127.0.0.1:8080")
 	return &OxiLLaMaEngine{
 		cfg:        cfg,
 		httpClient: client,
@@ -299,15 +292,9 @@ func (e *OxiLLaMaEngine) SupportedModels(ctx context.Context) ([]string, error) 
 		var localModels []string
 		for _, entry := range entries {
 			if entry.IsDir() {
-				mfPath := filepath.Join(oxillamaDir, entry.Name(), "oxillama-manifest.json")
-				if data, mfErr := os.ReadFile(mfPath); mfErr == nil {
-					var mf struct {
-						Name string `json:"name"`
-					}
-					if json.Unmarshal(data, &mf) == nil && mf.Name != "" {
-						localModels = append(localModels, mf.Name)
-						continue
-					}
+				if name := readManifestModelName(filepath.Join(oxillamaDir, entry.Name())); name != "" {
+					localModels = append(localModels, name)
+					continue
 				}
 				localModels = append(localModels, entry.Name())
 			}
@@ -350,4 +337,18 @@ func (e *OxiLLaMaEngine) acquireLocalServer(ctx context.Context) (func(), error)
 		return noop, err
 	}
 	return func() { _ = lease.Release() }, nil
+}
+
+// readManifestModelName reads oxillama-manifest.json in dir and returns the model name if valid.
+func readManifestModelName(dir string) string {
+	mfPath := filepath.Join(dir, "oxillama-manifest.json")
+	if data, err := os.ReadFile(mfPath); err == nil {
+		var mf struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(data, &mf) == nil && mf.Name != "" {
+			return mf.Name
+		}
+	}
+	return ""
 }

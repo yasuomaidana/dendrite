@@ -229,37 +229,69 @@ func (r *ZeroCostRegistry) Test(model string) (bool, string) {
 	return false, fmt.Sprintf("model '%s' does not match any active zero-cost model or prefix", m)
 }
 
-// AddModel registers an exact model name as zero-cost.
-func (r *ZeroCostRegistry) AddModel(model string) bool {
-	m := strings.ToLower(strings.TrimSpace(model))
-	if m == "" {
-		return false
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	delete(r.removedModels, m)
-	r.customModels[m] = true
-	return true
+func cleanModel(model string) string {
+	return strings.ToLower(strings.TrimSpace(model))
 }
 
-// AddPrefix registers a prefix pattern as zero-cost.
-func (r *ZeroCostRegistry) AddPrefix(prefix string) bool {
+func cleanPrefix(prefix string) string {
 	p := strings.ToLower(strings.TrimSpace(prefix))
 	if p == "" {
-		return false
+		return ""
 	}
 	if !strings.HasSuffix(p, "/") {
 		p += "/"
 	}
+	return p
+}
 
+func (r *ZeroCostRegistry) updateEntry(item string, removeMap, insertMap map[string]bool) bool {
+	if item == "" {
+		return false
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
-	delete(r.removedPrefixes, p)
-	r.customPrefixes[p] = true
+	delete(removeMap, item)
+	insertMap[item] = true
 	return true
+}
+
+func (r *ZeroCostRegistry) parseEnvConfig(models, prefixes string) {
+	if models != "" {
+		for _, part := range strings.Split(models, ",") {
+			item := strings.ToLower(strings.TrimSpace(part))
+			if item == "" {
+				continue
+			}
+			if strings.HasSuffix(item, "/") {
+				r.envPrefixes[item] = true
+			} else {
+				r.envModels[item] = true
+			}
+		}
+	}
+
+	if prefixes != "" {
+		for _, part := range strings.Split(prefixes, ",") {
+			item := strings.ToLower(strings.TrimSpace(part))
+			if item == "" {
+				continue
+			}
+			if !strings.HasSuffix(item, "/") {
+				item += "/"
+			}
+			r.envPrefixes[item] = true
+		}
+	}
+}
+
+// AddModel registers an exact model name as zero-cost.
+func (r *ZeroCostRegistry) AddModel(model string) bool {
+	return r.updateEntry(cleanModel(model), r.removedModels, r.customModels)
+}
+
+// AddPrefix registers a prefix pattern as zero-cost.
+func (r *ZeroCostRegistry) AddPrefix(prefix string) bool {
+	return r.updateEntry(cleanPrefix(prefix), r.removedPrefixes, r.customPrefixes)
 }
 
 // Add registers an item as either a prefix (if ends with /) or exact model.
@@ -276,35 +308,12 @@ func (r *ZeroCostRegistry) Add(item string) (bool, bool) {
 
 // RemoveModel unregisters an exact model name from zero-cost eligibility.
 func (r *ZeroCostRegistry) RemoveModel(model string) bool {
-	m := strings.ToLower(strings.TrimSpace(model))
-	if m == "" {
-		return false
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	delete(r.customModels, m)
-	r.removedModels[m] = true
-	return true
+	return r.updateEntry(cleanModel(model), r.customModels, r.removedModels)
 }
 
 // RemovePrefix unregisters a prefix pattern.
 func (r *ZeroCostRegistry) RemovePrefix(prefix string) bool {
-	p := strings.ToLower(strings.TrimSpace(prefix))
-	if p == "" {
-		return false
-	}
-	if !strings.HasSuffix(p, "/") {
-		p += "/"
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	delete(r.customPrefixes, p)
-	r.removedPrefixes[p] = true
-	return true
+	return r.updateEntry(cleanPrefix(prefix), r.customPrefixes, r.removedPrefixes)
 }
 
 // Remove unregisters an item as prefix (if ends with /) or exact model.
@@ -353,30 +362,5 @@ func (r *ZeroCostRegistry) LoadFromEnv() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if rawModels != "" {
-		for _, part := range strings.Split(rawModels, ",") {
-			item := strings.ToLower(strings.TrimSpace(part))
-			if item == "" {
-				continue
-			}
-			if strings.HasSuffix(item, "/") {
-				r.envPrefixes[item] = true
-			} else {
-				r.envModels[item] = true
-			}
-		}
-	}
-
-	if rawPrefixes != "" {
-		for _, part := range strings.Split(rawPrefixes, ",") {
-			item := strings.ToLower(strings.TrimSpace(part))
-			if item == "" {
-				continue
-			}
-			if !strings.HasSuffix(item, "/") {
-				item += "/"
-			}
-			r.envPrefixes[item] = true
-		}
-	}
+	r.parseEnvConfig(rawModels, rawPrefixes)
 }

@@ -19,14 +19,7 @@ type LlamaCppEngine struct {
 
 // NewLlamaCppEngine creates a llama.cpp engine adapter.
 func NewLlamaCppEngine(cfg EngineConfig, client *http.Client) *LlamaCppEngine {
-	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
-	}
-	if cfg.Endpoint == "" {
-		cfg.Endpoint = "http://localhost:8081"
-	}
-	cfg.Type = EngineLlamaCpp
-	cfg.SelfHosted = true
+	cfg, client = initSelfHostedEngine(cfg, client, EngineLlamaCpp, "http://localhost:8081")
 	return &LlamaCppEngine{
 		cfg:        cfg,
 		httpClient: client,
@@ -120,118 +113,34 @@ func (e *LlamaCppEngine) Stream(ctx context.Context, req CompletionRequest) (<-c
 		"prompt": req.Prompt,
 		"stream": true,
 	}
-	data, _ := json.Marshal(payload)
-
 	url := fmt.Sprintf("%s/completion", strings.TrimRight(e.cfg.Endpoint, "/"))
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := e.httpClient.Do(httpReq)
+	resp, err := postJSONRequest(ctx, e.httpClient, url, payload)
 	if err != nil {
 		return nil, err
 	}
 
-	ch := make(chan StreamChunk)
-	go func() {
-		defer close(ch)
-		defer resp.Body.Close()
-
-		buf := make([]byte, 4096)
-		for {
-			n, err := resp.Body.Read(buf)
-			if n > 0 {
-				lines := strings.Split(string(buf[:n]), "\n")
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if strings.HasPrefix(line, "data: ") {
-						dataPayload := strings.TrimPrefix(line, "data: ")
-						var chunkRes struct {
-							Content string `json:"content"`
-							Stop    bool   `json:"stop"`
-						}
-						if err := json.Unmarshal([]byte(dataPayload), &chunkRes); err == nil {
-							ch <- StreamChunk{Text: chunkRes.Content, Done: chunkRes.Stop}
-							if chunkRes.Stop {
-								return
-							}
-						}
-					}
-				}
-			}
-			if err != nil {
-				return
-			}
+	return streamSSEChunks(resp, func(payload string) (StreamChunk, bool, bool) {
+		var chunkRes struct {
+			Content string `json:"content"`
+			Stop    bool   `json:"stop"`
 		}
-	}()
-
-	return ch, nil
+		if err := json.Unmarshal([]byte(payload), &chunkRes); err == nil {
+			return StreamChunk{Text: chunkRes.Content, Done: chunkRes.Stop}, true, chunkRes.Stop
+		}
+		return StreamChunk{}, false, false
+	}), nil
 }
 
 func (e *LlamaCppEngine) Health(ctx context.Context) EngineHealth {
-	start := time.Now()
-	h := EngineHealth{
+	return checkHTTPHealth(ctx, e.httpClient, EngineHealth{
 		EngineID:   e.cfg.ID,
 		Type:       EngineLlamaCpp,
 		Endpoint:   e.cfg.Endpoint,
 		SelfHosted: true,
 		ZeroCost:   true,
-		LastCheck:  time.Now(),
-	}
-
-	url := fmt.Sprintf("%s/health", strings.TrimRight(e.cfg.Endpoint, "/"))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		h.Error = err.Error()
-		return h
-	}
-
-	resp, err := e.httpClient.Do(req)
-	h.Latency = time.Since(start)
-	if err != nil {
-		h.Error = err.Error()
-		return h
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK {
-		h.Reachable = true
-		models, _ := e.SupportedModels(ctx)
-		h.Models = models
-	} else {
-		h.Error = fmt.Sprintf("HTTP status %d", resp.StatusCode)
-	}
-
-	return h
+	}, "/health", e.SupportedModels)
 }
 
 func (e *LlamaCppEngine) SupportedModels(ctx context.Context) ([]string, error) {
-	url := fmt.Sprintf("%s/v1/models", strings.TrimRight(e.cfg.Endpoint, "/"))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return e.cfg.Models, nil
-	}
-
-	resp, err := e.httpClient.Do(req)
-	if err != nil {
-		return e.cfg.Models, nil
-	}
-	defer resp.Body.Close()
-
-	var res struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err == nil && len(res.Data) > 0 {
-		var names []string
-		for _, m := range res.Data {
-			names = append(names, m.ID)
-		}
-		return names, nil
-	}
-
-	return e.cfg.Models, nil
+	return fetchV1Models(ctx, e.httpClient, e.cfg.Endpoint, e.cfg.Models)
 }

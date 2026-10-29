@@ -44,32 +44,7 @@ func (r *ZeroCostRegistry) LoadFromEnvFile(path string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if envModels != "" {
-		for _, part := range strings.Split(envModels, ",") {
-			item := strings.ToLower(strings.TrimSpace(part))
-			if item == "" {
-				continue
-			}
-			if strings.HasSuffix(item, "/") {
-				r.envPrefixes[item] = true
-			} else {
-				r.envModels[item] = true
-			}
-		}
-	}
-
-	if envPrefixes != "" {
-		for _, part := range strings.Split(envPrefixes, ",") {
-			item := strings.ToLower(strings.TrimSpace(part))
-			if item == "" {
-				continue
-			}
-			if !strings.HasSuffix(item, "/") {
-				item += "/"
-			}
-			r.envPrefixes[item] = true
-		}
-	}
+	r.parseEnvConfig(envModels, envPrefixes)
 
 	return scanner.Err()
 }

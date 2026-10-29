@@ -19,14 +19,7 @@ type CandleEngine struct {
 
 // NewCandleEngine creates a Candle pure-Rust inference engine adapter.
 func NewCandleEngine(cfg EngineConfig, client *http.Client) *CandleEngine {
-	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
-	}
-	if cfg.Endpoint == "" {
-		cfg.Endpoint = "http://127.0.0.1:8083"
-	}
-	cfg.Type = EngineCandle
-	cfg.SelfHosted = true
+	cfg, client = initSelfHostedEngine(cfg, client, EngineCandle, "http://127.0.0.1:8083")
 	return &CandleEngine{
 		cfg:        cfg,
 		httpClient: client,
@@ -143,40 +136,13 @@ func (e *CandleEngine) Stream(ctx context.Context, req CompletionRequest) (<-cha
 }
 
 func (e *CandleEngine) Health(ctx context.Context) EngineHealth {
-	start := time.Now()
-	h := EngineHealth{
+	return checkHTTPHealth(ctx, e.httpClient, EngineHealth{
 		EngineID:   e.cfg.ID,
 		Type:       EngineCandle,
 		Endpoint:   e.cfg.Endpoint,
 		SelfHosted: true,
 		ZeroCost:   true,
-		LastCheck:  time.Now(),
-	}
-
-	url := fmt.Sprintf("%s/v1/models", strings.TrimRight(e.cfg.Endpoint, "/"))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		h.Error = err.Error()
-		return h
-	}
-
-	resp, err := e.httpClient.Do(req)
-	h.Latency = time.Since(start)
-	if err != nil {
-		h.Error = err.Error()
-		return h
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK {
-		h.Reachable = true
-		models, _ := e.SupportedModels(ctx)
-		h.Models = models
-	} else {
-		h.Error = fmt.Sprintf("HTTP status %d", resp.StatusCode)
-	}
-
-	return h
+	}, "/v1/models", e.SupportedModels)
 }
 
 func (e *CandleEngine) SupportedModels(ctx context.Context) ([]string, error) {

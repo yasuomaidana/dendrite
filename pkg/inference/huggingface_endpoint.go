@@ -125,19 +125,7 @@ func (e *HuggingFaceEndpointEngine) Generate(ctx context.Context, req Completion
 }
 
 func (e *HuggingFaceEndpointEngine) Stream(ctx context.Context, req CompletionRequest) (<-chan StreamChunk, error) {
-	resp, err := e.Generate(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	ch := make(chan StreamChunk, 1)
-	ch <- StreamChunk{
-		Text:         resp.Text,
-		Done:         true,
-		OutputTokens: resp.OutputTokens,
-	}
-	close(ch)
-	return ch, nil
+	return streamUnaryGenerate(ctx, req, e.Generate)
 }
 
 func (e *HuggingFaceEndpointEngine) Health(ctx context.Context) EngineHealth {

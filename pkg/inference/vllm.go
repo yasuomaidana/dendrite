@@ -209,67 +209,15 @@ func (e *VLLMEngine) Stream(ctx context.Context, req CompletionRequest) (<-chan 
 }
 
 func (e *VLLMEngine) Health(ctx context.Context) EngineHealth {
-	start := time.Now()
-	h := EngineHealth{
+	return checkHTTPHealth(ctx, e.httpClient, EngineHealth{
 		EngineID:   e.cfg.ID,
 		Type:       EngineVLLM,
 		Endpoint:   e.cfg.Endpoint,
 		SelfHosted: e.cfg.SelfHosted,
 		ZeroCost:   e.cfg.SelfHosted,
-		LastCheck:  time.Now(),
-	}
-
-	url := fmt.Sprintf("%s/health", strings.TrimRight(e.cfg.Endpoint, "/"))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		h.Error = err.Error()
-		return h
-	}
-
-	resp, err := e.httpClient.Do(req)
-	h.Latency = time.Since(start)
-	if err != nil {
-		h.Error = err.Error()
-		return h
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK {
-		h.Reachable = true
-		models, _ := e.SupportedModels(ctx)
-		h.Models = models
-	} else {
-		h.Error = fmt.Sprintf("HTTP status %d", resp.StatusCode)
-	}
-
-	return h
+	}, "/health", e.SupportedModels)
 }
 
 func (e *VLLMEngine) SupportedModels(ctx context.Context) ([]string, error) {
-	url := fmt.Sprintf("%s/v1/models", strings.TrimRight(e.cfg.Endpoint, "/"))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return e.cfg.Models, nil
-	}
-
-	resp, err := e.httpClient.Do(req)
-	if err != nil {
-		return e.cfg.Models, nil
-	}
-	defer resp.Body.Close()
-
-	var res struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err == nil && len(res.Data) > 0 {
-		var names []string
-		for _, m := range res.Data {
-			names = append(names, m.ID)
-		}
-		return names, nil
-	}
-
-	return e.cfg.Models, nil
+	return fetchV1Models(ctx, e.httpClient, e.cfg.Endpoint, e.cfg.Models)
 }
