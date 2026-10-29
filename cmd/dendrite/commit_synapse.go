@@ -39,9 +39,17 @@ func linePrompter(in io.Reader, out io.Writer) peerConfirm {
 	}
 }
 
+// stdinIsTerminal reports whether stdin is an interactive terminal. /dev/null is a character
+// device too, but nobody can answer a prompt there (CI, installer scripts, `< /dev/null`).
 func stdinIsTerminal() bool {
 	fi, err := os.Stdin.Stat()
-	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+	if err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		return false
+	}
+	if null, err := os.Stat(os.DevNull); err == nil && os.SameFile(fi, null) {
+		return false
+	}
+	return true
 }
 
 // commitSynapsePeers walks every synapse peer of startDir after the main commit: dirty peers are
@@ -59,7 +67,11 @@ func commitSynapsePeers(ctx context.Context, out io.Writer, startDir, synapseID 
 	attention := 0
 	for _, t := range targets {
 		m := t.Member
-		if t.Synapse == "" || (startID != "" && m.ProjectID == startID) || filepath.Clean(m.PathHint) == filepath.Clean(startDir) {
+		// The member may have moved since the manifest was written: act on the directory it
+		// resolves to (path hint or project index), never on a stale PathHint.
+		dir, resolveErr := synapse.Resolve(m)
+		if t.Synapse == "" || (startID != "" && m.ProjectID == startID) || filepath.Clean(m.PathHint) == filepath.Clean(startDir) ||
+			(resolveErr == nil && filepath.Clean(dir) == filepath.Clean(startDir)) {
 			continue
 		}
 		peers++
@@ -68,7 +80,7 @@ func commitSynapsePeers(ctx context.Context, out io.Writer, startDir, synapseID 
 			attention++
 			continue
 		}
-		repo, err := devtool.InspectRepo(ctx, m.PathHint, false)
+		repo, err := devtool.InspectRepo(ctx, dir, false)
 		if err != nil {
 			fmt.Fprintf(out, "[-] %s: %v\n", m.Alias, err)
 			attention++
@@ -87,12 +99,12 @@ func commitSynapsePeers(ctx context.Context, out io.Writer, startDir, synapseID 
 				continue
 			}
 			peerOpts := base
-			peerOpts.RepoDir = m.PathHint
+			peerOpts.RepoDir = dir
 			peerOpts.TicketID, peerOpts.Message, peerOpts.Files, peerOpts.Amend, peerOpts.SmartTicket = "", "", nil, false, nil
 			// Peers are committed as leftovers without a ticket of their own; the lifecycle guard
 			// applies to the commit the user made, not to these.
 			peerOpts.NoTicketGuard = true
-			fmt.Fprintf(out, "[+] Committing synapse peer %s (%s)...\n", m.Alias, m.PathHint)
+			fmt.Fprintf(out, "[+] Committing synapse peer %s (%s)...\n", m.Alias, dir)
 			res, err := devtool.ExecuteCommit(ctx, peerOpts)
 			if err != nil {
 				fmt.Fprintf(out, "[-] %s: commit failed: %v\n", m.Alias, err)
@@ -103,7 +115,7 @@ func commitSynapsePeers(ctx context.Context, out io.Writer, startDir, synapseID 
 				attention++
 			}
 		case repo.Ahead > 0 && repo.Behind == 0 && !base.NoPush && !base.DryRun:
-			push := devtool.PushCurrentBranch(ctx, m.PathHint)
+			push := devtool.PushCurrentBranch(ctx, dir)
 			switch {
 			case push.Pushed:
 				fmt.Fprintf(out, "[✓] %s: pushed %d commit(s) to %s/%s\n", m.Alias, repo.Ahead, push.Remote, push.Branch)

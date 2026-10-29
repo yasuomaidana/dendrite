@@ -18,10 +18,10 @@ const (
 
 // Standard typed errors.
 var (
-	ErrInvalidMode          = errors.New("invalid dependency mode")
-	ErrMissingParameter     = errors.New("missing required mode parameter")
-	ErrManifestNotFound     = errors.New("no recognized manifest found in project directory")
-	ErrDependencyNotFound   = errors.New("target dependency not found in manifest")
+	ErrInvalidMode           = errors.New("invalid dependency mode")
+	ErrMissingParameter      = errors.New("missing required mode parameter")
+	ErrManifestNotFound      = errors.New("no recognized manifest found in project directory")
+	ErrDependencyNotFound    = errors.New("target dependency not found in manifest")
 	ErrTransactionalRollback = errors.New("transaction failed and original files were rolled back")
 )
 
@@ -101,11 +101,11 @@ type SwitchRequest struct {
 
 // SwitchResult summarizes the result of an atomic dependency mode switch.
 type SwitchResult struct {
-	DependencyName    string         `json:"dependency_name"`
-	TargetProject     string         `json:"target_project"`
-	PreviousMode      DependencyMode `json:"previous_mode"`
-	NewMode           DependencyMode `json:"new_mode"`
-	ModifiedFiles     []string       `json:"modified_files"`
-	IDEScopesUpdated  bool           `json:"ide_scopes_updated"`
-	Timestamp         time.Time      `json:"timestamp"`
+	DependencyName   string         `json:"dependency_name"`
+	TargetProject    string         `json:"target_project"`
+	PreviousMode     DependencyMode `json:"previous_mode"`
+	NewMode          DependencyMode `json:"new_mode"`
+	ModifiedFiles    []string       `json:"modified_files"`
+	IDEScopesUpdated bool           `json:"ide_scopes_updated"`
+	Timestamp        time.Time      `json:"timestamp"`
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/plane"
 )
@@ -41,7 +42,7 @@ func registerPlaneTicketSetTool(s *Server, deps Dependencies) {
 				return nil, fmt.Errorf("plane client error: %w", err)
 			}
 		}
-		if err := client.UpdateStatus(ctx, tracker.TicketID(strings.TrimSpace(ticket)), st); err != nil {
+		if _, err := planesvc.Default().SetStatus(ctx, client, tracker.TicketID(strings.TrimSpace(ticket)), st); err != nil {
 			return nil, fmt.Errorf("set %s to %s in Plane: %w", ticket, st, err)
 		}
 		data, _ := json.MarshalIndent(map[string]string{"ticket": ticket, "status": string(st), "source": "plane"}, "", "  ")

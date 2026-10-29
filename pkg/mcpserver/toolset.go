@@ -11,7 +11,7 @@ import (
 type Profile string
 
 const (
-	// ProfileCore exposes retrieval, the code graph and Plane ticket tools only.
+	// ProfileCore exposes retrieval, the code graph, Plane ticket tools and the ticket lifecycle tools only.
 	ProfileCore Profile = "core"
 	// ProfileFull exposes every registered tool.
 	ProfileFull Profile = "full"
@@ -31,8 +31,8 @@ const ProfileEnv = "DENDRITE_MCP_PROFILE"
 // Synapse tools are served by the scoped synapse server (NewSynapseServer), which is always
 // confined to the relationship and is not filtered.
 var (
-	coreToolPrefixes = []string{"dendrite_rag_", "dendrite_graph_", "dendrite_plane_"}
-	coreToolNames    = map[string]bool{"dendrite_ticket_smart_select": true}
+	coreToolPrefixes = []string{"dendrite_rag_", "dendrite_graph_", "dendrite_plane_", "dendrite_ticket_"}
+	coreToolNames    = map[string]bool{"dendrite_query_context": true, "dendrite_synapse_peers": true}
 )
 
 // ParseProfile validates a profile name; an empty name means defaultProfile.

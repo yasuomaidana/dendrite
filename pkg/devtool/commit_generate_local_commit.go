@@ -1,6 +1,7 @@
 package devtool
 
 import (
+	"Dendrite/pkg/memfit"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -19,6 +20,11 @@ import (
 
 // GenerateLocalCommitMessageWithContext synthesizes Conventional Commit with active ticket context.
 func GenerateLocalCommitMessageWithContext(ctx context.Context, diffStat, fullDiff, ticketID string, smartTicket *SmartTicketInfo, model string, ollamaURL, litellmURL, litellmKey string, stagedFiles []string) (string, string, error) {
+	// A default that is not installed, or too large for this machine, is replaced by the smartest
+	// installed model that fits; an unreachable Ollama keeps the old default.
+	if !strings.Contains(strings.ToLower(model), "oxillama") {
+		model = memfit.ResolveOllama(ctx, ollamaURL, model)
+	}
 	if model == "" {
 		model = inference.ChatModel(inference.TierChore)
 	}
@@ -214,6 +220,9 @@ func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, erro
 		cmd := exec.CommandContext(ctx, "git", args...)
 		if opts.RepoDir != "" {
 			cmd.Dir = opts.RepoDir
+		}
+		if opts.NoTicketGuard { // git's pre-commit hook honours the same bypass
+			cmd.Env = append(os.Environ(), TicketGuardEnv+"=off")
 		}
 		var out, errOut bytes.Buffer
 		cmd.Stdout = &out

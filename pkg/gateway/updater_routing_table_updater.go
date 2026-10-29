@@ -158,57 +158,54 @@ func (u *RoutingTableUpdater) buildDynamicConfig(
 		fallbackModelNames = append(fallbackModelNames, aliasName)
 	}
 
-	// 1. Process discovered models in intelligence order
-	var assigned27b, assigned9b, assignedCoder bool
+	// 1. Roles are assigned only among installed chat models that fit this machine's memory.
+	//    discovered is ordered smartest first; slower is acceptable, starving the machine is not.
+	var chat, embed []DiscoveredModel
 	for _, dm := range discovered {
+		switch {
+		case !dm.Fits:
+		case dm.Embed:
+			embed = append(embed, dm)
+		default:
+			chat = append(chat, dm)
+		}
+	}
+	role := func(aliases []string, dm DiscoveredModel, tokens int) {
+		for _, a := range aliases {
+			addLocalEntry(a, dm.ModelName, dm.EngineType, dm.Endpoint, tokens)
+		}
+	}
+	if len(chat) > 0 {
+		// reason: the smartest model that fits (the old local-qwen3-27b slot).
+		role([]string{"local-reason", "local-qwen3-27b"}, chat[0], 8192)
+		// coder: the smartest coder-tuned model, else the smartest overall.
+		coder := chat[0]
+		for _, dm := range chat {
+			if strings.Contains(strings.ToLower(dm.ModelName), "coder") {
+				coder = dm
+				break
+			}
+		}
+		role([]string{"local-coder", "local-qwen-coder"}, coder, 8192)
+		// fast: the smallest model that is still capable (score >= 50), for short, frequent calls.
+		fast := chat[len(chat)-1]
+		for i := len(chat) - 1; i >= 0; i-- {
+			if chat[i].IntelligenceScore >= 50 {
+				fast = chat[i]
+				break
+			}
+		}
+		role([]string{"local-fast", "local-qwen3-9b"}, fast, 4096)
+	}
+	if len(embed) > 0 {
+		role([]string{"local-embed"}, embed[0], 2048)
+	}
+	// Explicit per-model aliases, for the models that fit only.
+	for _, dm := range chat {
 		clean := strings.ToLower(dm.ModelName)
-
-		// Map standard dynamic aliases to the best available models
-		if !assigned27b && (strings.Contains(clean, "27b") || strings.Contains(clean, "32b") || dm.IntelligenceScore >= 85) {
-			addLocalEntry("local-qwen3-27b", dm.ModelName, dm.EngineType, dm.Endpoint, 8192)
-			assigned27b = true
-		} else if !assigned9b && (strings.Contains(clean, "9b") || strings.Contains(clean, "8b") || (dm.IntelligenceScore >= 65 && dm.IntelligenceScore < 85)) {
-			addLocalEntry("local-qwen3-9b", dm.ModelName, dm.EngineType, dm.Endpoint, 4096)
-			assigned9b = true
-		}
-
-		if !assignedCoder && (strings.Contains(clean, "coder") || strings.Contains(clean, "instruct")) {
-			addLocalEntry("local-qwen-coder", dm.ModelName, dm.EngineType, dm.Endpoint, 8192)
-			assignedCoder = true
-		}
-
-		// Also register explicit model name
-		explicitAlias := fmt.Sprintf("local-%s", strings.ReplaceAll(strings.ReplaceAll(clean, ":", "-"), "/", "-"))
-		addLocalEntry(explicitAlias, dm.ModelName, dm.EngineType, dm.Endpoint, 4096)
+		addLocalEntry(fmt.Sprintf("local-%s", strings.ReplaceAll(strings.ReplaceAll(clean, ":", "-"), "/", "-")),
+			dm.ModelName, dm.EngineType, dm.Endpoint, 4096)
 	}
-
-	// 2. Ensure standard fallback aliases exist even if engines are currently offline
-	defaultOllamaEP := "http://127.0.0.1:11434"
-	if opts.OllamaEndpoint != "" {
-		defaultOllamaEP = opts.OllamaEndpoint
-	}
-	defaultOxillamaEP := "http://127.0.0.1:8080"
-	if opts.OxillamaEndpoint != "" {
-		defaultOxillamaEP = opts.OxillamaEndpoint
-	}
-
-	// Offline defaults point at Ollama (GPU); OxiLLaMa keeps only its own alias.
-	if !registeredAliases["local-qwen3-27b"] {
-		addLocalEntry("local-qwen3-27b", "qwen3.8:27b", string(inference.EngineOllama), defaultOllamaEP, 8192)
-	}
-	if !registeredAliases["local-qwen3-9b"] {
-		addLocalEntry("local-qwen3-9b", "qwen3.5:9b", string(inference.EngineOllama), defaultOllamaEP, 4096)
-	}
-	if !registeredAliases["local-qwen-coder"] {
-		addLocalEntry("local-qwen-coder", "qwen2.5-coder:14b", string(inference.EngineOllama), defaultOllamaEP, 4096)
-	}
-
-	// Also register backward-compatible engine aliases
-	addLocalEntry("oxillama-rust", "qwen3.8:27b", string(inference.EngineOxiLLaMa), defaultOxillamaEP, 8192)
-	addLocalEntry("local-coder", "hermes3:8b", string(inference.EngineOllama), defaultOllamaEP, 4096)
-	addLocalEntry("llamacpp-local", "mistral-7b-instruct-q4", string(inference.EngineLlamaCpp), "http://localhost:8081", 4096)
-	addLocalEntry("vllm-cluster", "Qwen/Qwen2.5-Coder-32B-Instruct", string(inference.EngineVLLM), "http://vllm-node:8000", 4096)
-	addLocalEntry("hf-deepseek", "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct", string(inference.EngineHuggingFaceTGI), "http://tgi-node:8080", 4096)
 
 	// Dynamic cascade fallbacks
 	// Reorder fallbackModelNames by ModelIntelligenceScore

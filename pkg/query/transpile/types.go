@@ -33,15 +33,15 @@ type TranspileRequest struct {
 
 // TranspileResult encapsulates the synthesized Rust crate metadata and verification metrics.
 type TranspileResult struct {
-	CrateName                string                   `json:"crate_name"`
-	TargetLanguage           string                   `json:"target_language"`
-	NoStd                    bool                     `json:"no_std"`
-	NewtypesEmitted          []string                 `json:"newtypes_emitted"`
-	ZeroUnsafeVerified       bool                     `json:"zero_unsafe_verified"`
-	DifferentialTestsPassed  bool                     `json:"differential_tests_passed"`
-	TestCasesEvaluated       int                      `json:"test_cases_evaluated"`
-	MaxDelta                 float64                  `json:"max_delta"`
-	EmittedCratePath         string                   `json:"emitted_crate_path"`
-	DifferentialTestResults  []DifferentialTestResult `json:"differential_test_results"`
-	Timestamp                time.Time                `json:"timestamp"`
+	CrateName               string                   `json:"crate_name"`
+	TargetLanguage          string                   `json:"target_language"`
+	NoStd                   bool                     `json:"no_std"`
+	NewtypesEmitted         []string                 `json:"newtypes_emitted"`
+	ZeroUnsafeVerified      bool                     `json:"zero_unsafe_verified"`
+	DifferentialTestsPassed bool                     `json:"differential_tests_passed"`
+	TestCasesEvaluated      int                      `json:"test_cases_evaluated"`
+	MaxDelta                float64                  `json:"max_delta"`
+	EmittedCratePath        string                   `json:"emitted_crate_path"`
+	DifferentialTestResults []DifferentialTestResult `json:"differential_test_results"`
+	Timestamp               time.Time                `json:"timestamp"`
 }

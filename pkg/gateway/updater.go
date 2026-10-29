@@ -13,11 +13,12 @@ import (
 	"time"
 
 	"Dendrite/pkg/inference"
+	"Dendrite/pkg/memfit"
+	"Dendrite/pkg/stacks"
 )
 
-// Default paths and intervals for LiteLLM routing table updater.
+// Default interval for the LiteLLM routing table updater.
 const (
-	DefaultConfigPath     = "stacks/litellm_config.yaml"
 	DefaultUpdateInterval = 24 * time.Hour
 )
 
@@ -29,14 +30,18 @@ type DiscoveredModel struct {
 	IntelligenceScore int    `json:"intelligence_score"`
 	Endpoint          string `json:"endpoint"`
 	ZeroCost          bool   `json:"zero_cost"`
-	// FitsMachine is false for a model too large to stay resident in this machine's memory; such a
-	// model is still registered as a route but is never chosen as the active local primary.
-	FitsMachine bool `json:"fits_machine"`
+	SizeBytes         int64  `json:"size_bytes,omitempty"`
+	// Fits is false when the model would not run inside this machine's memory budget; such models
+	// never get a role alias or a place in the fallback cascade.
+	Fits      bool   `json:"fits"`
+	FitReason string `json:"fit_reason,omitempty"`
+	// Embed marks embedding models, which serve the local-embed role and never a chat role.
+	Embed bool `json:"embed,omitempty"`
 }
 
 // UpdaterOptions configures the LiteLLM routing table updater.
 type UpdaterOptions struct {
-	ConfigPath        string             // Target YAML path (default: stacks/litellm_config.yaml)
+	ConfigPath        string             // Target YAML path (default: <stacks dir>/litellm_config.yaml, i.e. ~/.dendrite/stacks)
 	Interval          time.Duration      // Scheduled update interval (default: 24h)
 	UseContainerHost  bool               // Rewrite localhost/127.0.0.1 to host.docker.internal
 	DryRun            bool               // Return generated config without writing to disk
@@ -46,15 +51,17 @@ type UpdaterOptions struct {
 	PrimaryCloudModel string             // Primary commercial model (default: gemini-4-argon-medium)
 	BackupCloudModel  string             // Secondary commercial model (default: copilot-sonnet)
 	FastCloudModel    string             // Fast commercial model (default: gemini-3.8-flash-medium)
-	RAMGB             float64            // Machine memory for the fit check (0: detect)
 	Logger            func(format string, args ...interface{})
 }
+
+// DefaultConfigPath is the LiteLLM routing table in the stacks directory, next to the compose file that mounts it.
+func DefaultConfigPath() string { return stacks.Path("litellm_config.yaml") }
 
 // DefaultUpdaterOptions initializes options from environment variables with sensible defaults.
 func DefaultUpdaterOptions() UpdaterOptions {
 	cfgPath := os.Getenv("DENDRITE_LITELLM_CONFIG_PATH")
 	if strings.TrimSpace(cfgPath) == "" {
-		cfgPath = DefaultConfigPath
+		cfgPath = DefaultConfigPath()
 	}
 
 	interval := DefaultUpdateInterval
@@ -69,7 +76,7 @@ func DefaultUpdaterOptions() UpdaterOptions {
 		if b, err := strconv.ParseBool(rawHost); err == nil {
 			useContainerHost = b
 		}
-	} else if strings.Contains(cfgPath, "stacks/") {
+	} else if strings.Contains(cfgPath, "stacks/") || filepath.Dir(cfgPath) == stacks.Dir() {
 		// By default, if writing to stacks/litellm_config.yaml, it targets docker-compose
 		useContainerHost = true
 	}
@@ -108,6 +115,8 @@ type UpdateReport struct {
 	ActiveLocalPrimary       string            `json:"active_local_primary"`
 	ActiveLocalPrimaryScore  int               `json:"active_local_primary_score"`
 	ActiveLocalPrimaryEngine string            `json:"active_local_primary_engine"`
+	TooLargeModels           []string          `json:"too_large_models,omitempty"`
+	MemoryBudgetBytes        uint64            `json:"memory_budget_bytes"`
 	TotalModelsConfigured    int               `json:"total_models_configured"`
 	BytesWritten             int               `json:"bytes_written"`
 	DryRun                   bool              `json:"dry_run"`
@@ -183,10 +192,6 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 	mgr := u.mgr
 	u.mu.RUnlock()
 
-	ramGB, fraction := opts.RAMGB, inference.FitFraction()
-	if ramGB <= 0 {
-		ramGB = inference.MachineRAMGB()
-	}
 	report := &UpdateReport{
 		Timestamp:        start,
 		ConfigPath:       opts.ConfigPath,
@@ -245,6 +250,18 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 	wg.Wait()
 	close(resCh)
 
+	var ollamaEP, oxiEP string
+	for _, e := range engines {
+		switch e.Type() {
+		case inference.EngineOllama:
+			ollamaEP = e.Config().Endpoint
+		case inference.EngineOxiLLaMa:
+			oxiEP = e.Config().Endpoint
+		}
+	}
+	fit := memfit.Assess(ctx, ollamaEP, oxiEP)
+	report.MemoryBudgetBytes = fit.BudgetBytes
+
 	for r := range resCh {
 		if r.reachable {
 			report.OnlineEngines = append(report.OnlineEngines, r.id)
@@ -254,15 +271,23 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 					continue
 				}
 				score := inference.ModelIntelligenceScore(cleanModel)
-				report.DiscoveredModels = append(report.DiscoveredModels, DiscoveredModel{
+				dm := DiscoveredModel{
 					ModelName:         cleanModel,
 					EngineID:          r.id,
 					EngineType:        string(r.engType),
 					IntelligenceScore: score,
 					Endpoint:          r.endpoint,
 					ZeroCost:          true,
-					FitsMachine:       inference.Fits(cleanModel, ramGB, fraction),
-				})
+					Fits:              true,
+					Embed:             strings.Contains(strings.ToLower(cleanModel), "embed"),
+				}
+				if m, ok := fit.Find(string(r.engType), cleanModel); ok {
+					dm.SizeBytes, dm.Fits, dm.FitReason = m.SizeBytes, m.Fits, m.Reason
+				}
+				if !dm.Fits {
+					report.TooLargeModels = append(report.TooLargeModels, cleanModel)
+				}
+				report.DiscoveredModels = append(report.DiscoveredModels, dm)
 			}
 		} else {
 			report.OfflineEngines = append(report.OfflineEngines, r.id)
@@ -273,28 +298,32 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 	sort.Strings(report.OnlineEngines)
 	sort.Strings(report.OfflineEngines)
 
-	// GPU-accelerated engines first (OxiLLaMa prefills on the CPU), then smartest first.
+	// Smartest first: slower is acceptable, starving the machine is not (models that do not fit are
+	// already excluded above). A GPU engine wins a tie, since it answers faster.
 	sort.SliceStable(report.DiscoveredModels, func(i, j int) bool {
-		gi := inference.GPUAccelerated(inference.EngineType(report.DiscoveredModels[i].EngineType))
-		gj := inference.GPUAccelerated(inference.EngineType(report.DiscoveredModels[j].EngineType))
-		if gi != gj {
-			return gi
+		a, b := report.DiscoveredModels[i], report.DiscoveredModels[j]
+		if a.Fits != b.Fits { // models that fit come first
+			return a.Fits
 		}
-		// A model that fits comes before one that would swap, however smart the latter is.
-		if fi, fj := report.DiscoveredModels[i].FitsMachine, report.DiscoveredModels[j].FitsMachine; fi != fj {
-			return fi
+		if a.Embed != b.Embed { // chat models before embedders
+			return !a.Embed
 		}
-		if report.DiscoveredModels[i].IntelligenceScore != report.DiscoveredModels[j].IntelligenceScore {
-			return report.DiscoveredModels[i].IntelligenceScore > report.DiscoveredModels[j].IntelligenceScore
+		if a.IntelligenceScore != b.IntelligenceScore {
+			return a.IntelligenceScore > b.IntelligenceScore
 		}
-		return report.DiscoveredModels[i].ModelName < report.DiscoveredModels[j].ModelName
+		ga, gb := inference.GPUAccelerated(inference.EngineType(a.EngineType)), inference.GPUAccelerated(inference.EngineType(b.EngineType))
+		if ga != gb {
+			return ga
+		}
+		return a.ModelName < b.ModelName
 	})
 
-	if len(report.DiscoveredModels) > 0 {
+	if len(report.DiscoveredModels) > 0 && report.DiscoveredModels[0].Fits && !report.DiscoveredModels[0].Embed {
 		report.ActiveLocalPrimary = report.DiscoveredModels[0].ModelName
 		report.ActiveLocalPrimaryScore = report.DiscoveredModels[0].IntelligenceScore
 		report.ActiveLocalPrimaryEngine = report.DiscoveredModels[0].EngineID
 	}
+	sort.Strings(report.TooLargeModels)
 
 	// 2. Synthesize dynamic LiteLLM configuration honoring discovered intelligence
 	cfg := u.buildDynamicConfig(opts, engines, report.DiscoveredModels)

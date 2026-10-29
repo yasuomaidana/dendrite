@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"Dendrite/pkg/dotenv"
 	"Dendrite/pkg/projectid"
 )
 
@@ -50,8 +51,13 @@ func renderCopilotInstructions(fp ProjectFingerprint) string {
 	return sb.String()
 }
 
+// ManagedHeader marks a file Dendrite generates and may rewrite. A file without it was written by a person
+// and is left alone.
+const ManagedHeader = "# managed by dendrite — edit .github/dendrite/directives.toml"
+
 func renderCIWorkflow(fp ProjectFingerprint) string {
 	var sb strings.Builder
+	sb.WriteString(ManagedHeader + "\n")
 	sb.WriteString("name: Dendrite CI/CD\n\n")
 	sb.WriteString("on:\n")
 	sb.WriteString("  push:\n")
@@ -204,6 +210,17 @@ func writeOrUpdateFile(path, content string, dryRun bool) (bool, bool, error) {
 	return false, false, err
 }
 
+// writeManagedFile is writeOrUpdateFile for a file a person may own: it creates the file when missing and
+// rewrites it only while it carries ManagedHeader. kept is true when an existing file without the header was
+// left untouched.
+func writeManagedFile(path, content string, dryRun bool) (created, updated, kept bool, err error) {
+	if existing, readErr := os.ReadFile(path); readErr == nil && !strings.HasPrefix(string(existing), ManagedHeader) {
+		return false, false, true, nil
+	}
+	created, updated, err = writeOrUpdateFile(path, content, dryRun)
+	return created, updated, false, err
+}
+
 // RagEnvFile, under the Dendrite home, holds the DENDRITE_RAG_* variables the sidecar
 // launcher passes to dendrite-rag (pkg/sidecar).
 const RagEnvFile = "rag.env"
@@ -226,8 +243,7 @@ func ensureRagEnv(projectRoot string, dryRun bool) (created, updated bool, err e
 	}
 	port := strings.TrimSpace(os.Getenv("POSTGRES_PORT"))
 	if port == "" {
-		dotenv, _ := os.ReadFile(filepath.Join(projectRoot, ".env"))
-		port = dotEnvValue(string(dotenv), "POSTGRES_PORT")
+		port = dotenv.Lookup(projectRoot, "POSTGRES_PORT") // .env.local, then the global file, then the committed .env
 	}
 	if port == "" {
 		port = "5432"

@@ -7,10 +7,39 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"Dendrite/pkg/stacks"
 )
+
+// localCommands records what a test run asked this machine to execute. TestMain installs it so no test
+// can reach the real Docker: an earlier unstubbed PruneLocal test ran `docker compose down` against
+// the live Plane stack once its compose path stopped being a non-existent relative one.
+var (
+	localMu       sync.Mutex
+	localCommands []string
+)
+
+func TestMain(m *testing.M) {
+	execCommand = func(_ context.Context, cmd string) error {
+		localMu.Lock()
+		defer localMu.Unlock()
+		localCommands = append(localCommands, cmd)
+		return nil
+	}
+	dir, err := os.MkdirTemp("", "migrate-stacks")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv(stacks.EnvDir, dir)
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
+}
 
 type scriptedExecutor struct {
 	ExecuteFunc     func(ctx context.Context, host string, port int, user string, keyPath string, cmd string) (string, error)
@@ -414,7 +443,7 @@ func TestDefaultRemoteExecutor_ExecuteAndStream(t *testing.T) {
 
 func TestExecCommand(t *testing.T) {
 	ctx := context.Background()
-	err := execCommand(ctx, "true")
+	err := runLocalCommand(ctx, "true")
 	if err != nil {
 		t.Errorf("expected 'true' command to succeed: %v", err)
 	}
@@ -433,11 +462,25 @@ func TestMigrate_PruneLocal(t *testing.T) {
 		Timeout:     5 * time.Second,
 	}
 
+	localMu.Lock()
+	localCommands = nil
+	localMu.Unlock()
 	res, err := migrator.Migrate(ctx, req)
 	if err != nil {
 		t.Fatalf("unexpected migration error with PruneLocal: %v", err)
 	}
 	if !res.Success {
 		t.Errorf("expected migration to succeed")
+	}
+	// The prune is asked for, against the stack in the stacks directory, and never actually run here.
+	want := "docker compose -f " + stacks.Path("compose.plane.yaml") + " down"
+	localMu.Lock()
+	defer localMu.Unlock()
+	found := false
+	for _, c := range localCommands {
+		found = found || c == want
+	}
+	if !found {
+		t.Errorf("PruneLocal did not ask to run %q; ran %v", want, localCommands)
 	}
 }

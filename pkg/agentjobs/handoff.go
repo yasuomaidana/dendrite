@@ -48,6 +48,7 @@ func (r JobRef) MarshalJSON() ([]byte, error) {
 type Checkpoint struct {
 	Branch              string    `json:"branch"`
 	Worktree            string    `json:"worktree"`
+	Ticket              string    `json:"ticket,omitempty"`
 	InFlight            []JobRef  `json:"in_flight"`
 	VerifiedUncommitted []JobRef  `json:"verified_uncommitted"`
 	PendingDecisions    []string  `json:"pending_decisions,omitempty"`
@@ -59,6 +60,7 @@ type Checkpoint struct {
 // CheckpointOptions specifies configuration when constructing a Checkpoint.
 type CheckpointOptions struct {
 	Worktree         string   `json:"worktree,omitempty"`
+	Ticket           string   `json:"ticket,omitempty"`
 	PendingDecisions []string `json:"pending_decisions,omitempty"`
 	Next             []string `json:"next,omitempty"`
 	Notes            string   `json:"notes,omitempty"`
@@ -141,6 +143,7 @@ func BuildCheckpoint(ledger *Ledger, opts CheckpointOptions) (*Checkpoint, error
 	cp := &Checkpoint{
 		Branch:              branch,
 		Worktree:            worktree,
+		Ticket:              strings.TrimSpace(opts.Ticket),
 		InFlight:            inFlight,
 		VerifiedUncommitted: verifiedUncommitted,
 		PendingDecisions:    decisions,
@@ -222,6 +225,9 @@ func RenderCheckpoint(cp *Checkpoint) string {
 	sb.WriteString("# Session Handoff\n\n")
 	sb.WriteString(fmt.Sprintf("- **Branch**: %s\n", cp.Branch))
 	sb.WriteString(fmt.Sprintf("- **Worktree**: %s\n", cp.Worktree))
+	if cp.Ticket != "" {
+		sb.WriteString(fmt.Sprintf("- **Ticket**: %s\n", cp.Ticket))
+	}
 	sb.WriteString(fmt.Sprintf("- **Created**: %s\n\n", cp.CreatedAt.UTC().Format(time.RFC3339)))
 
 	sb.WriteString("## In-Flight Jobs\n")

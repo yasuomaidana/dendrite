@@ -18,7 +18,8 @@ Retrieve code and documentation chunks from the project RAG index. With detail "
       "enum": [
         "all",
         "code",
-        "docs"
+        "docs",
+        "tickets"
       ],
       "type": "string"
     },

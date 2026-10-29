@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"Dendrite/pkg/planesvc"
+	"Dendrite/pkg/ticketlock"
 	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/plane"
 )
@@ -113,25 +115,20 @@ func EnsureTicketInProgress(ctx context.Context, repoDir, ticket string, mode Gu
 	}
 	res.After = res.Before
 
-	switch res.Before {
-	case tracker.StatusInProgress:
+	// GuardCommit and GuardStart have the same values as ticketlock.ModeCommit and ModeStart.
+	move, hint := ticketlock.Allowed(res.Before, ticketlock.Mode(mode), ticket)
+	if hint != "" {
+		return res, &ErrTicketLifecycle{ticket, res.Before, hint}
+	}
+	if !move {
 		return res, nil
-	case tracker.StatusTodo, tracker.StatusBacklog:
-	case tracker.StatusBlocked:
-		if mode == GuardCommit {
-			return res, &ErrTicketLifecycle{ticket, res.Before, fmt.Sprintf("resume it first with `dendrite chronos ticket set %s \"in progress\"`", ticket)}
-		}
-	case tracker.StatusInReview:
-		return res, &ErrTicketLifecycle{ticket, res.Before, fmt.Sprintf("it is awaiting verification; reopen it with `dendrite chronos ticket set %s \"in progress\"` for review fixes, or create a follow-up ticket", ticket)}
-	default: // Done, Cancelled
-		return res, &ErrTicketLifecycle{ticket, res.Before, "it is finished; create a follow-up ticket with `dendrite chronos create`, or reopen it deliberately with `dendrite chronos ticket set`"}
 	}
 
 	if dryRun {
 		res.Note = fmt.Sprintf("would start %s (%s)", ticket, tracker.StatusDisplayName(res.Before))
 		return res, nil
 	}
-	if err := client.UpdateStatus(ctx, tracker.TicketID(issue.ID), tracker.StatusInProgress); err != nil {
+	if _, err := planesvc.Default().SetStatus(ctx, client, tracker.TicketID(issue.ID), tracker.StatusInProgress); err != nil {
 		return res, fmt.Errorf("start %s: %w", ticket, err)
 	}
 	res.After, res.Moved = tracker.StatusInProgress, true

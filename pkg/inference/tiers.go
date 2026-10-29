@@ -88,9 +88,8 @@ func ChatModel(t Tier) string {
 	if t == TierChore {
 		candidates = []string{stored.Chore, stored.Ask}
 	}
-	ram, fraction := MachineRAMGB(), FitFraction()
 	for _, c := range candidates {
-		if c != "" && Fits(c, ram, fraction) {
+		if c != "" && Fits(c) {
 			return c
 		}
 	}

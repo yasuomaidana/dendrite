@@ -59,6 +59,7 @@ func RegisterDefaultTools(s *Server, deps Dependencies) {
 	// Ticket-Milestone DAG Linker, Smart Prioritization & Plane Gantt Tools
 	registerPlaneDAGTools(s, deps)
 	registerPlaneTicketSetTool(s, deps)
+	registerTicketLifecycleTools(s, deps)
 
 	// 55-57: Git Guardrails, Speculative Stacked Branches & Vendor Audit Tools
 	registerAuditTools(s, deps)
@@ -74,6 +75,7 @@ func RegisterDefaultTools(s *Server, deps Dependencies) {
 	registerGreetingTools(s, deps)
 	// Project Environment Preparation & CI/CD Tools
 	registerEnvPrepareTools(s, deps)
+	registerSynapsePeersTool(s)
 	// Canvas Interactive Writing & Penpot Creative Bridge Tools
 	registerCanvasTools(s, deps)
 	// Project RAG & AST Retrieval Tools

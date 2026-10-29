@@ -11,11 +11,11 @@ import (
 
 // Typed error hierarchy for Topic Memory parser and Fidelity Guard.
 var (
-	ErrMalformedBlock         = errors.New("malformed topic memory code block")
-	ErrMissingDisclaimer      = errors.New("missing or altered topic memory header disclaimer")
-	ErrNoSectionsFound        = errors.New("topic memory must contain at least one section")
-	ErrMissingEmojiHeader     = errors.New("each topic memory section must start with an emoji icon")
-	ErrExtrapolationDetected  = errors.New("zero-extrapolation violation: unsupported fact or hallucinated entity detected")
+	ErrMalformedBlock          = errors.New("malformed topic memory code block")
+	ErrMissingDisclaimer       = errors.New("missing or altered topic memory header disclaimer")
+	ErrNoSectionsFound         = errors.New("topic memory must contain at least one section")
+	ErrMissingEmojiHeader      = errors.New("each topic memory section must start with an emoji icon")
+	ErrExtrapolationDetected   = errors.New("zero-extrapolation violation: unsupported fact or hallucinated entity detected")
 	ErrInformationLossDetected = errors.New("information loss violation: key entities from original context missing")
 )
 

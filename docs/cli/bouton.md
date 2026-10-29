@@ -34,6 +34,7 @@ Postsynaptic Effectors & Actuation
 | `jobs submit` | Submit a job to an agent (runs detached) |
 | `jobs tail` | Print the last lines of a job's agent.log |
 | `jobs wait` | Block until the matching jobs finish |
+| `jobs watch` | Follow a job live: status, process, model requests, changed files and the stall countdown |
 | `route` | Pick the best agent, tier and model for a task, and optionally run it |
 | `run` | Launch a coding agent (aider, openhands, opencode, agy, copilot) through the gateway |
 | `search` | Rank agents for a query through the dendrite-rag sidecar (BM25, embeddings, RRF) |
@@ -55,9 +56,8 @@ dendrite bouton jobs
 
 ```bash
 dendrite bouton jobs submit --ticket DEN-123 --agent agy --scope pkg/foo --prompt-file prompt.md --isolate
-dendrite bouton jobs show --ticket DRAG-30
-dendrite bouton jobs wait --ticket DRAG-30
-dendrite bouton jobs list --json
+dendrite bouton jobs list --ticket DEN-123
+dendrite bouton jobs show --ticket DEN-123
 dendrite bouton jobs wait --ticket DEN-123 --timeout 2h
 ```
 
@@ -71,6 +71,7 @@ dendrite bouton jobs daemon [flags]
 
 | Flag | Description |
 | :--- | :--- |
+| `--idle-exit` | Exit once no job has needed the watcher for this long (0: run until stopped) |
 | `--install` | Install the watcher as a macOS LaunchAgent |
 | `--interval` | Time between watcher passes (default: 30s) |
 | `--once` | Run one watcher pass and exit |
@@ -99,7 +100,7 @@ dendrite bouton jobs show [<job-id>] [flags]
 
 | Flag | Description |
 | :--- | :--- |
-| `--ticket, -t` | Ticket identifier (e.g. DEN-123); shows the latest job of the ticket |
+| `--ticket, -t` | Ticket identifier (e.g. DEN-123) |
 
 ### `dendrite bouton jobs submit`
 
@@ -146,6 +147,25 @@ dendrite bouton jobs wait [flags]
 | `--interval` | Polling interval (default: 2s) |
 | `--ticket, -t` | Ticket identifier (e.g. DEN-123) |
 | `--timeout` | Give up after this long (default: 30m0s) |
+
+### `dendrite bouton jobs watch`
+
+Follow a job live: status, process, model requests, changed files and the stall countdown
+
+```bash
+dendrite bouton jobs watch [<job-id>] [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--interval` | Time between snapshots (default: 10s) |
+| `--once` | Print one snapshot and exit |
+| `--ticket, -t` | Ticket identifier (e.g. DEN-123) |
+
+```bash
+dendrite bouton jobs watch --ticket DEN-123
+dendrite bouton jobs watch DEN-123-20261029T053329Z-ab7522 --once --json
+```
 
 ### `dendrite bouton route`
 
@@ -213,6 +233,4 @@ dendrite bouton run aider --ticket DEN-030 --task "fix the parser"
 dendrite bouton search "refactor AST parser" --local
 dendrite bouton route --task "add a CLI flag" --exec
 dendrite bouton jobs submit --ticket DEN-123 --agent agy --scope pkg/foo --prompt-file prompt.md --isolate
-dendrite bouton jobs show --ticket DRAG-30
-dendrite bouton jobs wait --ticket DRAG-30
 ```

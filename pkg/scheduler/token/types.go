@@ -44,7 +44,6 @@ func (RealClock) Now() time.Time {
 	return time.Now()
 }
 
-
 // Policy defines scheduling rules, time windows, and token ceilings.
 type Policy struct {
 	NightWindow       string        `json:"night_window"`        // e.g. "23:00-06:00"

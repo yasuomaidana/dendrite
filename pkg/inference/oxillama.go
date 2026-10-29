@@ -1,6 +1,7 @@
 package inference
 
 import (
+	"Dendrite/pkg/oxilease"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -44,6 +45,12 @@ func (e *OxiLLaMaEngine) Generate(ctx context.Context, req CompletionRequest) (*
 	if strings.TrimSpace(req.Prompt) == "" {
 		return nil, ErrEmptyPrompt
 	}
+
+	release, err := e.acquireLocalServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 
 	model := req.Model
 	if model == "" && len(e.cfg.Models) > 0 {
@@ -314,4 +321,33 @@ func (e *OxiLLaMaEngine) SupportedModels(ctx context.Context) ([]string, error) 
 		return nil, doErr
 	}
 	return e.cfg.Models, nil
+}
+
+// acquireLocalServer holds a lease on the local OxiLLaMa server for the duration of one call, so the
+// server is started for the call and stopped once no session needs it. It does nothing for a remote
+// or non-default endpoint, or when DENDRITE_OXILLAMA_AUTOSTART=off.
+func (e *OxiLLaMaEngine) acquireLocalServer(ctx context.Context) (func(), error) {
+	noop := func() {}
+	if strings.EqualFold(os.Getenv("DENDRITE_OXILLAMA_AUTOSTART"), "off") {
+		return noop, nil
+	}
+	want := fmt.Sprintf("127.0.0.1:%d", oxilease.DefaultPort)
+	ep := strings.TrimPrefix(strings.TrimPrefix(strings.TrimRight(e.cfg.Endpoint, "/"), "http://"), "https://")
+	if ep != want && ep != fmt.Sprintf("localhost:%d", oxilease.DefaultPort) {
+		return noop, nil
+	}
+	mgr := oxilease.Default()
+	req := oxilease.Request{Holder: "engine:" + e.cfg.ID}
+	if !mgr.Running() { // only choose a model when one has to be started
+		m, err := oxilease.BestFitting(ctx)
+		if err != nil {
+			return noop, err
+		}
+		req.ModelPath, req.ModelID = m.Path, m.ID
+	}
+	lease, err := mgr.Acquire(ctx, req)
+	if err != nil {
+		return noop, err
+	}
+	return func() { _ = lease.Release() }, nil
 }

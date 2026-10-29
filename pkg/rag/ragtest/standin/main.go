@@ -149,6 +149,8 @@ func main() {
 			} else {
 				resp["result"] = r
 			}
+		case strings.HasPrefix(req.Method, "quality."):
+			resp["result"] = quality(req.Method, p.Root, req.Params)
 		case req.Method == "rank":
 			resp["result"] = map[string]interface{}{"ranked": rank(p)}
 		case req.Method == "chunks.get":

@@ -22,8 +22,19 @@ Policy:
 | Outcome classifier | `pkg/agentjobs/classify.go` | Maps exit code + log tail + file-scope changes to `QUOTA`, `TRANSIENT`, `PERMISSION`, `EARLY_EXIT`, `DONE` |
 | Dispatcher | `dendrite agent jobs submit/list/show/tail/wait/retry/cancel` | Starts detached jobs with the standard headless preamble and a file-scope guard |
 | Fallback chain | `pkg/agentjobs/fallback.go` + `pkg/scheduler/governor` | Escalates on `QUOTA`, marks exhausted providers until reset, parks with `resume_after` |
-| Watcher | `dendrite agent jobs daemon [--install]` | Verifies finished jobs (gofmt, build, vet, race tests, coverage), re-dispatches failures once, wakes parked jobs |
+| Watcher | `dendrite agent jobs daemon [--install] [--idle-exit 30m]` | Verifies finished jobs (gofmt, build, vet, race tests, coverage), re-dispatches failures once, wakes parked jobs, kills and retries a running job with no sign of life; writes a heartbeat (`watcher.json` in the ledger root). `jobs submit` starts one when none is alive; `session resume` warns when jobs are in flight and none is |
+| Visibility | `dendrite agent jobs watch [<job-id>\|--ticket T] [--once] [--json]` | One line per interval: status, elapsed time, process, model requests and age of the last, changed files, time left before the stall check, watcher up or down |
 | Handoff | `dendrite session checkpoint` / `dendrite session resume` | < 500-token state checkpoint; `resume` is the first command of every new session |
+
+## Progress signals (DEN-391)
+
+AGY prints its result only when the turn ends, so `agent.log` says nothing while it works. Three signals exist instead:
+
+- **agy's own log.** Every attempt runs with `--log-file <job dir>/agy.log`; agy writes one `streamGenerateContent` line per model request. The request count and the age of the last one separate a busy agent (reading, thinking) from a stuck one.
+- **agent.log, live.** stdout and stderr are written to it as they arrive, not after the process ends.
+- **Stall check.** The watcher counts the newest of the ledger entry, `agent.log`, `agy.log` and the files in the job's scope as the job's last sign of life. A job that keeps making model requests is never called stalled even when it has not touched a file.
+
+The per-attempt wall-clock deadline (`DefaultAttemptTimeout`, 20 minutes) is enforced by the job's own runner, so it applies even when no watcher runs.
 
 ## Spike findings (DEN-993, 2026-10-17)
 

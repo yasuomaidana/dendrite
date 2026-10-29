@@ -18,8 +18,21 @@ var (
 
 	// isTestBinary and gitTopLevel are seams so every resolution branch is testable.
 	isTestBinary = testing.Testing
-	gitTopLevel  = func() ([]byte, error) { return exec.Command("git", "rev-parse", "--show-toplevel").Output() }
+	gitTopLevel  = mainCheckout
 )
+
+// mainCheckout prints the checkout that owns the git directory: for a linked worktree that is
+// the main checkout, so every working copy shares one untracked .dendrite/. Outside a
+// standard layout (bare repository) it falls back to the current top level.
+func mainCheckout() ([]byte, error) {
+	out, err := exec.Command("git", "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	if err == nil {
+		if common := strings.TrimSpace(string(out)); filepath.Base(common) == ".git" {
+			return []byte(filepath.Dir(common) + "\n"), nil
+		}
+	}
+	return exec.Command("git", "rev-parse", "--show-toplevel").Output()
+}
 
 // testStateDir isolates state per test binary so `go test` never mutates the
 // repository's tracked .dendrite/ files or leaves state in package directories.

@@ -57,16 +57,16 @@ var CanonicalActionVerbs = map[string]bool{
 type GreetingStyle string
 
 const (
-	StyleThoughtfulCheckin  GreetingStyle = "G-01" // Thoughtful check-in
-	StyleProgressCelebration GreetingStyle = "G-02" // Progress celebration
-	StyleReflectionPrompt   GreetingStyle = "G-03" // Reflection prompt
-	StyleCallbackToDetail   GreetingStyle = "G-04" // Callback to specific detail
+	StyleThoughtfulCheckin    GreetingStyle = "G-01" // Thoughtful check-in
+	StyleProgressCelebration  GreetingStyle = "G-02" // Progress celebration
+	StyleReflectionPrompt     GreetingStyle = "G-03" // Reflection prompt
+	StyleCallbackToDetail     GreetingStyle = "G-04" // Callback to specific detail
 	StyleInvitationToContinue GreetingStyle = "G-05" // Invitation to continue
-	StyleAnticipationBuilder GreetingStyle = "G-06" // Anticipation builder
-	StyleGentleNudge        GreetingStyle = "G-07" // Gentle nudge
-	StyleMilestoneRecap     GreetingStyle = "G-08" // Milestone recap
-	StyleStrategicPause     GreetingStyle = "G-09" // Strategic pause
-	StyleCreativeSpark      GreetingStyle = "G-10" // Creative spark
+	StyleAnticipationBuilder  GreetingStyle = "G-06" // Anticipation builder
+	StyleGentleNudge          GreetingStyle = "G-07" // Gentle nudge
+	StyleMilestoneRecap       GreetingStyle = "G-08" // Milestone recap
+	StyleStrategicPause       GreetingStyle = "G-09" // Strategic pause
+	StyleCreativeSpark        GreetingStyle = "G-10" // Creative spark
 )
 
 // MemorySection represents a formatted section within the Topic Memory block.

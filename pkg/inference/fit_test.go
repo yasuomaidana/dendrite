@@ -3,6 +3,8 @@ package inference
 import (
 	"path/filepath"
 	"testing"
+
+	"Dendrite/pkg/memfit"
 )
 
 func TestEstimateModelGBReadsParameterCounts(t *testing.T) {
@@ -30,44 +32,28 @@ func TestEstimateModelGBReadsParameterCounts(t *testing.T) {
 }
 
 func TestFitsRefusesWhatWouldSwapOnThisMachine(t *testing.T) {
-	const ram = 24.0 // the M3 MacBook Air this was measured on
+	budget := uint64(15 << 30) // the budget of the 24 GB M3 this was measured on, about 62% of RAM
 	for name, want := range map[string]bool{
 		"hermes3:8b":      true,
-		"gpt-oss:20b":     true,  // 12 GB estimated, 14 GB on disk: under 65% of 24 GB (15.6 GB)
+		"gpt-oss:20b":     true,  // 12 GB estimated
 		"qwen3.8:27b":     false, // the model that put this machine 21 GB into swap
-		"qwen3-coder:30b": false, // 18 GB: fits only after the GPU memory limit is raised and the fraction too
-		"tinyllama":       true,  // size unknown: benefit of the doubt
+		"qwen3-coder:30b": false,
+		"tinyllama":       true, // size unknown: benefit of the doubt
 	} {
-		if got := Fits(name, ram, 0); got != want {
-			t.Errorf("Fits(%q, 24 GB) = %v, want %v", name, got, want)
+		if got := FitsBudget(name, budget); got != want {
+			t.Errorf("FitsBudget(%q, 15 GB) = %v, want %v", name, got, want)
 		}
 	}
-	if !Fits("qwen3-coder:30b", ram, 0.8) {
-		t.Error("an 80% fraction should admit the 30B mixture-of-experts model")
+	t.Setenv(memfit.EnvBudgetGB, "200")
+	if !Fits("qwen3.8:27b") {
+		t.Error("a budget raised through the environment should admit the 27B model")
 	}
-	if !Fits("qwen3.8:27b", 0, 0) {
-		t.Error("unknown RAM must not reject models")
-	}
-	if !Fits("qwen3.8:27b", 64, 0) {
-		t.Error("a 64 GB machine fits a 27B model")
-	}
-}
 
-func TestFitFractionOverrideIsValidated(t *testing.T) {
-	t.Setenv(FitFractionEnv, "0.8")
-	if FitFraction() != 0.8 {
-		t.Errorf("FitFraction = %v", FitFraction())
-	}
-	for _, bad := range []string{"", "x", "0", "1.5", "-1"} {
-		t.Setenv(FitFractionEnv, bad)
-		if FitFraction() != DefaultFitFraction {
-			t.Errorf("%q gave %v, want the default", bad, FitFraction())
-		}
-	}
 }
 
 func TestChatModelResolutionOrder(t *testing.T) {
 	t.Setenv("DENDRITE_HOME", t.TempDir())
+	t.Setenv(memfit.EnvBudgetGB, "40") // the stored models fit, whatever the machine running the test has
 	t.Setenv(ChatModelEnv, "")
 	if got := ChatModel(TierAsk); got != FallbackModel {
 		t.Errorf("nothing configured: %q, want the fallback %q", got, FallbackModel)
@@ -94,11 +80,11 @@ func TestChatModelResolutionOrder(t *testing.T) {
 func TestChatModelNeverReturnsAStoredModelThatSwaps(t *testing.T) {
 	t.Setenv("DENDRITE_HOME", t.TempDir())
 	t.Setenv(ChatModelEnv, "")
-	t.Setenv(FitFractionEnv, "0.01") // nothing with a known size fits
+	t.Setenv(memfit.EnvBudgetGB, "0.5") // nothing with a known size fits
 	if err := (Tiers{Ask: "qwen3.8:27b", Chore: "qwen3.8:27b"}).Save(); err != nil {
 		t.Fatal(err)
 	}
-	if got := ChatModel(TierAsk); got != FallbackModel && MachineRAMGB() > 0 {
+	if got := ChatModel(TierAsk); got != FallbackModel {
 		t.Errorf("a stored model that does not fit was returned: %q", got)
 	}
 }

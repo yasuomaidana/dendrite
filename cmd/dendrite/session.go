@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"Dendrite/pkg/agentjobs"
 	"Dendrite/pkg/statedir"
+	"Dendrite/pkg/ticketlock"
 )
 
 // newSessionCmd builds `dendrite session`: orchestrator checkpoint and resume.
@@ -74,6 +77,7 @@ func runSessionCheckpoint(ctx context.Context, o sessionCheckpointOptions, out i
 
 	opts := agentjobs.CheckpointOptions{
 		Worktree:         o.Worktree,
+		Ticket:           claimedTicket(o.Worktree),
 		PendingDecisions: o.Decisions,
 		Next:             o.Next,
 		Notes:            combinedNotes,
@@ -115,12 +119,61 @@ func runSessionCheckpoint(ctx context.Context, o sessionCheckpointOptions, out i
 		fmt.Fprintf(out, "    - Next:                 %s\n", strings.Join(cp.Next, ", "))
 	}
 
+	if cp.Ticket != "" {
+		postTicketComment(ctx, out, o.Worktree, "milestone", checkpointSummary(cp))
+	}
 	autoCleanWorkCopies(ctx, out)
 	return nil
 }
 
+// checkpointSummary is the milestone comment of a checkpoint: the decisions, next tickets and notes.
+func checkpointSummary(cp *agentjobs.Checkpoint) string {
+	parts := []string{"Checkpoint on " + cp.Branch}
+	if len(cp.PendingDecisions) > 0 {
+		parts = append(parts, "Decisions:\n- "+strings.Join(cp.PendingDecisions, "\n- "))
+	}
+	if len(cp.Next) > 0 {
+		parts = append(parts, "Next: "+strings.Join(cp.Next, ", "))
+	}
+	if cp.Notes != "" {
+		parts = append(parts, "Notes:\n"+cp.Notes)
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// claimedTicket is the ticket claimed by the working copy in dir ("" is the current directory).
+func claimedTicket(dir string) string {
+	if dir == "" {
+		dir = "."
+	}
+	c, _ := ticketlock.NewStore().ClaimOfDir(dir)
+	return c.Ticket
+}
+
+// mintSessionToken prunes expired session tokens and writes the token of this session, which the
+// write lock (`dendrite hook pre-edit`) requires. It returns a one-line summary for the user.
+func mintSessionToken() (string, error) {
+	store, now := ticketlock.NewStore(), time.Now()
+	store.PruneTokens(now)
+	cwd, _ := os.Getwd()
+	tok, err := store.MintToken(ticketlock.TokenOptions{Worktree: cwd}, now)
+	if err != nil {
+		return "", err
+	}
+	line := fmt.Sprintf("session: %s (agent %s", tok.SessionID, tok.Agent)
+	if tok.ModelTier != "" {
+		line += ", tier " + tok.ModelTier
+	}
+	line += ")"
+	if t := claimedTicket(""); t != "" {
+		line += ", claimed ticket " + t
+	}
+	return line, nil
+}
+
 func runSessionResume(ctx context.Context, targetPath string, asJSON bool, out io.Writer) error {
 	ledger := agentjobs.NewLedger("")
+	session, tokErr := mintSessionToken()
 	if asJSON {
 		report, err := agentjobs.ResumeState(targetPath, ledger)
 		if err != nil {
@@ -141,6 +194,33 @@ func runSessionResume(ctx context.Context, targetPath string, asJSON bool, out i
 	}
 
 	fmt.Fprint(out, text)
+	if tokErr != nil {
+		fmt.Fprintf(out, "[!] session token not written: %v\n", tokErr)
+	} else {
+		fmt.Fprintf(out, "[i] %s\n", session)
+	}
 	autoCleanWorkCopies(ctx, out)
+	warnStaleIndex(out)
+	warnWatcherDown(ledger, time.Now(), out)
+	printSynapsePeers(".", out)
 	return nil
+}
+
+// warnWatcherDown says so when delegated jobs are in flight and no stall watcher is looking at them, so a
+// stuck agent does not run unnoticed.
+func warnWatcherDown(l *agentjobs.Ledger, now time.Time, out io.Writer) {
+	jobs, err := l.List()
+	if err != nil {
+		return
+	}
+	active := 0
+	for _, j := range jobs {
+		switch j.Status {
+		case agentjobs.StatusQueued, agentjobs.StatusRunning, agentjobs.StatusParked, agentjobs.StatusFailedRetryable:
+			active++
+		}
+	}
+	if _, alive := l.WatcherAlive(now); active > 0 && !alive {
+		fmt.Fprintf(out, "[!] %d job(s) in flight and no stall watcher is running: start it with `dendrite bouton jobs daemon` (submitting a job also starts one)\n", active)
+	}
 }

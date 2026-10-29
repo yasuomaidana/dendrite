@@ -39,32 +39,32 @@ type Node struct {
 
 // MilestoneSchedule represents a calculated timeline for a milestone in Gantt view.
 type MilestoneSchedule struct {
-	Name            string   `json:"name"`
-	StartDate       string   `json:"start_date"`
-	TargetDate      string   `json:"target_date"`
-	TicketCount     int      `json:"ticket_count"`
-	CompletedCount  int      `json:"completed_count"`
-	Tickets         []string `json:"tickets"`
+	Name           string   `json:"name"`
+	StartDate      string   `json:"start_date"`
+	TargetDate     string   `json:"target_date"`
+	TicketCount    int      `json:"ticket_count"`
+	CompletedCount int      `json:"completed_count"`
+	Tickets        []string `json:"tickets"`
 }
 
 // SelectionResult encapsulates the output of a smart ticket selection query.
 type SelectionResult struct {
-	SelectedTicket    *Node    `json:"selected_ticket"`
-	IsActive          bool     `json:"is_active"`
-	IsBlocked         bool     `json:"is_blocked"`
-	BlockingTickets   []string `json:"blocking_tickets,omitempty"`
+	SelectedTicket      *Node    `json:"selected_ticket"`
+	IsActive            bool     `json:"is_active"`
+	IsBlocked           bool     `json:"is_blocked"`
+	BlockingTickets     []string `json:"blocking_tickets,omitempty"`
 	UnblockedDownstream []string `json:"unblocked_downstream,omitempty"`
-	TotalScore        float64  `json:"total_score"`
-	Reason            string   `json:"reason"`
-	Milestone         string   `json:"milestone"`
-	GanttStartDate    string   `json:"gantt_start_date"`
-	GanttTargetDate   string   `json:"gantt_target_date"`
+	TotalScore          float64  `json:"total_score"`
+	Reason              string   `json:"reason"`
+	Milestone           string   `json:"milestone"`
+	GanttStartDate      string   `json:"gantt_start_date"`
+	GanttTargetDate     string   `json:"gantt_target_date"`
 }
 
 // GanttPlan represents the full calculated development plan for Gantt diagram rendering.
 type GanttPlan struct {
-	AnchorDate time.Time                    `json:"anchor_date"`
+	AnchorDate time.Time                     `json:"anchor_date"`
 	Milestones map[string]*MilestoneSchedule `json:"milestones"`
-	Tickets    map[string]*Node             `json:"tickets"`
-	Order      []string                     `json:"order"`
+	Tickets    map[string]*Node              `json:"tickets"`
+	Order      []string                      `json:"order"`
 }

@@ -20,12 +20,17 @@ func TestPrepare_EveryAgentFamilyGetsTheSameSearchAndLifecycleRules(t *testing.T
 	}
 
 	needles := []string{
-		"dendrite rag search",                   // retrieval first
-		"`rg`/`grep`/`find` only when",          // raw search last
-		"`dendrite rag grep`",                   // the indexed exact-pattern fallback
-		"`dendrite work new <ticket>`",          // start moves the ticket to In Progress
-		"`to verify` when the work is finished", // never straight to done
-		"--no-ticket-guard",                     // the deliberate bypass
+		"dendrite rag search",                           // retrieval first
+		"`rg`/`grep`/`find` only when",                  // raw search last
+		"`dendrite rag grep`",                           // the indexed exact-pattern fallback
+		"`dendrite work new <ticket>`",                  // start moves the ticket to In Progress
+		"`dendrite chronos finish <ticket>`",            // the gate decides done, to verify or blocked
+		"`dendrite chronos decision <ticket>",           // questions and answers go on the ticket
+		"`dendrite directive \"<rule>\"`",               // quality limits are changed through the directive command
+		"`dendrite allostasis gate`",                    // the one command that checks the directives
+		"`blocked` with a handoff",                      // a failed finish leaves the diagnosis
+		"`dendrite hook pre-edit` refuses file changes", // the write lock
+		"--no-ticket-guard",                             // the deliberate bypass
 	}
 	files := []string{
 		"AGENTS.md",
@@ -70,9 +75,13 @@ func TestPrepare_InstallsTheClaudeHookWithoutClobberingSettings(t *testing.T) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatalf("settings.json is not JSON: %v\n%s", err, data)
 	}
-	pre := doc["hooks"].(map[string]any)["PreToolUse"].([]any)
-	if doc["permissions"] == nil || len(pre) != 1 || hookCommandOf(pre[0].(map[string]any)) != preToolCommand {
+	hooks := doc["hooks"].(map[string]any)
+	pre := hooks["PreToolUse"].([]any)
+	if doc["permissions"] == nil || len(pre) != 2 || hookCommandOf(pre[0].(map[string]any)) != preToolCommand || hookCommandOf(pre[1].(map[string]any)) != editLockCommand {
 		t.Errorf("settings = %s", data)
+	}
+	if hooks["PostToolUse"] == nil || hooks["SessionEnd"] == nil {
+		t.Errorf("the plan and session-end hooks are missing: %s", data)
 	}
 
 	// A second prepare leaves the file untouched.

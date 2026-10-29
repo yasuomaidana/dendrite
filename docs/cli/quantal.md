@@ -37,6 +37,7 @@ None
 | `--no-local` | Do not use the local model for the message |
 | `--no-push` | Do not push after committing |
 | `--no-smart` | Do not resolve the ticket automatically |
+| `--no-ticket-guard` | Skip the ticket lifecycle check (the ticket must exist and be In Progress; env DENDRITE_TICKET_GUARD=off) |
 | `--smart` | Resolve the active ticket from Plane when --ticket is not given (default) (default: true) |
 | `--synapse` | Then check every synapse peer (of this synapse, or every one holding the project): offer to commit dirty peers (-y: without asking), push peers ahead |
 | `--ticket, -t` | Ticket identifier (e.g. DEN-123) |

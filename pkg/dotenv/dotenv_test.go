@@ -71,7 +71,8 @@ func TestLoadPrecedence(t *testing.T) {
 	if _, err := Load(dir); err != nil {
 		t.Fatal(err)
 	}
-	for k, want := range map[string]string{"DOTENV_T_A": "project", "DOTENV_T_B": "global", "DOTENV_T_C": "exported"} {
+	// The committed project .env only supplies defaults: the global file wins, empty values never mask.
+	for k, want := range map[string]string{"DOTENV_T_A": "global", "DOTENV_T_B": "global", "DOTENV_T_C": "exported"} {
 		if got := os.Getenv(k); got != want {
 			t.Fatalf("%s = %q, want %q", k, got, want)
 		}
@@ -88,10 +89,18 @@ func TestLookupResolvesForAnotherProject(t *testing.T) {
 	if got := Lookup(other, "DOTENV_T_KEY"); got != "global" {
 		t.Fatalf("a project without .env gets %q, want the global key", got)
 	}
-	write(t, filepath.Join(other, FileName), "DOTENV_T_KEY=other\n")
-	if got := Lookup(other, "DOTENV_T_KEY"); got != "other" {
-		t.Fatalf("got %q, want the project's own key", got)
+	write(t, filepath.Join(other, FileName), "DOTENV_T_KEY=other\nDOTENV_T_ONLY=default\n")
+	if got := Lookup(other, "DOTENV_T_KEY"); got != "global" {
+		t.Fatalf("got %q, want the global key to outrank the project's committed .env", got)
 	}
+	if got := Lookup(other, "DOTENV_T_ONLY"); got != "default" {
+		t.Fatalf("got %q, want the project's default where nothing else sets the key", got)
+	}
+	write(t, filepath.Join(other, LocalFileName), "DOTENV_T_KEY=local\n")
+	if got := Lookup(other, "DOTENV_T_KEY"); got != "local" {
+		t.Fatalf("got %q, want .env.local to outrank the global file", got)
+	}
+	_ = os.Remove(filepath.Join(other, LocalFileName))
 	t.Setenv("DOTENV_T_KEY", "exported")
 	delete(loaded, "DOTENV_T_KEY")
 	if got := Lookup(other, "DOTENV_T_KEY"); got != "exported" {
@@ -105,5 +114,25 @@ func TestDisabled(t *testing.T) {
 	t.Setenv(EnvDisable, "off")
 	if found, _ := Load(dir); found != nil || os.Getenv("DOTENV_T_KEY") != "" {
 		t.Fatalf("loaded %v", found)
+	}
+}
+
+func TestLocalFileOutranksGlobalWhichOutranksTheCommittedProjectEnv(t *testing.T) {
+	dir := setup(t, "DOTENV_T_A=global\nDOTENV_T_B=global\nDOTENV_T_C=global\n", "DOTENV_T_A=project\nDOTENV_T_B=project\n")
+	root := ProjectRoot(dir)
+	write(t, filepath.Join(root, LocalFileName), "DOTENV_T_A=local\n")
+	for _, k := range []string{"DOTENV_T_A", "DOTENV_T_B", "DOTENV_T_C"} {
+		t.Setenv(k, "")
+	}
+	if _, err := Load(dir); err != nil {
+		t.Fatal(err)
+	}
+	for k, want := range map[string]string{"DOTENV_T_A": "local", "DOTENV_T_B": "global", "DOTENV_T_C": "global"} {
+		if got := os.Getenv(k); got != want {
+			t.Fatalf("%s = %q, want %q", k, got, want)
+		}
+	}
+	if got := Lookup(dir, "DOTENV_T_A"); got != "local" {
+		t.Fatalf("Lookup = %q, want the .env.local value", got)
 	}
 }

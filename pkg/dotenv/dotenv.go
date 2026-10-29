@@ -1,6 +1,7 @@
 // Package dotenv loads API keys and vendor configuration, which are configured once in
-// $DENDRITE_HOME/.env. A project may keep its own .env for what is unique to it; its
-// values override the global ones, and an exported variable overrides both.
+// $DENDRITE_HOME/.env: configure once, every project uses it. Highest first: an exported
+// variable, the project's .env.local (untracked, this checkout only), the global file, and
+// last the project's committed .env, which only supplies defaults.
 package dotenv
 
 import (
@@ -17,6 +18,10 @@ import (
 
 // FileName is the name of both the global and the project configuration file.
 const FileName = ".env"
+
+// LocalFileName is the project's untracked override file, for what must differ in one checkout
+// only. It outranks the global file; the project's committed .env ranks below it.
+const LocalFileName = ".env.local"
 
 // EnvDisable set to "off" stops Load from reading any file (hermetic tests).
 const EnvDisable = "DENDRITE_DOTENV"
@@ -76,13 +81,16 @@ func Parse(data string) map[string]string {
 	return out
 }
 
-// files returns the parsed project and global files for dir, project first; a missing
-// file is skipped.
+// files returns the parsed files for dir, highest precedence first (.env.local, global, the
+// project's committed .env); a missing file is skipped.
 func files(dir string) ([]string, []map[string]string, error) {
-	paths := []string{filepath.Join(ProjectRoot(dir), FileName)}
-	if global, err := GlobalPath(); err == nil && global != paths[0] {
+	root := ProjectRoot(dir)
+	project := filepath.Join(root, FileName)
+	paths := []string{filepath.Join(root, LocalFileName)}
+	if global, err := GlobalPath(); err == nil && global != project {
 		paths = append(paths, global)
 	}
+	paths = append(paths, project)
 	var found []string
 	var vars []map[string]string
 	for _, p := range paths {

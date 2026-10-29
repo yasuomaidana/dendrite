@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +13,7 @@ import (
 	"testing"
 
 	"Dendrite/pkg/dotenv"
+	"Dendrite/pkg/planesvc/planetest"
 	"Dendrite/pkg/workcopy"
 )
 
@@ -23,9 +26,28 @@ func TestMain(m *testing.M) {
 	}
 	// Commands must not pick up the developer's real keys from .env files.
 	_ = os.Setenv(dotenv.EnvDisable, "off")
+	// Nothing here may reach the developer's real Docker or write into the real ~/.dendrite/stacks:
+	// an unstubbed `docker compose down` once removed the live Plane containers.
+	runCompose = func(context.Context, io.Writer, string, ...string) error { return nil }
+	restartRunningLiteLLM = func(context.Context) error { return nil }
+	dockerCmd = func(context.Context, ...string) ([]byte, error) { return nil, nil }
+	stacksDir, stacksErr := os.MkdirTemp("", "dendrite-stacks-test-")
+	if stacksErr == nil {
+		_ = os.Setenv("DENDRITE_STACKS_DIR", stacksDir)
+	}
+	// The dendrite-plane sidecar is required: tests that reach Plane run the real binary.
+	stopPlane, planeErr := planetest.Install()
+	if planeErr != nil {
+		fmt.Fprintln(os.Stderr, planeErr)
+		os.Exit(1)
+	}
 	code := m.Run()
+	stopPlane()
 	if err == nil {
 		_ = os.RemoveAll(dir)
+	}
+	if stacksErr == nil {
+		_ = os.RemoveAll(stacksDir)
 	}
 	os.Exit(code)
 }

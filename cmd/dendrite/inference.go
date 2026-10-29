@@ -6,7 +6,6 @@ import (
 	"io"
 	"maps"
 	"os"
-	"os/exec"
 	"os/signal"
 	"slices"
 	"strconv"
@@ -14,6 +13,7 @@ import (
 	"syscall"
 
 	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/dotenv"
 	"Dendrite/pkg/gateway"
 	"Dendrite/pkg/inference"
 	"Dendrite/pkg/statedir"
@@ -26,18 +26,23 @@ func newSpikeCmd() *cobra.Command {
 	cmd := newGroupCmd("spike", "Unified multi-provider inference engine gateway (Ollama, OxiLLaMa, vLLM, TGI)", "cleft",
 		"inference", "action-potential", "inf")
 	cmd.Example = "dendrite spike list\n" +
+		"dendrite spike models\n" +
 		"dendrite spike probe ollama-metal\n" +
 		"dendrite spike probe --endpoint http://10.0.0.5:11434\n" +
 		"dendrite spike migrate qwen2.5-coder:7b --to oxillama --delete-source\n" +
 		"dendrite spike zero-cost add my-model --env"
 	cmd.AddCommand(
 		newSpikeListCmd(),
+		newSpikeModelsCmd(),
 		newSpikeProbeCmd(),
 		newSpikeSwitchCmd(),
 		newSpikeRenderCmd(),
 		newSpikeMigrateCmd(),
 		newSpikeServeCmd(),
 		newSpikeStopCmd(),
+		newSpikeSuperviseCmd(),
+		newSpikeStatusCmd(),
+		newSpikeHoldCmd(),
 		newSpikeZeroCostCmd(),
 		newSpikeBenchCmd(),
 	)
@@ -300,26 +305,6 @@ func newSpikeStopCmd() *cobra.Command {
 	return cmd
 }
 
-func runSpikeStop(ctx context.Context, port int, out io.Writer) error {
-	fmt.Fprintf(out, "[+] Stopping OxiLLaMa server on port %d...\n", port)
-	pidsOut, _ := exec.CommandContext(ctx, "lsof", "-ti", fmt.Sprintf(":%d", port)).Output()
-	stopped := 0
-	for _, pidStr := range strings.Fields(string(pidsOut)) {
-		if pid, err := strconv.Atoi(pidStr); err == nil && pid > 0 {
-			if proc, err := os.FindProcess(pid); err == nil && proc.Kill() == nil {
-				stopped++
-			}
-		}
-	}
-	_ = exec.CommandContext(ctx, "pkill", "-f", "oxillama serve").Run()
-	if stopped > 0 {
-		fmt.Fprintf(out, "[✓] Successfully stopped OxiLLaMa server (terminated %d process(es) on port %d)\n", stopped, port)
-	} else {
-		fmt.Fprintf(out, "[✓] OxiLLaMa server is not currently running on port %d.\n", port)
-	}
-	return nil
-}
-
 func newSpikeZeroCostCmd() *cobra.Command {
 	cmd := newGroupCmd("zero-cost", "Manage the zero-cost (self-hosted) model and prefix rules", "", "zerocost")
 	cmd.Example = "dendrite spike zero-cost list\n" +
@@ -425,14 +410,19 @@ func runZeroCostList(reg *inference.ZeroCostRegistry, out io.Writer) error {
 	return nil
 }
 
-// saveZeroCost persists the registry to the state dir, and to .env when it exists or syncEnv is set.
+// saveZeroCost persists the registry to the state dir, and to the global .env when it exists or syncEnv is set.
 func saveZeroCost(reg *inference.ZeroCostRegistry, syncEnv bool, out io.Writer) error {
 	path := statedir.Resolve(inference.DefaultZeroCostConfigFile)
 	if err := reg.SaveToFile(path); err != nil {
 		return fmt.Errorf("save zero-cost config: %w", err)
 	}
 	fmt.Fprintf(out, "    Saved to dynamic config: %s\n", path)
-	envPath := ".env"
+	// Zero-cost rules are machine-wide, so they live in $DENDRITE_HOME/.env (configured once), never in
+	// whatever directory this ran from or in the repository's committed .env.
+	envPath, pathErr := dotenv.GlobalPath()
+	if pathErr != nil {
+		return nil
+	}
 	if _, err := os.Stat(envPath); err == nil || syncEnv {
 		if err := reg.SaveToEnvFile(envPath); err != nil {
 			return fmt.Errorf("write %s: %w", envPath, err)

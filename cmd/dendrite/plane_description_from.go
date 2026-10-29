@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/dag"
 	"Dendrite/pkg/tracker/plane"
@@ -133,7 +134,7 @@ func runChronosCreate(ctx context.Context, client *plane.Client, o chronosCreate
 		}
 	}
 
-	created, err := client.CreatePlaneIssueWithDetails(ctx, plane.CreateIssueRequest{
+	created, _, err := planesvc.Default().CreateIssue(ctx, client, plane.CreateIssueRequest{
 		Name:            o.Name,
 		DescriptionHTML: plane.MarkdownToHTML(o.Desc),
 		Priority:        o.Priority,
@@ -206,7 +207,7 @@ func runChronosUpdate(ctx context.Context, client *plane.Client, ticket, name, d
 	if !plane.IsEmptyContext(desc) {
 		req.DescriptionHTML = plane.MarkdownToHTML(desc)
 	}
-	updated, err := client.UpdatePlaneIssueWithDetails(ctx, target.ID, req)
+	updated, err := planesvc.Default().UpdateIssue(ctx, client, target.ID, req)
 	if err != nil {
 		return fmt.Errorf("update issue in Plane: %w", err)
 	}
@@ -381,7 +382,7 @@ func runChronosTicketList(ctx context.Context, file string, out io.Writer) error
 func runChronosTicketSet(ctx context.Context, file, id string, st tracker.Status, out io.Writer) error {
 	planeSynced := false
 	if client, err := newPlaneClient(); err == nil && client != nil {
-		if err := client.UpdateStatus(ctx, tracker.TicketID(id), st); err != nil {
+		if _, err := planesvc.Default().SetStatus(ctx, client, tracker.TicketID(id), st); err != nil {
 			return fmt.Errorf("update ticket status in Plane: %w", err)
 		}
 		planeSynced = true
@@ -449,7 +450,7 @@ func prefixTicketTitle(ctx context.Context, client *plane.Client, iss *plane.Pla
 		return iss
 	}
 	name := fmt.Sprintf("[%s-%d] %s", link.Identifier, iss.SequenceID, iss.Name)
-	updated, err := client.UpdatePlaneIssueWithDetails(ctx, iss.ID, plane.UpdateIssueRequest{Name: name})
+	updated, err := planesvc.Default().UpdateIssue(ctx, client, iss.ID, plane.UpdateIssueRequest{Name: name})
 	if err != nil || updated == nil {
 		return iss
 	}

@@ -140,7 +140,7 @@ func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareRe
 			Enforced:            true,
 		}
 
-		created, updated, err := p.scaffoldCICD(opts.ProjectPath, fp, opts.DryRun)
+		created, updated, notes, err := p.scaffoldCICD(opts.ProjectPath, fp, opts.DryRun)
 		if err != nil {
 			return nil, fmt.Errorf("CI/CD scaffolding failed: %w", err)
 		}
@@ -149,6 +149,20 @@ func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareRe
 		report.CICD = cicd
 		report.FilesCreated = append(report.FilesCreated, created...)
 		report.FilesUpdated = append(report.FilesUpdated, updated...)
+		report.Notes = append(report.Notes, notes...)
+
+		// A project without quality directives gets the defaults and the files derived from them.
+		dirCreated, dirNotes, err := ensureDirectives(opts.ProjectPath, opts.DryRun)
+		if err != nil {
+			return nil, fmt.Errorf("quality directives failed: %w", err)
+		}
+		report.FilesCreated = append(report.FilesCreated, dirCreated...)
+		report.Notes = append(report.Notes, dirNotes...)
+
+		// Rust crates with tests use the rstest crate.
+		rstestChanged, rstestNotes := ensureRstest(opts.ProjectPath, opts.DryRun)
+		report.FilesUpdated = append(report.FilesUpdated, rstestChanged...)
+		report.Notes = append(report.Notes, rstestNotes...)
 	}
 
 	// 2. Agent Rules & Skills Synchronization
@@ -187,16 +201,14 @@ func (p *Preparer) Update(ctx context.Context, opts PrepareOptions) (*PrepareRep
 	return p.Prepare(ctx, opts)
 }
 
-func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool) ([]string, []string, error) {
-	var created []string
-	var updated []string
+func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool) (created, updated, notes []string, err error) {
 
 	githubDir := filepath.Join(root, ".github")
 	workflowsDir := filepath.Join(githubDir, "workflows")
 
 	if !dryRun {
 		if err := os.MkdirAll(workflowsDir, 0755); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
@@ -205,7 +217,7 @@ func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool)
 	copilotContent := renderCopilotInstructions(fp)
 	c, u, err := writeOrUpdateFile(copilotPath, copilotContent, dryRun)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if c {
 		created = append(created, filepath.Join(".github", "copilot-instructions.md"))
@@ -216,9 +228,12 @@ func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool)
 	// 2. .github/workflows/ci.yml
 	workflowPath := filepath.Join(workflowsDir, "ci.yml")
 	workflowContent := renderCIWorkflow(fp)
-	c, u, err = writeOrUpdateFile(workflowPath, workflowContent, dryRun)
+	c, u, kept, err := writeManagedFile(workflowPath, workflowContent, dryRun)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	if kept {
+		notes = append(notes, "kept the hand-written "+filepath.ToSlash(filepath.Join(".github", "workflows", "ci.yml"))+": it does not carry the managed header, so Dendrite does not overwrite it")
 	}
 	if c {
 		created = append(created, filepath.Join(".github", "workflows", "ci.yml"))
@@ -234,7 +249,7 @@ func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool)
 		updated = append(updated, ".gitignore")
 	}
 
-	return created, updated, nil
+	return created, updated, notes, nil
 }
 
 func (p *Preparer) syncAgentRulesAndSkills(root string, fp ProjectFingerprint, dryRun bool) ([]string, []string, []string, error) {
@@ -264,7 +279,7 @@ func (p *Preparer) syncAgentRulesAndSkills(root string, fp ProjectFingerprint, d
 
 	// 2. AGENTS.md in project root
 	agentsMDPath := filepath.Join(root, "AGENTS.md")
-	agentsMDContent := renderAgentsOverview(fp)
+	agentsMDContent := renderAgentsOverview(fp) + renderSynapsesSection(root)
 	c, u, err = writeOrUpdateFile(agentsMDPath, agentsMDContent, dryRun)
 	if err != nil {
 		return nil, nil, nil, err
@@ -358,6 +373,23 @@ Reference criteria for domain isolation, SOLID principles, zero placeholders, an
 		}
 	}
 
+	// 7. Git pre-commit hook: the ticket lock for agents that do not go through Claude Code.
+	gitCreated, gitUpdated, gitNote, gitErr := installGitHook(root, dryRun)
+	created, updated = append(created, gitCreated...), append(updated, gitUpdated...)
+	if gitErr != nil {
+		fmt.Fprintf(os.Stderr, "[!] git pre-commit hook: %v\n", gitErr)
+	}
+	if gitNote != "" {
+		fmt.Fprintf(os.Stderr, "[!] %s\n", gitNote)
+	}
+
+	// 8. MCP configs for Claude, AGY and JetBrains: dendrite (core profile) and one server per synapse.
+	mcpCreated, mcpUpdated, mcpErr := writeMCPConfigs(root, dryRun)
+	created, updated = append(created, mcpCreated...), append(updated, mcpUpdated...)
+	if mcpErr != nil {
+		fmt.Fprintf(os.Stderr, "[!] MCP config left alone: %v\n", mcpErr)
+	}
+
 	// Discover existing skills in every agent family's skill dir
 	skillSet := make(map[string]bool)
 	for _, dir := range skillDirs {
@@ -392,11 +424,17 @@ func ensureGitignoreEntries(root string, dryRun bool) (bool, bool) {
 		"bin/",
 		".venv/",
 		"node_modules/",
+		// .dendrite/ is local tool state (project identity, Plane link, caches): never committed.
+		".dendrite/",
 	}
 
+	lines := map[string]bool{}
+	for _, l := range strings.Split(existing, "\n") {
+		lines[strings.TrimSpace(l)] = true
+	}
 	var toAppend []string
 	for _, n := range needed {
-		if !strings.Contains(existing, n) {
+		if !lines[n] && !(n == ".dendrite/" && lines[".dendrite"]) {
 			toAppend = append(toAppend, n)
 		}
 	}
@@ -426,4 +464,32 @@ func ensureGitignoreEntries(root string, dryRun bool) (bool, bool) {
 		return true, false
 	}
 	return false, true
+}
+
+// EnsureGitignoreLine appends line to root/.gitignore unless a line equal to it is already
+// there. It reports whether the file changed, or would change when dryRun is set.
+func EnsureGitignoreLine(root, line string, dryRun bool) (bool, error) {
+	path := filepath.Join(root, ".gitignore")
+	var existing string
+	if data, err := os.ReadFile(path); err == nil {
+		existing = string(data)
+	}
+	for _, l := range strings.Split(existing, "\n") {
+		if strings.TrimSpace(l) == line {
+			return false, nil
+		}
+	}
+	if dryRun {
+		return true, nil
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	if existing != "" && !strings.HasSuffix(existing, "\n") {
+		line = "\n" + line
+	}
+	_, err = f.WriteString(line + "\n")
+	return err == nil, err
 }

@@ -89,7 +89,7 @@ func newChronosProjectCmd() *cobra.Command {
 	audit.Flags().StringSliceVar(&roots, "roots", nil, "Directories to scan (default: parents of every known project and synapse member)")
 	audit.Flags().StringSliceVar(&owners, "owner", nil, "Git remote owners whose repositories are editable (default: this repository's owner)")
 
-	cmd.AddCommand(ensure, show, audit)
+	cmd.AddCommand(ensure, show, audit, newChronosProjectRefreshCmd(), newChronosProjectRemoveCmd())
 	return cmd
 }
 
@@ -161,8 +161,12 @@ func registerProjectIdentity(root string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := idx.Register(root); err != nil {
+	entry, err := idx.Register(root)
+	if err != nil {
 		return err
+	}
+	if l, err := plane.ReadLink(root); err == nil {
+		idx.SetPlane(entry.ID, &projectid.PlaneBinding{Identifier: l.Identifier, ProjectID: l.ProjectID, Name: l.Name, Workspace: l.Workspace})
 	}
 	return idx.Save()
 }
@@ -176,6 +180,7 @@ func planeProjectShow(dir string, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(out, "%s -> %s (%s) project_id=%s workspace=%s\n", root, link.Identifier, link.Name, link.ProjectID, link.Workspace)
+	refreshIndexPathOf(root)
 	return nil
 }
 
@@ -205,6 +210,7 @@ func planeProjectAudit(rawRoots, owners []string, out io.Writer) error {
 	}
 
 	rep := projectaudit.Audit(projectaudit.Discover(roots), owners, syns)
+	rep.MissingProject = withoutUntracked(rep.MissingProject)
 	if globals.JSON {
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
@@ -292,4 +298,21 @@ func printAudit(out io.Writer, rep projectaudit.Report, roots, owners []string) 
 	if len(rep.MissingProject) == 0 && len(rep.Unsynapsed) == 0 {
 		fmt.Fprintln(out, "\n[✓] Every editable repository is a Plane project and every related pair shares a synapse.")
 	}
+}
+
+// withoutUntracked drops the repositories that were detached from Plane on purpose
+// (`dendrite chronos project remove`): they are not expected to have a project.
+func withoutUntracked(repos []projectaudit.Repo) []projectaudit.Repo {
+	untracked, err := loadUntracked()
+	if err != nil || len(untracked.Projects) == 0 {
+		return repos
+	}
+	var keep []projectaudit.Repo
+	for _, r := range repos {
+		if id, err := projectid.Read(r.Root); err == nil && untracked.Has(id) {
+			continue
+		}
+		keep = append(keep, r)
+	}
+	return keep
 }

@@ -237,6 +237,10 @@ func TestSynchronizer_Sync_WithPlaneComment_And_PenpotHealth(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/issues/") { // the sidecar resolves DEN-n through the list
+			_, _ = w.Write([]byte(`{"results":[{"id":"11111111-2222-3333-4444-555555555555","name":"[DEN-810] sync","sequence_id":810},{"id":"11111111-2222-3333-4444-666666666666","name":"[DEN-807] sync","sequence_id":807}],"next_page_results":false}`))
+			return
+		}
 		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/comments/") {
 			var body map[string]string
 			_ = json.NewDecoder(r.Body).Decode(&body)

@@ -22,6 +22,7 @@ Synaptic Cleft & Gating
 | Subcommand | Description |
 | :--- | :--- |
 | `call` | Call one MCP tool and print its result |
+| `probe` | Call every read-only MCP tool once and print a pass/fail matrix |
 | `serve` | Serve MCP over stdin/stdout |
 | `tools` | List the registered MCP tools |
 
@@ -30,6 +31,18 @@ Synaptic Cleft & Gating
 None
 
 ## Subcommand Reference
+
+### `dendrite inter probe`
+
+Call every read-only MCP tool once and print a pass/fail matrix
+
+```bash
+dendrite inter probe [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--timeout` | Override every probe's timeout (default: per tool, 5s unless it needs more) |
 
 ### `dendrite inter serve`
 

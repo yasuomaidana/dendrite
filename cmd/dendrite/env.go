@@ -9,9 +9,12 @@ import (
 
 	"Dendrite/pkg/agent"
 	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/dotenv"
 	"Dendrite/pkg/env"
 	"Dendrite/pkg/env/bootstrap"
 	"Dendrite/pkg/ollama"
+	"Dendrite/pkg/planesvc"
+	"Dendrite/pkg/sidecar"
 
 	"Dendrite/pkg/tracker/plane"
 	"github.com/spf13/cobra"
@@ -34,6 +37,9 @@ func newSomaCmd() *cobra.Command {
 		newSomaInstallCmd(),
 		newSomaStatusCmd(),
 		newSomaDiagnoseCmd(),
+		newSomaMigrateStateCmd(),
+		newSomaSecretsCmd(),
+		newSomaStacksCmd(),
 	)
 	return cmd
 }
@@ -92,7 +98,7 @@ func newSomaPrepareCmd() *cobra.Command {
 	var o somaPrepareOptions
 	cmd := &cobra.Command{
 		Use:     "prepare [path|project]",
-		Aliases: []string{"sync", "update"},
+		Aliases: []string{"sync", "update", "configure"},
 		Short:   "Sync agent rules and skills, and enforce CI/CD tooling defaults",
 		Args:    maxArgs(1),
 		Example: "dendrite soma prepare\ndendrite soma prepare ../other-repo --dry-run\ndendrite soma prepare --json",
@@ -161,6 +167,9 @@ func runSomaPrepare(ctx context.Context, o somaPrepareOptions, out io.Writer) er
 	}
 	if len(report.FilesUpdated) > 0 {
 		fmt.Fprintf(out, "    - Files Updated (%d): %s\n", len(report.FilesUpdated), strings.Join(report.FilesUpdated, ", "))
+	}
+	for _, note := range report.Notes {
+		fmt.Fprintf(out, "    - [i] %s\n", note)
 	}
 	if len(report.SkillsSynced) > 0 {
 		fmt.Fprintf(out, "    - Skills Synced (%d): %s\n", len(report.SkillsSynced), strings.Join(report.SkillsSynced, ", "))
@@ -249,6 +258,18 @@ func newSomaReplicateCmd() *cobra.Command {
 }
 
 func runSomaReplicate(ctx context.Context, req env.ReplicationRequest, out io.Writer) error {
+	if !req.DryRun {
+		adoptCheckoutStacks(out)
+	}
+	if !req.DryRun { // compose refuses to start without these keys
+		res, err := env.EnsureSecrets(env.SecretsOptions{Dir: dotenv.ProjectRoot("."), GlobalPath: globalEnvPath()})
+		if err != nil {
+			return fmt.Errorf("prepare .env: %w", err)
+		}
+		if res.Created || len(res.Added) > 0 {
+			_ = reportSecrets(out, res)
+		}
+	}
 	planner, replicator, err := envTools(ctx)
 	if err != nil {
 		return err
@@ -387,6 +408,7 @@ func runSomaDiagnose(ctx context.Context, ollamaURL string, out io.Writer) error
 		}
 	}
 	diagnosePlane(ctx, out)
+	diagnoseSidecars(out)
 	if _, err := os.Stat("DEV_STATUS.md"); err == nil {
 		fmt.Fprintln(out, "  [✓] Project Status: DEV_STATUS.md present")
 	} else {
@@ -394,6 +416,18 @@ func runSomaDiagnose(ctx context.Context, ollamaURL string, out io.Writer) error
 	}
 	fmt.Fprintln(out, "[+] Pre-flight diagnostics complete.")
 	return nil
+}
+
+// diagnoseSidecars reports where each Rust sidecar Dendrite requires was found, or how to get it.
+func diagnoseSidecars(out io.Writer) {
+	loc := sidecar.DefaultLocator()
+	for _, name := range []string{planesvc.BinaryName, "dendrite-rag"} {
+		if path, err := loc.Locate(name); err == nil {
+			fmt.Fprintf(out, "  [✓] Sidecar %s: %s\n", name, path)
+		} else {
+			fmt.Fprintf(out, "  [-] Sidecar %s: not found (%v); run `dendrite install`\n", name, err)
+		}
+	}
 }
 
 // diagnosePlane reports whether the Plane token is configured and the service answers with it.

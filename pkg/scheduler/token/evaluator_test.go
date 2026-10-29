@@ -12,10 +12,10 @@ func TestNightWindowEvaluation(t *testing.T) {
 
 	loc := time.UTC
 	tests := []struct {
-		name    string
-		hour    int
-		minute  int
-		wantIn  bool
+		name   string
+		hour   int
+		minute int
+		wantIn bool
 	}{
 		{"before window evening", 22, 59, false},
 		{"start of window", 23, 0, true},

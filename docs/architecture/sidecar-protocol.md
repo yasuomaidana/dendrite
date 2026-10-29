@@ -1,6 +1,6 @@
 # Sidecar Protocol (v1)
 
-The sibling repositories ship helper binaries (`dendrite-core`, `dendrite-git`, `dendrite-rag`) that Dendrite calls through `pkg/sidecar`. Every call site also has an in-process Go implementation, and `sidecar.Call` falls back to it. Dendrite therefore behaves the same whether or not a sidecar is installed. A sidecar is a performance and quality upgrade, never a requirement.
+The sibling repositories ship helper binaries (`dendrite-core`, `dendrite-git`, `dendrite-rag`) that Dendrite calls through `pkg/sidecar`. **Rule: when a Rust service exists, Dendrite only calls it; the Go copy is deleted.** `dendrite-plane` and `dendrite-rag` are required: when one is missing or speaks another protocol major, the call returns an error that names the fix (`dendrite install`), never a silent Go fallback (`planesvc.ErrSidecarMissing`). `dendrite soma diagnose` reports where each was found. Sidecars not yet built (`dendrite-core`, `dendrite-git`) still have Go implementations and may use `sidecar.Call` with a fallback until their Rust service ships.
 
 ## Transport
 
@@ -18,11 +18,11 @@ The first request is always `health`. Its result must be:
 {"name": "dendrite-core", "version": "0.3.1", "protocol": "1.2.0"}
 ```
 
-`protocol` is the semver version of this contract. A client built for protocol major `N` refuses a sidecar with a different major (and uses its fallback, where one still exists). Minor versions add methods; patch versions never change shapes.
+`protocol` is the semver version of this contract. A client built for protocol major `N` refuses a sidecar with a different major (and uses its fallback only where a Go implementation still exists). Minor versions add methods; patch versions never change shapes.
 
 ## Errors
 
-Failures use the standard JSON-RPC `error` object: `{"code": -32601, "message": "method not found: x"}`. Any error makes `sidecar.Call` use the Go fallback and report `origin: fallback` with the reason. Sidecars without a Go implementation (`dendrite-rag`) return the error to the caller instead.
+Failures use the standard JSON-RPC `error` object: `{"code": -32601, "message": "method not found: x"}`. Where a Go fallback still exists, any error makes `sidecar.Call` use it and report `origin: fallback` with the reason. Required sidecars (`dendrite-plane`, `dendrite-rag`) return the error to the caller instead; the sidecar's `kind` (`unauthorized`, `not_found`) is mapped back to the sentinel errors callers test with `errors.Is`.
 
 ## Locating binaries
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/pkg/memfit"
 	"context"
 	"fmt"
 	"io"
@@ -50,6 +51,9 @@ func newCleftUpdateCmd() *cobra.Command {
 }
 
 func runCleftUpdate(ctx context.Context, opts gateway.UpdaterOptions, out io.Writer) error {
+	if !opts.DryRun {
+		adoptCheckoutStacks(out)
+	}
 	report, err := gateway.NewRoutingTableUpdater(opts).UpdateNow(ctx)
 	if err != nil {
 		return fmt.Errorf("update LiteLLM routing table: %w", err)
@@ -73,6 +77,12 @@ func runCleftUpdate(ctx context.Context, opts gateway.UpdaterOptions, out io.Wri
 		fmt.Fprintf(out, "    * Offline Engines:         %s\n", strings.Join(report.OfflineEngines, ", "))
 	}
 	fmt.Fprintf(out, "    * Discovered Local Models: %d\n", len(report.DiscoveredModels))
+	if report.MemoryBudgetBytes > 0 {
+		fmt.Fprintf(out, "    * Memory Budget:           %s for local models\n", memfit.GB(report.MemoryBudgetBytes))
+	}
+	if len(report.TooLargeModels) > 0 {
+		fmt.Fprintf(out, "    * Too Large (no route):    %s\n", strings.Join(report.TooLargeModels, ", "))
+	}
 	if report.ActiveLocalPrimary != "" {
 		fmt.Fprintf(out, "    * Active Local Primary:    %s (Score: %d on %s)\n",
 			report.ActiveLocalPrimary, report.ActiveLocalPrimaryScore, report.ActiveLocalPrimaryEngine)
@@ -89,10 +99,10 @@ func runCleftUpdate(ctx context.Context, opts gateway.UpdaterOptions, out io.Wri
 	return nil
 }
 
-// restartRunningLiteLLM reloads or restarts the LiteLLM proxy container if running.
-func restartRunningLiteLLM(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, "docker", "restart", "dendrite-litellm")
-	return cmd.Run()
+// restartRunningLiteLLM reloads or restarts the LiteLLM proxy container if running. It is a variable
+// so tests never restart the developer's real gateway.
+var restartRunningLiteLLM = func(ctx context.Context) error {
+	return exec.CommandContext(ctx, "docker", "restart", "dendrite-litellm").Run()
 }
 
 func newCleftScheduleCmd() *cobra.Command {

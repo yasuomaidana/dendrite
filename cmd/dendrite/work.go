@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"Dendrite/pkg/agentjobs"
+	"Dendrite/pkg/ticketlock"
 	"Dendrite/pkg/workcopy"
 
 	"github.com/spf13/cobra"
@@ -115,8 +116,25 @@ func runWorkNew(ctx context.Context, name, branch, base string, noTicketGuard bo
 		return err
 	}
 	fmt.Fprintf(out, "[✓] Working copy created: %s\n", path)
+	if ticketShaped.MatchString(name) && !noTicketGuard && devtool.GuardEnabled() {
+		claimInCopy(ctx, name, path, out)
+	}
 	fmt.Fprintf(out, "    cd %s\n", path)
 	return nil
+}
+
+// claimInCopy claims the ticket for the new working copy, which opens the edit lock there. The copy already
+// exists, so a failure is a warning that says how to claim by hand, not an error.
+func claimInCopy(ctx context.Context, ticket, path string, out io.Writer) {
+	client, err := newPlaneClient()
+	if err == nil {
+		var res ticketlock.ClaimResult
+		if res, err = lifecycleIn(client, path).Claim(ctx, ticket, ticketlock.ClaimOptions{}); err == nil {
+			fmt.Fprintf(out, "[✓] Claimed %s for this copy (session %s)\n", res.Ticket, res.SessionID)
+			return
+		}
+	}
+	fmt.Fprintf(out, "[!] %s is not claimed: %v\n    claim it before editing: dendrite chronos claim %s --worktree %s\n", ticket, err, ticket, path)
 }
 
 func runWorkList(ctx context.Context, out io.Writer) error {

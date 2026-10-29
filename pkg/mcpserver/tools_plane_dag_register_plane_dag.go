@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/tracker/dag"
 	"Dendrite/pkg/tracker/plane"
 )
@@ -286,7 +287,7 @@ func registerPlaneDAGTools(s *Server, deps Dependencies) {
 		}
 
 		descHTML := fmt.Sprintf("<div><p>%s</p></div>", desc)
-		created, err := client.CreatePlaneIssueWithDetails(ctx, plane.CreateIssueRequest{
+		created, _, err := planesvc.Default().CreateIssue(ctx, client, plane.CreateIssueRequest{
 			Name:            name,
 			DescriptionHTML: descHTML,
 			Priority:        prio,

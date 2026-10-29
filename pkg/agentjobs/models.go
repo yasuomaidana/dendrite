@@ -369,7 +369,8 @@ func (d *Dispatcher) familyServedSince(job *Job, since time.Time) bool {
 }
 
 // liteLLMKey resolves LITELLM_MASTER_KEY for a job: exported, then the job worktree's own
-// .env, then the global $DENDRITE_HOME/.env (detached runners do not inherit a shell).
+// .env.local, then the global $DENDRITE_HOME/.env, then the committed .env defaults (detached
+// runners do not inherit a shell).
 func (d *Dispatcher) liteLLMKey(worktree string) string {
 	if worktree == "" {
 		worktree = "."

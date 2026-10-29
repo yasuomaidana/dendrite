@@ -234,7 +234,7 @@ func TestScanForMocks_Detected(t *testing.T) {
 	runCmd("config", "user.name", "Test")
 	runCmd("config", "user.email", "test@test.com")
 	mockFile := filepath.Join(tmpDir, "sample_test.go")
-	_ = os.WriteFile(mockFile, []byte("package sample\ntype " + "MockService struct{}\n"), 0644)
+	_ = os.WriteFile(mockFile, []byte("package sample\ntype "+"MockService struct{}\n"), 0644)
 	runCmd("add", "sample_test.go")
 	runCmd("commit", "-m", "add test")
 
@@ -476,4 +476,3 @@ func TestValidateZeroMockGate(t *testing.T) {
 		t.Fatalf("expected no mocks in pkg/quality")
 	}
 }
-

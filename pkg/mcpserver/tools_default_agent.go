@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"Dendrite/pkg/memfit"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -200,6 +201,24 @@ func registerTelemetryAndInferenceTools(s *Server, deps Dependencies) {
 			"cascade_order": cascade,
 		}
 		data, err := json.MarshalIndent(res, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		return &CallToolResult{
+			Content: []ContentItem{{Type: "text", Text: string(data)}},
+		}, nil
+	})
+
+	// dendrite_inference_models
+	s.RegisterTool(Tool{
+		Name:        "dendrite_inference_models",
+		Description: "List the local models installed on Ollama and OxiLLaMa with size, loaded state and whether each fits this machine's memory budget (models marked too large get no gateway route and are refused at call time)",
+		InputSchema: map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{},
+		},
+	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		data, err := json.MarshalIndent(memfit.Assess(ctx, "", ""), "", "  ")
 		if err != nil {
 			return nil, err
 		}
