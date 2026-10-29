@@ -69,13 +69,7 @@ func resolveJob(l *agentjobs.Ledger, id, ticket string) (*agentjobs.Ledger, stri
 	if err != nil || len(matches) == 0 {
 		return nil, "", fmt.Errorf("no matching jobs found for ticket %s", ticket)
 	}
-	var latest *agentjobs.Job
-	for _, j := range matches {
-		if latest == nil || j.CreatedAt.After(latest.CreatedAt) || (j.CreatedAt.Equal(latest.CreatedAt) && j.ID > latest.ID) {
-			latest = j
-		}
-	}
-	return rl, latest.ID, nil
+	return rl, agentjobs.Latest(matches).ID, nil
 }
 
 // runJobsWatch prints a snapshot of the job every interval until it reaches a final state or ctx ends.
@@ -182,13 +176,7 @@ func runJobsShowEntry(l *agentjobs.Ledger, id, ticket string, out io.Writer) err
 		if err != nil || len(matches) == 0 {
 			return fmt.Errorf("no matching jobs found for ticket %s", ticket)
 		}
-		var latest *agentjobs.Job
-		for _, j := range matches {
-			if latest == nil || j.CreatedAt.After(latest.CreatedAt) || (j.CreatedAt.Equal(latest.CreatedAt) && j.ID > latest.ID) {
-				latest = j
-			}
-		}
-		return runJobsShow(resolvedLedger, latest.ID, out)
+		return runJobsShow(resolvedLedger, agentjobs.Latest(matches).ID, out)
 	}
 
 	err := runJobsShow(l, id, out)

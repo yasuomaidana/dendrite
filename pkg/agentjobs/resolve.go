@@ -66,13 +66,18 @@ func (l *Ledger) LatestByTicket(ticket string) (*Job, error) {
 	if len(matches) == 0 {
 		return nil, nil
 	}
+	return Latest(matches), nil
+}
+
+// Latest is the most recently created job of the list (the larger ID breaks a tie), or nil when it is empty.
+func Latest(jobs []*Job) *Job {
 	var latest *Job
-	for _, j := range matches {
+	for _, j := range jobs {
 		if latest == nil || j.CreatedAt.After(latest.CreatedAt) || (j.CreatedAt.Equal(latest.CreatedAt) && j.ID > latest.ID) {
 			latest = j
 		}
 	}
-	return latest, nil
+	return latest
 }
 
 // ResolveTicketLedger searches for jobs matching ticket.
