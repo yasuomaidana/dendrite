@@ -168,6 +168,9 @@ func runSomaPrepare(ctx context.Context, o somaPrepareOptions, out io.Writer) er
 	if len(report.FilesUpdated) > 0 {
 		fmt.Fprintf(out, "    - Files Updated (%d): %s\n", len(report.FilesUpdated), strings.Join(report.FilesUpdated, ", "))
 	}
+	for _, note := range report.Notes {
+		fmt.Fprintf(out, "    - [i] %s\n", note)
+	}
 	if len(report.SkillsSynced) > 0 {
 		fmt.Fprintf(out, "    - Skills Synced (%d): %s\n", len(report.SkillsSynced), strings.Join(report.SkillsSynced, ", "))
 	}

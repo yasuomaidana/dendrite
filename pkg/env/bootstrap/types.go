@@ -81,6 +81,8 @@ type PrepareReport struct {
 	FilesUpdated []string           `json:"files_updated"`
 	CICD         CICDStatus         `json:"cicd"`
 	SkillsSynced []string           `json:"skills_synced,omitempty"`
-	Duration     time.Duration      `json:"duration"`
-	Success      bool               `json:"success"`
+	// Notes say what Prepare deliberately left alone, for example a hand-written CI workflow.
+	Notes    []string      `json:"notes,omitempty"`
+	Duration time.Duration `json:"duration"`
+	Success  bool          `json:"success"`
 }

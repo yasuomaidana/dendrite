@@ -51,8 +51,13 @@ func renderCopilotInstructions(fp ProjectFingerprint) string {
 	return sb.String()
 }
 
+// ManagedHeader marks a file Dendrite generates and may rewrite. A file without it was written by a person
+// and is left alone.
+const ManagedHeader = "# managed by dendrite — edit .github/dendrite/directives.toml"
+
 func renderCIWorkflow(fp ProjectFingerprint) string {
 	var sb strings.Builder
+	sb.WriteString(ManagedHeader + "\n")
 	sb.WriteString("name: Dendrite CI/CD\n\n")
 	sb.WriteString("on:\n")
 	sb.WriteString("  push:\n")
@@ -203,6 +208,17 @@ func writeOrUpdateFile(path, content string, dryRun bool) (bool, bool, error) {
 	}
 
 	return false, false, err
+}
+
+// writeManagedFile is writeOrUpdateFile for a file a person may own: it creates the file when missing and
+// rewrites it only while it carries ManagedHeader. kept is true when an existing file without the header was
+// left untouched.
+func writeManagedFile(path, content string, dryRun bool) (created, updated, kept bool, err error) {
+	if existing, readErr := os.ReadFile(path); readErr == nil && !strings.HasPrefix(string(existing), ManagedHeader) {
+		return false, false, true, nil
+	}
+	created, updated, err = writeOrUpdateFile(path, content, dryRun)
+	return created, updated, false, err
 }
 
 // RagEnvFile, under the Dendrite home, holds the DENDRITE_RAG_* variables the sidecar

@@ -140,7 +140,7 @@ func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareRe
 			Enforced:            true,
 		}
 
-		created, updated, err := p.scaffoldCICD(opts.ProjectPath, fp, opts.DryRun)
+		created, updated, notes, err := p.scaffoldCICD(opts.ProjectPath, fp, opts.DryRun)
 		if err != nil {
 			return nil, fmt.Errorf("CI/CD scaffolding failed: %w", err)
 		}
@@ -149,6 +149,7 @@ func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareRe
 		report.CICD = cicd
 		report.FilesCreated = append(report.FilesCreated, created...)
 		report.FilesUpdated = append(report.FilesUpdated, updated...)
+		report.Notes = append(report.Notes, notes...)
 	}
 
 	// 2. Agent Rules & Skills Synchronization
@@ -187,16 +188,14 @@ func (p *Preparer) Update(ctx context.Context, opts PrepareOptions) (*PrepareRep
 	return p.Prepare(ctx, opts)
 }
 
-func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool) ([]string, []string, error) {
-	var created []string
-	var updated []string
+func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool) (created, updated, notes []string, err error) {
 
 	githubDir := filepath.Join(root, ".github")
 	workflowsDir := filepath.Join(githubDir, "workflows")
 
 	if !dryRun {
 		if err := os.MkdirAll(workflowsDir, 0755); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
@@ -205,7 +204,7 @@ func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool)
 	copilotContent := renderCopilotInstructions(fp)
 	c, u, err := writeOrUpdateFile(copilotPath, copilotContent, dryRun)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if c {
 		created = append(created, filepath.Join(".github", "copilot-instructions.md"))
@@ -216,9 +215,12 @@ func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool)
 	// 2. .github/workflows/ci.yml
 	workflowPath := filepath.Join(workflowsDir, "ci.yml")
 	workflowContent := renderCIWorkflow(fp)
-	c, u, err = writeOrUpdateFile(workflowPath, workflowContent, dryRun)
+	c, u, kept, err := writeManagedFile(workflowPath, workflowContent, dryRun)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	if kept {
+		notes = append(notes, "kept the hand-written "+filepath.ToSlash(filepath.Join(".github", "workflows", "ci.yml"))+": it does not carry the managed header, so Dendrite does not overwrite it")
 	}
 	if c {
 		created = append(created, filepath.Join(".github", "workflows", "ci.yml"))
@@ -234,7 +236,7 @@ func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool)
 		updated = append(updated, ".gitignore")
 	}
 
-	return created, updated, nil
+	return created, updated, notes, nil
 }
 
 func (p *Preparer) syncAgentRulesAndSkills(root string, fp ProjectFingerprint, dryRun bool) ([]string, []string, []string, error) {
