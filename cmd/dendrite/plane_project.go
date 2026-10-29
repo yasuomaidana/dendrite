@@ -89,7 +89,7 @@ func newChronosProjectCmd() *cobra.Command {
 	audit.Flags().StringSliceVar(&roots, "roots", nil, "Directories to scan (default: parents of every known project and synapse member)")
 	audit.Flags().StringSliceVar(&owners, "owner", nil, "Git remote owners whose repositories are editable (default: this repository's owner)")
 
-	cmd.AddCommand(ensure, show, audit, newChronosProjectRefreshCmd())
+	cmd.AddCommand(ensure, show, audit, newChronosProjectRefreshCmd(), newChronosProjectRemoveCmd())
 	return cmd
 }
 
@@ -210,6 +210,7 @@ func planeProjectAudit(rawRoots, owners []string, out io.Writer) error {
 	}
 
 	rep := projectaudit.Audit(projectaudit.Discover(roots), owners, syns)
+	rep.MissingProject = withoutUntracked(rep.MissingProject)
 	if globals.JSON {
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
@@ -297,4 +298,21 @@ func printAudit(out io.Writer, rep projectaudit.Report, roots, owners []string) 
 	if len(rep.MissingProject) == 0 && len(rep.Unsynapsed) == 0 {
 		fmt.Fprintln(out, "\n[✓] Every editable repository is a Plane project and every related pair shares a synapse.")
 	}
+}
+
+// withoutUntracked drops the repositories that were detached from Plane on purpose
+// (`dendrite chronos project remove`): they are not expected to have a project.
+func withoutUntracked(repos []projectaudit.Repo) []projectaudit.Repo {
+	untracked, err := loadUntracked()
+	if err != nil || len(untracked.Projects) == 0 {
+		return repos
+	}
+	var keep []projectaudit.Repo
+	for _, r := range repos {
+		if id, err := projectid.Read(r.Root); err == nil && untracked.Has(id) {
+			continue
+		}
+		keep = append(keep, r)
+	}
+	return keep
 }

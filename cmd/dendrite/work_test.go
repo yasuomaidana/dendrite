@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"Dendrite/pkg/dotenv"
+	"Dendrite/pkg/planesvc/planetest"
 	"Dendrite/pkg/workcopy"
 )
 
@@ -33,7 +35,14 @@ func TestMain(m *testing.M) {
 	if stacksErr == nil {
 		_ = os.Setenv("DENDRITE_STACKS_DIR", stacksDir)
 	}
+	// The dendrite-plane sidecar is required: tests that reach Plane run the real binary.
+	stopPlane, planeErr := planetest.Install()
+	if planeErr != nil {
+		fmt.Fprintln(os.Stderr, planeErr)
+		os.Exit(1)
+	}
 	code := m.Run()
+	stopPlane()
 	if err == nil {
 		_ = os.RemoveAll(dir)
 	}
