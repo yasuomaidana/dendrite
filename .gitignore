@@ -4,8 +4,11 @@
 website/docs/
 bin/
 .aider*
+# Only the root .env (published defaults) is tracked; a .env anywhere else is a local artifact.
+**/.env
+!/.env
 .env.local
-stacks/.env
+**/.env.local
 coverage.out
 *.tmp
 .venv/
