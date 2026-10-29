@@ -26,7 +26,7 @@ jobs:
 
       - name: Coverage Ratchet (no package may drop; goal 100%)
         run: |
-          # Fails when any package falls below .dendrite/coverage_baseline.json or a new package starts below 100%.
+          # Fails when any package falls below .github/coverage_baseline.json or a new package starts below 100%.
           go run ./cmd/dendrite allostasis coverage --ratchet
 
       - name: Verify Documentation Reference Audit (--strict)

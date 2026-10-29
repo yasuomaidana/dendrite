@@ -310,7 +310,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		opts.RepoDir = "."
 	}
 	if opts.BaselinePath == "" {
-		opts.BaselinePath = ".dendrite/coverage_baseline.json"
+		opts.BaselinePath = ".github/coverage_baseline.json"
 	}
 	if opts.CommandRunner == nil {
 		opts.CommandRunner = DefaultCommandRunner

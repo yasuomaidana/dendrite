@@ -80,7 +80,7 @@ func runAllostasisAudit(ctx context.Context, pkg string, out io.Writer) error {
 }
 
 func newAllostasisCoverageCmd() *cobra.Command {
-	opts := coverage.Options{BaselinePath: ".dendrite/coverage_baseline.json"}
+	opts := coverage.Options{BaselinePath: ".github/coverage_baseline.json"}
 	cmd := &cobra.Command{
 		Use:   "coverage [package...]",
 		Short: "Per-package coverage ratchet: --ratchet fails on a drop, --update raises the baseline",

@@ -43,7 +43,7 @@ dendrite allostasis coverage [package...] [flags]
 
 | Flag | Description |
 | :--- | :--- |
-| `--baseline` | Baseline JSON file (default: .dendrite/coverage_baseline.json) |
+| `--baseline` | Baseline JSON file (default: .github/coverage_baseline.json) |
 | `--ratchet` | Fail when any package drops below its baseline |
 | `--update` | Raise the baseline to the measured coverage and add new packages |
 
