@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/dotenv"
 	"Dendrite/pkg/gateway"
 	"Dendrite/pkg/inference"
 	"Dendrite/pkg/statedir"
@@ -408,14 +409,19 @@ func runZeroCostList(reg *inference.ZeroCostRegistry, out io.Writer) error {
 	return nil
 }
 
-// saveZeroCost persists the registry to the state dir, and to .env when it exists or syncEnv is set.
+// saveZeroCost persists the registry to the state dir, and to the global .env when it exists or syncEnv is set.
 func saveZeroCost(reg *inference.ZeroCostRegistry, syncEnv bool, out io.Writer) error {
 	path := statedir.Resolve(inference.DefaultZeroCostConfigFile)
 	if err := reg.SaveToFile(path); err != nil {
 		return fmt.Errorf("save zero-cost config: %w", err)
 	}
 	fmt.Fprintf(out, "    Saved to dynamic config: %s\n", path)
-	envPath := ".env"
+	// Zero-cost rules are machine-wide, so they live in $DENDRITE_HOME/.env (configured once), never in
+	// whatever directory this ran from or in the repository's committed .env.
+	envPath, pathErr := dotenv.GlobalPath()
+	if pathErr != nil {
+		return nil
+	}
 	if _, err := os.Stat(envPath); err == nil || syncEnv {
 		if err := reg.SaveToEnvFile(envPath); err != nil {
 			return fmt.Errorf("write %s: %w", envPath, err)

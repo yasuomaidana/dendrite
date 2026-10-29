@@ -371,9 +371,14 @@ func TestLiteLLMKeyFromDotEnv(t *testing.T) {
 	if got := d.liteLLMKey(worktree); got != "sk-global" {
 		t.Errorf("a worktree without .env must use the global key, got %q", got)
 	}
-	_ = os.WriteFile(filepath.Join(worktree, ".env"), []byte("FOO=1\nLITELLM_MASTER_KEY=\"sk-from-env-file\"\n"), 0o644)
+	// The committed .env only supplies defaults: the global key outranks it.
+	_ = os.WriteFile(filepath.Join(worktree, ".env"), []byte("FOO=1\nLITELLM_MASTER_KEY=sk-committed-default\n"), 0o644)
+	if got := d.liteLLMKey(worktree); got != "sk-global" {
+		t.Errorf("the global key must outrank the committed .env defaults, got %q", got)
+	}
+	_ = os.WriteFile(filepath.Join(worktree, ".env.local"), []byte("FOO=1\nLITELLM_MASTER_KEY=\"sk-from-env-file\"\n"), 0o600)
 	if got := d.liteLLMKey(worktree); got != "sk-from-env-file" {
-		t.Errorf("the worktree's own .env must win over the global one, got %q", got)
+		t.Errorf("the worktree's own .env.local must win over the global one, got %q", got)
 	}
 	t.Setenv("LITELLM_MASTER_KEY", "sk-process")
 	if got := d.liteLLMKey(worktree); got != "sk-process" {

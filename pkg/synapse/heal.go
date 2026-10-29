@@ -24,7 +24,7 @@ const DefaultHealDepth = 4
 const EnvSearchRoots = "DENDRITE_SEARCH_ROOTS"
 
 // defaultRootDirs are the IDE project folders under the home directory scanned by default.
-var defaultRootDirs = []string{"GoLandProjects", "RustRoverProjects", "WebstormProjects", "PycharmProjects", "IdeaProjects", "src", "code"}
+var defaultRootDirs = []string{"Projects", "GoLandProjects", "RustRoverProjects", "WebstormProjects", "PycharmProjects", "IdeaProjects", "src", "code"}
 
 // MatchKind records which evidence tied a member to a discovered directory.
 type MatchKind string
@@ -338,7 +338,7 @@ func applyMoves(st *Store, syns []*Synapse, moves map[string]Location, ix *proje
 	for id, loc := range moves {
 		// A remote match is a fresh clone or a copy without identity: restore it first
 		// so the member resolves when the synapse state is re-derived below.
-		if loc.Match == MatchRemote {
+		if loc.Match == MatchRemote || loc.Match == MatchRootCommit {
 			if err := writeProjectID(loc.Path, id); err != nil {
 				return err
 			}

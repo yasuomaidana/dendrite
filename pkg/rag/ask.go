@@ -256,7 +256,8 @@ func (e *AskEngine) Ask(ctx context.Context, req AskRequest) (*AskResult, error)
 }
 
 // gatewayEnv passes the LiteLLM gateway key to the sidecar (it calls the gateway for
-// `ask`): the asked project's own .env wins over the global $DENDRITE_HOME/.env.
+// `ask`): the asked project's own .env.local wins over the global $DENDRITE_HOME/.env, which
+// wins over the committed .env defaults.
 func gatewayEnv(projectPath string) []string {
 	root, _, err := projectRoot(projectPath)
 	if err != nil {

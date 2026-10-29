@@ -281,11 +281,17 @@ func TestGatewayKeyIsTheProjectsOwnElseTheGlobalOne(t *testing.T) {
 	if got := gatewayEnv(dir); len(got) != 1 || got[0] != "LITELLM_MASTER_KEY=sk-global" {
 		t.Fatalf("a project without .env must use the global key, got %v", got)
 	}
-	if err := os.WriteFile(dir+"/.env", []byte("OTHER=1\nLITELLM_MASTER_KEY=\"sk-project\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(dir+"/.env", []byte("OTHER=1\nLITELLM_MASTER_KEY=sk-committed-default\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := gatewayEnv(dir); len(got) != 1 || got[0] != "LITELLM_MASTER_KEY=sk-global" {
+		t.Fatalf("the global key must outrank the committed .env defaults, got %v", got)
+	}
+	if err := os.WriteFile(dir+"/.env.local", []byte("OTHER=1\nLITELLM_MASTER_KEY=\"sk-project\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if got := gatewayEnv(dir); len(got) != 1 || got[0] != "LITELLM_MASTER_KEY=sk-project" {
-		t.Fatalf("the project's own key must win, got %v", got)
+		t.Fatalf("the project's own .env.local key must win, got %v", got)
 	}
 	t.Setenv("LITELLM_MASTER_KEY", "from-shell")
 	if got := gatewayEnv(dir); len(got) != 1 || got[0] != "LITELLM_MASTER_KEY=from-shell" {

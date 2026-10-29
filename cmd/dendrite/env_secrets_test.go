@@ -9,6 +9,7 @@ import (
 
 func secretsProject(t *testing.T) string {
 	t.Helper()
+	t.Setenv("DENDRITE_HOME", t.TempDir())
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
 		t.Fatal(err)
@@ -35,12 +36,22 @@ func TestSomaSecrets_EnsureStatusAndSet(t *testing.T) {
 	if out, code = cliOutput(t, "soma", "secrets", "ensure", "--set", "POSTGRES_PASSWORD=mine"); code != ExitOK || !strings.Contains(out, "changed: POSTGRES_PASSWORD") {
 		t.Fatalf("--set: exit %d\n%s", code, out)
 	}
-	raw, _ := os.ReadFile(filepath.Join(dir, ".env.local"))
+	home := os.Getenv("DENDRITE_HOME")
+	raw, _ := os.ReadFile(filepath.Join(home, ".env"))
 	if !strings.Contains(string(raw), "POSTGRES_PASSWORD=mine") {
-		t.Errorf(".env.local = %q", raw)
+		t.Errorf("global .env = %q, want the value configured once in DENDRITE_HOME", raw)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".env.local")); err == nil {
+		t.Error("a checkout-local file was written without --local")
 	}
 	if committed, _ := os.ReadFile(filepath.Join(dir, ".env")); strings.Contains(string(committed), "mine") {
 		t.Error("the committed .env was edited")
+	}
+	if out, code = cliOutput(t, "soma", "secrets", "ensure", "--local", "--set", "LITELLM_MASTER_KEY=sk-here-only"); code != ExitOK {
+		t.Fatalf("--local: exit %d\n%s", code, out)
+	}
+	if local, _ := os.ReadFile(filepath.Join(dir, ".env.local")); !strings.Contains(string(local), "LITELLM_MASTER_KEY=sk-here-only") {
+		t.Errorf(".env.local = %q", local)
 	}
 
 	out, code = cliOutput(t, "soma", "secrets", "status")

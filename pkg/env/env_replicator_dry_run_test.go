@@ -1,6 +1,7 @@
 package env
 
 import (
+	"Dendrite/pkg/stacks"
 	"context"
 	"os"
 	"path/filepath"
@@ -48,6 +49,7 @@ func TestReplicator_RenderActions(t *testing.T) {
 	origDir, _ := os.Getwd()
 	_ = os.Chdir(tmpDir)
 	defer func() { _ = os.Chdir(origDir) }()
+	t.Setenv(stacks.EnvDir, "stacks") // render into the temp working directory, never into the real home
 
 	runner := withTools(t, stackTools(false))
 	host := HostInfo{OS: "darwin", HasDocker: true}

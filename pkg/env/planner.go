@@ -1,6 +1,7 @@
 package env
 
 import (
+	"Dendrite/pkg/stacks"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -74,7 +75,7 @@ func (p *Planner) planContainerMode(req ReplicationRequest, targets []Replicatio
 
 	outDir := req.OutputDir
 	if outDir == "" {
-		outDir = "stacks"
+		outDir = stacks.Dir()
 	}
 
 	// 2. Control plane / Dev compose stack

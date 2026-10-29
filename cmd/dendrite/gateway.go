@@ -51,6 +51,9 @@ func newCleftUpdateCmd() *cobra.Command {
 }
 
 func runCleftUpdate(ctx context.Context, opts gateway.UpdaterOptions, out io.Writer) error {
+	if !opts.DryRun {
+		adoptCheckoutStacks(out)
+	}
 	report, err := gateway.NewRoutingTableUpdater(opts).UpdateNow(ctx)
 	if err != nil {
 		return fmt.Errorf("update LiteLLM routing table: %w", err)
