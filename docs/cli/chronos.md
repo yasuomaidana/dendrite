@@ -117,13 +117,39 @@ dendrite chronos next [flags]
 | Flag | Description |
 | :--- | :--- |
 | `--milestone, -m` | Only consider tickets whose name contains this milestone |
+| `--synapse` | Only consider requests that peers filed through this synapse (`chronos request`) |
 | `--ticket, -t` | Ticket identifier (e.g. DEN-123) |
 
 ```bash
 dendrite chronos next
 dendrite chronos next --ticket DEN-123 --json
 dendrite chronos next --milestone M3
+dendrite chronos next --synapse kakebo
 ```
+
+### `dendrite chronos request`
+
+Ask a synapse peer for a feature by creating a ticket in its Plane project
+
+The target must be a peer of this repository: a member of a synapse the repository belongs to, referred to by alias, Plane identifier or project ID. A peer outside every shared synapse is refused. When the peer shares several synapses with this repository, `--synapse` says which one the request belongs to; the ticket records it as its external source (`dendrite-synapse:<id>`), which is what `chronos next --synapse` filters on. Asking twice with the same name returns the existing ticket. `--from` blocks a ticket of this project on the request, when Plane accepts a relation across projects (otherwise the request's description names the ticket).
+
+```bash
+dendrite chronos request <peer-alias|IDENT> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--desc` | What is needed and why (goal and acceptance criteria) |
+| `--from` | Ticket in this project that depends on the request |
+| `--name` | Title of the request |
+| `--synapse` | The synapse the request belongs to (required when several are shared) |
+
+```bash
+dendrite chronos request oxipix --name "Expose a batch resize API" --desc "docula needs ..." --from DOC-12
+dendrite chronos request oxipix --synapse kakebo --name "..." --desc "..."
+```
+
+`chronos link` also accepts `IDENT-N` for a ticket of another project of the workspace, e.g. `dendrite chronos link DOC-12 blocked_by OXI-3`.
 
 ### `dendrite chronos project audit`
 

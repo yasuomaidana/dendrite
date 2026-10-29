@@ -63,6 +63,7 @@ func newChronosCmd() *cobra.Command {
 		newChronosStatesCmd(),
 		newChronosProjectCmd(),
 		newChronosTicketCmd(),
+		newChronosRequestCmd(),
 	)
 	return cmd
 }
@@ -150,7 +151,7 @@ func runChronosPush(ctx context.Context, client *plane.Client, file string, out 
 }
 
 func newChronosNextCmd() *cobra.Command {
-	var ticket, milestone string
+	var ticket, milestone, synapseID string
 	cmd := &cobra.Command{
 		Use:     "next",
 		Short:   "Pick the next ticket by priority and DAG reachability",
@@ -158,12 +159,13 @@ func newChronosNextCmd() *cobra.Command {
 		Example: "dendrite chronos next\ndendrite chronos next --ticket DEN-123 --json\ndendrite chronos next --milestone M3",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeRun(func(c *plane.Client) error {
-				return runChronosNext(cmd.Context(), c, ticket, milestone, cmd.OutOrStdout())
+				return runChronosNext(cmd.Context(), c, ticket, milestone, synapseID, cmd.OutOrStdout())
 			})
 		},
 	}
 	addTicketFlag(cmd, &ticket, "")
 	cmd.Flags().StringVarP(&milestone, "milestone", "m", "", "Only consider tickets whose name contains this milestone")
+	cmd.Flags().StringVar(&synapseID, "synapse", "", "Only consider requests that peers filed through this synapse (`chronos request`)")
 	return cmd
 }
 
@@ -172,6 +174,12 @@ func planeStatusFor(st plane.PlaneState) tracker.Status { return plane.StatusFor
 
 // buildPlaneDAG loads the Plane board into a dependency graph.
 func buildPlaneDAG(ctx context.Context, client *plane.Client, milestone string) (*dag.Graph, error) {
+	return buildPlaneDAGFor(ctx, client, milestone, "")
+}
+
+// buildPlaneDAGFor is buildPlaneDAG limited to the requests that came in through one synapse
+// (synapseID != ""), so a project shared by several synapses can work through them one at a time.
+func buildPlaneDAGFor(ctx context.Context, client *plane.Client, milestone, synapseID string) (*dag.Graph, error) {
 	snap, _, err := planesvc.Default().Snapshot(ctx, client, false)
 	if err != nil {
 		return nil, fmt.Errorf("query Plane issues: %w", err)
@@ -182,6 +190,9 @@ func buildPlaneDAG(ctx context.Context, client *plane.Client, milestone string) 
 	uuidToID := make(map[string]string)
 	for _, iss := range issues {
 		if milestone != "" && !strings.Contains(strings.ToLower(iss.Name), strings.ToLower(milestone)) {
+			continue
+		}
+		if synapseID != "" && iss.ExternalSource != requestSourcePrefix+synapseID {
 			continue
 		}
 		id := fmt.Sprintf("DEN-%03d", iss.SequenceID)
@@ -241,8 +252,8 @@ func buildPlaneDAG(ctx context.Context, client *plane.Client, milestone string) 
 	return graph, nil
 }
 
-func runChronosNext(ctx context.Context, client *plane.Client, ticket, milestone string, out io.Writer) error {
-	graph, err := buildPlaneDAG(ctx, client, milestone)
+func runChronosNext(ctx context.Context, client *plane.Client, ticket, milestone, synapseID string, out io.Writer) error {
+	graph, err := buildPlaneDAGFor(ctx, client, milestone, synapseID)
 	if err != nil {
 		return err
 	}
