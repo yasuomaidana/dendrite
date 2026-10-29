@@ -68,6 +68,13 @@ func (s *Service) UpdateIssue(ctx context.Context, c *plane.Client, ref string, 
 	setPtr(params, "start_date", req.StartDate)
 	setPtr(params, "target_date", req.TargetDate)
 	setPtr(params, "parent", req.Parent)
+	// A non-nil empty list is sent: it clears the field.
+	if req.Assignees != nil {
+		params["assignees"] = req.Assignees
+	}
+	if req.Labels != nil {
+		params["labels"] = req.Labels
+	}
 	var out issueReply
 	if err := s.call(ctx, false, "issue.update", params, &out); err != nil {
 		return nil, err

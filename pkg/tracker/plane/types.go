@@ -15,6 +15,7 @@ var (
 	ErrMissingAPIToken    = errors.New("plane API token environment variable is empty or not set")
 	ErrUnauthorized       = errors.New("plane request unauthorized: invalid API key")
 	ErrIssueNotFound      = errors.New("plane issue not found")
+	ErrCommentNotFound    = errors.New("plane comment not found")
 	ErrStateNotFound      = errors.New("no matching plane state found for requested status")
 	ErrValidationTimeout  = errors.New("plane credential validation timed out")
 	ErrPageNotFound       = errors.New("plane page not found")
@@ -92,6 +93,7 @@ type PlaneIssue struct {
 	ExternalID          string           `json:"external_id,omitempty"`
 	ExternalSource      string           `json:"external_source,omitempty"`
 	Labels              []string         `json:"labels,omitempty"`
+	Assignees           []string         `json:"assignees,omitempty"`
 }
 
 // PlaneModule represents a milestone / module in Plane.
@@ -153,6 +155,11 @@ type UpdateIssueRequest struct {
 	StartDate       *string `json:"start_date,omitempty"`
 	TargetDate      *string `json:"target_date,omitempty"`
 	Parent          *string `json:"parent,omitempty"`
+	// Assignees are user ids and Labels are label names or ids. Each is a full replacement list: nil
+	// leaves the field alone, an empty non-nil list clears it. Only the sidecar path honours an empty
+	// list (omitempty drops it from a directly marshalled request).
+	Assignees []string `json:"assignees,omitempty"`
+	Labels    []string `json:"labels,omitempty"`
 }
 
 // CreateModuleRequest defines inputs for creating a module/milestone with date boundaries.

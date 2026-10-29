@@ -66,6 +66,9 @@ func typed(err error) error {
 		if strings.HasPrefix(rpc.Message, "no workflow state") {
 			return fmt.Errorf("%w: %s", plane.ErrStateNotFound, rpc.Message)
 		}
+		if strings.HasPrefix(rpc.Message, "no comment matches") {
+			return fmt.Errorf("%w: %s", plane.ErrCommentNotFound, rpc.Message)
+		}
 		return fmt.Errorf("%w: %s", plane.ErrIssueNotFound, rpc.Message)
 	}
 	return err
