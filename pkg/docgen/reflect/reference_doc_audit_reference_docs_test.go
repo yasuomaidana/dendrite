@@ -203,3 +203,18 @@ func TestIntrospectCLICommand_EdgeCases(t *testing.T) {
 		t.Errorf("formatAliases = %q", got)
 	}
 }
+
+func TestPortable(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	for in, want := range map[string]string{
+		"default: " + home + "/.dendrite/stacks/a.yaml)":       "default: ~/.dendrite/stacks/a.yaml)",
+		"default: " + home + "/Code/App/.dendrite/s.json)":     "default: .dendrite/s.json)",
+		"default: /home/runner/work/App/App/.dendrite/s.json)": "default: .dendrite/s.json)",
+		"in " + home:        "in ~",
+		"nothing to change": "nothing to change",
+	} {
+		if got := portable(in); got != want {
+			t.Errorf("portable(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
