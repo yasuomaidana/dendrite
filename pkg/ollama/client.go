@@ -162,20 +162,26 @@ func (c *Client) Generate(ctx context.Context, req GenerateRequest) (*GenerateRe
 // GenerateStream streams generated text chunks to the provided callback.
 func (c *Client) GenerateStream(ctx context.Context, req GenerateRequest, onChunk func(GenerateResponse) error) error {
 	req.Stream = true
+	return streamNDJSON(ctx, c, "/api/generate", "generate", req, onChunk)
+}
+
+// streamNDJSON posts req to an Ollama route and hands every line of the newline-delimited JSON answer to
+// onChunk. what names the route in error messages.
+func streamNDJSON[T any](ctx context.Context, c *Client, path, what string, req any, onChunk func(T) error) error {
 	body, err := json.Marshal(req)
 	if err != nil {
-		return fmt.Errorf("failed to encode generate request: %w", err)
+		return fmt.Errorf("failed to encode %s request: %w", what, err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/generate", bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("failed to create stream request: %w", err)
+		return fmt.Errorf("failed to create %s stream request: %w", what, err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		return fmt.Errorf("generate stream request failed: %w", err)
+		return fmt.Errorf("%s stream request failed: %w", what, err)
 	}
 	defer resp.Body.Close()
 
@@ -189,9 +195,9 @@ func (c *Client) GenerateStream(ctx context.Context, req GenerateRequest, onChun
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
-		var chunk GenerateResponse
+		var chunk T
 		if err := json.Unmarshal(line, &chunk); err != nil {
-			return fmt.Errorf("failed to unmarshal chunk: %w", err)
+			return fmt.Errorf("failed to unmarshal %s chunk: %w", what, err)
 		}
 		if err := onChunk(chunk); err != nil {
 			return err
@@ -234,42 +240,7 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, erro
 // ChatStream streams conversation chunks to the provided callback.
 func (c *Client) ChatStream(ctx context.Context, req ChatRequest, onChunk func(ChatResponse) error) error {
 	req.Stream = true
-	body, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("failed to encode chat request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/chat", bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to create chat stream request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("chat stream request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return c.handleError(resp)
-	}
-
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(bytes.TrimSpace(line)) == 0 {
-			continue
-		}
-		var chunk ChatResponse
-		if err := json.Unmarshal(line, &chunk); err != nil {
-			return fmt.Errorf("failed to unmarshal chat chunk: %w", err)
-		}
-		if err := onChunk(chunk); err != nil {
-			return err
-		}
-	}
-	return scanner.Err()
+	return streamNDJSON(ctx, c, "/api/chat", "chat", req, onChunk)
 }
 
 func (c *Client) handleError(resp *http.Response) error {
