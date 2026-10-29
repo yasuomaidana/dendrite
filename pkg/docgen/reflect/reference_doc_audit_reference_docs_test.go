@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
 	"Dendrite/pkg/mcpserver"
 )
@@ -205,16 +204,17 @@ func TestIntrospectCLICommand_EdgeCases(t *testing.T) {
 	}
 }
 
-func TestFlagDocs_PathsArePortable(t *testing.T) {
-	wd, _ := os.Getwd()
+func TestPortable(t *testing.T) {
 	home, _ := os.UserHomeDir()
-	fs := pflag.NewFlagSet("x", pflag.ContinueOnError)
-	fs.String("policy", wd+"/.dendrite/p.json", "policy file (default: "+wd+"/.dendrite/p.json)")
-	fs.String("cfg", home+"/.dendrite/c.yaml", "config in "+home)
-	docs := flagDocs(fs)
-	for _, d := range docs {
-		if strings.Contains(d.Default+d.Description, "/Users/") || strings.Contains(d.Default+d.Description, wd) {
-			t.Errorf("%s still names this machine: default %q, description %q", d.Name, d.Default, d.Description)
+	for in, want := range map[string]string{
+		"default: " + home + "/.dendrite/stacks/a.yaml)":       "default: ~/.dendrite/stacks/a.yaml)",
+		"default: " + home + "/Code/App/.dendrite/s.json)":     "default: .dendrite/s.json)",
+		"default: /home/runner/work/App/App/.dendrite/s.json)": "default: .dendrite/s.json)",
+		"in " + home:        "in ~",
+		"nothing to change": "nothing to change",
+	} {
+		if got := portable(in); got != want {
+			t.Errorf("portable(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

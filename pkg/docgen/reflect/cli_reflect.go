@@ -3,6 +3,7 @@ package reflect
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -174,16 +175,20 @@ func flagDocs(fs *pflag.FlagSet) []FlagDoc {
 	return out
 }
 
-// portable writes the working directory as "." and the home directory as "~" in flag text, so the
-// reference docs read the same on every machine (the audit compares them with a fresh generation).
+// repoState matches the project's .dendrite state directory behind any absolute checkout path.
+var repoState = regexp.MustCompile(`/[^\s()]+/\.dendrite/`)
+
+// portable writes the home directory as "~" and the project's state directory as ".dendrite/" in flag
+// text, so the reference docs read the same on every machine and in every checkout (the audit compares
+// them with a fresh generation).
 func portable(s string) string {
-	if wd, err := os.Getwd(); err == nil && wd != "" && wd != "/" {
-		s = strings.ReplaceAll(s, wd, ".")
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" || home == "/" {
+		return repoState.ReplaceAllString(s, ".dendrite/")
 	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" && home != "/" {
-		s = strings.ReplaceAll(s, home, "~")
-	}
-	return s
+	s = strings.ReplaceAll(s, home+"/.dendrite/", "~/.dendrite/")
+	s = repoState.ReplaceAllString(s, ".dendrite/")
+	return strings.ReplaceAll(s, home, "~")
 }
 
 // exampleLines splits a cobra Example block into trimmed, non-empty lines.
