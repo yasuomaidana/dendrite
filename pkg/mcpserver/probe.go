@@ -53,6 +53,7 @@ func DefaultProbeSpecs() []ProbeSpec {
 		{Tool: "dendrite_dist_sources"},
 		{Tool: "dendrite_env_status"},
 		{Tool: "dendrite_inference_list"},
+		{Tool: "dendrite_inference_models"},
 		{Tool: "dendrite_store_status"},
 		{Tool: "dendrite_tokens_status"},
 		{Tool: "dendrite_analyze_status"},
