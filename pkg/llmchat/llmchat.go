@@ -90,15 +90,25 @@ func Gateway(dir string) Client {
 
 var thinkBlock = regexp.MustCompile(`(?s)<think>.*?</think>`)
 
-// JSON cuts the first JSON value out of a model's answer, which may wrap it in prose, a code fence or a
-// <think> block. open and closeCh are '[' and ']' for an array, '{' and '}' for an object.
+// JSON cuts the JSON value out of a model's answer, which may wrap it in prose, a code fence or a <think>
+// block, and may mention brackets before it ("[AC-1] holds: [...]"). open and closeCh are '[' and ']' for an
+// array, '{' and '}' for an object. It returns the first span that starts at an open bracket, ends at a close
+// bracket and is valid JSON, longest first.
 func JSON(content string, open, closeCh byte) (string, error) {
 	content = thinkBlock.ReplaceAllString(content, "")
-	start, end := strings.IndexByte(content, open), strings.LastIndexByte(content, closeCh)
-	if start < 0 || end < start {
-		return "", fmt.Errorf("the answer holds no JSON %s (it starts: %q)", map[byte]string{'[': "array", '{': "object"}[open], head(content))
+	for start := strings.IndexByte(content, open); start >= 0; {
+		for end := strings.LastIndexByte(content, closeCh); end > start; end = strings.LastIndexByte(content[:end], closeCh) {
+			if candidate := content[start : end+1]; json.Valid([]byte(candidate)) {
+				return candidate, nil
+			}
+		}
+		next := strings.IndexByte(content[start+1:], open)
+		if next < 0 {
+			break
+		}
+		start += 1 + next
 	}
-	return content[start : end+1], nil
+	return "", fmt.Errorf("the answer holds no JSON %s (it starts: %q)", map[byte]string{'[': "array", '{': "object"}[open], head(content))
 }
 
 func head(s string) string {

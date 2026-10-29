@@ -95,16 +95,21 @@ func TestJSONCutsTheValueOutOfAChattyAnswer(t *testing.T) {
 		open, shut byte
 		want       string
 	}{
-		"bare array":      {`[1,2]`, '[', ']', `[1,2]`},
-		"code fence":      {"Sure:\n```json\n[{\"a\":1}]\n```\nDone.", '[', ']', `[{"a":1}]`},
-		"think block":     {"<think>maybe [wrong] here</think>\n[3]", '[', ']', `[3]`},
-		"object":          {`Result: {"k":"v"} ok`, '{', '}', `{"k":"v"}`},
-		"multiline think": {"<think>\nstep [1]\nstep 2\n</think>[4]", '[', ']', `[4]`},
+		"bare array":                      {`[1,2]`, '[', ']', `[1,2]`},
+		"code fence":                      {"Sure:\n```json\n[{\"a\":1}]\n```\nDone.", '[', ']', `[{"a":1}]`},
+		"think block":                     {"<think>maybe [wrong] here</think>\n[3]", '[', ']', `[3]`},
+		"object":                          {`Result: {"k":"v"} ok`, '{', '}', `{"k":"v"}`},
+		"prose brackets before the array": {"The [AC-1] criterion holds. Result: [{\"ac\":\"AC-1\",\"pass\":true}] done [x]", '[', ']', `[{"ac":"AC-1","pass":true}]`},
+		"nested arrays":                   {`ok [1,[2,3]] fine`, '[', ']', `[1,[2,3]]`},
+		"multiline think":                 {"<think>\nstep [1]\nstep 2\n</think>[4]", '[', ']', `[4]`},
 	} {
 		got, err := JSON(tc.in, tc.open, tc.shut)
 		if err != nil || got != tc.want {
 			t.Errorf("%s: %q, %v, want %q", name, got, err, tc.want)
 		}
+	}
+	if _, err := JSON("[AC-1] holds and [AC-2] does not", '[', ']'); err == nil {
+		t.Error("bracketed prose is not JSON")
 	}
 	_, err := JSON("I could not decide, sorry. "+strings.Repeat("x", 300), '[', ']')
 	if err == nil || !strings.Contains(err.Error(), "JSON array") || !strings.Contains(err.Error(), "I could not decide") || len(err.Error()) > 300 {

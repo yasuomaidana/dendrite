@@ -25,6 +25,15 @@ func (g GatewayReviewer) Review(ctx context.Context, in ReviewInput) ([]ACVerdic
 	if err != nil {
 		return nil, err
 	}
+	verdicts, readErr := parseVerdicts(answer)
+	if readErr == nil {
+		return verdicts, nil
+	}
+	// A chatty model often reads the reminder right: ask once more, quoting why the first answer was unusable.
+	retry := user + "\n\nYour previous answer could not be read (" + readErr.Error() + "). Reply with ONLY the JSON array, nothing else."
+	if answer, err = g.Chat.Complete(ctx, reviewPrompt, retry); err != nil {
+		return nil, err
+	}
 	return parseVerdicts(answer)
 }
 

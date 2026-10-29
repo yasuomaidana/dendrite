@@ -2,7 +2,10 @@ package ticketlock
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"Dendrite/pkg/llmchat"
@@ -29,10 +32,40 @@ func TestGatewayReviewerFailures(t *testing.T) {
 		"the model is unreachable": {llmchat.Client{URL: "http://127.0.0.1:1"}, "connect"},
 		"the gateway errs":         {llmchattest.Failing(t, 503).Client, "HTTP 503"},
 		"no json array":            {llmchattest.New(t, "looks fine to me").Client, "JSON array"},
-		"invalid json":             {llmchattest.New(t, "[{oops]").Client, "not valid JSON"},
+		"broken json":              {llmchattest.New(t, "[{oops]").Client, "JSON array"},
+		"wrong shape":              {llmchattest.New(t, "[1,2]").Client, "not valid JSON"},
 	} {
 		if _, err := (GatewayReviewer{Chat: tc.chat}).Review(ctx, ReviewInput{Ticket: "DEN-1"}); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: %v, want %q", name, err, tc.want)
 		}
+	}
+}
+
+func TestGatewayReviewerAsksOnceMoreWhenTheFirstAnswerCannotBeRead(t *testing.T) {
+	gw := llmchattest.Sequence(t, "Let me think: [AC-1] holds and [AC-2] does not.", `[{"ac":"AC-1","pass":true},{"ac":"AC-2","pass":false,"reason":"no test"}]`)
+	got, err := GatewayReviewer{Chat: gw.Client}.Review(context.Background(), ReviewInput{Ticket: "DEN-1", Criteria: []string{"[AC-1] a", "[AC-2] b"}})
+	if err != nil || len(got) != 2 || got[1].Pass {
+		t.Fatalf("%+v, %v", got, err)
+	}
+	if gw.Requests() != 2 || !strings.Contains(gw.Last().User, "could not be read") || !strings.Contains(gw.Last().User, "ONLY the JSON array") {
+		t.Errorf("the second request quotes why the first failed: %d requests, %q", gw.Requests(), gw.Last().User)
+	}
+
+	twice := llmchattest.Sequence(t, "no idea", "still prose")
+	if _, err := (GatewayReviewer{Chat: twice.Client}).Review(context.Background(), ReviewInput{Ticket: "DEN-1"}); err == nil || !strings.Contains(err.Error(), "JSON array") || twice.Requests() != 2 {
+		t.Errorf("a second unusable answer is the error: %v after %d requests", err, twice.Requests())
+	}
+
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"prose"}}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	if _, err := (GatewayReviewer{Chat: llmchat.Client{URL: srv.URL}}).Review(context.Background(), ReviewInput{Ticket: "DEN-1"}); err == nil || !strings.Contains(err.Error(), "HTTP 503") {
+		t.Errorf("a failure of the retry is reported: %v", err)
 	}
 }

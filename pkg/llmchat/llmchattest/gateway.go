@@ -17,7 +17,8 @@ type Request struct {
 	System, User string
 }
 
-// Gateway answers every chat completion with one fixed answer (or one fixed HTTP error).
+// Gateway answers chat completions with fixed answers, in order (the last one repeats), or with one fixed HTTP
+// error.
 type Gateway struct {
 	// Client talks to this gateway.
 	Client llmchat.Client
@@ -29,10 +30,14 @@ type Gateway struct {
 // New starts a gateway that answers every request with answer.
 func New(t *testing.T, answer string) *Gateway { return start(t, http.StatusOK, answer) }
 
-// Failing starts a gateway that answers every request with the HTTP status.
-func Failing(t *testing.T, status int) *Gateway { return start(t, status, "") }
+// Sequence starts a gateway that answers the first request with answers[0], the second with answers[1], and so
+// on; the last answer repeats.
+func Sequence(t *testing.T, answers ...string) *Gateway { return start(t, http.StatusOK, answers...) }
 
-func start(t *testing.T, status int, answer string) *Gateway {
+// Failing starts a gateway that answers every request with the HTTP status.
+func Failing(t *testing.T, status int) *Gateway { return start(t, status) }
+
+func start(t *testing.T, status int, answers ...string) *Gateway {
 	t.Helper()
 	g := &Gateway{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +55,10 @@ func start(t *testing.T, status int, answer string) *Gateway {
 		}
 		g.mu.Lock()
 		g.requests = append(g.requests, req)
+		answer := ""
+		if len(answers) > 0 {
+			answer = answers[min(len(g.requests), len(answers))-1]
+		}
 		g.mu.Unlock()
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": answer}}}})
@@ -57,6 +66,13 @@ func start(t *testing.T, status int, answer string) *Gateway {
 	t.Cleanup(srv.Close)
 	g.Client = llmchat.Client{URL: srv.URL, Model: "test-model"}
 	return g
+}
+
+// Requests is how many requests the gateway has answered.
+func (g *Gateway) Requests() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return len(g.requests)
 }
 
 // Last is the most recent request, or the zero Request when there was none.
