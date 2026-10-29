@@ -114,9 +114,7 @@ func TestServerStaysWhileAnotherSessionHoldsALeaseAndStopsAfterTheLastOne(t *tes
 	}
 	waitFor(t, "the idle server to stop", func() bool { return !processAlive(child) })
 	waitFor(t, "owner record removal", func() bool { return e.m.readOwner() == nil })
-	if e.healthy.Load() {
-		t.Error("still healthy after the child stopped")
-	}
+	waitFor(t, "the health probe to fail after the child stopped", func() bool { return !e.healthy.Load() })
 }
 
 func TestReleaseIsIdempotent(t *testing.T) {
