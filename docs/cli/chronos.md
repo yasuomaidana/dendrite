@@ -32,6 +32,7 @@ Terminal Boutons & Vesicles
 | `project` | Link the repository to its Plane project and audit the project rule |
 | `project audit` | Check that every editable repository is a Plane project and related repositories share a synapse |
 | `project ensure` | Adopt or create the repository's Plane project, converge its states, and write .dendrite/plane.json |
+| `project refresh` | Relocate or prune the entries of the global project index whose directory moved or vanished |
 | `project show` | Print the Plane project linked to the repository |
 | `push` | Push DEV_STATUS.md to Plane with Gantt timelines and dependencies |
 | `relate` | Set a ticket's priority and dates and add several relations at once |
@@ -160,6 +161,26 @@ dendrite chronos project ensure [dir] [flags]
 ```bash
 dendrite chronos project ensure
 dendrite chronos project ensure ../dendrite-git-rs --identifier DGIT --import DEV_STATUS.md
+```
+
+### `dendrite chronos project refresh`
+
+Relocate or prune the entries of the global project index whose directory moved or vanished
+
+```bash
+dendrite chronos project refresh [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--depth` | Maximum search depth below each root |
+| `--dry-run` | Show what would happen without changing anything |
+| `--prune` | Remove entries whose project cannot be found |
+| `--roots` | Extra directories to search (comma-separated) |
+
+```bash
+dendrite chronos project refresh --dry-run
+dendrite chronos project refresh --prune --roots ~/work
 ```
 
 ### `dendrite chronos project show`

@@ -14,6 +14,7 @@ import (
 
 	"Dendrite/pkg/projectid"
 	"Dendrite/pkg/selfupdate"
+	"Dendrite/pkg/stacks"
 	"Dendrite/pkg/synapse"
 
 	"github.com/spf13/cobra"
@@ -168,9 +169,12 @@ func runDevUpdate(ctx context.Context, o updateOptions, target string, out io.Wr
 
 // healActiveServices inspects and restarts active control-plane services whose compose configurations or routes changed.
 func healActiveServices(ctx context.Context, src string, out io.Writer) {
-	composeFile := filepath.Join(src, "stacks", "compose.control.yaml")
+	composeFile := stacks.Path("compose.control.yaml") // the install path, else the checkout it was built from
 	if _, err := os.Stat(composeFile); err != nil {
-		return
+		composeFile = filepath.Join(src, "stacks", "compose.control.yaml")
+		if _, err := os.Stat(composeFile); err != nil {
+			return
+		}
 	}
 	// Check if Docker daemon is accessible and dendrite-litellm is running
 	checkCmd := exec.CommandContext(ctx, "docker", "ps", "-q", "-f", "name=dendrite-litellm")

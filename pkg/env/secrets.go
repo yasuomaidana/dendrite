@@ -3,6 +3,7 @@ package env
 import (
 	"bufio"
 	"crypto/rand"
+	_ "embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -14,6 +15,22 @@ import (
 
 // TemplatePath is the committed file that documents every default value.
 const TemplatePath = "stacks/.env.example"
+
+// embeddedDefaults is a copy of TemplatePath compiled into the binary, so the defaults are known
+// outside a checkout too (a test keeps the two identical).
+//
+//go:embed defaults.env
+var embeddedDefaults string
+
+// readTemplate returns the template lines: the checkout's own file when there is one, otherwise the
+// embedded copy.
+func readTemplate(dir string) ([]string, error) {
+	lines, err := readLines(filepath.Join(dir, TemplatePath))
+	if errors.Is(err, os.ErrNotExist) {
+		return strings.Split(strings.TrimRight(embeddedDefaults, "\n"), "\n"), nil
+	}
+	return lines, err
+}
 
 // ManagedSecrets are the credentials a user may want to change at install. Their defaults are
 // published in TemplatePath on purpose: they are local-development values.
@@ -88,7 +105,7 @@ func layers(dir, globalPath string) (proj, global, local []string, err error) {
 // Local, to this checkout's .env.local. Existing values are never overwritten, so re-running is
 // safe, and only the keys being set are touched in a file that holds other settings.
 func EnsureSecrets(opts SecretsOptions) (*SecretsResult, error) {
-	tmplLines, err := readLines(filepath.Join(opts.Dir, TemplatePath))
+	tmplLines, err := readTemplate(opts.Dir)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", TemplatePath, err)
 	}
@@ -100,7 +117,7 @@ func EnsureSecrets(opts SecretsOptions) (*SecretsResult, error) {
 	}
 
 	projPath := filepath.Join(opts.Dir, ".env")
-	if _, err := os.Stat(projPath); errors.Is(err, os.ErrNotExist) { // a checkout without the committed defaults
+	if _, err := os.Stat(projPath); errors.Is(err, os.ErrNotExist) && isCheckout(opts.Dir) { // a checkout without the committed defaults
 		if err := os.WriteFile(projPath, []byte(strings.Join(tmplLines, "\n")+"\n"), 0o644); err != nil {
 			return nil, err
 		}
@@ -203,7 +220,7 @@ func EnsureSecrets(opts SecretsOptions) (*SecretsResult, error) {
 // SecretState says, for each managed key, whether the value that applies is the published default,
 // custom or missing. It never returns a value.
 func SecretState(dir, globalPath string) (map[string]string, error) {
-	tmplLines, err := readLines(filepath.Join(dir, TemplatePath))
+	tmplLines, err := readTemplate(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -306,4 +323,11 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// isCheckout reports whether dir is a Dendrite checkout (it carries the committed template), as
+// opposed to any directory the command happens to run from.
+func isCheckout(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, TemplatePath))
+	return err == nil
 }

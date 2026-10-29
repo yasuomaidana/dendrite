@@ -14,11 +14,11 @@ import (
 
 	"Dendrite/pkg/inference"
 	"Dendrite/pkg/memfit"
+	"Dendrite/pkg/stacks"
 )
 
-// Default paths and intervals for LiteLLM routing table updater.
+// Default interval for the LiteLLM routing table updater.
 const (
-	DefaultConfigPath     = "stacks/litellm_config.yaml"
 	DefaultUpdateInterval = 24 * time.Hour
 )
 
@@ -41,7 +41,7 @@ type DiscoveredModel struct {
 
 // UpdaterOptions configures the LiteLLM routing table updater.
 type UpdaterOptions struct {
-	ConfigPath        string             // Target YAML path (default: stacks/litellm_config.yaml)
+	ConfigPath        string             // Target YAML path (default: <stacks dir>/litellm_config.yaml, i.e. ~/.dendrite/stacks)
 	Interval          time.Duration      // Scheduled update interval (default: 24h)
 	UseContainerHost  bool               // Rewrite localhost/127.0.0.1 to host.docker.internal
 	DryRun            bool               // Return generated config without writing to disk
@@ -54,11 +54,14 @@ type UpdaterOptions struct {
 	Logger            func(format string, args ...interface{})
 }
 
+// DefaultConfigPath is the LiteLLM routing table in the stacks directory, next to the compose file that mounts it.
+func DefaultConfigPath() string { return stacks.Path("litellm_config.yaml") }
+
 // DefaultUpdaterOptions initializes options from environment variables with sensible defaults.
 func DefaultUpdaterOptions() UpdaterOptions {
 	cfgPath := os.Getenv("DENDRITE_LITELLM_CONFIG_PATH")
 	if strings.TrimSpace(cfgPath) == "" {
-		cfgPath = DefaultConfigPath
+		cfgPath = DefaultConfigPath()
 	}
 
 	interval := DefaultUpdateInterval
@@ -73,7 +76,7 @@ func DefaultUpdaterOptions() UpdaterOptions {
 		if b, err := strconv.ParseBool(rawHost); err == nil {
 			useContainerHost = b
 		}
-	} else if strings.Contains(cfgPath, "stacks/") {
+	} else if strings.Contains(cfgPath, "stacks/") || filepath.Dir(cfgPath) == stacks.Dir() {
 		// By default, if writing to stacks/litellm_config.yaml, it targets docker-compose
 		useContainerHost = true
 	}

@@ -1,6 +1,7 @@
 package env
 
 import (
+	"Dendrite/pkg/stacks"
 	"context"
 	"fmt"
 	"os"
@@ -122,7 +123,7 @@ func (r *Replicator) handleRenderAction(action PlanAction) (string, error) {
 	case TargetLinear:
 		cfg := DefaultLinearConfig()
 		yamlContent := GenerateLinearCompose(cfg)
-		outPath := filepath.Join("stacks", "compose.linear.yaml")
+		outPath := stacks.Path("compose.linear.yaml")
 		if err := writeStackFileIfAbsent(outPath, yamlContent); err != nil {
 			return "", err
 		}
@@ -131,7 +132,7 @@ func (r *Replicator) handleRenderAction(action PlanAction) (string, error) {
 	case TargetPlane:
 		cfg := DefaultPlaneConfig()
 		yamlContent := GeneratePlaneCompose(cfg)
-		outPath := filepath.Join("stacks", "compose.plane.yaml")
+		outPath := stacks.Path("compose.plane.yaml")
 		if err := writeStackFileIfAbsent(outPath, yamlContent); err != nil {
 			return "", err
 		}
@@ -144,7 +145,7 @@ func (r *Replicator) handleRenderAction(action PlanAction) (string, error) {
 	case TargetPenpot:
 		cfg := DefaultPenpotConfig()
 		yamlContent := GeneratePenpotCompose(cfg)
-		outPath := filepath.Join("stacks", "compose.penpot.yaml")
+		outPath := stacks.Path("compose.penpot.yaml")
 		if err := writeStackFileIfAbsent(outPath, yamlContent); err != nil {
 			return "", err
 		}
@@ -152,7 +153,7 @@ func (r *Replicator) handleRenderAction(action PlanAction) (string, error) {
 
 	case TargetLiteLLM, TargetPostgres, TargetRedis:
 		yamlContent := GenerateControlCompose()
-		outPath := filepath.Join("stacks", "compose.control.yaml")
+		outPath := stacks.Path("compose.control.yaml")
 		if err := writeStackFileIfAbsent(outPath, yamlContent); err != nil {
 			return "", err
 		}
@@ -262,7 +263,7 @@ func (r *Replicator) AuditComponents(ctx context.Context) []ComponentStatus {
 const RagInitSQL = `-- dendrite-rag shared tier: the dendrite_rag role and database with pgvector.
 -- Runs on a fresh volume through /docker-entrypoint-initdb.d; idempotent, so an existing
 -- stack can apply it too:
---   docker exec -i dendrite-postgres psql -U dendrite -d postgres < stacks/init-rag.sql
+--   docker exec -i dendrite-postgres psql -U dendrite -d postgres < ~/.dendrite/stacks/init-rag.sql
 SELECT 'CREATE ROLE dendrite_rag WITH LOGIN PASSWORD ''dendrite_rag'''
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'dendrite_rag')\gexec
 SELECT 'CREATE DATABASE dendrite_rag OWNER dendrite_rag'
