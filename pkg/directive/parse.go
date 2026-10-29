@@ -11,6 +11,10 @@ var (
 	warnAt      = regexp.MustCompile(`(?i)\bwarn(?:ing|s)?\s+(?:at|from|above|over)\s+(\d+)\b`)
 	noDuplicate = regexp.MustCompile(`(?i)\b(?:zero|no|without|0\s*%?)\s+(?:duplicat\w*|clones?|copy[- ]?paste)`)
 	dupPercent  = regexp.MustCompile(`(?i)(?:up to|at most|max(?:imum)?|allow)\s+(\d+(?:\.\d+)?)\s*(?:%|percent)\s+(?:of\s+)?(?:code\s+)?duplicat\w*`)
+	useMacros   = regexp.MustCompile(`(?i)\bmacros?\b`)
+	useHelpers  = regexp.MustCompile(`(?i)\bhelpers?(?:\s+(?:functions?|fns?|methods?))?\b|\bshared functions?\b`)
+	useRstest   = regexp.MustCompile(`(?i)\brstest\b|\bparameteri[sz]ed tests?\b`)
+	dupContext  = regexp.MustCompile(`(?i)\b(?:duplicat\w*|repeat\w*|copy[- ]?paste|clones?|dry)\b`)
 	autoDoneOn  = regexp.MustCompile(`(?i)\b(?:allow|let|enable)s?\s+agents?\s+(?:to\s+)?(?:set\s+)?done|agents?\s+may\s+set\s+done|auto[- ]?done\s+(?:on|enabled)`)
 	autoDoneOff = regexp.MustCompile(`(?i)\brequire\s+human\s+(?:review|sign[- ]?off)|agents?\s+(?:never|must not|may not|cannot)\s+set\s+done|(?:disable|turn off)\s+auto[- ]?done|auto[- ]?done\s+off|humans?\s+sign\s+off`)
 )
@@ -40,6 +44,9 @@ func Parse(text string) []Change {
 	} else if noDuplicate.MatchString(text) {
 		out = append(out, Change{Key: "duplication.max_percent", Value: 0.0, Reason: "no duplicated code"})
 	}
+	if s := strategies(text); s != nil {
+		out = append(out, Change{Key: "duplication.strategies", Value: s, Reason: "how duplicated code is removed"})
+	}
 	switch {
 	case autoDoneOff.MatchString(text):
 		out = append(out, Change{Key: "done.auto_done", Value: false, Reason: "a person signs off"})
@@ -54,4 +61,22 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// strategies reads "use macros and helper functions against duplicated code": the strategies the sentence names,
+// in the order the project tries them. Only a sentence that speaks of duplication counts.
+func strategies(text string) []string {
+	if !dupContext.MatchString(text) {
+		return nil
+	}
+	var out []string
+	for _, s := range []struct {
+		name string
+		re   *regexp.Regexp
+	}{{"helper_function", useHelpers}, {"macro", useMacros}, {"rstest", useRstest}} {
+		if s.re.MatchString(text) {
+			out = append(out, s.name)
+		}
+	}
+	return out
 }

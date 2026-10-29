@@ -172,7 +172,7 @@ func TestParseValueReadsTypedText(t *testing.T) {
 
 func TestKeysAndDescribeCoverEverySetting(t *testing.T) {
 	ks := Keys()
-	if len(ks) != 16 || ks[0] != "coverage.exclude" {
+	if len(ks) != 17 || ks[0] != "coverage.exclude" {
 		t.Errorf("keys = %v", ks)
 	}
 	text := Describe()
@@ -299,7 +299,7 @@ func TestInterpretReturnsTheStoredValueOfEveryKey(t *testing.T) {
 	sample := map[string]string{
 		"loc.max_production_lines": "600", "loc.warn_at": "100", "loc.exclude": `["a"]`,
 		"coverage.min_percent": "50", "coverage.scope": `"branch"`, "coverage.exclude": `["b"]`,
-		"duplication.max_percent": "5", "duplication.min_tokens": "20", "duplication.min_lines": "3", "duplication.include_tests": "false",
+		"duplication.max_percent": "5", "duplication.min_tokens": "20", "duplication.min_lines": "3", "duplication.include_tests": "false", "duplication.strategies": `["macro"]`,
 		"lint.strictness": `"standard"`, "security.fail_on": `"medium"`, "security.secrets": "false",
 		"done.auto_done": "false", "done.human_review_labels": `["x"]`, "languages.preference": `["go"]`,
 	}
@@ -413,4 +413,40 @@ func contains(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestStrategiesRuleParsesValidatesAndAdvises(t *testing.T) {
+	for text, want := range map[string][]string{
+		"use macros and helper functions to remove duplicated code": {"helper_function", "macro"},
+		"avoid copy-paste: extract a helper":                        {"helper_function"},
+		"repeated code goes into macros":                            {"macro"},
+		"use rstest parameterized tests against repeated tests":     {"rstest"},
+		"use macros": nil, // no word about duplication
+	} {
+		var got []string
+		for _, c := range Parse(text) {
+			if c.Key == "duplication.strategies" {
+				got = c.Value.([]string)
+			}
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%q: %v, want %v", text, got, want)
+		}
+	}
+	s := Defaults()
+	if err := s.Apply("duplication.strategies", []string{"macro", "magic"}); err == nil || !strings.Contains(err.Error(), "helper_function, macro and rstest") {
+		t.Errorf("an unknown strategy was accepted: %v", err)
+	}
+	if err := s.Apply("duplication.strategies", []string{"macro"}); err != nil || s.Duplication.Strategies[0] != "macro" {
+		t.Errorf("%v %v", err, s.Duplication.Strategies)
+	}
+	advice := Defaults().Duplication.StrategyAdvice()
+	for _, w := range []string{"helper function", "macro", `rstest = "0.28.0"`, "#[case]", "#[fixture]"} {
+		if !strings.Contains(advice, w) {
+			t.Errorf("advice misses %q: %s", w, advice)
+		}
+	}
+	if (Duplication{}).StrategyAdvice() != "" {
+		t.Error("no strategies, no advice")
+	}
 }

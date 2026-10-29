@@ -27,6 +27,7 @@ var keys = map[string]keyDef{
 	"duplication.min_tokens":    {"int", "tokens a repeated block needs to count, at least 10", func(s *Set, v any) { s.Duplication.MinTokens = v.(int) }},
 	"duplication.min_lines":     {"int", "lines a repeated block needs to count, at least 2", func(s *Set, v any) { s.Duplication.MinLines = v.(int) }},
 	"duplication.include_tests": {"bool", "whether test code is checked for duplication", func(s *Set, v any) { s.Duplication.IncludeTests = v.(bool) }},
+	"duplication.strategies":    {"strings", "how repeated code is removed, in order: helper_function, macro, rstest (Rust tests use the rstest crate)", func(s *Set, v any) { s.Duplication.Strategies = v.([]string) }},
 	"lint.strictness":           {"string", "relaxed, standard or strict", func(s *Set, v any) { s.Lint.Strictness = v.(string) }},
 	"security.fail_on":          {"string", "lowest severity that fails the security job: low, medium, high or critical", func(s *Set, v any) { s.Security.FailOn = v.(string) }},
 	"security.secrets":          {"bool", "whether leaked secrets are scanned for", func(s *Set, v any) { s.Security.Secrets = v.(bool) }},

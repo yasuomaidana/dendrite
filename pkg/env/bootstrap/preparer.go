@@ -158,6 +158,11 @@ func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareRe
 		}
 		report.FilesCreated = append(report.FilesCreated, dirCreated...)
 		report.Notes = append(report.Notes, dirNotes...)
+
+		// Rust crates with tests use the rstest crate.
+		rstestChanged, rstestNotes := ensureRstest(opts.ProjectPath, opts.DryRun)
+		report.FilesUpdated = append(report.FilesUpdated, rstestChanged...)
+		report.Notes = append(report.Notes, rstestNotes...)
 	}
 
 	// 2. Agent Rules & Skills Synchronization

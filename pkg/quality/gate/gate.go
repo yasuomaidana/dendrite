@@ -29,6 +29,8 @@ type Check struct {
 	Status   Status   `json:"status"`
 	Summary  string   `json:"summary"`
 	Findings []string `json:"findings,omitempty"`
+	// Advice says how the project wants a failure of this check fixed.
+	Advice string `json:"advice,omitempty"`
 }
 
 // Report is the outcome of the whole gate.

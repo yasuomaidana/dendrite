@@ -49,6 +49,29 @@ type Duplication struct {
 	MinTokens    int     `toml:"min_tokens"`
 	MinLines     int     `toml:"min_lines"`
 	IncludeTests bool    `toml:"include_tests"`
+	// Strategies are how repeated code is removed, in the order to try them: see StrategyAdvice.
+	Strategies []string `toml:"strategies"`
+}
+
+// strategyAdvice says what each duplication strategy means.
+var strategyAdvice = map[string]string{
+	"helper_function": "extract the repeated logic into a helper function the copies call",
+	"macro":           "where a function cannot express it (repeated items, impls, match arms, test bodies), generate the copies with a macro (macro_rules!, a decorator, a template)",
+	"rstest":          "in Rust tests use the rstest crate (rstest = \"0.28.0\"): #[case] for constants, #[values] for matrices, #[fixture] for setup",
+}
+
+// StrategyAdvice is the sentence that tells an agent how this project removes duplicated code.
+func (d Duplication) StrategyAdvice() string {
+	var parts []string
+	for _, s := range d.Strategies {
+		if a, ok := strategyAdvice[s]; ok {
+			parts = append(parts, a)
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "To remove repeated code: " + strings.Join(parts, "; ") + "."
 }
 
 // Lint picks how strict the generated lint configurations are.
@@ -79,7 +102,7 @@ func Defaults() Set {
 		Schema:      SchemaVersion,
 		Loc:         Loc{MaxProductionLines: 500, WarnAt: 450, Exclude: []string{"**/generated/**"}},
 		Coverage:    Coverage{MinPercent: 100, Scope: "line", Exclude: []string{}},
-		Duplication: Duplication{MaxPercent: 0, MinTokens: 50, MinLines: 5, IncludeTests: true},
+		Duplication: Duplication{MaxPercent: 0, MinTokens: 50, MinLines: 5, IncludeTests: true, Strategies: []string{"helper_function", "macro", "rstest"}},
 		Lint:        Lint{Strictness: "strict"},
 		Security:    Security{FailOn: "high", Secrets: true},
 		Done:        Done{AutoDone: true, HumanReviewLabels: []string{"needs-human-review"}},
@@ -107,6 +130,7 @@ func (s Set) Validate() error {
 		check(s.Duplication.MaxPercent >= 0 && s.Duplication.MaxPercent <= 100, "duplication.max_percent must be between 0 and 100"),
 		check(s.Duplication.MinTokens >= 10, "duplication.min_tokens must be at least 10"),
 		check(s.Duplication.MinLines >= 2, "duplication.min_lines must be at least 2"),
+		check(knownStrategies(s.Duplication.Strategies), "duplication.strategies must be among helper_function, macro and rstest"),
 		check(oneOf(s.Lint.Strictness, "relaxed", "standard", "strict"), "lint.strictness must be relaxed, standard or strict"),
 		check(oneOf(s.Security.FailOn, "low", "medium", "high", "critical"), "security.fail_on must be low, medium, high or critical"),
 		check(len(s.Languages.Preference) > 0, "languages.preference needs at least one language"),
@@ -117,6 +141,15 @@ func (s Set) Validate() error {
 		}
 	}
 	return nil
+}
+
+func knownStrategies(list []string) bool {
+	for _, s := range list {
+		if _, ok := strategyAdvice[s]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func oneOf(v string, allowed ...string) bool {

@@ -99,7 +99,11 @@ func checkClones(ctx context.Context, o Options) Check {
 	if o.Scope != nil {
 		summary = fmt.Sprintf("%d repeated blocks involve lines this change added", len(findings))
 	}
-	return verdict("clones", summary, findings)
+	c := verdict("clones", summary, findings)
+	if c.Status == Fail {
+		c.Advice = o.Set.Duplication.StrategyAdvice()
+	}
+	return c
 }
 
 // checkRstest applies to Rust projects only.

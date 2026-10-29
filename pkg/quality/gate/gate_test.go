@@ -64,7 +64,8 @@ func TestRunReportsEveryCheckOfARepository(t *testing.T) {
 	if loc.Status != Fail || len(loc.Findings) != 2 || !strings.HasPrefix(loc.Findings[0], "a.go: 12 production lines, the limit is 10") {
 		t.Errorf("loc = %+v", loc)
 	}
-	if c := byName(rep, "clones"); c.Status != Fail || len(c.Findings) != 1 || !strings.Contains(c.Findings[0], "a.go:1-12, b.go:1-12") {
+	if c := byName(rep, "clones"); c.Status != Fail || len(c.Findings) != 1 || !strings.Contains(c.Findings[0], "a.go:1-12, b.go:1-12") ||
+		!strings.Contains(c.Advice, "helper function") || !strings.Contains(c.Advice, "macro") {
 		t.Errorf("clones = %+v", c)
 	}
 	if c := byName(rep, "rstest"); c.Status != Fail || !strings.Contains(c.Findings[0], "r.rs:1 [repeated_test]") {
@@ -130,17 +131,17 @@ func TestRunWithinTheDuplicationAllowancePasses(t *testing.T) {
 
 func TestReportFormats(t *testing.T) {
 	rep := Report{Schema: 1, Scope: "changes", Checks: []Check{
-		{Name: "loc", Status: Fail, Summary: "1 over", Findings: []string{"a.go: 12 lines"}},
+		{Name: "loc", Status: Fail, Summary: "1 over", Findings: []string{"a.go: 12 lines"}, Advice: "split the file"},
 		{Name: "rstest", Status: Skipped, Summary: "no Rust files"},
 	}}
 	text := rep.Text()
-	for _, want := range []string{"FAIL  loc       1 over", "        - a.go: 12 lines", "skip  rstest", "quality gate (changes): FAILED"} {
+	for _, want := range []string{"FAIL  loc       1 over", "        - a.go: 12 lines", "        > split the file", "skip  rstest", "quality gate (changes): FAILED"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("text lacks %q:\n%s", want, text)
 		}
 	}
 	md := rep.Markdown()
-	for _, want := range []string{"Quality gate (changes): **failed**", "- `loc` fail: 1 over", "  - a.go: 12 lines"} {
+	for _, want := range []string{"Quality gate (changes): **failed**", "- `loc` fail: 1 over", "  - a.go: 12 lines", "  - split the file"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("markdown lacks %q:\n%s", want, md)
 		}

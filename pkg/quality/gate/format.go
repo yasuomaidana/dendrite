@@ -22,6 +22,9 @@ func (r Report) Text() string {
 		for _, f := range c.Findings {
 			fmt.Fprintf(&b, "        - %s\n", f)
 		}
+		if c.Advice != "" {
+			fmt.Fprintf(&b, "        > %s\n", c.Advice)
+		}
 	}
 	fmt.Fprintf(&b, "quality gate (%s): %s\n", r.Scope, map[bool]string{true: "passed", false: "FAILED"}[r.Passed])
 	return b.String()
@@ -35,6 +38,9 @@ func (r Report) Markdown() string {
 		fmt.Fprintf(&b, "- `%s` %s: %s\n", c.Name, c.Status, c.Summary)
 		for _, f := range c.Findings {
 			fmt.Fprintf(&b, "  - %s\n", f)
+		}
+		if c.Advice != "" {
+			fmt.Fprintf(&b, "  - %s\n", c.Advice)
 		}
 	}
 	return b.String()
