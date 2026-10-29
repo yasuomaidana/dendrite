@@ -295,7 +295,8 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 	sort.Strings(report.OnlineEngines)
 	sort.Strings(report.OfflineEngines)
 
-	// GPU-accelerated engines first (OxiLLaMa prefills on the CPU), then smartest first.
+	// Smartest first: slower is acceptable, starving the machine is not (models that do not fit are
+	// already excluded above). A GPU engine wins a tie, since it answers faster.
 	sort.SliceStable(report.DiscoveredModels, func(i, j int) bool {
 		a, b := report.DiscoveredModels[i], report.DiscoveredModels[j]
 		if a.Fits != b.Fits { // models that fit come first
@@ -304,15 +305,14 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 		if a.Embed != b.Embed { // chat models before embedders
 			return !a.Embed
 		}
-		gi := inference.GPUAccelerated(inference.EngineType(report.DiscoveredModels[i].EngineType))
-		gj := inference.GPUAccelerated(inference.EngineType(report.DiscoveredModels[j].EngineType))
-		if gi != gj {
-			return gi
+		if a.IntelligenceScore != b.IntelligenceScore {
+			return a.IntelligenceScore > b.IntelligenceScore
 		}
-		if report.DiscoveredModels[i].IntelligenceScore != report.DiscoveredModels[j].IntelligenceScore {
-			return report.DiscoveredModels[i].IntelligenceScore > report.DiscoveredModels[j].IntelligenceScore
+		ga, gb := inference.GPUAccelerated(inference.EngineType(a.EngineType)), inference.GPUAccelerated(inference.EngineType(b.EngineType))
+		if ga != gb {
+			return ga
 		}
-		return report.DiscoveredModels[i].ModelName < report.DiscoveredModels[j].ModelName
+		return a.ModelName < b.ModelName
 	})
 
 	if len(report.DiscoveredModels) > 0 && report.DiscoveredModels[0].Fits && !report.DiscoveredModels[0].Embed {

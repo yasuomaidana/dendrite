@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"Dendrite/pkg/inference"
 	"Dendrite/pkg/memfit"
 
 	"github.com/spf13/cobra"
@@ -65,8 +66,14 @@ func runSpikeModels(ctx context.Context, out io.Writer, ollamaURL, oxiURL string
 		}
 		fmt.Fprintf(out, "    %-9s %-28s %9s  %-8s %s\n", m.Engine, m.Name, size, state, fit)
 	}
-	if best := r.BestFitting(""); best != "" {
-		fmt.Fprintf(out, "[+] Smartest Ollama model that fits: %s\n", best)
+	if best, err := inference.BestLocalModel(ctx, ollamaURL, oxiURL); err == nil {
+		start := ""
+		if best.NeedsStart {
+			start = ", started on demand and stopped when idle"
+		}
+		fmt.Fprintf(out, "[+] Best available now: %s on %s (score %d%s)\n", best.Model, best.Engine, best.Score, start)
+	} else {
+		fmt.Fprintf(out, "[-] %v\n", err)
 	}
 	fmt.Fprintln(out, "    Run `dendrite cleft update` to route the gateway to these models.")
 	return nil

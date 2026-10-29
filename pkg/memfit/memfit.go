@@ -177,15 +177,23 @@ func (r Report) Find(engine, name string) (Model, bool) {
 	return Model{}, false
 }
 
-// BestFitting names the largest installed Ollama model that fits, "" when none does. A larger
-// model is the smarter one, and slower is acceptable.
+// Score ranks a model name by capability; the inference package installs its intelligence scorer
+// here (memfit itself has no dependencies). Unset, every model scores 0 and size decides.
+var Score = func(string) int { return 0 }
+
+// BestFitting names the smartest installed Ollama model that fits, "" when none does. Ties go to the
+// larger model: slower is acceptable, starving the machine is not.
 func (r Report) BestFitting(excluding string) string {
+	best, bestScore, bestSize := "", -1, int64(-1)
 	for _, m := range r.Models {
-		if m.Engine == "ollama" && m.Fits && m.Name != excluding && !strings.Contains(m.Name, "embed") {
-			return m.Name
+		if m.Engine != "ollama" || !m.Fits || m.Name == excluding || strings.Contains(m.Name, "embed") {
+			continue
+		}
+		if sc := Score(m.Name); sc > bestScore || (sc == bestScore && m.SizeBytes > bestSize) {
+			best, bestScore, bestSize = m.Name, sc, m.SizeBytes
 		}
 	}
-	return ""
+	return best
 }
 
 // GuardOllama refuses to start loading a model that would starve the machine. A model that is
@@ -324,13 +332,18 @@ func ResolveOllama(ctx context.Context, endpoint, requested string) string {
 // CheckStart reports whether a model of sizeBytes can be started on engine without starving the
 // machine, counting what the other engine already holds in memory. A nil error means it may start.
 func CheckStart(ctx context.Context, engine string, sizeBytes int64) error {
+	return CheckStartAt(ctx, DefaultOllamaEndpoint, engine, sizeBytes)
+}
+
+// CheckStartAt is CheckStart against a specific Ollama endpoint (the source of "already loaded").
+func CheckStartAt(ctx context.Context, ollamaEndpoint, engine string, sizeBytes int64) error {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv(EnvGuard)), "off") {
 		return nil
 	}
 	hc := &http.Client{Timeout: 3 * time.Second}
 	var others uint64
 	if engine != "ollama" {
-		loaded, _ := ollamaLoaded(ctx, hc, DefaultOllamaEndpoint)
+		loaded, _ := ollamaLoaded(ctx, hc, ollamaEndpoint)
 		for _, sz := range loaded {
 			others += uint64(sz)
 		}

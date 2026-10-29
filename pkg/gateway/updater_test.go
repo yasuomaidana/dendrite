@@ -106,10 +106,9 @@ func TestRoutingTableUpdater_DryRun_And_Precedence(t *testing.T) {
 	if !report.DryRun {
 		t.Errorf("expected report to be dry run")
 	}
-	// GPU engines take precedence: OxiLLaMa prefills on the CPU, so Ollama's smaller model
-	// is the primary even though OxiLLaMa hosts a smarter one.
-	if report.ActiveLocalPrimaryEngine != "ollama-metal" {
-		t.Errorf("expected active primary engine to be 'ollama-metal', got %s", report.ActiveLocalPrimaryEngine)
+	// Smartest wins even on a slower engine: OxiLLaMa hosts the 27B model, Ollama only small ones.
+	if report.ActiveLocalPrimaryEngine != "oxillama-rust" {
+		t.Errorf("expected active primary engine to be 'oxillama-rust' (hosts the smartest model), got %s", report.ActiveLocalPrimaryEngine)
 	}
 
 	// Verify rendered YAML content

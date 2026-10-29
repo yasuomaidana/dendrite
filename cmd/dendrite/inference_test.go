@@ -166,7 +166,7 @@ func TestSpike_ModelsFlagsWhatDoesNotFit(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
-	for _, want := range []string{"12.0 GB budget", "huge:30b", "TOO LARGE", "small:4b", "Smartest Ollama model that fits: small:4b", "OxiLLaMa is not reachable"} {
+	for _, want := range []string{"12.0 GB budget", "huge:30b", "TOO LARGE", "small:4b", "Best available now: small:4b on ollama", "OxiLLaMa is not reachable"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
