@@ -42,8 +42,8 @@ type FinishChecks struct {
 	Gate func(ctx context.Context, dir string) (GateResult, error)
 	// Review judges the diff against every acceptance criterion.
 	Review func(ctx context.Context, in ReviewInput) ([]ACVerdict, error)
-	// Diff is the work of the branch, as shown to Review (it is cut to MaxReviewDiff).
-	Diff func(dir string) string
+	// Diff is the work done for the ticket, as shown to Review (it is cut to MaxReviewDiff).
+	Diff func(dir, ticket string) string
 	// AutoDone lets a clean finish set Done; without it every clean finish waits in To Verify.
 	AutoDone bool
 }
@@ -96,7 +96,7 @@ func (l *Lifecycle) Finish(ctx context.Context, ref string, c FinishChecks) (Fin
 	case len(qc.AcceptanceCriteria) == 0:
 		res.Notes = append(res.Notes, "the ticket lists no [AC-n] criteria, so there was nothing to review")
 	default:
-		verdicts, rErr := c.Review(ctx, ReviewInput{Ticket: ticket, Description: qc.Description, Criteria: qc.AcceptanceCriteria, Diff: cutDiff(c.Diff(l.Dir))})
+		verdicts, rErr := c.Review(ctx, ReviewInput{Ticket: ticket, Description: qc.Description, Criteria: qc.AcceptanceCriteria, Diff: cutDiff(c.Diff(l.Dir, ticket))})
 		if rErr != nil {
 			human = true
 			res.Notes = append(res.Notes, "the acceptance review could not run ("+rErr.Error()+"), so a person has to verify")
@@ -176,11 +176,29 @@ func hasLabel(labels []string, want string) bool {
 	return false
 }
 
+// cutDiff keeps a diff within MaxReviewDiff by keeping the start of every file, so one large file does not hide
+// the rest from the review.
 func cutDiff(diff string) string {
 	if len(diff) <= MaxReviewDiff {
 		return diff
 	}
-	return diff[:MaxReviewDiff] + "\n[diff cut at " + fmt.Sprint(MaxReviewDiff) + " bytes]"
+	files := strings.Split(diff, "\ndiff --git ")
+	per := max(2000, MaxReviewDiff/len(files))
+	var b strings.Builder
+	for i, f := range files {
+		if i > 0 {
+			f = "\ndiff --git " + f
+		}
+		if len(f) > per {
+			f = f[:per] + "\n[file cut]\n"
+		}
+		b.WriteString(f)
+	}
+	out := b.String()
+	if len(out) > MaxReviewDiff {
+		out = out[:MaxReviewDiff]
+	}
+	return out + "\n[diff cut at " + fmt.Sprint(MaxReviewDiff) + " bytes]"
 }
 
 // finishReport is the comment a clean finish leaves: the gate report, one line per criterion and the notes.

@@ -132,7 +132,7 @@ func finishChecks(gatePasses bool) ticketlock.FinishChecks {
 			return ticketlock.GateResult{Passed: gatePasses, Report: "gate report"}, nil
 		},
 		Review:   func(context.Context, ticketlock.ReviewInput) ([]ticketlock.ACVerdict, error) { return nil, nil },
-		Diff:     func(string) string { return "" },
+		Diff:     func(string, string) string { return "" },
 		AutoDone: true,
 	}
 }

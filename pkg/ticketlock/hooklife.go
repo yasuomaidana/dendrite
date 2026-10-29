@@ -84,6 +84,11 @@ func (l *Lifecycle) completedWork(ctx context.Context, c Claim) string {
 			break
 		}
 	}
+	if len(parts) == 0 { // the branch is merged: its commits are the ones that name the ticket
+		if _, lines := ticketCommits(dir, c.Ticket); len(lines) > 0 {
+			parts = append(parts, "Commits for "+c.Ticket+" (already merged):\n"+strings.Join(lines[max(0, len(lines)-15):], "\n"))
+		}
+	}
 	if out, err := gitBytes(dir, "diff", "--stat", "HEAD"); err == nil {
 		if s := strings.TrimSpace(string(out)); s != "" {
 			parts = append(parts, "Uncommitted changes:\n"+s)

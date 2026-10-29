@@ -102,14 +102,44 @@ func tail(s string, lines int) string {
 	return strings.Join(parts, "\n")
 }
 
-// branchDiff is the work of the branch: its changes against develop, from origin when it is known.
-func branchDiff(dir string) string {
+// diffExcludes leave out of a review diff what is large and says nothing about the work.
+var diffExcludes = []string{":(exclude)*.lock", ":(exclude)go.sum", ":(exclude)package-lock.json", ":(exclude)pnpm-lock.yaml", ":(exclude)bun.lockb"}
+
+// branchDiff is the work done for a ticket: the branch's changes against develop while they are not merged, and
+// the ticket's own commits (their subject starts with [TICKET]) once they are, so finishing after the merge
+// still shows the work.
+func branchDiff(dir, ticket string) string {
 	for _, base := range []string{"origin/develop", "develop"} {
-		if out, err := gitBytes(dir, "diff", base+"...HEAD"); err == nil {
+		args := append([]string{"diff", base + "...HEAD", "--", "."}, diffExcludes...)
+		if out, err := gitBytes(dir, args...); err == nil && len(strings.TrimSpace(string(out))) > 0 {
 			return string(out)
 		}
 	}
-	return ""
+	var b strings.Builder
+	shas, _ := ticketCommits(dir, ticket)
+	for _, sha := range shas {
+		args := append([]string{"show", "--format=", "--patch", sha, "--", "."}, diffExcludes...)
+		if out, err := gitBytes(dir, args...); err == nil {
+			b.Write(out)
+		}
+	}
+	return b.String()
+}
+
+// ticketCommits lists, oldest first, the commits whose subject starts with [TICKET]: their hashes and
+// "short-hash subject" lines.
+func ticketCommits(dir, ticket string) (shas, lines []string) {
+	out, err := gitBytes(dir, "log", "--reverse", "--no-merges", "--format=%H %s", "--fixed-strings", "--grep=["+ticket+"]")
+	if err != nil {
+		return nil, nil
+	}
+	for _, l := range strings.Split(string(out), "\n") {
+		sha, subject, ok := strings.Cut(strings.TrimSpace(l), " ")
+		if ok && strings.HasPrefix(subject, "["+ticket+"]") {
+			shas, lines = append(shas, sha), append(lines, sha[:min(7, len(sha))]+" "+subject)
+		}
+	}
+	return shas, lines
 }
 
 // preferLocalModel is a seam for the choice of the review model.

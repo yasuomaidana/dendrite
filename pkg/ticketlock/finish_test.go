@@ -3,6 +3,7 @@ package ticketlock
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -31,7 +32,7 @@ func newFinishRig(t *testing.T, state, description string) *finishRig {
 			}
 			return out, nil
 		},
-		Diff:     func(string) string { return "diff --git a/x b/x" },
+		Diff:     func(string, string) string { return "diff --git a/x b/x" },
 		AutoDone: true,
 	}
 	if state != "Done" && state != "To Verify" {
@@ -178,6 +179,19 @@ func TestCutDiffAndACID(t *testing.T) {
 	}
 	if got := cutDiff(strings.Repeat("x", MaxReviewDiff+10)); !strings.HasSuffix(got, "bytes]") || len(got) > MaxReviewDiff+60 {
 		t.Errorf("long diffs are cut: %d", len(got))
+	}
+	var big strings.Builder
+	for i := 0; i < 6; i++ {
+		big.WriteString("\ndiff --git a/f" + fmt.Sprint(i) + " b/f" + fmt.Sprint(i) + "\n+" + strings.Repeat("y", 30000))
+	}
+	cut := cutDiff(big.String())
+	if len(cut) > MaxReviewDiff+60 {
+		t.Errorf("the cut diff is %d bytes", len(cut))
+	}
+	for i := 0; i < 5; i++ {
+		if !strings.Contains(cut, "diff --git a/f"+fmt.Sprint(i)+" ") {
+			t.Errorf("file %d is missing from the cut diff: every file keeps its start", i)
+		}
 	}
 	for _, in := range []string{"[AC-1]", "AC-1", " ac-1 "} {
 		if acID(in) != "AC-1" {

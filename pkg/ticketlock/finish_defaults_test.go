@@ -88,7 +88,7 @@ func TestBranchDiffIsAgainstDevelop(t *testing.T) {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
-	if got := branchDiff(repo); got != "" {
+	if got := branchDiff(repo, "DEN-1"); got != "" {
 		t.Errorf("not a repository: %q", got)
 	}
 	run("init", "-q", "-b", "develop")
@@ -97,7 +97,7 @@ func TestBranchDiffIsAgainstDevelop(t *testing.T) {
 	writeFile(t, repo, "new.txt", "hello\n")
 	run("add", ".")
 	run("commit", "-q", "-m", "work")
-	if got := branchDiff(repo); !strings.Contains(got, "+hello") {
+	if got := branchDiff(repo, "DEN-1"); !strings.Contains(got, "+hello") {
 		t.Errorf("diff = %q", got)
 	}
 }
@@ -191,4 +191,68 @@ func mustRead(t *testing.T, dir, rel string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+// repoWithMergedWork is a repository whose develop already holds the ticket's two commits (and a lockfile
+// change), the state in which a ticket is finished after its branch was merged.
+func repoWithMergedWork(t *testing.T) string {
+	t.Helper()
+	repo := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@e.x", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@e.x")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q", "-b", "develop")
+	run("commit", "-q", "--allow-empty", "-m", "base")
+	writeFile(t, repo, "a.go", "package a\n// json output\n")
+	writeFile(t, repo, "Cargo.lock", "huge lock noise\n")
+	run("add", ".")
+	run("commit", "-q", "-m", "[DEN-9] feat: json output")
+	writeFile(t, repo, "b.go", "package b\n// github annotations\n")
+	run("add", ".")
+	run("commit", "-q", "-m", "[DEN-9] feat: github annotations")
+	writeFile(t, repo, "other.go", "package other\n")
+	run("add", ".")
+	run("commit", "-q", "-m", "[DEN-10] unrelated work")
+	return repo
+}
+
+func TestBranchDiffOfAMergedTicketIsItsOwnCommitsWithoutLockfiles(t *testing.T) {
+	repo := repoWithMergedWork(t)
+	got := branchDiff(repo, "DEN-9")
+	for _, want := range []string{"+// json output", "+// github annotations"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("diff lacks %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "Cargo.lock") || strings.Contains(got, "other.go") {
+		t.Errorf("lockfiles and other tickets' work stay out:\n%s", got)
+	}
+	if got := branchDiff(repo, "DEN-404"); got != "" {
+		t.Errorf("a ticket with no commits has no diff: %q", got)
+	}
+}
+
+func TestTicketCommitsMatchOnTheSubjectPrefix(t *testing.T) {
+	repo := repoWithMergedWork(t)
+	shas, lines := ticketCommits(repo, "DEN-9")
+	if len(shas) != 2 || len(lines) != 2 || !strings.HasSuffix(lines[0], " [DEN-9] feat: json output") || !strings.HasSuffix(lines[1], "github annotations") {
+		t.Errorf("%v %v", shas, lines)
+	}
+	if s, l := ticketCommits(t.TempDir(), "DEN-9"); s != nil || l != nil {
+		t.Error("not a repository")
+	}
+}
+
+func TestCompletedWorkListsTheTicketsCommitsOnceMerged(t *testing.T) {
+	s := newSession(t, map[string]string{"DEN-377": "To Do"})
+	repo := repoWithMergedWork(t)
+	got := s.completedWork(context.Background(), Claim{Ticket: "DEN-9", Worktree: repo, Branch: "develop"})
+	if !strings.Contains(got, "Commits for DEN-9 (already merged):") || !strings.Contains(got, "feat: json output") || !strings.Contains(got, "feat: github annotations") || strings.Contains(got, "unrelated") {
+		t.Errorf("completed work = %q", got)
+	}
 }
