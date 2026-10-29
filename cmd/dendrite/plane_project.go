@@ -161,8 +161,12 @@ func registerProjectIdentity(root string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := idx.Register(root); err != nil {
+	entry, err := idx.Register(root)
+	if err != nil {
 		return err
+	}
+	if l, err := plane.ReadLink(root); err == nil {
+		idx.SetPlane(entry.ID, &projectid.PlaneBinding{Identifier: l.Identifier, ProjectID: l.ProjectID, Name: l.Name, Workspace: l.Workspace})
 	}
 	return idx.Save()
 }
