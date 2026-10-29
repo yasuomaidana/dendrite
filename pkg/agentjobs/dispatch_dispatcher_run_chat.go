@@ -294,19 +294,29 @@ func (d *Dispatcher) backoffDuration(attempt int) time.Duration {
 // which would recursively run the whole test suite (a fork bomb).
 var ErrSelfExecInTest = errors.New("agentjobs: refusing to re-execute the test binary as job runner; set Dispatcher.Executable")
 
-// spawnRunner starts `<binary> bouton jobs run <id>` detached in its own session, logging to agent.log.
-// It returns the runner's process id, which is also its process group id (Setsid).
-func (d *Dispatcher) spawnRunner(id string) (int, error) {
+// executable is the binary re-executed for detached work: Dispatcher.Executable, else this process.
+// A test binary never re-executes itself.
+func (d *Dispatcher) executable() (string, error) {
 	self, _ := os.Executable()
 	exe := d.Executable
 	if exe == "" {
 		exe = self
 	}
 	if exe == "" {
-		return 0, errors.New("agentjobs: failed to resolve binary path")
+		return "", errors.New("agentjobs: failed to resolve binary path")
 	}
 	if testing.Testing() && exe == self {
-		return 0, ErrSelfExecInTest
+		return "", ErrSelfExecInTest
+	}
+	return exe, nil
+}
+
+// spawnRunner starts `<binary> bouton jobs run <id>` detached in its own session, logging to agent.log.
+// It returns the runner's process id, which is also its process group id (Setsid).
+func (d *Dispatcher) spawnRunner(id string) (int, error) {
+	exe, err := d.executable()
+	if err != nil {
+		return 0, err
 	}
 
 	logFile, err := os.OpenFile(d.Ledger.AgentLogPath(id), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)

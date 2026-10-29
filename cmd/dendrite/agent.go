@@ -53,6 +53,7 @@ func newBoutonJobsCmd() *cobra.Command {
 		newJobsShowCmd(),
 		tail,
 		newJobsWaitCmd(),
+		newJobsWatchCmd(),
 		idCmd("retry", "Re-dispatch a job", func(cmd *cobra.Command, id string) error {
 			if err := agentjobs.DefaultDispatcher.Retry(id); err != nil {
 				return err
@@ -113,6 +114,7 @@ func newJobsSubmitCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("submit job: %w", err)
 			}
+			ensureJobWatcher(agentjobs.DefaultDispatcher, cmd.ErrOrStderr())
 			if globals.JSON {
 				return writeJSON(cmd.OutOrStdout(), map[string]string{"id": id})
 			}
@@ -120,6 +122,7 @@ func newJobsSubmitCmd() *cobra.Command {
 			if job, lErr := agentjobs.DefaultDispatcher.Ledger.Load(id); lErr == nil {
 				fmt.Fprintf(cmd.OutOrStdout(), "    Agent/Model:     %s/%s\n", job.Agent, job.Model)
 			}
+			fmt.Fprintf(cmd.OutOrStdout(), "    Follow it:       dendrite bouton jobs watch %s\n", id)
 			return nil
 		},
 	}
@@ -139,6 +142,107 @@ func newJobsSubmitCmd() *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("prompt-file", "prompt")
 	cmd.MarkFlagsMutuallyExclusive("worktree", "isolate")
 	return cmd
+}
+
+// ensureJobWatcher makes sure a stall watcher runs over the ledger and says so on errOut, so a job is never
+// left to run unwatched. A failure is a warning: the job itself is already submitted.
+func ensureJobWatcher(d *agentjobs.Dispatcher, errOut io.Writer) {
+	pid, err := d.EnsureWatcher()
+	switch {
+	case err != nil:
+		fmt.Fprintf(errOut, "[!] No stall watcher is running and one could not be started: %v\n    Start it with `dendrite bouton jobs daemon`.\n", err)
+	case pid > 0:
+		fmt.Fprintf(errOut, "[i] Stall watcher started (pid %d, log %s)\n", pid, d.Ledger.WatcherLogPath())
+	}
+}
+
+func newJobsWatchCmd() *cobra.Command {
+	var ticket string
+	var once bool
+	interval := 10 * time.Second
+	cmd := &cobra.Command{
+		Use:   "watch [<job-id>]",
+		Short: "Follow a job live: status, process, model requests, changed files and the stall countdown",
+		Long: "Prints one line per interval until the job reaches a final state (Ctrl-C stops watching, not the job).\n" +
+			"Model requests come from agy's own log, so a quiet line with a growing request count is a busy agent;\n" +
+			"no requests, no changed files and a shrinking stall countdown is a stuck one.",
+		Example: "dendrite bouton jobs watch --ticket DEN-123\ndendrite bouton jobs watch DEN-123-20261029T053329Z-ab7522 --once --json",
+		Args:    maxArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var id string
+			if len(args) == 1 {
+				id = args[0]
+			}
+			if (id == "") == (ticket == "") {
+				return usageErrorf("specify exactly one of <job-id> and --ticket")
+			}
+			if interval <= 0 {
+				return usageErrorf("--interval must be positive")
+			}
+			l, id, err := resolveJob(agentjobs.NewLedger(""), id, ticket)
+			if err != nil {
+				return err
+			}
+			return runJobsWatch(cmd.Context(), agentjobs.NewWatcher(l, nil), id, once, interval, cmd.OutOrStdout())
+		},
+	}
+	addTicketFlag(cmd, &ticket, "")
+	cmd.Flags().BoolVar(&once, "once", false, "Print one snapshot and exit")
+	cmd.Flags().DurationVar(&interval, "interval", interval, "Time between snapshots")
+	return cmd
+}
+
+// resolveJob finds the ledger and id of a job given either its id or a ticket (its newest job).
+func resolveJob(l *agentjobs.Ledger, id, ticket string) (*agentjobs.Ledger, string, error) {
+	if ticket == "" {
+		if _, err := l.Load(id); err == nil {
+			return l, id, nil
+		}
+		if t := agentjobs.TicketFromJobID(id); t != "" && t != id {
+			if rl, _, err := agentjobs.ResolveTicketLedger(l, t); err == nil && rl != nil {
+				if _, err := rl.Load(id); err == nil {
+					return rl, id, nil
+				}
+			}
+		}
+		return nil, "", fmt.Errorf("no job %q found", id)
+	}
+	rl, matches, err := agentjobs.ResolveTicketLedger(l, ticket)
+	if err != nil || len(matches) == 0 {
+		return nil, "", fmt.Errorf("no matching jobs found for ticket %s", ticket)
+	}
+	var latest *agentjobs.Job
+	for _, j := range matches {
+		if latest == nil || j.CreatedAt.After(latest.CreatedAt) || (j.CreatedAt.Equal(latest.CreatedAt) && j.ID > latest.ID) {
+			latest = j
+		}
+	}
+	return rl, latest.ID, nil
+}
+
+// runJobsWatch prints a snapshot of the job every interval until it reaches a final state or ctx ends.
+func runJobsWatch(ctx context.Context, w *agentjobs.Watcher, id string, once bool, interval time.Duration, out io.Writer) error {
+	for {
+		s, err := w.Snapshot(ctx, id)
+		if err != nil {
+			return err
+		}
+		if globals.JSON {
+			if err := writeJSON(out, s); err != nil {
+				return err
+			}
+		} else {
+			fmt.Fprintf(out, "%s %s\n", time.Now().Format("15:04:05"), s.Line())
+		}
+		if once || s.Final() {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(interval):
+		}
+	}
 }
 
 func newJobsListCmd() *cobra.Command {
@@ -408,6 +512,7 @@ func runJobsWait(ctx context.Context, l *agentjobs.Ledger, ticket string, timeou
 
 func newJobsDaemonCmd() *cobra.Command {
 	var once, install bool
+	var idleExit time.Duration
 	interval := agentjobs.DefaultDaemonInterval
 	cmd := &cobra.Command{
 		Use:   "daemon",
@@ -429,9 +534,10 @@ func newJobsDaemonCmd() *cobra.Command {
 			if interval <= 0 {
 				return usageErrorf("--interval must be positive")
 			}
-			return runJobsDaemon(cmd.Context(), w, interval, cmd.ErrOrStderr())
+			return runJobsDaemon(cmd.Context(), w, interval, idleExit, cmd.ErrOrStderr())
 		},
 	}
+	cmd.Flags().DurationVar(&idleExit, "idle-exit", 0, "Exit once no job has needed the watcher for this long (0: run until stopped)")
 	cmd.Flags().BoolVar(&once, "once", false, "Run one watcher pass and exit")
 	cmd.Flags().BoolVar(&install, "install", false, "Install the watcher as a macOS LaunchAgent")
 	cmd.Flags().DurationVar(&interval, "interval", interval, "Time between watcher passes")
@@ -439,14 +545,26 @@ func newJobsDaemonCmd() *cobra.Command {
 	return cmd
 }
 
-// runJobsDaemon ticks the watcher until ctx is cancelled; tick errors are logged, not fatal.
-func runJobsDaemon(ctx context.Context, w *agentjobs.Watcher, interval time.Duration, errOut io.Writer) error {
-	tick := func() {
+// runJobsDaemon ticks the watcher until ctx is cancelled, or until no job has needed it for idleExit
+// (0 never); tick errors are logged, not fatal. A second watcher over the same ledger does not start.
+func runJobsDaemon(ctx context.Context, w *agentjobs.Watcher, interval, idleExit time.Duration, errOut io.Writer) error {
+	if pid, alive := w.Ledger.WatcherAlive(time.Now()); alive && pid != os.Getpid() {
+		fmt.Fprintf(errOut, "[i] a stall watcher is already running over this ledger (pid %d)\n", pid)
+		return nil
+	}
+	idleSince := time.Now()
+	tick := func() bool {
 		if err := w.Tick(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			fmt.Fprintf(errOut, "[-] daemon tick error: %v\n", err)
 		}
+		if w.Busy() {
+			idleSince = time.Now()
+		}
+		return idleExit > 0 && time.Since(idleSince) >= idleExit
 	}
-	tick()
+	if tick() {
+		return nil
+	}
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
@@ -454,7 +572,10 @@ func runJobsDaemon(ctx context.Context, w *agentjobs.Watcher, interval time.Dura
 		case <-ctx.Done():
 			return nil
 		case <-t.C:
-			tick()
+			if tick() {
+				fmt.Fprintf(errOut, "[i] no job needed the watcher for %s: exiting\n", idleExit)
+				return nil
+			}
 		}
 	}
 }

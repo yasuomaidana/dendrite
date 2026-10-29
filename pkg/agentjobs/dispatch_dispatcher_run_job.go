@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -279,6 +280,9 @@ func (d *Dispatcher) runAgy(ctx context.Context, job *Job, promptText string, la
 		"--sandbox",
 		"--add-dir", job.Worktree,
 		"--output-format", "json",
+		// agy's own log grows with every model request, so progress is visible and a busy agent is
+		// never mistaken for a stalled one.
+		"--log-file", d.Ledger.AgyLogPath(job.ID),
 	}
 	if job.ConversationID != "" {
 		args = append(args, "--conversation", job.ConversationID)
@@ -295,18 +299,15 @@ func (d *Dispatcher) runAgy(ctx context.Context, job *Job, promptText string, la
 	}
 	cmd.WaitDelay = 100 * time.Millisecond
 
+	// Output goes to agent.log as it arrives, so `jobs tail` and `jobs watch` see it during the run.
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if f, oErr := os.OpenFile(d.Ledger.AgentLogPath(job.ID), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); oErr == nil {
+		defer f.Close()
+		cmd.Stdout, cmd.Stderr = io.MultiWriter(&stdout, f), io.MultiWriter(&stderr, f)
+	}
 
 	err := cmd.Run()
-
-	logPath := d.Ledger.AgentLogPath(job.ID)
-	if f, oErr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); oErr == nil {
-		_, _ = f.Write(stdout.Bytes())
-		_, _ = f.Write(stderr.Bytes())
-		_ = f.Close()
-	}
 
 	exitCode := 0
 	if err != nil {

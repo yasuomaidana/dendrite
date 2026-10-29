@@ -183,6 +183,26 @@ func runSessionResume(ctx context.Context, targetPath string, asJSON bool, out i
 	}
 	autoCleanWorkCopies(ctx, out)
 	warnStaleIndex(out)
+	warnWatcherDown(ledger, time.Now(), out)
 	printSynapsePeers(".", out)
 	return nil
+}
+
+// warnWatcherDown says so when delegated jobs are in flight and no stall watcher is looking at them, so a
+// stuck agent does not run unnoticed.
+func warnWatcherDown(l *agentjobs.Ledger, now time.Time, out io.Writer) {
+	jobs, err := l.List()
+	if err != nil {
+		return
+	}
+	active := 0
+	for _, j := range jobs {
+		switch j.Status {
+		case agentjobs.StatusQueued, agentjobs.StatusRunning, agentjobs.StatusParked, agentjobs.StatusFailedRetryable:
+			active++
+		}
+	}
+	if _, alive := l.WatcherAlive(now); active > 0 && !alive {
+		fmt.Fprintf(out, "[!] %d job(s) in flight and no stall watcher is running: start it with `dendrite bouton jobs daemon` (submitting a job also starts one)\n", active)
+	}
 }
