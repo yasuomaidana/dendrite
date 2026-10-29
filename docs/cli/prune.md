@@ -30,7 +30,7 @@ None
 | `--branch, -b` | Audit only this branch (default: every pending local/* branch) |
 | `--dry-run` | Show what would happen without changing anything |
 | `--max-tokens` | Token budget for the audit payload (default: 4096) |
-| `--model` | LLM model name (default: qwen3.8:27b) |
+| `--model` | LLM model name (default: hermes3:8b) |
 
 ## Examples
 

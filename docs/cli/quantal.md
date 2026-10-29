@@ -33,7 +33,7 @@ None
 | `--files, -f` | Files to stage (comma-separated) |
 | `--local` | Generate the message with the local model (default) (default: true) |
 | `--message, -m` | Commit message (skips message generation) |
-| `--model` | LLM model name (default: qwen3.8:27b) |
+| `--model` | LLM model name (default: hermes3:8b) |
 | `--no-local` | Do not use the local model for the message |
 | `--no-push` | Do not push after committing |
 | `--no-smart` | Do not resolve the ticket automatically |

@@ -22,6 +22,7 @@ Synaptic Cleft & Gating
 
 | Subcommand | Description |
 | :--- | :--- |
+| `bench` | Benchmark local chat models on this machine (speed, first word, memory pressure, answer quality) |
 | `hold` | Start OxiLLaMa if needed and keep it alive while this command runs (--for, or until Ctrl+C) |
 | `list` | List registered engines, their models and the failover cascade |
 | `migrate` | Copy a model's blobs between engines (default Ollama to OxiLLaMa, which runs prompts on the CPU), optionally evicting the source |
@@ -44,6 +45,31 @@ Synaptic Cleft & Gating
 None
 
 ## Subcommand Reference
+
+### `dendrite spike bench`
+
+Benchmark local chat models on this machine (speed, first word, memory pressure, answer quality)
+
+```bash
+dendrite spike bench [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--budget` | Longest acceptable median answer time (default: 1m0s) |
+| `--judge` | Gateway model that scores each answer 1-5 (e.g. gemini-3.8-flash-medium); omit to skip quality |
+| `--max-swap-growth` | Most swap (MB) a run may add before the model is judged to swap (default: 200) |
+| `--models` | Comma-separated Ollama models (default: every installed chat model) |
+| `--num-ctx` | Context window (default: 8192) |
+| `--num-predict` | Answer cap in tokens (what dendrite ask uses) (default: 600) |
+| `--ollama` | Ollama base URL (default: http://localhost:11434) |
+| `--out` | Where to write the raw runs as JSON (default: $DENDRITE_HOME/bench/) |
+| `--project` | Project whose code supplies the context packs (default: .) |
+| `--runs` | Runs per prompt and model (default: 2) |
+
+```bash
+dendrite spike bench --models hermes3:8b,gpt-oss:20b --judge gemini-3.8-flash-medium --budget 60s
+```
 
 ### `dendrite spike hold`
 

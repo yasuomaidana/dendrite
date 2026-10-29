@@ -144,6 +144,17 @@ type chatChunk struct {
 	EvalDuration int64 `json:"eval_duration"`
 }
 
+// postJSON posts payload to an Ollama route.
+func postJSON(ctx context.Context, cfg Config, path string, payload any) (*http.Response, error) {
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.OllamaURL+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return cfg.Client.Do(req)
+}
+
 // generate streams one chat completion from Ollama and times it.
 func generate(ctx context.Context, cfg Config, model string, p Prompt, numPredict int) (Run, error) {
 	var msgs []map[string]string
@@ -151,18 +162,11 @@ func generate(ctx context.Context, cfg Config, model string, p Prompt, numPredic
 		msgs = append(msgs, map[string]string{"role": "system", "content": p.System})
 	}
 	msgs = append(msgs, map[string]string{"role": "user", "content": p.User})
-	body, _ := json.Marshal(map[string]any{
+	start := time.Now()
+	resp, err := postJSON(ctx, cfg, "/api/chat", map[string]any{
 		"model": model, "messages": msgs, "stream": true, "keep_alive": "10m",
 		"options": map[string]any{"num_predict": numPredict, "num_ctx": cfg.NumCtx, "temperature": 0},
 	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.OllamaURL+"/api/chat", bytes.NewReader(body))
-	if err != nil {
-		return Run{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	start := time.Now()
-	resp, err := cfg.Client.Do(req)
 	if err != nil {
 		return Run{}, err
 	}
@@ -228,13 +232,7 @@ func unloadOthers(ctx context.Context, cfg Config, keep string) error {
 		if m.Name == keep {
 			continue
 		}
-		b, _ := json.Marshal(map[string]any{"model": m.Name, "keep_alive": 0})
-		r, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.OllamaURL+"/api/generate", bytes.NewReader(b))
-		if err != nil {
-			return err
-		}
-		r.Header.Set("Content-Type", "application/json")
-		if resp, err := cfg.Client.Do(r); err == nil {
+		if resp, err := postJSON(ctx, cfg, "/api/generate", map[string]any{"model": m.Name, "keep_alive": 0}); err == nil {
 			_ = resp.Body.Close()
 		}
 	}
