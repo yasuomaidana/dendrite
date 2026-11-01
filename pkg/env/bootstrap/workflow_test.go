@@ -38,6 +38,7 @@ func TestPrepare_EmitsDendriteFirstRulesForEveryAgentFamily(t *testing.T) {
 		"dendrite session checkpoint",
 		"merge your branch into `develop` and push",
 		"git push origin HEAD:develop",
+		"EGM artifact directory: docs/specs",
 	} {
 		if !strings.Contains(string(agents), want) {
 			t.Errorf("AGENTS.md missing %q", want)

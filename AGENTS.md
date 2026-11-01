@@ -9,6 +9,11 @@ This repository is orchestrated with autonomous multi-agent loops and governed b
 - **Authoritative Issue Tracker**: Plane v2 (`http://localhost:8090`)
 - **Token Governor**: LiteLLM Gateway (`http://localhost:4000`)
 
+## Specs & Design Artifacts
+Committed specs and EGM (`/egm:*`) design documents live under `docs/specs/`; per-ticket micro-plans live on the Plane ticket (`dendrite chronos plan push`), never under `.dendrite/`.
+
+EGM artifact directory: docs/specs
+
 ## Preparation & Sync
 To synchronize agent rules, skills, and enforce CI/CD tooling defaults, execute:
 ```bash
