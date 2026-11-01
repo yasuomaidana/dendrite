@@ -183,6 +183,52 @@ var (
 	pathLike = regexp.MustCompile("(?:[\\w.-]+/)+[\\w.-]+\\.\\w+|\\b[\\w-]+\\.(?:go|rs|md|toml|json|ts|py)\\b")
 )
 
+// acMarker finds an [AC-n] id anywhere in text, where acItem only anchors one at the start of a list item.
+var acMarker = regexp.MustCompile(`\[AC-\d+\]`)
+
+// blockEnd marks where running text breaks: a closing block tag or a line break ends an inline criterion.
+var blockEnd = regexp.MustCompile(`(?i)</(?:p|li|ul|ol|div|h[1-6])>|<br\s*/?>`)
+
+// inlineText strips a fragment's tags the way list items are cleaned: unescape first, then drop tags.
+func inlineText(s string) string {
+	return strings.TrimSpace(htmlTags.ReplaceAllString(html.UnescapeString(s), ""))
+}
+
+// acceptanceCriteria extracts every [AC-n] criterion from a description's HTML. A list item anchored by a
+// marker is taken whole, as before. Markers inline in running text each start a criterion that ends at the
+// next marker or at its block's end (paragraph, list item, line break). The first occurrence of an id wins,
+// so a later mention of an already-defined criterion is not a duplicate.
+func acceptanceCriteria(descHTML string) []string {
+	out, seen := []string{}, map[string]bool{}
+	add := func(item string) {
+		id := acID(acMarker.FindString(item))
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		out = append(out, strings.TrimSpace(item))
+	}
+	rest := listItem.ReplaceAllStringFunc(descHTML, func(li string) string {
+		item := inlineText(listItem.FindStringSubmatch(li)[1])
+		if acItem.MatchString(item) {
+			add(item)
+			return "\n"
+		}
+		return "\n" + item + "\n"
+	})
+	for _, line := range strings.Split(inlineText(blockEnd.ReplaceAllString(rest, "\n")), "\n") {
+		locs := acMarker.FindAllStringIndex(line, -1)
+		for i, loc := range locs {
+			end := len(line)
+			if i+1 < len(locs) {
+				end = locs[i+1][0]
+			}
+			add(line[loc[0]:end])
+		}
+	}
+	return out
+}
+
 // QueryContext gathers a ticket's description, acceptance criteria, plan and the files it names.
 func (l *Lifecycle) QueryContext(ctx context.Context, ref string) (Context, error) {
 	st, issue, err := l.Board.Status(ctx, ref)
@@ -191,12 +237,7 @@ func (l *Lifecycle) QueryContext(ctx context.Context, ref string) (Context, erro
 	}
 	ticket := canonical(issue, ref)
 	out := Context{Ticket: ticket, Name: issue.Name, State: tracker.StatusDisplayName(st),
-		Description: issue.DescriptionStripped, AcceptanceCriteria: []string{}, Files: []string{}}
-	for _, m := range listItem.FindAllStringSubmatch(issue.DescriptionHTML, -1) {
-		if item := strings.TrimSpace(htmlTags.ReplaceAllString(html.UnescapeString(m[1]), "")); acItem.MatchString(item) {
-			out.AcceptanceCriteria = append(out.AcceptanceCriteria, item)
-		}
-	}
+		Description: issue.DescriptionStripped, AcceptanceCriteria: acceptanceCriteria(issue.DescriptionHTML), Files: []string{}}
 	text := issue.DescriptionStripped
 	if p, err := l.GetPlan(ctx, ticket); err == nil {
 		out.Plan = &p

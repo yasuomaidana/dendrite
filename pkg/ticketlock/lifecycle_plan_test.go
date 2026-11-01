@@ -294,6 +294,41 @@ func TestQueryContextGathersWhatAnAgentNeeds(t *testing.T) {
 	}
 }
 
+func TestQueryContextFindsCriteriaInlineInRunningText(t *testing.T) {
+	cases := []struct {
+		name string
+		html string
+		want []string
+	}{
+		{"inline in one paragraph", "<p>Sweep the board. [AC-1] every group probed. [AC-2] failures have fix tickets. [AC-3] issues curated.</p>",
+			[]string{"[AC-1] every group probed.", "[AC-2] failures have fix tickets.", "[AC-3] issues curated."}},
+		{"mixed list and inline parse each exactly once", "<ul><li>[AC-1] listed</li></ul><p>and [AC-2] inline too</p>",
+			[]string{"[AC-1] listed", "[AC-2] inline too"}},
+		{"a later mention of a defined id is not a second criterion", "<ul><li>[AC-1] the definition</li></ul><p>see [AC-1] above</p>",
+			[]string{"[AC-1] the definition"}},
+		{"line breaks end a criterion", "<p>[AC-1] first line<br>[AC-2] second line</p>",
+			[]string{"[AC-1] first line", "[AC-2] second line"}},
+		{"paragraph boundaries end a criterion", "<p>[AC-1] in the first paragraph</p><p>prose without markers</p>",
+			[]string{"[AC-1] in the first paragraph"}},
+		{"list items still parse as before", "<p>Goal</p><ul><li>[AC-1] tools are listed</li><li><p>[AC-2] a <b>blocked</b> handoff is refused</p></li><li>just a note</li></ul>",
+			[]string{"[AC-1] tools are listed", "[AC-2] a blocked handoff is refused"}},
+		{"no markers means no criteria", "<p>just prose about acceptance</p>", []string{}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := newSession(t, map[string]string{"DEN-377": "In Progress"})
+			s.board.SetDescription("DEN-377", c.html)
+			got, err := s.QueryContext(context.Background(), "DEN-377")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got.AcceptanceCriteria, c.want) {
+				t.Errorf("acceptance criteria = %q, want %q", got.AcceptanceCriteria, c.want)
+			}
+		})
+	}
+}
+
 func TestQueryContextCapsTheFileListAndWorksWithoutAPlan(t *testing.T) {
 	s := newSession(t, map[string]string{"DEN-377": "To Do"})
 	var b strings.Builder
