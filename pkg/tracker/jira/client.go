@@ -9,14 +9,11 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
 	"Dendrite/pkg/tracker"
 )
-
-var specRegex = regexp.MustCompile(`\b(FEAT-\d+|ADR-\d+)\b`)
 
 // Client is an Atlassian Jira REST v3 issue tracker client adhering to tracker.UnifiedIssueTracker.
 type Client struct {
@@ -129,7 +126,7 @@ func (c *Client) GetIssue(ctx context.Context, id tracker.TicketID) (*tracker.Un
 	descMarkdown := ParseADFToMarkdown(issueResp.Fields.Description)
 	normState := mapJiraStatus(issueResp.Fields.Status.Name)
 
-	specs := extractLinkedSpecs(issueResp.Fields.Summary + " " + descMarkdown)
+	specs := tracker.LinkedSpecs(issueResp.Fields.Summary + " " + descMarkdown)
 
 	createdAt, _ := time.Parse(time.RFC3339, issueResp.Fields.Created)
 	updatedAt, _ := time.Parse(time.RFC3339, issueResp.Fields.Updated)
@@ -279,31 +276,9 @@ func (c *Client) LinkPullRequest(ctx context.Context, id tracker.TicketID, prURL
 
 // ValidateCredentials verifies connectivity and authentication with Jira within < 1.5s.
 func (c *Client) ValidateCredentials(ctx context.Context) error {
-	timeoutCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
-	defer cancel()
-
-	req, err := c.newRequest(timeoutCtx, http.MethodGet, "/rest/api/3/myself", nil)
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		if timeoutCtx.Err() != nil {
-			return ErrCredentialsTimeout
-		}
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return ErrUnauthorized
-	}
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("credential validation failed: status %d", resp.StatusCode)
-	}
-
-	return nil
+	return tracker.CheckCredentials(ctx, c.httpClient, func(ctx context.Context) (*http.Request, error) {
+		return c.newRequest(ctx, http.MethodGet, "/rest/api/3/myself", nil)
+	}, ErrCredentialsTimeout, ErrUnauthorized)
 }
 
 func mapJiraStatus(jiraStatus string) tracker.Status {
@@ -343,20 +318,4 @@ func findMatchingTransition(transitions []struct {
 		}
 	}
 	return ""
-}
-
-func extractLinkedSpecs(content string) []string {
-	matches := specRegex.FindAllString(content, -1)
-	if len(matches) == 0 {
-		return nil
-	}
-	seen := make(map[string]bool)
-	var unique []string
-	for _, m := range matches {
-		if !seen[m] {
-			seen[m] = true
-			unique = append(unique, m)
-		}
-	}
-	return unique
 }

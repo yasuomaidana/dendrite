@@ -205,28 +205,21 @@ func parseQuotedString(s string) (str string, rest string, err error) {
 				b.WriteRune('\t')
 			case 'r':
 				b.WriteRune('\r')
-			case 'u':
-				if i+4 >= len(runes) {
-					return "", "", errors.New("short \\u escape sequence")
+			case 'u', 'U':
+				width := 4
+				if runes[i] == 'U' {
+					width = 8
 				}
-				hexStr := string(runes[i+1 : i+5])
+				if i+width >= len(runes) {
+					return "", "", fmt.Errorf("short \\%c escape sequence", runes[i])
+				}
+				hexStr := string(runes[i+1 : i+1+width])
 				val, err := strconv.ParseUint(hexStr, 16, 32)
 				if err != nil {
-					return "", "", fmt.Errorf("invalid \\u escape: %s", hexStr)
+					return "", "", fmt.Errorf("invalid \\%c escape: %s", runes[i], hexStr)
 				}
 				b.WriteRune(rune(val))
-				i += 4
-			case 'U':
-				if i+8 >= len(runes) {
-					return "", "", errors.New("short \\U escape sequence")
-				}
-				hexStr := string(runes[i+1 : i+9])
-				val, err := strconv.ParseUint(hexStr, 16, 32)
-				if err != nil {
-					return "", "", fmt.Errorf("invalid \\U escape: %s", hexStr)
-				}
-				b.WriteRune(rune(val))
-				i += 8
+				i += width
 			default:
 				return "", "", fmt.Errorf("unknown escape sequence \\%c", runes[i])
 			}

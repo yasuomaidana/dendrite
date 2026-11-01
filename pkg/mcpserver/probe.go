@@ -8,6 +8,8 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"Dendrite/pkg/textutil"
 )
 
 // ProbeSpec is one read-only tool call used to check that a tool answers.
@@ -108,11 +110,11 @@ func probeOne(ctx context.Context, spec ProbeSpec, h ToolHandler, timeout time.D
 		pr.Duration = time.Since(start)
 		switch {
 		case o.err != nil:
-			pr.Detail = firstLine(o.err.Error())
+			pr.Detail = textutil.FirstLine(o.err.Error(), 160)
 		case o.res == nil:
 			pr.Detail = "nil result"
 		case o.res.IsError:
-			pr.Detail = firstLine(contentText(o.res))
+			pr.Detail = textutil.FirstLine(contentText(o.res), 160)
 		default:
 			pr.OK = true
 		}
@@ -129,17 +131,6 @@ func contentText(r *CallToolResult) string {
 		sb.WriteString(c.Text)
 	}
 	return sb.String()
-}
-
-func firstLine(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
-	}
-	if len(s) > 160 {
-		s = s[:160] + "…"
-	}
-	return s
 }
 
 // WriteProbeMatrix prints the pass/fail matrix and returns the number of failures.

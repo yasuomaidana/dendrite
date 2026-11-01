@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"Dendrite/pkg/sidecar"
+	"Dendrite/pkg/testmain"
 )
 
 // Build compiles the stand-in sidecar into dir and returns its path.
@@ -40,16 +41,7 @@ func Install() (func(), error) {
 }
 
 // Main installs the stand-in, runs the tests and exits.
-func Main(m *testing.M) {
-	cleanup, err := Install()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	code := m.Run()
-	cleanup()
-	os.Exit(code)
-}
+func Main(m *testing.M) { testmain.Run(m, Install) }
 
 var (
 	builtOnce sync.Once

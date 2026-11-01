@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 
 	"Dendrite/pkg/directive"
 	"Dendrite/pkg/quality"
 	"Dendrite/pkg/quality/coverage"
+	"Dendrite/pkg/textutil"
 	"Dendrite/pkg/tracker/hitl"
 
 	"github.com/spf13/cobra"
@@ -135,20 +135,9 @@ func describeHITLResult(r hitl.HITLResult, dryRun bool) string {
 		line += " -> would move to Done"
 	case r.Outcome == hitl.OutcomeFeedback:
 		last := r.Feedback[len(r.Feedback)-1]
-		line += fmt.Sprintf(" -> %d comment(s), latest by @%s: %s", len(r.Feedback), last.Author, firstLine(last.Body))
+		line += fmt.Sprintf(" -> %d comment(s), latest by @%s: %s", len(r.Feedback), last.Author, textutil.FirstLine(last.Body, 100))
 	case r.Outcome == hitl.OutcomeNoIssue:
 		line += " -> run `dendrite myelin github-sync` to open its verification issue"
 	}
 	return line
-}
-
-func firstLine(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
-	}
-	if len(s) > 100 {
-		s = s[:100] + "…"
-	}
-	return s
 }

@@ -166,16 +166,6 @@ func TestHITLSyncCommandEmptyAndErrors(t *testing.T) {
 	}
 }
 
-func TestFirstLine(t *testing.T) {
-	if got := firstLine("  one\ntwo"); got != "one" {
-		t.Errorf("got %q", got)
-	}
-	long := strings.Repeat("x", 120)
-	if got := firstLine(long); len([]rune(got)) != 101 || !strings.HasSuffix(got, "…") {
-		t.Errorf("long line not truncated: %q", got)
-	}
-}
-
 func TestGitHubSyncTicketFilter(t *testing.T) {
 	ctx := context.Background()
 	_, gh := offlineSyncer(t,

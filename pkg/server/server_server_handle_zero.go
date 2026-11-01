@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -81,26 +82,59 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(html))
 }
 
-func (s *Server) handleRAGAsk(w http.ResponseWriter, r *http.Request) {
+// decodePost accepts POST only and decodes the JSON body into out. With allowEmpty a missing or
+// empty body leaves out untouched. It answers the client itself and returns false when the
+// request cannot be used.
+func decodePost(w http.ResponseWriter, r *http.Request, out interface{}, allowEmpty bool) bool {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
+		return false
 	}
-
-	var req rag.AskRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if allowEmpty && r.Body == nil {
+		return true
+	}
+	if err := json.NewDecoder(r.Body).Decode(out); err != nil && !(allowEmpty && err == io.EOF) {
 		http.Error(w, fmt.Sprintf("invalid request payload: %v", err), http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
+// writeJSON answers 200 with v as JSON.
+func writeJSON(w http.ResponseWriter, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// failInternal answers 500 with "<what> failed: <err>".
+func failInternal(w http.ResponseWriter, what string, err error) {
+	http.Error(w, fmt.Sprintf("%s failed: %v", what, err), http.StatusInternalServerError)
+}
+
+// requireField answers 400 and returns false when value is blank.
+func requireField(w http.ResponseWriter, value, message string) bool {
+	if strings.TrimSpace(value) == "" {
+		http.Error(w, message, http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
+// projectOrDot is the project path to use: "." when none was given.
+func projectOrDot(path string) string {
+	if path == "" {
+		return "."
+	}
+	return path
+}
+
+func (s *Server) handleRAGAsk(w http.ResponseWriter, r *http.Request) {
+	var req rag.AskRequest
+	if !decodePost(w, r, &req, false) || !requireField(w, req.Question, "question is required") {
 		return
 	}
 
-	if strings.TrimSpace(req.Question) == "" {
-		http.Error(w, "question is required", http.StatusBadRequest)
-		return
-	}
-
-	if req.ProjectPath == "" {
-		req.ProjectPath = "."
-	}
+	req.ProjectPath = projectOrDot(req.ProjectPath)
 	if req.PaidModel == "" {
 		req.PaidModel = "gemini-2.5-pro"
 	}
@@ -109,136 +143,74 @@ func (s *Server) handleRAGAsk(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Input = strings.NewReader("n\n")
 
-	engine := rag.NewAskEngine()
-	res, err := engine.Ask(r.Context(), req)
+	res, err := rag.NewAskEngine().Ask(r.Context(), req)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("rag ask failed: %v", err), http.StatusInternalServerError)
+		failInternal(w, "rag ask", err)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(res)
+	writeJSON(w, res)
 }
 
 func (s *Server) handleRAGRetrieve(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	var body struct {
 		Query       string  `json:"query"`
 		ProjectPath string  `json:"project_path"`
 		TopK        int     `json:"top_k"`
 		MinScore    float32 `json:"min_score"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request payload: %v", err), http.StatusBadRequest)
+	if !decodePost(w, r, &body, false) || !requireField(w, body.Query, "query is required") {
 		return
 	}
 
-	if strings.TrimSpace(body.Query) == "" {
-		http.Error(w, "query is required", http.StatusBadRequest)
-		return
-	}
-
-	if body.ProjectPath == "" {
-		body.ProjectPath = "."
-	}
 	if body.TopK <= 0 {
 		body.TopK = 4
 	}
-	retrieval, err := rag.NewRetriever().Retrieve(r.Context(), body.ProjectPath, body.Query, rag.SearchOptions{
+	retrieval, err := rag.NewRetriever().Retrieve(r.Context(), projectOrDot(body.ProjectPath), body.Query, rag.SearchOptions{
 		TopK:     body.TopK,
 		MinScore: body.MinScore,
 	}, false)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("retrieval failed: %v", err), http.StatusInternalServerError)
+		failInternal(w, "retrieval", err)
 		return
 	}
+	writeJSON(w, retrieval.Chunks)
+}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(retrieval.Chunks)
+// graphListBody is the request shared by the graph list endpoints; each reads the fields it needs.
+type graphListBody struct {
+	ProjectPath string `json:"project_path"`
+	Limit       int    `json:"limit"`
+	MinSize     int    `json:"min_size"`
+	MinInDegree int    `json:"min_in_degree"`
+}
+
+// serveGraphList decodes a graph list request, runs query and answers {key: result}.
+func serveGraphList(w http.ResponseWriter, r *http.Request, what, key string, query func(ctx context.Context, b graphListBody) (interface{}, error)) {
+	var body graphListBody
+	if !decodePost(w, r, &body, true) {
+		return
+	}
+	res, err := query(r.Context(), body)
+	if err != nil {
+		failInternal(w, what, err)
+		return
+	}
+	writeJSON(w, map[string]interface{}{key: res})
 }
 
 func (s *Server) handleGraphCommunities(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var body struct {
-		ProjectPath string `json:"project_path"`
-		Limit       int    `json:"limit"`
-		MinSize     int    `json:"min_size"`
-	}
-	if r.Body != nil {
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
-			http.Error(w, fmt.Sprintf("invalid request payload: %v", err), http.StatusBadRequest)
-			return
-		}
-	}
-	if body.ProjectPath == "" {
-		body.ProjectPath = "."
-	}
-
-	communities, err := rag.NewRetriever().Communities(r.Context(), body.ProjectPath, rag.CommunitiesOptions{
-		Limit:   body.Limit,
-		MinSize: body.MinSize,
-	})
-	if err != nil {
-		http.Error(w, fmt.Sprintf("graph communities failed: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"communities": communities,
+	serveGraphList(w, r, "graph communities", "communities", func(ctx context.Context, b graphListBody) (interface{}, error) {
+		return rag.NewRetriever().Communities(ctx, projectOrDot(b.ProjectPath), rag.CommunitiesOptions{Limit: b.Limit, MinSize: b.MinSize})
 	})
 }
 
 func (s *Server) handleGraphGodNodes(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var body struct {
-		ProjectPath string `json:"project_path"`
-		MinInDegree int    `json:"min_in_degree"`
-		Limit       int    `json:"limit"`
-	}
-	if r.Body != nil {
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
-			http.Error(w, fmt.Sprintf("invalid request payload: %v", err), http.StatusBadRequest)
-			return
-		}
-	}
-	if body.ProjectPath == "" {
-		body.ProjectPath = "."
-	}
-
-	nodes, err := rag.NewRetriever().GodNodes(r.Context(), body.ProjectPath, rag.GodNodesOptions{
-		MinInDegree: body.MinInDegree,
-		Limit:       body.Limit,
-	})
-	if err != nil {
-		http.Error(w, fmt.Sprintf("graph god nodes failed: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"nodes": nodes,
+	serveGraphList(w, r, "graph god nodes", "nodes", func(ctx context.Context, b graphListBody) (interface{}, error) {
+		return rag.NewRetriever().GodNodes(ctx, projectOrDot(b.ProjectPath), rag.GodNodesOptions{MinInDegree: b.MinInDegree, Limit: b.Limit})
 	})
 }
 
 func (s *Server) handleGraphPath(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	var body struct {
 		ProjectPath string   `json:"project_path"`
 		From        string   `json:"from"`
@@ -246,65 +218,38 @@ func (s *Server) handleGraphPath(w http.ResponseWriter, r *http.Request) {
 		Kinds       []string `json:"kinds"`
 		MaxHops     int      `json:"max_hops"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request payload: %v", err), http.StatusBadRequest)
+	if !decodePost(w, r, &body, false) {
 		return
 	}
-
 	if strings.TrimSpace(body.From) == "" || strings.TrimSpace(body.To) == "" {
 		http.Error(w, "from and to are required", http.StatusBadRequest)
 		return
 	}
 
-	if body.ProjectPath == "" {
-		body.ProjectPath = "."
-	}
-
-	path, err := rag.NewRetriever().Path(r.Context(), body.ProjectPath, body.From, body.To, rag.PathOptions{
+	path, err := rag.NewRetriever().Path(r.Context(), projectOrDot(body.ProjectPath), body.From, body.To, rag.PathOptions{
 		Kinds:   body.Kinds,
 		MaxHops: body.MaxHops,
 	})
 	if err != nil {
-		http.Error(w, fmt.Sprintf("graph path failed: %v", err), http.StatusInternalServerError)
+		failInternal(w, "graph path", err)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(path)
+	writeJSON(w, path)
 }
 
 func (s *Server) handleGraphExplain(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	var body struct {
 		ProjectPath string `json:"project_path"`
 		Target      string `json:"target"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request payload: %v", err), http.StatusBadRequest)
+	if !decodePost(w, r, &body, false) || !requireField(w, body.Target, "target is required") {
 		return
 	}
 
-	if strings.TrimSpace(body.Target) == "" {
-		http.Error(w, "target is required", http.StatusBadRequest)
-		return
-	}
-
-	if body.ProjectPath == "" {
-		body.ProjectPath = "."
-	}
-
-	matches, err := rag.NewRetriever().Explain(r.Context(), body.ProjectPath, body.Target)
+	matches, err := rag.NewRetriever().Explain(r.Context(), projectOrDot(body.ProjectPath), body.Target)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("graph explain failed: %v", err), http.StatusInternalServerError)
+		failInternal(w, "graph explain", err)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"matches": matches,
-	})
+	writeJSON(w, map[string]interface{}{"matches": matches})
 }

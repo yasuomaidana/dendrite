@@ -231,31 +231,23 @@ func getJSON(ctx context.Context, hc *http.Client, url string, out any) error {
 }
 
 func ollamaTags(ctx context.Context, hc *http.Client, endpoint string) (map[string]int64, error) {
-	var res struct {
-		Models []struct {
-			Name string `json:"name"`
-			Size int64  `json:"size"`
-		} `json:"models"`
-	}
-	if err := getJSON(ctx, hc, strings.TrimRight(endpoint, "/")+"/api/tags", &res); err != nil {
-		return nil, err
-	}
-	out := make(map[string]int64, len(res.Models))
-	for _, m := range res.Models {
-		out[m.Name] = m.Size
-	}
-	return out, nil
+	return ollamaModelSizes(ctx, hc, endpoint, "/api/tags")
 }
 
 // ollamaLoaded maps the models Ollama currently holds in memory to the bytes they occupy.
 func ollamaLoaded(ctx context.Context, hc *http.Client, endpoint string) (map[string]int64, error) {
+	return ollamaModelSizes(ctx, hc, endpoint, "/api/ps")
+}
+
+// ollamaModelSizes maps the model names listed by one Ollama endpoint path to their sizes in bytes.
+func ollamaModelSizes(ctx context.Context, hc *http.Client, endpoint, path string) (map[string]int64, error) {
 	var res struct {
 		Models []struct {
 			Name string `json:"name"`
 			Size int64  `json:"size"`
 		} `json:"models"`
 	}
-	if err := getJSON(ctx, hc, strings.TrimRight(endpoint, "/")+"/api/ps", &res); err != nil {
+	if err := getJSON(ctx, hc, strings.TrimRight(endpoint, "/")+path, &res); err != nil {
 		return nil, err
 	}
 	out := make(map[string]int64, len(res.Models))

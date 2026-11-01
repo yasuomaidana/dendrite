@@ -251,6 +251,26 @@ func postJSONRequest(ctx context.Context, client *http.Client, url string, paylo
 	return client.Do(httpReq)
 }
 
+// streamPrompt rejects a blank prompt, POSTs payload to endpoint+path and streams the SSE reply, turning
+// each JSON data line into a chunk with decode (ok=false skips the line, done=true ends the stream).
+func streamPrompt[T any](ctx context.Context, client *http.Client, req CompletionRequest, endpoint, path string, payload interface{}, decode func(T) (chunk StreamChunk, done bool)) (<-chan StreamChunk, error) {
+	if strings.TrimSpace(req.Prompt) == "" {
+		return nil, ErrEmptyPrompt
+	}
+	resp, err := postJSONRequest(ctx, client, strings.TrimRight(endpoint, "/")+path, payload)
+	if err != nil {
+		return nil, err
+	}
+	return streamSSEChunks(resp, func(data string) (StreamChunk, bool, bool) {
+		var v T
+		if err := json.Unmarshal([]byte(data), &v); err != nil {
+			return StreamChunk{}, false, false
+		}
+		chunk, done := decode(v)
+		return chunk, true, done
+	}), nil
+}
+
 // streamSSEChunks streams tokens from an SSE HTTP response, dispatching parsed payloads to caller.
 func streamSSEChunks(resp *http.Response, parsePayload func(payload string) (StreamChunk, bool, bool)) <-chan StreamChunk {
 	ch := make(chan StreamChunk)

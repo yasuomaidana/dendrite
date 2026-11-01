@@ -2,6 +2,7 @@ package rag
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -122,13 +123,9 @@ func (r *Retriever) runGraph(ctx context.Context, projectPath string, query func
 	if err != nil {
 		return err
 	}
-	bin, err := r.Locator.Locate(SidecarBinary)
+	c, err := r.dial(ctx)
 	if err != nil {
-		return fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
-	}
-	c, err := r.connect(ctx, bin)
-	if err != nil {
-		return fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
+		return err
 	}
 
 	indexParams := map[string]interface{}{"root": root, "full": false}
@@ -142,111 +139,80 @@ func (r *Retriever) runGraph(ctx context.Context, projectPath string, query func
 	return query(c, root)
 }
 
-// Communities returns the Leiden communities of the project's file graph.
-func (r *Retriever) Communities(ctx context.Context, projectPath string, opts CommunitiesOptions) ([]Community, error) {
+// graphCall runs one graph method over projectPath: params gains the project root and out
+// receives the sidecar's reply.
+func (r *Retriever) graphCall(ctx context.Context, projectPath, method string, params map[string]interface{}, out interface{}) error {
 	if r == nil {
 		r = NewRetriever()
 	}
-	var communities []Community
-	err := r.runGraph(ctx, projectPath, func(c *conn, root string) error {
-		params := map[string]interface{}{"root": root}
-		if opts.Limit > 0 {
-			params["limit"] = opts.Limit
+	return r.runGraph(ctx, projectPath, func(c *conn, root string) error {
+		params["root"] = root
+		if err := c.Call(ctx, method, params, out); err != nil {
+			return fmt.Errorf("%s: %w", method, err)
 		}
-		if opts.MinSize > 0 {
-			params["min_size"] = opts.MinSize
-		}
-		var res struct {
-			Communities []Community `json:"communities"`
-		}
-		if err := c.Call(ctx, "graph.communities", params, &res); err != nil {
-			return fmt.Errorf("graph.communities: %w", err)
-		}
-		communities = res.Communities
 		return nil
 	})
-	return communities, err
+}
+
+// graphList runs a graph method whose reply holds a list under field.
+func graphList[T any](ctx context.Context, r *Retriever, projectPath, method, field string, params map[string]interface{}) ([]T, error) {
+	var res map[string]json.RawMessage
+	if err := r.graphCall(ctx, projectPath, method, params, &res); err != nil {
+		return nil, err
+	}
+	var list []T
+	if raw, ok := res[field]; ok {
+		if err := json.Unmarshal(raw, &list); err != nil {
+			return nil, fmt.Errorf("%s: %w", method, err)
+		}
+	}
+	return list, nil
+}
+
+// Communities returns the Leiden communities of the project's file graph.
+func (r *Retriever) Communities(ctx context.Context, projectPath string, opts CommunitiesOptions) ([]Community, error) {
+	params := map[string]interface{}{}
+	setPositive(params, "limit", opts.Limit)
+	setPositive(params, "min_size", opts.MinSize)
+	return graphList[Community](ctx, r, projectPath, "graph.communities", "communities", params)
 }
 
 // GodNodes returns the symbols with the most callers and type users in the project.
 func (r *Retriever) GodNodes(ctx context.Context, projectPath string, opts GodNodesOptions) ([]GodNode, error) {
-	if r == nil {
-		r = NewRetriever()
+	params := map[string]interface{}{}
+	setPositive(params, "min_in_degree", opts.MinInDegree)
+	setPositive(params, "limit", opts.Limit)
+	return graphList[GodNode](ctx, r, projectPath, "graph.god_nodes", "nodes", params)
+}
+
+// setPositive stores n under key only when it is set (above zero), so the sidecar keeps its default.
+func setPositive(params map[string]interface{}, key string, n int) {
+	if n > 0 {
+		params[key] = n
 	}
-	var nodes []GodNode
-	err := r.runGraph(ctx, projectPath, func(c *conn, root string) error {
-		params := map[string]interface{}{"root": root}
-		if opts.MinInDegree > 0 {
-			params["min_in_degree"] = opts.MinInDegree
-		}
-		if opts.Limit > 0 {
-			params["limit"] = opts.Limit
-		}
-		var res struct {
-			Nodes []GodNode `json:"nodes"`
-		}
-		if err := c.Call(ctx, "graph.god_nodes", params, &res); err != nil {
-			return fmt.Errorf("graph.god_nodes: %w", err)
-		}
-		nodes = res.Nodes
-		return nil
-	})
-	return nodes, err
 }
 
 // Path finds the shortest path between two symbols or files in the code graph.
 func (r *Retriever) Path(ctx context.Context, projectPath, from, to string, opts PathOptions) (GraphPath, error) {
-	if r == nil {
-		r = NewRetriever()
-	}
 	if strings.TrimSpace(from) == "" || strings.TrimSpace(to) == "" {
 		return GraphPath{}, errors.New("from and to are required")
 	}
+	params := map[string]interface{}{"from": from, "to": to}
+	if len(opts.Kinds) > 0 {
+		params["kinds"] = opts.Kinds
+	}
+	setPositive(params, "max_hops", opts.MaxHops)
 	var path GraphPath
-	err := r.runGraph(ctx, projectPath, func(c *conn, root string) error {
-		params := map[string]interface{}{
-			"root": root,
-			"from": from,
-			"to":   to,
-		}
-		if len(opts.Kinds) > 0 {
-			params["kinds"] = opts.Kinds
-		}
-		if opts.MaxHops > 0 {
-			params["max_hops"] = opts.MaxHops
-		}
-		if err := c.Call(ctx, "graph.path", params, &path); err != nil {
-			return fmt.Errorf("graph.path: %w", err)
-		}
-		return nil
-	})
+	err := r.graphCall(ctx, projectPath, "graph.path", params, &path)
 	return path, err
 }
 
 // Explain explains a symbol or file: callers, callees, definitions, imports, and community membership.
 func (r *Retriever) Explain(ctx context.Context, projectPath, target string) ([]Explanation, error) {
-	if r == nil {
-		r = NewRetriever()
-	}
 	if strings.TrimSpace(target) == "" {
 		return nil, errors.New("target is required")
 	}
-	var matches []Explanation
-	err := r.runGraph(ctx, projectPath, func(c *conn, root string) error {
-		params := map[string]interface{}{
-			"root":   root,
-			"target": target,
-		}
-		var res struct {
-			Matches []Explanation `json:"matches"`
-		}
-		if err := c.Call(ctx, "graph.explain", params, &res); err != nil {
-			return fmt.Errorf("graph.explain: %w", err)
-		}
-		matches = res.Matches
-		return nil
-	})
-	return matches, err
+	return graphList[Explanation](ctx, r, projectPath, "graph.explain", "matches", map[string]interface{}{"target": target})
 }
 
 // Communities returns the Leiden communities of the project's file graph using default settings.

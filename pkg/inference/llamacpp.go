@@ -105,30 +105,16 @@ func (e *LlamaCppEngine) Generate(ctx context.Context, req CompletionRequest) (*
 }
 
 func (e *LlamaCppEngine) Stream(ctx context.Context, req CompletionRequest) (<-chan StreamChunk, error) {
-	if strings.TrimSpace(req.Prompt) == "" {
-		return nil, ErrEmptyPrompt
-	}
-
 	payload := map[string]interface{}{
 		"prompt": req.Prompt,
 		"stream": true,
 	}
-	url := fmt.Sprintf("%s/completion", strings.TrimRight(e.cfg.Endpoint, "/"))
-	resp, err := postJSONRequest(ctx, e.httpClient, url, payload)
-	if err != nil {
-		return nil, err
-	}
-
-	return streamSSEChunks(resp, func(payload string) (StreamChunk, bool, bool) {
-		var chunkRes struct {
-			Content string `json:"content"`
-			Stop    bool   `json:"stop"`
-		}
-		if err := json.Unmarshal([]byte(payload), &chunkRes); err == nil {
-			return StreamChunk{Text: chunkRes.Content, Done: chunkRes.Stop}, true, chunkRes.Stop
-		}
-		return StreamChunk{}, false, false
-	}), nil
+	return streamPrompt(ctx, e.httpClient, req, e.cfg.Endpoint, "/completion", payload, func(c struct {
+		Content string `json:"content"`
+		Stop    bool   `json:"stop"`
+	}) (StreamChunk, bool) {
+		return StreamChunk{Text: c.Content, Done: c.Stop}, c.Stop
+	})
 }
 
 func (e *LlamaCppEngine) Health(ctx context.Context) EngineHealth {

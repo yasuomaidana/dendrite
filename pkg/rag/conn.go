@@ -73,6 +73,43 @@ var (
 	pools   = map[string]*poolEntry{}
 )
 
+// dial locates the sidecar binary and leases a connection to it.
+func (r *Retriever) dial(ctx context.Context) (*conn, error) {
+	bin, err := r.Locator.Locate(SidecarBinary)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
+	}
+	c, err := r.connect(ctx, bin)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
+	}
+	return c, nil
+}
+
+// callRoot resolves projectPath to its root and runs one sidecar method on it. params (may be nil)
+// gains the root, and out (may be nil) receives the reply. Errors name the method.
+func (r *Retriever) callRoot(ctx context.Context, projectPath, method string, params map[string]interface{}, out interface{}) error {
+	if projectPath == "" {
+		projectPath = "."
+	}
+	root, _, err := projectRoot(projectPath)
+	if err != nil {
+		return err
+	}
+	c, err := r.dial(ctx)
+	if err != nil {
+		return err
+	}
+	if params == nil {
+		params = map[string]interface{}{}
+	}
+	params["root"] = root
+	if err := c.Call(ctx, method, params, out); err != nil {
+		return fmt.Errorf("%s: %w", method, err)
+	}
+	return nil
+}
+
 // connect returns a lease on the pooled sidecar at bin, starting it on first use. Pools are
 // shared process-wide and keyed by binary and environment.
 func (r *Retriever) connect(ctx context.Context, bin string) (*conn, error) {

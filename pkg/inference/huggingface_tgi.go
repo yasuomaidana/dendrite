@@ -120,35 +120,21 @@ func (e *HuggingFaceTGIEngine) Generate(ctx context.Context, req CompletionReque
 }
 
 func (e *HuggingFaceTGIEngine) Stream(ctx context.Context, req CompletionRequest) (<-chan StreamChunk, error) {
-	if strings.TrimSpace(req.Prompt) == "" {
-		return nil, ErrEmptyPrompt
-	}
-
 	payload := map[string]interface{}{
 		"inputs": req.Prompt,
 		"parameters": map[string]interface{}{
 			"max_new_tokens": 512,
 		},
 	}
-	url := fmt.Sprintf("%s/generate_stream", strings.TrimRight(e.cfg.Endpoint, "/"))
-	resp, err := postJSONRequest(ctx, e.httpClient, url, payload)
-	if err != nil {
-		return nil, err
-	}
-
-	return streamSSEChunks(resp, func(payload string) (StreamChunk, bool, bool) {
-		var chunkRes struct {
-			Token struct {
-				Text string `json:"text"`
-			} `json:"token"`
-			GeneratedText *string `json:"generated_text"`
-		}
-		if err := json.Unmarshal([]byte(payload), &chunkRes); err == nil {
-			done := chunkRes.GeneratedText != nil
-			return StreamChunk{Text: chunkRes.Token.Text, Done: done}, true, done
-		}
-		return StreamChunk{}, false, false
-	}), nil
+	return streamPrompt(ctx, e.httpClient, req, e.cfg.Endpoint, "/generate_stream", payload, func(c struct {
+		Token struct {
+			Text string `json:"text"`
+		} `json:"token"`
+		GeneratedText *string `json:"generated_text"`
+	}) (StreamChunk, bool) {
+		done := c.GeneratedText != nil
+		return StreamChunk{Text: c.Token.Text, Done: done}, done
+	})
 }
 
 func (e *HuggingFaceTGIEngine) Health(ctx context.Context) EngineHealth {

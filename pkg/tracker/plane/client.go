@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -16,7 +15,7 @@ import (
 	"Dendrite/pkg/tracker"
 )
 
-var specRegex = regexp.MustCompile(`\b(FEAT-\d+|ADR-\d+)\b`)
+var specRegex = tracker.SpecRegex
 
 // Client is a Plane v2 REST API client adhering to tracker.UnifiedIssueTracker.
 type Client struct {
@@ -211,7 +210,7 @@ func (c *Client) GetIssue(ctx context.Context, id tracker.TicketID) (*tracker.Un
 		labels = append(labels, l.Name)
 	}
 
-	specs := extractLinkedSpecs(issueResp.Name + " " + issueResp.DescriptionStripped)
+	specs := tracker.LinkedSpecs(issueResp.Name + " " + issueResp.DescriptionStripped)
 	createdAt, _ := time.Parse(time.RFC3339, issueResp.CreatedAt)
 	updatedAt, _ := time.Parse(time.RFC3339, issueResp.UpdatedAt)
 

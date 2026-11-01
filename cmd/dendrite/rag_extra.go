@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"Dendrite/pkg/rag"
@@ -21,19 +22,16 @@ func newRagSymbolsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, chunks)
-			}
-			action := "Definitions"
-			if refs {
-				action = "References"
-			}
-			fmt.Fprintf(out, "[✓] %s for %q (%d chunks):\n", action, args[0], len(chunks))
-			for i, c := range chunks {
-				fmt.Fprintf(out, "%2d. %s:%d-%d\n", i+1, c.FilePath, c.LineStart, c.LineEnd)
-			}
-			return nil
+			return printResult(cmd, chunks, func(out io.Writer) {
+				action := "Definitions"
+				if refs {
+					action = "References"
+				}
+				fmt.Fprintf(out, "[✓] %s for %q (%d chunks):\n", action, args[0], len(chunks))
+				for i, c := range chunks {
+					fmt.Fprintf(out, "%2d. %s:%d-%d\n", i+1, c.FilePath, c.LineStart, c.LineEnd)
+				}
+			})
 		},
 	}
 	addProjectFlag(cmd, &project, ".", "Project directory")
@@ -54,14 +52,11 @@ func newRagGrepCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, matches)
-			}
-			for _, m := range matches {
-				fmt.Fprintf(out, "%s:%d: %s\n", m.Path, m.Line, m.Text)
-			}
-			return nil
+			return printResult(cmd, matches, func(out io.Writer) {
+				for _, m := range matches {
+					fmt.Fprintf(out, "%s:%d: %s\n", m.Path, m.Line, m.Text)
+				}
+			})
 		},
 	}
 	addProjectFlag(cmd, &project, ".", "Project directory")
@@ -83,19 +78,16 @@ func newRagHistoryCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, hits)
-			}
-			fmt.Fprintf(out, "[✓] History hits for %q:\n", query)
-			for _, h := range hits {
-				sha := h.SHA
-				if len(sha) > 10 {
-					sha = sha[:10]
+			return printResult(cmd, hits, func(out io.Writer) {
+				fmt.Fprintf(out, "[✓] History hits for %q:\n", query)
+				for _, h := range hits {
+					sha := h.SHA
+					if len(sha) > 10 {
+						sha = sha[:10]
+					}
+					fmt.Fprintf(out, "%.2f  %s  %s  %s\n", h.Score, sha, h.Subject, h.Path)
 				}
-				fmt.Fprintf(out, "%.2f  %s  %s  %s\n", h.Score, sha, h.Subject, h.Path)
-			}
-			return nil
+			})
 		},
 	}
 	addProjectFlag(cmd, &project, ".", "Project directory")
@@ -115,14 +107,11 @@ func newRagGraphCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				out := cmd.OutOrStdout()
-				if globals.JSON {
-					return writeJSON(out, comms)
-				}
-				for _, c := range comms {
-					fmt.Fprintf(out, "Community #%d: %s (%d files)\n", c.ID, c.Label, c.Size)
-				}
-				return nil
+				return printResult(cmd, comms, func(out io.Writer) {
+					for _, c := range comms {
+						fmt.Fprintf(out, "Community #%d: %s (%d files)\n", c.ID, c.Label, c.Size)
+					}
+				})
 			},
 		},
 		&cobra.Command{
@@ -133,14 +122,11 @@ func newRagGraphCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				out := cmd.OutOrStdout()
-				if globals.JSON {
-					return writeJSON(out, nodes)
-				}
-				for _, n := range nodes {
-					fmt.Fprintf(out, "%s (%s:%d) - InDegree: %d\n", n.Symbol, n.Path, n.Line, n.InDegree)
-				}
-				return nil
+				return printResult(cmd, nodes, func(out io.Writer) {
+					for _, n := range nodes {
+						fmt.Fprintf(out, "%s (%s:%d) - InDegree: %d\n", n.Symbol, n.Path, n.Line, n.InDegree)
+					}
+				})
 			},
 		},
 	)
@@ -198,15 +184,22 @@ func newRagPushCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, rep)
-			}
-			fmt.Fprintf(out, "[✓] Push complete (dry_run: %t): commit %s, uploaded %d embeddings\n", rep.DryRun, rep.Commit, rep.EmbeddingsUploaded)
-			return nil
+			return printResult(cmd, rep, func(out io.Writer) {
+				fmt.Fprintf(out, "[✓] Push complete (dry_run: %t): commit %s, uploaded %d embeddings\n", rep.DryRun, rep.Commit, rep.EmbeddingsUploaded)
+			})
 		},
 	}
 	addProjectFlag(cmd, &project, ".", "Project directory")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Simulate push without modifying shared tier")
 	return cmd
+}
+
+// printResult writes v as JSON with --json, otherwise lets text print the human form.
+func printResult(cmd *cobra.Command, v interface{}, text func(out io.Writer)) error {
+	out := cmd.OutOrStdout()
+	if globals.JSON {
+		return writeJSON(out, v)
+	}
+	text(out)
+	return nil
 }

@@ -113,37 +113,29 @@ func reportHook(out io.Writer, msg string, err error) {
 	}
 }
 
-func runPlanSaved(ctx context.Context, stdin io.Reader, out io.Writer) error {
+// runAfterHook parses the hook input from stdin, runs act on its working copy's board and reports
+// the outcome. An unreadable input is ignored: these hooks never fail the agent.
+func runAfterHook(ctx context.Context, stdin io.Reader, out io.Writer, act func(context.Context, *ticketlock.Lifecycle, func() (ticketlock.Board, error), ticketlock.HookInput) (string, error)) error {
 	in, ok := ticketlock.ParseHookInput(stdin)
 	if !ok {
 		return nil
 	}
 	l := ticketlock.NewLifecycle(ticketlock.Board{}, hookDir(in))
-	msg, err := ticketlock.SavePlan(ctx, l, boardOfDir(l.Dir), in)
+	msg, err := act(ctx, l, boardOfDir(l.Dir), in)
 	reportHook(out, msg, err)
 	return nil
+}
+
+func runPlanSaved(ctx context.Context, stdin io.Reader, out io.Writer) error {
+	return runAfterHook(ctx, stdin, out, ticketlock.SavePlan)
 }
 
 func runSessionEnd(ctx context.Context, stdin io.Reader, out io.Writer) error {
-	in, ok := ticketlock.ParseHookInput(stdin)
-	if !ok {
-		return nil
-	}
-	l := ticketlock.NewLifecycle(ticketlock.Board{}, hookDir(in))
-	msg, err := ticketlock.AutoHandoff(ctx, l, boardOfDir(l.Dir), in)
-	reportHook(out, msg, err)
-	return nil
+	return runAfterHook(ctx, stdin, out, ticketlock.AutoHandoff)
 }
 
 func runDecision(ctx context.Context, stdin io.Reader, out io.Writer) error {
-	in, ok := ticketlock.ParseHookInput(stdin)
-	if !ok {
-		return nil
-	}
-	l := ticketlock.NewLifecycle(ticketlock.Board{}, hookDir(in))
-	msg, err := ticketlock.SaveDecisions(ctx, l, boardOfDir(l.Dir), in)
-	reportHook(out, msg, err)
-	return nil
+	return runAfterHook(ctx, stdin, out, ticketlock.SaveDecisions)
 }
 
 func hookDir(in ticketlock.HookInput) string {
