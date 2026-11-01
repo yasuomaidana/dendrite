@@ -582,7 +582,7 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 
 - [ ] **DEN-422**: Technology integration roadmap (EGM, Engram, Hermes executor, SkillSpector, dual-protocol): epic [State: Backlog, Priority: High]
 - [x] **DEN-423**: Roadmap S0: tickets-RAG health + Plane board reconciliation [State: Done, Priority: Medium]
-- [ ] **DEN-424**: Roadmap S1: bootstrap - adopt EGM, speq-skill, superpowers; SkillSpector pre-scan; agy zero-trust [State: To Verify, Priority: Medium]
+- [x] **DEN-424**: Roadmap S1: bootstrap - adopt EGM, speq-skill, superpowers; SkillSpector pre-scan; agy zero-trust [State: Done, Priority: Medium]
 - [ ] **DEN-425**: Roadmap S2: dendrite immune - SkillSpector gate wrapper (DEN-388/389/390) [State: Backlog, Priority: Medium]
 - [ ] **DEN-426**: Roadmap S3: real local inference - kill the spike serve mock; finish capability catalog (DEN-920) [State: Backlog, Priority: Medium]
 - [ ] **DEN-427**: Roadmap S4: Engram adoption + frozen session-start snapshot (DEN-941) [State: Backlog, Priority: Medium]
