@@ -15,6 +15,7 @@ type T interface {
 	Helper()
 	Fatal(args ...any)
 	Fatalf(format string, args ...any)
+	Errorf(format string, args ...any)
 	TempDir() string
 }
 
@@ -84,4 +85,12 @@ func Build[V any](t T, build func() (V, error)) V {
 	v, err := build()
 	Check(t, err)
 	return v
+}
+
+// Equal reports a mismatch between got and want under the given label without stopping the test.
+func Equal[V comparable](t T, label string, got, want V) {
+	t.Helper()
+	if got != want {
+		t.Errorf("%s = %v, want %v", label, got, want)
+	}
 }

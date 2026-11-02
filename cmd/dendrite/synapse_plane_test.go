@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/pkg/testkit"
 	"bytes"
 	"context"
 	"fmt"
@@ -11,17 +12,15 @@ import (
 )
 
 func TestSplitPlaneSuffix(t *testing.T) {
-	cases := []struct{ in, rest, plane string }{
-		{"../git=git:peer@dgit", "../git=git:peer", "DGIT"},
-		{"/tmp/x", "/tmp/x", ""},
-		{"/tmp/me@host/repo", "/tmp/me@host/repo", ""},
-		{"/tmp/x@", "/tmp/x@", ""},
-	}
-	for _, c := range cases {
-		rest, plane := splitPlaneSuffix(c.in)
-		if rest != c.rest || plane != c.plane {
-			t.Errorf("splitPlaneSuffix(%q) = %q,%q want %q,%q", c.in, rest, plane, c.rest, c.plane)
-		}
+	for in, want := range map[string][2]string{
+		"../git=git:peer@dgit": {"../git=git:peer", "DGIT"},
+		"/tmp/x":               {"/tmp/x", ""},
+		"/tmp/me@host/repo":    {"/tmp/me@host/repo", ""},
+		"/tmp/x@":              {"/tmp/x@", ""},
+	} {
+		rest, plane := splitPlaneSuffix(in)
+		testkit.Equal(t, in+" rest", rest, want[0])
+		testkit.Equal(t, in+" plane", plane, want[1])
 	}
 }
 

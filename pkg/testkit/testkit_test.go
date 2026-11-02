@@ -57,6 +57,20 @@ func (r *recorder) Fatalf(format string, args ...any) {
 	panic(stopped{})
 }
 
+func (r *recorder) Errorf(format string, args ...any) { r.msg = fmt.Sprintf(format, args...) }
+
+func TestEqualReportsOnlyAMismatch(t *testing.T) {
+	r := &recorder{}
+	Equal(r, "same", 3, 3)
+	if r.msg != "" {
+		t.Fatalf("equal values reported %q", r.msg)
+	}
+	Equal(r, "count", 3, 4)
+	if r.msg != "count = 3, want 4" {
+		t.Fatalf("mismatch reported %q", r.msg)
+	}
+}
+
 // failsWith runs fn and returns what the helper reported before stopping ("" when it did not).
 func failsWith(r *recorder, fn func()) (msg string) {
 	defer func() {

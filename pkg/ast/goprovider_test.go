@@ -228,13 +228,7 @@ func TestGoASTProvider_ChangedSymbols_RealGitRepo(t *testing.T) {
 		{"git", "config", "user.name", "Audit Tester"},
 		{"git", "config", "user.email", "audit@dendrite.dev"},
 	}
-	for _, c := range cmds {
-		cmd := exec.Command(c[0], c[1:]...)
-		cmd.Dir = repoDir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git setup command %v failed: %v, output: %s", c, err, string(out))
-		}
-	}
+	runGitCommands(t, repoDir, cmds)
 
 	initialSource := `package runner
 
@@ -251,13 +245,7 @@ func Execute() string {
 		{"git", "add", "runner.go"},
 		{"git", "commit", "-m", "initial commit"},
 	}
-	for _, c := range commitCmds {
-		cmd := exec.Command(c[0], c[1:]...)
-		cmd.Dir = repoDir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git commit command %v failed: %v, output: %s", c, err, string(out))
-		}
-	}
+	runGitCommands(t, repoDir, commitCmds)
 
 	// Modify Execute function
 	modifiedSource := `package runner

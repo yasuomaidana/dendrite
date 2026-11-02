@@ -1,6 +1,7 @@
 package coverage
 
 import (
+	"Dendrite/pkg/testkit"
 	"bytes"
 	"context"
 	"math"
@@ -146,15 +147,13 @@ func TestDetectModulePath(t *testing.T) {
 }
 
 func TestNormalizePackage(t *testing.T) {
-	for _, c := range []struct{ pkg, module, want string }{
+	for _, c := range [][3]string{
 		{"pkg/foo", "", "pkg/foo"},
 		{"Dendrite", "Dendrite", "."},
 		{"Dendrite/pkg/foo", "Dendrite", "pkg/foo"},
 		{"other/pkg/foo", "Dendrite", "other/pkg/foo"},
 	} {
-		if p := normalizePackage(c.pkg, c.module); p != c.want {
-			t.Errorf("normalizePackage(%q, %q) = %q, want %q", c.pkg, c.module, p, c.want)
-		}
+		testkit.Equal(t, "normalizePackage("+c[0]+")", normalizePackage(c[0], c[1]), c[2])
 	}
 }
 

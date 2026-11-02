@@ -1,6 +1,7 @@
 package inference
 
 import (
+	"Dendrite/pkg/testkit"
 	"math"
 	"os"
 	"path/filepath"
@@ -272,14 +273,8 @@ func TestCatalog_ConcurrencyRaceFree(t *testing.T) {
 }
 
 func TestReasoningTierForScore_AllBranches(t *testing.T) {
-	for _, c := range []struct {
-		name  string
-		score int
-		want  int
-	}{{"custom-14b-instruct", 90, 3}, {"small", 10, 1}, {"frontier", 120, 5}, {"mid", 60, 3}} {
-		if tier := reasoningTierForScore(c.name, c.score); tier != c.want {
-			t.Errorf("%s at score %d: tier %d, want %d", c.name, c.score, tier, c.want)
-		}
+	for name, c := range map[string][3]int{"custom-14b-instruct": {90, 3}, "small": {10, 1}, "frontier": {120, 5}, "mid": {60, 3}} {
+		testkit.Equal(t, name, reasoningTierForScore(name, c[0]), c[1])
 	}
 }
 
