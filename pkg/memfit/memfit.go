@@ -38,18 +38,27 @@ const (
 // ErrTooLarge means a model would not fit in the memory budget.
 var ErrTooLarge = errors.New("model does not fit this machine's memory budget")
 
+// How the physical memory size is read; tests replace these to reach every operating system.
+var (
+	goos        = runtime.GOOS
+	readSysctl  = func() ([]byte, error) { return exec.Command("sysctl", "-n", "hw.memsize").Output() }
+	readMeminfo = readProcMeminfo
+)
+
+func readProcMeminfo() ([]byte, error) { return os.ReadFile("/proc/meminfo") }
+
 // TotalRAMBytes is the physical memory, 0 when it cannot be read.
 func TotalRAMBytes() uint64 {
-	switch runtime.GOOS {
+	switch goos {
 	case "darwin":
-		out, err := exec.Command("sysctl", "-n", "hw.memsize").Output()
+		out, err := readSysctl()
 		if err != nil {
 			return 0
 		}
 		n, _ := strconv.ParseUint(strings.TrimSpace(string(out)), 10, 64)
 		return n
 	case "linux":
-		data, err := os.ReadFile("/proc/meminfo")
+		data, err := readMeminfo()
 		if err != nil {
 			return 0
 		}

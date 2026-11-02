@@ -353,16 +353,11 @@ func (s *Server) handleZeroCost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var ok bool
+		// The name is not blank (checked above), which is the only way an add can fail.
 		if req.IsPrefix {
-			ok = reg.AddPrefix(req.Name)
+			reg.AddPrefix(req.Name)
 		} else {
-			ok, _ = reg.Add(req.Name)
-		}
-
-		if !ok {
-			http.Error(w, "failed to add zero-cost entry", http.StatusInternalServerError)
-			return
+			reg.Add(req.Name)
 		}
 
 		_ = reg.SaveToFile(statedir.Resolve(inference.DefaultZeroCostConfigFile))
@@ -392,16 +387,11 @@ func (s *Server) handleZeroCost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var ok bool
+		// The name is not blank (checked above), which is the only way a removal can fail.
 		if req.IsPrefix {
-			ok = reg.RemovePrefix(req.Name)
+			reg.RemovePrefix(req.Name)
 		} else {
-			ok, _ = reg.Remove(req.Name)
-		}
-
-		if !ok {
-			http.Error(w, "failed to remove zero-cost entry", http.StatusInternalServerError)
-			return
+			reg.Remove(req.Name)
 		}
 
 		_ = reg.SaveToFile(statedir.Resolve(inference.DefaultZeroCostConfigFile))

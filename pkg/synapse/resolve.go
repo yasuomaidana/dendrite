@@ -75,11 +75,14 @@ func normalizePath(p string) string {
 			p = filepath.Join(home, strings.TrimPrefix(p, "~"))
 		}
 	}
-	if abs, err := filepath.Abs(p); err == nil {
+	if abs, err := absPath(p); err == nil {
 		return abs
 	}
 	return p
 }
+
+// absPath is filepath.Abs; tests replace it to reach the case where the working directory is gone.
+var absPath = filepath.Abs
 
 // indexedPath is where the global project index says the project lives ("" when unknown).
 func indexedPath(projectID string) string {

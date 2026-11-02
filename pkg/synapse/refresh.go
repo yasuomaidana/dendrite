@@ -108,16 +108,11 @@ func RefreshIndex(st *Store, ix *projectid.Index, opts RefreshOptions) ([]Refres
 		if err != nil {
 			return rows, err
 		}
-		if err := applyMoves(st, syns, moves, ix); err != nil {
-			return rows, err
-		}
 		for _, id := range prune {
 			ix.Remove(id)
 		}
-		if len(prune) > 0 {
-			if err := ix.Save(); err != nil {
-				return rows, fmt.Errorf("saving project index: %w", err)
-			}
+		if err := applyMoves(st, syns, moves, ix); err != nil { // saves the index once, pruned entries included
+			return rows, err
 		}
 		pruned := map[string]bool{}
 		for _, id := range prune {

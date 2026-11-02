@@ -38,10 +38,7 @@ func (h *TelemetryHub) Subscribe() (<-chan TelemetryFrame, func()) {
 	h.subscribers[ch] = struct{}{}
 
 	if h.lastFrame != nil {
-		select {
-		case ch <- *h.lastFrame:
-		default:
-		}
+		ch <- *h.lastFrame // the channel was just made with room for it
 	}
 
 	unsubscribe := func() {

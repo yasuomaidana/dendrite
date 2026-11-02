@@ -2,6 +2,7 @@ package dag
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -111,19 +112,8 @@ func (g *Graph) DetectCycles() ([]string, error) {
 
 		for _, v := range g.edges[u] {
 			if visited[v] == 1 {
-				// Cycle detected
-				cycleStart := -1
-				for i, node := range currentPath {
-					if node == v {
-						cycleStart = i
-						break
-					}
-				}
-				if cycleStart != -1 {
-					cycle = append(currentPath[cycleStart:], v)
-				} else {
-					cycle = append(currentPath, v)
-				}
+				// Cycle detected: v is being visited, so it is on the current path.
+				cycle = append(currentPath[slices.Index(currentPath, v):], v)
 				return true
 			}
 			if visited[v] == 0 {
