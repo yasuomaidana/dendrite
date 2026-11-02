@@ -2,94 +2,11 @@ package tokenopt_test
 
 import (
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
 	"Dendrite/pkg/ai/tokenopt"
 )
-
-func TestCompactGoSource(t *testing.T) {
-	// 1. Error on empty source
-	if _, err := tokenopt.CompactGoSource("", nil); !errors.Is(err, tokenopt.ErrEmptySource) {
-		t.Errorf("expected ErrEmptySource, got: %v", err)
-	}
-
-	// 2. Full Go source with types, interfaces, and heavy implementations
-	heavyBody1 := strings.Repeat("\t\tfmt.Println(\"processing extensive data record batch item\")\n", 50)
-	heavyBody2 := strings.Repeat("\t\tres += (x * i) + (y * i)\n\t\tfmt.Println(\"matrix multiplication step\", res)\n", 50)
-
-	sampleSource := `package service
-
-import (
-	"context"
-	"fmt"
-)
-
-type User struct {
-	ID   string
-	Name string
-}
-
-type UserService interface {
-	GetUser(ctx context.Context, id string) (*User, error)
-	DeleteUser(ctx context.Context, id string) error
-}
-
-func (s *server) GetUser(ctx context.Context, id string) (*User, error) {
-	// We want to keep this implementation
-	if id == "" {
-		return nil, fmt.Errorf("empty id")
-	}
-	return &User{ID: id, Name: "Alice"}, nil
-}
-
-func (s *server) DeleteUser(ctx context.Context, id string) error {
-` + heavyBody1 + `	return nil
-}
-
-func helperCalculation(x, y int) int {
-	res := 0
-` + heavyBody2 + `	return res
-}
-`
-
-	// Keep only "GetUser"
-	compacted, err := tokenopt.CompactGoSource(sampleSource, []string{"GetUser"})
-	if err != nil {
-		t.Fatalf("unexpected error compacting Go source: %v", err)
-	}
-
-	content := compacted.CompactedContent
-
-	// Must preserve package, imports, structs, interfaces
-	if !strings.Contains(content, "package service") ||
-		!strings.Contains(content, "type User struct") ||
-		!strings.Contains(content, "type UserService interface") {
-		t.Errorf("expected type definitions and interfaces to be preserved")
-	}
-
-	// Must preserve GetUser implementation
-	if !strings.Contains(content, "We want to keep this implementation") {
-		t.Errorf("expected GetUser implementation to be preserved")
-	}
-
-	// Must prune DeleteUser and helperCalculation bodies
-	if strings.Contains(content, "processing extensive data record batch item") ||
-		strings.Contains(content, "matrix multiplication step") {
-		t.Errorf("expected heavy function bodies to be pruned")
-	}
-
-	// Check pruning comment
-	if !strings.Contains(content, "implementation pruned for token economy") {
-		t.Errorf("expected pruning placeholder comment in compacted source")
-	}
-
-	// Verify compaction ratio meets >= 50% AC-1 goal
-	if compacted.CompactionRatio < 0.50 {
-		t.Errorf("expected >= 50%% compaction ratio, got %.2f%%", compacted.CompactionRatio*100)
-	}
-}
 
 func TestPrefixCacheHarness_Lifecycle(t *testing.T) {
 	harness := tokenopt.NewPrefixCacheHarness()

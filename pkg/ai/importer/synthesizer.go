@@ -1,10 +1,11 @@
 package importer
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
-	"Dendrite/pkg/ast"
+	"Dendrite/pkg/coreclient"
 )
 
 // DissectCapability packages observed external behaviors into a cleanroom capability model.
@@ -84,6 +85,7 @@ func SynthesizeCleanroom(spec CleanroomSpec) (*SynthesizedModule, error) {
 		testSb.WriteString(fmt.Sprintf("\t\t{name: %q, input: %q, want: %q},\n", v.Name, v.Input, v.ExpectedOutput))
 	}
 	testSb.WriteString("\t}\n\n")
+
 	testSb.WriteString("\tfor _, tc := range tests {\n")
 	testSb.WriteString("\t\tt.Run(tc.name, func(t *testing.T) {\n")
 	testSb.WriteString(fmt.Sprintf("\t\t\tgot := %s(tc.input)\n", funcName))
@@ -97,7 +99,20 @@ func SynthesizeCleanroom(spec CleanroomSpec) (*SynthesizedModule, error) {
 	testCode := testSb.String()
 
 	// 3. Complexity & line metrics auditing
-	cc, cog := ast.AnalyzeSourceComplexity(sourceCode)
+	metrics, err := coreclient.Default().Complexity(context.Background(), "go", sourceCode)
+	if err != nil {
+		return nil, fmt.Errorf("analyzing complexity: %w", err)
+	}
+
+	cc, cog := 1, 0 // a function with no branches has cyclomatic complexity 1
+	for _, m := range metrics {
+		if m.Cyclomatic > cc {
+			cc = m.Cyclomatic
+		}
+		if m.Cognitive > cog {
+			cog = m.Cognitive
+		}
+	}
 	if cc > 10 {
 		return nil, fmt.Errorf("%w: cyclomatic complexity is %d (limit: 10)", ErrComplexityExceeded, cc)
 	}

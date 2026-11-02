@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"Dendrite/pkg/agent"
+	"Dendrite/pkg/coreclient"
 	"Dendrite/pkg/devtool"
 	"Dendrite/pkg/dotenv"
 	"Dendrite/pkg/env"
@@ -421,7 +422,7 @@ func runSomaDiagnose(ctx context.Context, ollamaURL string, out io.Writer) error
 // diagnoseSidecars reports where each Rust sidecar Dendrite requires was found, or how to get it.
 func diagnoseSidecars(out io.Writer) {
 	loc := sidecar.DefaultLocator()
-	for _, name := range []string{planesvc.BinaryName, "dendrite-rag"} {
+	for _, name := range []string{coreclient.BinaryName, planesvc.BinaryName, "dendrite-rag"} {
 		if path, err := loc.Locate(name); err == nil {
 			fmt.Fprintf(out, "  [✓] Sidecar %s: %s\n", name, path)
 		} else {

@@ -11,7 +11,7 @@ The directive is `min_percent = 100`. Every package touched by release 0.1.0 (DE
 | Package | Why it is below 100% | Plan |
 | :--- | :--- | :--- |
 | `cmd/dendrite` | It is the whole CLI (6.4% at baseline). Only the functions changed in this release are held to 100%. | A follow-up ticket covers the package. |
-| `pkg/planesvc/planetest`, `pkg/rag/ragtest` | Test-support packages that start the real Rust sidecars. Other packages exercise them through `TestMain`; the sidecar lookup cannot run hermetically. | None; they are test infrastructure. |
+| `pkg/planesvc/planetest`, `pkg/rag/ragtest`, `pkg/coreclient/coretest` | Test-support packages that start the real Rust sidecars (or, for `coretest`, a scripted stand-in of `dendrite-core`). Other packages exercise them through `TestMain`; the sidecar lookup cannot run hermetically. | None; they are test infrastructure. |
 | `pkg/stacks` (83.3%) | Not touched by the release beyond a test helper; the gap was already there. | Part of the DEN-414 debt. |
 
 ## Duplication
