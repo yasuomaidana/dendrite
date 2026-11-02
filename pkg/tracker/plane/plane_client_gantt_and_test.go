@@ -1,12 +1,12 @@
 package plane
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -118,13 +118,8 @@ func TestClient_UpdateStatus_ZeroMockRejection(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "pkg", "uitest", "driver.go"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"init", "-q"}, {"add", "."}} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = repo
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v %s", args, err, out)
-		}
-	}
+	testkit.Git(t, repo, "init", "-q")
+	testkit.Git(t, repo, "add", ".")
 	t.Chdir(repo)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

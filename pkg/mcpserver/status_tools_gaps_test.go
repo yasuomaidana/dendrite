@@ -9,9 +9,9 @@ import (
 
 func TestTicketUpdateFallsBackToPlane(t *testing.T) {
 	sp := newScriptedPlane(t,
-		apiRule{"GET", "/states/", 200, `{"results":[{"id":"st-todo","name":"To Do","group":"unstarted"},{"id":"st-prog","name":"In Progress","group":"started"},{"id":"st-done","name":"Done","group":"completed"}]}`},
-		apiRule{"GET", "/issues/", 200, `{"results":[{"id":"11111111-2222-3333-4444-555555555555","name":"[DEN-5] work","sequence_id":5,"state":"st-todo"}]}`},
-		apiRule{"PATCH", "/issues/", 200, `{}`},
+		on("GET", "/states/", 200, `{"results":[{"id":"st-todo","name":"To Do","group":"unstarted"},{"id":"st-prog","name":"In Progress","group":"started"},{"id":"st-done","name":"Done","group":"completed"}]}`),
+		on("GET", "/issues/", 200, `{"results":[{"id":"11111111-2222-3333-4444-555555555555","name":"[DEN-5] work","sequence_id":5,"state":"st-todo"}]}`),
+		on("PATCH", "/issues/", 200, `{}`),
 	)
 	srv := toolsWith(t, sp, filepath.Join(t.TempDir(), "missing.md"))
 	text, isErr := callTool(t, srv, "dendrite_ticket_update", `{"ticket_id":"DEN-5","status":"in_progress"}`)

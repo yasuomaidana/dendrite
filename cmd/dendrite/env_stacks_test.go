@@ -13,19 +13,11 @@ func stacksCheckout(t *testing.T) (repo, dest string) {
 	if err := os.Mkdir(filepath.Join(repo, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for name, body := range map[string]string{
+	writeTree(t, repo, map[string]string{
 		"stacks/compose.control.yaml": "services: {}\n",
 		"stacks/litellm_config.yaml":  "model_list: []\n",
 		"stacks/.env.example":         "X=1\n",
-	} {
-		p := filepath.Join(repo, name)
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	})
 	t.Chdir(repo)
 	t.Setenv("DENDRITE_STACKS_DIR", dest)
 	return repo, dest

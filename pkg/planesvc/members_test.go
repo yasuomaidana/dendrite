@@ -119,14 +119,7 @@ func (b *boardPlane) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (b *boardPlane) client(t *testing.T) *plane.Client {
-	t.Helper()
-	c, err := plane.NewClient(plane.Config{BaseURL: b.URL, WorkspaceSlug: "ws", ProjectID: "proj", DirectToken: "k"}, b.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return c
-}
+func (b *boardPlane) client(t *testing.T) *plane.Client { return planeClientAt(t, b.URL, b.Client()) }
 
 func (b *boardPlane) names(ids []string) []string {
 	b.mu.Lock()

@@ -177,7 +177,7 @@ func TestTransitionBlockedNeedsAllThreeHandoffSections(t *testing.T) {
 	if err != nil || res.State != "Blocked" || res.Ticket != "DEN-377" {
 		t.Fatalf("res = %+v, err = %v", res, err)
 	}
-	all := texts(s.board, "DEN-377")
+	all := s.board.Texts("DEN-377")
 	last := all[len(all)-1]
 	for _, want := range []string{"[dendrite:handoff] Completed: lock done", "Challenges: Plane strips <comments>", "Missing: hooks (AC-1)"} {
 		if !strings.Contains(last, want) {

@@ -1,6 +1,7 @@
 package selfupdate
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -26,15 +27,7 @@ func writeExec(t *testing.T, path, script string) string {
 	return path
 }
 
-func writeFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
+func writeFile(t *testing.T, path, content string) { testkit.WriteFile(t, path, content, 0o644) }
 
 func TestInstallSwapsAndKeepsBackup(t *testing.T) {
 	dir := t.TempDir()

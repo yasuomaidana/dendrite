@@ -1,10 +1,10 @@
 package hitl
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -283,13 +283,8 @@ func TestNewDefaultsAndNewFromEnv(t *testing.T) {
 
 	ctx := context.Background()
 	repo := t.TempDir()
-	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "git@github.com:acme/widgets.git"}} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = repo
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
+	testkit.Git(t, repo, "init", "-q")
+	testkit.Git(t, repo, "remote", "add", "origin", "git@github.com:acme/widgets.git")
 	t.Setenv("PLANE_API_KEY", "test-token")
 	s, err := NewFromEnv(ctx, "", repo)
 	if err != nil || s.GitHub.Repo != "acme/widgets" || s.RepoDir != repo {

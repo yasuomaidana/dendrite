@@ -1,30 +1,16 @@
 package agentjobs
 
 import (
+	"Dendrite/pkg/testkit"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
 
-func initGitRepo(t *testing.T, dir, branch string) {
-	t.Helper()
-	cmd := exec.Command("git", "init", "-b", branch)
-	cmd.Dir = dir
-	if err := cmd.Run(); err != nil {
-		cmdInit := exec.Command("git", "init")
-		cmdInit.Dir = dir
-		if err := cmdInit.Run(); err != nil {
-			t.Fatalf("git init failed: %v", err)
-		}
-		cmdCheckout := exec.Command("git", "checkout", "-b", branch)
-		cmdCheckout.Dir = dir
-		_ = cmdCheckout.Run()
-	}
-}
+func initGitRepo(t *testing.T, dir, branch string) { testkit.GitInit(t, dir, branch) }
 
 func TestJobRef_MarshalJSON(t *testing.T) {
 	refZero := JobRef{

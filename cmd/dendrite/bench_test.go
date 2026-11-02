@@ -9,17 +9,13 @@ import (
 )
 
 func TestVelocity_UsageErrors(t *testing.T) {
-	for _, args := range [][]string{
+	expectUsageErrors(t, [][]string{
 		{"velocity", "gateway", "--fault", "meteor"},
 		{"velocity", "inference", "--vus", "0"},
 		{"velocity", "matrix", "--duration", "0s"},
 		{"bench", "stress", "--spends", "0"},
 		{"velocity", "inference", "--duration", "later"},
-	} {
-		if _, code := cliOutput(t, args...); code != ExitUsage {
-			t.Errorf("%v: exit %d, want %d", args, code, ExitUsage)
-		}
-	}
+	})
 }
 
 func TestParseFault(t *testing.T) {

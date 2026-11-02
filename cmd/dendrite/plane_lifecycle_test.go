@@ -1,12 +1,12 @@
 package main
 
 import (
+	"Dendrite/pkg/testkit"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -38,11 +38,8 @@ func newLifecycleCLI(t *testing.T, tickets map[string]string) *lifecycleCLI {
 	newPlaneClient = func() (*plane.Client, error) { return client, nil }
 	t.Cleanup(func() { newPlaneClient = prev })
 	repo := t.TempDir()
-	for _, args := range [][]string{{"init", "-q"}, {"checkout", "-q", "-b", "agent/den-377"}} {
-		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
+	testkit.Git(t, repo, "init", "-q")
+	testkit.Git(t, repo, "checkout", "-q", "-b", "agent/den-377")
 	return &lifecycleCLI{t: t, board: board, repo: repo}
 }
 
@@ -128,7 +125,7 @@ func TestChronosCommentFromFlagAndFile(t *testing.T) {
 	if _, err := c.run("comment", "DEN-377", "--body-file", writeFile(t, "from a file\nsecond line")); err != nil {
 		t.Fatal(err)
 	}
-	got := texts(c.board, "DEN-377")
+	got := c.board.Texts("DEN-377")
 	if len(got) != 2 || !strings.HasPrefix(got[0], "[dendrite:milestone] lock done") || !strings.HasPrefix(got[1], "[dendrite:progress] from a file second line") {
 		t.Errorf("comments = %q", got)
 	}
@@ -138,14 +135,6 @@ func TestChronosCommentFromFlagAndFile(t *testing.T) {
 	if _, err := c.run("comment", "DEN-377", "--kind", "progress"); err == nil {
 		t.Error("a comment with no text is refused")
 	}
-}
-
-func texts(b *planetest.Board, ref string) []string {
-	var out []string
-	for _, c := range b.Comments(ref) {
-		out = append(out, c.Text())
-	}
-	return out
 }
 
 func TestChronosPlanPushAndGet(t *testing.T) {

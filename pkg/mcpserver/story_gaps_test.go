@@ -1,9 +1,9 @@
 package mcpserver
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,16 +24,8 @@ func (timedHarness) BenchmarkVariant(_ context.Context, v *fork.Variant, _ fork.
 func storyRepo(t *testing.T) string {
 	t.Helper()
 	repo, stories := t.TempDir(), filepath.Join(t.TempDir(), "stories")
-	for _, args := range [][]string{
-		{"init", "-q"},
-		{"-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-m", "base"},
-	} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = repo
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
+	testkit.Git(t, repo, "init", "-q")
+	testkit.Git(t, repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-m", "base")
 	old := defaultForkController
 	defaultForkController = fork.NewForkController(repo, stories, fork.NewOSGitExecutor(), timedHarness{}, store.NewStore(filepath.Join(repo, "store"), filepath.Join(repo, "adr")))
 	t.Cleanup(func() { defaultForkController = old })
@@ -65,16 +57,12 @@ func TestStoryToolsReportWhatTheControllerRefuses(t *testing.T) {
 	storyRepo(t)
 	srv := NewServer(ServerConfig{})
 	RegisterDefaultTools(srv, Dependencies{})
-	for _, c := range []struct{ tool, args, want string }{
-		{"dendrite_story_fork", `{"story_id":"s","variants":["only-one"]}`, "at least 2"},
-		{"dendrite_story_fork", `{"story_id":"s","variants":["a","a"]}`, "story fork failed"},
-		{"dendrite_story_benchmark", `{"story_id":"never-forked"}`, "story benchmark failed"},
-		{"dendrite_story_resolve", `{"story_id":"never-forked","winner":"v1"}`, "story resolve failed"},
-	} {
-		if text, isErr := callTool(t, srv, c.tool, c.args); !isErr || !strings.Contains(text, c.want) {
-			t.Errorf("%s %s: %q (error %v), want %q", c.tool, c.args, text, isErr, c.want)
-		}
-	}
+	runToolFailures(t, srv, []toolFailure{
+		{"fork with one variant", "dendrite_story_fork", `{"story_id":"s","variants":["only-one"]}`, nil, "at least 2"},
+		{"fork with a repeated variant", "dendrite_story_fork", `{"story_id":"s","variants":["a","a"]}`, nil, "story fork failed"},
+		{"benchmark of an unknown story", "dendrite_story_benchmark", `{"story_id":"never-forked"}`, nil, "story benchmark failed"},
+		{"resolve of an unknown story", "dendrite_story_resolve", `{"story_id":"never-forked","winner":"v1"}`, nil, "story resolve failed"},
+	})
 }
 
 func TestStoryAbortReportsADirectoryItCannotRemove(t *testing.T) {

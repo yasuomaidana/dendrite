@@ -1,6 +1,7 @@
 package linear
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
 	"errors"
 	"net/http"
@@ -13,11 +14,9 @@ import (
 func linearAt(t *testing.T, endpoint string) *Client {
 	t.Helper()
 	t.Setenv("LINEAR_FAILURE_KEY", "lin_secret")
-	c, err := NewClient(Config{APITokenEnv: "LINEAR_FAILURE_KEY", Endpoint: endpoint}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return c
+	return testkit.Build(t, func() (*Client, error) {
+		return NewClient(Config{APITokenEnv: "LINEAR_FAILURE_KEY", Endpoint: endpoint}, nil)
+	})
 }
 
 func answer(body string) *httptest.Server {

@@ -1,6 +1,7 @@
 package planesvc
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
 	"encoding/json"
 	"errors"
@@ -76,14 +77,15 @@ func newLocalPlane(t *testing.T) *localPlane {
 	return f
 }
 
-func (f *localPlane) client(t *testing.T) *plane.Client {
+// planeClientAt is a Plane client for a test server.
+func planeClientAt(t *testing.T, url string, hc *http.Client) *plane.Client {
 	t.Helper()
-	c, err := plane.NewClient(plane.Config{BaseURL: f.URL, WorkspaceSlug: "ws", ProjectID: "proj", DirectToken: "k"}, f.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return c
+	return testkit.Build(t, func() (*plane.Client, error) {
+		return plane.NewClient(plane.Config{BaseURL: url, WorkspaceSlug: "ws", ProjectID: "proj", DirectToken: "k"}, hc)
+	})
 }
+
+func (f *localPlane) client(t *testing.T) *plane.Client { return planeClientAt(t, f.URL, f.Client()) }
 
 func absentService() *Service {
 	return New(sidecar.Locator{LookPath: func(string) (string, error) { return "", os.ErrNotExist }})

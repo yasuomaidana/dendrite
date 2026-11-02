@@ -47,7 +47,7 @@ func (r *finishRig) finish() (FinishResult, error) {
 }
 
 func (r *finishRig) lastComment() string {
-	c := texts(r.board, "DEN-377")
+	c := r.board.Texts("DEN-377")
 	return c[len(c)-1]
 }
 
@@ -132,7 +132,7 @@ func TestFinishBlocksWithAHandoffWhenAStageFails(t *testing.T) {
 				t.Fatalf("%+v, %v, Plane %q", res, err, r.board.State("DEN-377"))
 			}
 			handoff := ""
-			for _, c := range texts(r.board, "DEN-377") {
+			for _, c := range r.board.Texts("DEN-377") {
 				if strings.HasPrefix(c, "[dendrite:handoff]") {
 					handoff = c
 				}

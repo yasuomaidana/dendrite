@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -12,7 +11,7 @@ import (
 // statesPlane serves one project's states: GET lists them, POST creates one with the wrong
 // sequence (as Plane does), PATCH answers patchStatus when it is set.
 type statesPlane struct {
-	*httptest.Server
+	*scriptedPlane
 	existing    []PlaneState
 	postStatus  int
 	patchStatus int
@@ -21,8 +20,8 @@ type statesPlane struct {
 
 func newStatesPlane(t *testing.T, existing ...PlaneState) *statesPlane {
 	t.Helper()
-	sp := &statesPlane{existing: existing}
-	sp.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	sp := &statesPlane{scriptedPlane: newScriptedPlane(t), existing: existing}
+	sp.HandleFunc("", "", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			_ = json.NewEncoder(w).Encode(sp.existing)
@@ -40,8 +39,7 @@ func newStatesPlane(t *testing.T, existing ...PlaneState) *statesPlane {
 			}
 			_, _ = w.Write([]byte(`{}`))
 		}
-	}))
-	t.Cleanup(sp.Close)
+	})
 	return sp
 }
 

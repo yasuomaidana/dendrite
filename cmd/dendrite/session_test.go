@@ -1,11 +1,11 @@
 package main
 
 import (
+	"Dendrite/pkg/testkit"
 	"bytes"
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,21 +14,7 @@ import (
 	"Dendrite/pkg/agentjobs"
 )
 
-func initTestGitRepo(t *testing.T, dir, branch string) {
-	t.Helper()
-	cmd := exec.Command("git", "init", "-b", branch)
-	cmd.Dir = dir
-	if err := cmd.Run(); err != nil {
-		cmdInit := exec.Command("git", "init")
-		cmdInit.Dir = dir
-		if err := cmdInit.Run(); err != nil {
-			t.Fatalf("git init failed: %v", err)
-		}
-		cmdCheckout := exec.Command("git", "checkout", "-b", branch)
-		cmdCheckout.Dir = dir
-		_ = cmdCheckout.Run()
-	}
-}
+func initTestGitRepo(t *testing.T, dir, branch string) { testkit.GitInit(t, dir, branch) }
 
 func TestSessionCommand_DispatchAndHelp(t *testing.T) {
 	ctx := context.Background()

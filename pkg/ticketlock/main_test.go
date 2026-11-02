@@ -1,8 +1,7 @@
 package ticketlock
 
 import (
-	"os"
-	"path/filepath"
+	"Dendrite/pkg/testkit"
 	"testing"
 
 	"Dendrite/pkg/planesvc/planetest"
@@ -12,11 +11,4 @@ import (
 func TestMain(m *testing.M) { planetest.Main(m) }
 
 // writeRegularFile makes a regular file; a path below it cannot be created, which breaks any store placed there.
-func writeRegularFile(t *testing.T) string {
-	t.Helper()
-	p := filepath.Join(t.TempDir(), "file")
-	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
+func writeRegularFile(t *testing.T) string { return testkit.RegularFile(t) }

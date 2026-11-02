@@ -76,15 +76,21 @@ func move(t *testing.T, from, to string) {
 	}
 }
 
-func rowFor(t *testing.T, rows []HealRow, alias string) HealRow {
+// rowWhere returns the first row for which match is true, stopping the test when there is none.
+func rowWhere[R any](t *testing.T, rows []R, what string, match func(R) bool) R {
 	t.Helper()
 	for _, r := range rows {
-		if r.Alias == alias {
+		if match(r) {
 			return r
 		}
 	}
-	t.Fatalf("no row for %s in %+v", alias, rows)
-	return HealRow{}
+	t.Fatalf("no row for %s in %+v", what, rows)
+	var zero R
+	return zero
+}
+
+func rowFor(t *testing.T, rows []HealRow, alias string) HealRow {
+	return rowWhere(t, rows, alias, func(r HealRow) bool { return r.Alias == alias })
 }
 
 func TestHealAppliesMovedMemberEverywhere(t *testing.T) {

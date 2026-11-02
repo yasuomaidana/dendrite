@@ -1,6 +1,7 @@
 package agentjobs
 
 import (
+	"Dendrite/pkg/testkit"
 	"encoding/json"
 	"errors"
 	"os"
@@ -99,14 +100,7 @@ func TestBusyCountsEveryStateTheWatcherActsOn(t *testing.T) {
 	}
 }
 
-func writeRegularFile(t *testing.T) string {
-	t.Helper()
-	p := filepath.Join(t.TempDir(), "file")
-	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
+func writeRegularFile(t *testing.T) string { return testkit.RegularFile(t) }
 
 func waitForFile(t *testing.T, path string) string {
 	t.Helper()

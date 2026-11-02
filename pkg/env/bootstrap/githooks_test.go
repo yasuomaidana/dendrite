@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"Dendrite/pkg/testkit"
 	"errors"
 	"os"
 	"os/exec"
@@ -16,16 +17,7 @@ func gitRepoAt(t *testing.T) string {
 	return root
 }
 
-func gitRun(t *testing.T, root string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-	return strings.TrimSpace(string(out))
-}
+func gitRun(t *testing.T, root string, args ...string) string { return testkit.Git(t, root, args...) }
 
 func TestMergeManagedBlock(t *testing.T) {
 	fresh, changed := mergeManagedBlock("")

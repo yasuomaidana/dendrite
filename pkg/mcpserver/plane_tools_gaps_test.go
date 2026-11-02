@@ -14,11 +14,11 @@ func TestPlaneSyncToolsReportEachFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	healthy := []apiRule{
-		{"GET", "/states/", 200, `{"results":[]}`},
-		{"GET", "/modules/", 200, `{"results":[]}`},
-		{"GET", "/issues/", 200, `{"results":[]}`},
-		{"GET", "/projects/", 200, `{"results":[]}`},
-		{"GET", "/pages/", 200, `[]`},
+		on("GET", "/states/", 200, `{"results":[]}`),
+		on("GET", "/modules/", 200, `{"results":[]}`),
+		on("GET", "/issues/", 200, `{"results":[]}`),
+		on("GET", "/projects/", 200, `{"results":[]}`),
+		on("GET", "/pages/", 200, `[]`),
 	}
 	with := func(first apiRule) []apiRule { return append([]apiRule{first}, healthy...) }
 
@@ -29,11 +29,11 @@ func TestPlaneSyncToolsReportEachFailure(t *testing.T) {
 		args  string
 		want  string
 	}{
-		{"replicate: Plane cannot be read", with(apiRule{"GET", "/issues/", 500, ""}), "dendrite_plane_replicate", `{"dry_run":true}`, "replication failed"},
+		{"replicate: Plane cannot be read", with(on("GET", "/issues/", 500, "")), "dendrite_plane_replicate", `{"dry_run":true}`, "replication failed"},
 		{"replicate: the file cannot be written", healthy, "dendrite_plane_replicate", `{"file":"` + filepath.Join(dir, "no", "such", "dir", "out.md") + `"}`, "failed to write"},
 		{"push: the ledger is missing", healthy, "dendrite_plane_push_status", `{"file":"` + filepath.Join(dir, "missing.md") + `"}`, "failed to read"},
-		{"push: Plane refuses the states", with(apiRule{"GET", "/states/", 500, ""}), "dendrite_plane_push_status", `{"file":"` + ledger + `"}`, "push to plane failed"},
-		{"docs: Plane cannot list pages", with(apiRule{"GET", "/pages/", 500, ""}), "dendrite_plane_doc_sync", `{"direction":"pull","dir":"` + dir + `"}`, "documentation sync failed"},
+		{"push: Plane refuses the states", with(on("GET", "/states/", 500, "")), "dendrite_plane_push_status", `{"file":"` + ledger + `"}`, "push to plane failed"},
+		{"docs: Plane cannot list pages", with(on("GET", "/pages/", 500, "")), "dendrite_plane_doc_sync", `{"direction":"pull","dir":"` + dir + `"}`, "documentation sync failed"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/pkg/testkit"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -48,13 +49,7 @@ func TestParseUpdateArgs(t *testing.T) {
 func writeTree(t *testing.T, root string, files map[string]string) {
 	t.Helper()
 	for name, content := range files {
-		p := filepath.Join(root, name)
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		testkit.WriteFile(t, filepath.Join(root, name), content, 0o644)
 	}
 }
 

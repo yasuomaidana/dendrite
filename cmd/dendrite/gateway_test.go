@@ -47,17 +47,13 @@ func TestCleft_Render(t *testing.T) {
 }
 
 func TestCleft_UsageErrors(t *testing.T) {
-	for _, args := range [][]string{
+	expectUsageErrors(t, [][]string{
 		{"cleft", "local-hybrid"},
 		{"cleft", "zero-cost"},
 		{"cleft", "schedule", "--interval", "0s"},
 		{"cleft", "schedule", "--interval", "soon"},
 		{"cleft", "update", "extra"},
-	} {
-		if _, code := cliOutput(t, args...); code != ExitUsage {
-			t.Errorf("%v: exit %d, want %d", args, code, ExitUsage)
-		}
-	}
+	})
 }
 
 func TestCleft_UpdateDryRun(t *testing.T) {
@@ -132,5 +128,15 @@ func TestParseNodeTargets(t *testing.T) {
 	}
 	if def := parseNodeTargets(" , "); len(def) != 1 || def[0].ID != "local" || !def[0].IsLocal {
 		t.Fatalf("empty input should default to localhost: %+v", def)
+	}
+}
+
+// expectUsageErrors runs each command line and requires the usage exit code.
+func expectUsageErrors(t *testing.T, cases [][]string) {
+	t.Helper()
+	for _, args := range cases {
+		if _, code := cliOutput(t, args...); code != ExitUsage {
+			t.Errorf("%v: exit %d, want %d", args, code, ExitUsage)
+		}
 	}
 }

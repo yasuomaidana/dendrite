@@ -355,3 +355,15 @@ func streamChatCompletions(ctx context.Context, client *http.Client, req Complet
 	}
 	return streamSSEChunks(resp, openAIChunk), nil
 }
+
+// streamSpec describes one engine's streaming endpoint: where to post, what to send and how to read
+// a data line.
+type streamSpec[T any] struct {
+	path    string
+	payload func(CompletionRequest) map[string]interface{}
+	decode  func(T) (chunk StreamChunk, done bool)
+}
+
+func (sp streamSpec[T]) run(ctx context.Context, client *http.Client, endpoint string, req CompletionRequest) (<-chan StreamChunk, error) {
+	return streamPrompt(ctx, client, req, endpoint, sp.path, sp.payload(req), sp.decode)
+}

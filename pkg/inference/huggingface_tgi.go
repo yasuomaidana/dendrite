@@ -116,22 +116,27 @@ func (e *HuggingFaceTGIEngine) Generate(ctx context.Context, req CompletionReque
 	}, nil
 }
 
-func (e *HuggingFaceTGIEngine) Stream(ctx context.Context, req CompletionRequest) (<-chan StreamChunk, error) {
-	payload := map[string]interface{}{
-		"inputs": req.Prompt,
-		"parameters": map[string]interface{}{
-			"max_new_tokens": 512,
-		},
-	}
-	return streamPrompt(ctx, e.httpClient, req, e.cfg.Endpoint, "/generate_stream", payload, func(c struct {
-		Token struct {
-			Text string `json:"text"`
-		} `json:"token"`
-		GeneratedText *string `json:"generated_text"`
-	}) (StreamChunk, bool) {
+// tgiChunk is one data line of a TGI stream.
+type tgiChunk struct {
+	Token struct {
+		Text string `json:"text"`
+	} `json:"token"`
+	GeneratedText *string `json:"generated_text"`
+}
+
+var tgiStream = streamSpec[tgiChunk]{
+	path: "/generate_stream",
+	payload: func(req CompletionRequest) map[string]interface{} {
+		return map[string]interface{}{"inputs": req.Prompt, "parameters": map[string]interface{}{"max_new_tokens": 512}}
+	},
+	decode: func(c tgiChunk) (StreamChunk, bool) {
 		done := c.GeneratedText != nil
 		return StreamChunk{Text: c.Token.Text, Done: done}, done
-	})
+	},
+}
+
+func (e *HuggingFaceTGIEngine) Stream(ctx context.Context, req CompletionRequest) (<-chan StreamChunk, error) {
+	return tgiStream.run(ctx, e.httpClient, e.cfg.Endpoint, req)
 }
 
 func (e *HuggingFaceTGIEngine) Health(ctx context.Context) EngineHealth {

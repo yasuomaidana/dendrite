@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
 	"encoding/json"
 	"os"
@@ -74,15 +75,7 @@ func TestPenpotSyncAndModelMigrationDryRuns(t *testing.T) {
 	}
 }
 
-func gitIn(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	full := append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)
-	cmd := exec.Command("git", full...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v in %s: %v\n%s", args, dir, err, out)
-	}
-}
+func gitIn(t *testing.T, dir string, args ...string) { testkit.Git(t, dir, args...) }
 
 func TestRemoteSyncReportsAConflictingRebase(t *testing.T) {
 	root := t.TempDir()

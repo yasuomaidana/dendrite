@@ -1,10 +1,10 @@
 package ticketlock
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,16 +13,7 @@ import (
 	"Dendrite/pkg/tracker/plane"
 )
 
-func gitIn(t *testing.T, repo string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-	return strings.TrimSpace(string(out))
-}
+func gitIn(t *testing.T, repo string, args ...string) string { return testkit.Git(t, repo, args...) }
 
 // hookRepo is a repository with a develop branch and a working branch agent/den-377.
 func hookRepo(t *testing.T) string {
@@ -279,7 +270,7 @@ func TestAutoHandoffBlocksATicketLeftInProgress(t *testing.T) {
 	if labels := strings.Join(s.board.LabelNames("DEN-377"), ","); !strings.Contains(labels, "needs-input") {
 		t.Errorf("labels = %s", labels)
 	}
-	all := texts(s.board, "DEN-377")
+	all := s.board.Texts("DEN-377")
 	handoff := all[len(all)-1]
 	for _, want := range []string{"[dendrite:handoff] Completed:", "Commits on agent/den-377 not on develop:", "first slice", "Uncommitted changes:", "work.go", "Plan steps done:", "- [x] design", "written automatically", "Plan steps left:", "- [ ] build", "- [ ] test"} {
 		if !strings.Contains(handoff, want) {
@@ -300,7 +291,7 @@ func TestAutoHandoffWithoutAPlanOrAnyWork(t *testing.T) {
 	if _, err := AutoHandoff(ctx, s.Lifecycle, s.boardFunc(), HookInput{Cwd: s.Dir}); err != nil {
 		t.Fatal(err)
 	}
-	all := texts(s.board, "DEN-377")
+	all := s.board.Texts("DEN-377")
 	last := all[len(all)-1]
 	if !strings.Contains(last, "Nothing committed or changed on the branch yet.") || !strings.Contains(last, "No plan was stored: compare the work with the ticket's acceptance criteria (`dendrite chronos context DEN-377`)") {
 		t.Errorf("handoff:\n%s", last)

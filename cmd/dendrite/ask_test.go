@@ -12,7 +12,7 @@ import (
 )
 
 func TestAsk_UsageErrors(t *testing.T) {
-	for _, args := range [][]string{
+	expectUsageErrors(t, [][]string{
 		{"ask"},
 		{"ask", "q", "--tier", "galactic"},
 		{"ask", "q", "--top-k", "-1"},
@@ -21,11 +21,7 @@ func TestAsk_UsageErrors(t *testing.T) {
 		{"ask", "q", "-d", "--corpus", "docs"},
 		{"ask", "q", "--docs-share", "1.5"},
 		{"ask", "q", "--corpus", "code", "--docs-share", "0.5"},
-	} {
-		if _, code := cliOutput(t, args...); code != ExitUsage {
-			t.Errorf("%v: exit %d, want %d", args, code, ExitUsage)
-		}
-	}
+	})
 }
 
 func TestAsk_CentralServerUnreachable(t *testing.T) {

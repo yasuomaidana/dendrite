@@ -1,9 +1,9 @@
 package mcpserver
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
 	"encoding/json"
-	"os/exec"
 	"strings"
 	"testing"
 
@@ -53,11 +53,8 @@ func newLifecycleRig(t *testing.T, tickets map[string]string) *lifecycleRig {
 		t.Fatal(err)
 	}
 	repo := t.TempDir()
-	for _, args := range [][]string{{"init", "-q"}, {"checkout", "-q", "-b", "agent/den-377"}} {
-		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
+	testkit.Git(t, repo, "init", "-q")
+	testkit.Git(t, repo, "checkout", "-q", "-b", "agent/den-377")
 	s := NewServer(ServerConfig{})
 	registerTicketLifecycleTools(s, Dependencies{PlaneClient: client})
 	return &lifecycleRig{t: t, s: s, board: board, repo: repo}

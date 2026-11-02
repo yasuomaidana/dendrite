@@ -1,6 +1,7 @@
 package devtool
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -191,11 +192,9 @@ func TestGenerateLocalCommitMessage_CannedResponses(t *testing.T) {
 func TestExecuteCommit_SpecificFilesLeaveOtherStagedWorkAlone(t *testing.T) {
 	t.Setenv("DENDRITE_COMMIT_PUSH", "false")
 	dir := t.TempDir()
-	for _, args := range [][]string{{"init", "-q"}, {"config", "user.name", "Test"}, {"config", "user.email", "test@example.com"}} {
-		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
+	testkit.Git(t, dir, "init", "-q")
+	testkit.Git(t, dir, "config", "user.name", "Test")
+	testkit.Git(t, dir, "config", "user.email", "test@example.com")
 	_ = os.WriteFile(filepath.Join(dir, "base.txt"), []byte("base"), 0644)
 	_ = exec.Command("git", "-C", dir, "add", "base.txt").Run()
 	_ = exec.Command("git", "-C", dir, "commit", "-q", "-m", "base").Run()

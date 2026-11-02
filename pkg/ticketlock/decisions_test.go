@@ -132,7 +132,7 @@ func TestSaveDecisionsOnTheClaimedTicketOrLocally(t *testing.T) {
 	if err != nil || res.Ticket != "DEN-377" {
 		t.Fatal(err)
 	}
-	got := texts(s.board, "DEN-377")
+	got := s.board.Texts("DEN-377")
 	last := got[len(got)-1]
 	if !strings.HasPrefix(last, "[dendrite:decision] Decisions made before this ticket was claimed:") || !strings.Contains(last, "Q: Which model? A: Keep") {
 		t.Fatalf("the claim must post what was decided before it: %q", last)
@@ -145,7 +145,7 @@ func TestSaveDecisionsOnTheClaimedTicketOrLocally(t *testing.T) {
 	if err != nil || msg != "2 decision(s) recorded on DEN-377" {
 		t.Fatalf("claimed: %q, %v", msg, err)
 	}
-	if got := texts(s.board, "DEN-377"); !strings.HasPrefix(got[len(got)-1], "[dendrite:decision] Q: Which model?") {
+	if got := s.board.Texts("DEN-377"); !strings.HasPrefix(got[len(got)-1], "[dendrite:decision] Q: Which model?") {
 		t.Errorf("comment = %q", got[len(got)-1])
 	}
 

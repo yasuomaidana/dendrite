@@ -102,7 +102,7 @@ func TestCommentClaimed(t *testing.T) {
 	if ticket, err := s.CommentClaimed(ctx, "progress", "nothing claimed"); ticket != "" || err != nil {
 		t.Fatalf("no claim posts nothing: %q, %v", ticket, err)
 	}
-	if got := texts(s.board, "DEN-377"); len(got) != 0 {
+	if got := s.board.Texts("DEN-377"); len(got) != 0 {
 		t.Fatalf("comments = %q", got)
 	}
 	if _, err := s.Claim(ctx, "DEN-377", ClaimOptions{}); err != nil {
@@ -112,7 +112,7 @@ func TestCommentClaimed(t *testing.T) {
 	if err != nil || ticket != "DEN-377" {
 		t.Fatalf("posted to %q, %v", ticket, err)
 	}
-	got := texts(s.board, "DEN-377")
+	got := s.board.Texts("DEN-377")
 	if len(got) != 2 || !strings.HasPrefix(got[1], "[dendrite:progress] did a thing (abc1234)") {
 		t.Errorf("comments = %q", got)
 	}

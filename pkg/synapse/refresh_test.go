@@ -40,14 +40,7 @@ func gitWorktreeAdd(t *testing.T, dir, wtDir string) {
 }
 
 func refreshRowFor(t *testing.T, rows []RefreshRow, id string) RefreshRow {
-	t.Helper()
-	for _, r := range rows {
-		if r.ID == id {
-			return r
-		}
-	}
-	t.Fatalf("no refresh row for %s in %+v", id, rows)
-	return RefreshRow{}
+	return rowWhere(t, rows, id, func(r RefreshRow) bool { return r.ID == id })
 }
 
 func TestRefreshRelocatedByID(t *testing.T) {

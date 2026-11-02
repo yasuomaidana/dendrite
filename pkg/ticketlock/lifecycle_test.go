@@ -46,14 +46,6 @@ func newSession(t *testing.T, tickets map[string]string) *session {
 	return s
 }
 
-func texts(b *planetest.Board, ref string) []string {
-	var out []string
-	for _, c := range b.Comments(ref) {
-		out = append(out, c.Text())
-	}
-	return out
-}
-
 func TestClaimMovesAssignsLabelsRecordsAndGreets(t *testing.T) {
 	s := newSession(t, map[string]string{"DEN-377": "To Do"})
 	res, err := s.Claim(context.Background(), "DEN-377", ClaimOptions{})
@@ -76,7 +68,7 @@ func TestClaimMovesAssignsLabelsRecordsAndGreets(t *testing.T) {
 	if err != nil || c.Ticket != "DEN-377" || c.SessionID != res.SessionID || c.PlaneState != tracker.StatusInProgress || !c.CheckedAt.Equal(t0) {
 		t.Errorf("claim = %+v, err = %v", c, err)
 	}
-	got := texts(s.board, "DEN-377")
+	got := s.board.Texts("DEN-377")
 	if len(got) != 1 || !strings.HasPrefix(got[0], "[dendrite:claim] Claimed by claude") || !strings.Contains(got[0], "branch agent/den-377") || !strings.Contains(got[0], "commit abc1234") {
 		t.Errorf("comments = %q", got)
 	}

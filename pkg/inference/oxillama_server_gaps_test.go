@@ -1,8 +1,8 @@
 package inference
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,15 +15,7 @@ import (
 // withoutFlush hides the Flush method of a ResponseWriter.
 type withoutFlush struct{ http.ResponseWriter }
 
-func freePort(t *testing.T) int {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port
-}
+func freePort(t *testing.T) int { return testkit.FreePort(t) }
 
 func TestOxiLLaMaServerDefaultsAndLifecycle(t *testing.T) {
 	home := t.TempDir()

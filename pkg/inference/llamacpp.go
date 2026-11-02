@@ -101,17 +101,22 @@ func (e *LlamaCppEngine) Generate(ctx context.Context, req CompletionRequest) (*
 	}, nil
 }
 
+// llamaChunk is one data line of a llama.cpp stream.
+type llamaChunk struct {
+	Content string `json:"content"`
+	Stop    bool   `json:"stop"`
+}
+
+var llamaStream = streamSpec[llamaChunk]{
+	path: "/completion",
+	payload: func(req CompletionRequest) map[string]interface{} {
+		return map[string]interface{}{"prompt": req.Prompt, "stream": true}
+	},
+	decode: func(c llamaChunk) (StreamChunk, bool) { return StreamChunk{Text: c.Content, Done: c.Stop}, c.Stop },
+}
+
 func (e *LlamaCppEngine) Stream(ctx context.Context, req CompletionRequest) (<-chan StreamChunk, error) {
-	payload := map[string]interface{}{
-		"prompt": req.Prompt,
-		"stream": true,
-	}
-	return streamPrompt(ctx, e.httpClient, req, e.cfg.Endpoint, "/completion", payload, func(c struct {
-		Content string `json:"content"`
-		Stop    bool   `json:"stop"`
-	}) (StreamChunk, bool) {
-		return StreamChunk{Text: c.Content, Done: c.Stop}, c.Stop
-	})
+	return llamaStream.run(ctx, e.httpClient, e.cfg.Endpoint, req)
 }
 
 func (e *LlamaCppEngine) Health(ctx context.Context) EngineHealth {

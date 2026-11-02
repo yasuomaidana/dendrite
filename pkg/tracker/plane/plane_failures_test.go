@@ -1,6 +1,7 @@
 package plane
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,11 +18,9 @@ const issueUUID = "11111111-2222-3333-4444-555555555555"
 
 func planeAt(t *testing.T, baseURL string) *Client {
 	t.Helper()
-	c, err := NewClient(Config{BaseURL: baseURL, WorkspaceSlug: "ws", ProjectID: "proj", DirectToken: "token"}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return c
+	return testkit.Build(t, func() (*Client, error) {
+		return NewClient(Config{BaseURL: baseURL, WorkspaceSlug: "ws", ProjectID: "proj", DirectToken: "token"}, nil)
+	})
 }
 
 func closedPlane() string {

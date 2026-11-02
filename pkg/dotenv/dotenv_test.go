@@ -1,20 +1,13 @@
 package dotenv
 
 import (
+	"Dendrite/pkg/testkit"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
-func write(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
+func write(t *testing.T, path, content string) { testkit.WriteFile(t, path, content, 0o600) }
 
 // setup makes a global .env and a git project; it returns the project's directory.
 func setup(t *testing.T, global, project string) string {

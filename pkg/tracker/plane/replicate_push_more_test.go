@@ -1,9 +1,9 @@
 package plane
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -48,7 +48,7 @@ func TestTicketScoreAndPriority(t *testing.T) {
 
 func TestPushStatusReportsEveryFailure(t *testing.T) {
 	ctx := context.Background()
-	ok := []rule{{"GET", "/states/", 200, statesJSON}, {"GET", "/modules/", 200, `[]`}, {"GET", "/issues/", 200, `[]`}}
+	ok := []rule{on("GET", "/states/", 200, statesJSON), on("GET", "/modules/", 200, `[]`), on("GET", "/issues/", 200, `[]`)}
 	with := func(first rule) []rule { return append([]rule{first}, ok...) }
 
 	for _, c := range []struct {
@@ -58,14 +58,14 @@ func TestPushStatusReportsEveryFailure(t *testing.T) {
 		want  string
 	}{
 		{"markdown too long to scan", strings.Repeat("x", 70*1024), ok, "failed to parse dev status"},
-		{"states", devStatusFixture, with(rule{"GET", "/states/", 500, ""}), "failed to fetch plane states"},
-		{"modules", devStatusFixture, with(rule{"GET", "/modules/", 500, ""}), "failed to list plane modules"},
-		{"issues", devStatusFixture, with(rule{"GET", "/issues/", 500, ""}), "failed to list plane issues"},
-		{"create", devStatusFixture, with(rule{"POST", "/issues/", 500, ""}), "failed to create issue DEN-010"},
+		{"states", devStatusFixture, with(on("GET", "/states/", 500, "")), "failed to fetch plane states"},
+		{"modules", devStatusFixture, with(on("GET", "/modules/", 500, "")), "failed to list plane modules"},
+		{"issues", devStatusFixture, with(on("GET", "/issues/", 500, "")), "failed to list plane issues"},
+		{"create", devStatusFixture, with(on("POST", "/issues/", 500, "")), "failed to create issue DEN-010"},
 		{"update", devStatusFixture, []rule{
-			{"PATCH", "/issues/", 500, ""},
-			{"GET", "/issues/", 200, `[{"id":"u1","name":"[DEN-010] Base work"}]`},
-			{"GET", "/states/", 200, statesJSON}, {"GET", "/modules/", 200, `[]`}}, "failed to update issue DEN-010"},
+			on("PATCH", "/issues/", 500, ""),
+			on("GET", "/issues/", 200, `[{"id":"u1","name":"[DEN-010] Base work"}]`),
+			on("GET", "/states/", 200, statesJSON), on("GET", "/modules/", 200, `[]`)}, "failed to update issue DEN-010"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			sp := newScriptedPlane(t, c.rules...)
@@ -86,13 +86,8 @@ func gitRepoWithMock(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(dir, "pkg", "risky", "risky.go"), []byte("package risky\n\ntype "+"Mo"+"ck struct{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"init", "-q"}, {"add", "."}} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
+	testkit.Git(t, dir, "init", "-q")
+	testkit.Git(t, dir, "add", ".")
 	return dir
 }
 
@@ -114,12 +109,12 @@ func TestPushStatusRoutesEveryTicketKind(t *testing.T) {
 - [ ] **DEN-050**: Later work
 `
 	sp := newScriptedPlane(t,
-		rule{"GET", "/states/", 200, `[{"id":"s-todo","name":"To Do","group":"unstarted"},{"id":"s-done","name":"Done","group":"completed"}]`},
-		rule{"GET", "/modules/", 200, `[{"id":"m1","name":"Milestone 1: Base"}]`},
-		rule{"GET", "/issues/", 200, `[{"id":"u1","name":"[DEN-020] Review work"}]`},
-		rule{"GET", "/pages/", 200, `[{"id":"pg","name":"Development Status"}]`},
-		rule{"POST", "/issues/", 201, `{"id":"new-issue"}`},
-		rule{"POST", "/modules/", 201, `{"id":"m2"}`},
+		on("GET", "/states/", 200, `[{"id":"s-todo","name":"To Do","group":"unstarted"},{"id":"s-done","name":"Done","group":"completed"}]`),
+		on("GET", "/modules/", 200, `[{"id":"m1","name":"Milestone 1: Base"}]`),
+		on("GET", "/issues/", 200, `[{"id":"u1","name":"[DEN-020] Review work"}]`),
+		on("GET", "/pages/", 200, `[{"id":"pg","name":"Development Status"}]`),
+		on("POST", "/issues/", 201, `{"id":"new-issue"}`),
+		on("POST", "/modules/", 201, `{"id":"m2"}`),
 	)
 	report, err := PushStatusToPlaneIn(context.Background(), planeAt(t, sp.URL), md, gitRepoWithMock(t))
 	if err != nil {
@@ -132,30 +127,30 @@ func TestPushStatusRoutesEveryTicketKind(t *testing.T) {
 	if report.DoneTickets != 0 || report.ToVerifyTickets != 1 || report.BacklogTickets != 1 || report.InProgressTickets != 0 || report.TodoTickets != 3 {
 		t.Errorf("counts = %+v", report)
 	}
-	if sp.called("PATCH /api/v1/workspaces/ws/projects/proj/modules/m1") != 1 {
+	if sp.Called("PATCH /api/v1/workspaces/ws/projects/proj/modules/m1") != 1 {
 		t.Errorf("the existing module gets its dates: %v", sp.Calls)
 	}
-	if sp.called("POST /api/v1/workspaces/ws/projects/proj/modules/") != 1 {
+	if sp.Called("POST /api/v1/workspaces/ws/projects/proj/modules/") != 1 {
 		t.Errorf("the new module is created: %v", sp.Calls)
 	}
-	if sp.called("PATCH /api/workspaces/ws/projects/proj/pages/pg") != 1 {
+	if sp.Called("PATCH /api/workspaces/ws/projects/proj/pages/pg") != 1 {
 		t.Errorf("the existing status page is updated: %v", sp.Calls)
 	}
 }
 
 func TestPushStatusCreatesTheStatusPageWhenMissing(t *testing.T) {
 	sp := newScriptedPlane(t,
-		rule{"GET", "/states/", 200, statesJSON},
-		rule{"GET", "/modules/", 200, `[]`},
-		rule{"GET", "/issues/", 200, `[]`},
-		rule{"GET", "/pages/", 200, `[{"id":"other","name":"Unrelated"}]`},
-		rule{"POST", "/issues/", 201, `{"id":"n"}`},
-		rule{"POST", "/modules/", 500, ``},
+		on("GET", "/states/", 200, statesJSON),
+		on("GET", "/modules/", 200, `[]`),
+		on("GET", "/issues/", 200, `[]`),
+		on("GET", "/pages/", 200, `[{"id":"other","name":"Unrelated"}]`),
+		on("POST", "/issues/", 201, `{"id":"n"}`),
+		on("POST", "/modules/", 500, ``),
 	)
 	if _, err := PushStatusToPlaneIn(context.Background(), planeAt(t, sp.URL), "### Milestone 1: A\n- [ ] **DEN-1**: x\n", t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
-	if sp.called("POST /api/workspaces/ws/projects/proj/pages/") != 1 {
+	if sp.Called("POST /api/workspaces/ws/projects/proj/pages/") != 1 {
 		t.Errorf("a missing status page is created: %v", sp.Calls)
 	}
 }

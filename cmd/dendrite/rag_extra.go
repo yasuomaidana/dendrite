@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -10,89 +11,87 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newRagSymbolsCmd() *cobra.Command {
+// ragLeaf builds a rag subcommand over one project: call asks the sidecar and show prints the answer
+// (as JSON with --json).
+func ragLeaf[R any](use, short string, args cobra.PositionalArgs, flags func(*cobra.Command),
+	call func(ctx context.Context, project string, args []string) (R, error),
+	show func(out io.Writer, result R, args []string)) *cobra.Command {
 	var project string
-	var refs bool
 	cmd := &cobra.Command{
-		Use:   "symbols <name>",
-		Short: "Find definitions or references of a symbol name",
-		Args:  exactArgs(1),
+		Use:   use,
+		Short: short,
+		Args:  args,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			chunks, err := rag.NewRetriever().Symbols(cmd.Context(), project, args[0], refs)
+			result, err := call(cmd.Context(), project, args)
 			if err != nil {
 				return err
 			}
-			return printResult(cmd, chunks, func(out io.Writer) {
-				action := "Definitions"
-				if refs {
-					action = "References"
-				}
-				fmt.Fprintf(out, "[✓] %s for %q (%d chunks):\n", action, args[0], len(chunks))
-				for i, c := range chunks {
-					fmt.Fprintf(out, "%2d. %s:%d-%d\n", i+1, c.FilePath, c.LineStart, c.LineEnd)
-				}
-			})
+			return printResult(cmd, result, func(out io.Writer) { show(out, result, args) })
 		},
 	}
 	addProjectFlag(cmd, &project, ".", "Project directory")
-	cmd.Flags().BoolVar(&refs, "refs", false, "Find callers and users instead of definitions")
+	if flags != nil {
+		flags(cmd)
+	}
 	return cmd
+}
+
+func newRagSymbolsCmd() *cobra.Command {
+	var refs bool
+	return ragLeaf("symbols <name>", "Find definitions or references of a symbol name", exactArgs(1),
+		func(c *cobra.Command) {
+			c.Flags().BoolVar(&refs, "refs", false, "Find callers and users instead of definitions")
+		},
+		func(ctx context.Context, project string, args []string) ([]rag.Chunk, error) {
+			return rag.NewRetriever().Symbols(ctx, project, args[0], refs)
+		},
+		func(out io.Writer, chunks []rag.Chunk, args []string) {
+			action := "Definitions"
+			if refs {
+				action = "References"
+			}
+			fmt.Fprintf(out, "[✓] %s for %q (%d chunks):\n", action, args[0], len(chunks))
+			for i, c := range chunks {
+				fmt.Fprintf(out, "%2d. %s:%d-%d\n", i+1, c.FilePath, c.LineStart, c.LineEnd)
+			}
+		})
 }
 
 func newRagGrepCmd() *cobra.Command {
-	var project string
 	var paths []string
 	var maxResults int
-	cmd := &cobra.Command{
-		Use:   "grep <pattern>",
-		Short: "Regex search over indexable repository files",
-		Args:  exactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			matches, err := rag.NewRetriever().Grep(cmd.Context(), project, args[0], paths, maxResults)
-			if err != nil {
-				return err
-			}
-			return printResult(cmd, matches, func(out io.Writer) {
-				for _, m := range matches {
-					fmt.Fprintf(out, "%s:%d: %s\n", m.Path, m.Line, m.Text)
-				}
-			})
+	return ragLeaf("grep <pattern>", "Regex search over indexable repository files", exactArgs(1),
+		func(c *cobra.Command) {
+			c.Flags().StringSliceVar(&paths, "path", nil, "Filter glob patterns (repeatable)")
+			c.Flags().IntVar(&maxResults, "max", 200, "Maximum matches")
 		},
-	}
-	addProjectFlag(cmd, &project, ".", "Project directory")
-	cmd.Flags().StringSliceVar(&paths, "path", nil, "Filter glob patterns (repeatable)")
-	cmd.Flags().IntVar(&maxResults, "max", 200, "Maximum matches")
-	return cmd
+		func(ctx context.Context, project string, args []string) ([]rag.GrepMatch, error) {
+			return rag.NewRetriever().Grep(ctx, project, args[0], paths, maxResults)
+		},
+		func(out io.Writer, matches []rag.GrepMatch, _ []string) {
+			for _, m := range matches {
+				fmt.Fprintf(out, "%s:%d: %s\n", m.Path, m.Line, m.Text)
+			}
+		})
 }
 
 func newRagHistoryCmd() *cobra.Command {
-	var project string
 	var topK int
-	cmd := &cobra.Command{
-		Use:   "history <query...>",
-		Short: "Search Git commit messages and per-file diffs",
-		Args:  minArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			query := strings.Join(args, " ")
-			hits, err := rag.NewRetriever().History(cmd.Context(), project, query, topK)
-			if err != nil {
-				return err
-			}
-			return printResult(cmd, hits, func(out io.Writer) {
-				fmt.Fprintf(out, "[✓] History hits for %q:\n", query)
-				for _, h := range hits {
-					sha := h.SHA
-					if len(sha) > 10 {
-						sha = sha[:10]
-					}
-					fmt.Fprintf(out, "%.2f  %s  %s  %s\n", h.Score, sha, h.Subject, h.Path)
-				}
-			})
+	return ragLeaf("history <query...>", "Search Git commit messages and per-file diffs", minArgs(1),
+		func(c *cobra.Command) { c.Flags().IntVarP(&topK, "top-k", "k", 10, "Maximum commits") },
+		func(ctx context.Context, project string, args []string) ([]rag.HistoryHit, error) {
+			return rag.NewRetriever().History(ctx, project, strings.Join(args, " "), topK)
 		},
-	}
-	addProjectFlag(cmd, &project, ".", "Project directory")
-	cmd.Flags().IntVarP(&topK, "top-k", "k", 10, "Maximum commits")
-	return cmd
+		func(out io.Writer, hits []rag.HistoryHit, args []string) {
+			fmt.Fprintf(out, "[✓] History hits for %q:\n", strings.Join(args, " "))
+			for _, h := range hits {
+				sha := h.SHA
+				if len(sha) > 10 {
+					sha = sha[:10]
+				}
+				fmt.Fprintf(out, "%.2f  %s  %s  %s\n", h.Score, sha, h.Subject, h.Path)
+			}
+		})
 }
 
 func newRagGraphCmd() *cobra.Command {
@@ -135,63 +134,37 @@ func newRagGraphCmd() *cobra.Command {
 }
 
 func newRagSyncCmd() *cobra.Command {
-	var project string
-	cmd := &cobra.Command{
-		Use:   "sync",
-		Short: "Replay journaled offline commits to shared tier",
-		Args:  noArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			pending, err := rag.NewRetriever().Sync(cmd.Context(), project)
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "[✓] Sync complete: %d commits pending\n", pending)
-			return nil
+	return ragLeaf("sync", "Replay journaled offline commits to shared tier", noArgs, nil,
+		func(ctx context.Context, project string, _ []string) (int, error) {
+			return rag.NewRetriever().Sync(ctx, project)
 		},
-	}
-	addProjectFlag(cmd, &project, ".", "Project directory")
-	return cmd
+		func(out io.Writer, pending int, _ []string) {
+			fmt.Fprintf(out, "[✓] Sync complete: %d commits pending\n", pending)
+		})
 }
 
 func newRagPullCmd() *cobra.Command {
-	var project string
-	cmd := &cobra.Command{
-		Use:   "pull",
-		Short: "Fetch missing embeddings from shared tier for offline use",
-		Args:  noArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			rep, err := rag.NewRetriever().Pull(cmd.Context(), project)
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "[✓] Pull complete: %d chunks, %d cached vectors\n", rep.Chunks, rep.Cached)
-			return nil
+	return ragLeaf("pull", "Fetch missing embeddings from shared tier for offline use", noArgs, nil,
+		func(ctx context.Context, project string, _ []string) (rag.PullReport, error) {
+			return rag.NewRetriever().Pull(ctx, project)
 		},
-	}
-	addProjectFlag(cmd, &project, ".", "Project directory")
-	return cmd
+		func(out io.Writer, rep rag.PullReport, _ []string) {
+			fmt.Fprintf(out, "[✓] Pull complete: %d chunks, %d cached vectors\n", rep.Chunks, rep.Cached)
+		})
 }
 
 func newRagPushCmd() *cobra.Command {
-	var project string
 	var dryRun bool
-	cmd := &cobra.Command{
-		Use:   "push",
-		Short: "Upload local index to PostgreSQL shared tier",
-		Args:  noArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			rep, err := rag.NewRetriever().Push(cmd.Context(), project, dryRun)
-			if err != nil {
-				return err
-			}
-			return printResult(cmd, rep, func(out io.Writer) {
-				fmt.Fprintf(out, "[✓] Push complete (dry_run: %t): commit %s, uploaded %d embeddings\n", rep.DryRun, rep.Commit, rep.EmbeddingsUploaded)
-			})
+	return ragLeaf("push", "Upload local index to PostgreSQL shared tier", noArgs,
+		func(c *cobra.Command) {
+			c.Flags().BoolVar(&dryRun, "dry-run", false, "Simulate push without modifying shared tier")
 		},
-	}
-	addProjectFlag(cmd, &project, ".", "Project directory")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Simulate push without modifying shared tier")
-	return cmd
+		func(ctx context.Context, project string, _ []string) (rag.PushReport, error) {
+			return rag.NewRetriever().Push(ctx, project, dryRun)
+		},
+		func(out io.Writer, rep rag.PushReport, _ []string) {
+			fmt.Fprintf(out, "[✓] Push complete (dry_run: %t): commit %s, uploaded %d embeddings\n", rep.DryRun, rep.Commit, rep.EmbeddingsUploaded)
+		})
 }
 
 // printResult writes v as JSON with --json, otherwise lets text print the human form.

@@ -32,7 +32,7 @@ func TestMilestoneForPrefersTheMostSpecificSource(t *testing.T) {
 }
 
 func TestPullStatusReportsStatesThatCannotBeRead(t *testing.T) {
-	sp := newScriptedPlane(t, rule{"GET", "/states/", 500, ""}, rule{"GET", "/issues/", 200, `[]`})
+	sp := newScriptedPlane(t, on("GET", "/states/", 500, ""), on("GET", "/issues/", 200, `[]`))
 	if _, _, err := PullStatusFromPlane(context.Background(), planeAt(t, sp.URL)); err == nil || !strings.Contains(err.Error(), "failed to query states") {
 		t.Fatalf("err = %v", err)
 	}
@@ -40,13 +40,13 @@ func TestPullStatusReportsStatesThatCannotBeRead(t *testing.T) {
 
 func TestPullStatusMergesProjectsAndSkipsRepeatedIssues(t *testing.T) {
 	sp := newScriptedPlane(t,
-		rule{"GET", "/projects/x/states/", 200, `[{"id":"xs","name":"Blocked","group":"started"}]`},
-		rule{"GET", "/projects/x/issues/", 200, `[{"id":"a1","name":"[X-1] shared","state":"xs","sequence_id":1},{"id":"x2","name":"Plain title","state":"xs","sequence_id":2}]`},
-		rule{"GET", "/projects/proj/states/", 200, `[{"id":"s1","name":"Done","group":"completed"}]`},
-		rule{"GET", "/projects/proj/issues/", 200, `[{"id":"a1","name":"[DEN-001] first","state":"s1","sequence_id":1},{"id":"nostate","name":"No state","sequence_id":3,"state_detail":{"name":"To Verify","group":"started"}},{"id":"","name":"No id","sequence_id":4}]`},
-		rule{"GET", "/projects/proj/modules/", 200, `[{"id":"m","name":"Milestone 1: Base"}]`},
-		rule{"GET", "/module-issues/", 200, `[{"id":"a1"}]`},
-		rule{"GET", "/workspaces/ws/projects/", 200, `[{"id":"proj","identifier":"DEN"},{"id":"x","identifier":"X"},{"id":"blank","identifier":""}]`},
+		on("GET", "/projects/x/states/", 200, `[{"id":"xs","name":"Blocked","group":"started"}]`),
+		on("GET", "/projects/x/issues/", 200, `[{"id":"a1","name":"[X-1] shared","state":"xs","sequence_id":1},{"id":"x2","name":"Plain title","state":"xs","sequence_id":2}]`),
+		on("GET", "/projects/proj/states/", 200, `[{"id":"s1","name":"Done","group":"completed"}]`),
+		on("GET", "/projects/proj/issues/", 200, `[{"id":"a1","name":"[DEN-001] first","state":"s1","sequence_id":1},{"id":"nostate","name":"No state","sequence_id":3,"state_detail":{"name":"To Verify","group":"started"}},{"id":"","name":"No id","sequence_id":4}]`),
+		on("GET", "/projects/proj/modules/", 200, `[{"id":"m","name":"Milestone 1: Base"}]`),
+		on("GET", "/module-issues/", 200, `[{"id":"a1"}]`),
+		on("GET", "/workspaces/ws/projects/", 200, `[{"id":"proj","identifier":"DEN"},{"id":"x","identifier":"X"},{"id":"blank","identifier":""}]`),
 	)
 	md, report, err := PullStatusFromPlane(context.Background(), planeAt(t, sp.URL))
 	if err != nil {
@@ -85,8 +85,8 @@ func TestParseIssuePageIgnoresAnswersItCannotRead(t *testing.T) {
 func TestStatusUpdatesNeedAKnownTicket(t *testing.T) {
 	ctx := context.Background()
 	sp := newScriptedPlane(t,
-		rule{"GET", "/states/", 200, `[{"id":"s","name":"In Progress","group":"started"},{"id":"d","name":"Done","group":"completed"}]`},
-		rule{"GET", "/issues/", 200, `[]`},
+		on("GET", "/states/", 200, `[{"id":"s","name":"In Progress","group":"started"},{"id":"d","name":"Done","group":"completed"}]`),
+		on("GET", "/issues/", 200, `[]`),
 	)
 	c := planeAt(t, sp.URL)
 	if err := c.CheckZeroMockGate(ctx, "DEN-1", tracker.StatusTodo); err != nil {
@@ -99,13 +99,13 @@ func TestStatusUpdatesNeedAKnownTicket(t *testing.T) {
 
 func TestAddCommentFindsTheIssueByTicketID(t *testing.T) {
 	sp := newScriptedPlane(t,
-		rule{"GET", "/issues/", 200, `[{"id":"the-uuid","name":"[DEN-5] work"}]`},
-		rule{"POST", "/comments/", 201, `{}`},
+		on("GET", "/issues/", 200, `[{"id":"the-uuid","name":"[DEN-5] work"}]`),
+		on("POST", "/comments/", 201, `{}`),
 	)
 	if err := planeAt(t, sp.URL).AddComment(context.Background(), "DEN-5", "hello"); err != nil {
 		t.Fatal(err)
 	}
-	if sp.called("POST /api/v1/workspaces/ws/projects/proj/issues/the-uuid/comments/") != 1 {
+	if sp.Called("POST /api/v1/workspaces/ws/projects/proj/issues/the-uuid/comments/") != 1 {
 		t.Errorf("the comment must go to the resolved issue: %v", sp.Calls)
 	}
 }
@@ -127,7 +127,7 @@ func TestIssueReferenceHelpers(t *testing.T) {
 }
 
 func TestGetRelationsForUsesFewerWorkersThanIssues(t *testing.T) {
-	sp := newScriptedPlane(t, rule{"GET", "/issue-relation/", 200, `{}`})
+	sp := newScriptedPlane(t, on("GET", "/issue-relation/", 200, `{}`))
 	rels, err := planeAt(t, sp.URL).GetRelationsFor(context.Background(), []string{"a", "b"})
 	if err != nil || len(rels) != 2 {
 		t.Fatalf("rels = %v, err = %v", rels, err)
@@ -142,19 +142,19 @@ func TestChecklistParsingAndImportEdgeCases(t *testing.T) {
 	ctx := context.Background()
 	items := []ChecklistItem{{Key: "K-1", Title: "one", Status: tracker.StatusTodo}}
 	t.Run("states cannot be read", func(t *testing.T) {
-		sp := newScriptedPlane(t, rule{"GET", "/states/", 500, ""})
+		sp := newScriptedPlane(t, on("GET", "/states/", 500, ""))
 		if _, err := ImportChecklist(ctx, planeAt(t, sp.URL), items, "STATUS.md"); err == nil {
 			t.Fatal("expected the states error")
 		}
 	})
 	t.Run("issues cannot be read", func(t *testing.T) {
-		sp := newScriptedPlane(t, rule{"GET", "/states/", 200, `[]`}, rule{"GET", "/issues/", 500, ""})
+		sp := newScriptedPlane(t, on("GET", "/states/", 200, `[]`), on("GET", "/issues/", 500, ""))
 		if _, err := ImportChecklist(ctx, planeAt(t, sp.URL), items, "STATUS.md"); err == nil {
 			t.Fatal("expected the issues error")
 		}
 	})
 	t.Run("an issue cannot be created", func(t *testing.T) {
-		sp := newScriptedPlane(t, rule{"GET", "/states/", 200, `[]`}, rule{"GET", "/issues/", 200, `[]`}, rule{"GET", "/modules/", 200, `[]`}, rule{"POST", "/issues/", 500, ""})
+		sp := newScriptedPlane(t, on("GET", "/states/", 200, `[]`), on("GET", "/issues/", 200, `[]`), on("GET", "/modules/", 200, `[]`), on("POST", "/issues/", 500, ""))
 		report, err := ImportChecklist(ctx, planeAt(t, sp.URL), items, "STATUS.md")
 		if err == nil || !strings.Contains(err.Error(), "import K-1") || report == nil {
 			t.Fatalf("report = %v, err = %v", report, err)

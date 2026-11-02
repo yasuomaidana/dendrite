@@ -69,14 +69,7 @@ func newIssuePlane(t *testing.T) *issuePlane {
 	return f
 }
 
-func (f *issuePlane) client(t *testing.T) *plane.Client {
-	t.Helper()
-	c, err := plane.NewClient(plane.Config{BaseURL: f.URL, WorkspaceSlug: "ws", ProjectID: "proj", DirectToken: "k"}, f.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return c
-}
+func (f *issuePlane) client(t *testing.T) *plane.Client { return planeClientAt(t, f.URL, f.Client()) }
 
 func (f *issuePlane) lastBody(t *testing.T, method string) map[string]any {
 	t.Helper()

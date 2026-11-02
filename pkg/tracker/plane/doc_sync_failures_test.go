@@ -1,6 +1,7 @@
 package plane
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -82,15 +83,7 @@ func (p *pagesPlane) client(t *testing.T) *Client {
 	return planeAt(t, p.URL)
 }
 
-func writeDoc(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
+func writeDoc(t *testing.T, path, content string) { testkit.WriteFile(t, path, content, 0o644) }
 
 func TestSyncDocsReportsPageListFailures(t *testing.T) {
 	ctx := context.Background()

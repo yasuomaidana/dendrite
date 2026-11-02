@@ -1,6 +1,7 @@
 package jira
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
 	"errors"
 	"net/http"
@@ -15,11 +16,9 @@ import (
 func jiraAt(t *testing.T, baseURL string) *Client {
 	t.Helper()
 	t.Setenv("JIRA_FAILURE_TOKEN", "secret")
-	c, err := NewClient(Config{BaseURL: baseURL, Email: "dev@dendrite.ai", APITokenEnv: "JIRA_FAILURE_TOKEN"}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return c
+	return testkit.Build(t, func() (*Client, error) {
+		return NewClient(Config{BaseURL: baseURL, Email: "dev@dendrite.ai", APITokenEnv: "JIRA_FAILURE_TOKEN"}, nil)
+	})
 }
 
 // closedURL is the address of a server that has already shut down, so every request fails.

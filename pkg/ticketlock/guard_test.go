@@ -1,10 +1,10 @@
 package ticketlock
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -298,11 +298,8 @@ func TestDefaultDepsReadGitAndThePlaneLink(t *testing.T) {
 	t.Setenv("DENDRITE_HOME", t.TempDir())
 	t.Setenv("DENDRITE_STATE_DIR", t.TempDir())
 	repo := t.TempDir()
-	for _, args := range [][]string{{"init", "-q"}, {"checkout", "-q", "-b", "agent/den-375"}} {
-		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
+	testkit.Git(t, repo, "init", "-q")
+	testkit.Git(t, repo, "checkout", "-q", "-b", "agent/den-375")
 	want := func(context.Context, string, string) (tracker.Status, error) { return tracker.StatusInProgress, nil }
 	d := DefaultDeps(want)
 

@@ -340,3 +340,12 @@ func (b *Board) commentRows(issueID string) []map[string]string {
 func (c BoardComment) Text() string {
 	return strings.TrimSpace(html.UnescapeString(htmlTag.ReplaceAllString(c.HTML, " ")))
 }
+
+// Texts lists the text of every comment on a ticket, oldest first.
+func (b *Board) Texts(ref string) []string {
+	var out []string
+	for _, c := range b.Comments(ref) {
+		out = append(out, c.Text())
+	}
+	return out
+}
