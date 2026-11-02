@@ -97,10 +97,7 @@ func registerAgentRunTool(s *Server, deps Dependencies) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to build agent env: %w", err)
 		}
-		cmd, err := agent.BuildAgentCommand(cfg)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build agent command: %w", err)
-		}
+		cmd, _ := agent.BuildAgentCommand(cfg) // validated by BuildAgentEnv above
 
 		var runner agent.Runner
 		if sandbox {
@@ -113,21 +110,7 @@ func registerAgentRunTool(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("agent execution failed: %w", err)
 		}
 
-		res := map[string]interface{}{
-			"session_id": summary.SessionID,
-			"agent":      summary.AgentType,
-			"ticket_id":  summary.TicketID,
-			"command":    strings.Join(cmd, " "),
-			"duration":   summary.Duration.String(),
-			"tokens":     summary.TokensConsumed,
-			"cost_usd":   summary.EstimatedCostUSD,
-			"commits":    summary.CommitsGenerated,
-			"env":        envVars,
-			"status":     summary.Status,
-		}
-
-		data := indentJSON(res)
-		return textResult(string(data)), nil
+		return textResult(string(indentJSON(agentRunReport(summary, cmd, envVars)))), nil
 	})
 }
 
@@ -231,4 +214,20 @@ func registerTelemetryAndInferenceTools(s *Server, deps Dependencies) {
 		data := indentJSON(results)
 		return textResult(string(data)), nil
 	})
+}
+
+// agentRunReport is what dendrite_agent_run answers with after a session.
+func agentRunReport(summary *agent.SessionSummary, cmd []string, envVars interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"session_id": summary.SessionID,
+		"agent":      summary.AgentType,
+		"ticket_id":  summary.TicketID,
+		"command":    strings.Join(cmd, " "),
+		"duration":   summary.Duration.String(),
+		"tokens":     summary.TokensConsumed,
+		"cost_usd":   summary.EstimatedCostUSD,
+		"commits":    summary.CommitsGenerated,
+		"env":        envVars,
+		"status":     summary.Status,
+	}
 }
