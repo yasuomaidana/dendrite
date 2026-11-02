@@ -49,3 +49,9 @@ func TestOnBuildsARule(t *testing.T) {
 		t.Fatalf("On = %+v", got)
 	}
 }
+
+func TestCountPrefix(t *testing.T) {
+	if got := CountPrefix([]string{"GET /a", "GET /b", "POST /a"}, "GET"); got != 2 {
+		t.Fatalf("CountPrefix = %d", got)
+	}
+}

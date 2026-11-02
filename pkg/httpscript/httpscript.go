@@ -83,8 +83,13 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 func (s *Server) Called(prefix string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return CountPrefix(s.Calls, prefix)
+}
+
+// CountPrefix counts the entries of calls that start with prefix.
+func CountPrefix(calls []string, prefix string) int {
 	n := 0
-	for _, c := range s.Calls {
+	for _, c := range calls {
 		if strings.HasPrefix(c, prefix) {
 			n++
 		}

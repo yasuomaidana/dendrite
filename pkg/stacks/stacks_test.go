@@ -1,21 +1,14 @@
 package stacks
 
 import (
+	"Dendrite/pkg/testkit"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func write(t *testing.T, path, body string, mode os.FileMode) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(body), mode); err != nil {
-		t.Fatal(err)
-	}
-}
+func write(t *testing.T, path, body string, mode os.FileMode) { testkit.WriteFile(t, path, body, mode) }
 
 func TestDirIsUnderTheHomeUnlessOverridden(t *testing.T) {
 	home := t.TempDir()

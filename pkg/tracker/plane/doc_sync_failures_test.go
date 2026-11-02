@@ -87,34 +87,25 @@ func writeDoc(t *testing.T, path, content string) { testkit.WriteFile(t, path, c
 
 func TestSyncDocsReportsPageListFailures(t *testing.T) {
 	ctx := context.Background()
-	t.Run("push", func(t *testing.T) {
-		p := newPagesPlane(t)
-		p.list = 500
-		if _, err := SyncDocs(ctx, p.client(t), t.TempDir(), DirectionToPlane); err == nil {
-			t.Fatal("expected the list error")
-		}
-	})
-	t.Run("pull", func(t *testing.T) {
-		p := newPagesPlane(t)
-		p.list = 500
-		if _, err := SyncDocs(ctx, p.client(t), t.TempDir(), DirectionFromPlane); err == nil {
-			t.Fatal("expected the list error")
-		}
-	})
-	t.Run("bidirectional fails in its push", func(t *testing.T) {
-		p := newPagesPlane(t)
-		p.list = 500
-		if _, err := SyncDocs(ctx, p.client(t), t.TempDir(), DirectionBidirectional); err == nil {
-			t.Fatal("expected the push error")
-		}
-	})
-	t.Run("bidirectional fails in its pull", func(t *testing.T) {
-		p := newPagesPlane(t)
-		p.list, p.listAfter = 500, 1
-		if _, err := SyncDocs(ctx, p.client(t), t.TempDir(), DirectionBidirectional); err == nil {
-			t.Fatal("expected the pull error")
-		}
-	})
+	cases := []struct {
+		name      string
+		direction SyncDirection
+		listAfter int32
+	}{
+		{"push", DirectionToPlane, 0},
+		{"pull", DirectionFromPlane, 0},
+		{"bidirectional fails in its push", DirectionBidirectional, 0},
+		{"bidirectional fails in its pull", DirectionBidirectional, 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := newPagesPlane(t)
+			p.list, p.listAfter = 500, c.listAfter
+			if _, err := SyncDocs(ctx, p.client(t), t.TempDir(), c.direction); err == nil {
+				t.Fatal("expected the list error")
+			}
+		})
+	}
 	t.Run("the default docs directory is docs", func(t *testing.T) {
 		t.Chdir(t.TempDir())
 		p := newPagesPlane(t)

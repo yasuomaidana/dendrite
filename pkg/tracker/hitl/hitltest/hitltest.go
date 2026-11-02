@@ -4,6 +4,7 @@
 package hitltest
 
 import (
+	"Dendrite/pkg/httpscript"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -121,13 +122,7 @@ func (g *GHScript) Execute(_ context.Context, name string, args ...string) (stri
 func (g *GHScript) Called(prefix string) int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	n := 0
-	for _, c := range g.Calls {
-		if strings.HasPrefix(c, prefix) {
-			n++
-		}
-	}
-	return n
+	return httpscript.CountPrefix(g.Calls, prefix)
 }
 
 // IssueListJSON renders `gh issue list --json number,title,state,stateReason,labels` output.

@@ -171,18 +171,22 @@ func graphList[T any](ctx context.Context, r *Retriever, projectPath, method, fi
 
 // Communities returns the Leiden communities of the project's file graph.
 func (r *Retriever) Communities(ctx context.Context, projectPath string, opts CommunitiesOptions) ([]Community, error) {
-	params := map[string]interface{}{}
-	setPositive(params, "limit", opts.Limit)
-	setPositive(params, "min_size", opts.MinSize)
-	return graphList[Community](ctx, r, projectPath, "graph.communities", "communities", params)
+	return graphCounts[Community](ctx, r, projectPath, "graph.communities", "communities", map[string]int{"limit": opts.Limit, "min_size": opts.MinSize})
 }
 
 // GodNodes returns the symbols with the most callers and type users in the project.
 func (r *Retriever) GodNodes(ctx context.Context, projectPath string, opts GodNodesOptions) ([]GodNode, error) {
+	return graphCounts[GodNode](ctx, r, projectPath, "graph.god_nodes", "nodes", map[string]int{"min_in_degree": opts.MinInDegree, "limit": opts.Limit})
+}
+
+// graphCounts runs a graph list method whose only parameters are counts; zero counts are left out
+// so the sidecar keeps its defaults.
+func graphCounts[T any](ctx context.Context, r *Retriever, projectPath, method, field string, counts map[string]int) ([]T, error) {
 	params := map[string]interface{}{}
-	setPositive(params, "min_in_degree", opts.MinInDegree)
-	setPositive(params, "limit", opts.Limit)
-	return graphList[GodNode](ctx, r, projectPath, "graph.god_nodes", "nodes", params)
+	for key, n := range counts {
+		setPositive(params, key, n)
+	}
+	return graphList[T](ctx, r, projectPath, method, field, params)
 }
 
 // setPositive stores n under key only when it is set (above zero), so the sidecar keeps its default.

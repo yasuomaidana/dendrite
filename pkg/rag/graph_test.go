@@ -38,30 +38,30 @@ func TestCommunitiesIndexesThenCallsSidecar(t *testing.T) {
 	}
 }
 
+// expectSidecarCall requires the sidecar log to hold a call; %s in format stands for the project's absolute path.
+func expectSidecarCall(t *testing.T, log, dir, format string) {
+	t.Helper()
+	calls, _ := os.ReadFile(log)
+	abs, _ := filepath.Abs(dir)
+	want := strings.Replace(format, "%s", abs, 1)
+	if !strings.Contains(string(calls), want) {
+		t.Errorf("calls lack %s:\n%s", want, calls)
+	}
+}
+
 func TestGodNodesIndexesThenCallsSidecar(t *testing.T) {
 	r, log := standInRetriever(t)
 	dir := ragProject(t)
 
 	got, err := r.GodNodes(context.Background(), dir, GodNodesOptions{MinInDegree: 21, Limit: 10})
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || len(got) != 1 || got[0].Symbol != "LocateBinary" || got[0].InDegree != 25 {
+		t.Fatalf("unexpected god nodes: %+v, %v", got, err)
 	}
-	if len(got) != 1 || got[0].Symbol != "LocateBinary" || got[0].InDegree != 25 {
-		t.Fatalf("unexpected god nodes: %+v", got)
-	}
-	calls, _ := os.ReadFile(log)
-	abs, _ := filepath.Abs(dir)
-	if !strings.Contains(string(calls), `graph.god_nodes {"limit":10,"min_in_degree":21,"root":"`+abs+`"}`) {
-		t.Errorf("calls missing graph.god_nodes: %s", calls)
-	}
+	expectSidecarCall(t, log, dir, `graph.god_nodes {"limit":10,"min_in_degree":21,"root":"%s"}`)
 
-	// Top-level helper
 	topGot, err := GodNodes(context.Background(), dir, GodNodesOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(topGot) != 1 {
-		t.Fatalf("unexpected top-level god nodes: %+v", topGot)
+	if err != nil || len(topGot) != 1 {
+		t.Fatalf("unexpected top-level god nodes: %+v, %v", topGot, err)
 	}
 }
 
@@ -97,25 +97,14 @@ func TestExplainIndexesThenCallsSidecar(t *testing.T) {
 	dir := ragProject(t)
 
 	got, err := r.Explain(context.Background(), dir, "LocateBinary")
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || len(got) != 1 || got[0].Kind != "symbol" || got[0].Symbol != "LocateBinary" {
+		t.Fatalf("unexpected explain: %+v, %v", got, err)
 	}
-	if len(got) != 1 || got[0].Kind != "symbol" || got[0].Symbol != "LocateBinary" {
-		t.Fatalf("unexpected explain: %+v", got)
-	}
-	calls, _ := os.ReadFile(log)
-	abs, _ := filepath.Abs(dir)
-	if !strings.Contains(string(calls), `graph.explain {"root":"`+abs+`","target":"LocateBinary"}`) {
-		t.Errorf("calls missing graph.explain: %s", calls)
-	}
+	expectSidecarCall(t, log, dir, `graph.explain {"root":"%s","target":"LocateBinary"}`)
 
-	// Top-level helper
 	topGot, err := Explain(context.Background(), dir, "LocateBinary")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(topGot) != 1 {
-		t.Fatalf("unexpected top-level explain: %+v", topGot)
+	if err != nil || len(topGot) != 1 {
+		t.Fatalf("unexpected top-level explain: %+v, %v", topGot, err)
 	}
 }
 
