@@ -12,6 +12,7 @@ This document maintains the real-time development status, milestones, and active
 - **Last Updated**: 2026-11-01
 - **Summary**: Backlog: 157 | To Do: 114 | In Progress: 51 | To Verify: 219 | Done: 287 (Total: 828)
 - **Overall Progress**: 287 / 828 Tickets Completed (34.7%)
+- **Releases**: 0.1.0 (2026-11-01): develop to main PR open, see [CHANGELOG.md](CHANGELOG.md) and [docs/cli/availability.md](docs/cli/availability.md)
 
 ---
 
