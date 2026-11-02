@@ -16,6 +16,15 @@ import (
 	"Dendrite/pkg/tracker/plane"
 )
 
+func assertToolCallSuccess(t *testing.T, srv *Server, name, argsJSON string) {
+	t.Helper()
+	req := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": %q, "arguments": %s}}`, name, argsJSON)
+	resp := srv.HandleRequest(context.Background(), []byte(req))
+	if resp == nil || resp.Error != nil {
+		t.Fatalf("tool %s with args %s failed: %v", name, argsJSON, resp)
+	}
+}
+
 // helper to spin up an httptest.Server simulating Plane API routes.
 func createTestPlaneServer(t *testing.T) (*httptest.Server, *plane.Client) {
 	mux := http.NewServeMux()
@@ -381,11 +390,7 @@ func TestTools_DendriteGatewayRender(t *testing.T) {
 
 	// Valid scenarios
 	for _, sc := range []string{"local-hybrid", "cloud-burst", "full-local"} {
-		req := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_gateway_render", "arguments": {"scenario": "%s"}}}`, sc)
-		resp := srv.HandleRequest(context.Background(), []byte(req))
-		if resp == nil || resp.Error != nil {
-			t.Fatalf("scenario %s failed: %v", sc, resp)
-		}
+		assertToolCallSuccess(t, srv, "dendrite_gateway_render", fmt.Sprintf(`{"scenario": %q}`, sc))
 	}
 
 	// Invalid scenario

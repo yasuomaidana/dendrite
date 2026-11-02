@@ -66,25 +66,39 @@ func TestUnmarshalRejectsMalformedLines(t *testing.T) {
 }
 
 func TestStoreFilesystemErrors(t *testing.T) {
-	t.Run("default store without home", func(t *testing.T) {
-		t.Setenv("DENDRITE_HOME", "")
-		t.Setenv("HOME", "")
-		if _, err := DefaultStore(); err == nil {
-			t.Fatal("expected DefaultStore to fail without a home directory")
-		}
-	})
-
-	t.Run("default store honours DENDRITE_HOME", func(t *testing.T) {
-		home := t.TempDir()
-		t.Setenv("DENDRITE_HOME", home)
-		st, err := DefaultStore()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if st.Dir() != filepath.Join(home, DirName) {
-			t.Fatalf("Dir() = %s", st.Dir())
-		}
-	})
+	defaultStoreTests := []struct {
+		name         string
+		dendriteHome string
+		home         string
+		wantErr      bool
+		wantSuffix   string
+	}{
+		{"without home", "", "", true, ""},
+		{"honours DENDRITE_HOME", "tmp", "", false, DirName},
+	}
+	for _, tc := range defaultStoreTests {
+		t.Run("default store "+tc.name, func(t *testing.T) {
+			dh := tc.dendriteHome
+			if dh == "tmp" {
+				dh = t.TempDir()
+			}
+			t.Setenv("DENDRITE_HOME", dh)
+			t.Setenv("HOME", tc.home)
+			st, err := DefaultStore()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected DefaultStore to fail without a home directory")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if st.Dir() != filepath.Join(dh, tc.wantSuffix) {
+				t.Fatalf("Dir() = %s", st.Dir())
+			}
+		})
+	}
 
 	t.Run("store dir is a file", func(t *testing.T) {
 		file := filepath.Join(t.TempDir(), "synapses")

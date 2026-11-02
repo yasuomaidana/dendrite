@@ -256,9 +256,10 @@ func TestMapLinearState(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		out := mapLinearState(c.stateType, c.name)
-		if out != c.exp {
-			t.Errorf("mapLinearState(%q, %q) = %v; want %v", c.stateType, c.name, out, c.exp)
-		}
+		t.Run(c.stateType+"/"+c.name, func(t *testing.T) {
+			if got := mapLinearState(c.stateType, c.name); got != c.exp {
+				t.Errorf("mapLinearState(%q, %q) = %v; want %v", c.stateType, c.name, got, c.exp)
+			}
+		})
 	}
 }

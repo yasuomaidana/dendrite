@@ -6,7 +6,6 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -315,23 +314,11 @@ func TestResolveDiffText_BranchesAndChangedSymbolsError(t *testing.T) {
 		{"git", "config", "user.name", "Tester"},
 		{"git", "config", "user.email", "tester@dendrite.dev"},
 	}
-	for _, c := range initCmds {
-		cmd := exec.Command(c[0], c[1:]...)
-		cmd.Dir = gitDir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git setup failed: %v, out: %s", err, string(out))
-		}
-	}
+	runGitCommands(t, gitDir, initCmds)
 	if err := os.WriteFile(filepath.Join(gitDir, "main.go"), []byte("package main\n"), 0644); err != nil {
 		t.Fatalf("write main.go: %v", err)
 	}
-	for _, c := range [][]string{{"git", "add", "main.go"}, {"git", "commit", "-m", "init"}} {
-		cmd := exec.Command(c[0], c[1:]...)
-		cmd.Dir = gitDir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git commit failed: %v, out: %s", err, string(out))
-		}
-	}
+	runGitCommands(t, gitDir, [][]string{{"git", "add", "main.go"}, {"git", "commit", "-m", "init"}})
 	if err := os.WriteFile(filepath.Join(gitDir, "main.go"), []byte("package main\n// modified\n"), 0644); err != nil {
 		t.Fatalf("modify main.go: %v", err)
 	}

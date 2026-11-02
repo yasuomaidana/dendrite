@@ -76,10 +76,7 @@ func TestSynapseCommand_SetSource(t *testing.T) {
 	if err := os.RemoveAll(hub); err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range []struct {
-		args []string
-		want string
-	}{
+	assertSynapseCommandErrors(t, run, []synapseCmdErrCase{
 		{[]string{"set-source", "stack", "mcphub", "local"}, "no local checkout"},
 		{[]string{"set-source", "stack", "mcphub", "vendored"}, "invalid source"},
 		{[]string{"set-source", "stack", "ghost", "local"}, "no member"},
@@ -87,11 +84,7 @@ func TestSynapseCommand_SetSource(t *testing.T) {
 		{[]string{"set-source", "stack"}, "accepts 3 arg(s)"},
 		{[]string{"set-source", "stack", "mcphub", "local", "--ref"}, "needs an argument"},
 		{[]string{"set-source", "stack", "mcphub", "local", "--bogus"}, "unknown flag"},
-	} {
-		if _, err := run(tc.args...); err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("%v: err = %v, want %q", tc.args, err, tc.want)
-		}
-	}
+	})
 }
 
 func TestDescribeSource(t *testing.T) {

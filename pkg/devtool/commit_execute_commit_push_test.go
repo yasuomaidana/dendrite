@@ -119,10 +119,12 @@ func TestInferScopeFromFiles(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := inferScopeFromFiles(tt.files)
-		if got != tt.expected {
-			t.Errorf("inferScopeFromFiles(%v) = %q; want %q", tt.files, got, tt.expected)
-		}
+		t.Run(strings.Join(tt.files, ","), func(t *testing.T) {
+			got := inferScopeFromFiles(tt.files)
+			if got != tt.expected {
+				t.Errorf("inferScopeFromFiles(%v) = %q; want %q", tt.files, got, tt.expected)
+			}
+		})
 	}
 }
 
@@ -143,37 +145,37 @@ func TestInferTypeFromTitle(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := inferTypeFromTitle(tt.title)
-		if got != tt.expected {
-			t.Errorf("inferTypeFromTitle(%q) = %q; want %q", tt.title, got, tt.expected)
-		}
+		t.Run(tt.title, func(t *testing.T) {
+			got := inferTypeFromTitle(tt.title)
+			if got != tt.expected {
+				t.Errorf("inferTypeFromTitle(%q) = %q; want %q", tt.title, got, tt.expected)
+			}
+		})
 	}
 }
 
 func TestIsCannedOrInvalidCommitMessage_AdditionalCases(t *testing.T) {
-	valid := []string{
-		"style: format code",
-		"build: update cargo",
-		"perf: optimize query",
-		"revert: rollback commit",
-		"[DEN-101] style: format code",
-		"[DEN-101] perf: improve speed",
+	cases := []struct {
+		name    string
+		message string
+		want    bool
+	}{
+		{"style prefix", "style: format code", false},
+		{"build prefix", "build: update cargo", false},
+		{"perf prefix", "perf: optimize query", false},
+		{"revert prefix", "revert: rollback commit", false},
+		{"ticket style prefix", "[DEN-101] style: format code", false},
+		{"ticket perf prefix", "[DEN-101] perf: improve speed", false},
+		{"canned here is commit", "here's the commit message for you", true},
+		{"canned plain commit", "here is the commit message", true},
+		{"canned as ai", "as an ai, here is the message", true},
 	}
-	for _, v := range valid {
-		if isCannedOrInvalidCommitMessage(v) {
-			t.Errorf("expected isCannedOrInvalidCommitMessage(%q) = false, got true", v)
-		}
-	}
-
-	invalid := []string{
-		"here's the commit message for you",
-		"here is the commit message",
-		"as an ai, here is the message",
-	}
-	for _, inv := range invalid {
-		if !isCannedOrInvalidCommitMessage(inv) {
-			t.Errorf("expected isCannedOrInvalidCommitMessage(%q) = true, got false", inv)
-		}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isCannedOrInvalidCommitMessage(tc.message); got != tc.want {
+				t.Errorf("isCannedOrInvalidCommitMessage(%q) = %v, want %v", tc.message, got, tc.want)
+			}
+		})
 	}
 }
 

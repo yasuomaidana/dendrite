@@ -42,11 +42,7 @@ func TestTools_REA(t *testing.T) {
 	RegisterDefaultTools(srv, Dependencies{})
 
 	for _, format := range []string{"json", "markdown", "summary", "default"} {
-		req := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_rea_showcase", "arguments": {"target": "all", "format": %q}}}`, format)
-		resp := srv.HandleRequest(context.Background(), []byte(req))
-		if resp == nil || resp.Error != nil {
-			t.Fatalf("rea_showcase format %s failed: %v", format, resp)
-		}
+		assertToolCallSuccess(t, srv, "dendrite_rea_showcase", fmt.Sprintf(`{"target": "all", "format": %q}`, format))
 	}
 }
 

@@ -61,26 +61,22 @@ func TestSiteConfigBuilder(t *testing.T) {
 		}
 	})
 
-	t.Run("InvalidPortValidation", func(t *testing.T) {
-		_, err := NewSiteConfigBuilder().WithPort(70000).Build()
-		if err == nil {
-			t.Fatal("expected error for invalid port > 65535, got nil")
-		}
-	})
-
-	t.Run("EmptySiteNameValidation", func(t *testing.T) {
-		_, err := NewSiteConfigBuilder().WithTitle("").Build()
-		if err == nil {
-			t.Fatal("expected error for empty site title, got nil")
-		}
-	})
-
-	t.Run("EmptyProjectNameValidation", func(t *testing.T) {
-		_, err := NewSiteConfigBuilder().WithProject("acme", "").Build()
-		if err == nil {
-			t.Fatal("expected error for empty project name, got nil")
-		}
-	})
+	validationTests := []struct {
+		name    string
+		builder *SiteConfigBuilder
+		wantErr string
+	}{
+		{"InvalidPortValidation", NewSiteConfigBuilder().WithPort(70000), "invalid port > 65535"},
+		{"EmptySiteNameValidation", NewSiteConfigBuilder().WithTitle(""), "empty site title"},
+		{"EmptyProjectNameValidation", NewSiteConfigBuilder().WithProject("acme", ""), "empty project name"},
+	}
+	for _, tc := range validationTests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := tc.builder.Build(); err == nil {
+				t.Fatalf("expected error for %s, got nil", tc.wantErr)
+			}
+		})
+	}
 }
 
 func TestManifestBuilder(t *testing.T) {

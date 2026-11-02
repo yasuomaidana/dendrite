@@ -94,47 +94,53 @@ func TestHostRunner(t *testing.T) {
 		}
 	})
 
-	t.Run("interactive host execution and failed command", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		var stdoutBuf, stderrBuf bytes.Buffer
-		runner := &HostRunner{
-			Interactive: true,
-			Stdout:      &stdoutBuf,
-			Stderr:      &stderrBuf,
-			Stdin:       bytes.NewBufferString(""),
-			LookPath: func(file string) (string, error) {
-				return "/usr/bin/false", nil
+	errorCases := []struct {
+		name       string
+		makeCtx    func() (context.Context, context.CancelFunc)
+		cmdName    string
+		wantStatus string
+	}{
+		{
+			name:       "interactive host execution and failed command",
+			makeCtx:    func() (context.Context, context.CancelFunc) { return context.WithCancel(ctx) },
+			cmdName:    "false",
+			wantStatus: "failed",
+		},
+		{
+			name: "curfew interrupted context cancellation",
+			makeCtx: func() (context.Context, context.CancelFunc) {
+				c, cancel := context.WithCancel(ctx)
+				cancel()
+				return c, cancel
 			},
-			CommandFunc: func(ctx context.Context, name string, arg ...string) *exec.Cmd {
-				return exec.CommandContext(ctx, "false")
-			},
-		}
-		cfg := AgentConfig{
-			Type:           AgentAider,
-			LiteLLMBaseURL: "http://localhost:4000/v1",
-			VirtualAPIKey:  "sk-test",
-			WorkspaceDir:   tmpDir,
-		}
-		assertHostRunnerExecute(t, ctx, runner, cfg, true, "failed")
-	})
-
-	t.Run("curfew interrupted context cancellation", func(t *testing.T) {
-		cctx, cancel := context.WithCancel(ctx)
-		cancel()
-		runner := &HostRunner{
-			LookPath: func(file string) (string, error) {
-				return "/bin/sleep", nil
-			},
-			CommandFunc: func(ctx context.Context, name string, arg ...string) *exec.Cmd {
-				return exec.CommandContext(ctx, "sleep", "5")
-			},
-		}
-		cfg := AgentConfig{
-			Type:           AgentAider,
-			LiteLLMBaseURL: "http://localhost:4000/v1",
-			VirtualAPIKey:  "sk-test",
-			WorkspaceDir:   t.TempDir(),
-		}
-		assertHostRunnerExecute(t, cctx, runner, cfg, true, "curfew_interrupted")
-	})
+			cmdName:    "sleep",
+			wantStatus: "curfew_interrupted",
+		},
+	}
+	for _, ec := range errorCases {
+		t.Run(ec.name, func(t *testing.T) {
+			c, cancel := ec.makeCtx()
+			defer cancel()
+			var stdoutBuf, stderrBuf bytes.Buffer
+			runner := &HostRunner{
+				Interactive: true,
+				Stdout:      &stdoutBuf,
+				Stderr:      &stderrBuf,
+				Stdin:       bytes.NewBufferString(""),
+				LookPath: func(file string) (string, error) {
+					return "/bin/" + ec.cmdName, nil
+				},
+				CommandFunc: func(cmdCtx context.Context, name string, arg ...string) *exec.Cmd {
+					return exec.CommandContext(c, ec.cmdName)
+				},
+			}
+			cfg := AgentConfig{
+				Type:           AgentAider,
+				LiteLLMBaseURL: "http://localhost:4000/v1",
+				VirtualAPIKey:  "sk-test",
+				WorkspaceDir:   t.TempDir(),
+			}
+			assertHostRunnerExecute(t, c, runner, cfg, true, ec.wantStatus)
+		})
+	}
 }

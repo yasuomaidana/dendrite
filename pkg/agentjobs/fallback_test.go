@@ -13,22 +13,25 @@ import (
 
 func TestProviderKey(t *testing.T) {
 	tests := []struct {
+		name         string
 		agent, model string
 		expected     string
 	}{
-		{"aider", copilotModel, providerCopilot},
-		{"oxillama", oxillamaModel, providerOxillama},
-		{"local", localModel, providerLocal},
-		{"agy", "gemini-3.8-flash-high", "agy:gemini-3.8"},
-		{"agy", "gemini-4-argon-medium", "agy:gemini-4-argon"},
-		{"", "gemini-3.8-flash-low", "agy:gemini-3.8"},
-		{"agy", "claude-sonnet-5-5-high", "agy:claude"},
-		{"custom_agent", "unknown", providerAGY},
+		{"aider copilot", "aider", copilotModel, providerCopilot},
+		{"oxillama local", "oxillama", oxillamaModel, providerOxillama},
+		{"local model", "local", localModel, providerLocal},
+		{"agy gemini flash", "agy", "gemini-3.8-flash-high", "agy:gemini-3.8"},
+		{"agy gemini argon", "agy", "gemini-4-argon-medium", "agy:gemini-4-argon"},
+		{"empty agent gemini", "", "gemini-3.8-flash-low", "agy:gemini-3.8"},
+		{"agy claude sonnet", "agy", "claude-sonnet-5-5-high", "agy:claude"},
+		{"custom fallback", "custom_agent", "unknown", providerAGY},
 	}
 	for _, tc := range tests {
-		if got := providerKey(tc.agent, tc.model); got != tc.expected {
-			t.Errorf("providerKey(%q, %q) = %q, want %q", tc.agent, tc.model, got, tc.expected)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			if got := providerKey(tc.agent, tc.model); got != tc.expected {
+				t.Errorf("providerKey(%q, %q) = %q, want %q", tc.agent, tc.model, got, tc.expected)
+			}
+		})
 	}
 }
 
@@ -166,27 +169,29 @@ func TestDispatcher_Now_DefaultAndCustom(t *testing.T) {
 
 func TestRetryAfter(t *testing.T) {
 	cases := []struct {
+		name     string
 		input    string
 		expected time.Duration
 	}{
-		{"Retry-After: 120", 120 * time.Second},
-		{"retry_after=30", 30 * time.Second},
-		{"retry-after: 5", 5 * time.Second},
-		{"retry after 45", 45 * time.Second},
-		{"\"retry_after\": 90", 90 * time.Second},
-		{"Retry-After: 0", DefaultProviderCooldown},
-		{"Retry-After: -10", DefaultProviderCooldown},
-		{"no retry hint present", DefaultProviderCooldown},
-		{`"short_error":"RESOURCE_EXHAUSTED (code 429): Individual quota reached. Resets in 140h4m53s."`, 140*time.Hour + 4*time.Minute + 53*time.Second},
-		{"Resets in 45m.", 45 * time.Minute},
-		{"Resets in soon", DefaultProviderCooldown},
-		{"", DefaultProviderCooldown},
+		{"header standard 120s", "Retry-After: 120", 120 * time.Second},
+		{"param format 30s", "retry_after=30", 30 * time.Second},
+		{"lowercase header 5s", "retry-after: 5", 5 * time.Second},
+		{"space separated 45s", "retry after 45", 45 * time.Second},
+		{"json format 90s", "\"retry_after\": 90", 90 * time.Second},
+		{"header zero duration", "Retry-After: 0", DefaultProviderCooldown},
+		{"negative duration", "Retry-After: -10", DefaultProviderCooldown},
+		{"no retry hint", "no retry hint present", DefaultProviderCooldown},
+		{"quota reset hours", `"short_error":"RESOURCE_EXHAUSTED (code 429): Individual quota reached. Resets in 140h4m53s."`, 140*time.Hour + 4*time.Minute + 53*time.Second},
+		{"quota reset minutes", "Resets in 45m.", 45 * time.Minute},
+		{"invalid duration text", "Resets in soon", DefaultProviderCooldown},
+		{"empty string", "", DefaultProviderCooldown},
 	}
 	for _, tc := range cases {
-		got := retryAfter(tc.input)
-		if got != tc.expected {
-			t.Errorf("retryAfter(%q) = %v, want %v", tc.input, got, tc.expected)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			if got := retryAfter(tc.input); got != tc.expected {
+				t.Errorf("retryAfter(%q) = %v, want %v", tc.input, got, tc.expected)
+			}
+		})
 	}
 }
 

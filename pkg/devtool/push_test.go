@@ -89,40 +89,76 @@ func TestPushCurrentBranch_AndInspectRepo(t *testing.T) {
 func TestPushCurrentBranch_Guards(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("env disabled", func(t *testing.T) {
-		t.Setenv("DENDRITE_COMMIT_PUSH", "false")
-		if out := PushCurrentBranch(ctx, t.TempDir()); !out.Skipped || out.Reason != "DENDRITE_COMMIT_PUSH=false" {
-			t.Fatalf("%+v", out)
-		}
-	})
+	tests := []struct {
+		name     string
+		setup    func(t *testing.T) string
+		validate func(t *testing.T, out PushOutcome)
+	}{
+		{
+			name: "env disabled",
+			setup: func(t *testing.T) string {
+				t.Setenv("DENDRITE_COMMIT_PUSH", "false")
+				return t.TempDir()
+			},
+			validate: func(t *testing.T, out PushOutcome) {
+				if !out.Skipped || out.Reason != "DENDRITE_COMMIT_PUSH=false" {
+					t.Fatalf("%+v", out)
+				}
+			},
+		},
+		{
+			name: "no remote",
+			setup: func(t *testing.T) string {
+				t.Setenv("DENDRITE_COMMIT_PUSH", "")
+				dir := t.TempDir()
+				gitIn(t, dir, "init", "-q", "-b", "feature")
+				return dir
+			},
+			validate: func(t *testing.T, out PushOutcome) {
+				if !out.Skipped || out.Reason != "no remote configured" {
+					t.Fatalf("%+v", out)
+				}
+			},
+		},
+		{
+			name: "main refused",
+			setup: func(t *testing.T) string {
+				t.Setenv("DENDRITE_COMMIT_PUSH", "")
+				repo, _ := setupCommitRepoWithRemote(t, "main")
+				commitFile(t, repo, "a.txt")
+				return repo
+			},
+			validate: func(t *testing.T, out PushOutcome) {
+				if out.Pushed || out.Err == nil {
+					t.Fatalf("%+v", out)
+				}
+			},
+		},
+		{
+			name: "detached HEAD skipped",
+			setup: func(t *testing.T) string {
+				t.Setenv("DENDRITE_COMMIT_PUSH", "")
+				repo, _ := setupCommitRepoWithRemote(t, "feature")
+				commitFile(t, repo, "a.txt")
+				commitFile(t, repo, "b.txt")
+				gitIn(t, repo, "checkout", "-q", "--detach", "HEAD~1")
+				return repo
+			},
+			validate: func(t *testing.T, out PushOutcome) {
+				if out.Pushed || !out.Skipped || out.Err != nil {
+					t.Fatalf("%+v", out)
+				}
+			},
+		},
+	}
 
-	t.Setenv("DENDRITE_COMMIT_PUSH", "")
-
-	t.Run("no remote", func(t *testing.T) {
-		dir := t.TempDir()
-		gitIn(t, dir, "init", "-q", "-b", "feature")
-		if out := PushCurrentBranch(ctx, dir); !out.Skipped || out.Reason != "no remote configured" {
-			t.Fatalf("%+v", out)
-		}
-	})
-
-	t.Run("main refused", func(t *testing.T) {
-		repo, _ := setupCommitRepoWithRemote(t, "main")
-		commitFile(t, repo, "a.txt")
-		if out := PushCurrentBranch(ctx, repo); out.Pushed || out.Err == nil {
-			t.Fatalf("%+v", out)
-		}
-	})
-
-	t.Run("detached HEAD skipped", func(t *testing.T) {
-		repo, _ := setupCommitRepoWithRemote(t, "feature")
-		commitFile(t, repo, "a.txt")
-		commitFile(t, repo, "b.txt")
-		gitIn(t, repo, "checkout", "-q", "--detach", "HEAD~1")
-		if out := PushCurrentBranch(ctx, repo); out.Pushed || !out.Skipped || out.Err != nil {
-			t.Fatalf("%+v", out)
-		}
-	})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := tc.setup(t)
+			out := PushCurrentBranch(ctx, dir)
+			tc.validate(t, out)
+		})
+	}
 
 	t.Run("inspect non-repo", func(t *testing.T) {
 		if _, err := InspectRepo(ctx, t.TempDir(), false); err == nil {

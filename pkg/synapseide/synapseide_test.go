@@ -23,40 +23,29 @@ func writeMemberProjectID(t *testing.T, dir, projectID string) {
 	}
 }
 
-func TestSynapseServerName(t *testing.T) {
-	cases := []struct {
-		id       string
-		expected string
-	}{
-		{"core", "dendrite-synapse-core"},
-		{"payment-service", "dendrite-synapse-payment-service"},
-		{"mesh-1-v2", "dendrite-synapse-mesh-1-v2"},
-	}
-
-	for _, tc := range cases {
-		got := SynapseServerName(tc.id)
-		if got != tc.expected {
-			t.Errorf("SynapseServerName(%q) = %q; expected %q", tc.id, got, tc.expected)
+func assertSynapseNameMapping(t *testing.T, transform func(string) string, cases map[string]string) {
+	t.Helper()
+	for input, expected := range cases {
+		if got := transform(input); got != expected {
+			t.Errorf("transform(%q) = %q; expected %q", input, got, expected)
 		}
 	}
 }
 
-func TestSynapseScopeName(t *testing.T) {
-	cases := []struct {
-		id       string
-		expected string
-	}{
-		{"core", "Synapse_core"},
-		{"payment-service", "Synapse_payment_service"},
-		{"multi-part-id-test", "Synapse_multi_part_id_test"},
-	}
+func TestSynapseServerName(t *testing.T) {
+	assertSynapseNameMapping(t, SynapseServerName, map[string]string{
+		"core":            "dendrite-synapse-core",
+		"payment-service": "dendrite-synapse-payment-service",
+		"mesh-1-v2":       "dendrite-synapse-mesh-1-v2",
+	})
+}
 
-	for _, tc := range cases {
-		got := SynapseScopeName(tc.id)
-		if got != tc.expected {
-			t.Errorf("SynapseScopeName(%q) = %q; expected %q", tc.id, got, tc.expected)
-		}
-	}
+func TestSynapseScopeName(t *testing.T) {
+	assertSynapseNameMapping(t, SynapseScopeName, map[string]string{
+		"core":               "Synapse_core",
+		"payment-service":    "Synapse_payment_service",
+		"multi-part-id-test": "Synapse_multi_part_id_test",
+	})
 }
 
 func TestSynapseScopeXML_ProducerMember(t *testing.T) {

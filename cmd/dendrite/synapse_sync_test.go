@@ -13,6 +13,20 @@ import (
 	"Dendrite/pkg/synapse"
 )
 
+type synapseCmdErrCase struct {
+	args []string
+	want string
+}
+
+func assertSynapseCommandErrors(t *testing.T, run func(args ...string) (string, error), cases []synapseCmdErrCase) {
+	t.Helper()
+	for _, tc := range cases {
+		if _, err := run(tc.args...); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%v: err = %v, want %q", tc.args, err, tc.want)
+		}
+	}
+}
+
 func gitRun(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
@@ -120,10 +134,7 @@ func TestSynapseCommand_StatusAndSync(t *testing.T) {
 		t.Fatalf("status after sync = %q, %v", out, err)
 	}
 
-	for _, tc := range []struct {
-		args []string
-		want string
-	}{
+	assertSynapseCommandErrors(t, run, []synapseCmdErrCase{
 		{[]string{"sync"}, "accepts 1 arg(s), received 0"},
 		{[]string{"sync", "nope"}, "nope"},
 		{[]string{"sync", "stack", "extra"}, "accepts 1 arg(s), received 2"},
@@ -131,11 +142,7 @@ func TestSynapseCommand_StatusAndSync(t *testing.T) {
 		{[]string{"sync", "stack", "--merge=hub"}, "invalid --merge"},
 		{[]string{"sync", "stack", "--merge", "ghost=x"}, "no member"},
 		{[]string{"status", "stack", "--autostash"}, "unknown flag"},
-	} {
-		if _, err := run(tc.args...); err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("%v: err = %v, want %q", tc.args, err, tc.want)
-		}
-	}
+	})
 }
 
 func TestPrintSyncReportVariants(t *testing.T) {

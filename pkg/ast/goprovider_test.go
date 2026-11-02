@@ -10,6 +10,17 @@ import (
 	"testing"
 )
 
+func runGitCommands(t *testing.T, dir string, cmds [][]string) {
+	t.Helper()
+	for _, c := range cmds {
+		cmd := exec.Command(c[0], c[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v, output: %s", c, err, string(out))
+		}
+	}
+}
+
 // managerFixture is a frozen copy of pkg/inference/manager.go (as of 3c87e4f). The fold tests measure
 // this copy: measuring the live file made the reduction drift with unrelated edits to it.
 func managerFixture(t *testing.T) []byte {
@@ -278,13 +289,7 @@ func Execute() string {
 		{"git", "add", "runner.go"},
 		{"git", "commit", "-m", "second commit"},
 	}
-	for _, c := range step2Cmds {
-		cmd := exec.Command(c[0], c[1:]...)
-		cmd.Dir = repoDir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git commit step 2 failed: %v, output: %s", err, string(out))
-		}
-	}
+	runGitCommands(t, repoDir, step2Cmds)
 
 	slicesCommits, err := provider.ChangedSymbols(repoDir, "HEAD~1")
 	if err != nil {

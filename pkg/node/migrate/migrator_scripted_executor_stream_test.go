@@ -35,10 +35,11 @@ func TestExtractHostOnly(t *testing.T) {
 		{"root@192.168.1.100", "192.168.1.100"},
 	}
 	for _, tc := range tests {
-		got := extractHostOnly(tc.input)
-		if got != tc.expected {
-			t.Errorf("extractHostOnly(%s) = %s, expected %s", tc.input, got, tc.expected)
-		}
+		t.Run(tc.input, func(t *testing.T) {
+			if got := extractHostOnly(tc.input); got != tc.expected {
+				t.Errorf("extractHostOnly(%s) = %s, expected %s", tc.input, got, tc.expected)
+			}
+		})
 	}
 }
 

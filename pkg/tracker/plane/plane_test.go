@@ -305,9 +305,11 @@ func TestMapPlaneState(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		out := mapPlaneState(c.group, c.name)
-		if out != c.exp {
-			t.Errorf("mapPlaneState(%q, %q) = %v; want %v", c.group, c.name, out, c.exp)
-		}
+		t.Run(c.group+"_"+c.name, func(t *testing.T) {
+			out := mapPlaneState(c.group, c.name)
+			if out != c.exp {
+				t.Errorf("mapPlaneState(%q, %q) = %v; want %v", c.group, c.name, out, c.exp)
+			}
+		})
 	}
 }

@@ -24,21 +24,24 @@ func isolateEnvironment(t *testing.T) {
 
 func TestFormatTicketCommit(t *testing.T) {
 	tests := []struct {
+		name     string
 		ticket   string
 		message  string
 		expected string
 	}{
-		{"DEN-098", "feat: implement commit engine", "[DEN-098] feat: implement commit engine"},
-		{"DEN-098", "[DEN-098] feat: already formatted", "[DEN-098] feat: already formatted"},
-		{"", "chore: no ticket ID", "chore: no ticket ID"},
-		{"  DEN-098  ", "fix: spacing check", "[DEN-098] fix: spacing check"},
+		{"standard ticket prefix", "DEN-098", "feat: implement commit engine", "[DEN-098] feat: implement commit engine"},
+		{"already formatted ticket", "DEN-098", "[DEN-098] feat: already formatted", "[DEN-098] feat: already formatted"},
+		{"empty ticket ID", "", "chore: no ticket ID", "chore: no ticket ID"},
+		{"trimmed whitespace ticket", "  DEN-098  ", "fix: spacing check", "[DEN-098] fix: spacing check"},
 	}
 
 	for _, tt := range tests {
-		got := FormatTicketCommit(tt.ticket, tt.message)
-		if got != tt.expected {
-			t.Errorf("FormatTicketCommit(%q, %q) = %q; want %q", tt.ticket, tt.message, got, tt.expected)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			got := FormatTicketCommit(tt.ticket, tt.message)
+			if got != tt.expected {
+				t.Errorf("FormatTicketCommit(%q, %q) = %q; want %q", tt.ticket, tt.message, got, tt.expected)
+			}
+		})
 	}
 }
 
@@ -381,34 +384,32 @@ func TestDevTool_ErrorBranches(t *testing.T) {
 }
 
 func TestIsCannedOrInvalidCommitMessage(t *testing.T) {
-	canned := []string{
-		"OxiLLaMa (pure-Rust zero-FFI runner) responded via 'qwen3.8:27b': processed your request safely with zero cloud tokens consumed.",
-		"processed your request safely with zero cloud tokens consumed",
-		"pure-Rust zero-FFI runner responded via qwen",
-		"As an AI, here is the commit message: feat(repo): update",
-		"Here is the commit message for you",
-		"",
-		"   ",
-		"random non-conventional commit text without type",
+	tests := []struct {
+		name    string
+		message string
+		want    bool
+	}{
+		{"canned oxillama response", "OxiLLaMa (pure-Rust zero-FFI runner) responded via 'qwen3.8:27b': processed your request safely with zero cloud tokens consumed.", true},
+		{"canned quota response", "processed your request safely with zero cloud tokens consumed", true},
+		{"canned runner response", "pure-Rust zero-FFI runner responded via qwen", true},
+		{"canned ai intro", "As an AI, here is the commit message: feat(repo): update", true},
+		{"canned message offer", "Here is the commit message for you", true},
+		{"empty string", "", true},
+		{"whitespace string", "   ", true},
+		{"non conventional", "random non-conventional commit text without type", true},
+		{"valid feat", "feat(commit): implement smart commit strategy", false},
+		{"valid fix", "fix(gateway): handle timeout error", false},
+		{"valid docs", "docs: update installation instructions", false},
+		{"valid refactor", "refactor(tracker): extract common client logic", false},
+		{"valid ticket prefixed", "[DEN-817] feat(devtool): decouple git commit engine with oxillama http adapter", false},
+		{"valid chore", "chore: update dependencies", false},
+		{"valid test", "test(mcpserver): add integration tests for plane tools", false},
 	}
-	for _, c := range canned {
-		if !isCannedOrInvalidCommitMessage(c) {
-			t.Errorf("expected isCannedOrInvalidCommitMessage(%q) = true, got false", c)
-		}
-	}
-
-	valid := []string{
-		"feat(commit): implement smart commit strategy",
-		"fix(gateway): handle timeout error",
-		"docs: update installation instructions",
-		"refactor(tracker): extract common client logic",
-		"[DEN-817] feat(devtool): decouple git commit engine with oxillama http adapter",
-		"chore: update dependencies",
-		"test(mcpserver): add integration tests for plane tools",
-	}
-	for _, v := range valid {
-		if isCannedOrInvalidCommitMessage(v) {
-			t.Errorf("expected isCannedOrInvalidCommitMessage(%q) = false, got true", v)
-		}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isCannedOrInvalidCommitMessage(tc.message); got != tc.want {
+				t.Errorf("isCannedOrInvalidCommitMessage(%q) = %v, want %v", tc.message, got, tc.want)
+			}
+		})
 	}
 }

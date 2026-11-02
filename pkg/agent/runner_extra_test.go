@@ -97,36 +97,31 @@ func TestHostRunner_ExecutionPaths(t *testing.T) {
 		}
 	})
 
-	t.Run("Interactive mode with custom and default streams", func(t *testing.T) {
-		cfg := AgentConfig{
-			Type:           AgentAGY,
-			LiteLLMBaseURL: "http://localhost:4000/v1",
-			VirtualAPIKey:  "sk-test",
-			WorkspaceDir:   "/tmp",
-		}
-		runnerCustom := newEchoHostRunner(true, true, "interactive")
-		if _, err := runnerCustom.Execute(ctx, cfg); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		runnerDefault := newEchoHostRunner(true, false, "interactive-default")
-		if _, err := runnerDefault.Execute(ctx, cfg); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("Non-interactive mode with custom streams", func(t *testing.T) {
-		runner := newEchoHostRunner(false, true, "piped")
-		cfg := AgentConfig{
-			Type:           AgentOpenHands,
-			LiteLLMBaseURL: "http://localhost:4000/v1",
-			VirtualAPIKey:  "sk-test",
-			WorkspaceDir:   "/tmp",
-		}
-		if _, err := runner.Execute(ctx, cfg); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	})
+	streamCases := []struct {
+		name          string
+		agentType     AgentType
+		interactive   bool
+		customStreams bool
+		tag           string
+	}{
+		{"Interactive custom streams", AgentAGY, true, true, "interactive"},
+		{"Interactive default streams", AgentAGY, true, false, "interactive-default"},
+		{"Non-interactive custom streams", AgentOpenHands, false, true, "piped"},
+	}
+	for _, sc := range streamCases {
+		t.Run(sc.name, func(t *testing.T) {
+			runner := newEchoHostRunner(sc.interactive, sc.customStreams, sc.tag)
+			cfg := AgentConfig{
+				Type:           sc.agentType,
+				LiteLLMBaseURL: "http://localhost:4000/v1",
+				VirtualAPIKey:  "sk-test",
+				WorkspaceDir:   "/tmp",
+			}
+			if _, err := runner.Execute(ctx, cfg); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
 
 	t.Run("Process execution error paths (failed vs curfew)", func(t *testing.T) {
 		cfg := AgentConfig{

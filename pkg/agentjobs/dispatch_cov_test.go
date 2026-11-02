@@ -61,10 +61,16 @@ func TestCoverage_NewDispatcher_EnvEndpoint(t *testing.T) {
 	}
 }
 
+func newTestDispatcherWithDummy(t *testing.T, ledger *Ledger) *Dispatcher {
+	t.Helper()
+	d := NewDispatcher(ledger)
+	d.Executable = installExecutableScript(t, t.TempDir(), "dummy", "exit 0\n")
+	return d
+}
+
 func TestCoverage_Submit_EdgeCases(t *testing.T) {
 	t.Run("whitespace prompt returns error", func(t *testing.T) {
-		d := NewDispatcher(NewLedger(t.TempDir()))
-		d.Executable = installExecutableScript(t, t.TempDir(), "dummy", "exit 0\n")
+		d := newTestDispatcherWithDummy(t, NewLedger(t.TempDir()))
 		_, err := d.Submit(SubmitSpec{Prompt: "   \t\n  "})
 		if err == nil {
 			t.Fatal("expected error for whitespace prompt")
@@ -77,8 +83,7 @@ func TestCoverage_Submit_EdgeCases(t *testing.T) {
 			t.Fatal(err)
 		}
 		badLedger := NewLedger(filepath.Join(tempFile, "subledger"))
-		d := NewDispatcher(badLedger)
-		d.Executable = installExecutableScript(t, t.TempDir(), "dummy", "exit 0\n")
+		d := newTestDispatcherWithDummy(t, badLedger)
 		_, err := d.Submit(SubmitSpec{Prompt: "valid prompt"})
 		if err == nil {
 			t.Fatal("expected error from ledger Create")
@@ -91,8 +96,7 @@ func TestCoverage_Submit_EdgeCases(t *testing.T) {
 		randReader = bytes.NewReader(bytes.Repeat([]byte{0x77}, 200))
 
 		tempLedger := NewLedger(t.TempDir())
-		d := NewDispatcher(tempLedger)
-		d.Executable = installExecutableScript(t, t.TempDir(), "dummy", "exit 0\n")
+		d := newTestDispatcherWithDummy(t, tempLedger)
 
 		for time.Now().UTC().Nanosecond() > 700_000_000 {
 			time.Sleep(10 * time.Millisecond)
@@ -125,8 +129,7 @@ func TestCoverage_Submit_EdgeCases(t *testing.T) {
 		defer func() { writeFile = origWriteFile }()
 
 		tempLedger := NewLedger(t.TempDir())
-		d := NewDispatcher(tempLedger)
-		d.Executable = installExecutableScript(t, t.TempDir(), "dummy", "exit 0\n")
+		d := newTestDispatcherWithDummy(t, tempLedger)
 
 		writeCount := 0
 		writeFile = func(name string, data []byte, perm os.FileMode) error {
@@ -165,8 +168,7 @@ func TestCoverage_Submit_EdgeCases(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		d := NewDispatcher(NewLedger(tmpDir))
-		d.Executable = installExecutableScript(t, tmpDir, "dummy", "exit 0\n")
+		d := newTestDispatcherWithDummy(t, NewLedger(tmpDir))
 		_, err = d.Submit(SubmitSpec{Worktree: "", Prompt: "test"})
 		_ = os.Chdir(origWd)
 		if err != nil && !strings.Contains(err.Error(), "failed to resolve worktree") {

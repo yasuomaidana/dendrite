@@ -24,9 +24,16 @@ func TestStatusForCoversCanonicalBoardAndLegacyNames(t *testing.T) {
 		{"", "something odd", tracker.StatusBacklog},
 	}
 	for _, c := range cases {
-		if got := StatusFor(c.group, c.name); got != c.want {
-			t.Errorf("StatusFor(%q, %q) = %s, want %s", c.group, c.name, got, c.want)
+		subName := c.group + "/" + c.name
+		if c.group == "" {
+			subName = "unspecified/" + c.name
 		}
+		t.Run(subName, func(t *testing.T) {
+			got := StatusFor(c.group, c.name)
+			if got != c.want {
+				t.Errorf("StatusFor(%q, %q) = %s, want %s", c.group, c.name, got, c.want)
+			}
+		})
 	}
 }
 

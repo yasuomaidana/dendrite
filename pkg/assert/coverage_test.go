@@ -241,23 +241,30 @@ func TestRunGitDiff_Branches(t *testing.T) {
 }
 
 func TestIsSourceFile(t *testing.T) {
-	sourceFiles := []string{
-		"code.go", "code.rs", "code.ts", "code.js",
-		"code.py", "code.c", "code.cpp", "code.h",
+	tests := []struct {
+		file string
+		want bool
+	}{
+		{"code.go", true},
+		{"code.rs", true},
+		{"code.ts", true},
+		{"code.js", true},
+		{"code.py", true},
+		{"code.c", true},
+		{"code.cpp", true},
+		{"code.h", true},
+		{"README.md", false},
+		{"image.png", false},
+		{"archive.tar.gz", false},
+		{"license", false},
+		{"", false},
 	}
-	for _, f := range sourceFiles {
-		if !isSourceFile(f) {
-			t.Errorf("expected %s to be recognized as source file", f)
-		}
-	}
-
-	nonSourceFiles := []string{
-		"README.md", "image.png", "archive.tar.gz", "license", "",
-	}
-	for _, f := range nonSourceFiles {
-		if isSourceFile(f) {
-			t.Errorf("expected %s NOT to be recognized as source file", f)
-		}
+	for _, tc := range tests {
+		t.Run(tc.file, func(t *testing.T) {
+			if got := isSourceFile(tc.file); got != tc.want {
+				t.Errorf("isSourceFile(%q) = %v, want %v", tc.file, got, tc.want)
+			}
+		})
 	}
 }
 

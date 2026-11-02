@@ -7,6 +7,15 @@ import (
 	"Dendrite/pkg/tracker"
 )
 
+func newCyclicGraph() *Graph {
+	g := NewGraph()
+	g.AddNode(&Node{ID: "A"})
+	g.AddNode(&Node{ID: "B"})
+	_ = g.AddEdge("A", "B")
+	_ = g.AddEdge("B", "A")
+	return g
+}
+
 func TestGraph_AdditionalCoverage(t *testing.T) {
 	t.Run("AddNode_EmptyID", func(t *testing.T) {
 		g := NewGraph()
@@ -16,31 +25,26 @@ func TestGraph_AdditionalCoverage(t *testing.T) {
 		}
 	})
 
-	t.Run("TopologicalSort_CycleError", func(t *testing.T) {
-		g := NewGraph()
-		g.AddNode(&Node{ID: "A"})
-		g.AddNode(&Node{ID: "B"})
-		_ = g.AddEdge("A", "B")
-		_ = g.AddEdge("B", "A")
-
-		_, err := g.TopologicalSort()
-		if err == nil {
-			t.Fatalf("expected cycle error from TopologicalSort")
-		}
-	})
-
-	t.Run("GenerateGanttPlan_CycleError", func(t *testing.T) {
-		g := NewGraph()
-		g.AddNode(&Node{ID: "A"})
-		g.AddNode(&Node{ID: "B"})
-		_ = g.AddEdge("A", "B")
-		_ = g.AddEdge("B", "A")
-
-		_, err := g.GenerateGanttPlan(time.Now())
-		if err == nil {
-			t.Fatalf("expected cycle error from GenerateGanttPlan")
-		}
-	})
+	cycleTests := []struct {
+		name string
+		op   func(*Graph) error
+	}{
+		{"TopologicalSort_CycleError", func(g *Graph) error {
+			_, err := g.TopologicalSort()
+			return err
+		}},
+		{"GenerateGanttPlan_CycleError", func(g *Graph) error {
+			_, err := g.GenerateGanttPlan(time.Now())
+			return err
+		}},
+	}
+	for _, tc := range cycleTests {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.op(newCyclicGraph()); err == nil {
+				t.Fatalf("expected cycle error from %s", tc.name)
+			}
+		})
+	}
 
 	t.Run("GenerateGanttPlan_MilestoneStartDateUpdate", func(t *testing.T) {
 		g := NewGraph()
