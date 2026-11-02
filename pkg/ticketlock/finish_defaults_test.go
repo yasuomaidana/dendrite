@@ -262,7 +262,7 @@ func moduleBranch(t *testing.T, directives string) string {
 }
 
 func TestQualityGateRunsTheTestsAndThenTheDirectivesOnTheTicketsChanges(t *testing.T) {
-	ragtest.UseStandin(t, "1.11.0")
+	ragtest.UseStandin(t, "1.12.0")
 	ok := moduleBranch(t, "")
 	res, err := qualityGate(context.Background(), ok, "DEN-5")
 	if err != nil || !res.Passed || !strings.Contains(res.Report, "go test -race") || !strings.Contains(res.Report, " passed.\n\nQuality gate (changes): **passed**") || strings.Contains(res.Report, "coverage:") {

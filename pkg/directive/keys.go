@@ -8,32 +8,42 @@ import (
 	"strings"
 )
 
-// keyDef is one setting a rule can change: its value kind, what it means and how to store it.
+// keyDef is one setting a rule can change: its value kind, what it means and how to store and read it.
 type keyDef struct {
 	kind string // int, float, bool, string, strings
 	doc  string
 	set  func(*Set, any)
+	get  func(Set) any
 }
 
 // keys is every setting, by its dotted name (table.key).
 var keys = map[string]keyDef{
-	"loc.max_production_lines":  {"int", "most production lines a file may have (tests, comments and blank lines do not count), at least 50", func(s *Set, v any) { s.Loc.MaxProductionLines = v.(int) }},
-	"loc.warn_at":               {"int", "production lines above which a file warns, not above loc.max_production_lines", func(s *Set, v any) { s.Loc.WarnAt = v.(int) }},
-	"loc.exclude":               {"strings", "globs of files whose lines are not counted", func(s *Set, v any) { s.Loc.Exclude = v.([]string) }},
-	"coverage.min_percent":      {"float", "minimum test coverage, 0 to 100", func(s *Set, v any) { s.Coverage.MinPercent = v.(float64) }},
-	"coverage.scope":            {"string", "line, statement or branch", func(s *Set, v any) { s.Coverage.Scope = v.(string) }},
-	"coverage.exclude":          {"strings", "globs of files not measured", func(s *Set, v any) { s.Coverage.Exclude = v.([]string) }},
-	"duplication.max_percent":   {"float", "share of duplicated code tolerated, 0 to 100 (0 means none)", func(s *Set, v any) { s.Duplication.MaxPercent = v.(float64) }},
-	"duplication.min_tokens":    {"int", "tokens a repeated block needs to count, at least 10", func(s *Set, v any) { s.Duplication.MinTokens = v.(int) }},
-	"duplication.min_lines":     {"int", "lines a repeated block needs to count, at least 2", func(s *Set, v any) { s.Duplication.MinLines = v.(int) }},
-	"duplication.include_tests": {"bool", "whether test code is checked for duplication", func(s *Set, v any) { s.Duplication.IncludeTests = v.(bool) }},
-	"duplication.strategies":    {"strings", "how repeated code is removed, in order: helper_function, macro, rstest (Rust tests use the rstest crate)", func(s *Set, v any) { s.Duplication.Strategies = v.([]string) }},
-	"lint.strictness":           {"string", "relaxed, standard or strict", func(s *Set, v any) { s.Lint.Strictness = v.(string) }},
-	"security.fail_on":          {"string", "lowest severity that fails the security job: low, medium, high or critical", func(s *Set, v any) { s.Security.FailOn = v.(string) }},
-	"security.secrets":          {"bool", "whether leaked secrets are scanned for", func(s *Set, v any) { s.Security.Secrets = v.(bool) }},
-	"done.auto_done":            {"bool", "true lets an agent set a ticket to Done when every gate passes; false leaves it to a person", func(s *Set, v any) { s.Done.AutoDone = v.(bool) }},
-	"done.human_review_labels":  {"strings", "ticket labels that always need a person", func(s *Set, v any) { s.Done.HumanReviewLabels = v.([]string) }},
-	"languages.preference":      {"strings", "languages in the order Dendrite proposes them for new code", func(s *Set, v any) { s.Languages.Preference = v.([]string) }},
+	"loc.max_production_lines":           {"int", "most production lines a file may have (tests, comments and blank lines do not count), at least 50", func(s *Set, v any) { s.Loc.MaxProductionLines = v.(int) }, func(s Set) any { return s.Loc.MaxProductionLines }},
+	"loc.warn_at":                        {"int", "production lines above which a file warns, not above loc.max_production_lines", func(s *Set, v any) { s.Loc.WarnAt = v.(int) }, func(s Set) any { return s.Loc.WarnAt }},
+	"loc.exclude":                        {"strings", "globs of files whose lines are not counted", func(s *Set, v any) { s.Loc.Exclude = v.([]string) }, func(s Set) any { return s.Loc.Exclude }},
+	"coverage.min_percent":               {"float", "minimum test coverage, 0 to 100", func(s *Set, v any) { s.Coverage.MinPercent = v.(float64) }, func(s Set) any { return s.Coverage.MinPercent }},
+	"coverage.scope":                     {"string", "line, statement or branch", func(s *Set, v any) { s.Coverage.Scope = v.(string) }, func(s Set) any { return s.Coverage.Scope }},
+	"coverage.exclude":                   {"strings", "globs of files not measured", func(s *Set, v any) { s.Coverage.Exclude = v.([]string) }, func(s Set) any { return s.Coverage.Exclude }},
+	"duplication.max_percent":            {"float", "share of duplicated code tolerated, 0 to 100 (0 means none)", func(s *Set, v any) { s.Duplication.MaxPercent = v.(float64) }, func(s Set) any { return s.Duplication.MaxPercent }},
+	"duplication.min_tokens":             {"int", "tokens a repeated block needs to count, at least 10", func(s *Set, v any) { s.Duplication.MinTokens = v.(int) }, func(s Set) any { return s.Duplication.MinTokens }},
+	"duplication.min_lines":              {"int", "lines a repeated block needs to count, at least 2", func(s *Set, v any) { s.Duplication.MinLines = v.(int) }, func(s Set) any { return s.Duplication.MinLines }},
+	"duplication.include_tests":          {"bool", "whether test code is checked for duplication", func(s *Set, v any) { s.Duplication.IncludeTests = v.(bool) }, func(s Set) any { return s.Duplication.IncludeTests }},
+	"duplication.strategies":             {"strings", "how repeated code is removed, in order: helper_function, macro, rstest (Rust tests use the rstest crate)", func(s *Set, v any) { s.Duplication.Strategies = v.([]string) }, func(s Set) any { return s.Duplication.Strategies }},
+	"complexity.max_cyclomatic":          {"int", "most decision points a function may have, at least 1", func(s *Set, v any) { s.Complexity.MaxCyclomatic = v.(int) }, func(s Set) any { return s.Complexity.MaxCyclomatic }},
+	"complexity.max_cognitive":           {"int", "highest cognitive complexity score a function may have, at least 1", func(s *Set, v any) { s.Complexity.MaxCognitive = v.(int) }, func(s Set) any { return s.Complexity.MaxCognitive }},
+	"complexity.exclude":                 {"strings", "globs of files skipped by the complexity check", func(s *Set, v any) { s.Complexity.Exclude = v.([]string) }, func(s Set) any { return s.Complexity.Exclude }},
+	"structure.max_files_per_dir":        {"int", "most source files one directory may hold before splitting into sub-packages, at least 1", func(s *Set, v any) { s.Structure.MaxFilesPerDir = v.(int) }, func(s Set) any { return s.Structure.MaxFilesPerDir }},
+	"structure.max_dir_production_lines": {"int", "most production lines one directory may hold across its files, at least 1", func(s *Set, v any) { s.Structure.MaxDirProductionLines = v.(int) }, func(s Set) any { return s.Structure.MaxDirProductionLines }},
+	"structure.max_prefix_group":         {"int", "most files in one directory that may share a leading word before becoming a sub-package, at least 2", func(s *Set, v any) { s.Structure.MaxPrefixGroup = v.(int) }, func(s Set) any { return s.Structure.MaxPrefixGroup }},
+	"structure.require_docs":             {"bool", "whether every crate, module and repository needs its documentation files", func(s *Set, v any) { s.Structure.RequireDocs = v.(bool) }, func(s Set) any { return s.Structure.RequireDocs }},
+	"structure.docs_files":               {"strings", "the documentation file names every crate, module and repository needs, e.g. README.md and CHANGELOG.md", func(s *Set, v any) { s.Structure.DocsFiles = v.([]string) }, func(s Set) any { return s.Structure.DocsFiles }},
+	"structure.exclude":                  {"strings", "globs of paths skipped by the directory structure check", func(s *Set, v any) { s.Structure.Exclude = v.([]string) }, func(s Set) any { return s.Structure.Exclude }},
+	"lint.strictness":                    {"string", "relaxed, standard or strict", func(s *Set, v any) { s.Lint.Strictness = v.(string) }, func(s Set) any { return s.Lint.Strictness }},
+	"security.fail_on":                   {"string", "lowest severity that fails the security job: low, medium, high or critical", func(s *Set, v any) { s.Security.FailOn = v.(string) }, func(s Set) any { return s.Security.FailOn }},
+	"security.secrets":                   {"bool", "whether leaked secrets are scanned for", func(s *Set, v any) { s.Security.Secrets = v.(bool) }, func(s Set) any { return s.Security.Secrets }},
+	"done.auto_done":                     {"bool", "true lets an agent set a ticket to Done when every gate passes; false leaves it to a person", func(s *Set, v any) { s.Done.AutoDone = v.(bool) }, func(s Set) any { return s.Done.AutoDone }},
+	"done.human_review_labels":           {"strings", "ticket labels that always need a person", func(s *Set, v any) { s.Done.HumanReviewLabels = v.([]string) }, func(s Set) any { return s.Done.HumanReviewLabels }},
+	"languages.preference":               {"strings", "languages in the order Dendrite proposes them for new code", func(s *Set, v any) { s.Languages.Preference = v.([]string) }, func(s Set) any { return s.Languages.Preference }},
 }
 
 // Keys lists every setting name, sorted.

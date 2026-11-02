@@ -10,13 +10,12 @@ import (
 
 	"Dendrite/pkg/llmchat"
 	"Dendrite/pkg/llmchat/llmchattest"
+	"Dendrite/pkg/testkit"
 )
 
 func TestTheSharedExampleIsTheDefaults(t *testing.T) {
 	data, err := os.ReadFile("testdata/directives.example.toml")
-	if err != nil {
-		t.Fatal(err)
-	}
+	testkit.Check(t, err)
 	got, err := Decode(data)
 	if err != nil {
 		t.Fatalf("the example both sides parse must be valid: %v", err)
@@ -24,6 +23,11 @@ func TestTheSharedExampleIsTheDefaults(t *testing.T) {
 	if !reflect.DeepEqual(got, Defaults()) {
 		t.Errorf("example %+v differs from the defaults %+v: change both (and the Rust side) together", got, Defaults())
 	}
+	testkit.Equal(t, "complexity.max_cyclomatic", got.Complexity.MaxCyclomatic, 10)
+	testkit.Equal(t, "complexity.max_cognitive", got.Complexity.MaxCognitive, 15)
+	testkit.Equal(t, "structure.max_files_per_dir", got.Structure.MaxFilesPerDir, 12)
+	testkit.Equal(t, "structure.max_dir_production_lines", got.Structure.MaxDirProductionLines, 3000)
+	testkit.Equal(t, "structure.max_prefix_group", got.Structure.MaxPrefixGroup, 4)
 }
 
 func TestEncodeRoundTripsAndFormatsNumbers(t *testing.T) {
@@ -31,19 +35,28 @@ func TestEncodeRoundTripsAndFormatsNumbers(t *testing.T) {
 	s.Coverage.MinPercent = 99.5
 	s.Duplication.MaxPercent = 2
 	s.Loc.Exclude = []string{`a "quoted" glob`, "b/**"}
+	s.Complexity = Complexity{MaxCyclomatic: 8, MaxCognitive: 12, Exclude: []string{"gen/**"}}
+	s.Structure = Structure{MaxFilesPerDir: 9, MaxDirProductionLines: 2000, MaxPrefixGroup: 3, DocsFiles: []string{}, Exclude: []string{"vendor/**"}}
 	text := string(Encode(s))
-	for _, want := range []string{Header + "\n", "min_percent = 99.5\n", "max_percent = 2.0\n", `exclude = ["a \"quoted\" glob", "b/**"]`, "\n[done]\nauto_done = true\n"} {
+	for _, want := range []string{
+		Header + "\n",
+		"min_percent = 99.5\n",
+		"max_percent = 2.0\n",
+		`exclude = ["a \"quoted\" glob", "b/**"]`,
+		"\n[complexity]\nmax_cyclomatic = 8\nmax_cognitive = 12\nexclude = [\"gen/**\"]\n",
+		"\n[structure]\nmax_files_per_dir = 9\nmax_dir_production_lines = 2000\nmax_prefix_group = 3\nrequire_docs = false\ndocs_files = []\nexclude = [\"vendor/**\"]\n",
+		"\n[done]\nauto_done = true\n",
+	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("encoded text lacks %q:\n%s", want, text)
 		}
 	}
 	back, err := Decode([]byte(text))
-	if err != nil || !reflect.DeepEqual(back, s) {
-		t.Errorf("round trip: %+v, %v", back, err)
+	testkit.Check(t, err)
+	if !reflect.DeepEqual(back, s) {
+		t.Errorf("round trip: %+v", back)
 	}
-	if string(Encode(back)) != text {
-		t.Error("the same directives always encode to the same text")
-	}
+	testkit.Equal(t, "canonical encode", string(Encode(back)), text)
 }
 
 func TestDecodeKeepsDefaultsAndRefusesWhatIsWrong(t *testing.T) {
@@ -66,22 +79,30 @@ func TestDecodeKeepsDefaultsAndRefusesWhatIsWrong(t *testing.T) {
 }
 
 func TestValidateNamesTheBrokenRule(t *testing.T) {
-	for name, mutate := range map[string]func(*Set){
-		"loc.max_production_lines": func(s *Set) { s.Loc.MaxProductionLines = 10; s.Loc.WarnAt = 5 },
-		"loc.warn_at":              func(s *Set) { s.Loc.WarnAt = -1 },
-		"coverage.min_percent":     func(s *Set) { s.Coverage.MinPercent = -1 },
-		"coverage.scope":           func(s *Set) { s.Coverage.Scope = "path" },
-		"duplication.max_percent":  func(s *Set) { s.Duplication.MaxPercent = 101 },
-		"duplication.min_tokens":   func(s *Set) { s.Duplication.MinTokens = 1 },
-		"duplication.min_lines":    func(s *Set) { s.Duplication.MinLines = 1 },
-		"lint.strictness":          func(s *Set) { s.Lint.Strictness = "wild" },
-		"security.fail_on":         func(s *Set) { s.Security.FailOn = "never" },
-		"languages.preference":     func(s *Set) { s.Languages.Preference = nil },
+	for _, tc := range []struct {
+		rule   string
+		mutate func(*Set)
+	}{
+		{"loc.max_production_lines", func(s *Set) { s.Loc.MaxProductionLines = 10; s.Loc.WarnAt = 5 }},
+		{"loc.warn_at", func(s *Set) { s.Loc.WarnAt = -1 }},
+		{"coverage.min_percent", func(s *Set) { s.Coverage.MinPercent = -1 }},
+		{"coverage.scope", func(s *Set) { s.Coverage.Scope = "path" }},
+		{"duplication.max_percent", func(s *Set) { s.Duplication.MaxPercent = 101 }},
+		{"duplication.min_tokens", func(s *Set) { s.Duplication.MinTokens = 1 }},
+		{"duplication.min_lines", func(s *Set) { s.Duplication.MinLines = 1 }},
+		{"complexity.max_cyclomatic", func(s *Set) { s.Complexity.MaxCyclomatic = 0 }},
+		{"complexity.max_cognitive", func(s *Set) { s.Complexity.MaxCognitive = 0 }},
+		{"structure.max_files_per_dir", func(s *Set) { s.Structure.MaxFilesPerDir = 0 }},
+		{"structure.max_dir_production_lines", func(s *Set) { s.Structure.MaxDirProductionLines = 0 }},
+		{"structure.max_prefix_group", func(s *Set) { s.Structure.MaxPrefixGroup = 1 }},
+		{"lint.strictness", func(s *Set) { s.Lint.Strictness = "wild" }},
+		{"security.fail_on", func(s *Set) { s.Security.FailOn = "never" }},
+		{"languages.preference", func(s *Set) { s.Languages.Preference = nil }},
 	} {
 		s := Defaults()
-		mutate(&s)
-		if err := s.Validate(); err == nil || !strings.Contains(err.Error(), name) {
-			t.Errorf("%s: %v", name, err)
+		tc.mutate(&s)
+		if err := s.Validate(); err == nil || !strings.Contains(err.Error(), tc.rule) {
+			t.Errorf("%s: %v", tc.rule, err)
 		}
 	}
 }
@@ -172,18 +193,15 @@ func TestParseValueReadsTypedText(t *testing.T) {
 
 func TestKeysAndDescribeCoverEverySetting(t *testing.T) {
 	ks := Keys()
-	if len(ks) != 17 || ks[0] != "coverage.exclude" {
-		t.Errorf("keys = %v", ks)
-	}
+	testkit.Equal(t, "len(Keys)", len(ks), 26)
+	testkit.Equal(t, "Keys[0]", ks[0], "complexity.exclude")
 	text := Describe()
 	for _, k := range ks {
 		if !strings.Contains(text, k+" (") {
 			t.Errorf("Describe lacks %s", k)
 		}
 	}
-	if (Change{Key: "a.b", Value: 3}).String() != "a.b = 3" {
-		t.Error("Change.String")
-	}
+	testkit.Equal(t, "Change.String", (Change{Key: "a.b", Value: 3}).String(), "a.b = 3")
 }
 
 func TestLoadSaveAndEnsureDefaults(t *testing.T) {
@@ -300,6 +318,8 @@ func TestInterpretReturnsTheStoredValueOfEveryKey(t *testing.T) {
 		"loc.max_production_lines": "600", "loc.warn_at": "100", "loc.exclude": `["a"]`,
 		"coverage.min_percent": "50", "coverage.scope": `"branch"`, "coverage.exclude": `["b"]`,
 		"duplication.max_percent": "5", "duplication.min_tokens": "20", "duplication.min_lines": "3", "duplication.include_tests": "false", "duplication.strategies": `["macro"]`,
+		"complexity.max_cyclomatic": "8", "complexity.max_cognitive": "12", "complexity.exclude": `["c"]`,
+		"structure.max_files_per_dir": "9", "structure.max_dir_production_lines": "2000", "structure.max_prefix_group": "3", "structure.require_docs": "false", "structure.docs_files": `["README.md"]`, "structure.exclude": `["d"]`,
 		"lint.strictness": `"standard"`, "security.fail_on": `"medium"`, "security.secrets": "false",
 		"done.auto_done": "false", "done.human_review_labels": `["x"]`, "languages.preference": `["go"]`,
 	}

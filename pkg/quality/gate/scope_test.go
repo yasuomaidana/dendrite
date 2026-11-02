@@ -105,7 +105,7 @@ func TestChangesSinceAndOfTicketFindWhatTheBranchDid(t *testing.T) {
 }
 
 func TestAScopedGateOnlyJudgesWhatTheChangeTouched(t *testing.T) {
-	ragtest.UseStandin(t, "1.11.0")
+	ragtest.UseStandin(t, "1.12.0")
 	dir := repoWithChange(t)
 	set := tightSet()
 	rep := Run(context.Background(), Options{Dir: dir, Set: set, Sidecar: rag.NewRetriever(), Scope: ChangesSince(dir, "develop"), Skip: []string{"coverage"}})
@@ -129,7 +129,7 @@ func TestAScopedGateOnlyJudgesWhatTheChangeTouched(t *testing.T) {
 }
 
 func TestAScopedRstestOnlyReportsTouchedFiles(t *testing.T) {
-	ragtest.UseStandin(t, "1.11.0")
+	ragtest.UseStandin(t, "1.12.0")
 	dir := t.TempDir()
 	write(t, dir, "old.rs", "REPEATED_TEST\n")
 	write(t, dir, "new.rs", "REPEATED_TEST\n")

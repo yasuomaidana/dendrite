@@ -28,7 +28,7 @@ func newAllostasisGateCmd() *cobra.Command {
 		Use:   "gate",
 		Short: "Run the project's quality gates: production lines per file, repeated code, Rust test structure and coverage",
 		Long: "Runs the gates of " + directive.Path + " as one check and exits non-zero when one fails, or could not run.\n" +
-			"loc, clones and rstest run on the dendrite-rag sidecar (`dendrite update` installs it); coverage runs `go test`.\n" +
+			"loc, clones, complexity, structure and rstest run on the dendrite-rag sidecar (`dendrite update` installs it); coverage runs `go test`.\n" +
 			"Without a scope the whole repository is held to the directives. --since <ref> or --ticket <ID> judges only what that\n" +
 			"change touched: files it changed, repeated blocks that include lines it added, and, for coverage, the ratchet of\n" +
 			"the packages it changed when the project keeps a baseline (the floor otherwise).",
