@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"Dendrite/pkg/directive"
+	"Dendrite/pkg/env/pipeline"
 )
 
 // DefaultToolName specifies the default CI/CD and developer tool.
@@ -114,6 +117,11 @@ func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareRe
 		return nil, fmt.Errorf("stack detection failed: %w", err)
 	}
 
+	set, err := directiveSet(opts.ProjectPath)
+	if err != nil {
+		return nil, err
+	}
+
 	report := &PrepareReport{
 		ProjectPath:  opts.ProjectPath,
 		Stack:        fp,
@@ -133,14 +141,14 @@ func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareRe
 			ToolInstalled:       installed,
 			ToolBinary:          bin,
 			ToolInstallCommand:  installCmd,
-			CoverageThreshold:   85.0,
+			CoverageThreshold:   set.Coverage.MinPercent,
 			CopilotInstructions: filepath.Join(".github", "copilot-instructions.md"),
 			CIWorkflowPath:      filepath.Join(".github", "workflows", "ci.yml"),
 			Toolchains:          toolchains,
 			Enforced:            true,
 		}
 
-		created, updated, notes, err := p.scaffoldCICD(opts.ProjectPath, fp, opts.DryRun)
+		created, updated, notes, err := p.scaffoldCICD(opts.ProjectPath, fp, set, opts)
 		if err != nil {
 			return nil, fmt.Errorf("CI/CD scaffolding failed: %w", err)
 		}
@@ -152,11 +160,12 @@ func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareRe
 		report.Notes = append(report.Notes, notes...)
 
 		// A project without quality directives gets the defaults and the files derived from them.
-		dirCreated, dirNotes, err := ensureDirectives(opts.ProjectPath, opts.DryRun)
+		dirCreated, dirUpdated, dirNotes, err := ensureDirectives(opts.ProjectPath, opts.DryRun)
 		if err != nil {
 			return nil, fmt.Errorf("quality directives failed: %w", err)
 		}
 		report.FilesCreated = append(report.FilesCreated, dirCreated...)
+		report.FilesUpdated = append(report.FilesUpdated, dirUpdated...)
 		report.Notes = append(report.Notes, dirNotes...)
 
 		// Rust crates with tests use the rstest crate.
@@ -167,7 +176,7 @@ func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareRe
 
 	// 2. Agent Rules & Skills Synchronization
 	if opts.SyncSkills {
-		created, updated, skills, err := p.syncAgentRulesAndSkills(opts.ProjectPath, fp, opts.DryRun)
+		created, updated, skills, err := p.syncAgentRulesAndSkills(opts.ProjectPath, fp, set, opts.DryRun)
 		if err != nil {
 			return nil, fmt.Errorf("agent skills sync failed: %w", err)
 		}
@@ -201,8 +210,8 @@ func (p *Preparer) Update(ctx context.Context, opts PrepareOptions) (*PrepareRep
 	return p.Prepare(ctx, opts)
 }
 
-func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool) (created, updated, notes []string, err error) {
-
+func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, set directive.Set, opts PrepareOptions) (created, updated, notes []string, err error) {
+	dryRun := opts.DryRun
 	githubDir := filepath.Join(root, ".github")
 	workflowsDir := filepath.Join(githubDir, "workflows")
 
@@ -214,7 +223,7 @@ func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool)
 
 	// 1. .github/copilot-instructions.md
 	copilotPath := filepath.Join(githubDir, "copilot-instructions.md")
-	copilotContent := renderCopilotInstructions(fp)
+	copilotContent := renderCopilotInstructions(fp, set)
 	c, u, err := writeOrUpdateFile(copilotPath, copilotContent, dryRun)
 	if err != nil {
 		return nil, nil, nil, err
@@ -225,21 +234,14 @@ func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool)
 		updated = append(updated, filepath.Join(".github", "copilot-instructions.md"))
 	}
 
-	// 2. .github/workflows/ci.yml
-	workflowPath := filepath.Join(workflowsDir, "ci.yml")
-	workflowContent := renderCIWorkflow(fp)
-	c, u, kept, err := writeManagedFile(workflowPath, workflowContent, dryRun)
+	// 2. .github/workflows/ci.yml, from the project's components, directives and extension
+	wf, err := pipeline.Scaffold(root, set, opts.AdoptCI, dryRun)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if kept {
-		notes = append(notes, "kept the hand-written "+filepath.ToSlash(filepath.Join(".github", "workflows", "ci.yml"))+": it does not carry the managed header, so Dendrite does not overwrite it")
-	}
-	if c {
-		created = append(created, filepath.Join(".github", "workflows", "ci.yml"))
-	} else if u {
-		updated = append(updated, filepath.Join(".github", "workflows", "ci.yml"))
-	}
+	created = append(created, wf.Created...)
+	updated = append(updated, wf.Updated...)
+	notes = append(notes, wf.Notes...)
 
 	// 3. Ensure .gitignore excludes coverage, build artifacts, lockfiles
 	giCreated, giUpdated := ensureGitignoreEntries(root, dryRun)
@@ -252,7 +254,7 @@ func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool)
 	return created, updated, notes, nil
 }
 
-func (p *Preparer) syncAgentRulesAndSkills(root string, fp ProjectFingerprint, dryRun bool) ([]string, []string, []string, error) {
+func (p *Preparer) syncAgentRulesAndSkills(root string, fp ProjectFingerprint, set directive.Set, dryRun bool) ([]string, []string, []string, error) {
 	var created []string
 	var updated []string
 	var skills []string
@@ -266,7 +268,7 @@ func (p *Preparer) syncAgentRulesAndSkills(root string, fp ProjectFingerprint, d
 
 	// 1. .agents/rules.md
 	rulesPath := filepath.Join(agentsDir, "rules.md")
-	rulesContent := renderAgentRules(fp)
+	rulesContent := renderAgentRules(fp, set)
 	c, u, err := writeOrUpdateFile(rulesPath, rulesContent, dryRun)
 	if err != nil {
 		return nil, nil, nil, err

@@ -116,14 +116,14 @@ func TestPrepareGivesAProjectItsDefaultDirectivesOnce(t *testing.T) {
 
 func TestEnsureDirectivesKeepsHandWrittenFilesAndHonoursDryRun(t *testing.T) {
 	root := t.TempDir()
-	created, notes, err := ensureDirectives(root, true)
-	if err != nil || len(created) != 1 || len(notes) != 0 || directive.Exists(root) {
+	created, _, notes, err := ensureDirectives(root, true)
+	if err != nil || len(created) == 0 || len(notes) != 0 || directive.Exists(root) {
 		t.Fatalf("a dry run only plans: %v %v %v", created, notes, err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "codecov.yml"), []byte("coverage: {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	created, notes, err = ensureDirectives(root, false)
+	created, _, notes, err = ensureDirectives(root, false)
 	if err != nil || contains(created, "codecov.yml") || len(notes) != 1 || !strings.Contains(notes[0], "hand-written codecov.yml") {
 		t.Fatalf("%v %v %v", created, notes, err)
 	}
@@ -137,7 +137,7 @@ func TestEnsureDirectivesKeepsHandWrittenFilesAndHonoursDryRun(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(blocked, ".github", "dendrite"), []byte("a file"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := ensureDirectives(blocked, false); err == nil {
+	if _, _, _, err := ensureDirectives(blocked, false); err == nil {
 		t.Error("directives that cannot be written are an error")
 	}
 }

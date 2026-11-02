@@ -71,6 +71,8 @@ type PrepareOptions struct {
 	EnforceCICD bool   `json:"enforce_cicd"` // default true
 	SyncSkills  bool   `json:"sync_skills"`  // default true
 	DryRun      bool   `json:"dry_run"`
+	// AdoptCI replaces a hand-written CI workflow with the generated one, archiving the old file.
+	AdoptCI bool `json:"adopt_ci"`
 }
 
 // PrepareReport summarizes the outcome of environment preparation, agent synchronization, and CI/CD enforcement.

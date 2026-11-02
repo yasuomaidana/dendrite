@@ -53,7 +53,8 @@ func TestDetectStack(t *testing.T) {
 		defer os.RemoveAll(tmpDir)
 
 		_ = os.WriteFile(filepath.Join(tmpDir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0644)
-		_ = os.WriteFile(filepath.Join(tmpDir, "package.json"), []byte("{\"name\": \"demo-web\"}\n"), 0644)
+		_ = os.WriteFile(filepath.Join(tmpDir, "package.json"), []byte("{\"name\": \"demo-web\", \"scripts\": {\"test\": \"bun test\"}}\n"), 0644)
+		_ = os.WriteFile(filepath.Join(tmpDir, "bun.lock"), []byte("{}\n"), 0644)
 		_ = os.WriteFile(filepath.Join(tmpDir, "tsconfig.json"), []byte("{}\n"), 0644)
 
 		p := NewPreparer()
@@ -89,7 +90,7 @@ func TestDetectStack(t *testing.T) {
 		}
 		defer os.RemoveAll(tmpDir)
 
-		_ = os.WriteFile(filepath.Join(tmpDir, "pyproject.toml"), []byte("[project]\nname = \"app\"\n"), 0644)
+		_ = os.WriteFile(filepath.Join(tmpDir, "pyproject.toml"), []byte("[project]\nname = \"app\"\n\n[tool.pytest.ini_options]\n"), 0644)
 
 		p := NewPreparer()
 		fp, err := p.DetectStack(tmpDir)
@@ -218,8 +219,9 @@ func TestPreparePipeline_EndToEnd(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module github.com/org/app\n\ngo 1.25\n"), 0644)
 	_ = os.WriteFile(filepath.Join(tmpDir, "Cargo.toml"), []byte("[package]\nname = \"rust-core\"\n"), 0644)
 	_ = os.MkdirAll(filepath.Join(tmpDir, "website"), 0755)
-	_ = os.WriteFile(filepath.Join(tmpDir, "website", "package.json"), []byte("{\"name\": \"web-portal\"}\n"), 0644)
-	_ = os.MkdirAll(filepath.Join(tmpDir, "scripts"), 0755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "website", "package.json"), []byte("{\"name\": \"web-portal\", \"scripts\": {\"build\": \"vite build\"}}\n"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "website", "bun.lock"), []byte("{}\n"), 0644)
+	_ = os.MkdirAll(filepath.Join(tmpDir, "scripts", "tests"), 0755)
 	_ = os.WriteFile(filepath.Join(tmpDir, "scripts", "pyproject.toml"), []byte("[project]\nname = \"scripts\"\n"), 0644)
 
 	_ = os.MkdirAll(filepath.Join(tmpDir, ".gemini", "skills", "my-skill"), 0755)
@@ -298,7 +300,7 @@ func TestPreparePipeline_EndToEnd(t *testing.T) {
 	if !strings.Contains(strContent, "Zero Code Without Plane Ticket Mandate") {
 		t.Errorf("missing Plane mandate in copilot instructions")
 	}
-	if !strings.Contains(strContent, "Approved & Enforced Toolchains (Go, Cargo, Bun, uv)") {
+	if !strings.Contains(strContent, "Approved & Enforced Toolchains") {
 		t.Errorf("missing approved toolchains section in copilot instructions")
 	}
 	if !strings.Contains(strContent, "bun") || !strings.Contains(strContent, "uv") || !strings.Contains(strContent, "cargo") {
@@ -314,8 +316,8 @@ func TestPreparePipeline_EndToEnd(t *testing.T) {
 	if !strings.Contains(strCI, "setup-go") {
 		t.Errorf("expected go setup in CI workflow")
 	}
-	if !strings.Contains(strCI, "cargo test") {
-		t.Errorf("expected cargo test in CI workflow")
+	if !strings.Contains(strCI, "cargo llvm-cov") {
+		t.Errorf("expected cargo coverage run in CI workflow")
 	}
 	if !strings.Contains(strCI, "setup-bun") {
 		t.Errorf("expected bun setup in CI workflow")

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"Dendrite/pkg/env/pipeline"
 )
 
 // DetectStack inspects the target directory manifests to infer primary and secondary stacks and canonical toolchains.
@@ -25,6 +27,10 @@ func DetectStack(projectPath string) (*ProjectFingerprint, error) {
 		Linters:          []string{},
 		TestFrameworks:   []string{},
 	}
+
+	// Bun and uv count only for a component with something to verify (a lockfile and scripts, tests); a bare
+	// manifest is reported by pipeline.Detect as a note and is not a stack.
+	comps, _ := pipeline.Detect(absPath)
 
 	// 1. Inspect Go (go.mod)
 	goModPath := filepath.Join(absPath, "go.mod")
@@ -103,7 +109,7 @@ func DetectStack(projectPath string) (*ProjectFingerprint, error) {
 	// 3. Inspect TypeScript / JavaScript & Bun (package.json, website/package.json)
 	packageJSONPath := filepath.Join(absPath, "package.json")
 	websitePkgPath := filepath.Join(absPath, "website", "package.json")
-	if fileExists(packageJSONPath) || fileExists(websitePkgPath) {
+	if hasComponent(comps, pipeline.Bun) {
 		fp.HasPackageJSON = true
 		fp.HasBun = true
 		fp.Toolchains = append(fp.Toolchains, "bun")
@@ -150,7 +156,7 @@ func DetectStack(projectPath string) (*ProjectFingerprint, error) {
 	pyprojectPath := filepath.Join(absPath, "pyproject.toml")
 	scriptsPyproject := filepath.Join(absPath, "scripts", "pyproject.toml")
 	reqTxtPath := filepath.Join(absPath, "requirements.txt")
-	if fileExists(pyprojectPath) || fileExists(scriptsPyproject) || fileExists(reqTxtPath) {
+	if hasComponent(comps, pipeline.UV) {
 		fp.HasPyProject = true
 		fp.HasUV = true
 		fp.Toolchains = append(fp.Toolchains, "uv")
@@ -187,6 +193,15 @@ func DetectStack(projectPath string) (*ProjectFingerprint, error) {
 	}
 
 	return fp, nil
+}
+
+func hasComponent(comps []pipeline.Component, k pipeline.Kind) bool {
+	for _, c := range comps {
+		if c.Kind == k {
+			return true
+		}
+	}
+	return false
 }
 
 func fileExists(p string) bool {

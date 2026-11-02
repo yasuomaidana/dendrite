@@ -406,12 +406,12 @@ func TestRenderReportsWriteFailuresAndTakesNewArtifacts(t *testing.T) {
 	}
 	n := len(artifacts)
 	defer func() { artifacts = artifacts[:n] }()
-	Register(Artifact{Path: "extra/x.txt", Content: func(Set) []byte { return []byte("x") }, Owns: func([]byte) bool { return true }})
+	Register(Artifact{Path: "extra/x.txt", Content: func(string, Set) []byte { return []byte("x") }, Owns: func([]byte) bool { return true }})
 	clean := t.TempDir()
 	if res, err := Render(clean, Defaults()); err != nil || !contains(res.Written, "extra/x.txt") {
 		t.Errorf("a registered artifact is rendered: %+v, %v", res, err)
 	}
-	Register(Artifact{Path: "readonly/y.txt", Content: func(Set) []byte { return []byte("y") }, Owns: func([]byte) bool { return true }})
+	Register(Artifact{Path: "readonly/y.txt", Content: func(string, Set) []byte { return []byte("y") }, Owns: func([]byte) bool { return true }})
 	if err := os.Mkdir(filepath.Join(clean, "readonly"), 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -468,5 +468,39 @@ func TestStrategiesRuleParsesValidatesAndAdvises(t *testing.T) {
 	}
 	if (Duplication{}).StrategyAdvice() != "" {
 		t.Error("no strategies, no advice")
+	}
+}
+
+func TestRenderSkipsAnArtifactTheProjectHasNoUseFor(t *testing.T) {
+	n := len(artifacts)
+	defer func() { artifacts = artifacts[:n] }()
+	Register(Artifact{Path: "unused.txt", Content: func(string, Set) []byte { return nil }, Owns: func([]byte) bool { return true }})
+	dir := t.TempDir()
+	res, err := Render(dir, Defaults())
+	if err != nil || contains(res.Written, "unused.txt") {
+		t.Fatalf("%+v, %v", res, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "unused.txt")); statErr == nil {
+		t.Error("a nil artifact is not written")
+	}
+}
+
+func TestPlanReportsWithoutWritingAndSplitsCreatedFromRewritten(t *testing.T) {
+	dir := t.TempDir()
+	plan, err := Plan(dir, Defaults())
+	if err != nil || !contains(plan.Created, "codecov.yml") {
+		t.Fatalf("%+v, %v", plan, err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "codecov.yml")); statErr == nil {
+		t.Fatal("Plan must not write")
+	}
+	if _, err := Render(dir, Defaults()); err != nil {
+		t.Fatal(err)
+	}
+	stricter := Defaults()
+	stricter.Coverage.MinPercent = 90
+	res, err := Plan(dir, stricter)
+	if err != nil || !contains(res.Written, "codecov.yml") || contains(res.Created, "codecov.yml") {
+		t.Errorf("a changed directive rewrites, it does not create: %+v, %v", res, err)
 	}
 }

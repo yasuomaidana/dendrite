@@ -4,13 +4,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
+	"Dendrite/pkg/directive"
 	"Dendrite/pkg/dotenv"
+	"Dendrite/pkg/env/pipeline"
 	"Dendrite/pkg/projectid"
 )
 
-func renderCopilotInstructions(fp ProjectFingerprint) string {
+func renderCopilotInstructions(fp ProjectFingerprint, set directive.Set) string {
 	var sb strings.Builder
 	sb.WriteString("# GitHub Copilot Custom Instructions\n\n")
 	sb.WriteString("> Authoritative developer guidelines and architectural constraints for AI code generation.\n\n")
@@ -22,14 +25,12 @@ func renderCopilotInstructions(fp ProjectFingerprint) string {
 	sb.WriteString("- Author tests before or alongside code implementation.\n")
 	sb.WriteString("- **Zero Mock Policy**: Do NOT use mocking frameworks, fake stubs, or synthetic dummies for persistence or protocols.\n")
 	sb.WriteString("- All persistent database layers (Postgres, Redis, MinIO) must use **Testcontainers** for real integration tests.\n")
-	sb.WriteString("- Maintain minimum statement coverage: **>= 85.0%** across all new packages.\n\n")
+	sb.WriteString(fmt.Sprintf("- Maintain minimum test coverage: **>= %s%%** (`coverage.min_percent` in `.github/dendrite/directives.toml`).\n\n", strconv.FormatFloat(set.Coverage.MinPercent, 'f', -1, 64)))
 
-	sb.WriteString("## 3. Approved & Enforced Toolchains (Go, Cargo, Bun, uv)\n")
-	sb.WriteString("All tooling and dependency operations must use project-approved toolchains:\n")
-	sb.WriteString("- **Go**: `go` (`go test -v -race -cover ./pkg/...`, `golangci-lint`)\n")
-	sb.WriteString("- **Rust**: `cargo` (`cargo test --verbose`, `cargo build --release`, `cargo clippy`)\n")
-	sb.WriteString("- **JavaScript / TypeScript**: `bun` (`bun test`, `bun run build`, `bun install --frozen-lockfile`) - legacy `npm` and `yarn` are strictly banned\n")
-	sb.WriteString("- **Python**: `uv` (`uv run pytest`, `uv pip list`, `uv venv`) - legacy `pip install` is strictly banned\n\n")
+	sb.WriteString("## 3. Approved & Enforced Toolchains\n")
+	sb.WriteString("This project uses these toolchains; all tooling and dependency operations go through them:\n")
+	sb.WriteString(pipeline.ToolchainBullets(fp.Toolchains))
+	sb.WriteString("\n")
 
 	sb.WriteString("## 4. Technology Stack & Coding Standards\n")
 	sb.WriteString(fmt.Sprintf("- **Primary Stack**: %s\n", strings.ToUpper(string(fp.PrimaryStack))))
@@ -42,7 +43,7 @@ func renderCopilotInstructions(fp ProjectFingerprint) string {
 	if len(fp.Linters) > 0 {
 		sb.WriteString(fmt.Sprintf("- **Enforced Linters**: %s\n", strings.Join(fp.Linters, ", ")))
 	}
-	sb.WriteString("- **Complexity Limits**: Cyclomatic Complexity <= 15 per function, Cognitive Complexity <= 20, max function length <= 80 lines.\n\n")
+	sb.WriteString(fmt.Sprintf("- **Complexity Limits**: cyclomatic complexity <= %d and cognitive complexity <= %d per function, at most %d production lines per file (`.github/dendrite/directives.toml`).\n\n", set.Complexity.MaxCyclomatic, set.Complexity.MaxCognitive, set.Loc.MaxProductionLines))
 
 	sb.WriteString("## 5. Model Precedence & Zero-Cost Delegation\n")
 	sb.WriteString("- Commit messages and repetitive test digestions must be delegated to local zero-cost models (`qwen3.8:27b` / Ollama Metal) to conserve API tokens.\n")
@@ -53,70 +54,9 @@ func renderCopilotInstructions(fp ProjectFingerprint) string {
 
 // ManagedHeader marks a file Dendrite generates and may rewrite. A file without it was written by a person
 // and is left alone.
-const ManagedHeader = "# managed by dendrite — edit .github/dendrite/directives.toml"
+const ManagedHeader = pipeline.ManagedHeader
 
-func renderCIWorkflow(fp ProjectFingerprint) string {
-	var sb strings.Builder
-	sb.WriteString(ManagedHeader + "\n")
-	sb.WriteString("name: Dendrite CI/CD\n\n")
-	sb.WriteString("on:\n")
-	sb.WriteString("  push:\n")
-	sb.WriteString("    branches: [ develop, main ]\n")
-	sb.WriteString("  pull_request:\n")
-	sb.WriteString("    branches: [ develop, main ]\n\n")
-	sb.WriteString("jobs:\n")
-	sb.WriteString("  verify:\n")
-	sb.WriteString("    name: Test & Coverage Gate (>= 85%)\n")
-	sb.WriteString("    runs-on: ubuntu-latest\n")
-	sb.WriteString("    steps:\n")
-	sb.WriteString("      - name: Checkout Code\n")
-	sb.WriteString("        uses: actions/checkout@v4\n\n")
-
-	// 1. Go toolchain (if Go is detected or is primary)
-	if fp.HasGoMod || fp.PrimaryStack == StackGo {
-		goVer := fp.GoVersion
-		if goVer == "" {
-			goVer = "1.25"
-		}
-		sb.WriteString("      - name: Set up Go\n")
-		sb.WriteString("        uses: actions/setup-go@v5\n")
-		sb.WriteString(fmt.Sprintf("        with:\n          go-version: '%s'\n          cache: true\n\n", goVer))
-		sb.WriteString("      - name: Run Tests with Coverage\n")
-		sb.WriteString("        run: |\n          go test -v -race -coverprofile=coverage.out -covermode=atomic ./pkg/...\n")
-		sb.WriteString("      - name: Verify Coverage Threshold (>= 85%)\n")
-		sb.WriteString("        run: |\n          total=$(go tool cover -func=coverage.out | grep 'total:' | awk '{print $3}' | sed 's/%//')\n          echo \"Total Statement Coverage: ${total}%\"\n          awk -v cov=\"$total\" 'BEGIN { if (cov < 85.0) { print \"[-] Statement coverage \" cov \"% is below required 85.0%\"; exit 1 } else { print \"[\u2713] Coverage gate passed: \" cov \"%\"; exit 0 } }'\n\n")
-	}
-
-	// 2. Rust & Cargo toolchain
-	if fp.HasCargoToml || fp.HasCargo || fp.PrimaryStack == StackRust {
-		sb.WriteString("      - name: Set up Rust (cargo)\n")
-		sb.WriteString("        uses: dtolnay/rust-toolchain@stable\n\n")
-		sb.WriteString("      - name: Run Cargo Tests\n")
-		sb.WriteString("        run: cargo test --verbose\n\n")
-	}
-
-	// 3. JS/TS & Bun toolchain
-	if fp.HasPackageJSON || fp.HasBun || fp.PrimaryStack == StackJavaScript || fp.PrimaryStack == StackTypeScript {
-		sb.WriteString("      - name: Set up Bun\n")
-		sb.WriteString("        uses: oven-sh/setup-bun@v2\n")
-		sb.WriteString("        with:\n          bun-version: latest\n\n")
-		sb.WriteString("      - name: Run Bun Tests & Build\n")
-		sb.WriteString("        run: |\n          if [ -d \"website\" ]; then\n            cd website && bun install --frozen-lockfile && bun run build\n          else\n            bun test\n          fi\n\n")
-	}
-
-	// 4. Python & uv toolchain
-	if fp.HasPyProject || fp.HasUV || fp.PrimaryStack == StackPython {
-		sb.WriteString("      - name: Set up uv (Python)\n")
-		sb.WriteString("        uses: astral-sh/setup-uv@v5\n")
-		sb.WriteString("        with:\n          enable-cache: true\n\n")
-		sb.WriteString("      - name: Verify Python Environment with uv\n")
-		sb.WriteString("        run: |\n          uv --version\n          if [ -f \"scripts/pyproject.toml\" ]; then\n            cd scripts && uv pip list || true\n          fi\n")
-	}
-
-	return sb.String()
-}
-
-func renderAgentRules(fp ProjectFingerprint) string {
+func renderAgentRules(fp ProjectFingerprint, set directive.Set) string {
 	var sb strings.Builder
 	sb.WriteString("# Autonomous Agent Operating Rules\n\n")
 	sb.WriteString("## Authoritative Project Management & Plane Ownership\n")
@@ -127,12 +67,9 @@ func renderAgentRules(fp ProjectFingerprint) string {
 	sb.WriteString("## Architecture & CI/CD Tooling Defaults\n")
 	sb.WriteString("- Default CI/CD & Assistant Tool: **GitHub Copilot** (`.github/copilot-instructions.md`).\n")
 	sb.WriteString(fmt.Sprintf("- Primary Stack: `%s`\n", fp.PrimaryStack))
-	sb.WriteString("- Standardized Toolsets:\n")
-	sb.WriteString("  - **Go**: `go test -v -race`, `golangci-lint`\n")
-	sb.WriteString("  - **Rust**: `cargo test`, `cargo build`, `cargo clippy`\n")
-	sb.WriteString("  - **JavaScript / TypeScript**: `bun test`, `bun run build` (zero npm)\n")
-	sb.WriteString("  - **Python**: `uv run`, `uv pip` (zero legacy pip)\n")
-	sb.WriteString("- Statement coverage threshold: **>= 85.0%**.\n")
+	sb.WriteString("- Toolchains of this project:\n")
+	sb.WriteString(pipeline.ToolchainBullets(fp.Toolchains))
+	sb.WriteString(fmt.Sprintf("- Test coverage threshold: **>= %s%%**; complexity per function: cyclomatic <= %d, cognitive <= %d.\n", strconv.FormatFloat(set.Coverage.MinPercent, 'f', -1, 64), set.Complexity.MaxCyclomatic, set.Complexity.MaxCognitive))
 	sb.WriteString("- Anti-mock policy: genuine structs and Testcontainers only.\n\n")
 
 	sb.WriteString("## Dendrite-First Workflow (every model and session)\n")
@@ -148,7 +85,7 @@ func renderAgentsOverview(fp ProjectFingerprint) string {
 	sb.WriteString("## Standard Tooling\n")
 	sb.WriteString("- **Default CI/CD Assistant**: GitHub Copilot (`.github/copilot-instructions.md`)\n")
 	sb.WriteString(fmt.Sprintf("- **Runtime Stack**: %s\n", strings.ToUpper(string(fp.PrimaryStack))))
-	sb.WriteString("- **Enforced Toolchains**: Go (`go`), Rust (`cargo`), Bun (`bun`), uv (`uv`)\n")
+	sb.WriteString(fmt.Sprintf("- **Enforced Toolchains**: %s\n", pipeline.ToolchainSummary(fp.Toolchains)))
 	sb.WriteString("- **Authoritative Issue Tracker**: Plane v2 (`http://localhost:8090`)\n")
 	sb.WriteString("- **Token Governor**: LiteLLM Gateway (`http://localhost:4000`)\n\n")
 	sb.WriteString("## Specs & Design Artifacts\n")

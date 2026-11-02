@@ -92,6 +92,7 @@ type somaPrepareOptions struct {
 	Tool     string
 	NoCICD   bool
 	NoSkills bool
+	AdoptCI  bool
 	DryRun   bool
 }
 
@@ -120,6 +121,7 @@ func newSomaPrepareCmd() *cobra.Command {
 	cmd.Flags().StringVar(&o.Tool, "tool", "copilot", "Default developer and CI/CD assistant tool")
 	cmd.Flags().BoolVar(&o.NoCICD, "no-cicd", false, "Disable CI/CD and Copilot enforcement")
 	cmd.Flags().BoolVar(&o.NoSkills, "no-skills", false, "Disable agent rules and skills synchronization")
+	cmd.Flags().BoolVar(&o.AdoptCI, "adopt-ci", false, "Replace a hand-written CI workflow with the generated one (the old file is archived in .github/dendrite/)")
 	addDryRunFlag(cmd, &o.DryRun)
 	return cmd
 }
@@ -138,6 +140,7 @@ func runSomaPrepare(ctx context.Context, o somaPrepareOptions, out io.Writer) er
 		EnforceCICD: !o.NoCICD,
 		SyncSkills:  !o.NoSkills,
 		DryRun:      o.DryRun,
+		AdoptCI:     o.AdoptCI,
 	})
 	if err != nil {
 		return fmt.Errorf("prepare project environment: %w", err)
