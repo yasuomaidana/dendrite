@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -135,13 +134,8 @@ func registerPlaneDAGTools(s *Server, deps Dependencies) {
 			"gantt_connected": true,
 		}
 
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(res)
+		return textResult(string(data)), nil
 	})
 
 	// 4. dendrite_plane_issue_create
@@ -314,12 +308,7 @@ func registerPlaneDAGTools(s *Server, deps Dependencies) {
 			"gantt_plan_placed": true,
 		}
 
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(res)
+		return textResult(string(data)), nil
 	})
 }

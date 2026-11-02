@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"Dendrite/pkg/agent/triage"
@@ -99,10 +98,7 @@ func registerTriageTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("triage failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(res)
 
 		return &CallToolResult{
 			Content: []ContentItem{

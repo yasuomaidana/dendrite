@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -57,10 +56,7 @@ func registerGraphTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("graph communities failed for %s: %w", projectPath, err)
 		}
 
-		data, err := json.MarshalIndent(communities, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(communities)
 		return &CallToolResult{
 			Content: []ContentItem{
 				{Type: "text", Text: string(data)},
@@ -115,10 +111,7 @@ func registerGraphTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("graph god nodes failed for %s: %w", projectPath, err)
 		}
 
-		data, err := json.MarshalIndent(nodes, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(nodes)
 		return &CallToolResult{
 			Content: []ContentItem{
 				{Type: "text", Text: string(data)},
@@ -195,10 +188,7 @@ func registerGraphTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("graph path failed for %s: %w", projectPath, err)
 		}
 
-		data, err := json.MarshalIndent(path, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(path)
 		return &CallToolResult{
 			Content: []ContentItem{
 				{Type: "text", Text: string(data)},
@@ -240,10 +230,7 @@ func registerGraphTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("graph explain failed for %s: %w", projectPath, err)
 		}
 
-		data, err := json.MarshalIndent(matches, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(matches)
 		return &CallToolResult{
 			Content: []ContentItem{
 				{Type: "text", Text: string(data)},

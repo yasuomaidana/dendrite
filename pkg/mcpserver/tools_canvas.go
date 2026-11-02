@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -79,10 +78,7 @@ func registerCanvasTools(s *Server, deps Dependencies) {
 			return nil, err
 		}
 
-		data, err := json.MarshalIndent(resp, "", "  ")
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal canvas response: %w", err)
-		}
+		data := indentJSON(resp)
 
 		return &CallToolResult{
 			Content: []ContentItem{
@@ -215,10 +211,7 @@ func registerCanvasTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("unknown subaction: %s (expected: 'relate', 'sync', 'update_state', or 'list')", subaction)
 		}
 
-		data, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal bridge result: %w", err)
-		}
+		data := indentJSON(result)
 
 		return &CallToolResult{
 			Content: []ContentItem{

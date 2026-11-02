@@ -65,13 +65,8 @@ func registerAuditTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("audit changes failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(summary, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(summary)
+		return textResult(string(data)), nil
 	})
 
 	// dendrite_github_sync
@@ -155,9 +150,7 @@ func registerAuditTools(s *Server, deps Dependencies) {
 		}
 
 		data, _ := json.MarshalIndent(res, "", "  ")
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// dendrite_remote_sync
@@ -181,13 +174,8 @@ func registerAuditTools(s *Server, deps Dependencies) {
 		if err != nil {
 			return nil, fmt.Errorf("remote sync failed: %w", err)
 		}
-		data, err := json.MarshalIndent(status, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(status)
+		return textResult(string(data)), nil
 	})
 
 	// dendrite_quality_audit
@@ -228,13 +216,8 @@ func registerAuditTools(s *Server, deps Dependencies) {
 			"rejection":    spec.ProposedResolution,
 			"gap_tickets":  gaps,
 		}
-		data, err := json.MarshalIndent(out, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(out)
+		return textResult(string(data)), nil
 	})
 
 	// dendrite_hitl_sync

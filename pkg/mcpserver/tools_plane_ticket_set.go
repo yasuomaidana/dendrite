@@ -46,6 +46,6 @@ func registerPlaneTicketSetTool(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("set %s to %s in Plane: %w", ticket, st, err)
 		}
 		data, _ := json.MarshalIndent(map[string]string{"ticket": ticket, "status": string(st), "source": "plane"}, "", "  ")
-		return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+		return textResult(string(data)), nil
 	})
 }

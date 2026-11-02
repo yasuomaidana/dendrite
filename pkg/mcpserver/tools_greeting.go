@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"Dendrite/pkg/personalcontext/greeting"
@@ -150,10 +149,7 @@ func registerGreetingTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("failed to generate greeting: %w", err)
 		}
 
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(res)
 
 		return &CallToolResult{
 			Content: []ContentItem{

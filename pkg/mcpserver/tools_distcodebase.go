@@ -40,7 +40,7 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 					"query":    query,
 					"resolved": matched,
 				}, "", "  ")
-				return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+				return textResult(string(data)), nil
 			}
 		}
 
@@ -61,11 +61,8 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 			"total_libraries": len(filteredLibs),
 			"libraries":       filteredLibs,
 		}
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+		data := indentJSON(res)
+		return textResult(string(data)), nil
 	})
 
 	// 17. dendrite_dist_decompose
@@ -120,11 +117,8 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("decomposition failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(plan, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+		data := indentJSON(plan)
+		return textResult(string(data)), nil
 	})
 
 	// 18. dendrite_dist_interop
@@ -171,7 +165,7 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 				"local_llm_prompt": prompt,
 			}
 			data, _ := json.MarshalIndent(res, "", "  ")
-			return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+			return textResult(string(data)), nil
 
 		case "complete":
 			coordID, _ := args["coordination_id"].(string)
@@ -180,7 +174,7 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 				return nil, fmt.Errorf("failed to complete feature: %w", err)
 			}
 			data, _ := json.MarshalIndent(coord, "", "  ")
-			return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+			return textResult(string(data)), nil
 
 		case "reconcile":
 			coordID, _ := args["coordination_id"].(string)
@@ -189,12 +183,12 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 				return nil, fmt.Errorf("failed to reconcile: %w", err)
 			}
 			data, _ := json.MarshalIndent(rec, "", "  ")
-			return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+			return textResult(string(data)), nil
 
 		case "list":
 			coords := globalInteropCoordinator.ListCoordinations()
 			data, _ := json.MarshalIndent(coords, "", "  ")
-			return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+			return textResult(string(data)), nil
 
 		default:
 			return nil, fmt.Errorf("unknown interop action: %s", action)
@@ -252,10 +246,7 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("spawning project failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+		data := indentJSON(result)
+		return textResult(string(data)), nil
 	})
 }

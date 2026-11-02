@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/yasuomaidana/dendrite-mcp-hub/pkg/polyglot/contract"
@@ -59,10 +58,7 @@ func registerContractTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("contract drift check failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(report, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(report)
 
 		return &CallToolResult{
 			Content: []ContentItem{

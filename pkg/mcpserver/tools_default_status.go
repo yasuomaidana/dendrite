@@ -35,10 +35,7 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 		replicator := env.NewReplicator(nil, *host)
 		statuses := replicator.AuditComponents(ctx)
 
-		data, err := json.MarshalIndent(statuses, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(statuses)
 		return &CallToolResult{
 			Content: []ContentItem{
 				{Type: "text", Text: string(data)},
@@ -75,9 +72,7 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 				if pErr == nil && len(issues) > 0 {
 					data, mErr := json.MarshalIndent(issues, "", "  ")
 					if mErr == nil {
-						return &CallToolResult{
-							Content: []ContentItem{{Type: "text", Text: string(data)}},
-						}, nil
+						return textResult(string(data)), nil
 					}
 				}
 			}
@@ -87,10 +82,7 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 		if err != nil {
 			return nil, err
 		}
-		data, err := json.MarshalIndent(tickets, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(tickets)
 		return &CallToolResult{
 			Content: []ContentItem{
 				{Type: "text", Text: string(data)},
@@ -185,10 +177,7 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("failed to connect to Plane: %w", err)
 		}
 
-		data, err := json.MarshalIndent(issues, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(issues)
 		return &CallToolResult{
 			Content: []ContentItem{
 				{Type: "text", Text: string(data)},
@@ -223,10 +212,7 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 			"latency":  status.Latency.String(),
 			"models":   models,
 		}
-		data, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(result)
 		return &CallToolResult{
 			Content: []ContentItem{
 				{Type: "text", Text: string(data)},
@@ -285,10 +271,7 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 			return nil, err
 		}
 
-		data, err := json.MarshalIndent(plan, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(plan)
 		return &CallToolResult{
 			Content: []ContentItem{
 				{Type: "text", Text: string(data)},
@@ -375,10 +358,7 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("gateway update failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(rep, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(rep)
 		return &CallToolResult{
 			Content: []ContentItem{
 				{Type: "text", Text: string(data)},

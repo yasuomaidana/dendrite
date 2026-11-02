@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"Dendrite/pkg/agentsearch"
@@ -91,13 +90,8 @@ func registerAgentSearchTools(s *Server, deps Dependencies) {
 			if err != nil {
 				return nil, fmt.Errorf("agent routing failed: %w", err)
 			}
-			data, err := json.MarshalIndent(decision, "", "  ")
-			if err != nil {
-				return nil, err
-			}
-			return &CallToolResult{
-				Content: []ContentItem{{Type: "text", Text: string(data)}},
-			}, nil
+			data := indentJSON(decision)
+			return textResult(string(data)), nil
 		}
 
 		results, err := engine.Search(ctx, query)
@@ -105,12 +99,7 @@ func registerAgentSearchTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("agent search failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(results, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(results)
+		return textResult(string(data)), nil
 	})
 }

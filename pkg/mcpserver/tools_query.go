@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"Dendrite/pkg/statedir"
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"Dendrite/pkg/query/fuse"
@@ -53,26 +52,12 @@ func registerQueryTools(s *Server, deps Dependencies) {
 
 		result, err := defaultMCPQuerySlicer.Slice(ctx, req)
 		if err != nil {
-			return &CallToolResult{
-				Content: []ContentItem{{
-					Type: "text",
-					Text: fmt.Sprintf("[-] Slicing failed: %v", err),
-				}},
-				IsError: true,
-			}, nil
+			return errorResult("[-] Slicing failed: %v", err), nil
 		}
 
-		data, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return nil, fmt.Errorf("marshaling slice result: %w", err)
-		}
+		data := indentJSON(result)
 
-		return &CallToolResult{
-			Content: []ContentItem{{
-				Type: "text",
-				Text: string(data),
-			}},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// 32. dendrite_query_swap
@@ -107,26 +92,12 @@ func registerQueryTools(s *Server, deps Dependencies) {
 
 		result, err := defaultMCPSwapper.Swap(ctx, req)
 		if err != nil {
-			return &CallToolResult{
-				Content: []ContentItem{{
-					Type: "text",
-					Text: fmt.Sprintf("[-] Subsystem swap failed: %v", err),
-				}},
-				IsError: true,
-			}, nil
+			return errorResult("[-] Subsystem swap failed: %v", err), nil
 		}
 
-		data, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return nil, fmt.Errorf("marshaling swap result: %w", err)
-		}
+		data := indentJSON(result)
 
-		return &CallToolResult{
-			Content: []ContentItem{{
-				Type: "text",
-				Text: string(data),
-			}},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// 33. dendrite_query_transpile
@@ -164,26 +135,12 @@ func registerQueryTools(s *Server, deps Dependencies) {
 
 		result, err := defaultMCPTranspiler.Transpile(ctx, req)
 		if err != nil {
-			return &CallToolResult{
-				Content: []ContentItem{{
-					Type: "text",
-					Text: fmt.Sprintf("[-] Transpilation failed: %v", err),
-				}},
-				IsError: true,
-			}, nil
+			return errorResult("[-] Transpilation failed: %v", err), nil
 		}
 
-		data, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return nil, fmt.Errorf("marshaling transpile result: %w", err)
-		}
+		data := indentJSON(result)
 
-		return &CallToolResult{
-			Content: []ContentItem{{
-				Type: "text",
-				Text: string(data),
-			}},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// 34. dendrite_query_fuse
@@ -228,26 +185,12 @@ func registerQueryTools(s *Server, deps Dependencies) {
 
 		result, err := defaultMCPFuser.Fuse(ctx, req)
 		if err != nil {
-			return &CallToolResult{
-				Content: []ContentItem{{
-					Type: "text",
-					Text: fmt.Sprintf("[-] Architecture fusion failed: %v", err),
-				}},
-				IsError: true,
-			}, nil
+			return errorResult("[-] Architecture fusion failed: %v", err), nil
 		}
 
-		data, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return nil, fmt.Errorf("marshaling fuse result: %w", err)
-		}
+		data := indentJSON(result)
 
-		return &CallToolResult{
-			Content: []ContentItem{{
-				Type: "text",
-				Text: string(data),
-			}},
-		}, nil
+		return textResult(string(data)), nil
 	})
 	// 35. dendrite_query_reuse_audit
 	s.RegisterTool(Tool{
@@ -278,26 +221,12 @@ func registerQueryTools(s *Server, deps Dependencies) {
 
 		res, err := defaultMCPReuseAuditor.AuditReuse(ctx, req)
 		if err != nil {
-			return &CallToolResult{
-				Content: []ContentItem{{
-					Type: "text",
-					Text: fmt.Sprintf("[-] 3-Tier library reuse audit failed: %v", err),
-				}},
-				IsError: true,
-			}, nil
+			return errorResult("[-] 3-Tier library reuse audit failed: %v", err), nil
 		}
 
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, fmt.Errorf("marshaling reuse result: %w", err)
-		}
+		data := indentJSON(res)
 
-		return &CallToolResult{
-			Content: []ContentItem{{
-				Type: "text",
-				Text: string(data),
-			}},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// 36. dendrite_ref_list
@@ -311,26 +240,12 @@ func registerQueryTools(s *Server, deps Dependencies) {
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		refs, err := defaultMCPRefMgr.ListRefs()
 		if err != nil {
-			return &CallToolResult{
-				Content: []ContentItem{{
-					Type: "text",
-					Text: fmt.Sprintf("[-] Failed to list refs: %v", err),
-				}},
-				IsError: true,
-			}, nil
+			return errorResult("[-] Failed to list refs: %v", err), nil
 		}
 
-		data, err := json.MarshalIndent(refs, "", "  ")
-		if err != nil {
-			return nil, fmt.Errorf("marshaling refs: %w", err)
-		}
+		data := indentJSON(refs)
 
-		return &CallToolResult{
-			Content: []ContentItem{{
-				Type: "text",
-				Text: string(data),
-			}},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// 37. dendrite_ref_add
@@ -378,20 +293,9 @@ func registerQueryTools(s *Server, deps Dependencies) {
 		}
 
 		if err := defaultMCPRefMgr.AddRef(ref); err != nil {
-			return &CallToolResult{
-				Content: []ContentItem{{
-					Type: "text",
-					Text: fmt.Sprintf("[-] Failed to register ref: %v", err),
-				}},
-				IsError: true,
-			}, nil
+			return errorResult("[-] Failed to register ref: %v", err), nil
 		}
 
-		return &CallToolResult{
-			Content: []ContentItem{{
-				Type: "text",
-				Text: fmt.Sprintf("[+] Successfully registered Tier 1 source reference %s (%s)", name, repo),
-			}},
-		}, nil
+		return textResult(fmt.Sprintf("[+] Successfully registered Tier 1 source reference %s (%s)", name, repo)), nil
 	})
 }

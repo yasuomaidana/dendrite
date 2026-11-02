@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -42,22 +41,15 @@ func registerREATools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("showcase execution failed: %w", err)
 		}
 
-		jsonData, err := json.MarshalIndent(report, "", "  ")
-		if err != nil {
-			return nil, fmt.Errorf("failed to encode report JSON: %w", err)
-		}
+		jsonData := indentJSON(report)
 
 		markdownScorecard := showcase.RenderMarkdownScorecard(report)
 
 		switch strings.ToLower(format) {
 		case "json":
-			return &CallToolResult{
-				Content: []ContentItem{{Type: "text", Text: string(jsonData)}},
-			}, nil
+			return textResult(string(jsonData)), nil
 		case "markdown", "md":
-			return &CallToolResult{
-				Content: []ContentItem{{Type: "text", Text: markdownScorecard}},
-			}, nil
+			return textResult(markdownScorecard), nil
 		default: // "summary"
 			summaryText := fmt.Sprintf("[+] REA Showcase Verification (%s): %d/%d targets passed (%.2f%% aggregate parity)",
 				report.OverallStatus, report.SucceededTargets, report.TotalTargets, report.OverallParityPercent)

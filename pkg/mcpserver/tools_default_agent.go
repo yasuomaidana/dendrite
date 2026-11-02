@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"Dendrite/pkg/memfit"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -127,10 +126,7 @@ func registerAgentRunTool(s *Server, deps Dependencies) {
 			"status":     summary.Status,
 		}
 
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(res)
 		return &CallToolResult{
 			Content: []ContentItem{
 				{Type: "text", Text: string(data)},
@@ -155,10 +151,7 @@ func registerTelemetryAndInferenceTools(s *Server, deps Dependencies) {
 		}, nil, nil, nil, nil)
 		rep := daemon.CollectOnce(ctx)
 
-		data, err := json.MarshalIndent(rep, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(rep)
 		return &CallToolResult{
 			Content: []ContentItem{
 				{Type: "text", Text: string(data)},
@@ -200,13 +193,8 @@ func registerTelemetryAndInferenceTools(s *Server, deps Dependencies) {
 			"engines":       list,
 			"cascade_order": cascade,
 		}
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(res)
+		return textResult(string(data)), nil
 	})
 
 	// dendrite_inference_models
@@ -218,13 +206,8 @@ func registerTelemetryAndInferenceTools(s *Server, deps Dependencies) {
 			"properties": map[string]interface{}{},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		data, err := json.MarshalIndent(memfit.Assess(ctx, "", ""), "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(memfit.Assess(ctx, "", ""))
+		return textResult(string(data)), nil
 	})
 
 	// 11. dendrite_inference_probe
@@ -249,21 +232,11 @@ func registerTelemetryAndInferenceTools(s *Server, deps Dependencies) {
 				return nil, err
 			}
 			h := eng.Health(ctx)
-			data, err := json.MarshalIndent(h, "", "  ")
-			if err != nil {
-				return nil, err
-			}
-			return &CallToolResult{
-				Content: []ContentItem{{Type: "text", Text: string(data)}},
-			}, nil
+			data := indentJSON(h)
+			return textResult(string(data)), nil
 		}
 		results := mgr.PollHealthAll(ctx)
-		data, err := json.MarshalIndent(results, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(results)
+		return textResult(string(data)), nil
 	})
 }

@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"Dendrite/pkg/planesvc"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -195,12 +194,7 @@ func planeSmartSelectHandler(deps Dependencies) func(context.Context, map[string
 			"selection":         res,
 		}
 
-		data, err := json.MarshalIndent(output, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(output)
+		return textResult(string(data)), nil
 	}
 }

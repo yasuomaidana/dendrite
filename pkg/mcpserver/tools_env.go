@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -69,10 +68,7 @@ func registerEnvPrepareTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("environment preparation failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(report, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(report)
 		return &CallToolResult{
 			Content: []ContentItem{
 				{Type: "text", Text: string(data)},

@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -59,13 +58,8 @@ func registerPlaneSyncAndIDETools(s *Server, deps Dependencies) {
 			"dry_run":   dryRun,
 			"report":    report,
 		}
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(res)
+		return textResult(string(data)), nil
 	})
 
 	// 13. dendrite_plane_push_status
@@ -106,13 +100,8 @@ func registerPlaneSyncAndIDETools(s *Server, deps Dependencies) {
 			"file":   sourceFile,
 			"report": report,
 		}
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(res)
+		return textResult(string(data)), nil
 	})
 
 	// 14. dendrite_plane_doc_sync
@@ -156,13 +145,8 @@ func registerPlaneSyncAndIDETools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("documentation sync failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(report, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(report)
+		return textResult(string(data)), nil
 	})
 
 	// 15. dendrite_jetbrains_setup
@@ -195,13 +179,8 @@ func registerPlaneSyncAndIDETools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("jetbrains setup failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(res)
+		return textResult(string(data)), nil
 	})
 }
 
@@ -286,12 +265,7 @@ func registerCommitTool(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("commit failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(res)
+		return textResult(string(data)), nil
 	})
 }

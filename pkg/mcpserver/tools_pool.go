@@ -52,36 +52,17 @@ func registerPoolTools(s *Server, deps Dependencies) {
 		}
 
 		if len(projects) == 0 {
-			return &CallToolResult{
-				Content: []ContentItem{{
-					Type: "text",
-					Text: "[-] Pool is empty. No projects registered.",
-				}},
-			}, nil
+			return textResult("[-] Pool is empty. No projects registered."), nil
 		}
 
 		res, err := defaultMCPDAGSolver.Resolve(projects)
 		if err != nil {
-			return &CallToolResult{
-				Content: []ContentItem{{
-					Type: "text",
-					Text: fmt.Sprintf("[-] Dependency resolution failed: %v", err),
-				}},
-				IsError: true,
-			}, nil
+			return errorResult("[-] Dependency resolution failed: %v", err), nil
 		}
 
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, fmt.Errorf("marshaling DAG resolution: %w", err)
-		}
+		data := indentJSON(res)
 
-		return &CallToolResult{
-			Content: []ContentItem{{
-				Type: "text",
-				Text: string(data),
-			}},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// 27. dendrite_pool_list
@@ -104,12 +85,7 @@ func registerPoolTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("marshaling pool projects: %w", err)
 		}
 
-		return &CallToolResult{
-			Content: []ContentItem{{
-				Type: "text",
-				Text: string(data),
-			}},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// 28. dendrite_pool_add
@@ -142,13 +118,7 @@ func registerPoolTools(s *Server, deps Dependencies) {
 
 		added, err := defaultMCPPoolManager.Add(dirs...)
 		if err != nil {
-			return &CallToolResult{
-				Content: []ContentItem{{
-					Type: "text",
-					Text: fmt.Sprintf("[-] Failed adding projects: %v", err),
-				}},
-				IsError: true,
-			}, nil
+			return errorResult("[-] Failed adding projects: %v", err), nil
 		}
 
 		if err := defaultMCPPoolManager.Save(); err != nil {
@@ -160,12 +130,7 @@ func registerPoolTools(s *Server, deps Dependencies) {
 			"added":  added,
 		}, "", "  ")
 
-		return &CallToolResult{
-			Content: []ContentItem{{
-				Type: "text",
-				Text: string(data),
-			}},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// 29. dendrite_pool_switch
@@ -215,26 +180,12 @@ func registerPoolTools(s *Server, deps Dependencies) {
 
 		result, err := defaultMCPSwitcher.Switch(ctx, req)
 		if err != nil {
-			return &CallToolResult{
-				Content: []ContentItem{{
-					Type: "text",
-					Text: fmt.Sprintf("[-] Dependency mode switch failed: %v", err),
-				}},
-				IsError: true,
-			}, nil
+			return errorResult("[-] Dependency mode switch failed: %v", err), nil
 		}
 
-		data, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return nil, fmt.Errorf("marshaling switch result: %w", err)
-		}
+		data := indentJSON(result)
 
-		return &CallToolResult{
-			Content: []ContentItem{{
-				Type: "text",
-				Text: string(data),
-			}},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// 30. dendrite_pool_split
@@ -272,25 +223,11 @@ func registerPoolTools(s *Server, deps Dependencies) {
 
 		result, err := defaultMCPSplitter.Split(ctx, req)
 		if err != nil {
-			return &CallToolResult{
-				Content: []ContentItem{{
-					Type: "text",
-					Text: fmt.Sprintf("[-] Project split failed: %v", err),
-				}},
-				IsError: true,
-			}, nil
+			return errorResult("[-] Project split failed: %v", err), nil
 		}
 
-		data, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return nil, fmt.Errorf("marshaling split result: %w", err)
-		}
+		data := indentJSON(result)
 
-		return &CallToolResult{
-			Content: []ContentItem{{
-				Type: "text",
-				Text: string(data),
-			}},
-		}, nil
+		return textResult(string(data)), nil
 	})
 }

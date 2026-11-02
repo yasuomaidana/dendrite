@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -123,14 +122,9 @@ func registerMigrateTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("migration failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(res)
 
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// dendrite_service_plan
@@ -161,13 +155,8 @@ func registerMigrateTools(s *Server, deps Dependencies) {
 		}
 
 		plan := migrate.EvaluateDebianServer(ramMB, diskGB)
-		data, err := json.MarshalIndent(plan, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(plan)
 
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		return textResult(string(data)), nil
 	})
 }

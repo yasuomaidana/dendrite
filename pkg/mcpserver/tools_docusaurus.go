@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -65,13 +64,8 @@ func registerDocusaurusTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("docusaurus generation failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(res)
+		return textResult(string(data)), nil
 	})
 
 	// dendrite_docusaurus_share
@@ -97,13 +91,8 @@ func registerDocusaurusTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("failed creating sharing bundle: %w", err)
 		}
 
-		data, err := json.MarshalIndent(manifest, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(manifest)
+		return textResult(string(data)), nil
 	})
 
 	// dendrite_docusaurus_audit
@@ -132,12 +121,7 @@ func registerDocusaurusTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("documentation audit failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(summary, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(summary)
+		return textResult(string(data)), nil
 	})
 }

@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"Dendrite/pkg/ticketindex"
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -112,10 +111,7 @@ func registerRAGTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("rag ask failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(res)
 
 		return &CallToolResult{
 			Content: []ContentItem{
@@ -223,10 +219,7 @@ func registerRAGTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("rag retrieval failed for %s: %w", projectPath, err)
 		}
 
-		data, err := json.MarshalIndent(retrieval.Chunks, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(retrieval.Chunks)
 
 		return &CallToolResult{
 			Content: []ContentItem{
@@ -276,11 +269,8 @@ func registerRAGTools(s *Server, deps Dependencies) {
 		if err != nil {
 			return nil, fmt.Errorf("rag show failed for %s: %w", projectPath, err)
 		}
-		data, err := json.MarshalIndent(chunks, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+		data := indentJSON(chunks)
+		return textResult(string(data)), nil
 	})
 }
 

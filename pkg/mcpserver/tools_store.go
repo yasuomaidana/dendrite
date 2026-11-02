@@ -67,7 +67,7 @@ func registerStoreTools(s *Server, deps Dependencies) {
 		}
 
 		data, _ := json.MarshalIndent(res, "", "  ")
-		return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+		return textResult(string(data)), nil
 	})
 
 	// 39. dendrite_store_commit_chunk
@@ -113,17 +113,11 @@ func registerStoreTools(s *Server, deps Dependencies) {
 
 		cp, err := defaultMCPStore.CommitChunk(ctx, project, chunkID, []segmented.Segment{seg}, map[string][]byte{hash: data}, isFinal)
 		if err != nil {
-			return &CallToolResult{
-				Content: []ContentItem{{
-					Type: "text",
-					Text: fmt.Sprintf("[-] Failed to commit chunk: %v", err),
-				}},
-				IsError: true,
-			}, nil
+			return errorResult("[-] Failed to commit chunk: %v", err), nil
 		}
 
 		dataRes, _ := json.MarshalIndent(cp, "", "  ")
-		return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(dataRes)}}}, nil
+		return textResult(string(dataRes)), nil
 	})
 
 	// 40. dendrite_store_query_partial
@@ -146,7 +140,7 @@ func registerStoreTools(s *Server, deps Dependencies) {
 		}
 
 		data, _ := json.MarshalIndent(segs, "", "  ")
-		return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+		return textResult(string(data)), nil
 	})
 	// 41. dendrite_store_inspect
 	s.RegisterTool(Tool{
@@ -163,20 +157,11 @@ func registerStoreTools(s *Server, deps Dependencies) {
 		storeID, _ := args["store_id"].(string)
 		details, err := defaultMCPStoreInspector.InspectStoreDetails(ctx, storeID)
 		if err != nil {
-			return &CallToolResult{
-				Content: []ContentItem{{
-					Type: "text",
-					Text: fmt.Sprintf("[-] Inspect failed: %v", err),
-				}},
-				IsError: true,
-			}, nil
+			return errorResult("[-] Inspect failed: %v", err), nil
 		}
 
-		data, err := json.MarshalIndent(details, "", "  ")
-		if err != nil {
-			return nil, fmt.Errorf("marshaling inspect result: %w", err)
-		}
-		return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+		data := indentJSON(details)
+		return textResult(string(data)), nil
 	})
 
 	// 42. dendrite_store_rm
@@ -197,19 +182,10 @@ func registerStoreTools(s *Server, deps Dependencies) {
 
 		res, err := defaultMCPStoreInspector.RemoveStore(ctx, storeID, force)
 		if err != nil {
-			return &CallToolResult{
-				Content: []ContentItem{{
-					Type: "text",
-					Text: fmt.Sprintf("[-] Removal failed: %v", err),
-				}},
-				IsError: true,
-			}, nil
+			return errorResult("[-] Removal failed: %v", err), nil
 		}
 
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, fmt.Errorf("marshaling removal result: %w", err)
-		}
-		return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+		data := indentJSON(res)
+		return textResult(string(data)), nil
 	})
 }

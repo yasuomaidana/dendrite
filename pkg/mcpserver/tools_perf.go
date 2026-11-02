@@ -111,9 +111,7 @@ func registerPerfTools(s *Server, deps Dependencies) {
 				return nil, fmt.Errorf("budget stress test failed: %w", err)
 			}
 			data, _ := json.MarshalIndent(res, "", "  ")
-			return &CallToolResult{
-				Content: []ContentItem{{Type: "text", Text: string(data)}},
-			}, nil
+			return textResult(string(data)), nil
 		}
 
 		cfg := perf.BenchmarkConfig{
@@ -142,10 +140,7 @@ func registerPerfTools(s *Server, deps Dependencies) {
 		}
 
 		summary := completed.Summary()
-		data, err := json.MarshalIndent(summary, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		data := indentJSON(summary)
 
 		scorecard := perf.FormatMarkdownScorecard(summary)
 		return &CallToolResult{

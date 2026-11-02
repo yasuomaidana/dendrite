@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"Dendrite/pkg/store"
@@ -69,13 +68,8 @@ func registerStoryForkTools(s *Server, deps Dependencies) {
 		}
 		guard.Dismiss() // Keep worktrees alive for developer/agent use
 
-		data, err := json.MarshalIndent(manifest, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(manifest)
+		return textResult(string(data)), nil
 	})
 
 	// 48. dendrite_story_benchmark
@@ -126,13 +120,8 @@ func registerStoryForkTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("story benchmark failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(scorecard, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(scorecard)
+		return textResult(string(data)), nil
 	})
 
 	// 49. dendrite_story_resolve
@@ -165,13 +154,8 @@ func registerStoryForkTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("story resolve failed: %w", err)
 		}
 
-		data, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: string(data)}},
-		}, nil
+		data := indentJSON(res)
+		return textResult(string(data)), nil
 	})
 
 	// 50. dendrite_story_abort
@@ -198,8 +182,6 @@ func registerStoryForkTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("story abort failed: %w", err)
 		}
 
-		return &CallToolResult{
-			Content: []ContentItem{{Type: "text", Text: fmt.Sprintf("[✓] Speculative story '%s' successfully aborted and cleaned.", storyID)}},
-		}, nil
+		return textResult(fmt.Sprintf("[✓] Speculative story '%s' successfully aborted and cleaned.", storyID)), nil
 	})
 }

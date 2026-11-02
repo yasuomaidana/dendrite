@@ -210,10 +210,7 @@ func registerSchedulerTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("processing chunk: %w", err)
 		}
 
-		bytes, err := json.MarshalIndent(res, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		bytes := indentJSON(res)
 
 		return &CallToolResult{
 			Content: []ContentItem{
@@ -251,10 +248,7 @@ func registerSchedulerTools(s *Server, deps Dependencies) {
 		}
 
 		state := defaultMCPGovernor.GetState()
-		bytes, err := json.MarshalIndent(state, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		bytes := indentJSON(state)
 
 		return &CallToolResult{
 			Content: []ContentItem{
@@ -310,10 +304,7 @@ func registerSchedulerTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("evaluating token status: %w", err)
 		}
 
-		bytes, err := json.MarshalIndent(rep, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		bytes := indentJSON(rep)
 
 		return &CallToolResult{
 			Content: []ContentItem{
