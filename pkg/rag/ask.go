@@ -299,10 +299,7 @@ func (e *AskEngine) delegateToRemoteServer(ctx context.Context, serverURL string
 	reqForward := req
 	reqForward.ServerURL = ""
 
-	bodyBytes, err := json.Marshal(reqForward)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode request for central RAG service: %w", err)
-	}
+	bodyBytes, _ := json.Marshal(reqForward) // the request holds only strings, numbers and booleans
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyBytes))
 	if err != nil {

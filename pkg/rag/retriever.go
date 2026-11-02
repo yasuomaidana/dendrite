@@ -225,15 +225,12 @@ func (r *Retriever) run(ctx context.Context, projectPath string, refresh bool, f
 	if err != nil {
 		return Retrieval{}, err
 	}
-	bin, err := r.Locator.Locate(SidecarBinary)
-	if err != nil {
-		return Retrieval{}, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
-	}
 	started := time.Now()
-	c, err := r.connect(ctx, bin)
+	c, err := r.dial(ctx)
 	if err != nil {
-		return Retrieval{}, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
+		return Retrieval{}, err
 	}
+	bin := c.Path
 	spawn := time.Since(started).Milliseconds()
 
 	indexParams := map[string]interface{}{"root": root, "full": refresh}
@@ -310,10 +307,13 @@ func protocolMinor(semver string) int {
 	return n
 }
 
+// absPath is filepath.Abs; tests replace it to reach the case where the working directory is gone.
+var absPath = filepath.Abs
+
 // projectRoot returns the absolute directory to index and, when projectPath is a file,
 // the directory-relative path that restricts the search to it.
 func projectRoot(projectPath string) (string, []string, error) {
-	abs, err := filepath.Abs(projectPath)
+	abs, err := absPath(projectPath)
 	if err != nil {
 		return "", nil, err
 	}

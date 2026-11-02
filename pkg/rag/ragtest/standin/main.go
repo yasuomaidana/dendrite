@@ -99,11 +99,15 @@ func main() {
 		case req.Method == os.Getenv("STANDIN_FAIL"):
 			resp["error"] = map[string]interface{}{"code": -32000, "message": "boom", "data": map[string]string{"kind": "index"}}
 		case req.Method == "index":
-			resp["result"] = map[string]int{"files_scanned": 1, "files_changed": 1, "embed_pending": 7, "embed_ms": 40}
+			resp["result"] = map[string]interface{}{"files_scanned": 1, "files_changed": 1, "embed_pending": 7, "embed_ms": 40, "embed_error": os.Getenv("STANDIN_EMBED_ERROR")}
 		case req.Method == "settings":
 			resp["result"] = map[string]interface{}{"settings": map[string]interface{}{"ask": map[string]string{"local_model": os.Getenv("STANDIN_ASK_LOCAL_MODEL")}}}
 		case req.Method == "status":
-			resp["result"] = map[string]interface{}{"files": 1, "chunks": 14, "vectors": 7, "embed_coverage": 0.5}
+			status := map[string]interface{}{"files": 1, "chunks": 14, "vectors": 7, "embed_coverage": 0.5}
+			if w := os.Getenv("STANDIN_WARN"); w != "" {
+				status["warnings"] = []string{w}
+			}
+			resp["result"] = status
 		case req.Method == "embedders":
 			resp["result"] = map[string]interface{}{
 				"backends": []map[string]interface{}{
@@ -383,9 +387,11 @@ func ask(p params) (map[string]interface{}, string) {
 		"hits": hits, "prompt_tokens": 100, "output_tokens": 20,
 		"timings": map[string]interface{}{"retrieval": map[string]int{"total_ms": 3}, "local_ms": 120, "paid_ms": 0, "total_ms": 123},
 	}
-	if os.Getenv("STANDIN_ABSTAIN") == "1" {
+	if abstain := os.Getenv("STANDIN_ABSTAIN"); abstain != "" {
 		out["abstained"] = true
-		out["source_tier"] = "abstained"
+		if abstain == "1" { // "untiered" leaves the tier for the caller to name
+			out["source_tier"] = "abstained"
+		}
 		out["answer"] = ""
 		return out, ""
 	}

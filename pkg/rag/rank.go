@@ -36,13 +36,9 @@ func (r *Retriever) Rank(ctx context.Context, root, query string, docs []RankDoc
 	if err != nil {
 		return nil, err
 	}
-	bin, err := r.Locator.Locate(SidecarBinary)
+	c, err := r.dial(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
-	}
-	c, err := r.connect(ctx, bin)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
+		return nil, err
 	}
 	if protocolMinor(c.Health.Protocol) < RankProtocolMinor {
 		return nil, fmt.Errorf("%w: %s speaks protocol %s; rank needs 1.%d or later; %s",

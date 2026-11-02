@@ -23,13 +23,9 @@ func (r *Retriever) Quality(ctx context.Context, root, method string, params map
 	if err != nil {
 		return err
 	}
-	bin, err := r.Locator.Locate(SidecarBinary)
+	c, err := r.dial(ctx)
 	if err != nil {
-		return fmt.Errorf("%w: %v; %s", ErrSidecarUnavailable, err, InstallHint)
-	}
-	c, err := r.connect(ctx, bin)
-	if err != nil {
-		return fmt.Errorf("%w: %s: %v", ErrSidecarUnavailable, bin, err)
+		return err
 	}
 	if protocolMinor(c.Health.Protocol) < minor {
 		return fmt.Errorf("%w: %s speaks protocol %s; %s needs 1.%d or later; %s",
