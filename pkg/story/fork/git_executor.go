@@ -1,5 +1,10 @@
 package fork
 
+// TODO(move:dendrite-git-rs,DGIT-4): running git for forks (worktrees, branches, diffs) is repository plumbing that dendrite-git does in-process with gix.
+//   When: dendrite-git serves git.worktree.* and git.hunks (DGIT-1, DGIT-4, DGIT-7); then the fork controller calls the sidecar and this file is deleted.
+//   Stays in Go: the fork benchmark policy and scoring (controller.go, benchmark.go).
+//   Until then: fix bugs here, but do not add features; add them in the Rust repository.
+
 import (
 	"bytes"
 	"context"
