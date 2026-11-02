@@ -58,9 +58,12 @@ type TopologyConfig struct {
 
 // Custom error definitions.
 var (
-	ErrInvalidScenario     = errors.New("invalid scenario")
-	ErrInvalidComputeNode  = errors.New("invalid compute node")
-	ErrInvalidComponent    = errors.New("invalid stack component")
+	ErrInvalidScenario    = errors.New("invalid scenario")
+	ErrInvalidComputeNode = errors.New("invalid compute node")
+	ErrInvalidComponent   = errors.New("invalid stack component")
+)
+
+var (
 	ErrMissingComponent    = errors.New("missing mandatory stack component")
 	ErrInvalidPlacement    = errors.New("invalid placement for scenario")
 	ErrInvalidEndpointHost = errors.New("invalid endpoint host format")

@@ -17,9 +17,12 @@ const (
 
 // Standard typed errors for workspace registry operations.
 var (
-	ErrProjectNotFound        = errors.New("project not found in workspace registry")
-	ErrProjectAlreadyExists   = errors.New("project already exists in workspace registry")
-	ErrInvalidProjectName     = errors.New("invalid project name")
+	ErrProjectNotFound      = errors.New("project not found in workspace registry")
+	ErrProjectAlreadyExists = errors.New("project already exists in workspace registry")
+	ErrInvalidProjectName   = errors.New("invalid project name")
+)
+
+var (
 	ErrInvalidProjectPath     = errors.New("invalid or non-existent project path")
 	ErrNoActiveProject        = errors.New("no active project selected")
 	ErrIllegalStateTransition = errors.New("illegal workspace state transition")

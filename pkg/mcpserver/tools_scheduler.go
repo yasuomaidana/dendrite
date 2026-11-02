@@ -18,35 +18,14 @@ func registerSchedulerTools(s *Server, deps Dependencies) {
 	s.RegisterTool(Tool{
 		Name:        "dendrite_analyze_policy",
 		Description: "Inspect or configure the Token-Aware Hybrid Scheduler policy (night local window, weekly quota reset, 48h pre-reset cloud sprint)",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"night_window": map[string]interface{}{
-					"type":        "string",
-					"description": "Scheduled zero-cost night window in 'HH:MM-HH:MM' format (e.g. '23:00-06:00')",
-				},
-				"weekly_reset": map[string]interface{}{
-					"type":        "string",
-					"description": "Weekly quota reset time in 'DAY HH:MM' format (e.g. 'SUN 23:59')",
-				},
-				"sprint_before_reset": map[string]interface{}{
-					"type":        "string",
-					"description": "Duration before weekly reset to activate cloud sprint (e.g. '48h')",
-				},
-				"reserve_floor": map[string]interface{}{
-					"type":        "number",
-					"description": "Safety reserve quota floor (0.0 to 1.0, default 0.20 for 20% reserve)",
-				},
-				"allow_zero": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Override to permit draining quota down to 0% (bypasses safety reserve floor)",
-				},
-				"mode": map[string]interface{}{
-					"type":        "string",
-					"description": "Operating mode: 'auto', 'always', 'night', 'sprint', or 'paused'",
-				},
-			},
-		},
+		InputSchema: objectSchema([]string{"chunk_id"}, map[string]interface{}{
+			"night_window":        typedProp("string", "Scheduled zero-cost night window in 'HH:MM-HH:MM' format (e.g. '23:00-06:00')"),
+			"weekly_reset":        typedProp("string", "Weekly quota reset time in 'DAY HH:MM' format (e.g. 'SUN 23:59')"),
+			"sprint_before_reset": typedProp("string", "Duration before weekly reset to activate cloud sprint (e.g. '48h')"),
+			"reserve_floor":       typedProp("number", "Safety reserve quota floor (0.0 to 1.0, default 0.20 for 20% reserve)"),
+			"allow_zero":          typedProp("boolean", "Override to permit draining quota down to 0% (bypasses safety reserve floor)"),
+			"mode":                typedProp("string", "Operating mode: 'auto', 'always', 'night', 'sprint', or 'paused'"),
+		}),
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		currentPolicy := defaultMCPScheduler.GetPolicy()
 		updated := false
@@ -107,15 +86,9 @@ func registerSchedulerTools(s *Server, deps Dependencies) {
 	s.RegisterTool(Tool{
 		Name:        "dendrite_analyze_status",
 		Description: "Query real-time status of the Token-Aware Hybrid Scheduler, quota governor, active execution tier, in-night/in-sprint window booleans, and cloud token spend",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"remaining_quota": map[string]interface{}{
-					"type":        "number",
-					"description": "Optional simulated or current remaining quota ratio (0.0 to 1.0)",
-				},
-			},
-		},
+		InputSchema: propsSchema(map[string]interface{}{
+			"remaining_quota": typedProp("number", "Optional simulated or current remaining quota ratio (0.0 to 1.0)"),
+		}),
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		if rq, ok := args["remaining_quota"].(float64); ok {
 			defaultMCPScheduler.SetRemainingQuota(rq)
@@ -145,24 +118,11 @@ func registerSchedulerTools(s *Server, deps Dependencies) {
 	s.RegisterTool(Tool{
 		Name:        "dendrite_analyze_trigger",
 		Description: "Trigger or simulate execution of an analysis chunk under current or simulated token scheduling constraints",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"chunk_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Identifier of the code or AST chunk to analyze",
-				},
-				"simulate_night": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, simulates execution inside the scheduled night window",
-				},
-				"simulate_sprint": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, simulates execution inside the 48h pre-reset cloud sprint",
-				},
-			},
-			"required": []interface{}{"chunk_id"},
-		},
+		InputSchema: propsSchema(map[string]interface{}{
+			"chunk_id":        typedProp("string", "Identifier of the code or AST chunk to analyze"),
+			"simulate_night":  typedProp("boolean", "If true, simulates execution inside the scheduled night window"),
+			"simulate_sprint": typedProp("boolean", "If true, simulates execution inside the 48h pre-reset cloud sprint"),
+		}),
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		chunkID, _ := args["chunk_id"].(string)
 		if chunkID == "" {
@@ -216,19 +176,10 @@ func registerSchedulerTools(s *Server, deps Dependencies) {
 	s.RegisterTool(Tool{
 		Name:        "dendrite_analyze_switch",
 		Description: "Toggle Quota Governor switches (allow_zero drain override past 20% floor, or operational analysis mode)",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"allow_zero": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, allows draining quota down to 0%; if false, halts cloud sprint at 20% reserve floor",
-				},
-				"mode": map[string]interface{}{
-					"type":        "string",
-					"description": "Switch operating mode: 'always', 'policy', or 'paused'",
-				},
-			},
-		},
+		InputSchema: propsSchema(map[string]interface{}{
+			"allow_zero": typedProp("boolean", "If true, allows draining quota down to 0%; if false, halts cloud sprint at 20% reserve floor"),
+			"mode":       typedProp("string", "Switch operating mode: 'always', 'policy', or 'paused'"),
+		}),
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		if az, ok := args["allow_zero"].(bool); ok {
 			_ = defaultMCPGovernor.SetAllowZero(az)
@@ -254,27 +205,12 @@ func registerSchedulerTools(s *Server, deps Dependencies) {
 	s.RegisterTool(Tool{
 		Name:        "dendrite_tokens_status",
 		Description: "Inspect remaining tokens in the day window and week window, and confirm Google Antigravity (AGY) connectivity and availability",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"model": map[string]interface{}{
-					"type":        "string",
-					"description": "Target model identifier (default: \"gemini-3.8-flash-high\")",
-				},
-				"probe": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, executes an active probe to confirm AGY endpoint responsiveness",
-				},
-				"spend_file": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional path to spend.json override",
-				},
-				"policy_file": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional path to scheduler_policy.json override",
-				},
-			},
-		},
+		InputSchema: propsSchema(map[string]interface{}{
+			"model":       typedProp("string", "Target model identifier (default: \"gemini-3.8-flash-high\")"),
+			"probe":       typedProp("boolean", "If true, executes an active probe to confirm AGY endpoint responsiveness"),
+			"spend_file":  typedProp("string", "Optional path to spend.json override"),
+			"policy_file": typedProp("string", "Optional path to scheduler_policy.json override"),
+		}),
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		cfg := tokens.DefaultConfig()
 		if m, ok := args["model"].(string); ok && m != "" {

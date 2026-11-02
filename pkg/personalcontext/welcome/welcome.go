@@ -11,10 +11,13 @@ import (
 
 // Typed error hierarchy for the Welcome Prompt Suite and Dispatcher.
 var (
-	ErrNoDataSources             = errors.New("no connected data sources provided")
-	ErrBannedClicheInWelcome     = errors.New("welcome prompt starts with a banned cliché opener")
-	ErrInvasiveDataDetected      = errors.New("invasive medical or emotional data prohibited in welcome prompt")
-	ErrMechanicalExposition      = errors.New("synthesizer response contains mechanical source exposition")
+	ErrNoDataSources         = errors.New("no connected data sources provided")
+	ErrBannedClicheInWelcome = errors.New("welcome prompt starts with a banned cliché opener")
+	ErrInvasiveDataDetected  = errors.New("invasive medical or emotional data prohibited in welcome prompt")
+	ErrMechanicalExposition  = errors.New("synthesizer response contains mechanical source exposition")
+)
+
+var (
 	ErrMissingTrifectaDomain     = errors.New("showcase of possibilities requires all three life domains (productivity, passion, curiosity)")
 	ErrMissingChoiceCallToAction = errors.New("showcase of possibilities requires explicit choice call-to-action closing")
 	ErrInvalidTransparencyQnA    = errors.New("trustworthy guide requires all three mandatory privacy Q&A entries")

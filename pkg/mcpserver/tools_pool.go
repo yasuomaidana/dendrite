@@ -19,16 +19,9 @@ func registerPoolTools(s *Server, deps Dependencies) {
 	s.RegisterTool(Tool{
 		Name:        "dendrite_pool_resolve",
 		Description: "Computes deterministic topological DAG across multi-directory pool projects and detects circular dependency hazards",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"directories": map[string]interface{}{
-					"type":        "array",
-					"items":       map[string]interface{}{"type": "string"},
-					"description": "Optional ad-hoc list of directory paths to resolve directly without loading pool config",
-				},
-			},
-		},
+		InputSchema: objectSchema([]string{"directories"}, map[string]interface{}{
+			"directories": listProp("string", "Optional ad-hoc list of directory paths to resolve directly without loading pool config"),
+		}),
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		var projects []dag.ProjectInfo
 
@@ -68,10 +61,7 @@ func registerPoolTools(s *Server, deps Dependencies) {
 	s.RegisterTool(Tool{
 		Name:        "dendrite_pool_list",
 		Description: "List all registered project members in the multi-project pool",
-		InputSchema: map[string]interface{}{
-			"type":       "object",
-			"properties": map[string]interface{}{},
-		},
+		InputSchema: propsSchema(map[string]interface{}{}),
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		_ = defaultMCPPoolManager.Load()
 		projects := defaultMCPPoolManager.List()
@@ -88,17 +78,9 @@ func registerPoolTools(s *Server, deps Dependencies) {
 	s.RegisterTool(Tool{
 		Name:        "dendrite_pool_add",
 		Description: "Register one or more project directories into .dendrite/pool.json",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"directories": map[string]interface{}{
-					"type":        "array",
-					"items":       map[string]interface{}{"type": "string"},
-					"description": "List of project directory paths to register",
-				},
-			},
-			"required": []interface{}{"directories"},
-		},
+		InputSchema: propsSchema(map[string]interface{}{
+			"directories": listProp("string", "List of project directory paths to register"),
+		}),
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		rawDirs, ok := args["directories"].([]interface{})
 		if !ok || len(rawDirs) == 0 {
@@ -133,22 +115,18 @@ func registerPoolTools(s *Server, deps Dependencies) {
 	s.RegisterTool(Tool{
 		Name:        "dendrite_pool_switch",
 		Description: "Atomically transition a dependency mode across Published, Branch, Local, or Fork with JetBrains scope sync",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"target_project_dir": map[string]interface{}{"type": "string", "description": "Target project directory containing manifests"},
-				"dependency_name":    map[string]interface{}{"type": "string", "description": "Name or module path of target dependency"},
-				"mode":               map[string]interface{}{"type": "string", "enum": []string{"published", "branch", "local", "fork"}, "description": "Target dependency mode"},
-				"version":            map[string]interface{}{"type": "string", "description": "Version string (required for published mode)"},
-				"branch_name":        map[string]interface{}{"type": "string", "description": "Branch name (for branch mode)"},
-				"commit_sha":         map[string]interface{}{"type": "string", "description": "Commit SHA (optional pin for branch mode)"},
-				"local_path":         map[string]interface{}{"type": "string", "description": "Relative or absolute filesystem path (required for local mode)"},
-				"fork_url":           map[string]interface{}{"type": "string", "description": "Remote git fork URL (required for fork mode)"},
-				"fork_branch":        map[string]interface{}{"type": "string", "description": "Remote branch on fork (optional for fork mode)"},
-				"sync_ide":           map[string]interface{}{"type": "boolean", "description": "Whether to synchronize JetBrains IDE scopes (.idea/scopes)"},
-			},
-			"required": []interface{}{"target_project_dir", "dependency_name", "mode"},
-		},
+		InputSchema: objectSchema([]string{"target_project_dir", "dependency_name", "mode"}, map[string]interface{}{
+			"target_project_dir": typedProp("string", "Target project directory containing manifests"),
+			"dependency_name":    typedProp("string", "Name or module path of target dependency"),
+			"mode":               map[string]interface{}{"type": "string", "enum": []string{"published", "branch", "local", "fork"}, "description": "Target dependency mode"},
+			"version":            typedProp("string", "Version string (required for published mode)"),
+			"branch_name":        typedProp("string", "Branch name (for branch mode)"),
+			"commit_sha":         typedProp("string", "Commit SHA (optional pin for branch mode)"),
+			"local_path":         typedProp("string", "Relative or absolute filesystem path (required for local mode)"),
+			"fork_url":           typedProp("string", "Remote git fork URL (required for fork mode)"),
+			"fork_branch":        typedProp("string", "Remote branch on fork (optional for fork mode)"),
+			"sync_ide":           typedProp("boolean", "Whether to synchronize JetBrains IDE scopes (.idea/scopes)"),
+		}),
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		targetDir, _ := args["target_project_dir"].(string)
 		depName, _ := args["dependency_name"].(string)
@@ -188,18 +166,14 @@ func registerPoolTools(s *Server, deps Dependencies) {
 	s.RegisterTool(Tool{
 		Name:        "dendrite_pool_split",
 		Description: "Extract an AST slice and its tests into a new standalone pool member project",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"source_project_dir": map[string]interface{}{"type": "string", "description": "Path to source project directory"},
-				"module_subpath":     map[string]interface{}{"type": "string", "description": "Relative path to module being extracted (e.g. internal/matcher)"},
-				"new_member_name":    map[string]interface{}{"type": "string", "description": "Identifier for the new project member"},
-				"target_directory":   map[string]interface{}{"type": "string", "description": "Target destination directory on filesystem"},
-				"wire_local_mode":    map[string]interface{}{"type": "boolean", "description": "Wire parent project to depend on new member in local mode"},
-				"register_in_pool":   map[string]interface{}{"type": "boolean", "description": "Register newly extracted project in .dendrite/pool.json"},
-			},
-			"required": []interface{}{"source_project_dir", "module_subpath", "new_member_name", "target_directory"},
-		},
+		InputSchema: objectSchema([]string{"source_project_dir", "module_subpath", "new_member_name", "target_directory"}, map[string]interface{}{
+			"source_project_dir": typedProp("string", "Path to source project directory"),
+			"module_subpath":     typedProp("string", "Relative path to module being extracted (e.g. internal/matcher)"),
+			"new_member_name":    typedProp("string", "Identifier for the new project member"),
+			"target_directory":   typedProp("string", "Target destination directory on filesystem"),
+			"wire_local_mode":    typedProp("boolean", "Wire parent project to depend on new member in local mode"),
+			"register_in_pool":   typedProp("boolean", "Register newly extracted project in .dendrite/pool.json"),
+		}),
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		srcDir, _ := args["source_project_dir"].(string)
 		modSubpath, _ := args["module_subpath"].(string)

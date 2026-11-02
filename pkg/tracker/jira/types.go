@@ -6,10 +6,13 @@ import (
 
 // Standard typed errors for Jira provider operations.
 var (
-	ErrEmptyBaseURL       = errors.New("jira base URL cannot be empty")
-	ErrEmptyEmail         = errors.New("jira account email cannot be empty")
-	ErrMissingAPIToken    = errors.New("jira API token environment variable is empty or not set")
-	ErrUnauthorized       = errors.New("jira request unauthorized: invalid email or API token")
+	ErrEmptyBaseURL    = errors.New("jira base URL cannot be empty")
+	ErrEmptyEmail      = errors.New("jira account email cannot be empty")
+	ErrMissingAPIToken = errors.New("jira API token environment variable is empty or not set")
+	ErrUnauthorized    = errors.New("jira request unauthorized: invalid email or API token")
+)
+
+var (
 	ErrIssueNotFound      = errors.New("jira issue not found")
 	ErrTransitionNotFound = errors.New("no matching jira workflow transition found for requested status")
 	ErrCredentialsTimeout = errors.New("jira credential validation timed out")
