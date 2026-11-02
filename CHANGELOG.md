@@ -4,6 +4,9 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Added
+- CI: `.github/workflows/complexity.yml` cross-checks function complexity with `gocyclo`, `gocognit` and `ruff` (C901) next to Dendrite's own check; report only while the Go debt (DEN-816) is open (DEN-815).
+
 ## [0.1.0] - 2026-11-01
 
 First release from `develop` to `main` since 2026-10-19 (180 commits). Which commands are new is in [`docs/cli/availability.md`](docs/cli/availability.md).
