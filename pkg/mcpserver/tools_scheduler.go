@@ -16,7 +16,7 @@ var defaultMCPGovernor = governor.NewQuotaGovernor(governor.DefaultConfig(), def
 func registerSchedulerTools(s *Server, deps Dependencies) {
 	// 41. dendrite_analyze_policy
 	addTool(s, "dendrite_analyze_policy", "Inspect or configure the Token-Aware Hybrid Scheduler policy (night local window, weekly quota reset, 48h pre-reset cloud sprint)",
-		objectSchema([]string{"chunk_id"}, map[string]interface{}{
+		propsSchema(map[string]interface{}{
 			"night_window":        typedProp("string", "Scheduled zero-cost night window in 'HH:MM-HH:MM' format (e.g. '23:00-06:00')"),
 			"weekly_reset":        typedProp("string", "Weekly quota reset time in 'DAY HH:MM' format (e.g. 'SUN 23:59')"),
 			"sprint_before_reset": typedProp("string", "Duration before weekly reset to activate cloud sprint (e.g. '48h')"),
@@ -94,7 +94,7 @@ func registerSchedulerTools(s *Server, deps Dependencies) {
 
 	// 43. dendrite_analyze_trigger
 	addTool(s, "dendrite_analyze_trigger", "Trigger or simulate execution of an analysis chunk under current or simulated token scheduling constraints",
-		propsSchema(map[string]interface{}{
+		objectSchema([]string{"chunk_id"}, map[string]interface{}{
 			"chunk_id":        typedProp("string", "Identifier of the code or AST chunk to analyze"),
 			"simulate_night":  typedProp("boolean", "If true, simulates execution inside the scheduled night window"),
 			"simulate_sprint": typedProp("boolean", "If true, simulates execution inside the 48h pre-reset cloud sprint"),

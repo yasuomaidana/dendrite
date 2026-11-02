@@ -17,7 +17,7 @@ var defaultMCPSplitter = split.NewProjectSplitter()
 func registerPoolTools(s *Server, deps Dependencies) {
 	// 26. dendrite_pool_resolve
 	addTool(s, "dendrite_pool_resolve", "Computes deterministic topological DAG across multi-directory pool projects and detects circular dependency hazards",
-		objectSchema([]string{"directories"}, map[string]interface{}{
+		propsSchema(map[string]interface{}{
 			"directories": listProp("string", "Optional ad-hoc list of directory paths to resolve directly without loading pool config"),
 		}),
 		func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
@@ -66,7 +66,7 @@ func registerPoolTools(s *Server, deps Dependencies) {
 
 	// 28. dendrite_pool_add
 	addTool(s, "dendrite_pool_add", "Register one or more project directories into .dendrite/pool.json",
-		propsSchema(map[string]interface{}{
+		objectSchema([]string{"directories"}, map[string]interface{}{
 			"directories": listProp("string", "List of project directory paths to register"),
 		}),
 		func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
