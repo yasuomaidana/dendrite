@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -45,7 +44,7 @@ func registerPlaneTicketSetTool(s *Server, deps Dependencies) {
 		if _, err := planesvc.Default().SetStatus(ctx, client, tracker.TicketID(strings.TrimSpace(ticket)), st); err != nil {
 			return nil, fmt.Errorf("set %s to %s in Plane: %w", ticket, st, err)
 		}
-		data, _ := json.MarshalIndent(map[string]string{"ticket": ticket, "status": string(st), "source": "plane"}, "", "  ")
+		data := indentJSON(map[string]string{"ticket": ticket, "status": string(st), "source": "plane"})
 		return textResult(string(data)), nil
 	})
 }

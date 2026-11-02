@@ -44,14 +44,8 @@ func registerPenpotTools(s *Server, deps Dependencies) {
 		if strings.TrimSpace(file) == "" {
 			return nil, fmt.Errorf("file argument is required")
 		}
-		ticketID, _ := args["ticket_id"].(string)
-		if ticketID == "" {
-			ticketID = "DEN-810"
-		}
-		endpoint, _ := args["penpot_endpoint"].(string)
-		if endpoint == "" {
-			endpoint = "http://localhost:9000"
-		}
+		ticketID := stringArgOr(args, "ticket_id", "DEN-810")
+		endpoint := stringArgOr(args, "penpot_endpoint", "http://localhost:9000")
 		commentPlane := true
 		if cp, ok := args["comment_plane"].(bool); ok {
 			commentPlane = cp

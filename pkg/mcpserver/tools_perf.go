@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -55,20 +54,11 @@ func registerPerfTools(s *Server, deps Dependencies) {
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		modeStr, _ := args["mode"].(string)
-		if modeStr == "" {
-			modeStr = "inference"
-		}
+		modeStr := stringArgOr(args, "mode", "inference")
 		mode := perf.BenchmarkMode(strings.ToLower(modeStr))
 
-		engineID, _ := args["engine_id"].(string)
-		if engineID == "" {
-			engineID = "oxillama"
-		}
-		model, _ := args["model"].(string)
-		if model == "" {
-			model = "qwen2.5-coder-7b"
-		}
+		engineID := stringArgOr(args, "engine_id", "oxillama")
+		model := stringArgOr(args, "model", "qwen2.5-coder-7b")
 
 		targetURL, _ := args["endpoint"].(string)
 		if targetURL == "" {
@@ -110,7 +100,7 @@ func registerPerfTools(s *Server, deps Dependencies) {
 			if err != nil {
 				return nil, fmt.Errorf("budget stress test failed: %w", err)
 			}
-			data, _ := json.MarshalIndent(res, "", "  ")
+			data := indentJSON(res)
 			return textResult(string(data)), nil
 		}
 

@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"Dendrite/pkg/pool/dag"
@@ -77,13 +76,10 @@ func registerPoolTools(s *Server, deps Dependencies) {
 		_ = defaultMCPPoolManager.Load()
 		projects := defaultMCPPoolManager.List()
 
-		data, err := json.MarshalIndent(map[string]interface{}{
+		data := indentJSON(map[string]interface{}{
 			"count":    len(projects),
 			"projects": projects,
-		}, "", "  ")
-		if err != nil {
-			return nil, fmt.Errorf("marshaling pool projects: %w", err)
-		}
+		})
 
 		return textResult(string(data)), nil
 	})
@@ -125,10 +121,10 @@ func registerPoolTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("saving pool config: %w", err)
 		}
 
-		data, _ := json.MarshalIndent(map[string]interface{}{
+		data := indentJSON(map[string]interface{}{
 			"status": "success",
 			"added":  added,
-		}, "", "  ")
+		})
 
 		return textResult(string(data)), nil
 	})

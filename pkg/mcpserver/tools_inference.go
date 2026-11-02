@@ -44,14 +44,8 @@ func registerInferenceTools(s *Server, deps Dependencies) {
 		if strings.TrimSpace(model) == "" {
 			return nil, fmt.Errorf("model name is required")
 		}
-		sourceEngine, _ := args["source_engine"].(string)
-		if sourceEngine == "" {
-			sourceEngine = "ollama"
-		}
-		targetEngine, _ := args["target_engine"].(string)
-		if targetEngine == "" {
-			targetEngine = "oxillama"
-		}
+		sourceEngine := stringArgOr(args, "source_engine", "ollama")
+		targetEngine := stringArgOr(args, "target_engine", "oxillama")
 		deleteSource := false
 		if ds, ok := args["delete_source"].(bool); ok {
 			deleteSource = ds

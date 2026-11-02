@@ -27,14 +27,8 @@ func registerREATools(s *Server, deps Dependencies) {
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		target, _ := args["target"].(string)
-		if target == "" {
-			target = "all"
-		}
-		format, _ := args["format"].(string)
-		if format == "" {
-			format = "summary"
-		}
+		target := stringArgOr(args, "target", "all")
+		format := stringArgOr(args, "format", "summary")
 
 		report, err := showcase.RunShowcase(ctx, target)
 		if err != nil {

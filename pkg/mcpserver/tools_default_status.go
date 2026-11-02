@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -66,10 +65,7 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 			if pClient != nil {
 				issues, pErr := pClient.ListPlaneIssues(ctx)
 				if pErr == nil && len(issues) > 0 {
-					data, mErr := json.MarshalIndent(issues, "", "  ")
-					if mErr == nil {
-						return textResult(string(data)), nil
-					}
+					return textResult(string(indentJSON(issues))), nil
 				}
 			}
 			return nil, fmt.Errorf("failed to load markdown tickets: %w", err)

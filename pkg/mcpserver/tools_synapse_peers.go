@@ -20,10 +20,7 @@ func registerSynapsePeersTool(s *Server) {
 			"dir": map[string]interface{}{"type": "string", "description": "Directory inside the repository; default the server's working directory"},
 		}},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		dir, _ := args["dir"].(string)
-		if dir == "" {
-			dir = "."
-		}
+		dir := stringArgOr(args, "dir", ".")
 		root, err := plane.FindRepoRoot(dir)
 		if err != nil {
 			return errorResult("%s is not inside a git repository", dir), nil

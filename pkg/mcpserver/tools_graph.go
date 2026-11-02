@@ -35,18 +35,8 @@ func registerGraphTools(s *Server, deps Dependencies) {
 		if p, ok := args["project_path"].(string); ok && p != "" {
 			projectPath = p
 		}
-		var limit int
-		if l, ok := args["limit"].(float64); ok && l > 0 {
-			limit = int(l)
-		} else if lInt, ok := args["limit"].(int); ok && lInt > 0 {
-			limit = lInt
-		}
-		var minSize int
-		if ms, ok := args["min_size"].(float64); ok && ms > 0 {
-			minSize = int(ms)
-		} else if msInt, ok := args["min_size"].(int); ok && msInt > 0 {
-			minSize = msInt
-		}
+		limit := positiveIntArg(args, "limit")
+		minSize := positiveIntArg(args, "min_size")
 
 		communities, err := rag.NewRetriever().Communities(ctx, projectPath, rag.CommunitiesOptions{
 			Limit:   limit,
@@ -86,18 +76,8 @@ func registerGraphTools(s *Server, deps Dependencies) {
 		if p, ok := args["project_path"].(string); ok && p != "" {
 			projectPath = p
 		}
-		var minInDegree int
-		if mid, ok := args["min_in_degree"].(float64); ok && mid > 0 {
-			minInDegree = int(mid)
-		} else if midInt, ok := args["min_in_degree"].(int); ok && midInt > 0 {
-			minInDegree = midInt
-		}
-		var limit int
-		if l, ok := args["limit"].(float64); ok && l > 0 {
-			limit = int(l)
-		} else if lInt, ok := args["limit"].(int); ok && lInt > 0 {
-			limit = lInt
-		}
+		minInDegree := positiveIntArg(args, "min_in_degree")
+		limit := positiveIntArg(args, "limit")
 
 		nodes, err := rag.NewRetriever().GodNodes(ctx, projectPath, rag.GodNodesOptions{
 			MinInDegree: minInDegree,
@@ -165,12 +145,7 @@ func registerGraphTools(s *Server, deps Dependencies) {
 			kinds = strKinds
 		}
 
-		var maxHops int
-		if mh, ok := args["max_hops"].(float64); ok && mh > 0 {
-			maxHops = int(mh)
-		} else if mhInt, ok := args["max_hops"].(int); ok && mhInt > 0 {
-			maxHops = mhInt
-		}
+		maxHops := positiveIntArg(args, "max_hops")
 
 		path, err := rag.NewRetriever().Path(ctx, projectPath, from, to, rag.PathOptions{
 			Kinds:   kinds,

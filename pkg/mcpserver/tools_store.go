@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -66,7 +65,7 @@ func registerStoreTools(s *Server, deps Dependencies) {
 			"compressed_bytes":  totalCompBytes,
 		}
 
-		data, _ := json.MarshalIndent(res, "", "  ")
+		data := indentJSON(res)
 		return textResult(string(data)), nil
 	})
 
@@ -116,7 +115,7 @@ func registerStoreTools(s *Server, deps Dependencies) {
 			return errorResult("[-] Failed to commit chunk: %v", err), nil
 		}
 
-		dataRes, _ := json.MarshalIndent(cp, "", "  ")
+		dataRes := indentJSON(cp)
 		return textResult(string(dataRes)), nil
 	})
 
@@ -139,7 +138,7 @@ func registerStoreTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("querying partial segments: %w", err)
 		}
 
-		data, _ := json.MarshalIndent(segs, "", "  ")
+		data := indentJSON(segs)
 		return textResult(string(data)), nil
 	})
 	// 41. dendrite_store_inspect

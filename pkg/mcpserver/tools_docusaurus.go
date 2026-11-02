@@ -26,18 +26,9 @@ func registerDocusaurusTools(s *Server, deps Dependencies) {
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		docsDir, _ := args["docs_dir"].(string)
-		if docsDir == "" {
-			docsDir = "docs"
-		}
-		targetDir, _ := args["target_dir"].(string)
-		if targetDir == "" {
-			targetDir = "website"
-		}
-		title, _ := args["title"].(string)
-		if title == "" {
-			title = "Dendrite Documentation"
-		}
+		docsDir := stringArgOr(args, "docs_dir", "docs")
+		targetDir := stringArgOr(args, "target_dir", "website")
+		title := stringArgOr(args, "title", "Dendrite Documentation")
 		portFloat, _ := args["port"].(float64)
 		port := int(portFloat)
 		if port <= 0 {
@@ -80,10 +71,7 @@ func registerDocusaurusTools(s *Server, deps Dependencies) {
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		siteDir, _ := args["site_dir"].(string)
-		if siteDir == "" {
-			siteDir = "website"
-		}
+		siteDir := stringArgOr(args, "site_dir", "website")
 		bundlePath, _ := args["bundle_path"].(string)
 
 		manifest, err := svc.ExportBundle(ctx, siteDir, bundlePath)
@@ -107,14 +95,8 @@ func registerDocusaurusTools(s *Server, deps Dependencies) {
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		projRoot, _ := args["project_root"].(string)
-		if projRoot == "" {
-			projRoot = "."
-		}
-		docsDir, _ := args["docs_dir"].(string)
-		if docsDir == "" {
-			docsDir = "docs"
-		}
+		projRoot := stringArgOr(args, "project_root", ".")
+		docsDir := stringArgOr(args, "docs_dir", "docs")
 
 		summary, err := svc.Audit(ctx, projRoot, docsDir)
 		if err != nil {

@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -36,10 +35,10 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 
 		if query != "" {
 			if matched, found := globalDistRegistry.ResolveCapability(query, langFilter); found {
-				data, _ := json.MarshalIndent(map[string]interface{}{
+				data := indentJSON(map[string]interface{}{
 					"query":    query,
 					"resolved": matched,
-				}, "", "  ")
+				})
 				return textResult(string(data)), nil
 			}
 		}
@@ -164,7 +163,7 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 				"coordination":     coord,
 				"local_llm_prompt": prompt,
 			}
-			data, _ := json.MarshalIndent(res, "", "  ")
+			data := indentJSON(res)
 			return textResult(string(data)), nil
 
 		case "complete":
@@ -173,7 +172,7 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to complete feature: %w", err)
 			}
-			data, _ := json.MarshalIndent(coord, "", "  ")
+			data := indentJSON(coord)
 			return textResult(string(data)), nil
 
 		case "reconcile":
@@ -182,12 +181,12 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to reconcile: %w", err)
 			}
-			data, _ := json.MarshalIndent(rec, "", "  ")
+			data := indentJSON(rec)
 			return textResult(string(data)), nil
 
 		case "list":
 			coords := globalInteropCoordinator.ListCoordinations()
-			data, _ := json.MarshalIndent(coords, "", "  ")
+			data := indentJSON(coords)
 			return textResult(string(data)), nil
 
 		default:

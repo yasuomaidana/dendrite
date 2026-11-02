@@ -38,3 +38,26 @@ func planeClientOf(deps Dependencies) (*plane.Client, error) {
 	}
 	return client, nil
 }
+
+// positiveIntArg reads a whole-number argument (a JSON number or a Go int); 0 when absent or not positive.
+func positiveIntArg(args map[string]interface{}, key string) int {
+	switch v := args[key].(type) {
+	case float64:
+		if v > 0 {
+			return int(v)
+		}
+	case int:
+		if v > 0 {
+			return v
+		}
+	}
+	return 0
+}
+
+// stringArgOr reads a string argument, using def when it is absent or empty.
+func stringArgOr(args map[string]interface{}, key, def string) string {
+	if v, _ := args[key].(string); v != "" {
+		return v
+	}
+	return def
+}

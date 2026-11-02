@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"Dendrite/pkg/audit"
@@ -45,10 +44,7 @@ func registerAuditTools(s *Server, deps Dependencies) {
 		if mt, ok := args["max_tokens"].(float64); ok && mt > 0 {
 			maxTokens = int(mt)
 		}
-		model, _ := args["model"].(string)
-		if model == "" {
-			model = "qwen3.8:27b"
-		}
+		model := stringArgOr(args, "model", "qwen3.8:27b")
 
 		guard := vcs.NewGitGuard(".", vcs.ModeAuditChanges)
 		orch := vcs.NewStackedBranchOrchestrator(guard, "")
@@ -149,7 +145,7 @@ func registerAuditTools(s *Server, deps Dependencies) {
 			"execution_mode": string(mode),
 		}
 
-		data, _ := json.MarshalIndent(res, "", "  ")
+		data := indentJSON(res)
 		return textResult(string(data)), nil
 	})
 

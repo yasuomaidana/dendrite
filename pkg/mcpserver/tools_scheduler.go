@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -88,14 +87,11 @@ func registerSchedulerTools(s *Server, deps Dependencies) {
 			}
 		}
 
-		bytes, err := json.MarshalIndent(map[string]interface{}{
+		bytes := indentJSON(map[string]interface{}{
 			"updated":  updated,
 			"policy":   defaultMCPScheduler.GetPolicy(),
 			"governor": defaultMCPGovernor.GetState(),
-		}, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		})
 
 		return &CallToolResult{
 			Content: []ContentItem{
@@ -133,13 +129,10 @@ func registerSchedulerTools(s *Server, deps Dependencies) {
 
 		govState := defaultMCPGovernor.GetState()
 
-		bytes, err := json.MarshalIndent(map[string]interface{}{
+		bytes := indentJSON(map[string]interface{}{
 			"scheduler": st,
 			"governor":  govState,
-		}, "", "  ")
-		if err != nil {
-			return nil, err
-		}
+		})
 
 		return &CallToolResult{
 			Content: []ContentItem{
