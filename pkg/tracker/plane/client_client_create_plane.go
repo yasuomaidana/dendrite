@@ -2,10 +2,8 @@ package plane
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 )
@@ -57,27 +55,8 @@ func (c *Client) CreatePlaneIssueWithDetails(ctx context.Context, req CreateIssu
 		body["labels"] = req.Labels
 	}
 
-	httpReq, err := c.newRequest(ctx, http.MethodPost, endpoint, body)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode >= 400 {
-		errBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to create issue: status %d, err: %s", resp.StatusCode, string(errBytes))
-	}
-
 	var created PlaneIssue
-	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+	if err := c.call(ctx, http.MethodPost, endpoint, body, &created, callSpec{failure: "failed to create issue", withBody: true}); err != nil {
 		return nil, err
 	}
 
@@ -139,30 +118,8 @@ func (c *Client) UpdatePlaneIssueWithDetails(ctx context.Context, id string, req
 		body["parent"] = *req.Parent
 	}
 
-	httpReq, err := c.newRequest(ctx, http.MethodPatch, endpoint, body)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrIssueNotFound
-	}
-	if resp.StatusCode >= 400 {
-		errBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to patch issue: status %d, err: %s", resp.StatusCode, string(errBytes))
-	}
-
 	var updated PlaneIssue
-	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+	if err := c.call(ctx, http.MethodPatch, endpoint, body, &updated, callSpec{failure: "failed to patch issue", notFound: ErrIssueNotFound, withBody: true}); err != nil {
 		return nil, err
 	}
 	return &updated, nil
@@ -197,26 +154,8 @@ func (c *Client) CreateModuleWithDates(ctx context.Context, name, status, desc s
 		body["target_date"] = *targetDate
 	}
 
-	req, err := c.newRequest(ctx, http.MethodPost, endpoint, body)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to create module: status %d", resp.StatusCode)
-	}
-
 	var created PlaneModule
-	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+	if err := c.call(ctx, http.MethodPost, endpoint, body, &created, callSpec{failure: "failed to create module"}); err != nil {
 		return nil, err
 	}
 	return &created, nil
@@ -242,29 +181,8 @@ func (c *Client) UpdateModule(ctx context.Context, moduleID string, req UpdateMo
 		body["target_date"] = *req.TargetDate
 	}
 
-	httpReq, err := c.newRequest(ctx, http.MethodPatch, endpoint, body)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrModuleNotFound
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to patch module: status %d", resp.StatusCode)
-	}
-
 	var updated PlaneModule
-	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+	if err := c.call(ctx, http.MethodPatch, endpoint, body, &updated, callSpec{failure: "failed to patch module", notFound: ErrModuleNotFound}); err != nil {
 		return nil, err
 	}
 	return &updated, nil
@@ -280,69 +198,17 @@ func (c *Client) AddIssuesToModule(ctx context.Context, moduleID string, issueID
 		"issues": issueIDs,
 	}
 
-	req, err := c.newRequest(ctx, http.MethodPost, endpoint, body)
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return ErrUnauthorized
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return ErrModuleNotFound
-	}
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("failed to add issues to module: status %d", resp.StatusCode)
-	}
-
-	return nil
+	return c.call(ctx, http.MethodPost, endpoint, body, nil, callSpec{failure: "failed to add issues to module", notFound: ErrModuleNotFound})
 }
 
 // ListModuleIssues queries all issues attached to a specific module.
 func (c *Client) ListModuleIssues(ctx context.Context, moduleID string) ([]PlaneIssue, error) {
 	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/modules/%s/module-issues/", c.workspaceSlug, c.projectID, moduleID)
-	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
+	data, err := c.callRaw(ctx, http.MethodGet, endpoint, nil, callSpec{failure: "failed to list module issues"})
 	if err != nil {
 		return nil, err
 	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to list module issues: status %d", resp.StatusCode)
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var paginated struct {
-		Results []PlaneIssue `json:"results"`
-	}
-	if err := json.Unmarshal(bodyBytes, &paginated); err == nil && len(paginated.Results) > 0 {
-		return paginated.Results, nil
-	}
-
-	var directList []PlaneIssue
-	if err := json.Unmarshal(bodyBytes, &directList); err == nil {
-		return directList, nil
-	}
-
-	return paginated.Results, nil
+	return decodeList[PlaneIssue](data), nil
 }
 
 // AddIssueRelation establishes relations (blocking, blocked_by, relates_to, duplicate) between issues.
@@ -356,23 +222,8 @@ func (c *Client) AddIssueRelation(ctx context.Context, issueID string, relationT
 		"issues":        relatedIssueIDs,
 	}
 
-	req, err := c.newRequest(ctx, http.MethodPost, endpoint, body)
-	if err != nil {
+	if err := c.call(ctx, http.MethodPost, endpoint, body, nil, callSpec{failure: "failed to add issue relation", withBody: true}); err != nil {
 		return err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return ErrUnauthorized
-	}
-	if resp.StatusCode >= 400 {
-		errBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to add issue relation: status %d, err: %s", resp.StatusCode, string(errBytes))
 	}
 
 	notifyRelationsChanged(c, append([]string{issueID}, relatedIssueIDs...))

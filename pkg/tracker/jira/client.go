@@ -82,27 +82,39 @@ func (c *Client) newRequest(ctx context.Context, method, endpoint string, body i
 	return req, nil
 }
 
-// GetIssue retrieves and normalizes an issue from Jira REST v3 into a UnifiedIssue.
-func (c *Client) GetIssue(ctx context.Context, id tracker.TicketID) (*tracker.UnifiedIssue, error) {
-	req, err := c.newRequest(ctx, http.MethodGet, fmt.Sprintf("/rest/api/3/issue/%s", id), nil)
+// do builds and sends one request.
+func (c *Client) do(ctx context.Context, method, endpoint string, body interface{}) (*http.Response, error) {
+	req, err := c.newRequest(ctx, method, endpoint, body)
 	if err != nil {
 		return nil, err
 	}
+	return c.httpClient.Do(req)
+}
 
-	resp, err := c.httpClient.Do(req)
+// statusError maps an unsuccessful Jira answer to an error: unauthorized, not found, or failure
+// with the status code. It is nil for a successful status.
+func statusError(code int, failure string) error {
+	switch {
+	case code == http.StatusUnauthorized || code == http.StatusForbidden:
+		return ErrUnauthorized
+	case code == http.StatusNotFound:
+		return ErrIssueNotFound
+	case code >= 400:
+		return fmt.Errorf("%s: status %d", failure, code)
+	}
+	return nil
+}
+
+// GetIssue retrieves and normalizes an issue from Jira REST v3 into a UnifiedIssue.
+func (c *Client) GetIssue(ctx context.Context, id tracker.TicketID) (*tracker.UnifiedIssue, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/rest/api/3/issue/%s", id), nil)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrIssueNotFound
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("jira api error: status %d", resp.StatusCode)
+	if err := statusError(resp.StatusCode, "jira api error"); err != nil {
+		return nil, err
 	}
 
 	var issueResp struct {
@@ -145,25 +157,15 @@ func (c *Client) GetIssue(ctx context.Context, id tracker.TicketID) (*tracker.Un
 
 // UpdateStatus maps a normalized state to a Jira workflow transition and executes it.
 func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tracker.Status) error {
-	req, err := c.newRequest(ctx, http.MethodGet, fmt.Sprintf("/rest/api/3/issue/%s/transitions", id), nil)
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.httpClient.Do(req)
+	transitions := fmt.Sprintf("/rest/api/3/issue/%s/transitions", id)
+	resp, err := c.do(ctx, http.MethodGet, transitions, nil)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return ErrUnauthorized
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return ErrIssueNotFound
-	}
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("failed to fetch transitions: status %d", resp.StatusCode)
+	if err := statusError(resp.StatusCode, "failed to fetch transitions"); err != nil {
+		return err
 	}
 
 	var transResp struct {
@@ -188,12 +190,7 @@ func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tr
 		},
 	}
 
-	postReq, err := c.newRequest(ctx, http.MethodPost, fmt.Sprintf("/rest/api/3/issue/%s/transitions", id), body)
-	if err != nil {
-		return err
-	}
-
-	postResp, err := c.httpClient.Do(postReq)
+	postResp, err := c.do(ctx, http.MethodPost, transitions, body)
 	if err != nil {
 		return err
 	}
@@ -213,28 +210,13 @@ func (c *Client) AddComment(ctx context.Context, id tracker.TicketID, comment st
 		"body": adfBody,
 	}
 
-	req, err := c.newRequest(ctx, http.MethodPost, fmt.Sprintf("/rest/api/3/issue/%s/comment", id), body)
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(ctx, http.MethodPost, fmt.Sprintf("/rest/api/3/issue/%s/comment", id), body)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return ErrUnauthorized
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return ErrIssueNotFound
-	}
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("failed to add comment: status %d", resp.StatusCode)
-	}
-
-	return nil
+	return statusError(resp.StatusCode, "failed to add comment")
 }
 
 // LinkPullRequest creates a remote link on the Jira issue pointing to a GitHub/GitLab Pull Request.
@@ -250,28 +232,13 @@ func (c *Client) LinkPullRequest(ctx context.Context, id tracker.TicketID, prURL
 		},
 	}
 
-	req, err := c.newRequest(ctx, http.MethodPost, fmt.Sprintf("/rest/api/3/issue/%s/remotelink", id), body)
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(ctx, http.MethodPost, fmt.Sprintf("/rest/api/3/issue/%s/remotelink", id), body)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return ErrUnauthorized
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return ErrIssueNotFound
-	}
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("failed to link pull request: status %d", resp.StatusCode)
-	}
-
-	return nil
+	return statusError(resp.StatusCode, "failed to link pull request")
 }
 
 // ValidateCredentials verifies connectivity and authentication with Jira within < 1.5s.

@@ -164,27 +164,6 @@ func (c *Client) newRequest(ctx context.Context, method, endpoint string, body i
 // GetIssue retrieves an issue from Plane v2 and maps it into a UnifiedIssue.
 func (c *Client) GetIssue(ctx context.Context, id tracker.TicketID) (*tracker.UnifiedIssue, error) {
 	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/%s/", c.workspaceSlug, c.projectID, id)
-	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrIssueNotFound
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("plane api error: status %d", resp.StatusCode)
-	}
-
 	var issueResp struct {
 		ID                  string `json:"id"`
 		Name                string `json:"name"`
@@ -200,7 +179,7 @@ func (c *Client) GetIssue(ctx context.Context, id tracker.TicketID) (*tracker.Un
 		UpdatedAt string `json:"updated_at"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&issueResp); err != nil {
+	if err := c.call(ctx, http.MethodGet, endpoint, nil, &issueResp, callSpec{failure: "plane api error", notFound: ErrIssueNotFound}); err != nil {
 		return nil, err
 	}
 
@@ -237,27 +216,7 @@ func (c *Client) ListPlaneIssues(ctx context.Context) ([]PlaneIssue, error) {
 		if cursor != "" {
 			endpoint = fmt.Sprintf("%s&cursor=%s", endpoint, cursor)
 		}
-		req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
-
-		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-			resp.Body.Close()
-			return nil, ErrUnauthorized
-		}
-		if resp.StatusCode >= 400 {
-			resp.Body.Close()
-			return nil, fmt.Errorf("failed to list plane issues: status %d", resp.StatusCode)
-		}
-
-		bodyBytes, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		bodyBytes, err := c.callRaw(ctx, http.MethodGet, endpoint, nil, callSpec{failure: "failed to list plane issues"})
 		if err != nil {
 			return nil, err
 		}
@@ -291,42 +250,11 @@ func parseIssuePage(bodyBytes []byte) (issues []PlaneIssue, nextCursor string, h
 }
 
 func fetchResourceList[T any](ctx context.Context, c *Client, endpoint, errPrefix string) ([]T, error) {
-	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
+	data, err := c.callRaw(ctx, http.MethodGet, endpoint, nil, callSpec{failure: errPrefix})
 	if err != nil {
 		return nil, err
 	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("%s: status %d", errPrefix, resp.StatusCode)
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var paginated struct {
-		Results []T `json:"results"`
-	}
-	if err := json.Unmarshal(bodyBytes, &paginated); err == nil && len(paginated.Results) > 0 {
-		return paginated.Results, nil
-	}
-
-	var directList []T
-	if err := json.Unmarshal(bodyBytes, &directList); err == nil {
-		return directList, nil
-	}
-
-	return paginated.Results, nil
+	return decodeList[T](data), nil
 }
 
 // ListStates queries all states configured for the project.
@@ -386,28 +314,7 @@ func (c *Client) UpdateStatus(ctx context.Context, id tracker.TicketID, state tr
 		"state": targetStateID,
 	}
 
-	patchReq, err := c.newRequest(ctx, http.MethodPatch, patchEndpoint, patchBody)
-	if err != nil {
-		return err
-	}
-
-	patchResp, err := c.httpClient.Do(patchReq)
-	if err != nil {
-		return err
-	}
-	defer patchResp.Body.Close()
-
-	if patchResp.StatusCode == http.StatusUnauthorized || patchResp.StatusCode == http.StatusForbidden {
-		return ErrUnauthorized
-	}
-	if patchResp.StatusCode == http.StatusNotFound {
-		return ErrIssueNotFound
-	}
-	if patchResp.StatusCode >= 400 {
-		return fmt.Errorf("failed to update state: status %d", patchResp.StatusCode)
-	}
-
-	return nil
+	return c.call(ctx, http.MethodPatch, patchEndpoint, patchBody, nil, callSpec{failure: "failed to update state", notFound: ErrIssueNotFound})
 }
 
 // CreatePlaneIssue creates a new issue in Plane with rich metadata (backward compatible).

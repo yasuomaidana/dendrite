@@ -204,53 +204,52 @@ func findMatchingLocalDoc(pageName string, index map[string]localDocInfo) (local
 	return localDocInfo{}, false
 }
 
+// taxonomyDirs maps keywords in a page name to the docs subdirectory it belongs in; the first
+// matching entry wins.
+var taxonomyDirs = []struct {
+	dir      string
+	keywords []string
+}{
+	{"guides", []string{"guide", "setup", "replication", "onboarding"}},
+	{"architecture", []string{"architecture", "topology"}},
+	{"quality", []string{"quality", "scorecard", "benchmark"}},
+	{"cli", []string{"cli", "command reference"}},
+	{"project-sharing", []string{"sharing", "federation", "deployment"}},
+	{"roadmap", []string{"roadmap", "development status"}},
+}
+
+func containsAny(s string, keywords []string) bool {
+	for _, k := range keywords {
+		if strings.Contains(s, k) {
+			return true
+		}
+	}
+	return false
+}
+
 func determineTaxonomyPath(docsDir, pageName, bodyMD string) string {
 	sanitized := sanitizeDocFilename(pageName) + ".md"
 	lowerName := strings.ToLower(pageName)
 	lowerBody := strings.ToLower(bodyMD)
+	spec := specRegex.FindString(pageName)
 
-	if strings.Contains(lowerName, "scenario") {
+	switch {
+	case strings.Contains(lowerName, "scenario"):
 		return filepath.Join(docsDir, "SCENARIOS.md")
-	}
-	if strings.Contains(lowerName, "architecture & development environment") || lowerName == "readme" {
+	case strings.Contains(lowerName, "architecture & development environment") || lowerName == "readme":
 		return filepath.Join(docsDir, "README.md")
-	}
-
-	if m := specRegex.FindString(pageName); strings.HasPrefix(m, "FEAT-") {
-		return filepath.Join(docsDir, "features", fmt.Sprintf("%s-%s.md", m, sanitizeDocFilename(pageName)))
-	}
-	if strings.Contains(lowerBody, "plane_epic") || strings.Contains(lowerBody, "feature") {
+	case strings.HasPrefix(spec, "FEAT-"):
+		return filepath.Join(docsDir, "features", fmt.Sprintf("%s-%s.md", spec, sanitizeDocFilename(pageName)))
+	case strings.Contains(lowerBody, "plane_epic") || strings.Contains(lowerBody, "feature"):
 		return filepath.Join(docsDir, "features", sanitized)
+	case strings.HasPrefix(spec, "ADR-"):
+		return filepath.Join(docsDir, "adr", fmt.Sprintf("%s-%s.md", spec, sanitizeDocFilename(pageName)))
 	}
-
-	if m := specRegex.FindString(pageName); strings.HasPrefix(m, "ADR-") {
-		return filepath.Join(docsDir, "adr", fmt.Sprintf("%s-%s.md", m, sanitizeDocFilename(pageName)))
+	for _, t := range taxonomyDirs {
+		if containsAny(lowerName, t.keywords) {
+			return filepath.Join(docsDir, t.dir, sanitized)
+		}
 	}
-
-	if strings.Contains(lowerName, "guide") || strings.Contains(lowerName, "setup") || strings.Contains(lowerName, "replication") || strings.Contains(lowerName, "onboarding") {
-		return filepath.Join(docsDir, "guides", sanitized)
-	}
-
-	if strings.Contains(lowerName, "architecture") || strings.Contains(lowerName, "topology") {
-		return filepath.Join(docsDir, "architecture", sanitized)
-	}
-
-	if strings.Contains(lowerName, "quality") || strings.Contains(lowerName, "scorecard") || strings.Contains(lowerName, "benchmark") {
-		return filepath.Join(docsDir, "quality", sanitized)
-	}
-
-	if strings.Contains(lowerName, "cli") || strings.Contains(lowerName, "command reference") {
-		return filepath.Join(docsDir, "cli", sanitized)
-	}
-
-	if strings.Contains(lowerName, "sharing") || strings.Contains(lowerName, "federation") || strings.Contains(lowerName, "deployment") {
-		return filepath.Join(docsDir, "project-sharing", sanitized)
-	}
-
-	if strings.Contains(lowerName, "roadmap") || strings.Contains(lowerName, "development status") {
-		return filepath.Join(docsDir, "roadmap", sanitized)
-	}
-
 	return filepath.Join(docsDir, "features", sanitized)
 }
 

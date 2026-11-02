@@ -2,9 +2,7 @@ package plane
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -16,29 +14,8 @@ import (
 )
 
 func fetchEntity[T any](ctx context.Context, c *Client, endpoint string, notFoundErr error, errPrefix string) (*T, error) {
-	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, notFoundErr
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("%s: status %d", errPrefix, resp.StatusCode)
-	}
-
 	var entity T
-	if err := json.NewDecoder(resp.Body).Decode(&entity); err != nil {
+	if err := c.call(ctx, http.MethodGet, endpoint, nil, &entity, callSpec{failure: errPrefix, notFound: notFoundErr}); err != nil {
 		return nil, err
 	}
 	return &entity, nil
@@ -58,22 +35,8 @@ func (c *Client) RemoveIssueRelation(ctx context.Context, issueID, relationType,
 		"related_issue": relatedIssueID,
 	}
 
-	req, err := c.newRequest(ctx, http.MethodPost, endpoint, body)
-	if err != nil {
+	if err := c.call(ctx, http.MethodPost, endpoint, body, nil, callSpec{failure: "failed to remove issue relation"}); err != nil {
 		return err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return ErrUnauthorized
-	}
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("failed to remove issue relation: status %d", resp.StatusCode)
 	}
 
 	notifyRelationsChanged(c, []string{issueID, relatedIssueID})
@@ -83,42 +46,11 @@ func (c *Client) RemoveIssueRelation(ctx context.Context, issueID, relationType,
 // ListPages queries all documents/pages for the project.
 func (c *Client) ListPages(ctx context.Context) ([]PlanePage, error) {
 	endpoint := fmt.Sprintf("/api/workspaces/%s/projects/%s/pages/", c.workspaceSlug, c.projectID)
-	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
+	data, err := c.callRaw(ctx, http.MethodGet, endpoint, nil, callSpec{failure: "failed to list pages"})
 	if err != nil {
 		return nil, err
 	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to list pages: status %d", resp.StatusCode)
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var directList []PlanePage
-	if err := json.Unmarshal(bodyBytes, &directList); err == nil {
-		return directList, nil
-	}
-
-	var paginated struct {
-		Results []PlanePage `json:"results"`
-	}
-	if err := json.Unmarshal(bodyBytes, &paginated); err == nil {
-		return paginated.Results, nil
-	}
-
-	return nil, nil
+	return decodeList[PlanePage](data), nil
 }
 
 // GetPage retrieves details of a specific page.
@@ -135,26 +67,8 @@ func (c *Client) CreatePage(ctx context.Context, name, htmlContent string) (*Pla
 		"description_html": htmlContent,
 	}
 
-	req, err := c.newRequest(ctx, http.MethodPost, endpoint, body)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to create page: status %d", resp.StatusCode)
-	}
-
 	var page PlanePage
-	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+	if err := c.call(ctx, http.MethodPost, endpoint, body, &page, callSpec{failure: "failed to create page"}); err != nil {
 		return nil, err
 	}
 	return &page, nil
@@ -171,29 +85,8 @@ func (c *Client) UpdatePage(ctx context.Context, pageID, name, htmlContent strin
 		body["description_html"] = htmlContent
 	}
 
-	req, err := c.newRequest(ctx, http.MethodPatch, endpoint, body)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, ErrPageNotFound
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to update page: status %d", resp.StatusCode)
-	}
-
 	var page PlanePage
-	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+	if err := c.call(ctx, http.MethodPatch, endpoint, body, &page, callSpec{failure: "failed to update page", notFound: ErrPageNotFound}); err != nil {
 		return nil, err
 	}
 	return &page, nil
@@ -202,27 +95,7 @@ func (c *Client) UpdatePage(ctx context.Context, pageID, name, htmlContent strin
 // ArchivePage archives a page in Plane (prerequisite before deletion).
 func (c *Client) ArchivePage(ctx context.Context, pageID string) error {
 	endpoint := fmt.Sprintf("/api/workspaces/%s/projects/%s/pages/%s/archive/", c.workspaceSlug, c.projectID, pageID)
-	req, err := c.newRequest(ctx, http.MethodPost, endpoint, nil)
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return ErrUnauthorized
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return ErrPageNotFound
-	}
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("failed to archive page: status %d", resp.StatusCode)
-	}
-	return nil
+	return c.call(ctx, http.MethodPost, endpoint, nil, nil, callSpec{failure: "failed to archive page", notFound: ErrPageNotFound})
 }
 
 // AddComment appends an activity comment to the Plane issue.
@@ -246,28 +119,7 @@ func (c *Client) AddComment(ctx context.Context, id tracker.TicketID, comment st
 		"comment_html": fmt.Sprintf("<p>%s</p>", comment),
 	}
 
-	req, err := c.newRequest(ctx, http.MethodPost, endpoint, body)
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return ErrUnauthorized
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return ErrIssueNotFound
-	}
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("failed to add comment: status %d", resp.StatusCode)
-	}
-
-	return nil
+	return c.call(ctx, http.MethodPost, endpoint, body, nil, callSpec{failure: "failed to add comment", notFound: ErrIssueNotFound})
 }
 
 // LinkPullRequest creates an external link reference on the Plane issue.
@@ -278,28 +130,7 @@ func (c *Client) LinkPullRequest(ctx context.Context, id tracker.TicketID, prURL
 		"title": "Pull Request: " + prURL,
 	}
 
-	req, err := c.newRequest(ctx, http.MethodPost, endpoint, body)
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return ErrUnauthorized
-	}
-	if resp.StatusCode == http.StatusNotFound {
-		return ErrIssueNotFound
-	}
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("failed to link pull request: status %d", resp.StatusCode)
-	}
-
-	return nil
+	return c.call(ctx, http.MethodPost, endpoint, body, nil, callSpec{failure: "failed to link pull request", notFound: ErrIssueNotFound})
 }
 
 // ValidateCredentials verifies API key validity against Plane within < 1.5s.
