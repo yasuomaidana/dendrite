@@ -54,29 +54,8 @@ func registerTriageTools(s *Server, deps Dependencies) {
 		targetEngineStr, _ := args["target_engine"].(string)
 		executeLocal, _ := args["execute_local"].(bool)
 
-		var forceTier triage.ExecutionTier
-		switch forceTierStr {
-		case "local":
-			forceTier = triage.TierLocal
-		case "hybrid":
-			forceTier = triage.TierHybrid
-		case "cloud":
-			forceTier = triage.TierCloud
-		}
-
-		var targetEngine triage.SupportedEngine
-		switch targetEngineStr {
-		case "ollama":
-			targetEngine = triage.EngineOllama
-		case "ollama-validated":
-			targetEngine = triage.EngineOllamaValidated
-		case "huggingface", "hf":
-			targetEngine = triage.EngineHuggingFace
-		case "candle":
-			targetEngine = triage.EngineCandle
-		case "oxillama":
-			targetEngine = triage.EngineOxiLLaMa
-		}
+		forceTier := triageTiers[forceTierStr]
+		targetEngine := triageEngines[targetEngineStr]
 
 		var ollamaClient *ollama.Client
 		if deps.OllamaURL != "" {
@@ -103,3 +82,15 @@ func registerTriageTools(s *Server, deps Dependencies) {
 		return textResult(string(data)), nil
 	})
 }
+
+// triageTiers and triageEngines name the tiers and engines a caller may force; others mean "decide".
+var (
+	triageTiers = map[string]triage.ExecutionTier{
+		"local": triage.TierLocal, "hybrid": triage.TierHybrid, "cloud": triage.TierCloud,
+	}
+	triageEngines = map[string]triage.SupportedEngine{
+		"ollama": triage.EngineOllama, "ollama-validated": triage.EngineOllamaValidated,
+		"huggingface": triage.EngineHuggingFace, "hf": triage.EngineHuggingFace,
+		"candle": triage.EngineCandle, "oxillama": triage.EngineOxiLLaMa,
+	}
+)

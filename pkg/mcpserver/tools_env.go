@@ -8,10 +8,6 @@ import (
 	"Dendrite/pkg/env/bootstrap"
 )
 
-func registerEnvBootstrapTools(s *Server, deps Dependencies) {
-	registerEnvPrepareTools(s, deps)
-}
-
 func registerEnvPrepareTools(s *Server, deps Dependencies) {
 	// dendrite_env_prepare
 	s.RegisterTool(Tool{
