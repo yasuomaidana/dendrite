@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -20,7 +21,7 @@ func (timedHarness) BenchmarkVariant(_ context.Context, v *fork.Variant, _ fork.
 }
 
 // storyRepo points the story tools at a temporary git repository and its own worktree directory.
-func storyRepo(t *testing.T) {
+func storyRepo(t *testing.T) string {
 	t.Helper()
 	repo, stories := t.TempDir(), filepath.Join(t.TempDir(), "stories")
 	for _, args := range [][]string{
@@ -40,6 +41,7 @@ func storyRepo(t *testing.T) {
 	t.Setenv("GIT_AUTHOR_EMAIL", "t@t")
 	t.Setenv("GIT_COMMITTER_NAME", "t")
 	t.Setenv("GIT_COMMITTER_EMAIL", "t@t")
+	return stories
 }
 
 func TestStoryLifecycleThroughTheTools(t *testing.T) {
@@ -72,5 +74,22 @@ func TestStoryToolsReportWhatTheControllerRefuses(t *testing.T) {
 		if text, isErr := callTool(t, srv, c.tool, c.args); !isErr || !strings.Contains(text, c.want) {
 			t.Errorf("%s %s: %q (error %v), want %q", c.tool, c.args, text, isErr, c.want)
 		}
+	}
+}
+
+func TestStoryAbortReportsADirectoryItCannotRemove(t *testing.T) {
+	stories := storyRepo(t)
+	srv := NewServer(ServerConfig{})
+	RegisterDefaultTools(srv, Dependencies{})
+	// A story with a manifest is aborted by removing its directory.
+	if _, isErr := callTool(t, srv, "dendrite_story_fork", `{"story_id":"stuck2","variants":["a","b"]}`); isErr {
+		t.Fatal("fork failed")
+	}
+	if err := os.Chmod(filepath.Join(stories, "stuck2"), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(stories, "stuck2"), 0o755) })
+	if text, isErr := callTool(t, srv, "dendrite_story_abort", `{"story_id":"stuck2"}`); !isErr || !strings.Contains(text, "story abort failed") {
+		t.Fatalf("text = %q (error %v)", text, isErr)
 	}
 }

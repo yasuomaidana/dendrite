@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -36,7 +35,7 @@ func TestTriageTierAndEngineNames(t *testing.T) {
 			callTool(t, srv, "dendrite_local_agent_triage", `{"prompt":"fix a typo","target_engine":"`+engine+`","force_tier":"`+tier+`"}`)
 		}
 	}
-	if text, isErr := callTool(t, srv, "dendrite_local_agent_triage", `{"prompt":"x","execute_local":true}`); isErr && !strings.Contains(text, "triage failed") {
+	if text, isErr := callTool(t, srv, "dendrite_local_agent_triage", `{"prompt":"x","execute_local":true}`); isErr {
 		t.Errorf("text = %q", text)
 	}
 }

@@ -72,10 +72,7 @@ func registerTriageTools(s *Server, deps Dependencies) {
 			ExecuteLocal: executeLocal,
 		}
 
-		res, err := engine.Triage(ctx, req)
-		if err != nil {
-			return nil, fmt.Errorf("triage failed: %w", err)
-		}
+		res, _ := engine.Triage(ctx, req) // Triage degrades to a heuristic answer instead of failing
 
 		data := indentJSON(res)
 
