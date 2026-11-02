@@ -44,8 +44,8 @@ func PushStatusToPlaneIn(ctx context.Context, client *Client, mdContent, repoDir
 	// Build DAG graph and generate Gantt schedule
 	graph := dag.NewGraph()
 	for _, t := range data.Tickets {
-		sp, comp := ticketScore(t)
-		prio := priorityFor(comp, strings.Contains(data.ActiveMilestone, t.Milestone))
+		sp, comp := TicketScore(t)
+		prio := PriorityFor(comp, strings.Contains(data.ActiveMilestone, t.Milestone))
 
 		graph.AddNode(&dag.Node{
 			ID:             t.ID,
@@ -255,9 +255,9 @@ func PushStatusToPlaneIn(ctx context.Context, client *Client, mdContent, repoDir
 	return report, nil
 }
 
-// ticketScore reads a ticket's story points and complexity, defaulting to 5 and 5.0 when absent or
+// TicketScore reads a ticket's story points and complexity, defaulting to 5 and 5.0 when absent or
 // unreadable.
-func ticketScore(t ParsedDevTicket) (sp int, comp float64) {
+func TicketScore(t ParsedDevTicket) (sp int, comp float64) {
 	sp, comp = 5, 5.0
 	if n, _ := fmt.Sscanf(t.StoryPoints, "%d", &sp); n == 0 {
 		sp = 5
@@ -268,9 +268,9 @@ func ticketScore(t ParsedDevTicket) (sp int, comp float64) {
 	return sp, comp
 }
 
-// priorityFor maps a complexity score to a DAG priority; medium work inside the active milestone
+// PriorityFor maps a complexity score to a DAG priority; medium work inside the active milestone
 // is raised to high.
-func priorityFor(comp float64, inActiveMilestone bool) string {
+func PriorityFor(comp float64, inActiveMilestone bool) string {
 	switch {
 	case comp >= 9.0:
 		return dag.PriorityUrgent

@@ -87,35 +87,16 @@ func registerPlaneDAGTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("issue_id, relation_type, and target_issue_id are all required")
 		}
 
-		client := deps.PlaneClient
-		if client == nil {
-			var err error
-			client, err = plane.NewClientFromEnv()
-			if err != nil {
-				return nil, fmt.Errorf("plane client error: %w", err)
-			}
-		}
-
-		// Resolve ticket ID prefixes (e.g. DEN-036) to UUIDs if needed
-		resolveUUID := func(raw string) (string, error) {
-			if len(raw) == 36 && strings.Count(raw, "-") == 4 {
-				return raw, nil
-			}
-			issues, err := client.ListPlaneIssues(ctx)
-			if err != nil {
-				return "", err
-			}
-			if iss := plane.ResolveIssue(issues, raw); iss != nil {
-				return iss.ID, nil
-			}
-			return "", fmt.Errorf("ticket '%s' not found in Plane", raw)
-		}
-
-		sourceUUID, err := resolveUUID(issueID)
+		client, err := planeClientOf(deps)
 		if err != nil {
 			return nil, err
 		}
-		targetUUID, err := resolveUUID(targetIssueID)
+
+		sourceUUID, err := resolveIssueUUID(ctx, client, issueID)
+		if err != nil {
+			return nil, err
+		}
+		targetUUID, err := resolveIssueUUID(ctx, client, targetIssueID)
 		if err != nil {
 			return nil, err
 		}
@@ -214,13 +195,9 @@ func registerPlaneDAGTools(s *Server, deps Dependencies) {
 		sDate, _ := args["start_date"].(string)
 		tDate, _ := args["target_date"].(string)
 
-		client := deps.PlaneClient
-		if client == nil {
-			var err error
-			client, err = plane.NewClientFromEnv()
-			if err != nil {
-				return nil, fmt.Errorf("plane client error: %w", err)
-			}
+		client, err := planeClientOf(deps)
+		if err != nil {
+			return nil, err
 		}
 
 		// Auto-calculate dates if omitted
@@ -311,4 +288,19 @@ func registerPlaneDAGTools(s *Server, deps Dependencies) {
 		data := indentJSON(res)
 		return textResult(string(data)), nil
 	})
+}
+
+// resolveIssueUUID turns a ticket reference (DEN-036, a sequence number or a UUID) into the issue's UUID.
+func resolveIssueUUID(ctx context.Context, client *plane.Client, raw string) (string, error) {
+	if len(raw) == 36 && strings.Count(raw, "-") == 4 {
+		return raw, nil
+	}
+	issues, err := client.ListPlaneIssues(ctx)
+	if err != nil {
+		return "", err
+	}
+	if iss := plane.ResolveIssue(issues, raw); iss != nil {
+		return iss.ID, nil
+	}
+	return "", fmt.Errorf("ticket '%s' not found in Plane", raw)
 }

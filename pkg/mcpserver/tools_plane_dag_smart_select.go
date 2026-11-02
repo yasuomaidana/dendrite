@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"Dendrite/pkg/planesvc"
+	"cmp"
 	"context"
 	"fmt"
 	"os"
@@ -50,10 +51,7 @@ func planeSmartSelectHandler(deps Dependencies) func(context.Context, map[string
 					}
 					uuidToID[iss.ID] = id
 
-					st := snap.Statuses[iss.ID]
-					if st == "" {
-						st = tracker.StatusTodo
-					}
+					st := cmp.Or(snap.Statuses[iss.ID], tracker.StatusTodo)
 
 					prio := iss.Priority
 					if prio == "" || prio == "none" {
@@ -125,35 +123,8 @@ func planeSmartSelectHandler(deps Dependencies) func(context.Context, map[string
 					continue
 				}
 
-				sp := 5
-				if t.StoryPoints != "" {
-					var parsedSP int
-					if n, _ := fmt.Sscanf(t.StoryPoints, "%d", &parsedSP); n > 0 {
-						sp = parsedSP
-					}
-				}
-				var comp float64 = 5.0
-				if t.ComplexityScore != "" {
-					var parsedComp float64
-					if n, _ := fmt.Sscanf(t.ComplexityScore, "%f", &parsedComp); n > 0 {
-						comp = parsedComp
-					}
-				}
-
-				prio := dag.PriorityMedium
-				switch {
-				case comp >= 9.0:
-					prio = dag.PriorityUrgent
-				case comp >= 7.0:
-					prio = dag.PriorityHigh
-				case comp >= 4.0:
-					prio = dag.PriorityMedium
-				default:
-					prio = dag.PriorityLow
-				}
-				if strings.Contains(data.ActiveMilestone, t.Milestone) && prio == dag.PriorityMedium {
-					prio = dag.PriorityHigh
-				}
+				sp, comp := plane.TicketScore(t)
+				prio := plane.PriorityFor(comp, strings.Contains(data.ActiveMilestone, t.Milestone))
 
 				graph.AddNode(&dag.Node{
 					ID:             t.ID,

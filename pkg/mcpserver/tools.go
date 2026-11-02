@@ -1,6 +1,8 @@
 package mcpserver
 
 import (
+	"fmt"
+
 	"encoding/json"
 
 	"Dendrite/pkg/tracker/plane"
@@ -23,4 +25,16 @@ func indentJSON(v interface{}) []byte {
 // textResult is a successful tool result holding one text item.
 func textResult(text string) *CallToolResult {
 	return &CallToolResult{Content: []ContentItem{{Type: "text", Text: text}}}
+}
+
+// planeClientOf is the Plane client the tools were given, otherwise one built from the environment.
+func planeClientOf(deps Dependencies) (*plane.Client, error) {
+	if deps.PlaneClient != nil {
+		return deps.PlaneClient, nil
+	}
+	client, err := plane.NewClientFromEnv()
+	if err != nil {
+		return nil, fmt.Errorf("plane client error: %w", err)
+	}
+	return client, nil
 }

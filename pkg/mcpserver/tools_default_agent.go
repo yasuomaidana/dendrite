@@ -127,11 +127,7 @@ func registerAgentRunTool(s *Server, deps Dependencies) {
 		}
 
 		data := indentJSON(res)
-		return &CallToolResult{
-			Content: []ContentItem{
-				{Type: "text", Text: string(data)},
-			},
-		}, nil
+		return textResult(string(data)), nil
 	})
 }
 
@@ -152,11 +148,7 @@ func registerTelemetryAndInferenceTools(s *Server, deps Dependencies) {
 		rep := daemon.CollectOnce(ctx)
 
 		data := indentJSON(rep)
-		return &CallToolResult{
-			Content: []ContentItem{
-				{Type: "text", Text: string(data)},
-			},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// 10. dendrite_inference_list

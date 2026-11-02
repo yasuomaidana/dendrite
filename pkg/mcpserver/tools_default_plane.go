@@ -26,13 +26,9 @@ func registerPlaneSyncAndIDETools(s *Server, deps Dependencies) {
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		client := deps.PlaneClient
-		if client == nil {
-			var err error
-			client, err = plane.NewClientFromEnv()
-			if err != nil {
-				return nil, fmt.Errorf("plane client error: %w", err)
-			}
+		client, err := planeClientOf(deps)
+		if err != nil {
+			return nil, err
 		}
 		targetFile := "DEV_STATUS.md"
 		if f, ok := args["file"].(string); ok && f != "" {
@@ -73,13 +69,9 @@ func registerPlaneSyncAndIDETools(s *Server, deps Dependencies) {
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		client := deps.PlaneClient
-		if client == nil {
-			var err error
-			client, err = plane.NewClientFromEnv()
-			if err != nil {
-				return nil, fmt.Errorf("plane client error: %w", err)
-			}
+		client, err := planeClientOf(deps)
+		if err != nil {
+			return nil, err
 		}
 		sourceFile := "DEV_STATUS.md"
 		if f, ok := args["file"].(string); ok && f != "" {
@@ -116,13 +108,9 @@ func registerPlaneSyncAndIDETools(s *Server, deps Dependencies) {
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		client := deps.PlaneClient
-		if client == nil {
-			var err error
-			client, err = plane.NewClientFromEnv()
-			if err != nil {
-				return nil, fmt.Errorf("plane client error: %w", err)
-			}
+		client, err := planeClientOf(deps)
+		if err != nil {
+			return nil, err
 		}
 		dir := "docs"
 		if d, ok := args["dir"].(string); ok && d != "" {

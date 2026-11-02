@@ -57,11 +57,7 @@ func registerGraphTools(s *Server, deps Dependencies) {
 		}
 
 		data := indentJSON(communities)
-		return &CallToolResult{
-			Content: []ContentItem{
-				{Type: "text", Text: string(data)},
-			},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// dendrite_graph_god_nodes
@@ -112,11 +108,7 @@ func registerGraphTools(s *Server, deps Dependencies) {
 		}
 
 		data := indentJSON(nodes)
-		return &CallToolResult{
-			Content: []ContentItem{
-				{Type: "text", Text: string(data)},
-			},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// dendrite_graph_path
@@ -189,11 +181,7 @@ func registerGraphTools(s *Server, deps Dependencies) {
 		}
 
 		data := indentJSON(path)
-		return &CallToolResult{
-			Content: []ContentItem{
-				{Type: "text", Text: string(data)},
-			},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// dendrite_graph_explain
@@ -231,10 +219,6 @@ func registerGraphTools(s *Server, deps Dependencies) {
 		}
 
 		data := indentJSON(matches)
-		return &CallToolResult{
-			Content: []ContentItem{
-				{Type: "text", Text: string(data)},
-			},
-		}, nil
+		return textResult(string(data)), nil
 	})
 }

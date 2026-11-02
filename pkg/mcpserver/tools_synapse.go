@@ -69,7 +69,7 @@ func jsonResult(v interface{}) (*CallToolResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &CallToolResult{Content: []ContentItem{{Type: "text", Text: string(data)}}}, nil
+	return textResult(string(data)), nil
 }
 
 // errorResult renders a tool-level failure the agent can read and react to.

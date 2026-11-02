@@ -36,11 +36,7 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 		statuses := replicator.AuditComponents(ctx)
 
 		data := indentJSON(statuses)
-		return &CallToolResult{
-			Content: []ContentItem{
-				{Type: "text", Text: string(data)},
-			},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// 2. dendrite_ticket_list
@@ -83,11 +79,7 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 			return nil, err
 		}
 		data := indentJSON(tickets)
-		return &CallToolResult{
-			Content: []ContentItem{
-				{Type: "text", Text: string(data)},
-			},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// 3. dendrite_ticket_update
@@ -134,21 +126,13 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 			}
 			if pClient != nil {
 				if _, pErr := planesvc.Default().SetStatus(ctx, pClient, tracker.TicketID(tid), st); pErr == nil {
-					return &CallToolResult{
-						Content: []ContentItem{
-							{Type: "text", Text: fmt.Sprintf("Successfully updated %s to %s in Plane service", tid, st)},
-						},
-					}, nil
+					return textResult(fmt.Sprintf("Successfully updated %s to %s in Plane service", tid, st)), nil
 				}
 			}
 			return nil, fmt.Errorf("failed to update ticket in markdown: %w", err)
 		}
 
-		return &CallToolResult{
-			Content: []ContentItem{
-				{Type: "text", Text: fmt.Sprintf("Successfully updated %s to %s in %s", tid, st, file)},
-			},
-		}, nil
+		return textResult(fmt.Sprintf("Successfully updated %s to %s in %s", tid, st, file)), nil
 	})
 
 	// 4. dendrite_plane_issues
@@ -163,13 +147,9 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		client := deps.PlaneClient
-		if client == nil {
-			var err error
-			client, err = plane.NewClientFromEnv()
-			if err != nil {
-				return nil, fmt.Errorf("plane client error: %w", err)
-			}
+		client, err := planeClientOf(deps)
+		if err != nil {
+			return nil, err
 		}
 
 		issues, err := client.ListPlaneIssues(ctx)
@@ -178,11 +158,7 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 		}
 
 		data := indentJSON(issues)
-		return &CallToolResult{
-			Content: []ContentItem{
-				{Type: "text", Text: string(data)},
-			},
-		}, nil
+		return textResult(string(data)), nil
 	})
 }
 
@@ -213,11 +189,7 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 			"models":   models,
 		}
 		data := indentJSON(result)
-		return &CallToolResult{
-			Content: []ContentItem{
-				{Type: "text", Text: string(data)},
-			},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// 6. dendrite_topology_advisor
@@ -272,11 +244,7 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 		}
 
 		data := indentJSON(plan)
-		return &CallToolResult{
-			Content: []ContentItem{
-				{Type: "text", Text: string(data)},
-			},
-		}, nil
+		return textResult(string(data)), nil
 	})
 
 	// 7. dendrite_gateway_render
@@ -312,11 +280,7 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 		if err != nil {
 			return nil, err
 		}
-		return &CallToolResult{
-			Content: []ContentItem{
-				{Type: "text", Text: string(yamlData)},
-			},
-		}, nil
+		return textResult(string(yamlData)), nil
 	})
 
 	// dendrite_gateway_update
@@ -359,10 +323,6 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 		}
 
 		data := indentJSON(rep)
-		return &CallToolResult{
-			Content: []ContentItem{
-				{Type: "text", Text: string(data)},
-			},
-		}, nil
+		return textResult(string(data)), nil
 	})
 }

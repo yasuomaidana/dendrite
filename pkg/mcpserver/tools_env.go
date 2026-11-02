@@ -69,10 +69,6 @@ func registerEnvPrepareTools(s *Server, deps Dependencies) {
 		}
 
 		data := indentJSON(report)
-		return &CallToolResult{
-			Content: []ContentItem{
-				{Type: "text", Text: string(data)},
-			},
-		}, nil
+		return textResult(string(data)), nil
 	})
 }

@@ -22,9 +22,9 @@ func TestTicketScoreAndPriority(t *testing.T) {
 		wantSP   int
 		wantComp float64
 	}{{"", "", 5, 5.0}, {"8", "7.5", 8, 7.5}, {"x", "y", 5, 5.0}} {
-		sp, comp := ticketScore(ParsedDevTicket{StoryPoints: c.sp, ComplexityScore: c.comp})
+		sp, comp := TicketScore(ParsedDevTicket{StoryPoints: c.sp, ComplexityScore: c.comp})
 		if sp != c.wantSP || comp != c.wantComp {
-			t.Errorf("ticketScore(%q, %q) = %d, %v; want %d, %v", c.sp, c.comp, sp, comp, c.wantSP, c.wantComp)
+			t.Errorf("TicketScore(%q, %q) = %d, %v; want %d, %v", c.sp, c.comp, sp, comp, c.wantSP, c.wantComp)
 		}
 	}
 	for _, c := range []struct {
@@ -35,8 +35,8 @@ func TestTicketScoreAndPriority(t *testing.T) {
 		{9.5, false, dag.PriorityUrgent}, {7.0, false, dag.PriorityHigh}, {5.0, false, dag.PriorityMedium},
 		{5.0, true, dag.PriorityHigh}, {2.0, true, dag.PriorityLow},
 	} {
-		if got := priorityFor(c.comp, c.active); got != c.want {
-			t.Errorf("priorityFor(%v, %v) = %q, want %q", c.comp, c.active, got, c.want)
+		if got := PriorityFor(c.comp, c.active); got != c.want {
+			t.Errorf("PriorityFor(%v, %v) = %q, want %q", c.comp, c.active, got, c.want)
 		}
 	}
 	for in, want := range map[int]int{-3: 0, 0: 0, 7: 7, 12: 12, 40: 12} {
@@ -83,7 +83,7 @@ func gitRepoWithMock(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Join(dir, "pkg", "risky"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "pkg", "risky", "risky.go"), []byte("package risky\n\ntype " + "Mo" + "ck struct{}\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "pkg", "risky", "risky.go"), []byte("package risky\n\ntype "+"Mo"+"ck struct{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{{"init", "-q"}, {"add", "."}} {
