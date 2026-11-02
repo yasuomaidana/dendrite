@@ -9,9 +9,16 @@ import (
 	"strings"
 )
 
+// file is one .go or .rs file of the project: its path relative to the root, its trimmed text and its non-blank lines.
+type file struct {
+	path, text string
+	lines      int
+}
+
 // quality answers the quality.* methods with simple, real computations over the project's files, enough to
 // exercise a client: non-blank lines of .go and .rs files for loc, files of identical non-blank content for
-// clones, and one violation per Rust file holding the marker REPEATED_TEST for rstest.
+// clones, and one violation per Rust file holding the marker REPEATED_TEST for rstest, one finding per file holding the marker
+// COMPLEX_FUNCTION for complexity, and the directory rules (too many files, a missing README.md) for structure.
 func quality(method, root string, raw json.RawMessage) map[string]interface{} {
 	var q struct {
 		MaxProductionLines int      `json:"max_production_lines"`
@@ -19,12 +26,10 @@ func quality(method, root string, raw json.RawMessage) map[string]interface{} {
 		MaxPercent         float64  `json:"max_percent"`
 		MinLines           int      `json:"min_lines"`
 		Exclude            []string `json:"exclude"`
+		MaxFilesPerDir     int      `json:"max_files_per_dir"`
+		RequireDocs        bool     `json:"require_docs"`
 	}
 	_ = json.Unmarshal(raw, &q)
-	type file struct {
-		path, text string
-		lines      int
-	}
 	var files []file
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !(strings.HasSuffix(path, ".go") || strings.HasSuffix(path, ".rs")) {
@@ -92,6 +97,10 @@ func quality(method, root string, raw json.RawMessage) map[string]interface{} {
 			percent = float64(dup) * 100 / float64(total)
 		}
 		return map[string]interface{}{"schema": 1, "max_percent": q.MaxPercent, "totals": map[string]interface{}{"files": len(files), "lines": total, "duplicated_lines": dup, "percent": percent, "groups": len(groups)}, "groups": groups}
+	case "quality.complexity":
+		return complexityReport(files)
+	case "quality.structure":
+		return structureReport(files, q.MaxFilesPerDir, q.RequireDocs, root)
 	default: // quality.rstest
 		rust, violations := 0, []map[string]interface{}{}
 		for _, f := range files {

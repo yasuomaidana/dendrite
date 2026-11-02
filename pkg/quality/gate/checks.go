@@ -5,11 +5,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"Dendrite/pkg/quality/coverage"
+)
+
+const (
+	complexityAdvice = "split the function, extract helpers, replace nested branches with early returns or tables"
+	structureAdvice  = "move modules that share a leading word into a sub-package named after it, group files by responsibility"
 )
 
 func failed(name string, err error) Check {
@@ -21,6 +27,35 @@ func verdict(name, summary string, findings []string) Check {
 		return Check{Name: name, Status: Fail, Summary: summary, Findings: findings}
 	}
 	return Check{Name: name, Status: Pass, Summary: summary}
+}
+
+func advise(c Check, advice string) Check {
+	if c.Status == Fail {
+		c.Advice = advice
+	}
+	return c
+}
+
+func touchesSpan(s *Scope, file string, start, end int) bool {
+	if s == nil {
+		return true
+	}
+	if start <= 0 {
+		return s.HasFile(file)
+	}
+	return s.Touches(file, start, max(start, end))
+}
+
+func touchesAnyFile(s *Scope, dir string, files []string) bool {
+	if s == nil {
+		return true
+	}
+	for _, f := range files {
+		if s.HasFile(f) || (!strings.Contains(f, "/") && s.HasFile(path.Join(dir, f))) {
+			return true
+		}
+	}
+	return false
 }
 
 // checkLoc fails a file with more production lines than the directive allows; scoped to a change, only the

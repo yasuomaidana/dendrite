@@ -1,5 +1,10 @@
 package agentsearch
 
+// TODO(move:dendrite-rag-rs,DRAG-79): scoring and the search engine duplicate retrieval that dendrite-rag-rs owns (BM25 plus vectors, rank fusion).
+//   When: the Rust side serves the same query semantics (DRAG-79) and a one-off parity run is recorded; then delete this package.
+//   Stays in Go: the MCP tool wiring (moves to dendrite-mcp-hub with DMCP-1).
+//   Until then: fix bugs here, but do not add features; add them in the Rust repository.
+
 import (
 	"fmt"
 	"strings"

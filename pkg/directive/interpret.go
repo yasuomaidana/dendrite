@@ -45,38 +45,5 @@ func Interpret(ctx context.Context, chat llmchat.Completer, text string) ([]Chan
 
 // valueOf is the value a key holds in s, as the typed value Apply stored (a JSON 95 becomes 95.0).
 func valueOf(s Set, key string) any {
-	switch key {
-	case "loc.max_production_lines":
-		return s.Loc.MaxProductionLines
-	case "loc.warn_at":
-		return s.Loc.WarnAt
-	case "loc.exclude":
-		return s.Loc.Exclude
-	case "coverage.min_percent":
-		return s.Coverage.MinPercent
-	case "coverage.scope":
-		return s.Coverage.Scope
-	case "coverage.exclude":
-		return s.Coverage.Exclude
-	case "duplication.max_percent":
-		return s.Duplication.MaxPercent
-	case "duplication.min_tokens":
-		return s.Duplication.MinTokens
-	case "duplication.min_lines":
-		return s.Duplication.MinLines
-	case "duplication.include_tests":
-		return s.Duplication.IncludeTests
-	case "lint.strictness":
-		return s.Lint.Strictness
-	case "security.fail_on":
-		return s.Security.FailOn
-	case "security.secrets":
-		return s.Security.Secrets
-	case "done.auto_done":
-		return s.Done.AutoDone
-	case "done.human_review_labels":
-		return s.Done.HumanReviewLabels
-	default:
-		return s.Languages.Preference
-	}
+	return keys[key].get(s)
 }

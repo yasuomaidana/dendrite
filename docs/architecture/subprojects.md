@@ -65,6 +65,19 @@ Every repository we can modify is a Plane project, and repositories that depend 
   - It is consumed by `dendrite-core-rs` and `dendrite-rag-rs` with `default-features = false, features = ["core", "matcher"]`.
   - New DAG code is not written in Go.
 
+## Pending moves (marked in the code)
+
+Go files that are going to live in another repository carry a `TODO(move:<repo>,<TICKET>)` block after their package clause: what moves, when, what stays in Go. Find them with `dendrite rag grep 'TODO\(move:'`. Until a move happens, fix bugs in the Go file but add features in the target repository.
+
+| Go code | Moves to | Ticket | When |
+|---|---|---|---|
+| `pkg/tracker/dag`, `pkg/topology/validate.go` | dendrite-core-rs (`dag.*` over embedag) | DCORE-11 | after EMBEDAG-83 (SCC) and embedag ticket 9.2.2 |
+| `pkg/ast/graph.go`, `pkg/agentsearch`, `pkg/store` | dendrite-rag-rs | DRAG-79 | `graph.*` and search cover the same queries; parity recorded once |
+| `pkg/story/fork/git_executor.go`, `pkg/workcopy` | dendrite-git-rs (`git.worktree.*`, `git.hunks`) | DGIT-4, DGIT-7 | the sidecar methods exist |
+| `pkg/vcs/reposync.go`, `pkg/vcs/orchestrator.go` | dendrite-git-rs (`git.divergence`, hunk graph, clusterer, apply) | DGIT-2, DGIT-3 | those methods exist; the branch guard stays in Go |
+| `pkg/tracker/plane` HTTP code | dendrite-plane-rs (typed methods) | DPLANE-7 | the protocol minor with projects, members, checklist and doc sync is out |
+| `pkg/mcpserver` | dendrite-mcp-hub (Go) | DMCP-1 | ports defined in the hub, tools moved group by group |
+
 ## Interface contract
 
 - Each Rust crate ships a `dendrite-<x>` binary that speaks JSON-RPC 2.0 over stdio. Its schema lives in `proto/*.json`, versioned with semver.

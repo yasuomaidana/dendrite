@@ -1,6 +1,7 @@
 // Package directive is the project's quality directives: the limits (production lines per file, coverage,
-// duplication, security, who may set Done) that CI, the quality gate and the agents all enforce. They live in
-// .github/dendrite/directives.toml, tracked, so CI can read them; `dendrite directive` changes them.
+// duplication, complexity, directory structure, security, who may set Done) that CI, the quality gate and the
+// agents all enforce. They live in .github/dendrite/directives.toml, tracked, so CI can read them;
+// `dendrite directive` changes them.
 package directive
 
 import (
@@ -23,6 +24,8 @@ type Set struct {
 	Loc         Loc         `toml:"loc"`
 	Coverage    Coverage    `toml:"coverage"`
 	Duplication Duplication `toml:"duplication"`
+	Complexity  Complexity  `toml:"complexity"`
+	Structure   Structure   `toml:"structure"`
 	Lint        Lint        `toml:"lint"`
 	Security    Security    `toml:"security"`
 	Done        Done        `toml:"done"`
@@ -74,6 +77,24 @@ func (d Duplication) StrategyAdvice() string {
 	return "To remove repeated code: " + strings.Join(parts, "; ") + "."
 }
 
+// Complexity limits the branching and nesting of a single function.
+type Complexity struct {
+	MaxCyclomatic int      `toml:"max_cyclomatic"`
+	MaxCognitive  int      `toml:"max_cognitive"`
+	Exclude       []string `toml:"exclude"`
+}
+
+// Structure limits how much code and how many similarly named files one directory may hold, and requires
+// every project unit (crate, module, repository) to carry its documentation files.
+type Structure struct {
+	MaxFilesPerDir        int      `toml:"max_files_per_dir"`
+	MaxDirProductionLines int      `toml:"max_dir_production_lines"`
+	MaxPrefixGroup        int      `toml:"max_prefix_group"`
+	RequireDocs           bool     `toml:"require_docs"`
+	DocsFiles             []string `toml:"docs_files"`
+	Exclude               []string `toml:"exclude"`
+}
+
 // Lint picks how strict the generated lint configurations are.
 type Lint struct {
 	Strictness string `toml:"strictness"`
@@ -103,6 +124,8 @@ func Defaults() Set {
 		Loc:         Loc{MaxProductionLines: 500, WarnAt: 450, Exclude: []string{"**/generated/**"}},
 		Coverage:    Coverage{MinPercent: 100, Scope: "line", Exclude: []string{}},
 		Duplication: Duplication{MaxPercent: 0, MinTokens: 50, MinLines: 5, IncludeTests: true, Strategies: []string{"helper_function", "macro", "rstest"}},
+		Complexity:  Complexity{MaxCyclomatic: 10, MaxCognitive: 15, Exclude: []string{}},
+		Structure:   Structure{MaxFilesPerDir: 12, MaxDirProductionLines: 3000, MaxPrefixGroup: 4, RequireDocs: true, DocsFiles: []string{"README.md", "CHANGELOG.md"}, Exclude: []string{}},
 		Lint:        Lint{Strictness: "strict"},
 		Security:    Security{FailOn: "high", Secrets: true},
 		Done:        Done{AutoDone: true, HumanReviewLabels: []string{"needs-human-review"}},
@@ -131,6 +154,12 @@ func (s Set) Validate() error {
 		check(s.Duplication.MinTokens >= 10, "duplication.min_tokens must be at least 10"),
 		check(s.Duplication.MinLines >= 2, "duplication.min_lines must be at least 2"),
 		check(knownStrategies(s.Duplication.Strategies), "duplication.strategies must be among helper_function, macro and rstest"),
+		check(s.Complexity.MaxCyclomatic > 0, "complexity.max_cyclomatic must be at least 1"),
+		check(s.Complexity.MaxCognitive > 0, "complexity.max_cognitive must be at least 1"),
+		check(s.Structure.MaxFilesPerDir > 0, "structure.max_files_per_dir must be at least 1"),
+		check(s.Structure.MaxDirProductionLines > 0, "structure.max_dir_production_lines must be at least 1"),
+		check(s.Structure.MaxPrefixGroup >= 2, "structure.max_prefix_group must be at least 2"),
+		check(!s.Structure.RequireDocs || len(s.Structure.DocsFiles) > 0, "structure.docs_files needs at least one file name when structure.require_docs is on"),
 		check(oneOf(s.Lint.Strictness, "relaxed", "standard", "strict"), "lint.strictness must be relaxed, standard or strict"),
 		check(oneOf(s.Security.FailOn, "low", "medium", "high", "critical"), "security.fail_on must be low, medium, high or critical"),
 		check(len(s.Languages.Preference) > 0, "languages.preference needs at least one language"),

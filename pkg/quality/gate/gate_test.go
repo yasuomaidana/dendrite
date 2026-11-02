@@ -37,6 +37,7 @@ func tightSet() directive.Set {
 	s := directive.Defaults()
 	s.Loc.MaxProductionLines, s.Loc.WarnAt = 10, 5
 	s.Duplication.MinLines = 5
+	s.Structure.RequireDocs = false
 	return s
 }
 
@@ -50,14 +51,14 @@ func byName(r Report, name string) Check {
 }
 
 func TestRunReportsEveryCheckOfARepository(t *testing.T) {
-	ragtest.UseStandin(t, "1.11.0")
+	ragtest.UseStandin(t, "1.12.0")
 	dir := t.TempDir()
 	write(t, dir, "a.go", lines(12))
 	write(t, dir, "b.go", lines(12))
 	write(t, dir, "c.go", lines(2))
 	write(t, dir, "r.rs", "REPEATED_TEST\n")
 	rep := Run(context.Background(), Options{Dir: dir, Set: tightSet(), Sidecar: rag.NewRetriever()})
-	if rep.Passed || rep.Scope != "repository" || len(rep.Checks) != 4 {
+	if rep.Passed || rep.Scope != "repository" || len(rep.Checks) != 6 {
 		t.Fatalf("%+v", rep)
 	}
 	loc := byName(rep, "loc")
@@ -77,7 +78,7 @@ func TestRunReportsEveryCheckOfARepository(t *testing.T) {
 }
 
 func TestRunPassesACleanRepositoryAndOnlyRunsWhatWasAskedFor(t *testing.T) {
-	ragtest.UseStandin(t, "1.11.0")
+	ragtest.UseStandin(t, "1.12.0")
 	dir := t.TempDir()
 	write(t, dir, "a.go", lines(2))
 	write(t, dir, "b.go", lines(3))
@@ -89,7 +90,7 @@ func TestRunPassesACleanRepositoryAndOnlyRunsWhatWasAskedFor(t *testing.T) {
 	if len(only.Checks) != 2 || only.Checks[0].Name != "loc" || only.Checks[1].Name != "clones" {
 		t.Errorf("Only wins over Skip, in the gate's order: %+v", only.Checks)
 	}
-	skip := Run(context.Background(), Options{Dir: dir, Set: tightSet(), Sidecar: rag.NewRetriever(), Skip: []string{"loc", "clones", "coverage"}})
+	skip := Run(context.Background(), Options{Dir: dir, Set: tightSet(), Sidecar: rag.NewRetriever(), Skip: []string{"loc", "clones", "complexity", "structure", "coverage"}})
 	if len(skip.Checks) != 1 || skip.Checks[0].Name != "rstest" {
 		t.Errorf("%+v", skip.Checks)
 	}
@@ -117,7 +118,7 @@ func TestACheckThatCannotRunFailsTheGate(t *testing.T) {
 }
 
 func TestRunWithinTheDuplicationAllowancePasses(t *testing.T) {
-	ragtest.UseStandin(t, "1.11.0")
+	ragtest.UseStandin(t, "1.12.0")
 	dir := t.TempDir()
 	write(t, dir, "a.go", lines(12))
 	write(t, dir, "b.go", lines(12))

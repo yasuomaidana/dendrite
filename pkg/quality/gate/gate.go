@@ -1,6 +1,6 @@
 // Package gate runs the quality gates of a project's directives as one check: production lines per file,
-// repeated code, the Rust test structure and test coverage. It is what CI, `dendrite allostasis gate` and
-// `dendrite chronos finish` all run, so the same rule holds everywhere.
+// repeated code, function complexity, directory structure, the Rust test structure and test coverage. It is
+// what CI, `dendrite allostasis gate` and `dendrite chronos finish` all run, so the same rule holds everywhere.
 package gate
 
 import (
@@ -56,18 +56,27 @@ type Options struct {
 	Dir string
 	// Set are the project's directives.
 	Set directive.Set
-	// Sidecar runs the loc, clones and rstest gates.
+	// Sidecar runs the loc, clones, complexity, structure and rstest gates.
 	Sidecar Sidecar
 	// Scope limits the gate to a change; nil checks the whole repository.
 	Scope *Scope
-	// Only and Skip pick checks by name (loc, clones, rstest, coverage). Only wins when both are set.
+	// Only and Skip pick checks by name (loc, clones, complexity, structure, rstest, coverage). Only wins when both are set.
 	Only, Skip []string
 	// CoverageRunner replaces the real `go test` of the coverage check (tests only).
 	CoverageRunner CommandRunner
 }
 
 // Names are the checks, in the order they run.
-var Names = []string{"loc", "clones", "rstest", "coverage"}
+var Names = []string{"loc", "clones", "complexity", "structure", "rstest", "coverage"}
+
+var checks = map[string]func(context.Context, Options) Check{
+	"loc":        checkLoc,
+	"clones":     checkClones,
+	"complexity": checkComplexity,
+	"structure":  checkStructure,
+	"rstest":     checkRstest,
+	"coverage":   checkCoverage,
+}
 
 // Run runs the selected checks and collects their outcomes.
 func Run(ctx context.Context, o Options) Report {
@@ -79,17 +88,7 @@ func Run(ctx context.Context, o Options) Report {
 		if !selected(name, o.Only, o.Skip) {
 			continue
 		}
-		var c Check
-		switch name {
-		case "loc":
-			c = checkLoc(ctx, o)
-		case "clones":
-			c = checkClones(ctx, o)
-		case "rstest":
-			c = checkRstest(ctx, o)
-		default:
-			c = checkCoverage(ctx, o)
-		}
+		c := checks[name](ctx, o)
 		if c.Status == Fail || c.Status == Error {
 			r.Passed = false
 		}

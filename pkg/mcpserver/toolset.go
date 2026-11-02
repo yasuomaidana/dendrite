@@ -1,5 +1,10 @@
 package mcpserver
 
+// TODO(move:dendrite-mcp-hub,DMCP-1): the MCP JSON-RPC server and its tool registry are owned by dendrite-mcp-hub (Go).
+//   When: the hub defines small ports per tool group and control injects its implementations (DMCP-1); tool files then move group by group with their tests. The hub never imports control.
+//   Stays in Go: the implementations behind the ports (tracker, rag, devtool) and the wiring in cmd/dendrite/mcp.go.
+//   Until then: fix bugs here, but do not add features; add them in the Rust repository.
+
 import (
 	"fmt"
 	"os"

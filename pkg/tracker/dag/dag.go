@@ -1,5 +1,10 @@
 package dag
 
+// TODO(move:dendrite-core-rs,DCORE-11): topological sort, levels, critical path and reverse dependencies are graph algorithms that embedag-core already implements.
+//   When: dendrite-core serves dag.* over JSON-RPC (needs EMBEDAG-83 SCC and the work-item prioritisation ticket 9.2.2); then this file becomes a client and the algorithms are deleted.
+//   Stays in Go: ticket-specific types and the mapping from Plane relations to nodes and edges.
+//   Until then: fix bugs here, but do not add features; add them in the Rust repository.
+
 import (
 	"fmt"
 	"slices"

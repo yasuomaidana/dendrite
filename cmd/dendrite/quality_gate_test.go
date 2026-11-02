@@ -13,11 +13,21 @@ import (
 	"Dendrite/pkg/rag/ragtest"
 )
 
+// withDocs adds the README and CHANGELOG every project unit needs, unless the test brings its own.
+func withDocs(files map[string]string) map[string]string {
+	out := map[string]string{"README.md": "# project\n", "CHANGELOG.md": "# Changelog\n"}
+	for rel, body := range files {
+		out[rel] = body
+	}
+	return out
+}
+
 // gateProject is a directory with a few files; dir is also the --path of the command.
 func gateProject(t *testing.T, files map[string]string) string {
 	t.Helper()
-	ragtest.UseStandin(t, "1.11.0")
+	ragtest.UseStandin(t, "1.12.0")
 	dir := t.TempDir()
+	files = withDocs(files)
 	for rel, body := range files {
 		p := filepath.Join(dir, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
