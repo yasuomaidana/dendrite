@@ -1,5 +1,10 @@
 package topology
 
+// TODO(move:dendrite-core-rs,DCORE-11): the cycle and placement validation walks a graph; its traversal belongs to embedag-core (SCC and condensation).
+//   When: dag.condense exists in dendrite-core (DCORE-11, after EMBEDAG-83).
+//   Stays in Go: the scenario rules (placement, resources) that are Dendrite policy.
+//   Until then: fix bugs here, but do not add features; add them in the Rust repository.
+
 import (
 	"fmt"
 	"net"

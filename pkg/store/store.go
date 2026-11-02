@@ -1,5 +1,10 @@
 package store
 
+// TODO(move:dendrite-rag-rs,DRAG-79): the segmented content store and its status belong to the content-addressed store of loom-rag.
+//   When: DRAG-79 serves the store and status methods; then this package is reduced to a client or deleted.
+//   Stays in Go: where the store lives on disk (statedir), which is Dendrite configuration.
+//   Until then: fix bugs here, but do not add features; add them in the Rust repository.
+
 import (
 	"Dendrite/pkg/statedir"
 	"crypto/sha256"

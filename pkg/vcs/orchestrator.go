@@ -1,5 +1,10 @@
 package vcs
 
+// TODO(move:dendrite-git-rs,DGIT-3): splitting a working tree into commits (hunks, clustering, plan validation, applying) is the dendrite-git commit planner.
+//   When: git.hunk_graph, git.cluster_hunks, git.validate_plan and git.apply_plan are implemented (DGIT-1, DGIT-4, DGIT-3); then the commit flow calls them and the Go hunk handling is deleted.
+//   Stays in Go: the branch guard (never main or master), ticket references and the LLM message synthesis, which stay in Dendrite.
+//   Until then: fix bugs here, but do not add features; add them in the Rust repository.
+
 import (
 	"context"
 	"encoding/json"

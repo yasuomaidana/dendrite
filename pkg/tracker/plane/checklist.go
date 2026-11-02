@@ -1,5 +1,10 @@
 package plane
 
+// TODO(move:dendrite-plane-rs,DPLANE-7): the Plane HTTP client code (projects, members, checklist, doc sync, markdown to HTML) belongs to dendrite-plane, where newtypes and enums rule out invalid states.
+//   When: DPLANE-7 adds the typed methods and a protocol minor bump; then this package keeps only the sidecar client (pkg/planesvc) and the HTTP code is deleted.
+//   Stays in Go: ticket workflow policy (canonical states, claims, lifecycle) that is Dendrite behaviour.
+//   Until then: fix bugs here, but do not add features; add them in the Rust repository.
+
 import (
 	"context"
 	"crypto/sha256"

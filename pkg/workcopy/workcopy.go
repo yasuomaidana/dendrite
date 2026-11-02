@@ -6,6 +6,11 @@
 // projects and lets Dendrite delete a copy once its work is merged and clean.
 package workcopy
 
+// TODO(move:dendrite-git-rs,DGIT-7): creating and removing isolated git worktrees with guaranteed cleanup is git.worktree.create and git.worktree.remove.
+//   When: those methods are implemented (DGIT-7); then the git calls here go through the sidecar.
+//   Stays in Go: the model-owned naming, claims and garbage collection of working copies.
+//   Until then: fix bugs here, but do not add features; add them in the Rust repository.
+
 import (
 	"bytes"
 	"context"
