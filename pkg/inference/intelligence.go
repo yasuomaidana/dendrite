@@ -54,10 +54,10 @@ func ModelIntelligenceScore(modelName string) int {
 			paramB = 9.0
 		case strings.Contains(clean, "8b"):
 			paramB = 8.0
-		case strings.Contains(clean, "7b"):
-			paramB = 7.0
 		case strings.Contains(clean, "6.7b"):
 			paramB = 6.7
+		case strings.Contains(clean, "7b"):
+			paramB = 7.0
 		case strings.Contains(clean, "3b") || strings.Contains(clean, "3.2"):
 			paramB = 3.0
 		case strings.Contains(clean, "1.5b"):
@@ -107,15 +107,7 @@ func ModelIntelligenceScore(modelName string) int {
 		modifier += 2
 	}
 
-	score := baseScore + modifier
-	if score > 100 {
-		score = 100
-	}
-	if score < 1 {
-		score = 1
-	}
-
-	return score
+	return min(baseScore+modifier, 100)
 }
 
 // EngineMaxIntelligence evaluates the maximum model intelligence score available on an engine.

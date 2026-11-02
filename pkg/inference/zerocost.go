@@ -139,51 +139,8 @@ func (r *ZeroCostRegistry) AutoLoad() {
 
 // IsZeroCost checks if a given model identifier matches an active zero-cost model or prefix.
 func (r *ZeroCostRegistry) IsZeroCost(model string) bool {
-	m := strings.ToLower(strings.TrimSpace(model))
-	if m == "" {
-		return false
-	}
-
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	// Check custom exact models
-	if r.customModels[m] {
-		return true
-	}
-
-	// Check env exact models (unless removed)
-	if r.envModels[m] && !r.removedModels[m] {
-		return true
-	}
-
-	// Check default exact models (unless removed)
-	if r.defaultModels[m] && !r.removedModels[m] {
-		return true
-	}
-
-	// Check custom prefixes
-	for p := range r.customPrefixes {
-		if strings.HasPrefix(m, p) {
-			return true
-		}
-	}
-
-	// Check env prefixes (unless removed)
-	for p := range r.envPrefixes {
-		if !r.removedPrefixes[p] && strings.HasPrefix(m, p) {
-			return true
-		}
-	}
-
-	// Check default prefixes (unless removed)
-	for p := range r.defaultPrefixes {
-		if !r.removedPrefixes[p] && strings.HasPrefix(m, p) {
-			return true
-		}
-	}
-
-	return false
+	ok, _ := r.Test(model)
+	return ok
 }
 
 // Test evaluates a model string and returns match status along with the reason.

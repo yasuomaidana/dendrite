@@ -133,10 +133,7 @@ func (r *ZeroCostRegistry) SaveToFile(path string) error {
 		UpdatedAt:       time.Now().UTC(),
 	}
 
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
+	data, _ := json.MarshalIndent(cfg, "", "  ") // strings and a time always marshal
 
 	dir := filepath.Dir(path)
 	if dir != "" && dir != "." {
