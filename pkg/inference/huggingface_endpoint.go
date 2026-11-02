@@ -63,10 +63,7 @@ func (e *HuggingFaceEndpointEngine) Generate(ctx context.Context, req Completion
 		payload["parameters"].(map[string]interface{})["max_new_tokens"] = 512
 	}
 
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
+	data, _ := json.Marshal(payload) // a map of strings and numbers always marshals
 
 	start := time.Now()
 	url := fmt.Sprintf("%s/%s", strings.TrimRight(e.cfg.Endpoint, "/"), model)

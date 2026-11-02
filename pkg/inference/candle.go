@@ -61,10 +61,7 @@ func (e *CandleEngine) Generate(ctx context.Context, req CompletionRequest) (*Co
 		payload["max_tokens"] = req.MaxTokens
 	}
 
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
+	data, _ := json.Marshal(payload) // a map of strings and numbers always marshals
 
 	start := time.Now()
 	url := fmt.Sprintf("%s/v1/chat/completions", strings.TrimRight(e.cfg.Endpoint, "/"))

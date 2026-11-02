@@ -67,10 +67,7 @@ func (e *VLLMEngine) Generate(ctx context.Context, req CompletionRequest) (*Comp
 		payload["max_tokens"] = req.MaxTokens
 	}
 
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
+	data, _ := json.Marshal(payload) // a map of strings and numbers always marshals
 
 	start := time.Now()
 	url := fmt.Sprintf("%s/v1/chat/completions", strings.TrimRight(e.cfg.Endpoint, "/"))
@@ -130,82 +127,11 @@ func (e *VLLMEngine) Generate(ctx context.Context, req CompletionRequest) (*Comp
 }
 
 func (e *VLLMEngine) Stream(ctx context.Context, req CompletionRequest) (<-chan StreamChunk, error) {
-	if strings.TrimSpace(req.Prompt) == "" {
-		return nil, ErrEmptyPrompt
-	}
-
 	model := req.Model
 	if model == "" && len(e.cfg.Models) > 0 {
 		model = e.cfg.Models[0]
 	}
-
-	messages := []map[string]string{
-		{"role": "user", "content": req.Prompt},
-	}
-	payload := map[string]interface{}{
-		"model":    model,
-		"messages": messages,
-		"stream":   true,
-	}
-
-	data, _ := json.Marshal(payload)
-	url := fmt.Sprintf("%s/v1/chat/completions", strings.TrimRight(e.cfg.Endpoint, "/"))
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if e.cfg.APIKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+e.cfg.APIKey)
-	}
-
-	resp, err := e.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-
-	ch := make(chan StreamChunk)
-	go func() {
-		defer close(ch)
-		defer resp.Body.Close()
-
-		buf := make([]byte, 4096)
-		for {
-			n, err := resp.Body.Read(buf)
-			if n > 0 {
-				lines := strings.Split(string(buf[:n]), "\n")
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if !strings.HasPrefix(line, "data: ") {
-						continue
-					}
-					dataPayload := strings.TrimPrefix(line, "data: ")
-					if dataPayload == "[DONE]" {
-						ch <- StreamChunk{Done: true}
-						return
-					}
-					var chunkRes struct {
-						Choices []struct {
-							Delta struct {
-								Content string `json:"content"`
-							} `json:"delta"`
-						} `json:"choices"`
-					}
-					if err := json.Unmarshal([]byte(dataPayload), &chunkRes); err == nil && len(chunkRes.Choices) > 0 {
-						ch <- StreamChunk{
-							Text: chunkRes.Choices[0].Delta.Content,
-							Done: false,
-						}
-					}
-				}
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-
-	return ch, nil
+	return streamChatCompletions(ctx, e.httpClient, req, e.cfg.Endpoint, e.cfg.APIKey, model)
 }
 
 func (e *VLLMEngine) Health(ctx context.Context) EngineHealth {

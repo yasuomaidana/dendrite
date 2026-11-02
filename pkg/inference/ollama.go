@@ -65,10 +65,7 @@ func (e *OllamaEngine) Generate(ctx context.Context, req CompletionRequest) (*Co
 		payload["options"].(map[string]interface{})["num_predict"] = req.MaxTokens
 	}
 
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("marshal error: %w", err)
-	}
+	data, _ := json.Marshal(payload) // a map of strings and numbers always marshals
 
 	start := time.Now()
 	url := fmt.Sprintf("%s/api/generate", strings.TrimRight(e.cfg.Endpoint, "/"))
@@ -131,10 +128,7 @@ func (e *OllamaEngine) Stream(ctx context.Context, req CompletionRequest) (<-cha
 		"stream": true,
 	}
 
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
+	data, _ := json.Marshal(payload) // a map of strings and booleans always marshals
 
 	url := fmt.Sprintf("%s/api/generate", strings.TrimRight(e.cfg.Endpoint, "/"))
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))

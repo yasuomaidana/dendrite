@@ -70,10 +70,7 @@ func (e *OxiLLaMaEngine) Generate(ctx context.Context, req CompletionRequest) (*
 		payload["max_tokens"] = req.MaxTokens
 	}
 
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
+	data, _ := json.Marshal(payload) // a map of strings and numbers always marshals
 
 	start := time.Now()
 	url := fmt.Sprintf("%s/v1/chat/completions", strings.TrimRight(e.cfg.Endpoint, "/"))
@@ -133,86 +130,11 @@ func (e *OxiLLaMaEngine) Generate(ctx context.Context, req CompletionRequest) (*
 }
 
 func (e *OxiLLaMaEngine) Stream(ctx context.Context, req CompletionRequest) (<-chan StreamChunk, error) {
-	if strings.TrimSpace(req.Prompt) == "" {
-		return nil, ErrEmptyPrompt
-	}
-
 	model := req.Model
 	if model == "" && len(e.cfg.Models) > 0 {
 		model = e.cfg.Models[0]
 	}
-
-	messages := []map[string]string{
-		{"role": "user", "content": req.Prompt},
-	}
-	payload := map[string]interface{}{
-		"model":    model,
-		"messages": messages,
-		"stream":   true,
-	}
-
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	url := fmt.Sprintf("%s/v1/chat/completions", strings.TrimRight(e.cfg.Endpoint, "/"))
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := e.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-
-	ch := make(chan StreamChunk)
-	go func() {
-		defer close(ch)
-		defer resp.Body.Close()
-
-		buf := make([]byte, 4096)
-		for {
-			n, err := resp.Body.Read(buf)
-			if n > 0 {
-				lines := strings.Split(string(buf[:n]), "\n")
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if !strings.HasPrefix(line, "data: ") {
-						continue
-					}
-					dataPayload := strings.TrimPrefix(line, "data: ")
-					if dataPayload == "[DONE]" {
-						ch <- StreamChunk{Done: true}
-						return
-					}
-					var chunkRes struct {
-						Choices []struct {
-							Delta struct {
-								Content string `json:"content"`
-							} `json:"delta"`
-						} `json:"choices"`
-					}
-					if err := json.Unmarshal([]byte(dataPayload), &chunkRes); err == nil && len(chunkRes.Choices) > 0 {
-						ch <- StreamChunk{
-							Text: chunkRes.Choices[0].Delta.Content,
-							Done: false,
-						}
-					}
-				}
-			}
-			if err != nil {
-				if err != io.EOF {
-					ch <- StreamChunk{Error: err}
-				}
-				return
-			}
-		}
-	}()
-
-	return ch, nil
+	return streamChatCompletions(ctx, e.httpClient, req, e.cfg.Endpoint, "", model)
 }
 
 func (e *OxiLLaMaEngine) Health(ctx context.Context) EngineHealth {
@@ -310,6 +232,12 @@ func (e *OxiLLaMaEngine) SupportedModels(ctx context.Context) ([]string, error) 
 	return e.cfg.Models, nil
 }
 
+// The lease manager and the model choice behind acquireLocalServer; tests replace them so no server starts.
+var (
+	oxiManager     = oxilease.Default
+	oxiBestFitting = oxilease.BestFitting
+)
+
 // acquireLocalServer holds a lease on the local OxiLLaMa server for the duration of one call, so the
 // server is started for the call and stopped once no session needs it. It does nothing for a remote
 // or non-default endpoint, or when DENDRITE_OXILLAMA_AUTOSTART=off.
@@ -323,10 +251,10 @@ func (e *OxiLLaMaEngine) acquireLocalServer(ctx context.Context) (func(), error)
 	if ep != want && ep != fmt.Sprintf("localhost:%d", oxilease.DefaultPort) {
 		return noop, nil
 	}
-	mgr := oxilease.Default()
+	mgr := oxiManager()
 	req := oxilease.Request{Holder: "engine:" + e.cfg.ID}
 	if !mgr.Running() { // only choose a model when one has to be started
-		m, err := oxilease.BestFitting(ctx)
+		m, err := oxiBestFitting(ctx)
 		if err != nil {
 			return noop, err
 		}

@@ -45,10 +45,7 @@ func (e *HuggingFaceTEIEngine) Generate(ctx context.Context, req CompletionReque
 	payload := map[string]interface{}{
 		"inputs": req.Prompt,
 	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
+	data, _ := json.Marshal(payload) // a map of strings and numbers always marshals
 
 	start := time.Now()
 	url := fmt.Sprintf("%s/embed", strings.TrimRight(e.cfg.Endpoint, "/"))

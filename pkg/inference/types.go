@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -298,9 +299,59 @@ func streamSSEChunks(resp *http.Response, parsePayload func(payload string) (Str
 				}
 			}
 			if err != nil {
+				if err != io.EOF {
+					ch <- StreamChunk{Error: err}
+				}
 				return
 			}
 		}
 	}()
 	return ch
+}
+
+// openAIChunk reads one data line of an OpenAI-style chat stream: "[DONE]" ends it, a delta with
+// content is a chunk, anything else is skipped.
+func openAIChunk(data string) (StreamChunk, bool, bool) {
+	if data == "[DONE]" {
+		return StreamChunk{Done: true}, true, true
+	}
+	var v struct {
+		Choices []struct {
+			Delta struct {
+				Content string `json:"content"`
+			} `json:"delta"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal([]byte(data), &v) != nil || len(v.Choices) == 0 {
+		return StreamChunk{}, false, false
+	}
+	return StreamChunk{Text: v.Choices[0].Delta.Content}, true, false
+}
+
+// streamChatCompletions posts a streaming chat request to an OpenAI-compatible server and streams
+// the deltas of its answer. apiKey, when set, is sent as a bearer token.
+func streamChatCompletions(ctx context.Context, client *http.Client, req CompletionRequest, endpoint, apiKey, model string) (<-chan StreamChunk, error) {
+	if strings.TrimSpace(req.Prompt) == "" {
+		return nil, ErrEmptyPrompt
+	}
+	payload := map[string]interface{}{
+		"model":    model,
+		"messages": []map[string]string{{"role": "user", "content": req.Prompt}},
+		"stream":   true,
+	}
+	data, _ := json.Marshal(payload) // a map of strings and booleans always marshals
+	url := fmt.Sprintf("%s/v1/chat/completions", strings.TrimRight(endpoint, "/"))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	return streamSSEChunks(resp, openAIChunk), nil
 }

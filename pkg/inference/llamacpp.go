@@ -57,10 +57,7 @@ func (e *LlamaCppEngine) Generate(ctx context.Context, req CompletionRequest) (*
 		payload["stop"] = req.Stop
 	}
 
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
+	data, _ := json.Marshal(payload) // a map of strings and numbers always marshals
 
 	start := time.Now()
 	url := fmt.Sprintf("%s/completion", strings.TrimRight(e.cfg.Endpoint, "/"))

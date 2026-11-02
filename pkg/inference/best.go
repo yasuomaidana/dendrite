@@ -44,6 +44,12 @@ func BestLocalModel(ctx context.Context, ollamaEndpoint, oxiEndpoint string) (Ch
 	if len(cands) == 0 {
 		return Choice{}, errors.New("no installed local model fits this machine's memory budget (see `dendrite spike models`)")
 	}
+	return pickBest(cands), nil
+}
+
+// pickBest returns the preferred candidate: highest score, then Ollama (GPU) over other engines,
+// then the larger model. cands must not be empty.
+func pickBest(cands []Choice) Choice {
 	best := cands[0]
 	for _, c := range cands[1:] {
 		switch {
@@ -59,5 +65,5 @@ func BestLocalModel(ctx context.Context, ollamaEndpoint, oxiEndpoint string) (Ch
 			best = c
 		}
 	}
-	return best, nil
+	return best
 }

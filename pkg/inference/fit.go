@@ -19,8 +19,8 @@ func EstimateModelGB(name string) (gb float64, ok bool) {
 	if m == nil {
 		return 0, false
 	}
-	b, err := strconv.ParseFloat(m[1], 64)
-	if err != nil || b <= 0 {
+	b, _ := strconv.ParseFloat(m[1], 64) // the pattern only matches digits
+	if b <= 0 {
 		return 0, false
 	}
 	return b * 0.6, true
