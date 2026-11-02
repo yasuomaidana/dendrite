@@ -61,3 +61,11 @@ func stringArgOr(args map[string]interface{}, key, def string) string {
 	}
 	return def
 }
+
+// boolArgOr reads a boolean argument, using def when it is absent.
+func boolArgOr(args map[string]interface{}, key string, def bool) bool {
+	if v, ok := args[key].(bool); ok {
+		return v
+	}
+	return def
+}

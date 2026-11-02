@@ -144,10 +144,7 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 			reqProject, _ := args["requester_project"].(string)
 			depProject, _ := args["dependency_project"].(string)
 			feature, _ := args["feature_requested"].(string)
-			fallback, ok := args["allow_fallback"].(bool)
-			if !ok {
-				fallback = true
-			}
+			fallback := boolArgOr(args, "allow_fallback", true)
 
 			coord, err := globalInteropCoordinator.CoordinateFeature(distcodebase.InteropRequest{
 				RequesterProject:  reqProject,
@@ -218,14 +215,8 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 		targetDir, _ := args["target_dir"].(string)
 		lang, _ := args["language"].(string)
 		isSat, _ := args["is_satellite"].(bool)
-		createPlane, okPlane := args["create_plane_project"].(bool)
-		if !okPlane {
-			createPlane = true
-		}
-		initGit, okGit := args["init_git"].(bool)
-		if !okGit {
-			initGit = true
-		}
+		createPlane := boolArgOr(args, "create_plane_project", true)
+		initGit := boolArgOr(args, "init_git", true)
 		desc, _ := args["description"].(string)
 
 		wsReg, _ := workspace.NewRegistry("", "")
