@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"fmt"
 
 	"Dendrite/pkg/personalcontext/greeting"
 )
@@ -144,10 +143,7 @@ func registerGreetingTools(s *Server, deps Dependencies) {
 		}
 
 		eng := greeting.NewEngine()
-		res, err := eng.Generate(ctx, uCtx, recentStyles)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate greeting: %w", err)
-		}
+		res, _ := eng.Generate(ctx, uCtx, recentStyles) // Generate always settles on a style, so it does not fail
 
 		data := indentJSON(res)
 

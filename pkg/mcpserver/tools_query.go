@@ -12,7 +12,12 @@ import (
 	"Dendrite/pkg/query/transpile"
 )
 
-var defaultMCPQuerySlicer = slice.NewIntentSlicer()
+// sliceRunner computes a reachability slice; tests give the query tool a runner with a prepared answer.
+type sliceRunner interface {
+	Slice(ctx context.Context, req slice.SliceRequest) (*slice.SliceResult, error)
+}
+
+var defaultMCPQuerySlicer sliceRunner = slice.NewIntentSlicer()
 var defaultMCPSwapper = swap.NewSubsystemSwapper()
 var defaultMCPTranspiler = transpile.NewRustTranspiler()
 var defaultMCPFuser = fuse.NewArchitectureFuser()
