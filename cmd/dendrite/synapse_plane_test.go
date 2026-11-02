@@ -12,16 +12,12 @@ import (
 )
 
 func TestSplitPlaneSuffix(t *testing.T) {
-	for in, want := range map[string][2]string{
+	testkit.Table(t, map[string][2]string{
 		"../git=git:peer@dgit": {"../git=git:peer", "DGIT"},
 		"/tmp/x":               {"/tmp/x", ""},
 		"/tmp/me@host/repo":    {"/tmp/me@host/repo", ""},
 		"/tmp/x@":              {"/tmp/x@", ""},
-	} {
-		rest, plane := splitPlaneSuffix(in)
-		testkit.Equal(t, in+" rest", rest, want[0])
-		testkit.Equal(t, in+" plane", plane, want[1])
-	}
+	}, func(in string) [2]string { rest, plane := splitPlaneSuffix(in); return [2]string{rest, plane} })
 }
 
 func TestSynapseCommand_PlaneBinding(t *testing.T) {

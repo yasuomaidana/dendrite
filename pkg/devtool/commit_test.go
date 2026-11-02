@@ -20,6 +20,7 @@ func isolateEnvironment(t *testing.T) {
 	t.Setenv("PLANE_PROJECT_ID", "isolated-proj")
 	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", "http://127.0.0.1:59997")
 	t.Setenv("DENDRITE_COMMIT_PREFER_OXILLAMA", "false")
+	t.Setenv("DENDRITE_TICKET_GUARD", "off")
 }
 
 func TestFormatTicketCommit(t *testing.T) {
@@ -125,6 +126,7 @@ func TestGenerateLocalCommitMessage_Fallback(t *testing.T) {
 }
 
 func TestExecuteCommit_DryRunAndActual(t *testing.T) {
+	isolateEnvironment(t)
 	tempDir := t.TempDir()
 
 	// Initialize git repo in tempDir
@@ -267,6 +269,7 @@ func TestGenerateLocalCommitMessage_LiteLLM(t *testing.T) {
 }
 
 func TestExecuteCommit_UseLocalModel_And_SpecificFiles(t *testing.T) {
+	isolateEnvironment(t)
 	tempDir := t.TempDir()
 
 	_ = exec.Command("git", "-C", tempDir, "init").Run()
@@ -349,6 +352,7 @@ func TestGenerateLocalCommitMessage_OxiLLaMaCLI(t *testing.T) {
 }
 
 func TestDevTool_ErrorBranches(t *testing.T) {
+	isolateEnvironment(t)
 	ctx := context.Background()
 
 	// ProbeOllama with unreachable port

@@ -129,3 +129,15 @@ func TestBuildReturnsTheValueOrStopsTheTest(t *testing.T) {
 		t.Error("Build must stop the test with the error")
 	}
 }
+
+func TestTableChecksEveryInput(t *testing.T) {
+	r := &recorder{}
+	Table(r, map[string]int{"a": 1, "bb": 2}, func(in string) int { return len(in) })
+	if r.msg != "a = 1, want 1" && r.msg != "" {
+		t.Fatalf("unexpected report %q", r.msg)
+	}
+	Table(r, map[string]int{"ccc": 1}, func(in string) int { return len(in) })
+	if r.msg != "ccc = 3, want 1" {
+		t.Fatalf("mismatch reported %q", r.msg)
+	}
+}

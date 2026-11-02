@@ -71,30 +71,26 @@ func TestHostThermalSensor(t *testing.T) {
 		}
 	})
 
-	t.Run("returns ErrThermalSensorUnavailable when powermetrics fails", func(t *testing.T) {
-		sensor := NewHostThermalSensor()
-		sensor.SysfsGlob = "/nonexistent/sysfs/*"
-		sensor.CommandFunc = func(ctx context.Context, name string, arg ...string) *exec.Cmd {
-			return exec.CommandContext(ctx, "false")
-		}
-		_, err := sensor.GetSoCTemperature(ctx)
-		if !errors.Is(err, ErrThermalSensorUnavailable) {
-			t.Fatalf("expected ErrThermalSensorUnavailable, got: %v", err)
-		}
-	})
-
-	t.Run("returns ErrThermalSensorUnavailable when powermetrics output has no temperature", func(t *testing.T) {
-		sensor := &HostThermalSensor{
-			SysfsGlob: "/nonexistent/sysfs/*",
-			CommandFunc: func(ctx context.Context, name string, arg ...string) *exec.Cmd {
-				return exec.CommandContext(ctx, "echo", "no temperature info")
-			},
-		}
-		_, err := sensor.GetSoCTemperature(ctx)
-		if !errors.Is(err, ErrThermalSensorUnavailable) {
-			t.Fatalf("expected ErrThermalSensorUnavailable, got: %v", err)
-		}
-	})
+	unavailableTests := []struct {
+		name string
+		cmd  []string
+	}{
+		{"returns ErrThermalSensorUnavailable when powermetrics fails", []string{"false"}},
+		{"returns ErrThermalSensorUnavailable when powermetrics output has no temperature", []string{"echo", "no temperature info"}},
+	}
+	for _, tc := range unavailableTests {
+		t.Run(tc.name, func(t *testing.T) {
+			sensor := NewHostThermalSensor()
+			sensor.SysfsGlob = "/nonexistent/sysfs/*"
+			sensor.CommandFunc = func(ctx context.Context, name string, arg ...string) *exec.Cmd {
+				return exec.CommandContext(ctx, tc.cmd[0], tc.cmd[1:]...)
+			}
+			_, err := sensor.GetSoCTemperature(ctx)
+			if !errors.Is(err, ErrThermalSensorUnavailable) {
+				t.Fatalf("expected ErrThermalSensorUnavailable, got: %v", err)
+			}
+		})
+	}
 }
 
 func TestParsePowermetricsOutput(t *testing.T) {

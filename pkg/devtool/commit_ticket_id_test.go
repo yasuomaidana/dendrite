@@ -7,7 +7,7 @@ import (
 )
 
 func TestExtractTicketIDAndTitleAnyProjectIdentifier(t *testing.T) {
-	for in, want := range map[string][2]string{
+	testkit.Table(t, map[string][2]string{
 		"[DEN-324] Fix resolver":       {"DEN-324", "Fix resolver"},
 		"[KAKEBO-12] Import ledger":    {"KAKEBO-12", "Import ledger"},
 		"DRAG-7 index tickets":         {"DRAG-7", "index tickets"},
@@ -17,9 +17,5 @@ func TestExtractTicketIDAndTitleAnyProjectIdentifier(t *testing.T) {
 		"[DEND-202] Add graph node":    {"DEND-202", "Add graph node"},
 		"DEN-303 Fix without brackets": {"DEN-303", "Fix without brackets"},
 		"No ticket in this title":      {"", "No ticket in this title"},
-	} {
-		id, title := extractTicketIDAndTitle(in)
-		testkit.Equal(t, in+" id", id, want[0])
-		testkit.Equal(t, in+" title", title, want[1])
-	}
+	}, func(in string) [2]string { id, title := extractTicketIDAndTitle(in); return [2]string{id, title} })
 }

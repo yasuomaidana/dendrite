@@ -67,31 +67,45 @@ func TestReconcileStatesFixesDriftAndOrdersNewStates(t *testing.T) {
 
 func TestReconcileStatesReportsEachWriteThatFails(t *testing.T) {
 	ctx := context.Background()
-	t.Run("create", func(t *testing.T) {
-		sp := newStatesPlane(t)
-		sp.postStatus = 500
-		if _, err := planeAt(t, sp.URL).ReconcileStates(ctx, "", false); err == nil || !strings.Contains(err.Error(), "create state") {
-			t.Fatalf("err = %v", err)
-		}
-	})
-	t.Run("order", func(t *testing.T) {
-		sp := newStatesPlane(t)
-		sp.patchStatus = 500
-		if _, err := planeAt(t, sp.URL).ReconcileStates(ctx, "", false); err == nil || !strings.Contains(err.Error(), "order state") {
-			t.Fatalf("err = %v", err)
-		}
-	})
-	t.Run("update", func(t *testing.T) {
+	allDrifted := func() []PlaneState {
 		all := make([]PlaneState, len(CanonicalStates))
 		for i, s := range CanonicalStates {
 			all[i] = PlaneState{ID: s.Name, Name: s.Name, Group: "wrong", Color: s.Color, Sequence: s.Sequence}
 		}
-		sp := newStatesPlane(t, all...)
-		sp.patchStatus = 500
-		if _, err := planeAt(t, sp.URL).ReconcileStates(ctx, "", false); err == nil || !strings.Contains(err.Error(), "update state") {
-			t.Fatalf("err = %v", err)
-		}
-	})
+		return all
+	}
+	tests := []struct {
+		name     string
+		existing []PlaneState
+		setErr   func(sp *statesPlane)
+		wantErr  string
+	}{
+		{
+			name:    "create",
+			setErr:  func(sp *statesPlane) { sp.postStatus = 500 },
+			wantErr: "create state",
+		},
+		{
+			name:    "order",
+			setErr:  func(sp *statesPlane) { sp.patchStatus = 500 },
+			wantErr: "order state",
+		},
+		{
+			name:     "update",
+			existing: allDrifted(),
+			setErr:   func(sp *statesPlane) { sp.patchStatus = 500 },
+			wantErr:  "update state",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sp := newStatesPlane(t, tc.existing...)
+			tc.setErr(sp)
+			if _, err := planeAt(t, sp.URL).ReconcileStates(ctx, "", false); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err = %v", err)
+			}
+		})
+	}
 	t.Run("an unreadable state list", func(t *testing.T) {
 		s := statusServer(500, "")
 		defer s.Close()

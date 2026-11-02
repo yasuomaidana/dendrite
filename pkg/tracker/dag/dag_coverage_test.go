@@ -110,131 +110,126 @@ func TestGraph_AdditionalCoverage(t *testing.T) {
 }
 
 func TestGraph_SmartSelect_ExtendedCoverage(t *testing.T) {
-	t.Run("PreferredTicket_ActiveAndExternalBlocker", func(t *testing.T) {
-		g := NewGraph()
-		g.AddNode(&Node{
-			ID:        "ACTIVE",
-			Status:    tracker.StatusInProgress,
-			BlockedBy: []string{"EXTERNAL_TICKET"},
+	cases := []struct {
+		name      string
+		nodes     []*Node
+		preferred string
+		assert    func(t *testing.T, res *SelectionResult, err error)
+	}{
+		{
+			name: "PreferredTicket_ActiveAndExternalBlocker",
+			nodes: []*Node{
+				{ID: "ACTIVE", Status: tracker.StatusInProgress, BlockedBy: []string{"EXTERNAL_TICKET"}},
+			},
+			preferred: "ACTIVE",
+			assert: func(t *testing.T, res *SelectionResult, err error) {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if !res.IsActive {
+					t.Errorf("expected IsActive to be true")
+				}
+				if !res.IsBlocked {
+					t.Errorf("expected IsBlocked to be true due to external blocker")
+				}
+				if len(res.BlockingTickets) != 1 || res.BlockingTickets[0] != "EXTERNAL_TICKET" {
+					t.Errorf("unexpected blocking tickets: %v", res.BlockingTickets)
+				}
+			},
+		},
+		{
+			name: "PreferredTicket_ResolvedBlockers",
+			nodes: []*Node{
+				{ID: "REV", Status: tracker.StatusInReview},
+				{ID: "CANC", Status: tracker.StatusCancelled},
+				{ID: "CHILD", Status: tracker.StatusTodo, BlockedBy: []string{"REV", "CANC"}},
+			},
+			preferred: "CHILD",
+			assert: func(t *testing.T, res *SelectionResult, err error) {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if res.IsBlocked {
+					t.Errorf("expected child not to be blocked by review/cancelled tickets")
+				}
+			},
+		},
+		{
+			name: "InProgressTicket_AutoSelect",
+			nodes: []*Node{
+				{ID: "IP1", Status: tracker.StatusInProgress, Priority: PriorityLow},
+				{ID: "IP2", Status: tracker.StatusInProgress, Priority: PriorityUrgent},
+				{ID: "TODO1", Status: tracker.StatusTodo, Priority: PriorityUrgent},
+			},
+			assert: func(t *testing.T, res *SelectionResult, err error) {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if !res.IsActive || res.SelectedTicket.ID != "IP2" {
+					t.Errorf("expected highest priority in-progress ticket IP2, got %v", res.SelectedTicket.ID)
+				}
+			},
+		},
+		{
+			name: "CandidateFilter_And_TieBreaker",
+			nodes: []*Node{
+				{ID: "D1", Status: tracker.StatusDone},
+				{ID: "IR1", Status: tracker.StatusInReview},
+				{ID: "BL1", Status: tracker.StatusBlocked},
+				{ID: "CA1", Status: tracker.StatusCancelled},
+				{ID: "ACT1", SequenceID: 10, Status: tracker.StatusTodo, Priority: PriorityUrgent, BlockedBy: []string{"IR1", "CA1"}},
+				{ID: "ACT2", SequenceID: 5, Status: tracker.StatusTodo, Priority: PriorityUrgent},
+			},
+			assert: func(t *testing.T, res *SelectionResult, err error) {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if res.SelectedTicket.ID != "ACT2" {
+					t.Errorf("expected tie-breaker to select ACT2, got %s", res.SelectedTicket.ID)
+				}
+			},
+		},
+		{
+			name: "AllBlockedCandidates_SortedByBlockerCount",
+			nodes: []*Node{
+				{ID: "BLOCKED_HEAVY", Status: tracker.StatusTodo, BlockedBy: []string{"X1", "X2", "X3"}},
+				{ID: "BLOCKED_LIGHT", Status: tracker.StatusTodo, BlockedBy: []string{"X1"}},
+			},
+			assert: func(t *testing.T, res *SelectionResult, err error) {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if res.SelectedTicket.ID != "BLOCKED_LIGHT" {
+					t.Errorf("expected BLOCKED_LIGHT with fewest blockers, got %s", res.SelectedTicket.ID)
+				}
+				if !res.IsBlocked {
+					t.Errorf("expected IsBlocked to be true")
+				}
+			},
+		},
+		{
+			name: "AllCompleted_Error",
+			nodes: []*Node{
+				{ID: "D1", Status: tracker.StatusDone},
+				{ID: "D2", Status: tracker.StatusInReview},
+				{ID: "D3", Status: tracker.StatusCancelled},
+			},
+			assert: func(t *testing.T, res *SelectionResult, err error) {
+				if err == nil {
+					t.Fatalf("expected error when all tickets are completed/unselectable")
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGraph()
+			for _, n := range tc.nodes {
+				g.AddNode(n)
+			}
+			res, err := g.SmartSelect(tc.preferred)
+			tc.assert(t, res, err)
 		})
-
-		res, err := g.SmartSelect("ACTIVE")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !res.IsActive {
-			t.Errorf("expected IsActive to be true")
-		}
-		if !res.IsBlocked {
-			t.Errorf("expected IsBlocked to be true due to external blocker")
-		}
-		if len(res.BlockingTickets) != 1 || res.BlockingTickets[0] != "EXTERNAL_TICKET" {
-			t.Errorf("unexpected blocking tickets: %v", res.BlockingTickets)
-		}
-	})
-
-	t.Run("PreferredTicket_ResolvedBlockers", func(t *testing.T) {
-		g := NewGraph()
-		g.AddNode(&Node{ID: "REV", Status: tracker.StatusInReview})
-		g.AddNode(&Node{ID: "CANC", Status: tracker.StatusCancelled})
-		g.AddNode(&Node{
-			ID:        "CHILD",
-			Status:    tracker.StatusTodo,
-			BlockedBy: []string{"REV", "CANC"},
-		})
-
-		res, err := g.SmartSelect("CHILD")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if res.IsBlocked {
-			t.Errorf("expected child not to be blocked by review/cancelled tickets")
-		}
-	})
-
-	t.Run("InProgressTicket_AutoSelect", func(t *testing.T) {
-		g := NewGraph()
-		g.AddNode(&Node{ID: "IP1", Status: tracker.StatusInProgress, Priority: PriorityLow})
-		g.AddNode(&Node{ID: "IP2", Status: tracker.StatusInProgress, Priority: PriorityUrgent})
-		g.AddNode(&Node{ID: "TODO1", Status: tracker.StatusTodo, Priority: PriorityUrgent})
-
-		res, err := g.SmartSelect("")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !res.IsActive || res.SelectedTicket.ID != "IP2" {
-			t.Errorf("expected highest priority in-progress ticket IP2, got %v", res.SelectedTicket.ID)
-		}
-	})
-
-	t.Run("CandidateFilter_And_TieBreaker", func(t *testing.T) {
-		g := NewGraph()
-		// Filter out Done, InReview, Blocked, Cancelled
-		g.AddNode(&Node{ID: "D1", Status: tracker.StatusDone})
-		g.AddNode(&Node{ID: "IR1", Status: tracker.StatusInReview})
-		g.AddNode(&Node{ID: "BL1", Status: tracker.StatusBlocked})
-		g.AddNode(&Node{ID: "CA1", Status: tracker.StatusCancelled})
-
-		// Candidate unblocked by InReview and Cancelled
-		g.AddNode(&Node{
-			ID:         "ACT1",
-			SequenceID: 10,
-			Status:     tracker.StatusTodo,
-			Priority:   PriorityUrgent,
-			BlockedBy:  []string{"IR1", "CA1"},
-		})
-		// Candidate with same priority/score but lower sequence ID
-		g.AddNode(&Node{
-			ID:         "ACT2",
-			SequenceID: 5,
-			Status:     tracker.StatusTodo,
-			Priority:   PriorityUrgent,
-		})
-
-		res, err := g.SmartSelect("")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		// ACT2 has lower SequenceID (5 < 10) so it wins the tie-breaker
-		if res.SelectedTicket.ID != "ACT2" {
-			t.Errorf("expected tie-breaker to select ACT2, got %s", res.SelectedTicket.ID)
-		}
-	})
-
-	t.Run("AllBlockedCandidates_SortedByBlockerCount", func(t *testing.T) {
-		g := NewGraph()
-		g.AddNode(&Node{
-			ID:        "BLOCKED_HEAVY",
-			Status:    tracker.StatusTodo,
-			BlockedBy: []string{"X1", "X2", "X3"},
-		})
-		g.AddNode(&Node{
-			ID:        "BLOCKED_LIGHT",
-			Status:    tracker.StatusTodo,
-			BlockedBy: []string{"X1"},
-		})
-
-		res, err := g.SmartSelect("")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if res.SelectedTicket.ID != "BLOCKED_LIGHT" {
-			t.Errorf("expected BLOCKED_LIGHT with fewest blockers, got %s", res.SelectedTicket.ID)
-		}
-		if !res.IsBlocked {
-			t.Errorf("expected IsBlocked to be true")
-		}
-	})
-
-	t.Run("AllCompleted_Error", func(t *testing.T) {
-		g := NewGraph()
-		g.AddNode(&Node{ID: "D1", Status: tracker.StatusDone})
-		g.AddNode(&Node{ID: "D2", Status: tracker.StatusInReview})
-		g.AddNode(&Node{ID: "D3", Status: tracker.StatusCancelled})
-
-		_, err := g.SmartSelect("")
-		if err == nil {
-			t.Fatalf("expected error when all tickets are completed/unselectable")
-		}
-	})
+	}
 }

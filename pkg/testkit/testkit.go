@@ -94,3 +94,11 @@ func Equal[V comparable](t T, label string, got, want V) {
 		t.Errorf("%s = %v, want %v", label, got, want)
 	}
 }
+
+// Table checks fn against every input of cases and reports each mismatch without stopping the test.
+func Table[V comparable](t T, cases map[string]V, fn func(input string) V) {
+	t.Helper()
+	for input, want := range cases {
+		Equal(t, input, fn(input), want)
+	}
+}
