@@ -272,17 +272,14 @@ func TestCatalog_ConcurrencyRaceFree(t *testing.T) {
 }
 
 func TestReasoningTierForScore_AllBranches(t *testing.T) {
-	if tier := reasoningTierForScore("custom-14b-instruct", 90); tier != 3 {
-		t.Errorf("expected 3 for 14b, got %d", tier)
-	}
-	if tier := reasoningTierForScore("small", 10); tier != 1 {
-		t.Errorf("expected 1 for score 10, got %d", tier)
-	}
-	if tier := reasoningTierForScore("frontier", 120); tier != 5 {
-		t.Errorf("expected 5 for score 120, got %d", tier)
-	}
-	if tier := reasoningTierForScore("mid", 60); tier != 3 {
-		t.Errorf("expected 3 for score 60, got %d", tier)
+	for _, c := range []struct {
+		name  string
+		score int
+		want  int
+	}{{"custom-14b-instruct", 90, 3}, {"small", 10, 1}, {"frontier", 120, 5}, {"mid", 60, 3}} {
+		if tier := reasoningTierForScore(c.name, c.score); tier != c.want {
+			t.Errorf("%s at score %d: tier %d, want %d", c.name, c.score, tier, c.want)
+		}
 	}
 }
 

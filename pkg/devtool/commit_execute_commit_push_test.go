@@ -98,26 +98,6 @@ func TestPushAfterCommit_RemoteCommandError(t *testing.T) {
 	}
 }
 
-func TestExtractTicketIDAndTitle(t *testing.T) {
-	tests := []struct {
-		name          string
-		expectedID    string
-		expectedTitle string
-	}{
-		{"[DEN-101] Fix bug in parser", "DEN-101", "Fix bug in parser"},
-		{"[DEND-202] Add graph node", "DEND-202", "Add graph node"},
-		{"DEN-303 Fix without brackets", "DEN-303", "Fix without brackets"},
-		{"No ticket in this title", "", "No ticket in this title"},
-	}
-
-	for _, tt := range tests {
-		id, title := extractTicketIDAndTitle(tt.name)
-		if id != tt.expectedID || title != tt.expectedTitle {
-			t.Errorf("extractTicketIDAndTitle(%q) = (%q, %q); want (%q, %q)", tt.name, id, title, tt.expectedID, tt.expectedTitle)
-		}
-	}
-}
-
 func TestInferScopeFromFiles(t *testing.T) {
 	tests := []struct {
 		files    []string

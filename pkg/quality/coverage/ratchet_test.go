@@ -146,26 +146,23 @@ func TestDetectModulePath(t *testing.T) {
 }
 
 func TestNormalizePackage(t *testing.T) {
-	if p := normalizePackage("pkg/foo", ""); p != "pkg/foo" {
-		t.Fatalf("expected pkg/foo, got %s", p)
-	}
-	if p := normalizePackage("Dendrite", "Dendrite"); p != "." {
-		t.Fatalf("expected ., got %s", p)
-	}
-	if p := normalizePackage("Dendrite/pkg/foo", "Dendrite"); p != "pkg/foo" {
-		t.Fatalf("expected pkg/foo, got %s", p)
-	}
-	if p := normalizePackage("other/pkg/foo", "Dendrite"); p != "other/pkg/foo" {
-		t.Fatalf("expected other/pkg/foo, got %s", p)
+	for _, c := range []struct{ pkg, module, want string }{
+		{"pkg/foo", "", "pkg/foo"},
+		{"Dendrite", "Dendrite", "."},
+		{"Dendrite/pkg/foo", "Dendrite", "pkg/foo"},
+		{"other/pkg/foo", "Dendrite", "other/pkg/foo"},
+	} {
+		if p := normalizePackage(c.pkg, c.module); p != c.want {
+			t.Errorf("normalizePackage(%q, %q) = %q, want %q", c.pkg, c.module, p, c.want)
+		}
 	}
 }
 
 func TestRoundPct(t *testing.T) {
-	if r := roundPct(85.24); r != 85.2 {
-		t.Fatalf("expected 85.2, got %v", r)
-	}
-	if r := roundPct(85.26); r != 85.3 {
-		t.Fatalf("expected 85.3, got %v", r)
+	for in, want := range map[float64]float64{85.24: 85.2, 85.26: 85.3} {
+		if r := roundPct(in); r != want {
+			t.Errorf("roundPct(%v) = %v, want %v", in, r, want)
+		}
 	}
 }
 

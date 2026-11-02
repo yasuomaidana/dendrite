@@ -248,25 +248,42 @@ func TestRun_UpdateSaveErrorIsReturned(t *testing.T) {
 	}
 }
 
-func TestRun_NewPackageMustStartAt100(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module Dendrite\n"), 0o644); err != nil {
-		t.Fatal(err)
+func TestRun_RatchetFailureMessages(t *testing.T) {
+	cases := []struct {
+		name     string
+		baseline float64
+		goTest   string
+		want     string
+	}{
+		{"new package must start at 100", 100,
+			"ok  \tDendrite/pkg/a\t0.1s\tcoverage: 100.0% of statements\nok  \tDendrite/pkg/b\t0.1s\tcoverage: 60.0% of statements\n",
+			"new packages must start at 100.0%"},
+		{"existing package drop is reported", 90,
+			"ok  \tDendrite/pkg/a\t0.1s\tcoverage: 80.0% of statements\n",
+			"pkg/a: 80.0% < 90.0% (dropped by 10.0%)"},
 	}
-	path := filepath.Join(dir, "baseline.json")
-	if err := SaveBaseline(path, map[string]float64{"pkg/a": 100}); err != nil {
-		t.Fatal(err)
-	}
-	var out, errOut bytes.Buffer
-	res, err := Run(context.Background(), Options{
-		RepoDir: dir, BaselinePath: path, Ratchet: true, Stdout: &out, Stderr: &errOut,
-		CommandRunner: scriptedGoTest("ok  \tDendrite/pkg/a\t0.1s\tcoverage: 100.0% of statements\nok  \tDendrite/pkg/b\t0.1s\tcoverage: 60.0% of statements\n"),
-	})
-	if err != nil || res.Passed {
-		t.Fatalf("expected ratchet failure for a new package below 100%%, got res=%v err=%v", res, err)
-	}
-	if !bytes.Contains(errOut.Bytes(), []byte("new packages must start at 100.0%")) {
-		t.Fatalf("expected new-package message, got: %s", errOut.String())
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module Dendrite\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "baseline.json")
+			if err := SaveBaseline(path, map[string]float64{"pkg/a": c.baseline}); err != nil {
+				t.Fatal(err)
+			}
+			var out, errOut bytes.Buffer
+			res, err := Run(context.Background(), Options{
+				RepoDir: dir, BaselinePath: path, Ratchet: true, Stdout: &out, Stderr: &errOut,
+				CommandRunner: scriptedGoTest(c.goTest),
+			})
+			if err != nil || res.Passed {
+				t.Fatalf("expected ratchet failure, got res=%v err=%v", res, err)
+			}
+			if !bytes.Contains(errOut.Bytes(), []byte(c.want)) {
+				t.Fatalf("expected %q, got: %s", c.want, errOut.String())
+			}
+		})
 	}
 }
 
@@ -290,27 +307,5 @@ func TestRun_UpdateCannotWriteBaseline(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected an error when the baseline cannot be written")
-	}
-}
-
-func TestRun_ExistingPackageDropReported(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module Dendrite\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, "baseline.json")
-	if err := SaveBaseline(path, map[string]float64{"pkg/a": 90}); err != nil {
-		t.Fatal(err)
-	}
-	var out, errOut bytes.Buffer
-	res, err := Run(context.Background(), Options{
-		RepoDir: dir, BaselinePath: path, Ratchet: true, Stdout: &out, Stderr: &errOut,
-		CommandRunner: scriptedGoTest("ok  \tDendrite/pkg/a\t0.1s\tcoverage: 80.0% of statements\n"),
-	})
-	if err != nil || res.Passed {
-		t.Fatalf("expected ratchet failure, got res=%v err=%v", res, err)
-	}
-	if !bytes.Contains(errOut.Bytes(), []byte("pkg/a: 80.0% < 90.0% (dropped by 10.0%)")) {
-		t.Fatalf("expected drop report, got: %s", errOut.String())
 	}
 }

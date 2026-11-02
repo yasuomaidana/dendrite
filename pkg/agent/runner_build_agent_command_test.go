@@ -4,212 +4,88 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 )
 
+// agentBase fills the fields every agent configuration shares.
+func agentBase(typ AgentType, mutate func(*AgentConfig)) AgentConfig {
+	cfg := AgentConfig{
+		Type:           typ,
+		LiteLLMBaseURL: "http://localhost:4000/v1",
+		VirtualAPIKey:  "sk-test",
+		WorkspaceDir:   "/workspace",
+	}
+	mutate(&cfg)
+	return cfg
+}
+
 func TestBuildAgentCommand(t *testing.T) {
-	t.Run("aider command with ticket and map tokens", func(t *testing.T) {
-		cfg := AgentConfig{
-			Type:            AgentAider,
-			LiteLLMBaseURL:  "http://localhost:4000/v1",
-			VirtualAPIKey:   "sk-test",
-			Model:           "copilot-sonnet",
-			TicketID:        "DEN-006",
-			WorkspaceDir:    "/workspace",
-			MapTokens:       1024,
-			TaskDescription: "Refactor pkg/ast",
-			ExtraArgs:       []string{"--auto-commits"},
-		}
-
-		cmd, err := BuildAgentCommand(cfg)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		expected := []string{
-			"aider",
-			"--openai-api-base", "http://localhost:4000/v1",
-			"--model", "copilot-sonnet",
-			"--message-template", "[DEN-006] {msg}",
-			"--map-tokens", "1024",
-			"--message", "Refactor pkg/ast",
-			"--auto-commits",
-		}
-
-		if len(cmd) != len(expected) {
-			t.Fatalf("expected len %d, got %d: %v", len(expected), len(cmd), cmd)
-		}
-		for i, v := range expected {
-			if cmd[i] != v {
-				t.Errorf("at index %d: expected %s, got %s", i, v, cmd[i])
+	cases := []struct {
+		name string
+		cfg  AgentConfig
+		want []string
+	}{
+		{"aider command with ticket and map tokens", agentBase(AgentAider, func(c *AgentConfig) {
+			c.Model, c.TicketID, c.MapTokens = "copilot-sonnet", "DEN-006", 1024
+			c.TaskDescription, c.ExtraArgs = "Refactor pkg/ast", []string{"--auto-commits"}
+		}), []string{
+			"aider", "--openai-api-base", "http://localhost:4000/v1", "--model", "copilot-sonnet",
+			"--message-template", "[DEN-006] {msg}", "--map-tokens", "1024",
+			"--message", "Refactor pkg/ast", "--auto-commits",
+		}},
+		{"openhands command with sandbox flag", agentBase(AgentOpenHands, func(c *AgentConfig) {
+			c.TaskDescription, c.Sandbox = "Fix issue 42", true
+		}), []string{"openhands", "--workspace", "/workspace", "--task", "Fix issue 42", "--sandbox"}},
+		{"opencode command with model", agentBase(AgentOpenCode, func(c *AgentConfig) {
+			c.Model, c.TaskDescription = "local-qwen-coder", "Run unit tests"
+		}), []string{"opencode", "exec", "--workspace", "/workspace", "--prompt", "Run unit tests", "--model", "local-qwen-coder"}},
+		{"agy command with prompt ticket and sandbox", agentBase(AgentAGY, func(c *AgentConfig) {
+			c.Model, c.TicketID, c.TaskDescription = "gemini-2.5-pro", "DEN-028", "Integrate AGY CLI"
+			c.Sandbox, c.ExtraArgs = true, []string{"--effort", "high"}
+		}), []string{
+			"agy", "--add-dir", "/workspace", "--model", "gemini-2.5-pro", "--sandbox",
+			"--dangerously-skip-permissions", "-p", "[DEN-028] Integrate AGY CLI", "--effort", "high",
+		}},
+		{"copilot command with prompt and ticket", agentBase(AgentCopilot, func(c *AgentConfig) {
+			c.Model, c.TicketID, c.TaskDescription = "claude-sonnet-4.5", "DEN-072", "Develop copilot runtime adapter"
+		}), []string{
+			"copilot", "-C", "/workspace", "--model", "claude-sonnet-4.5", "--allow-all",
+			"-p", "[DEN-072] Develop copilot runtime adapter",
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cmd, err := BuildAgentCommand(c.cfg)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
-		}
-	})
-
-	t.Run("openhands command with sandbox flag", func(t *testing.T) {
-		cfg := AgentConfig{
-			Type:            AgentOpenHands,
-			LiteLLMBaseURL:  "http://localhost:4000/v1",
-			VirtualAPIKey:   "sk-test",
-			WorkspaceDir:    "/workspace",
-			TaskDescription: "Fix issue 42",
-			Sandbox:         true,
-		}
-
-		cmd, err := BuildAgentCommand(cfg)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		expected := []string{
-			"openhands",
-			"--workspace", "/workspace",
-			"--task", "Fix issue 42",
-			"--sandbox",
-		}
-
-		if len(cmd) != len(expected) {
-			t.Fatalf("expected len %d, got %d: %v", len(expected), len(cmd), cmd)
-		}
-		for i, v := range expected {
-			if cmd[i] != v {
-				t.Errorf("at index %d: expected %s, got %s", i, v, cmd[i])
+			if !reflect.DeepEqual(cmd, c.want) {
+				t.Fatalf("command = %v, want %v", cmd, c.want)
 			}
-		}
-	})
-
-	t.Run("opencode command with model", func(t *testing.T) {
-		cfg := AgentConfig{
-			Type:            AgentOpenCode,
-			LiteLLMBaseURL:  "http://localhost:4000/v1",
-			VirtualAPIKey:   "sk-test",
-			WorkspaceDir:    "/workspace",
-			Model:           "local-qwen-coder",
-			TaskDescription: "Run unit tests",
-		}
-
-		cmd, err := BuildAgentCommand(cfg)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		expected := []string{
-			"opencode", "exec",
-			"--workspace", "/workspace",
-			"--prompt", "Run unit tests",
-			"--model", "local-qwen-coder",
-		}
-
-		if len(cmd) != len(expected) {
-			t.Fatalf("expected len %d, got %d: %v", len(expected), len(cmd), cmd)
-		}
-		for i, v := range expected {
-			if cmd[i] != v {
-				t.Errorf("at index %d: expected %s, got %s", i, v, cmd[i])
-			}
-		}
-	})
-
-	t.Run("agy command with prompt ticket and sandbox", func(t *testing.T) {
-		cfg := AgentConfig{
-			Type:            AgentAGY,
-			LiteLLMBaseURL:  "http://localhost:4000/v1",
-			VirtualAPIKey:   "sk-test",
-			WorkspaceDir:    "/workspace",
-			Model:           "gemini-2.5-pro",
-			TicketID:        "DEN-028",
-			TaskDescription: "Integrate AGY CLI",
-			Sandbox:         true,
-			ExtraArgs:       []string{"--effort", "high"},
-		}
-
-		cmd, err := BuildAgentCommand(cfg)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		expected := []string{
-			"agy",
-			"--add-dir", "/workspace",
-			"--model", "gemini-2.5-pro",
-			"--sandbox",
-			"--dangerously-skip-permissions",
-			"-p", "[DEN-028] Integrate AGY CLI",
-			"--effort", "high",
-		}
-
-		if len(cmd) != len(expected) {
-			t.Fatalf("expected len %d, got %d: %v", len(expected), len(cmd), cmd)
-		}
-		for i, v := range expected {
-			if cmd[i] != v {
-				t.Errorf("at index %d: expected %s, got %s", i, v, cmd[i])
-			}
-		}
-	})
+		})
+	}
 
 	t.Run("copilot environment", func(t *testing.T) {
-		cfg := AgentConfig{
-			Type:           AgentCopilot,
-			LiteLLMBaseURL: "http://localhost:4000/v1",
-			VirtualAPIKey:  "ghp_mock_token",
-			Model:          "claude-sonnet-4.5",
-			WorkspaceDir:   "/workspace",
-		}
-
+		cfg := agentBase(AgentCopilot, func(c *AgentConfig) {
+			c.VirtualAPIKey, c.Model = "ghp_mock_token", "claude-sonnet-4.5"
+		})
 		env, err := BuildAgentEnv(cfg)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if env["COPILOT_API_KEY"] != "ghp_mock_token" {
-			t.Errorf("expected COPILOT_API_KEY match, got %s", env["COPILOT_API_KEY"])
-		}
-		if env["GITHUB_TOKEN"] != "ghp_mock_token" {
-			t.Errorf("expected GITHUB_TOKEN match, got %s", env["GITHUB_TOKEN"])
-		}
-		if env["COPILOT_MODEL"] != "claude-sonnet-4.5" {
-			t.Errorf("expected COPILOT_MODEL claude-sonnet-4.5, got %s", env["COPILOT_MODEL"])
-		}
-	})
-
-	t.Run("copilot command with prompt and ticket", func(t *testing.T) {
-		cfg := AgentConfig{
-			Type:            AgentCopilot,
-			LiteLLMBaseURL:  "http://localhost:4000/v1",
-			VirtualAPIKey:   "sk-test",
-			WorkspaceDir:    "/workspace",
-			Model:           "claude-sonnet-4.5",
-			TicketID:        "DEN-072",
-			TaskDescription: "Develop copilot runtime adapter",
-		}
-
-		cmd, err := BuildAgentCommand(cfg)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		expected := []string{
-			"copilot",
-			"-C", "/workspace",
-			"--model", "claude-sonnet-4.5",
-			"--allow-all",
-			"-p", "[DEN-072] Develop copilot runtime adapter",
-		}
-
-		if len(cmd) != len(expected) {
-			t.Fatalf("expected len %d, got %d: %v", len(expected), len(cmd), cmd)
-		}
-		for i, v := range expected {
-			if cmd[i] != v {
-				t.Errorf("at index %d: expected %s, got %s", i, v, cmd[i])
+		for key, want := range map[string]string{
+			"COPILOT_API_KEY": "ghp_mock_token", "GITHUB_TOKEN": "ghp_mock_token", "COPILOT_MODEL": "claude-sonnet-4.5",
+		} {
+			if env[key] != want {
+				t.Errorf("%s = %q, want %q", key, env[key], want)
 			}
 		}
 	})
 
 	t.Run("invalid config returns error", func(t *testing.T) {
-		_, err := BuildAgentCommand(AgentConfig{})
-		if err == nil {
+		if _, err := BuildAgentCommand(AgentConfig{}); err == nil {
 			t.Fatal("expected error for empty config, got nil")
 		}
 	})
@@ -271,57 +147,22 @@ func (s *scriptedRunner) Execute(ctx context.Context, cfg AgentConfig) (*Session
 func TestScriptedRunner(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("default scripted execution", func(t *testing.T) {
-		runner := &scriptedRunner{}
-		cfg := AgentConfig{
-			Type:           AgentAider,
-			LiteLLMBaseURL: "http://localhost:4000/v1",
-			VirtualAPIKey:  "sk-test",
-			WorkspaceDir:   "/workspace",
-			TicketID:       "DEN-006",
-		}
-
-		summary, err := runner.Execute(ctx, cfg)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if summary.AgentType != AgentAider {
-			t.Errorf("expected AgentAider, got %s", summary.AgentType)
-		}
-		if summary.TicketID != "DEN-006" {
-			t.Errorf("expected DEN-006, got %s", summary.TicketID)
-		}
-		if summary.Status != "completed" {
-			t.Errorf("expected completed, got %s", summary.Status)
-		}
-		if len(summary.CommitsGenerated) == 0 {
-			t.Errorf("expected at least one commit generated")
-		}
-	})
-
-	t.Run("scripted execution with agy", func(t *testing.T) {
-		runner := &scriptedRunner{}
-		cfg := AgentConfig{
-			Type:           AgentAGY,
-			LiteLLMBaseURL: "http://localhost:4000/v1",
-			VirtualAPIKey:  "sk-test",
-			WorkspaceDir:   "/workspace",
-			TicketID:       "DEN-028",
-		}
-
-		summary, err := runner.Execute(ctx, cfg)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if summary.AgentType != AgentAGY {
-			t.Errorf("expected AgentAGY, got %s", summary.AgentType)
-		}
-		if summary.TicketID != "DEN-028" {
-			t.Errorf("expected DEN-028, got %s", summary.TicketID)
-		}
-	})
+	for _, c := range []struct {
+		name   string
+		typ    AgentType
+		ticket string
+	}{{"default scripted execution", AgentAider, "DEN-006"}, {"scripted execution with agy", AgentAGY, "DEN-028"}} {
+		t.Run(c.name, func(t *testing.T) {
+			cfg := agentBase(c.typ, func(cfg *AgentConfig) { cfg.TicketID = c.ticket })
+			summary, err := (&scriptedRunner{}).Execute(ctx, cfg)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if summary.AgentType != c.typ || summary.TicketID != c.ticket || summary.Status != "completed" || len(summary.CommitsGenerated) == 0 {
+				t.Errorf("unexpected summary: %+v", summary)
+			}
+		})
+	}
 
 	t.Run("invalid config in scripted execution", func(t *testing.T) {
 		runner := &scriptedRunner{}

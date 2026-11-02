@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -336,41 +337,32 @@ func TestGitGuard_CommitAndPush_Failures(t *testing.T) {
 	}
 }
 
-func TestGitGuard_PushWithRebaseRetry_PullRebaseFail(t *testing.T) {
-	repoDir, _ := setupRealRepo(t)
-	runner := &interceptorRunner{
-		base: &DefaultGitRunner{},
-		failMatch: func(args []string) bool {
-			if len(args) > 0 && args[0] == "push" {
-				return true
+func TestGitGuard_PushWithRebaseRetry_FailureReports(t *testing.T) {
+	cases := []struct {
+		name      string
+		failOn    []string
+		failError string
+		want      string
+	}{
+		{"pull rebase fails", []string{"push", "pull"}, "non-fast-forward rejected", "pull --rebase failed"},
+		{"other push error", []string{"push"}, "fatal: could not resolve host", "could not resolve host"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			repoDir, _ := setupRealRepo(t)
+			runner := &interceptorRunner{
+				base: &DefaultGitRunner{},
+				failMatch: func(args []string) bool {
+					return len(args) > 0 && slices.Contains(c.failOn, args[0])
+				},
+				failError: errors.New(c.failError),
 			}
-			if len(args) > 0 && args[0] == "pull" {
-				return true
+			guard := NewGitGuard(repoDir, ModeStandard).WithRunner(runner)
+			err := guard.pushWithRebaseRetry(context.Background(), "develop", 2)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("expected %q, got: %v", c.want, err)
 			}
-			return false
-		},
-		failError: errors.New("non-fast-forward rejected"),
-	}
-	guard := NewGitGuard(repoDir, ModeStandard).WithRunner(runner)
-	err := guard.pushWithRebaseRetry(context.Background(), "develop", 2)
-	if err == nil || !strings.Contains(err.Error(), "pull --rebase failed") {
-		t.Fatalf("expected pull --rebase failure, got: %v", err)
-	}
-}
-
-func TestGitGuard_PushWithRebaseRetry_OtherPushError(t *testing.T) {
-	repoDir, _ := setupRealRepo(t)
-	runner := &interceptorRunner{
-		base: &DefaultGitRunner{},
-		failMatch: func(args []string) bool {
-			return len(args) > 0 && args[0] == "push"
-		},
-		failError: errors.New("fatal: could not resolve host"),
-	}
-	guard := NewGitGuard(repoDir, ModeStandard).WithRunner(runner)
-	err := guard.pushWithRebaseRetry(context.Background(), "develop", 2)
-	if err == nil || !strings.Contains(err.Error(), "could not resolve host") {
-		t.Fatalf("expected host resolution error, got: %v", err)
+		})
 	}
 }
 

@@ -18,10 +18,16 @@ func TestHTMLToMarkdown(t *testing.T) {
 }
 
 func TestSummaryOf(t *testing.T) {
-	if got := summaryOf(plane.PlaneIssue{DescriptionHTML: "<p>From <b>HTML</b></p>", DescriptionStripped: "plain"}); got != "From **HTML**" {
-		t.Errorf("html summary = %q", got)
-	}
-	if got := summaryOf(plane.PlaneIssue{DescriptionStripped: "  plain  "}); got != "plain" {
-		t.Errorf("stripped fallback = %q", got)
+	for _, c := range []struct {
+		name  string
+		issue plane.PlaneIssue
+		want  string
+	}{
+		{"html summary", plane.PlaneIssue{DescriptionHTML: "<p>From <b>HTML</b></p>", DescriptionStripped: "plain"}, "From **HTML**"},
+		{"stripped fallback", plane.PlaneIssue{DescriptionStripped: "  plain  "}, "plain"},
+	} {
+		if got := summaryOf(c.issue); got != c.want {
+			t.Errorf("%s = %q, want %q", c.name, got, c.want)
+		}
 	}
 }

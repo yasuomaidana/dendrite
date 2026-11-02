@@ -9,6 +9,9 @@ func TestExtractTicketIDAndTitleAnyProjectIdentifier(t *testing.T) {
 		{"DRAG-7 index tickets", "DRAG-7", "index tickets"},
 		{"Support UTF-8 input", "", "Support UTF-8 input"},
 		{"legacy name DEN-100 mention", "DEN-100", "legacy name  mention"},
+		{"[DEN-101] Fix bug in parser", "DEN-101", "Fix bug in parser"},
+		{"[DEND-202] Add graph node", "DEND-202", "Add graph node"},
+		{"DEN-303 Fix without brackets", "DEN-303", "Fix without brackets"},
 	}
 	for _, c := range cases {
 		id, title := extractTicketIDAndTitle(c.in)
