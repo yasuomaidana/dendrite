@@ -20,7 +20,7 @@ jobs:
         id: limits
         run: |
           f=.github/dendrite/directives.toml
-          pick() { awk -v key="$1" '/^\[complexity\]/{t=1;next} /^\[/{t=0} t && $1==key {print $3; exit}' "$f" 2>/dev/null; }
+          pick() { awk -v key="$1" '/^\[complexity\]/{t=1;next} /^\[/{t=0} t && $1==key {print $3; exit}' "$f" 2>/dev/null || true; }
           cyc=$(pick max_cyclomatic); cog=$(pick max_cognitive)
           echo "cyc=${cyc:-10}" >> "$GITHUB_OUTPUT"
           echo "cog=${cog:-15}" >> "$GITHUB_OUTPUT"
@@ -31,13 +31,17 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: gocyclo (report only, known debt DEN-816)
         run: |
-          n=$( (gocyclo -over "${{ steps.limits.outputs.cyc }}" . || true) | grep -c . || true)
-          echo "::warning title=gocyclo::$n findings above the cyclomatic limit (known debt, see DEN-816); this step turns blocking when the debt is cleared"
+          out=$(gocyclo -over "${{ steps.limits.outputs.cyc }}" . 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -gt 1 ]; then printf '%s\n' "$out" | tail -20; echo "::error title=gocyclo::gocyclo did not run (exit $rc)"; exit 1; fi
+          n=$(printf '%s\n' "$out" | grep -c . || true)
+          echo "::warning title=gocyclo::$n findings above the cyclomatic limit (known debt, DEN-816); this step turns blocking when the debt is cleared"
           echo "gocyclo: $n findings above the cyclomatic limit" >> "$GITHUB_STEP_SUMMARY"
       - name: gocognit (report only, known debt DEN-816)
         run: |
-          n=$( (gocognit -over "${{ steps.limits.outputs.cog }}" . || true) | grep -c . || true)
-          echo "::warning title=gocognit::$n findings above the cognitive limit (known debt, see DEN-816); this step turns blocking when the debt is cleared"
+          out=$(gocognit -over "${{ steps.limits.outputs.cog }}" . 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -gt 1 ]; then printf '%s\n' "$out" | tail -20; echo "::error title=gocognit::gocognit did not run (exit $rc)"; exit 1; fi
+          n=$(printf '%s\n' "$out" | grep -c . || true)
+          echo "::warning title=gocognit::$n findings above the cognitive limit (known debt, DEN-816); this step turns blocking when the debt is cleared"
           echo "gocognit: $n findings above the cognitive limit" >> "$GITHUB_STEP_SUMMARY"
   python:
     name: Python (ruff C901)
@@ -48,7 +52,7 @@ jobs:
         id: limits
         run: |
           f=.github/dendrite/directives.toml
-          pick() { awk -v key="$1" '/^\[complexity\]/{t=1;next} /^\[/{t=0} t && $1==key {print $3; exit}' "$f" 2>/dev/null; }
+          pick() { awk -v key="$1" '/^\[complexity\]/{t=1;next} /^\[/{t=0} t && $1==key {print $3; exit}' "$f" 2>/dev/null || true; }
           cyc=$(pick max_cyclomatic); cog=$(pick max_cognitive)
           echo "cyc=${cyc:-10}" >> "$GITHUB_OUTPUT"
           echo "cog=${cog:-15}" >> "$GITHUB_OUTPUT"
