@@ -37,10 +37,13 @@ func LinkPath(root string) string {
 	return filepath.Join(projectid.StateRoot(root), ".dendrite", LinkFileName)
 }
 
+// absPath is filepath.Abs; tests replace it to reach the case where the working directory is gone.
+var absPath = filepath.Abs
+
 // FindRepoRoot walks up from dir to the nearest directory holding .git
 // (a directory for normal checkouts, a file for worktrees).
 func FindRepoRoot(dir string) (string, error) {
-	abs, err := filepath.Abs(dir)
+	abs, err := absPath(dir)
 	if err != nil {
 		return "", err
 	}
@@ -74,10 +77,7 @@ func ReadLink(root string) (*ProjectLink, error) {
 
 // WriteLink stores the link file in a repository root.
 func WriteLink(root string, l ProjectLink) error {
-	data, err := json.MarshalIndent(l, "", "  ")
-	if err != nil {
-		return err
-	}
+	data, _ := json.MarshalIndent(l, "", "  ") // a struct of strings always marshals
 	return fsutil.WriteFileAtomic(LinkPath(root), append(data, '\n'))
 }
 

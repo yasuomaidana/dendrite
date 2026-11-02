@@ -11,6 +11,15 @@ import (
 	"Dendrite/pkg/tracker"
 )
 
+// pendingComplexityRows are the tickets of the complexity table that can still be open: the label
+// shown while open, and the table row with a %s where the status goes.
+var pendingComplexityRows = []struct{ id, open, line string }{
+	{"DEN-036", "**CURRENT FOCUS [ ]**", "|      **6**      | **DEN-036** | Milestone 17 | FEAT-021   |     8 SP     |     7.5 / 10     | `pkg/perf`, `cmd/dendrite`, `tests/perf`                     | %s |\n"},
+	{"DEN-037", "**QUEUED [ ]**", "|      **8**      | **DEN-037** | Milestone 18 | FEAT-022   |    13 SP     |     8.5 / 10     | `pkg/agentsearch`, `cmd/dendrite`                            |    %s     |\n"},
+	{"DEN-038", "**QUEUED [ ]**", "|      **9**      | **DEN-038** | Milestone 19 | FEAT-023   |    13 SP     |     9.0 / 10     | `pkg/testgen`, `pkg/uitest`, `cmd/dendrite`                  |    %s     |\n"},
+	{"DEN-039", "**QUEUED [ ]**", "|      **7**      | **DEN-039** | Milestone 20 | FEAT-024   |     8 SP     |     8.0 / 10     | `pkg/rea`, `pkg/ai/import`, `tests/showcase`, `cmd/dendrite` |    %s     |\n"},
+}
+
 func renderDevStatusMarkdown(items []ticketItem, report *StatusReplicationReport) string {
 	var sb strings.Builder
 
@@ -45,33 +54,16 @@ func renderDevStatusMarkdown(items []ticketItem, report *StatusReplicationReport
 		itemByID[it.id] = it
 	}
 
-	if it, ok := itemByID["DEN-036"]; ok {
-		statusCol := "**CURRENT FOCUS [ ]**"
+	for _, row := range pendingComplexityRows {
+		it, ok := itemByID[row.id]
+		if !ok {
+			continue
+		}
+		statusCol := row.open
 		if it.status == tracker.StatusDone {
 			statusCol = "**COMPLETED [x]**"
 		}
-		sb.WriteString(fmt.Sprintf("|      **6**      | **DEN-036** | Milestone 17 | FEAT-021   |     8 SP     |     7.5 / 10     | `pkg/perf`, `cmd/dendrite`, `tests/perf`                     | %s |\n", statusCol))
-	}
-	if it, ok := itemByID["DEN-037"]; ok {
-		statusCol := "**QUEUED [ ]**"
-		if it.status == tracker.StatusDone {
-			statusCol = "**COMPLETED [x]**"
-		}
-		sb.WriteString(fmt.Sprintf("|      **8**      | **DEN-037** | Milestone 18 | FEAT-022   |    13 SP     |     8.5 / 10     | `pkg/agentsearch`, `cmd/dendrite`                            |    %s     |\n", statusCol))
-	}
-	if it, ok := itemByID["DEN-038"]; ok {
-		statusCol := "**QUEUED [ ]**"
-		if it.status == tracker.StatusDone {
-			statusCol = "**COMPLETED [x]**"
-		}
-		sb.WriteString(fmt.Sprintf("|      **9**      | **DEN-038** | Milestone 19 | FEAT-023   |    13 SP     |     9.0 / 10     | `pkg/testgen`, `pkg/uitest`, `cmd/dendrite`                  |    %s     |\n", statusCol))
-	}
-	if it, ok := itemByID["DEN-039"]; ok {
-		statusCol := "**QUEUED [ ]**"
-		if it.status == tracker.StatusDone {
-			statusCol = "**COMPLETED [x]**"
-		}
-		sb.WriteString(fmt.Sprintf("|      **7**      | **DEN-039** | Milestone 20 | FEAT-024   |     8 SP     |     8.0 / 10     | `pkg/rea`, `pkg/ai/import`, `tests/showcase`, `cmd/dendrite` |    %s     |\n", statusCol))
+		sb.WriteString(fmt.Sprintf(row.line, statusCol))
 	}
 
 	sb.WriteString("\n---\n\n")
@@ -120,12 +112,7 @@ func renderDevStatusMarkdown(items []ticketItem, report *StatusReplicationReport
 
 	for _, mKey := range milestoneKeys {
 		mTickets := milestoneMap[mKey]
-		sort.Slice(mTickets, func(i, j int) bool {
-			if mTickets[i].num != mTickets[j].num {
-				return mTickets[i].num < mTickets[j].num
-			}
-			return mTickets[i].id < mTickets[j].id
-		})
+		sortTickets(mTickets)
 
 		sb.WriteString(fmt.Sprintf("### %s\n\n", mKey))
 		writeDevStatusTickets(&sb, mTickets)
@@ -143,12 +130,7 @@ func renderDevStatusMarkdown(items []ticketItem, report *StatusReplicationReport
 
 		for _, pKey := range otherProjKeys {
 			pTickets := otherProjectItems[pKey]
-			sort.Slice(pTickets, func(i, j int) bool {
-				if pTickets[i].num != pTickets[j].num {
-					return pTickets[i].num < pTickets[j].num
-				}
-				return pTickets[i].id < pTickets[j].id
-			})
+			sortTickets(pTickets)
 
 			sb.WriteString(fmt.Sprintf("### %s\n\n", pKey))
 			if len(pTickets) == 0 {
@@ -161,6 +143,16 @@ func renderDevStatusMarkdown(items []ticketItem, report *StatusReplicationReport
 	}
 
 	return sb.String()
+}
+
+// sortTickets orders tickets by number, then by id.
+func sortTickets(tickets []ticketItem) {
+	sort.Slice(tickets, func(i, j int) bool {
+		if tickets[i].num != tickets[j].num {
+			return tickets[i].num < tickets[j].num
+		}
+		return tickets[i].id < tickets[j].id
+	})
 }
 
 func writeDevStatusTickets(sb *strings.Builder, tickets []ticketItem) {
@@ -255,11 +247,8 @@ func extractTargetPackage(content string) string {
 }
 
 func extractTicketNumber(id string) int {
-	numRegex := regexp.MustCompile(`\d+`)
-	m := numRegex.FindString(id)
-	if m != "" {
-		n, _ := strconv.Atoi(m)
-		return n
-	}
-	return 0
+	n, _ := strconv.Atoi(digitsRegex.FindString(id)) // no digits: 0
+	return n
 }
+
+var digitsRegex = regexp.MustCompile(`\d+`)

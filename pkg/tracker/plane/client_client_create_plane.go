@@ -25,13 +25,7 @@ func (c *Client) CreatePlaneIssueWithDetails(ctx context.Context, req CreateIssu
 		body["state"] = req.StateID
 	}
 	if req.EstimatePoint != nil {
-		ep := *req.EstimatePoint
-		if ep > 12 {
-			ep = 12
-		} else if ep < 0 {
-			ep = 0
-		}
-		body["estimate_point"] = ep
+		body["estimate_point"] = clampEstimate(*req.EstimatePoint)
 	}
 	if req.Priority != "" {
 		body["priority"] = req.Priority
@@ -97,13 +91,7 @@ func (c *Client) UpdatePlaneIssueWithDetails(ctx context.Context, id string, req
 		body["state"] = req.StateID
 	}
 	if req.EstimatePoint != nil {
-		ep := *req.EstimatePoint
-		if ep > 12 {
-			ep = 12
-		} else if ep < 0 {
-			ep = 0
-		}
-		body["estimate_point"] = ep
+		body["estimate_point"] = clampEstimate(*req.EstimatePoint)
 	}
 	if req.Priority != "" {
 		body["priority"] = req.Priority

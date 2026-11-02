@@ -97,6 +97,21 @@ func extractProjectIdentifier(ticketID string) string {
 	return "DEN"
 }
 
+// milestoneFor names the milestone of an issue: its first module, a module that lists it, a
+// "Milestone:" line in its description, then the built-in default for the ticket id ("" when none).
+func milestoneFor(iss PlaneIssue, id string, moduleNames map[string]string, moduleOf map[string]string) string {
+	if len(iss.ModuleIDs) > 0 && moduleNames[iss.ModuleIDs[0]] != "" {
+		return moduleNames[iss.ModuleIDs[0]]
+	}
+	if moduleOf[iss.ID] != "" {
+		return moduleOf[iss.ID]
+	}
+	if em := extractMilestone(iss.DescriptionHTML + " " + iss.DescriptionStripped); em != "" {
+		return em
+	}
+	return defaultTicketMilestones[id]
+}
+
 // PullStatusFromPlane recreates DEV_STATUS.md directly from Plane service state.
 func PullStatusFromPlane(ctx context.Context, client *Client) (string, *StatusReplicationReport, error) {
 	start := time.Now()
@@ -214,9 +229,7 @@ func PullStatusFromPlane(ctx context.Context, client *Client) (string, *StatusRe
 			report.InProgressTickets++
 		case tracker.StatusTodo:
 			report.TodoTickets++
-		case tracker.StatusBacklog:
-			report.BacklogTickets++
-		default:
+		default: // backlog, blocked, cancelled and anything else counts as backlog
 			report.BacklogTickets++
 		}
 
@@ -245,17 +258,7 @@ func PullStatusFromPlane(ctx context.Context, client *Client) (string, *StatusRe
 		targetPkg := extractTargetPackage(iss.DescriptionHTML + " " + iss.DescriptionStripped)
 		priority := normalizePriority(iss.Priority)
 
-		milestone := ""
-		if len(iss.ModuleIDs) > 0 && moduleNameLookup[iss.ModuleIDs[0]] != "" {
-			milestone = moduleNameLookup[iss.ModuleIDs[0]]
-		} else if moduleIssuesMap[iss.ID] != "" {
-			milestone = moduleIssuesMap[iss.ID]
-		} else if em := extractMilestone(iss.DescriptionHTML + " " + iss.DescriptionStripped); em != "" {
-			milestone = em
-		} else if dm, ok := defaultTicketMilestones[id]; ok {
-			milestone = dm
-		}
-
+		milestone := milestoneFor(iss, id, moduleNameLookup, moduleIssuesMap)
 		if milestone == "" && proj == "DEN" {
 			milestone = "General"
 		}

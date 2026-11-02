@@ -51,6 +51,8 @@ func calls() []call {
 		{"GetIssue", func(c *Client) error { _, err := c.GetIssue(ctx, "DEN-1"); return err }, ErrIssueNotFound, true},
 		{"ListPlaneIssues", func(c *Client) error { _, err := c.ListPlaneIssues(ctx); return err }, nil, false},
 		{"ListStates", func(c *Client) error { _, err := c.ListStates(ctx); return err }, nil, false},
+		{"ListProjects", func(c *Client) error { _, err := c.ListProjects(ctx); return err }, nil, false},
+		{"CreateProject", func(c *Client) error { _, err := c.CreateProject(ctx, "n", "id", "d"); return err }, nil, true},
 		{"ListModules", func(c *Client) error { _, err := c.ListModules(ctx); return err }, nil, false},
 		{"ListModuleIssues", func(c *Client) error { _, err := c.ListModuleIssues(ctx, "m"); return err }, nil, false},
 		{"ListPages", func(c *Client) error { _, err := c.ListPages(ctx); return err }, nil, false},

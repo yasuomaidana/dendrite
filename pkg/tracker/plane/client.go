@@ -207,29 +207,30 @@ func (c *Client) GetIssue(ctx context.Context, id tracker.TicketID) (*tracker.Un
 
 // ListPlaneIssues queries all issues for the project across all pages.
 func (c *Client) ListPlaneIssues(ctx context.Context) ([]PlaneIssue, error) {
-	var allIssues []PlaneIssue
-	cursor := ""
+	return c.listIssues(ctx, c.projectID, "failed to list plane issues")
+}
 
+// listIssues reads every page of a project's issues; failure names the call in errors.
+func (c *Client) listIssues(ctx context.Context, projectID, failure string) ([]PlaneIssue, error) {
+	var all []PlaneIssue
+	cursor := ""
 	for {
-		endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/", c.workspaceSlug, c.projectID)
-		endpoint += "?per_page=100"
+		endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/?per_page=100", c.workspaceSlug, projectID)
 		if cursor != "" {
 			endpoint = fmt.Sprintf("%s&cursor=%s", endpoint, cursor)
 		}
-		bodyBytes, err := c.callRaw(ctx, http.MethodGet, endpoint, nil, callSpec{failure: "failed to list plane issues"})
+		data, err := c.callRaw(ctx, http.MethodGet, endpoint, nil, callSpec{failure: failure})
 		if err != nil {
 			return nil, err
 		}
-
-		pageIssues, nextCursor, hasNext := parseIssuePage(bodyBytes)
-		allIssues = append(allIssues, pageIssues...)
+		page, next, hasNext := parseIssuePage(data)
+		all = append(all, page...)
 		if !hasNext {
 			break
 		}
-		cursor = nextCursor
+		cursor = next
 	}
-
-	return dedupeIssues(allIssues), nil
+	return dedupeIssues(all), nil
 }
 
 func parseIssuePage(bodyBytes []byte) (issues []PlaneIssue, nextCursor string, hasNext bool) {

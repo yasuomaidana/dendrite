@@ -3,8 +3,6 @@ package plane
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -46,35 +44,8 @@ func PushStatusToPlaneIn(ctx context.Context, client *Client, mdContent, repoDir
 	// Build DAG graph and generate Gantt schedule
 	graph := dag.NewGraph()
 	for _, t := range data.Tickets {
-		sp := 5
-		if t.StoryPoints != "" {
-			var parsedSP int
-			if n, _ := fmt.Sscanf(t.StoryPoints, "%d", &parsedSP); n > 0 {
-				sp = parsedSP
-			}
-		}
-		var comp float64 = 5.0
-		if t.ComplexityScore != "" {
-			var parsedComp float64
-			if n, _ := fmt.Sscanf(t.ComplexityScore, "%f", &parsedComp); n > 0 {
-				comp = parsedComp
-			}
-		}
-
-		prio := dag.PriorityMedium
-		switch {
-		case comp >= 9.0:
-			prio = dag.PriorityUrgent
-		case comp >= 7.0:
-			prio = dag.PriorityHigh
-		case comp >= 4.0:
-			prio = dag.PriorityMedium
-		default:
-			prio = dag.PriorityLow
-		}
-		if strings.Contains(data.ActiveMilestone, t.Milestone) && prio == dag.PriorityMedium {
-			prio = dag.PriorityHigh
-		}
+		sp, comp := ticketScore(t)
+		prio := priorityFor(comp, strings.Contains(data.ActiveMilestone, t.Milestone))
 
 		graph.AddNode(&dag.Node{
 			ID:             t.ID,
@@ -200,12 +171,7 @@ func PushStatusToPlaneIn(ctx context.Context, client *Client, mdContent, repoDir
 				startStr = &node.StartDate
 				targetStr = &node.TargetDate
 				priority = node.Priority
-				est := node.EstimatePoints
-				if est > 12 {
-					est = 12
-				} else if est < 0 {
-					est = 0
-				}
+				est := clampEstimate(node.EstimatePoints)
 				estimate = &est
 			}
 		}
@@ -274,22 +240,8 @@ func PushStatusToPlaneIn(ctx context.Context, client *Client, mdContent, repoDir
 		_ = client.AddIssuesToModule(ctx, modID, issueIDs)
 	}
 
-	pageHTML := buildDevStatusPageHTML(data)
-	pages, err := client.ListPages(ctx)
-	if err == nil {
-		pageName := "Dendrite Project Development Status & Roadmap"
-		var targetPageID string
-		for _, p := range pages {
-			if strings.Contains(p.Name, "Development Status") || strings.Contains(p.Name, "DEV_STATUS") {
-				targetPageID = p.ID
-				break
-			}
-		}
-		if targetPageID != "" {
-			_, _ = client.UpdatePage(ctx, targetPageID, pageName, pageHTML)
-		} else {
-			_, _ = client.CreatePage(ctx, pageName, pageHTML)
-		}
+	if pages, err := client.ListPages(ctx); err == nil {
+		upsertStatusPage(ctx, client, pages, buildDevStatusPageHTML(data))
 		report.PagesCount = len(pages) + 1
 	}
 
@@ -303,54 +255,58 @@ func PushStatusToPlaneIn(ctx context.Context, client *Client, mdContent, repoDir
 	return report, nil
 }
 
+// ticketScore reads a ticket's story points and complexity, defaulting to 5 and 5.0 when absent or
+// unreadable.
+func ticketScore(t ParsedDevTicket) (sp int, comp float64) {
+	sp, comp = 5, 5.0
+	if n, _ := fmt.Sscanf(t.StoryPoints, "%d", &sp); n == 0 {
+		sp = 5
+	}
+	if n, _ := fmt.Sscanf(t.ComplexityScore, "%f", &comp); n == 0 {
+		comp = 5.0
+	}
+	return sp, comp
+}
+
+// priorityFor maps a complexity score to a DAG priority; medium work inside the active milestone
+// is raised to high.
+func priorityFor(comp float64, inActiveMilestone bool) string {
+	switch {
+	case comp >= 9.0:
+		return dag.PriorityUrgent
+	case comp >= 7.0:
+		return dag.PriorityHigh
+	case comp >= 4.0 && inActiveMilestone:
+		return dag.PriorityHigh
+	case comp >= 4.0:
+		return dag.PriorityMedium
+	}
+	return dag.PriorityLow
+}
+
+// clampEstimate keeps an estimate inside Plane's 0..12 range.
+func clampEstimate(n int) int {
+	return max(0, min(n, 12))
+}
+
+// upsertStatusPage updates the development status page when pages has one, otherwise creates it.
+func upsertStatusPage(ctx context.Context, client *Client, pages []PlanePage, html string) {
+	const pageName = "Dendrite Project Development Status & Roadmap"
+	for _, p := range pages {
+		if strings.Contains(p.Name, "Development Status") || strings.Contains(p.Name, "DEV_STATUS") {
+			_, _ = client.UpdatePage(ctx, p.ID, pageName, html)
+			return
+		}
+	}
+	_, _ = client.CreatePage(ctx, pageName, html)
+}
+
 // ListPlaneIssuesForProject queries all issues for a specific project across all pages.
 func (c *Client) ListPlaneIssuesForProject(ctx context.Context, projectID string) ([]PlaneIssue, error) {
 	if projectID == "" {
 		projectID = c.projectID
 	}
-	var allIssues []PlaneIssue
-	cursor := ""
-
-	for {
-		endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/", c.workspaceSlug, projectID)
-		endpoint += "?per_page=100"
-		if cursor != "" {
-			endpoint = fmt.Sprintf("%s&cursor=%s", endpoint, cursor)
-		}
-		req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
-
-		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-			resp.Body.Close()
-			return nil, ErrUnauthorized
-		}
-		if resp.StatusCode >= 400 {
-			resp.Body.Close()
-			return nil, fmt.Errorf("failed to list plane issues for project %s: status %d", projectID, resp.StatusCode)
-		}
-
-		bodyBytes, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return nil, err
-		}
-
-		pageIssues, nextCursor, hasNext := parseIssuePage(bodyBytes)
-		allIssues = append(allIssues, pageIssues...)
-		if !hasNext {
-			break
-		}
-		cursor = nextCursor
-	}
-
-	return dedupeIssues(allIssues), nil
+	return c.listIssues(ctx, projectID, "failed to list plane issues for project "+projectID)
 }
 
 // ListStatesForProject queries all states configured for a specific project.
