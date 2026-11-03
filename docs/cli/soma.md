@@ -121,6 +121,7 @@ Aliases: `sync`, `update`, `configure`
 
 | Flag | Description |
 | :--- | :--- |
+| `--adopt-ci` | Replace a hand-written CI workflow with the generated one (the old file is archived in .github/dendrite/) |
 | `--dry-run` | Show what would happen without changing anything |
 | `--no-cicd` | Disable CI/CD and Copilot enforcement |
 | `--no-skills` | Disable agent rules and skills synchronization |

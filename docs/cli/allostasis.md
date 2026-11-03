@@ -61,7 +61,7 @@ dendrite allostasis gate [flags]
 | Flag | Description |
 | :--- | :--- |
 | `--format` | text, json or markdown (default: text) |
-| `--only` | Run only these checks: [loc clones rstest coverage] |
+| `--only` | Run only these checks: [loc clones complexity structure rstest coverage] |
 | `--path` | Project directory (default: .) |
 | `--since` | Judge only what changed since this ref (for example origin/develop) |
 | `--skip` | Do not run these checks |
