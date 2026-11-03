@@ -48,6 +48,8 @@ func (b *boardServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		write(map[string]any{})
+	case strings.HasSuffix(p, "/workspaces/ws/projects/"):
+		write(map[string]any{"results": []map[string]any{{"id": "proj", "identifier": "DEN"}}})
 	case strings.HasSuffix(p, "/states/"):
 		write([]map[string]any{
 			{"id": "s-todo", "name": "Todo", "group": "unstarted"},

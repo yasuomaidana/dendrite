@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -126,13 +125,51 @@ func PullStatusFromPlane(ctx context.Context, client *Client) (string, *StatusRe
 	}
 	modules, _ := client.ListModules(ctx)
 
+	// DEV_STATUS.md describes the project it lives in: the workspace holds other projects (peers,
+	// unrelated repositories) and each one replicates its own file from its own board.
+	projectIdent, workspaceProjects, err := projectIdentifier(ctx, client)
+	if err != nil {
+		return "", nil, err
+	}
+
 	stateNameLookup := make(map[string]tracker.Status)
 	for _, s := range states {
 		stateNameLookup[s.ID] = resolvePlaneState(s.Group, s.Name)
 	}
+	moduleNameLookup, moduleIssuesMap := loadModuleNames(ctx, client, modules)
 
-	moduleNameLookup := make(map[string]string)
-	moduleIssuesMap := make(map[string]string)
+	report := &StatusReplicationReport{ModulesCount: len(modules), ProjectIdentifier: projectIdent}
+	var items []ticketItem
+	for _, iss := range mainIssues {
+		item, ok := buildTicketItem(iss, projectIdent, workspaceProjects)
+		if !ok {
+			continue
+		}
+		item.status = issueStatus(iss, stateNameLookup)
+		item.milestone = milestoneOf(iss, item, moduleNameLookup, moduleIssuesMap)
+		report.countStatus(item.status)
+		items = append(items, item)
+	}
+
+	report.TotalTickets = len(items)
+	if report.TotalTickets > 0 {
+		report.OverallProgress = float64(report.CompletedTickets) / float64(report.TotalTickets) * 100.0
+	}
+	report.CurrentFocus = currentFocusOf(items)
+	if projectIdent == "DEN" {
+		report.ActiveMilestone = "Milestone 17 — Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)"
+	}
+
+	rendered := renderDevStatusMarkdown(items, report)
+	report.Duration = time.Since(start)
+
+	return rendered, report, nil
+}
+
+// loadModuleNames maps module ids to names and each issue to the module that lists it.
+func loadModuleNames(ctx context.Context, client *Client, modules []PlaneModule) (names, issueModule map[string]string) {
+	names = make(map[string]string)
+	issueModule = make(map[string]string)
 	// Each module's issue list is independent: fetch them together, then merge in module order so a
 	// ticket in several modules keeps the same (last) module as before.
 	moduleIssues := make([][]PlaneIssue, len(modules))
@@ -142,180 +179,127 @@ func PullStatusFromPlane(ctx context.Context, client *Client) (string, *StatusRe
 		}
 	})
 	for i, mod := range modules {
-		moduleNameLookup[mod.ID] = mod.Name
+		names[mod.ID] = mod.Name
 		for _, mi := range moduleIssues[i] {
-			moduleIssuesMap[mi.ID] = mod.Name
+			issueModule[mi.ID] = mod.Name
 		}
 	}
+	return names, issueModule
+}
 
-	// Discover any other projects in Plane workspace (e.g. DCORE, DRAG, DGIT, DMCP)
-	allProjects, projErr := client.ListProjects(ctx)
-	otherProjectsMap := make(map[string]PlaneProject)
-	var otherProjectNames []string
-	if projErr == nil {
-		for _, p := range allProjects {
-			ident := strings.ToUpper(strings.TrimSpace(p.Identifier))
-			if p.ID != client.projectID && ident != "DEN" && ident != "" {
-				otherProjectsMap[ident] = p
-				otherProjectNames = append(otherProjectNames, ident)
-			}
-		}
-		sort.Strings(otherProjectNames)
+// buildTicketItem names one issue of the project and says whether it belongs in its file.
+func buildTicketItem(iss PlaneIssue, projectIdent string, workspaceProjects map[string]bool) (ticketItem, bool) {
+	rawName := iss.Name
+	id := fmt.Sprintf("%s-%03d", projectIdent, iss.SequenceID)
+	title := rawName
+	// Only the leading ID is stripped; IDs referenced later in the title stay.
+	if loc := ticketIdPrefixRegex.FindStringSubmatchIndex(rawName); loc != nil {
+		id = rawName[loc[2]:loc[3]]
+		title = strings.TrimSpace(rawName[:loc[0]] + rawName[loc[1]:])
+		title = strings.TrimSpace(strings.TrimPrefix(title, ":"))
 	}
 
-	type projectIssuePair struct {
-		projIdent string
-		issue     PlaneIssue
+	proj := extractProjectIdentifier(id)
+	if proj != projectIdent && proj != "DEN" && proj != "DEND" && workspaceProjects[proj] {
+		// The title names another project of the workspace: that ticket belongs to the other
+		// project's file. Copies relocated from DEN (DEN-*) and legacy DEND-* are kept.
+		return ticketItem{}, false
 	}
-	var otherProjectIssues []projectIssuePair
-
-	// State UUIDs are per project, so each sub-project needs its own lookup.
-	projectStateLookup := map[string]map[string]tracker.Status{"DEN": stateNameLookup}
-	// The projects are independent: fetch their states and issues together, then assemble in the
-	// sorted project order so the generated file does not depend on which request finished first.
-	type projectData struct {
-		lookup map[string]tracker.Status
-		issues []PlaneIssue
-	}
-	fetched := make([]projectData, len(otherProjectNames))
-	fanOut(len(otherProjectNames), pullWorkers, func(i int) {
-		p := otherProjectsMap[otherProjectNames[i]]
-		lookup := make(map[string]tracker.Status)
-		if pStates, err := client.ListStatesForProject(ctx, p.ID); err == nil {
-			for _, s := range pStates {
-				lookup[s.ID] = resolvePlaneState(s.Group, s.Name)
-			}
-		}
-		data := projectData{lookup: lookup}
-		if pIssues, err := client.ListPlaneIssuesForProject(ctx, p.ID); err == nil {
-			data.issues = pIssues
-		}
-		fetched[i] = data
-	})
-	for i, ident := range otherProjectNames {
-		projectStateLookup[ident] = fetched[i].lookup
-		for _, pi := range fetched[i].issues {
-			otherProjectIssues = append(otherProjectIssues, projectIssuePair{projIdent: ident, issue: pi})
-		}
+	if projectIdent == "DEN" {
+		// Legacy DEND-* tickets live in DEN and belong to its milestones.
+		proj = "DEN"
+	} else if proj != projectIdent {
+		// Relocated copies keep their DEN title; list them under their own key.
+		id = fmt.Sprintf("%s-%d", projectIdent, iss.SequenceID)
+		title = strings.TrimSpace(rawName)
+		proj = projectIdent
 	}
 
-	var allTicketItems []ticketItem
-	report := &StatusReplicationReport{
-		ModulesCount:  len(modules),
-		OtherProjects: otherProjectNames,
+	return ticketItem{
+		id:         id,
+		num:        extractTicketNumber(id),
+		title:      title,
+		desc:       iss.DescriptionStripped,
+		sequenceID: iss.SequenceID,
+		targetPkg:  extractTargetPackage(iss.DescriptionHTML + " " + iss.DescriptionStripped),
+		priority:   normalizePriority(iss.Priority),
+		project:    proj,
+	}, true
+}
+
+// issueStatus resolves an issue's state from the project's state ids, then from its embedded detail.
+func issueStatus(iss PlaneIssue, stateNameLookup map[string]tracker.Status) tracker.Status {
+	if st := stateNameLookup[iss.State]; st != "" {
+		return st
 	}
-	seenIDs := make(map[string]bool)
+	return resolvePlaneState(iss.StateDetail.Group, iss.StateDetail.Name)
+}
 
-	processIssue := func(iss PlaneIssue, defaultProj string) {
-		if iss.ID != "" && seenIDs[iss.ID] {
-			return
-		}
-		if iss.ID != "" {
-			seenIDs[iss.ID] = true
-		}
-
-		st := projectStateLookup[defaultProj][iss.State]
-		if st == "" {
-			st = resolvePlaneState(iss.StateDetail.Group, iss.StateDetail.Name)
-		}
-
-		switch st {
-		case tracker.StatusDone:
-			report.CompletedTickets++
-			report.DoneTickets++
-		case tracker.StatusInReview:
-			report.ToVerifyTickets++
-		case tracker.StatusInProgress:
-			report.InProgressTickets++
-		case tracker.StatusTodo:
-			report.TodoTickets++
-		default: // backlog, blocked, cancelled and anything else counts as backlog
-			report.BacklogTickets++
-		}
-
-		rawName := iss.Name
-		id := fmt.Sprintf("%s-%03d", defaultProj, iss.SequenceID)
-		title := rawName
-		// Only the leading ID is stripped; IDs referenced later in the title stay.
-		if loc := ticketIdPrefixRegex.FindStringSubmatchIndex(rawName); loc != nil {
-			id = rawName[loc[2]:loc[3]]
-			title = strings.TrimSpace(rawName[:loc[0]] + rawName[loc[1]:])
-			title = strings.TrimPrefix(title, ":")
-			title = strings.TrimSpace(title)
-		}
-
-		proj := extractProjectIdentifier(id)
-		if defaultProj == "DEN" {
-			// Legacy DEND-* tickets live in DEN and belong to its milestones.
-			proj = "DEN"
-		} else if proj != defaultProj {
-			// Relocated copies keep their DEN title; list them under their own key.
-			id = fmt.Sprintf("%s-%d", defaultProj, iss.SequenceID)
-			title = strings.TrimSpace(rawName)
-			proj = defaultProj
-		}
-
-		targetPkg := extractTargetPackage(iss.DescriptionHTML + " " + iss.DescriptionStripped)
-		priority := normalizePriority(iss.Priority)
-
-		milestone := milestoneFor(iss, id, moduleNameLookup, moduleIssuesMap)
-		if milestone == "" && proj == "DEN" {
-			milestone = "General"
-		}
-		milestone = normalizeMilestoneName(milestone)
-
-		allTicketItems = append(allTicketItems, ticketItem{
-			id:         id,
-			num:        extractTicketNumber(id),
-			title:      title,
-			status:     st,
-			desc:       iss.DescriptionStripped,
-			sequenceID: iss.SequenceID,
-			targetPkg:  targetPkg,
-			priority:   priority,
-			milestone:  milestone,
-			project:    proj,
-		})
+// milestoneOf names the normalized milestone of a ticket; DEN tickets without one go to "General".
+func milestoneOf(iss PlaneIssue, item ticketItem, moduleNames, moduleOf map[string]string) string {
+	milestone := milestoneFor(iss, item.id, moduleNames, moduleOf)
+	if milestone == "" && item.project == "DEN" {
+		milestone = "General"
 	}
+	return normalizeMilestoneName(milestone)
+}
 
-	for _, iss := range mainIssues {
-		processIssue(iss, "DEN")
+// countStatus adds one ticket to the per-state counters of the summary.
+func (r *StatusReplicationReport) countStatus(st tracker.Status) {
+	switch st {
+	case tracker.StatusDone:
+		r.CompletedTickets++
+		r.DoneTickets++
+	case tracker.StatusInReview:
+		r.ToVerifyTickets++
+	case tracker.StatusInProgress:
+		r.InProgressTickets++
+	case tracker.StatusTodo:
+		r.TodoTickets++
+	default: // backlog, blocked, cancelled and anything else counts as backlog
+		r.BacklogTickets++
 	}
+}
 
-	for _, pair := range otherProjectIssues {
-		processIssue(pair.issue, pair.projIdent)
-	}
-
-	report.TotalTickets = len(allTicketItems)
-	if report.TotalTickets > 0 {
-		report.OverallProgress = float64(report.CompletedTickets) / float64(report.TotalTickets) * 100.0
-	}
-
-	var currentFocus string
-	for _, item := range allTicketItems {
-		if item.status == tracker.StatusInProgress {
-			currentFocus = fmt.Sprintf("`%s: %s`", item.id, item.title)
-			break
-		}
-	}
-	if currentFocus == "" {
-		for _, item := range allTicketItems {
-			if item.status == tracker.StatusTodo {
-				currentFocus = fmt.Sprintf("`%s: %s`", item.id, item.title)
-				break
+// currentFocusOf is the first ticket in progress, else the first one to do ("" when neither exists).
+func currentFocusOf(items []ticketItem) string {
+	for _, want := range []tracker.Status{tracker.StatusInProgress, tracker.StatusTodo} {
+		for _, item := range items {
+			if item.status == want {
+				return fmt.Sprintf("`%s: %s`", item.id, item.title)
 			}
 		}
 	}
-	report.CurrentFocus = currentFocus
-	report.ActiveMilestone = "Milestone 17 — Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)"
-
-	rendered := renderDevStatusMarkdown(allTicketItems, report)
-	report.Duration = time.Since(start)
-
-	return rendered, report, nil
+	return ""
 }
 
 // ReplicateStatusFromPlane recreates DEV_STATUS.md directly from Plane service state.
 func ReplicateStatusFromPlane(ctx context.Context, client *Client) (string, *StatusReplicationReport, error) {
 	return PullStatusFromPlane(ctx, client)
+}
+
+// projectIdentifier returns the upper-case identifier (DEN, DCORE...) of the client's project and
+// the set of identifiers of every project of the workspace. A workspace that does not list the
+// project is an error: guessing "DEN" would write a peer's board into the wrong file.
+func projectIdentifier(ctx context.Context, client *Client) (string, map[string]bool, error) {
+	projects, err := client.ListProjects(ctx)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to query projects from plane: %w", err)
+	}
+	own := ""
+	known := make(map[string]bool, len(projects))
+	for _, p := range projects {
+		ident := strings.ToUpper(strings.TrimSpace(p.Identifier))
+		if ident == "" {
+			continue
+		}
+		known[ident] = true
+		if p.ID == client.projectID {
+			own = ident
+		}
+	}
+	if own == "" {
+		return "", nil, fmt.Errorf("project %s is not in the workspace project list or has no identifier", client.projectID)
+	}
+	return own, known, nil
 }

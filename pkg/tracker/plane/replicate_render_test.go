@@ -25,21 +25,18 @@ func TestRenderDevStatusMarkdownShowsOpenAndDoneComplexityRows(t *testing.T) {
 	}
 }
 
-func TestRenderDevStatusMarkdownGroupsByMilestoneAndProject(t *testing.T) {
+func TestRenderDevStatusMarkdownGroupsByMilestone(t *testing.T) {
 	items := []ticketItem{
 		{id: "DEN-2", num: 2, title: "second", milestone: "Milestone 2: B", status: tracker.StatusDone, priority: "High", targetPkg: "pkg/x"},
 		{id: "DEN-1", num: 1, title: "first", milestone: "Milestone 2: B"},
 		{id: "DEN-9", num: 9, title: "loose"},
 		{id: "A", num: 3, title: "same number a", milestone: "Milestone 1: A"},
 		{id: "B", num: 3, title: "same number b", milestone: "Milestone 1: A"},
-		{id: "X-2", num: 2, title: "x2", project: "x"},
-		{id: "X-1", num: 2, title: "x1", project: "X"},
-		{id: "Z-1", num: 1, title: "other", milestone: "Zeta", project: " z "},
 		{id: "Y-1", num: 1, title: "named", milestone: "Alpha"},
 	}
-	md := renderDevStatusMarkdown(items, &StatusReplicationReport{OtherProjects: []string{"EMPTY"}})
+	md := renderDevStatusMarkdown(items, &StatusReplicationReport{})
 
-	order := []string{"### Milestone 1: A", "### Milestone 2: B", "### Alpha", "### General", "## Other Plane Projects", "### EMPTY", "*(No active tickets)*", "### X", "### Z"}
+	order := []string{"### Milestone 1: A", "### Milestone 2: B", "### Alpha", "### General"}
 	last := -1
 	for _, want := range order {
 		i := strings.Index(md, want)
@@ -63,8 +60,25 @@ func TestRenderDevStatusMarkdownGroupsByMilestoneAndProject(t *testing.T) {
 	if strings.Index(md, "**A**") > strings.Index(md, "**B**") {
 		t.Error("equal numbers are ordered by id")
 	}
-	if strings.Index(md, "**X-1**") > strings.Index(md, "**X-2**") {
-		t.Error("other projects' tickets are ordered by number, then id")
+	if strings.Contains(md, "Other Plane Projects") {
+		t.Error("a status file has no section for other projects")
+	}
+}
+
+func TestRenderDevStatusMarkdownNamesItsOwnProject(t *testing.T) {
+	peer := renderDevStatusMarkdown([]ticketItem{{id: "DCORE-1", num: 1, title: "sidecar", milestone: "M"}},
+		&StatusReplicationReport{ProjectIdentifier: "DCORE"})
+	if !strings.HasPrefix(peer, "# DCORE Project Development Status & Roadmap") || !strings.Contains(peer, "**DCORE**, managed") {
+		t.Errorf("header does not name the project:\n%s", peer)
+	}
+	for _, unwanted := range []string{"Complexity Analysis", "Active Milestone", "Dendrite"} {
+		if strings.Contains(peer, unwanted) {
+			t.Errorf("a peer file must not carry the Dendrite-only %q", unwanted)
+		}
+	}
+	den := renderDevStatusMarkdown(nil, &StatusReplicationReport{ProjectIdentifier: "DEN", ActiveMilestone: "M17"})
+	if !strings.Contains(den, "# Dendrite Project") || !strings.Contains(den, "Complexity Analysis") || !strings.Contains(den, "Active Milestone**: M17") {
+		t.Errorf("the Dendrite file keeps its header, table and milestone:\n%s", den)
 	}
 }
 

@@ -17,7 +17,7 @@ func TestPlaneSyncToolsReportEachFailure(t *testing.T) {
 		on("GET", "/states/", 200, `{"results":[]}`),
 		on("GET", "/modules/", 200, `{"results":[]}`),
 		on("GET", "/issues/", 200, `{"results":[]}`),
-		on("GET", "/projects/", 200, `{"results":[]}`),
+		on("GET", "/projects/", 200, `{"results":[{"id":"proj","identifier":"DEN"}]}`),
 		on("GET", "/pages/", 200, `[]`),
 	}
 	with := func(first apiRule) []apiRule { return append([]apiRule{first}, healthy...) }

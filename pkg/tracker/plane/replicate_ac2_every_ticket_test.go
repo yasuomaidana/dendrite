@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestAC2_EveryTicketGroupedByModuleAndOtherProjects(t *testing.T) {
+func TestAC2_EveryTicketOfTheProjectGroupedByModule(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -163,14 +163,18 @@ func TestAC2_EveryTicketGroupedByModuleAndOtherProjects(t *testing.T) {
 		t.Fatalf("PullStatusFromPlane failed: %v", err)
 	}
 
-	if rep.TotalTickets != 7 {
-		t.Errorf("expected 7 tickets (3 DEN + 4 other), got %d", rep.TotalTickets)
+	if rep.TotalTickets != 3 {
+		t.Errorf("expected the 3 DEN tickets and nothing from the other projects, got %d", rep.TotalTickets)
 	}
 
-	// Verify all tickets appear
-	for _, expectedID := range []string{"DEN-035", "DEN-036", "DEN-984", "DCORE-001", "DRAG-001", "DGIT-001", "DMCP-001"} {
+	for _, expectedID := range []string{"DEN-035", "DEN-036", "DEN-984"} {
 		if !strings.Contains(rendered, expectedID) {
 			t.Errorf("expected rendered output to contain ticket %s", expectedID)
+		}
+	}
+	for _, foreign := range []string{"DCORE", "DRAG", "DGIT", "DMCP", "Other Plane Projects"} {
+		if strings.Contains(rendered, foreign) {
+			t.Errorf("DEV_STATUS.md of DEN must not mention %s:\n%s", foreign, rendered)
 		}
 	}
 
@@ -195,29 +199,16 @@ func TestAC2_EveryTicketGroupedByModuleAndOtherProjects(t *testing.T) {
 	if !strings.Contains(rendered, "[State: To Verify, Priority: Urgent]") {
 		t.Errorf("missing To Verify/Urgent state tag for DEN-984")
 	}
-
-	// Verify Other Plane Projects section
-	if !strings.Contains(rendered, "## Other Plane Projects") {
-		t.Errorf("missing Other Plane Projects section header")
-	}
-	if !strings.Contains(rendered, "### DCORE") {
-		t.Errorf("missing DCORE subsection")
-	}
-	if !strings.Contains(rendered, "### DRAG") {
-		t.Errorf("missing DRAG subsection")
-	}
-	if !strings.Contains(rendered, "### DGIT") {
-		t.Errorf("missing DGIT subsection")
-	}
-	if !strings.Contains(rendered, "### DMCP") {
-		t.Errorf("missing DMCP subsection")
-	}
 }
 
 func TestAC3_DeterministicReplicationNoDiff(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/workspaces/ws/projects/"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"results": [{"id": "proj", "identifier": "DEN"}]}`))
+
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/states/"):
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"results": [

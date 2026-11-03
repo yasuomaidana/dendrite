@@ -289,7 +289,7 @@ func TestAC4_StatementCoverageEdgeCases(t *testing.T) {
 	}
 }
 
-func TestPullStatusFromPlane_RelocatedCopiesUseSubProjectIDsAndStates(t *testing.T) {
+func TestPullStatusFromPlane_EachProjectKeepsItsOwnIDsAndStates(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -318,17 +318,21 @@ func TestPullStatusFromPlane_RelocatedCopiesUseSubProjectIDsAndStates(t *testing
 	}))
 	defer server.Close()
 
-	client, err := NewClient(Config{BaseURL: server.URL, WorkspaceSlug: "ws", ProjectID: "proj-den", DirectToken: "k"}, server.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	rendered, rep, err := PullStatusFromPlane(context.Background(), client)
-	if err != nil {
-		t.Fatalf("PullStatusFromPlane failed: %v", err)
+	pull := func(projectID string) (string, *StatusReplicationReport) {
+		client, err := NewClient(Config{BaseURL: server.URL, WorkspaceSlug: "ws", ProjectID: projectID, DirectToken: "k"}, server.Client())
+		if err != nil {
+			t.Fatal(err)
+		}
+		rendered, rep, err := PullStatusFromPlane(context.Background(), client)
+		if err != nil {
+			t.Fatalf("PullStatusFromPlane(%s) failed: %v", projectID, err)
+		}
+		return rendered, rep
 	}
 
-	if !strings.Contains(rendered, "**DCORE-6**: [DEN-018] AST Context Compaction [State: To Verify") {
-		t.Errorf("relocated copy not listed under its DCORE key with the DCORE state:\n%s", rendered)
+	rendered, rep := pull("proj-den")
+	if strings.Contains(rendered, "DCORE") || strings.Contains(rendered, "AST Context Compaction") {
+		t.Errorf("another project's ticket leaked into the DEN file:\n%s", rendered)
 	}
 	if strings.Contains(rendered, "### DEND") {
 		t.Errorf("DEND-* tickets living in DEN must not get their own project section:\n%s", rendered)
@@ -339,7 +343,15 @@ func TestPullStatusFromPlane_RelocatedCopiesUseSubProjectIDsAndStates(t *testing
 	if !strings.Contains(rendered, "**DEN-701-COV-1**: Coverage Gap") {
 		t.Errorf("suffixed follow-up IDs must be kept whole:\n%s", rendered)
 	}
-	if rep.ToVerifyTickets != 1 || rep.TodoTickets != 3 {
-		t.Errorf("state counts = verify %d, todo %d; want 1, 3", rep.ToVerifyTickets, rep.TodoTickets)
+	if rep.ToVerifyTickets != 0 || rep.TodoTickets != 3 {
+		t.Errorf("DEN state counts = verify %d, todo %d; want 0, 3", rep.ToVerifyTickets, rep.TodoTickets)
+	}
+
+	rendered, rep = pull("proj-dcore")
+	if !strings.Contains(rendered, "**DCORE-6**: [DEN-018] AST Context Compaction [State: To Verify") {
+		t.Errorf("relocated copy not listed under its DCORE key with the DCORE state:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "DEN-942") || rep.ToVerifyTickets != 1 || rep.TodoTickets != 0 {
+		t.Errorf("DCORE file = verify %d, todo %d, and must hold no DEN ticket:\n%s", rep.ToVerifyTickets, rep.TodoTickets, rendered)
 	}
 }

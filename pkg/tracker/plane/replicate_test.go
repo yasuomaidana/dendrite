@@ -188,6 +188,10 @@ func TestReplicateStatusFromPlane(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/workspaces/ws/projects/"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"results": [{"id": "proj", "identifier": "DEN"}]}`))
+
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/states/"):
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"results": [
@@ -308,6 +312,10 @@ func TestAC1_KnownStatesAndSummaryCounts(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/workspaces/ws/projects/"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"results": [{"id": "proj", "identifier": "DEN"}]}`))
+
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/states/"):
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"results": [

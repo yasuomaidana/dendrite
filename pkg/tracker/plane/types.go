@@ -228,5 +228,5 @@ type StatusReplicationReport struct {
 	PagesCount        int           `json:"pages_count"`
 	RelationsCount    int           `json:"relations_count,omitempty"`
 	Duration          time.Duration `json:"duration"`
-	OtherProjects     []string      `json:"other_projects,omitempty"`
+	ProjectIdentifier string        `json:"project_identifier,omitempty"`
 }

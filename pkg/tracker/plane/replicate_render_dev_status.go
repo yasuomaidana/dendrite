@@ -23,13 +23,32 @@ var pendingComplexityRows = []struct{ id, open, line string }{
 func renderDevStatusMarkdown(items []ticketItem, report *StatusReplicationReport) string {
 	var sb strings.Builder
 
-	sb.WriteString("# Dendrite Project Development Status & Roadmap\n\n")
+	isDendrite := report == nil || report.ProjectIdentifier == "" || report.ProjectIdentifier == "DEN"
+	writeDevStatusHeader(&sb, report, isDendrite)
+	if isDendrite {
+		writeComplexityTable(&sb, items)
+	}
+	sb.WriteString("## Milestone Execution Pipeline\n\n")
+	writeMilestoneSections(&sb, items)
+
+	return sb.String()
+}
+
+// writeDevStatusHeader writes the title, the project's own name and the status overview.
+func writeDevStatusHeader(sb *strings.Builder, report *StatusReplicationReport, isDendrite bool) {
+	projName := "Dendrite"
+	if !isDendrite {
+		projName = report.ProjectIdentifier
+	}
+	sb.WriteString(fmt.Sprintf("# %s Project Development Status & Roadmap\n\n", projName))
 	sb.WriteString("This document maintains the real-time development status, milestones, and active ticket execution pipeline for\n")
-	sb.WriteString("**Dendrite**, managed following the autonomous ticket lifecycle protocol.\n\n")
+	sb.WriteString(fmt.Sprintf("**%s**, managed following the autonomous ticket lifecycle protocol.\n\n", projName))
 	sb.WriteString("---\n\n")
 
 	sb.WriteString("## Current Status Overview\n\n")
-	sb.WriteString(fmt.Sprintf("- **Active Milestone**: %s\n", report.ActiveMilestone))
+	if report.ActiveMilestone != "" {
+		sb.WriteString(fmt.Sprintf("- **Active Milestone**: %s\n", report.ActiveMilestone))
+	}
 	sb.WriteString(fmt.Sprintf("- **Current Focus**: %s\n", report.CurrentFocus))
 	sb.WriteString(fmt.Sprintf("- **Last Updated**: %s\n", time.Now().Format("2006-01-02")))
 	sb.WriteString(fmt.Sprintf("- **Summary**: Backlog: %d | To Do: %d | In Progress: %d | To Verify: %d | Done: %d (Total: %d)\n",
@@ -37,7 +56,44 @@ func renderDevStatusMarkdown(items []ticketItem, report *StatusReplicationReport
 	sb.WriteString(fmt.Sprintf("- **Overall Progress**: %d / %d Tickets Completed (%.1f%%)\n\n",
 		report.CompletedTickets, report.TotalTickets, report.OverallProgress))
 	sb.WriteString("---\n\n")
+}
 
+// writeMilestoneSections lists the tickets grouped by milestone, milestones in numeric order.
+func writeMilestoneSections(sb *strings.Builder, items []ticketItem) {
+	milestoneMap := make(map[string][]ticketItem)
+	for _, it := range items {
+		ms := strings.TrimSpace(it.milestone)
+		if ms == "" {
+			ms = "General"
+		}
+		milestoneMap[ms] = append(milestoneMap[ms], it)
+	}
+
+	var milestoneKeys []string
+	for k := range milestoneMap {
+		milestoneKeys = append(milestoneKeys, k)
+	}
+	sort.Slice(milestoneKeys, func(i, j int) bool {
+		numI := extractMilestoneNumber(milestoneKeys[i])
+		numJ := extractMilestoneNumber(milestoneKeys[j])
+		if numI != numJ {
+			return numI < numJ
+		}
+		return milestoneKeys[i] < milestoneKeys[j]
+	})
+
+	for _, mKey := range milestoneKeys {
+		mTickets := milestoneMap[mKey]
+		sortTickets(mTickets)
+
+		sb.WriteString(fmt.Sprintf("### %s\n\n", mKey))
+		writeDevStatusTickets(sb, mTickets)
+		sb.WriteString("\n")
+	}
+}
+
+// writeComplexityTable writes the Dendrite-only table that orders the open DEN tickets by complexity.
+func writeComplexityTable(sb *strings.Builder, items []ticketItem) {
 	sb.WriteString("## Missing Ticket Complexity Analysis & Execution Ordering\n\n")
 	sb.WriteString("All missing / incomplete tickets have been analyzed and ordered from lowest complexity (least dependencies,\n")
 	sb.WriteString("self-contained) to highest complexity (multi-component, distributed persistence, AI AST feedback):\n\n")
@@ -67,82 +123,6 @@ func renderDevStatusMarkdown(items []ticketItem, report *StatusReplicationReport
 	}
 
 	sb.WriteString("\n---\n\n")
-	sb.WriteString("## Milestone Execution Pipeline\n\n")
-
-	mainItems := make([]ticketItem, 0)
-	otherProjectItems := make(map[string][]ticketItem)
-
-	if report != nil && len(report.OtherProjects) > 0 {
-		for _, op := range report.OtherProjects {
-			otherProjectItems[op] = make([]ticketItem, 0)
-		}
-	}
-
-	for _, it := range items {
-		proj := strings.ToUpper(strings.TrimSpace(it.project))
-		if proj == "" || proj == "DEN" {
-			mainItems = append(mainItems, it)
-		} else {
-			otherProjectItems[proj] = append(otherProjectItems[proj], it)
-		}
-	}
-
-	milestoneMap := make(map[string][]ticketItem)
-	for _, it := range mainItems {
-		ms := strings.TrimSpace(it.milestone)
-		if ms == "" {
-			ms = "General"
-		}
-		milestoneMap[ms] = append(milestoneMap[ms], it)
-	}
-
-	var milestoneKeys []string
-	for k := range milestoneMap {
-		milestoneKeys = append(milestoneKeys, k)
-	}
-
-	sort.Slice(milestoneKeys, func(i, j int) bool {
-		numI := extractMilestoneNumber(milestoneKeys[i])
-		numJ := extractMilestoneNumber(milestoneKeys[j])
-		if numI != numJ {
-			return numI < numJ
-		}
-		return milestoneKeys[i] < milestoneKeys[j]
-	})
-
-	for _, mKey := range milestoneKeys {
-		mTickets := milestoneMap[mKey]
-		sortTickets(mTickets)
-
-		sb.WriteString(fmt.Sprintf("### %s\n\n", mKey))
-		writeDevStatusTickets(&sb, mTickets)
-		sb.WriteString("\n")
-	}
-
-	if len(otherProjectItems) > 0 {
-		sb.WriteString("---\n\n## Other Plane Projects\n\n")
-
-		var otherProjKeys []string
-		for k := range otherProjectItems {
-			otherProjKeys = append(otherProjKeys, k)
-		}
-		sort.Strings(otherProjKeys)
-
-		for _, pKey := range otherProjKeys {
-			pTickets := otherProjectItems[pKey]
-			sortTickets(pTickets)
-
-			sb.WriteString(fmt.Sprintf("### %s\n\n", pKey))
-			if len(pTickets) == 0 {
-				sb.WriteString("*(No active tickets)*\n\n")
-			} else {
-				writeDevStatusTickets(&sb, pTickets)
-				sb.WriteString("\n")
-			}
-		}
-	}
-
-	return sb.String()
 }
 
 // sortTickets orders tickets by number, then by id.
