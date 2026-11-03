@@ -114,7 +114,7 @@ func TestRenderAPolyglotProjectIsValidYAMLWithAJobPerComponent(t *testing.T) {
 	for _, want := range []string{
 		"loom-gate complexity --format github", "loom-gate rstest --format github", "golangci/golangci-lint-action@v8",
 		"working-directory: crates", "cargo clippy --workspace --all-targets -- -D warnings -W clippy::cognitive_complexity",
-		"cargo llvm-cov --workspace --fail-under-lines 87.5", "bun install --frozen-lockfile", "bun run build",
+		"cargo llvm-cov --workspace --fail-under-lines 87.5", "components: rustfmt, clippy, llvm-tools-preview", "bun install --frozen-lockfile", "bun run build",
 		"uvx ruff check .", "--cov-fail-under=87.5", "Coverage floor (>= 87.5%)", "go-version-file: go.mod",
 	} {
 		if !strings.Contains(text, want) {

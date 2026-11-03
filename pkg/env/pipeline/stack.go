@@ -66,7 +66,7 @@ type rustStack struct{}
 
 func (rustStack) setup(c Component) []Step {
 	return []Step{
-		{Name: "Set up Rust", Uses: "dtolnay/rust-toolchain@stable", With: [][2]string{{"components", "rustfmt, clippy"}}},
+		{Name: "Set up Rust", Uses: "dtolnay/rust-toolchain@stable", With: [][2]string{{"components", "rustfmt, clippy, llvm-tools-preview"}}},
 		{Name: "Cache cargo", Uses: "Swatinem/rust-cache@v2", With: [][2]string{{"workspaces", c.Dir}}},
 	}
 }
