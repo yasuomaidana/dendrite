@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"Dendrite/pkg/testkit"
 )
 
 func TestSiteConfigBuilder(t *testing.T) {
@@ -458,7 +460,8 @@ func TestAgentAndService(t *testing.T) {
 	}
 
 	// Test Serve
-	serverInst, err := svc.Serve(ctx, siteDir, 39998)
+	// A free port: a fixed one fails when two test runs overlap on the same machine.
+	serverInst, err := svc.Serve(ctx, siteDir, testkit.FreePort(t))
 	if err != nil {
 		t.Fatalf("service Serve failed: %v", err)
 	}
