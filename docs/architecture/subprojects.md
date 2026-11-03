@@ -47,14 +47,15 @@ Every repository we can modify is a Plane project, and repositories that depend 
   - tree-sitter signature folding and last-complete-node detection
   - complexity metrics and CFG slices
   - BLAKE3 hashing and token counting
+  - changed symbols and the symbols a range defines and uses (`ast.defs_uses`)
 
-  It replaces the heuristics in `pkg/ast` and `pkg/ai/tokenopt`.
+  Implemented: complexity, folding, last-complete-node, changed symbols, defs and uses, BLAKE3 chunk identity and token estimates (estimates only; exact tokenizers are not bundled). CFG slices and the intermediate representation are not implemented. Dendrite uses it through `pkg/coreclient`; the Go analyzers in `pkg/ast` and `pkg/ai/tokenopt` are deleted (see `docs/quality/core-parity.md` for the comparison and the speed result).
 - **dendrite-git-rs** owns:
   - the gitoxide hunk dependency graph
   - the semantic commit clusterer
   - the `--local-review` stacked-branch engine
 
-  It sits behind the `pkg/vcs` / `pkg/devtool` commit flow.
+  Implemented so far: hunk extraction (`git.hunks`). The hunk graph, clusterer, plan validation, apply and the stacked-branch engine are specified and not built; the Go commit flow in `pkg/vcs` and `pkg/devtool` stays until they exist.
 - **dendrite-rag-rs** owns:
   - BM25 + vector hybrid retrieval
   - the content-addressed store
@@ -62,7 +63,7 @@ Every repository we can modify is a Plane project, and repositories that depend 
 
   Retrieval is complete: `pkg/rag` keeps only the sidecar client (`Retriever`) and the ask orchestration, and the Go indexer is gone. The search primitives in `pkg/agentsearch` and `pkg/store` are still to move.
 - **embedag** owns every graph and DAG algorithm: toposort, levels, reverse dependencies, critical path, Merkle delta trees, AST similarity graphs, and Graph-RAG primitives (RRF, community detection).
-  - It is consumed by `dendrite-core-rs` and `dendrite-rag-rs` with `default-features = false, features = ["core", "matcher"]`.
+  - Today the only dependent is `dendrite-rag-rs`, with feature `core`, for the Merkle delta trees. Planned: `dendrite-git-rs` for strongly connected components (EMBEDAG-83 is done) and `dendrite-core-rs` serving `dag.*` for the Go DAG code (DCORE-11).
   - New DAG code is not written in Go.
 
 ## Pending moves (marked in the code)
