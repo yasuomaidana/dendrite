@@ -4,9 +4,6 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
-### Added
-- CI: `.github/workflows/complexity.yml` cross-checks function complexity with `gocyclo`, `gocognit` and `ruff` (C901) next to Dendrite's own check; report only while the Go debt (DEN-816) is open (DEN-815).
-
 ## [0.1.0] - 2026-11-01
 
 First release from `develop` to `main` since 2026-10-19 (180 commits). Which commands are new is in [`docs/cli/availability.md`](docs/cli/availability.md).
@@ -22,9 +19,14 @@ First release from `develop` to `main` since 2026-10-19 (180 commits). Which com
 - **Synapses (DEN-373):** `synapse add|delete|remove-member`, per-synapse peer listing, and `chronos request` to file a ticket in a peer's project.
 - **Environment (DEN-366):** `soma secrets ensure|status`, `soma stacks migrate`, `soma migrate-state`.
 - **Diagnostics (DEN-326):** `dendrite inter probe`, a read-only pass/fail matrix over the MCP tools; `sensory usage`; `bouton jobs show|watch`.
+- **Syntax analysis in Rust (DEN-813):** `pkg/coreclient` talks to the `dendrite-core` sidecar (dendrite-core-rs) for complexity, signature folding, last complete node, changed symbols, token estimates and chunk identity. `pkg/assert`, `pkg/ai/importer` and `pkg/ai/tokenopt` use it. `dendrite-core` is required, with no Go fallback; `dendrite doctor` reports it.
+- **Complexity and structure gates (DEN-812):** directives `[complexity]` (`max_cyclomatic` 10, `max_cognitive` 15) and `[structure]` (`max_files_per_dir` 12, `max_dir_production_lines` 3000, `max_prefix_group` 4, `require_docs`, `docs_files`) and the `complexity` and `structure` checks of `dendrite allostasis gate` and `chronos finish`, run on the `dendrite-rag` sidecar (protocol 1.12). The structure check also requires a README and a CHANGELOG for every crate, module and repository root.
+- **Second opinion in CI (DEN-815):** `.github/workflows/complexity.yml` cross-checks complexity with `gocyclo` and `gocognit` (report only while DEN-816 is open) and `ruff` C901, reading the limits from the directives; see `docs/quality/complexity-second-opinion.md`.
+- **Pending moves (DEN-814, DEN-818):** Go files that will move to a Rust repository or to dendrite-mcp-hub carry a `TODO(move:<repo>,<TICKET>)` block (what, when, what stays), listed in `docs/architecture/subprojects.md`, which also states what each sub-project implements today.
 
 ### Changed
 
+- **The Go complexity, folding and token analyzers in `pkg/ast` and `pkg/ai/tokenopt` are deleted (DEN-813).** A one-off comparison on 489 files and 2,955 functions found identical cyclomatic values (`docs/quality/core-parity.md`). The sidecar is about 4 times slower than the in-process analyzer on that corpus (0.40 s against 0.10 s); the fix is tracked as DCORE-13. `pkg/ast` keeps the symbol graph until it moves (DRAG-79).
 - API keys and vendor settings are configured once in `$DENDRITE_HOME/.env`; a project `.env` no longer overrides them (DEN-1057, DEN-343).
 - Plane, Jira and Linear clients, topology, the HTTP server and the inference engines share transport and stream helpers instead of repeating blocks (DEN-419, DEN-444).
 - Go files over 500 production lines were split by responsibility (DEN-412, DEN-1053).
@@ -37,6 +39,11 @@ First release from `develop` to `main` since 2026-10-19 (180 commits). Which com
 - Ticket resolution is one shared resolver with no substring matches (DEN-324); the finish gate lists its failing lines (DEN-401) and proves each verdict (DEN-406).
 - Tests cannot reach the real Docker or write the real stacks directory (DEN-371).
 - The Plane HITL sync reads comments from one `gh issue list`, 55 s down to 2.6 s on 128 tickets (DEN-338).
+
+### Known limits
+
+- The new `complexity` and `structure` checks fail on this repository when run over everything: 829 functions are above cyclomatic 10 or cognitive 15 (DEN-816) and many directories hold more than 12 modules or a group of files sharing a name prefix. The gate and `chronos finish` judge only what a change touches, so work is not blocked; the CI cross-check reports the totals without failing.
+- Go code that duplicates a Rust sub-project is marked `TODO(move:...)` and listed in `docs/architecture/subprojects.md`; it is not removed yet.
 
 ### Security
 
