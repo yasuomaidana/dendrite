@@ -33,36 +33,36 @@ func present(dir string, k Kind) bool {
 	return hasKind(comps, k)
 }
 
-func golangciContent(dir string, s directive.Set) []byte {
-	if !present(dir, Go) {
-		return nil
+// forKind renders a configuration file only for a project that has a component of the kind.
+func forKind(k Kind, body func(directive.Set) string) func(string, directive.Set) []byte {
+	return func(dir string, s directive.Set) []byte {
+		if !present(dir, k) {
+			return nil
+		}
+		return []byte(directive.Header + "\n" + body(s))
 	}
-	return []byte(strings.Join([]string{
-		directive.Header,
-		`version: "2"`,
-		"linters:",
-		"  enable:",
-		"    - gocyclo",
-		"    - gocognit",
-		"  settings:",
-		"    gocyclo:",
-		fmt.Sprintf("      min-complexity: %d", s.Complexity.MaxCyclomatic),
-		"    gocognit:",
-		fmt.Sprintf("      min-complexity: %d", s.Complexity.MaxCognitive),
-		"",
-	}, "\n"))
 }
 
-func clippyContent(dir string, s directive.Set) []byte {
-	if !present(dir, Rust) {
-		return nil
-	}
-	return []byte(fmt.Sprintf("%s\ncognitive-complexity-threshold = %d\n", directive.Header, s.Complexity.MaxCognitive))
-}
-
-func ruffContent(dir string, s directive.Set) []byte {
-	if !present(dir, UV) {
-		return nil
-	}
-	return []byte(fmt.Sprintf("%s\n[lint]\nselect = [\"E\", \"F\", \"C90\"]\n\n[lint.mccabe]\nmax-complexity = %d\n", directive.Header, s.Complexity.MaxCyclomatic))
-}
+var (
+	golangciContent = forKind(Go, func(s directive.Set) string {
+		return strings.Join([]string{
+			`version: "2"`,
+			"linters:",
+			"  enable:",
+			"    - gocyclo",
+			"    - gocognit",
+			"  settings:",
+			"    gocyclo:",
+			fmt.Sprintf("      min-complexity: %d", s.Complexity.MaxCyclomatic),
+			"    gocognit:",
+			fmt.Sprintf("      min-complexity: %d", s.Complexity.MaxCognitive),
+			"",
+		}, "\n")
+	})
+	clippyContent = forKind(Rust, func(s directive.Set) string {
+		return fmt.Sprintf("cognitive-complexity-threshold = %d\n", s.Complexity.MaxCognitive)
+	})
+	ruffContent = forKind(UV, func(s directive.Set) string {
+		return fmt.Sprintf("[lint]\nselect = [\"E\", \"F\", \"C90\"]\n\n[lint.mccabe]\nmax-complexity = %d\n", s.Complexity.MaxCyclomatic)
+	})
+)

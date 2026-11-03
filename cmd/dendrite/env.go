@@ -127,15 +127,8 @@ func newSomaPrepareCmd() *cobra.Command {
 }
 
 func runSomaPrepare(ctx context.Context, o somaPrepareOptions, out io.Writer) error {
-	pathVal := o.Path
-	if reg, err := newProjectRegistry(); err == nil {
-		if p, err := reg.GetProject(pathVal); err == nil && p != nil {
-			pathVal = p.Path
-		}
-	}
-
 	report, err := bootstrap.NewPreparer().Prepare(ctx, bootstrap.PrepareOptions{
-		ProjectPath: pathVal,
+		ProjectPath: resolvePrepareTarget(o.Path),
 		DefaultTool: o.Tool,
 		EnforceCICD: !o.NoCICD,
 		SyncSkills:  !o.NoSkills,
@@ -148,38 +141,65 @@ func runSomaPrepare(ctx context.Context, o somaPrepareOptions, out io.Writer) er
 	if globals.JSON {
 		return writeJSON(out, report)
 	}
+	printPrepareReport(out, report)
+	return nil
+}
 
+// resolvePrepareTarget maps a registered project name to its directory; any other value is a path.
+func resolvePrepareTarget(target string) string {
+	reg, err := newProjectRegistry()
+	if err != nil {
+		return target
+	}
+	if p, err := reg.GetProject(target); err == nil && p != nil {
+		return p.Path
+	}
+	return target
+}
+
+func printPrepareReport(out io.Writer, report *bootstrap.PrepareReport) {
 	fmt.Fprintln(out, "[+] Project Environment Preparation & CI/CD Enforcement:")
 	fmt.Fprintf(out, "    - Project Path:       %s\n", report.ProjectPath)
 	fmt.Fprintf(out, "    - Primary Stack:      %s\n", strings.ToUpper(string(report.Stack.PrimaryStack)))
 	if len(report.Stack.SecondaryStacks) > 0 {
-		var sec []string
-		for _, s := range report.Stack.SecondaryStacks {
-			sec = append(sec, strings.ToUpper(string(s)))
-		}
-		fmt.Fprintf(out, "    - Secondary Stacks:   %s\n", strings.Join(sec, ", "))
+		fmt.Fprintf(out, "    - Secondary Stacks:   %s\n", upperJoin(report.Stack.SecondaryStacks))
 	}
-	fmt.Fprintf(out, "    - Default Tool:       %s (Installed: %v)\n", report.CICD.DefaultTool, report.CICD.ToolInstalled)
-	if !report.CICD.ToolInstalled && report.CICD.ToolInstallCommand != "" {
-		fmt.Fprintf(out, "      * Tooling Guide:    %s\n", report.CICD.ToolInstallCommand)
+	printPrepareCICD(out, report.CICD)
+	printPrepareFiles(out, report)
+	fmt.Fprintf(out, "    - Execution Duration: %v\n", report.Duration)
+}
+
+func upperJoin(stacks []bootstrap.LanguageStack) string {
+	names := make([]string, 0, len(stacks))
+	for _, s := range stacks {
+		names = append(names, strings.ToUpper(string(s)))
 	}
-	fmt.Fprintf(out, "    - Coverage Gate:      >= %.1f%%\n", report.CICD.CoverageThreshold)
-	fmt.Fprintf(out, "    - Copilot Rules:      %s\n", report.CICD.CopilotInstructions)
-	fmt.Fprintf(out, "    - CI/CD Workflow:     %s\n", report.CICD.CIWorkflowPath)
-	if len(report.FilesCreated) > 0 {
-		fmt.Fprintf(out, "    - Files Created (%d): %s\n", len(report.FilesCreated), strings.Join(report.FilesCreated, ", "))
+	return strings.Join(names, ", ")
+}
+
+func printPrepareCICD(out io.Writer, c bootstrap.CICDStatus) {
+	fmt.Fprintf(out, "    - Default Tool:       %s (Installed: %v)\n", c.DefaultTool, c.ToolInstalled)
+	if !c.ToolInstalled && c.ToolInstallCommand != "" {
+		fmt.Fprintf(out, "      * Tooling Guide:    %s\n", c.ToolInstallCommand)
 	}
-	if len(report.FilesUpdated) > 0 {
-		fmt.Fprintf(out, "    - Files Updated (%d): %s\n", len(report.FilesUpdated), strings.Join(report.FilesUpdated, ", "))
-	}
+	fmt.Fprintf(out, "    - Coverage Gate:      >= %.1f%%\n", c.CoverageThreshold)
+	fmt.Fprintf(out, "    - Copilot Rules:      %s\n", c.CopilotInstructions)
+	fmt.Fprintf(out, "    - CI/CD Workflow:     %s\n", c.CIWorkflowPath)
+}
+
+func printPrepareFiles(out io.Writer, report *bootstrap.PrepareReport) {
+	printCounted(out, "Files Created", report.FilesCreated)
+	printCounted(out, "Files Updated", report.FilesUpdated)
 	for _, note := range report.Notes {
 		fmt.Fprintf(out, "    - [i] %s\n", note)
 	}
-	if len(report.SkillsSynced) > 0 {
-		fmt.Fprintf(out, "    - Skills Synced (%d): %s\n", len(report.SkillsSynced), strings.Join(report.SkillsSynced, ", "))
+	printCounted(out, "Skills Synced", report.SkillsSynced)
+}
+
+func printCounted(out io.Writer, label string, items []string) {
+	if len(items) > 0 {
+		fmt.Fprintf(out, "    - %s (%d): %s\n", label, len(items), strings.Join(items, ", "))
 	}
-	fmt.Fprintf(out, "    - Execution Duration: %v\n", report.Duration)
-	return nil
 }
 
 func newSomaPlanCmd() *cobra.Command {

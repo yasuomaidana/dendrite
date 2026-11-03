@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -61,24 +60,29 @@ func renderOne(dir string, s Set, a Artifact, write bool, res *RenderResult) err
 		return nil
 	}
 	path := filepath.Join(dir, filepath.FromSlash(a.Path))
-	existing, err := os.ReadFile(path)
-	switch {
-	case err == nil && !a.Owns(existing):
-		res.Kept = append(res.Kept, a.Path)
-		return nil
-	case err == nil && bytes.Equal(existing, want):
-		return nil
-	case err != nil && !os.IsNotExist(err):
+	existing, existed, err := fsutil.ReadIfPresent(path)
+	if err != nil {
 		return err
 	}
+	switch {
+	case existed && !a.Owns(existing):
+		res.Kept = append(res.Kept, a.Path)
+		return nil
+	case existed && bytes.Equal(existing, want):
+		return nil
+	}
+	return emit(path, a.Path, want, existed, write, res)
+}
+
+func emit(path, rel string, want []byte, existed, write bool, res *RenderResult) error {
 	if write {
 		if err := fsutil.WriteFileAtomic(path, want); err != nil {
-			return fmt.Errorf("write %s: %w", a.Path, err)
+			return fmt.Errorf("write %s: %w", rel, err)
 		}
 	}
-	res.Written = append(res.Written, a.Path)
-	if err != nil {
-		res.Created = append(res.Created, a.Path)
+	res.Written = append(res.Written, rel)
+	if !existed {
+		res.Created = append(res.Created, rel)
 	}
 	return nil
 }

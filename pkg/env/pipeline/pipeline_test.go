@@ -10,18 +10,8 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"Dendrite/pkg/directive"
+	"Dendrite/pkg/fsutil/fsutiltest"
 )
-
-func put(t *testing.T, root, rel, content string) {
-	t.Helper()
-	path := filepath.Join(root, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func ids(comps []Component) []string {
 	var out []string
@@ -53,7 +43,7 @@ func TestDetect(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			for rel, content := range c.files {
-				put(t, root, rel, content)
+				fsutiltest.WriteFile(t, root, rel, content)
 			}
 			comps, notes := Detect(root)
 			if got := ids(comps); strings.Join(got, ",") != strings.Join(c.want, ",") {
@@ -71,9 +61,9 @@ func TestDetect(t *testing.T) {
 
 func TestWorkspaceAndScripts(t *testing.T) {
 	root := t.TempDir()
-	put(t, root, "Cargo.toml", "[workspace]\nmembers = []\n")
-	put(t, root, "package.json", `{"scripts":{"lint":"a","build":"b"}}`)
-	put(t, root, "bun.lock", "{}")
+	fsutiltest.WriteFile(t, root, "Cargo.toml", "[workspace]\nmembers = []\n")
+	fsutiltest.WriteFile(t, root, "package.json", `{"scripts":{"lint":"a","build":"b"}}`)
+	fsutiltest.WriteFile(t, root, "bun.lock", "{}")
 	comps, _ := Detect(root)
 	if len(comps) != 2 || !comps[0].Workspace || !comps[1].Has("lint") || comps[1].Has("test") {
 		t.Errorf("%+v", comps)
@@ -109,12 +99,12 @@ func jobIDs(wf workflow) string {
 
 func TestRenderAPolyglotProjectIsValidYAMLWithAJobPerComponent(t *testing.T) {
 	root := t.TempDir()
-	put(t, root, "go.mod", "module x\n")
-	put(t, root, "crates/Cargo.toml", "[workspace]\n")
-	put(t, root, "web/package.json", `{"scripts":{"lint":"a","test":"b","build":"c"}}`)
-	put(t, root, "web/bun.lock", "{}")
-	put(t, root, "py/pyproject.toml", "[project]\n")
-	put(t, root, "py/tests/test_a.py", "")
+	fsutiltest.WriteFile(t, root, "go.mod", "module x\n")
+	fsutiltest.WriteFile(t, root, "crates/Cargo.toml", "[workspace]\n")
+	fsutiltest.WriteFile(t, root, "web/package.json", `{"scripts":{"lint":"a","test":"b","build":"c"}}`)
+	fsutiltest.WriteFile(t, root, "web/bun.lock", "{}")
+	fsutiltest.WriteFile(t, root, "py/pyproject.toml", "[project]\n")
+	fsutiltest.WriteFile(t, root, "py/tests/test_a.py", "")
 	set := directive.Defaults()
 	set.Coverage.MinPercent = 87.5
 	text, wf := render(t, root, set, Extension{})
@@ -138,8 +128,8 @@ func TestRenderAPolyglotProjectIsValidYAMLWithAJobPerComponent(t *testing.T) {
 
 func TestRenderWithoutRustSkipsRstestAndTheExtensionShapesTheJobs(t *testing.T) {
 	root := t.TempDir()
-	put(t, root, "Cargo.toml", "[package]\nname = \"x\"\n")
-	put(t, root, "go.mod", "module x\n")
+	fsutiltest.WriteFile(t, root, "Cargo.toml", "[package]\nname = \"x\"\n")
+	fsutiltest.WriteFile(t, root, "go.mod", "module x\n")
 	ext := Extension{
 		Env:               map[string]string{"A": "1"},
 		PreTest:           []map[string]any{{"name": "Build it", "run": "make"}},
@@ -179,22 +169,23 @@ func TestLoadExtension(t *testing.T) {
 	if ext, err := LoadExtension(root); err != nil || ext.LoomGate != "" {
 		t.Fatalf("no file is an empty extension: %+v, %v", ext, err)
 	}
-	put(t, root, ExtensionPath, "")
+	fsutiltest.WriteFile(t, root, ExtensionPath, "")
 	if _, err := LoadExtension(root); err != nil {
 		t.Errorf("an empty file is an empty extension: %v", err)
 	}
-	put(t, root, ExtensionPath, "skip_coverage_floor: true\n")
+	fsutiltest.WriteFile(t, root, ExtensionPath, "skip_coverage_floor: true\n")
 	if ext, err := LoadExtension(root); err != nil || !ext.SkipCoverageFloor {
 		t.Errorf("%+v, %v", ext, err)
 	}
-	put(t, root, ExtensionPath, "nope: 1\n")
+	fsutiltest.WriteFile(t, root, ExtensionPath, "nope: 1\n")
 	if _, err := LoadExtension(root); err == nil || !strings.Contains(err.Error(), "pipeline.yml") {
 		t.Errorf("a bad extension names its file: %v", err)
 	}
-	if err := os.Remove(filepath.Join(root, filepath.FromSlash(ExtensionPath))); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(filepath.Join(root, filepath.FromSlash(ExtensionPath)), 0o755); err != nil {
+}
+
+func TestLoadExtensionRefusesADirectoryWhereTheFileBelongs(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(ExtensionPath)), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := LoadExtension(root); err == nil {
@@ -209,20 +200,32 @@ func TestLintConfigurationsFollowTheDirectivesAndTheComponents(t *testing.T) {
 	if golangciContent(root, set) != nil || clippyContent(root, set) != nil || ruffContent(root, set) != nil {
 		t.Error("a project with none of the stacks gets none of the configurations")
 	}
-	put(t, root, "go.mod", "module x\n")
-	put(t, root, "Cargo.toml", "[package]\n")
-	put(t, root, "pyproject.toml", "[tool.pytest.ini_options]\n")
-	for name, got := range map[string][]byte{"golangci": golangciContent(root, set), "clippy": clippyContent(root, set), "ruff": ruffContent(root, set)} {
-		if !ownsConfig(got) {
+	fsutiltest.WriteFile(t, root, "go.mod", "module x\n")
+	fsutiltest.WriteFile(t, root, "Cargo.toml", "[package]\n")
+	fsutiltest.WriteFile(t, root, "pyproject.toml", "[tool.pytest.ini_options]\n")
+	for name, want := range map[string]struct {
+		got  []byte
+		with []string
+	}{
+		"golangci": {golangciContent(root, set), []string{"min-complexity: 6", "min-complexity: 9"}},
+		"clippy":   {clippyContent(root, set), []string{"threshold = 9"}},
+		"ruff":     {ruffContent(root, set), []string{"max-complexity = 6"}},
+	} {
+		if !ownsConfig(want.got) {
 			t.Errorf("%s carries the directives header", name)
 		}
+		for _, text := range want.with {
+			if !strings.Contains(string(want.got), text) {
+				t.Errorf("%s lacks %q (limits come from the directives):\n%s", name, text, want.got)
+			}
+		}
 	}
-	if !strings.Contains(string(golangciContent(root, set)), "min-complexity: 6") || !strings.Contains(string(golangciContent(root, set)), "min-complexity: 9") ||
-		!strings.Contains(string(clippyContent(root, set)), "threshold = 9") || !strings.Contains(string(ruffContent(root, set)), "max-complexity = 6") {
-		t.Error("limits come from the directives")
-	}
-	put(t, root, ExtensionPath, "bad: 1\n")
-	if ciContent(root, set) != nil {
+}
+
+func TestAWorkflowWhoseExtensionCannotBeReadIsKept(t *testing.T) {
+	root := t.TempDir()
+	fsutiltest.WriteFile(t, root, ExtensionPath, "bad: 1\n")
+	if ciContent(root, directive.Defaults()) != nil {
 		t.Error("a workflow whose extension cannot be read is kept")
 	}
 }
@@ -242,7 +245,7 @@ func TestToolchainDocs(t *testing.T) {
 func TestScaffold(t *testing.T) {
 	set := directive.Defaults()
 	root := t.TempDir()
-	put(t, root, "go.mod", "module x\n")
+	fsutiltest.WriteFile(t, root, "go.mod", "module x\n")
 	dry, err := Scaffold(root, set, false, true)
 	if err != nil || len(dry.Created) != 1 {
 		t.Fatalf("%+v, %v", dry, err)
@@ -260,45 +263,65 @@ func TestScaffold(t *testing.T) {
 	if res, _ := Scaffold(root, set, false, false); len(res.Updated) != 1 {
 		t.Errorf("a changed directive rewrites the workflow: %+v", res)
 	}
-	put(t, root, ".github/dendrite/pipeline.yml", "bad: 1\n")
+	fsutiltest.WriteFile(t, root, ".github/dendrite/pipeline.yml", "bad: 1\n")
 	if _, err := Scaffold(root, set, false, false); err == nil {
 		t.Error("a bad extension is an error")
 	}
 }
 
-func TestScaffoldKeepsOrAdoptsAHandWrittenWorkflow(t *testing.T) {
-	set := directive.Defaults()
-	const mine = "name: CI\njobs:\n  keep-me:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n"
+const handWrittenCI = "name: CI\njobs:\n  keep-me:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n"
+
+func handWrittenProject(t *testing.T) string {
+	t.Helper()
 	root := t.TempDir()
-	put(t, root, "go.mod", "module x\n")
-	put(t, root, WorkflowPath, mine)
-	put(t, root, ".github/workflows/quality.yml", "name: quality\n")
-	res, err := Scaffold(root, set, false, false)
+	fsutiltest.WriteFile(t, root, "go.mod", "module x\n")
+	fsutiltest.WriteFile(t, root, WorkflowPath, handWrittenCI)
+	fsutiltest.WriteFile(t, root, ".github/workflows/quality.yml", "name: quality\n")
+	return root
+}
+
+func fileAt(t *testing.T, root, rel string) bool {
+	t.Helper()
+	_, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel)))
+	return err == nil
+}
+
+func TestScaffoldKeepsAHandWrittenWorkflowByDefault(t *testing.T) {
+	root := handWrittenProject(t)
+	res, err := Scaffold(root, directive.Defaults(), false, false)
 	if err != nil || len(res.Notes) != 1 || !strings.Contains(res.Notes[0], "--adopt-ci") {
 		t.Fatalf("kept: %+v, %v", res, err)
 	}
-	if got, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(WorkflowPath))); string(got) != mine {
+	if got, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(WorkflowPath))); string(got) != handWrittenCI {
 		t.Fatal("a hand-written workflow stays byte for byte")
 	}
-	dry, err := Scaffold(root, set, true, true)
-	if err != nil || len(dry.Notes) < 3 {
+}
+
+func TestAdoptingInADryRunArchivesNothing(t *testing.T) {
+	root := handWrittenProject(t)
+	dry, err := Scaffold(root, directive.Defaults(), true, true)
+	if err != nil || len(dry.Notes) < 3 || fileAt(t, root, ".github/dendrite/ci.previous.yml") {
 		t.Fatalf("dry adopt: %+v, %v", dry, err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".github", "dendrite", "ci.previous.yml")); err == nil {
-		t.Fatal("a dry run archives nothing")
-	}
-	res, err = Scaffold(root, set, true, false)
+}
+
+func TestAdoptingArchivesTheOldWorkflowsAndNamesTheLostJobs(t *testing.T) {
+	root := handWrittenProject(t)
+	res, err := Scaffold(root, directive.Defaults(), true, false)
 	if err != nil || len(res.Updated) != 1 || !strings.Contains(strings.Join(res.Notes, "|"), "keep-me") {
 		t.Fatalf("adopted: %+v, %v", res, err)
 	}
 	for _, rel := range []string{".github/dendrite/ci.previous.yml", ".github/dendrite/quality.previous.yml"} {
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
-			t.Errorf("%s is archived: %v", rel, err)
+		if !fileAt(t, root, rel) {
+			t.Errorf("%s is archived", rel)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(root, ".github", "workflows", "quality.yml")); err == nil {
+	if fileAt(t, root, ".github/workflows/quality.yml") {
 		t.Error("the hand-written quality workflow is gone")
 	}
+}
+
+func TestUnparseableYAMLHasNoJobs(t *testing.T) {
 	if names := jobNames([]byte("jobs: [")); len(names) != 0 {
 		t.Error("unparseable YAML has no jobs")
 	}
@@ -306,7 +329,7 @@ func TestScaffoldKeepsOrAdoptsAHandWrittenWorkflow(t *testing.T) {
 
 func TestCIContentRendersAProjectsWorkflow(t *testing.T) {
 	root := t.TempDir()
-	put(t, root, "go.mod", "module x\n")
+	fsutiltest.WriteFile(t, root, "go.mod", "module x\n")
 	if got := ciContent(root, directive.Defaults()); !ownsWorkflow(got) || !strings.Contains(string(got), "golangci") {
 		t.Errorf("%s", got)
 	}
@@ -314,9 +337,9 @@ func TestCIContentRendersAProjectsWorkflow(t *testing.T) {
 
 func TestStepsOfTheNestedAndPartialComponents(t *testing.T) {
 	root := t.TempDir()
-	put(t, root, "svc/go.mod", "module x\n")
-	put(t, root, "web/package.json", `{"scripts":{"test":"a"}}`)
-	put(t, root, "web/bun.lock", "{}")
+	fsutiltest.WriteFile(t, root, "svc/go.mod", "module x\n")
+	fsutiltest.WriteFile(t, root, "web/package.json", `{"scripts":{"test":"a"}}`)
+	fsutiltest.WriteFile(t, root, "web/bun.lock", "{}")
 	text, _ := render(t, root, directive.Defaults(), Extension{})
 	for _, want := range []string{"working-directory: svc", "bun run test"} {
 		if !strings.Contains(text, want) {
@@ -343,8 +366,8 @@ func TestAdoptReportsAnArchiveItCannotWrite(t *testing.T) {
 	set := directive.Defaults()
 	for _, blocked := range []string{"ci.previous.yml", "quality.previous.yml"} {
 		root := t.TempDir()
-		put(t, root, WorkflowPath, "name: mine\n")
-		put(t, root, ".github/workflows/quality.yml", "name: q\n")
+		fsutiltest.WriteFile(t, root, WorkflowPath, "name: mine\n")
+		fsutiltest.WriteFile(t, root, ".github/workflows/quality.yml", "name: q\n")
 		if err := os.MkdirAll(filepath.Join(root, ".github", "dendrite", blocked), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -358,10 +381,10 @@ func TestScaffoldReportsAWorkflowItCannotWriteOrRemove(t *testing.T) {
 	set := directive.Defaults()
 	for _, adopt := range []bool{false, true} {
 		root := t.TempDir()
-		put(t, root, "go.mod", "module x\n")
+		fsutiltest.WriteFile(t, root, "go.mod", "module x\n")
 		if adopt {
-			put(t, root, WorkflowPath, "name: mine\n")
-			put(t, root, ".github/workflows/quality.yml", "name: q\n")
+			fsutiltest.WriteFile(t, root, WorkflowPath, "name: mine\n")
+			fsutiltest.WriteFile(t, root, ".github/workflows/quality.yml", "name: q\n")
 		}
 		dir := filepath.Join(root, ".github", "workflows")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -382,19 +405,19 @@ func TestScaffoldReportsAWorkflowItCannotWriteOrRemove(t *testing.T) {
 
 func TestAdoptWithoutAHandWrittenQualityWorkflowArchivesOnlyCI(t *testing.T) {
 	root := t.TempDir()
-	put(t, root, WorkflowPath, "name: mine\n")
+	fsutiltest.WriteFile(t, root, WorkflowPath, "name: mine\n")
 	res, err := Scaffold(root, directive.Defaults(), true, false)
 	if err != nil || len(res.Updated) != 1 {
 		t.Fatalf("%+v, %v", res, err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".github", "dendrite", "quality.previous.yml")); err == nil {
+	if fileAt(t, root, ".github/dendrite/quality.previous.yml") {
 		t.Error("there is no quality workflow to archive")
 	}
 }
 
 func TestAProjectWithItsOwnCoverageRatchetKeepsPlainTestRuns(t *testing.T) {
 	root := t.TempDir()
-	put(t, root, "pyproject.toml", "[tool.pytest.ini_options]\n")
+	fsutiltest.WriteFile(t, root, "pyproject.toml", "[tool.pytest.ini_options]\n")
 	text, _ := render(t, root, directive.Defaults(), Extension{SkipCoverageFloor: true})
 	if !strings.Contains(text, "uv run pytest\n") || strings.Contains(text, "cov-fail-under") {
 		t.Errorf("%s", text)

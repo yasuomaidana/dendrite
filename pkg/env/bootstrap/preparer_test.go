@@ -7,107 +7,115 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"Dendrite/pkg/fsutil/fsutiltest"
 )
 
 func TestDetectStack(t *testing.T) {
-	t.Run("detect go project with go.mod", func(t *testing.T) {
-		tmpDir, err := os.MkdirTemp("", "go-proj-*")
-		if err != nil {
-			t.Fatalf("failed to create temp dir: %v", err)
-		}
-		defer os.RemoveAll(tmpDir)
+	tests := []struct {
+		name   string
+		files  map[string]string
+		assert func(t *testing.T, fp ProjectFingerprint)
+	}{
+		{
+			name: "detect go project with go.mod",
+			files: map[string]string{
+				"go.mod":        "module testproj\n\ngo 1.24\n",
+				".golangci.yml": "linters:\n  enable:\n    - errcheck\n",
+			},
+			assert: func(t *testing.T, fp ProjectFingerprint) {
+				assertPrimaryStack(t, fp.PrimaryStack, StackGo, "")
+				assertGoVersion(t, fp.GoVersion, "1.24")
+				assertFirst(t, fp.Linters, "golangci-lint", "linters")
+				assertFirst(t, fp.Toolchains, "go", "toolchains")
+			},
+		},
+		{
+			name: "detect rust and polyglot typescript project with cargo and bun",
+			files: map[string]string{
+				"Cargo.toml":    "[package]\nname = \"demo\"\n",
+				"package.json":  "{\"name\": \"demo-web\", \"scripts\": {\"test\": \"bun test\"}}\n",
+				"bun.lock":      "{}\n",
+				"tsconfig.json": "{}\n",
+			},
+			assert: func(t *testing.T, fp ProjectFingerprint) {
+				assertPrimaryStack(t, fp.PrimaryStack, StackRust, "primary")
+				assertTrue(t, fp.HasCargo, "HasCargo")
+				assertTrue(t, fp.HasBun, "HasBun")
+				assertFirst(t, fp.SecondaryStacks, StackTypeScript, "secondary stacks")
+				assertToolchainBinary(t, fp.ToolchainDetails, "cargo", "cargo")
+				assertToolchainBinary(t, fp.ToolchainDetails, "bun", "bun")
+			},
+		},
+		{
+			name: "detect python project with uv",
+			files: map[string]string{
+				"pyproject.toml": "[project]\nname = \"app\"\n\n[tool.pytest.ini_options]\n",
+			},
+			assert: func(t *testing.T, fp ProjectFingerprint) {
+				assertPrimaryStack(t, fp.PrimaryStack, StackPython, "")
+				assertTrue(t, fp.HasUV, "HasUV")
+				assertToolchainBinary(t, fp.ToolchainDetails, "uv", "uv")
+			},
+		},
+	}
 
-		goModContent := "module testproj\n\ngo 1.24\n"
-		if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goModContent), 0644); err != nil {
-			t.Fatalf("failed to write go.mod: %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(tmpDir, ".golangci.yml"), []byte("linters:\n  enable:\n    - errcheck\n"), 0644); err != nil {
-			t.Fatalf("failed to write .golangci.yml: %v", err)
-		}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) { runDetectStackCase(t, tc.files, tc.assert) })
+	}
+}
 
-		p := NewPreparer()
-		fp, err := p.DetectStack(tmpDir)
-		if err != nil {
-			t.Fatalf("DetectStack failed: %v", err)
-		}
+func runDetectStackCase(t *testing.T, files map[string]string, check func(*testing.T, ProjectFingerprint)) {
+	t.Helper()
+	dir := t.TempDir()
+	for rel, content := range files {
+		fsutiltest.WriteFile(t, dir, rel, content)
+	}
+	fp, err := NewPreparer().DetectStack(dir)
+	if err != nil {
+		t.Fatalf("DetectStack failed: %v", err)
+	}
+	check(t, fp)
+}
 
-		if fp.PrimaryStack != StackGo {
-			t.Errorf("expected StackGo, got %s", fp.PrimaryStack)
+func assertPrimaryStack(t *testing.T, got, want LanguageStack, label string) {
+	t.Helper()
+	if got != want {
+		if label != "" {
+			t.Errorf("expected %s %s, got %s", want, label, got)
+		} else {
+			t.Errorf("expected %s, got %s", want, got)
 		}
-		if fp.GoVersion != "1.24" {
-			t.Errorf("expected GoVersion 1.24, got %s", fp.GoVersion)
-		}
-		if len(fp.Linters) == 0 || fp.Linters[0] != "golangci-lint" {
-			t.Errorf("expected golangci-lint in linters, got %v", fp.Linters)
-		}
-		if len(fp.Toolchains) == 0 || fp.Toolchains[0] != "go" {
-			t.Errorf("expected go in toolchains, got %v", fp.Toolchains)
-		}
-	})
+	}
+}
 
-	t.Run("detect rust and polyglot typescript project with cargo and bun", func(t *testing.T) {
-		tmpDir, err := os.MkdirTemp("", "polyglot-proj-*")
-		if err != nil {
-			t.Fatalf("failed to create temp dir: %v", err)
-		}
-		defer os.RemoveAll(tmpDir)
+func assertGoVersion(t *testing.T, got, want string) {
+	t.Helper()
+	if got != want {
+		t.Errorf("expected GoVersion %s, got %s", want, got)
+	}
+}
 
-		_ = os.WriteFile(filepath.Join(tmpDir, "Cargo.toml"), []byte("[package]\nname = \"demo\"\n"), 0644)
-		_ = os.WriteFile(filepath.Join(tmpDir, "package.json"), []byte("{\"name\": \"demo-web\", \"scripts\": {\"test\": \"bun test\"}}\n"), 0644)
-		_ = os.WriteFile(filepath.Join(tmpDir, "bun.lock"), []byte("{}\n"), 0644)
-		_ = os.WriteFile(filepath.Join(tmpDir, "tsconfig.json"), []byte("{}\n"), 0644)
+func assertFirst[T comparable](t *testing.T, list []T, want T, what string) {
+	t.Helper()
+	if len(list) == 0 || list[0] != want {
+		t.Errorf("expected %v in %s, got %v", want, what, list)
+	}
+}
 
-		p := NewPreparer()
-		fp, err := p.DetectStack(tmpDir)
-		if err != nil {
-			t.Fatalf("DetectStack failed: %v", err)
-		}
+func assertTrue(t *testing.T, condition bool, name string) {
+	t.Helper()
+	if !condition {
+		t.Errorf("expected %s true", name)
+	}
+}
 
-		if fp.PrimaryStack != StackRust {
-			t.Errorf("expected StackRust primary, got %s", fp.PrimaryStack)
-		}
-		if !fp.HasCargo {
-			t.Errorf("expected HasCargo true")
-		}
-		if !fp.HasBun {
-			t.Errorf("expected HasBun true")
-		}
-		if len(fp.SecondaryStacks) == 0 || fp.SecondaryStacks[0] != StackTypeScript {
-			t.Errorf("expected StackTypeScript secondary, got %v", fp.SecondaryStacks)
-		}
-		if tc, ok := fp.ToolchainDetails["cargo"]; !ok || tc.Binary != "cargo" {
-			t.Errorf("expected cargo toolchain details")
-		}
-		if tc, ok := fp.ToolchainDetails["bun"]; !ok || tc.Binary != "bun" {
-			t.Errorf("expected bun toolchain details")
-		}
-	})
-
-	t.Run("detect python project with uv", func(t *testing.T) {
-		tmpDir, err := os.MkdirTemp("", "py-proj-*")
-		if err != nil {
-			t.Fatalf("failed to create temp dir: %v", err)
-		}
-		defer os.RemoveAll(tmpDir)
-
-		_ = os.WriteFile(filepath.Join(tmpDir, "pyproject.toml"), []byte("[project]\nname = \"app\"\n\n[tool.pytest.ini_options]\n"), 0644)
-
-		p := NewPreparer()
-		fp, err := p.DetectStack(tmpDir)
-		if err != nil {
-			t.Fatalf("DetectStack failed: %v", err)
-		}
-
-		if fp.PrimaryStack != StackPython {
-			t.Errorf("expected StackPython, got %s", fp.PrimaryStack)
-		}
-		if !fp.HasUV {
-			t.Errorf("expected HasUV true")
-		}
-		if tc, ok := fp.ToolchainDetails["uv"]; !ok || tc.Binary != "uv" {
-			t.Errorf("expected uv toolchain details")
-		}
-	})
+func assertToolchainBinary(t *testing.T, details map[string]ToolchainInfo, name, wantBinary string) {
+	t.Helper()
+	tc, ok := details[name]
+	if !ok || tc.Binary != wantBinary {
+		t.Errorf("expected %s toolchain details", name)
+	}
 }
 
 func TestProbeGitHubCopilot(t *testing.T) {
@@ -208,78 +216,109 @@ func TestProbeToolchains(t *testing.T) {
 	}
 }
 
+func e2eOptions(dir string, dryRun bool) PrepareOptions {
+	return PrepareOptions{ProjectPath: dir, EnforceCICD: true, SyncSkills: true, DryRun: dryRun}
+}
+
 func TestPreparePipeline_EndToEnd(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "prepare-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Create fake polyglot project (Go + Cargo + Bun + uv)
-	_ = os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module github.com/org/app\n\ngo 1.25\n"), 0644)
-	_ = os.WriteFile(filepath.Join(tmpDir, "Cargo.toml"), []byte("[package]\nname = \"rust-core\"\n"), 0644)
-	_ = os.MkdirAll(filepath.Join(tmpDir, "website"), 0755)
-	_ = os.WriteFile(filepath.Join(tmpDir, "website", "package.json"), []byte("{\"name\": \"web-portal\", \"scripts\": {\"build\": \"vite build\"}}\n"), 0644)
-	_ = os.WriteFile(filepath.Join(tmpDir, "website", "bun.lock"), []byte("{}\n"), 0644)
-	_ = os.MkdirAll(filepath.Join(tmpDir, "scripts", "tests"), 0755)
-	_ = os.WriteFile(filepath.Join(tmpDir, "scripts", "pyproject.toml"), []byte("[project]\nname = \"scripts\"\n"), 0644)
-
-	_ = os.MkdirAll(filepath.Join(tmpDir, ".gemini", "skills", "my-skill"), 0755)
-	_ = os.WriteFile(filepath.Join(tmpDir, ".gemini", "skills", "my-skill", "SKILL.md"), []byte("# My Skill\n"), 0644)
-
+	dir := t.TempDir()
+	setupPolyglotTestProject(t, dir)
 	p := NewPreparer()
-	p.SetLookPath(func(cmd string) (string, error) {
-		switch cmd {
-		case "copilot":
-			return "/usr/local/bin/copilot", nil
-		case "go":
-			return "/usr/local/go/bin/go", nil
-		case "cargo":
-			return "/Users/test/.cargo/bin/cargo", nil
-		case "bun":
-			return "/Users/test/.bun/bin/bun", nil
-		case "uv":
-			return "/opt/homebrew/bin/uv", nil
-		default:
-			return "", errors.New("not found")
-		}
-	})
+	p.SetLookPath(testToolchainLookup)
 
-	ctx := context.Background()
+	steps := []struct {
+		name string
+		run  func(t *testing.T, p *Preparer, dir string)
+	}{
+		{"dry run execution", e2eDryRun},
+		{"real execution", e2eReal},
+		{"idempotency check", e2eIdempotent},
+		{"sync and update aliases", e2eAliases},
+	}
+	for _, step := range steps {
+		t.Run(step.name, func(t *testing.T) { step.run(t, p, dir) })
+	}
+}
 
-	// 1. Dry run execution
-	dryReport, err := p.Prepare(ctx, PrepareOptions{
-		ProjectPath: tmpDir,
-		EnforceCICD: true,
-		SyncSkills:  true,
-		DryRun:      true,
-	})
+func e2eDryRun(t *testing.T, p *Preparer, dir string) {
+	report, err := p.Prepare(context.Background(), e2eOptions(dir, true))
 	if err != nil {
 		t.Fatalf("dry run failed: %v", err)
 	}
-	if !dryReport.Success {
+	if !report.Success {
 		t.Errorf("expected dry run success")
 	}
-	if len(dryReport.FilesCreated) == 0 {
+	if len(report.FilesCreated) == 0 {
 		t.Errorf("expected files planned for creation in dry run")
 	}
-
-	// Verify no files written to disk during dry run
-	if fileExists(filepath.Join(tmpDir, ".github", "copilot-instructions.md")) {
+	if fileExists(filepath.Join(dir, ".github", "copilot-instructions.md")) {
 		t.Errorf("dry run should not create files on disk")
 	}
+}
 
-	// 2. Real execution
-	report, err := p.Prepare(ctx, PrepareOptions{
-		ProjectPath: tmpDir,
-		EnforceCICD: true,
-		SyncSkills:  true,
-		DryRun:      false,
-	})
+func e2eReal(t *testing.T, p *Preparer, dir string) {
+	report, err := p.Prepare(context.Background(), e2eOptions(dir, false))
 	if err != nil {
 		t.Fatalf("real prepare failed: %v", err)
 	}
+	assertPrepareReport(t, report)
+	assertCreatedFilesContent(t, dir)
+}
 
+func e2eIdempotent(t *testing.T, p *Preparer, dir string) {
+	report, err := p.Prepare(context.Background(), e2eOptions(dir, false))
+	if err != nil {
+		t.Fatalf("second prepare run failed: %v", err)
+	}
+	if len(report.FilesCreated) != 0 {
+		t.Errorf("expected 0 files created on idempotent run, got %d", len(report.FilesCreated))
+	}
+}
+
+func e2eAliases(t *testing.T, p *Preparer, dir string) {
+	ctx := context.Background()
+	for name, run := range map[string]func(context.Context, PrepareOptions) (*PrepareReport, error){"Sync": p.Sync, "Update": p.Update} {
+		report, err := run(ctx, e2eOptions(dir, false))
+		if err != nil || !report.Success {
+			t.Fatalf("%s failed: %v", name, err)
+		}
+	}
+}
+
+func setupPolyglotTestProject(t *testing.T, dir string) {
+	t.Helper()
+	for rel, content := range map[string]string{
+		"go.mod":                           "module github.com/org/app\n\ngo 1.25\n",
+		"Cargo.toml":                       "[package]\nname = \"rust-core\"\n",
+		"website/package.json":             "{\"name\": \"web-portal\", \"scripts\": {\"build\": \"vite build\"}}\n",
+		"website/bun.lock":                 "{}\n",
+		"scripts/pyproject.toml":           "[project]\nname = \"scripts\"\n",
+		"scripts/tests/test_scripts.py":    "",
+		".gemini/skills/my-skill/SKILL.md": "# My Skill\n",
+	} {
+		fsutiltest.WriteFile(t, dir, rel, content)
+	}
+}
+
+func testToolchainLookup(cmd string) (string, error) {
+	switch cmd {
+	case "copilot":
+		return "/usr/local/bin/copilot", nil
+	case "go":
+		return "/usr/local/go/bin/go", nil
+	case "cargo":
+		return "/Users/test/.cargo/bin/cargo", nil
+	case "bun":
+		return "/Users/test/.bun/bin/bun", nil
+	case "uv":
+		return "/opt/homebrew/bin/uv", nil
+	default:
+		return "", errors.New("not found")
+	}
+}
+
+func assertPrepareReport(t *testing.T, report *PrepareReport) {
+	t.Helper()
 	if !report.Success {
 		t.Errorf("expected report success")
 	}
@@ -289,12 +328,19 @@ func TestPreparePipeline_EndToEnd(t *testing.T) {
 	if len(report.CICD.Toolchains) != 4 {
 		t.Errorf("expected 4 toolchains in CICD report, got %d", len(report.CICD.Toolchains))
 	}
+}
 
-	// Verify files actually created on disk
+func assertCreatedFilesContent(t *testing.T, tmpDir string) {
+	t.Helper()
+	assertCopilotInstructionsContent(t, tmpDir)
+	assertCIWorkflowContent(t, tmpDir)
+	assertAgentRulesAndSkillContent(t, tmpDir)
+}
+
+func assertCopilotInstructionsContent(t *testing.T, tmpDir string) {
+	t.Helper()
 	copilotMD := filepath.Join(tmpDir, ".github", "copilot-instructions.md")
-	if !fileExists(copilotMD) {
-		t.Errorf("expected %s to exist", copilotMD)
-	}
+	assertTargetFileExists(t, copilotMD)
 	content, _ := os.ReadFile(copilotMD)
 	strContent := string(content)
 	if !strings.Contains(strContent, "Zero Code Without Plane Ticket Mandate") {
@@ -306,11 +352,12 @@ func TestPreparePipeline_EndToEnd(t *testing.T) {
 	if !strings.Contains(strContent, "bun") || !strings.Contains(strContent, "uv") || !strings.Contains(strContent, "cargo") {
 		t.Errorf("missing bun/uv/cargo references in copilot instructions")
 	}
+}
 
+func assertCIWorkflowContent(t *testing.T, tmpDir string) {
+	t.Helper()
 	ciYML := filepath.Join(tmpDir, ".github", "workflows", "ci.yml")
-	if !fileExists(ciYML) {
-		t.Errorf("expected %s to exist", ciYML)
-	}
+	assertTargetFileExists(t, ciYML)
 	ciContent, _ := os.ReadFile(ciYML)
 	strCI := string(ciContent)
 	if !strings.Contains(strCI, "setup-go") {
@@ -325,58 +372,30 @@ func TestPreparePipeline_EndToEnd(t *testing.T) {
 	if !strings.Contains(strCI, "setup-uv") {
 		t.Errorf("expected uv setup in CI workflow")
 	}
+}
 
+func assertAgentRulesAndSkillContent(t *testing.T, tmpDir string) {
+	t.Helper()
 	rulesMD := filepath.Join(tmpDir, ".agents", "rules.md")
-	if !fileExists(rulesMD) {
-		t.Errorf("expected %s to exist", rulesMD)
-	}
+	assertTargetFileExists(t, rulesMD)
 	rulesData, _ := os.ReadFile(rulesMD)
 	if !strings.Contains(string(rulesData), "bun") || !strings.Contains(string(rulesData), "cargo") || !strings.Contains(string(rulesData), "uv") {
 		t.Errorf("expected rules to state bun, cargo, uv toolsets")
 	}
 
 	agentsMD := filepath.Join(tmpDir, "AGENTS.md")
-	if !fileExists(agentsMD) {
-		t.Errorf("expected %s to exist", agentsMD)
-	}
+	assertTargetFileExists(t, agentsMD)
 
-	// Verify default copilot and compliance skills were seeded
 	copilotSkill := filepath.Join(tmpDir, ".gemini", "skills", "copilot", "SKILL.md")
 	if !fileExists(copilotSkill) {
 		t.Errorf("expected seeded copilot skill at %s", copilotSkill)
 	}
+}
 
-	// 3. Second run (idempotency check: files should report 0 created)
-	report2, err := p.Prepare(ctx, PrepareOptions{
-		ProjectPath: tmpDir,
-		EnforceCICD: true,
-		SyncSkills:  true,
-		DryRun:      false,
-	})
-	if err != nil {
-		t.Fatalf("second prepare run failed: %v", err)
-	}
-	if len(report2.FilesCreated) != 0 {
-		t.Errorf("expected 0 files created on idempotent run, got %d", len(report2.FilesCreated))
-	}
-
-	// 4. Test Sync and Update aliases
-	syncRep, err := p.Sync(ctx, PrepareOptions{
-		ProjectPath: tmpDir,
-		EnforceCICD: true,
-		SyncSkills:  true,
-	})
-	if err != nil || !syncRep.Success {
-		t.Fatalf("Sync failed: %v", err)
-	}
-
-	updateRep, err := p.Update(ctx, PrepareOptions{
-		ProjectPath: tmpDir,
-		EnforceCICD: true,
-		SyncSkills:  true,
-	})
-	if err != nil || !updateRep.Success {
-		t.Fatalf("Update failed: %v", err)
+func assertTargetFileExists(t *testing.T, path string) {
+	t.Helper()
+	if !fileExists(path) {
+		t.Errorf("expected %s to exist", path)
 	}
 }
 

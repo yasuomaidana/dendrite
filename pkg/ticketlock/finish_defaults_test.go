@@ -10,19 +10,9 @@ import (
 	"testing"
 
 	"Dendrite/pkg/directive"
+	"Dendrite/pkg/fsutil/fsutiltest"
 	"Dendrite/pkg/rag/ragtest"
 )
-
-func writeFile(t *testing.T, dir, rel, content string) {
-	t.Helper()
-	path := filepath.Join(dir, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func TestAutoDoneFollowsTheDirectives(t *testing.T) {
 	for name, tc := range map[string]struct {
@@ -38,7 +28,7 @@ func TestAutoDoneFollowsTheDirectives(t *testing.T) {
 	} {
 		dir := t.TempDir()
 		if tc.toml != "" {
-			writeFile(t, dir, directive.Path, tc.toml)
+			fsutiltest.WriteFile(t, dir, directive.Path, tc.toml)
 		}
 		if got := AutoDone(dir); got != tc.want {
 			t.Errorf("%s: AutoDone = %v, want %v", name, got, tc.want)
@@ -58,8 +48,8 @@ func TestTail(t *testing.T) {
 func goModule(t *testing.T, test string) string {
 	t.Helper()
 	dir := t.TempDir()
-	writeFile(t, dir, "go.mod", "module probe\n\ngo 1.22\n")
-	writeFile(t, dir, "p_test.go", "package probe\n\nimport \"testing\"\n\n"+test)
+	fsutiltest.WriteFile(t, dir, "go.mod", "module probe\n\ngo 1.22\n")
+	fsutiltest.WriteFile(t, dir, "p_test.go", "package probe\n\nimport \"testing\"\n\n"+test)
 	return dir
 }
 
@@ -94,7 +84,7 @@ func TestBranchDiffIsAgainstDevelop(t *testing.T) {
 	run("init", "-q", "-b", "develop")
 	run("commit", "-q", "--allow-empty", "-m", "base")
 	run("checkout", "-q", "-b", "agent/den-1")
-	writeFile(t, repo, "new.txt", "hello\n")
+	fsutiltest.WriteFile(t, repo, "new.txt", "hello\n")
 	run("add", ".")
 	run("commit", "-q", "-m", "work")
 	if got := branchDiff(repo, "DEN-1"); !strings.Contains(got, "+hello") {
@@ -104,7 +94,7 @@ func TestBranchDiffIsAgainstDevelop(t *testing.T) {
 
 func TestDefaultFinishChecksAreWiredToTheProject(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, dir, directive.Path, "[done]\nauto_done = false\n")
+	fsutiltest.WriteFile(t, dir, directive.Path, "[done]\nauto_done = false\n")
 	checks := DefaultFinishChecks(dir)
 	if checks.AutoDone || checks.Gate == nil || checks.Diff == nil || checks.Review == nil {
 		t.Fatalf("checks = %+v", checks)
@@ -146,7 +136,7 @@ func TestToolchainGateRunsTestsWithoutTheLiveEnvironment(t *testing.T) {
 	t.Setenv("PLANE_API_KEY", "live-key")
 	t.Setenv("DENDRITE_HOME", "/live/home")
 	dir := goModule(t, "func TestIsolated(t *testing.T) {\n\tif os.Getenv(\"PLANE_API_KEY\") != \"\" || os.Getenv(\"DENDRITE_HOME\") != \"\" {\n\t\tt.Fatal(\"the gate leaked the live environment\")\n\t}\n}\n")
-	writeFile(t, dir, "p_test.go", strings.Replace(mustRead(t, dir, "p_test.go"), "import \"testing\"", "import (\n\t\"os\"\n\t\"testing\"\n)", 1))
+	fsutiltest.WriteFile(t, dir, "p_test.go", strings.Replace(mustRead(t, dir, "p_test.go"), "import \"testing\"", "import (\n\t\"os\"\n\t\"testing\"\n)", 1))
 	res, err := toolchainGate(context.Background(), dir)
 	if err != nil || !res.Passed {
 		t.Fatalf("%+v, %v", res, err)
@@ -177,14 +167,14 @@ func repoWithMergedWork(t *testing.T) string {
 	}
 	run("init", "-q", "-b", "develop")
 	run("commit", "-q", "--allow-empty", "-m", "base")
-	writeFile(t, repo, "a.go", "package a\n// json output\n")
-	writeFile(t, repo, "Cargo.lock", "huge lock noise\n")
+	fsutiltest.WriteFile(t, repo, "a.go", "package a\n// json output\n")
+	fsutiltest.WriteFile(t, repo, "Cargo.lock", "huge lock noise\n")
 	run("add", ".")
 	run("commit", "-q", "-m", "[DEN-9] feat: json output")
-	writeFile(t, repo, "b.go", "package b\n// github annotations\n")
+	fsutiltest.WriteFile(t, repo, "b.go", "package b\n// github annotations\n")
 	run("add", ".")
 	run("commit", "-q", "-m", "[DEN-9] feat: github annotations")
-	writeFile(t, repo, "other.go", "package other\n")
+	fsutiltest.WriteFile(t, repo, "other.go", "package other\n")
 	run("add", ".")
 	run("commit", "-q", "-m", "[DEN-10] unrelated work")
 	return repo
@@ -217,9 +207,9 @@ func TestCompletedWorkListsTheTicketsCommitsOnceMerged(t *testing.T) {
 
 func TestBranchDiffLeavesOutGeneratedDocsAndAgentFiles(t *testing.T) {
 	repo := repoWithMergedWork(t)
-	writeFile(t, repo, "docs/cli/x.md", "generated reference\n")
-	writeFile(t, repo, ".claude/skills/s/SKILL.md", "generated skill\n")
-	writeFile(t, repo, "real.go", "package real\n")
+	fsutiltest.WriteFile(t, repo, "docs/cli/x.md", "generated reference\n")
+	fsutiltest.WriteFile(t, repo, ".claude/skills/s/SKILL.md", "generated skill\n")
+	fsutiltest.WriteFile(t, repo, "real.go", "package real\n")
 	run := func(args ...string) {
 		t.Helper()
 		if out, err := gitCommand(repo, args...).CombinedOutput(); err != nil {
@@ -238,11 +228,11 @@ func TestBranchDiffLeavesOutGeneratedDocsAndAgentFiles(t *testing.T) {
 func moduleBranch(t *testing.T, directives string) string {
 	t.Helper()
 	repo := t.TempDir()
-	writeFile(t, repo, "go.mod", "module probe\n\ngo 1.22\n")
-	writeFile(t, repo, "p.go", "package probe\n\nfunc Add(a, b int) int { return a + b }\n")
-	writeFile(t, repo, "p_test.go", "package probe\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) {\n\tif Add(1, 2) != 3 {\n\t\tt.Fatal(\"add\")\n\t}\n}\n")
+	fsutiltest.WriteFile(t, repo, "go.mod", "module probe\n\ngo 1.22\n")
+	fsutiltest.WriteFile(t, repo, "p.go", "package probe\n\nfunc Add(a, b int) int { return a + b }\n")
+	fsutiltest.WriteFile(t, repo, "p_test.go", "package probe\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) {\n\tif Add(1, 2) != 3 {\n\t\tt.Fatal(\"add\")\n\t}\n}\n")
 	if directives != "" {
-		writeFile(t, repo, directive.Path, directives)
+		fsutiltest.WriteFile(t, repo, directive.Path, directives)
 	}
 	run := func(args ...string) {
 		t.Helper()
@@ -254,45 +244,57 @@ func moduleBranch(t *testing.T, directives string) string {
 	run("add", ".")
 	run("-c", "user.name=t", "-c", "user.email=t@e.x", "commit", "-q", "-m", "base")
 	run("checkout", "-q", "-b", "agent/den-5")
-	writeFile(t, repo, "p.go", "package probe\n\nfunc Add(a, b int) int { return a + b }\n\nfunc Sub(a, b int) int { return a - b }\n")
-	writeFile(t, repo, "p_test.go", "package probe\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) {\n\tif Add(1, 2) != 3 || Sub(3, 1) != 2 {\n\t\tt.Fatal(\"math\")\n\t}\n}\n")
+	fsutiltest.WriteFile(t, repo, "p.go", "package probe\n\nfunc Add(a, b int) int { return a + b }\n\nfunc Sub(a, b int) int { return a - b }\n")
+	fsutiltest.WriteFile(t, repo, "p_test.go", "package probe\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) {\n\tif Add(1, 2) != 3 || Sub(3, 1) != 2 {\n\t\tt.Fatal(\"math\")\n\t}\n}\n")
 	run("add", ".")
 	run("-c", "user.name=t", "-c", "user.email=t@e.x", "commit", "-q", "-m", "[DEN-5] add Sub")
 	return repo
 }
 
-func TestQualityGateRunsTheTestsAndThenTheDirectivesOnTheTicketsChanges(t *testing.T) {
+func gateTicket(t *testing.T, repo string) (GateResult, error) {
+	t.Helper()
 	ragtest.UseStandin(t, "1.12.0")
-	ok := moduleBranch(t, "")
-	res, err := qualityGate(context.Background(), ok, "DEN-5")
+	return qualityGate(context.Background(), repo, "DEN-5")
+}
+
+func TestQualityGatePassesATestedChangeWithinTheLimits(t *testing.T) {
+	res, err := gateTicket(t, moduleBranch(t, ""))
 	if err != nil || !res.Passed || !strings.Contains(res.Report, "go test -race") || !strings.Contains(res.Report, " passed.\n\nQuality gate (changes): **passed**") || strings.Contains(res.Report, "coverage:") {
 		t.Fatalf("a tested change within the limits: %+v, %v", res, err)
 	}
+}
 
+func TestQualityGateFailsATouchedFileOverTheLimit(t *testing.T) {
 	strict := moduleBranch(t, "schema = 1\n[loc]\nmax_production_lines = 50\nwarn_at = 40\n")
 	var vars strings.Builder
 	for i := 0; i < 60; i++ {
 		fmt.Fprintf(&vars, "var v%d = %d\n", i, i)
 	}
-	writeFile(t, strict, "p.go", "package probe\n\nfunc Add(a, b int) int { return a + b }\n\nfunc Sub(a, b int) int { return a - b }\n"+vars.String())
-	res, err = qualityGate(context.Background(), strict, "DEN-5")
+	fsutiltest.WriteFile(t, strict, "p.go", "package probe\n\nfunc Add(a, b int) int { return a + b }\n\nfunc Sub(a, b int) int { return a - b }\n"+vars.String())
+	res, err := gateTicket(t, strict)
 	if err != nil || res.Passed || !strings.Contains(res.Report, "p.go: 63 production lines, the limit is 50") || !strings.Contains(res.Report, "Quality gate (changes): **failed**") {
 		t.Errorf("a touched file over the limit fails the gate: %+v, %v", res, err)
 	}
+}
 
-	broken := moduleBranch(t, "[loc\n")
-	res, err = qualityGate(context.Background(), broken, "DEN-5")
+func TestQualityGateFailsUnreadableDirectivesAndSaysWhy(t *testing.T) {
+	res, err := gateTicket(t, moduleBranch(t, "[loc\n"))
 	if err != nil || res.Passed || !strings.Contains(res.Report, "could not read the directives") {
 		t.Errorf("unreadable directives fail the gate and say why: %+v, %v", res, err)
 	}
+}
 
+func TestQualityGateSkipsTheDirectivesWhenTheTestsFail(t *testing.T) {
 	failing := moduleBranch(t, "")
-	writeFile(t, failing, "p_test.go", "package probe\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) { t.Fatal(\"broken\") }\n")
-	res, err = qualityGate(context.Background(), failing, "DEN-5")
+	fsutiltest.WriteFile(t, failing, "p_test.go", "package probe\n\nimport \"testing\"\n\nfunc TestAdd(t *testing.T) { t.Fatal(\"broken\") }\n")
+	res, err := gateTicket(t, failing)
 	if err != nil || res.Passed || strings.Contains(res.Report, "Quality gate") {
 		t.Errorf("when the tests fail the quality gate is not run: %+v, %v", res, err)
 	}
-	if _, err := qualityGate(context.Background(), t.TempDir(), "DEN-5"); err == nil {
+}
+
+func TestQualityGateCannotGateADirectoryWithNoToolchain(t *testing.T) {
+	if _, err := gateTicket(t, t.TempDir()); err == nil {
 		t.Error("a directory with no toolchain cannot be gated")
 	}
 }

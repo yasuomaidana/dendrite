@@ -7,18 +7,8 @@ import (
 	"testing"
 
 	"Dendrite/pkg/directive"
+	"Dendrite/pkg/fsutil/fsutiltest"
 )
-
-func write(t *testing.T, root, rel, content string) {
-	t.Helper()
-	path := filepath.Join(root, filepath.FromSlash(rel))
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func TestAGoOnlyProjectGetsNoBunOrUvAnywhere(t *testing.T) {
 	root := t.TempDir()
@@ -65,9 +55,9 @@ func TestComplexityLimitsComeFromTheDirectivesInEveryFile(t *testing.T) {
 
 func TestAdoptCITakesOverAHandWrittenWorkflowAndKeepsItsJobsReachable(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, "go.mod", "module x\n\ngo 1.25\n")
-	write(t, root, ".github/workflows/ci.yml", "name: CI\njobs:\n  sidecar-build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make sidecar\n")
-	write(t, root, ".github/workflows/quality.yml", "name: quality\njobs:\n  loc:\n    runs-on: ubuntu-latest\n    steps:\n      - run: bash scripts/check-max-lines.sh\n")
+	fsutiltest.WriteFile(t, root, "go.mod", "module x\n\ngo 1.25\n")
+	fsutiltest.WriteFile(t, root, ".github/workflows/ci.yml", "name: CI\njobs:\n  sidecar-build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make sidecar\n")
+	fsutiltest.WriteFile(t, root, ".github/workflows/quality.yml", "name: quality\njobs:\n  loc:\n    runs-on: ubuntu-latest\n    steps:\n      - run: bash scripts/check-max-lines.sh\n")
 	t.Setenv("DENDRITE_HOME", t.TempDir())
 	p := NewPreparer()
 	report, err := p.Prepare(t.Context(), PrepareOptions{ProjectPath: root, EnforceCICD: true, AdoptCI: true})
@@ -92,7 +82,7 @@ func TestAdoptCITakesOverAHandWrittenWorkflowAndKeepsItsJobsReachable(t *testing
 
 func TestTheProjectExtensionAddsEnvPreTestStepsAndJobs(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, ".github/dendrite/pipeline.yml", "env:\n  FOO: bar\npre_test:\n  - name: Build the sidecar\n    run: make sidecar\njobs:\n  docs:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make docs\nskip_coverage_floor: true\n")
+	fsutiltest.WriteFile(t, root, ".github/dendrite/pipeline.yml", "env:\n  FOO: bar\npre_test:\n  - name: Build the sidecar\n    run: make sidecar\njobs:\n  docs:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make docs\nskip_coverage_floor: true\n")
 	prepareCI(t, root)
 	ci := readCI(t, root)
 	for _, want := range []string{"FOO: bar", "Build the sidecar", "make sidecar", "  docs:", "make docs"} {
@@ -107,8 +97,8 @@ func TestTheProjectExtensionAddsEnvPreTestStepsAndJobs(t *testing.T) {
 
 func TestAMalformedExtensionIsAnErrorThatNamesTheFile(t *testing.T) {
 	root := t.TempDir()
-	write(t, root, "go.mod", "module x\n\ngo 1.25\n")
-	write(t, root, ".github/dendrite/pipeline.yml", "unknown_key: 1\n")
+	fsutiltest.WriteFile(t, root, "go.mod", "module x\n\ngo 1.25\n")
+	fsutiltest.WriteFile(t, root, ".github/dendrite/pipeline.yml", "unknown_key: 1\n")
 	t.Setenv("DENDRITE_HOME", t.TempDir())
 	_, err := NewPreparer().Prepare(t.Context(), PrepareOptions{ProjectPath: root, EnforceCICD: true})
 	if err == nil || !strings.Contains(err.Error(), "pipeline.yml") {

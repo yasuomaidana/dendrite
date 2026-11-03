@@ -104,13 +104,7 @@ func (p *Preparer) ProbeToolchains() []ToolchainInfo {
 // Prepare runs the complete environment preparation, agent synchronization, and CI/CD enforcement pipeline.
 func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareReport, error) {
 	start := time.Now()
-
-	if opts.ProjectPath == "" {
-		opts.ProjectPath = "."
-	}
-	if opts.DefaultTool == "" {
-		opts.DefaultTool = DefaultToolName
-	}
+	opts = normalizePrepareOptions(opts)
 
 	fp, err := p.DetectStack(opts.ProjectPath)
 	if err != nil {
@@ -133,71 +127,109 @@ func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareRe
 
 	// 1. CI/CD & Toolchain Enforcement
 	if opts.EnforceCICD {
-		installed, bin, installCmd := p.ProbeGitHubCopilot()
-		toolchains := p.ProbeToolchains()
-
-		cicd := CICDStatus{
-			DefaultTool:         opts.DefaultTool,
-			ToolInstalled:       installed,
-			ToolBinary:          bin,
-			ToolInstallCommand:  installCmd,
-			CoverageThreshold:   set.Coverage.MinPercent,
-			CopilotInstructions: filepath.Join(".github", "copilot-instructions.md"),
-			CIWorkflowPath:      filepath.Join(".github", "workflows", "ci.yml"),
-			Toolchains:          toolchains,
-			Enforced:            true,
+		if err := p.stepCICD(opts, fp, set, report); err != nil {
+			return nil, err
 		}
-
-		created, updated, notes, err := p.scaffoldCICD(opts.ProjectPath, fp, set, opts)
-		if err != nil {
-			return nil, fmt.Errorf("CI/CD scaffolding failed: %w", err)
+		if err := stepDirectives(opts, report); err != nil {
+			return nil, err
 		}
-		cicd.FilesCreated = created
-		cicd.FilesUpdated = updated
-		report.CICD = cicd
-		report.FilesCreated = append(report.FilesCreated, created...)
-		report.FilesUpdated = append(report.FilesUpdated, updated...)
-		report.Notes = append(report.Notes, notes...)
-
-		// A project without quality directives gets the defaults and the files derived from them.
-		dirCreated, dirUpdated, dirNotes, err := ensureDirectives(opts.ProjectPath, opts.DryRun)
-		if err != nil {
-			return nil, fmt.Errorf("quality directives failed: %w", err)
-		}
-		report.FilesCreated = append(report.FilesCreated, dirCreated...)
-		report.FilesUpdated = append(report.FilesUpdated, dirUpdated...)
-		report.Notes = append(report.Notes, dirNotes...)
-
-		// Rust crates with tests use the rstest crate.
-		rstestChanged, rstestNotes := ensureRstest(opts.ProjectPath, opts.DryRun)
-		report.FilesUpdated = append(report.FilesUpdated, rstestChanged...)
-		report.Notes = append(report.Notes, rstestNotes...)
+		stepRstest(opts, report)
 	}
 
 	// 2. Agent Rules & Skills Synchronization
 	if opts.SyncSkills {
-		created, updated, skills, err := p.syncAgentRulesAndSkills(opts.ProjectPath, fp, set, opts.DryRun)
-		if err != nil {
-			return nil, fmt.Errorf("agent skills sync failed: %w", err)
+		if err := p.stepSyncSkills(opts, fp, set, report); err != nil {
+			return nil, err
 		}
-		report.FilesCreated = append(report.FilesCreated, created...)
-		report.FilesUpdated = append(report.FilesUpdated, updated...)
-		report.SkillsSynced = skills
 	}
 
 	// 3. The dendrite-rag shared tier: DENDRITE_RAG_PG_URL in $DENDRITE_HOME/rag.env.
+	if err := stepRagEnv(opts, report); err != nil {
+		return nil, err
+	}
+
+	report.Duration = time.Since(start)
+	return report, nil
+}
+
+func normalizePrepareOptions(opts PrepareOptions) PrepareOptions {
+	if opts.ProjectPath == "" {
+		opts.ProjectPath = "."
+	}
+	if opts.DefaultTool == "" {
+		opts.DefaultTool = DefaultToolName
+	}
+	return opts
+}
+
+func (p *Preparer) stepCICD(opts PrepareOptions, fp ProjectFingerprint, set directive.Set, report *PrepareReport) error {
+	installed, bin, installCmd := p.ProbeGitHubCopilot()
+	toolchains := p.ProbeToolchains()
+
+	cicd := CICDStatus{
+		DefaultTool:         opts.DefaultTool,
+		ToolInstalled:       installed,
+		ToolBinary:          bin,
+		ToolInstallCommand:  installCmd,
+		CoverageThreshold:   set.Coverage.MinPercent,
+		CopilotInstructions: filepath.Join(".github", "copilot-instructions.md"),
+		CIWorkflowPath:      filepath.Join(".github", "workflows", "ci.yml"),
+		Toolchains:          toolchains,
+		Enforced:            true,
+	}
+
+	created, updated, notes, err := p.scaffoldCICD(opts.ProjectPath, fp, set, opts)
+	if err != nil {
+		return fmt.Errorf("CI/CD scaffolding failed: %w", err)
+	}
+	cicd.FilesCreated = created
+	cicd.FilesUpdated = updated
+	report.CICD = cicd
+	report.FilesCreated = append(report.FilesCreated, created...)
+	report.FilesUpdated = append(report.FilesUpdated, updated...)
+	report.Notes = append(report.Notes, notes...)
+	return nil
+}
+
+func stepDirectives(opts PrepareOptions, report *PrepareReport) error {
+	dirCreated, dirUpdated, dirNotes, err := ensureDirectives(opts.ProjectPath, opts.DryRun)
+	if err != nil {
+		return fmt.Errorf("quality directives failed: %w", err)
+	}
+	report.FilesCreated = append(report.FilesCreated, dirCreated...)
+	report.FilesUpdated = append(report.FilesUpdated, dirUpdated...)
+	report.Notes = append(report.Notes, dirNotes...)
+	return nil
+}
+
+func stepRstest(opts PrepareOptions, report *PrepareReport) {
+	rstestChanged, rstestNotes := ensureRstest(opts.ProjectPath, opts.DryRun)
+	report.FilesUpdated = append(report.FilesUpdated, rstestChanged...)
+	report.Notes = append(report.Notes, rstestNotes...)
+}
+
+func (p *Preparer) stepSyncSkills(opts PrepareOptions, fp ProjectFingerprint, set directive.Set, report *PrepareReport) error {
+	created, updated, skills, err := p.syncAgentRulesAndSkills(opts.ProjectPath, fp, set, opts.DryRun)
+	if err != nil {
+		return fmt.Errorf("agent skills sync failed: %w", err)
+	}
+	report.FilesCreated = append(report.FilesCreated, created...)
+	report.FilesUpdated = append(report.FilesUpdated, updated...)
+	report.SkillsSynced = skills
+	return nil
+}
+
+func stepRagEnv(opts PrepareOptions, report *PrepareReport) error {
 	envCreated, envUpdated, err := ensureRagEnv(opts.ProjectPath, opts.DryRun)
 	if err != nil {
-		return nil, fmt.Errorf("writing %s: %w", RagEnvFile, err)
+		return fmt.Errorf("writing %s: %w", RagEnvFile, err)
 	}
 	if envCreated {
 		report.FilesCreated = append(report.FilesCreated, "$DENDRITE_HOME/"+RagEnvFile)
 	} else if envUpdated {
 		report.FilesUpdated = append(report.FilesUpdated, "$DENDRITE_HOME/"+RagEnvFile)
 	}
-
-	report.Duration = time.Since(start)
-	return report, nil
+	return nil
 }
 
 // Sync is an alias for Prepare ensuring idempotent alignment of the workspace, skills, and CI/CD tools.
@@ -255,10 +287,6 @@ func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, set directiv
 }
 
 func (p *Preparer) syncAgentRulesAndSkills(root string, fp ProjectFingerprint, set directive.Set, dryRun bool) ([]string, []string, []string, error) {
-	var created []string
-	var updated []string
-	var skills []string
-
 	agentsDir := filepath.Join(root, ".agents")
 	if !dryRun {
 		if err := os.MkdirAll(agentsDir, 0755); err != nil {
@@ -266,52 +294,134 @@ func (p *Preparer) syncAgentRulesAndSkills(root string, fp ProjectFingerprint, s
 		}
 	}
 
-	// 1. .agents/rules.md
-	rulesPath := filepath.Join(agentsDir, "rules.md")
-	rulesContent := renderAgentRules(fp, set)
-	c, u, err := writeOrUpdateFile(rulesPath, rulesContent, dryRun)
+	created, updated, err := syncAgentRulesStep(root, fp, set, dryRun)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if c {
-		created = append(created, filepath.Join(".agents", "rules.md"))
-	} else if u {
-		updated = append(updated, filepath.Join(".agents", "rules.md"))
-	}
 
-	// 2. AGENTS.md in project root
+	sc, su, skills, err := syncSkillsStep(root, dryRun)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	created = append(created, sc...)
+	updated = append(updated, su...)
+
+	return created, updated, skills, nil
+}
+
+func syncAgentRulesStep(root string, fp ProjectFingerprint, set directive.Set, dryRun bool) (created, updated []string, err error) {
+	c, u, err := syncAgentRulesFiles(root, fp, set, dryRun)
+	if err != nil {
+		return nil, nil, err
+	}
+	created, updated = append(created, c...), append(updated, u...)
+
+	pc, err := syncAgentPointerFiles(root, dryRun)
+	if err != nil {
+		return nil, nil, err
+	}
+	created = append(created, pc...)
+
+	cc, cu, err := syncClaudeHooks(root, dryRun)
+	if err != nil {
+		return nil, nil, err
+	}
+	created, updated = append(created, cc...), append(updated, cu...)
+
+	gc, gu := syncGitAndMCP(root, dryRun)
+	created, updated = append(created, gc...), append(updated, gu...)
+	return created, updated, nil
+}
+
+func syncAgentRulesFiles(root string, fp ProjectFingerprint, set directive.Set, dryRun bool) (created, updated []string, err error) {
+	rulesPath := filepath.Join(root, ".agents", "rules.md")
+	c, u, err := writeOrUpdateFile(rulesPath, renderAgentRules(fp, set), dryRun)
+	if err != nil {
+		return nil, nil, err
+	}
+	appendFileChange(&created, &updated, filepath.Join(".agents", "rules.md"), c, u)
+
 	agentsMDPath := filepath.Join(root, "AGENTS.md")
-	agentsMDContent := renderAgentsOverview(fp) + renderSynapsesSection(root)
-	c, u, err = writeOrUpdateFile(agentsMDPath, agentsMDContent, dryRun)
+	agentsContent := renderAgentsOverview(fp) + renderSynapsesSection(root)
+	c, u, err = writeOrUpdateFile(agentsMDPath, agentsContent, dryRun)
+	if err != nil {
+		return nil, nil, err
+	}
+	appendFileChange(&created, &updated, "AGENTS.md", c, u)
+	return created, updated, nil
+}
+
+func syncAgentPointerFiles(root string, dryRun bool) (created []string, err error) {
+	for _, name := range pointerFiles {
+		target := filepath.Join(root, name)
+		if fileExists(target) {
+			continue
+		}
+		if c, _, err := writeOrUpdateFile(target, pointerFileContent, dryRun); err != nil {
+			return nil, err
+		} else if c {
+			created = append(created, name)
+		}
+	}
+	return created, nil
+}
+
+func syncClaudeHooks(root string, dryRun bool) (created, updated []string, err error) {
+	settingsPath := filepath.Join(root, filepath.FromSlash(claudeSettingsPath))
+	existing, _ := os.ReadFile(settingsPath)
+	merged, changed, err := mergeClaudeHooks(existing)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[!] %v\n", err)
+		return nil, nil, nil
+	}
+	if !changed {
+		return nil, nil, nil
+	}
+	c, u, err := writeOrUpdateFile(settingsPath, string(merged), dryRun)
+	if err != nil {
+		return nil, nil, err
+	}
+	appendFileChange(&created, &updated, claudeSettingsPath, c, u)
+	return created, updated, nil
+}
+
+func syncGitAndMCP(root string, dryRun bool) (created, updated []string) {
+	gitCreated, gitUpdated, gitNote, gitErr := installGitHook(root, dryRun)
+	created, updated = append(created, gitCreated...), append(updated, gitUpdated...)
+	if gitErr != nil {
+		fmt.Fprintf(os.Stderr, "[!] git pre-commit hook: %v\n", gitErr)
+	}
+	if gitNote != "" {
+		fmt.Fprintf(os.Stderr, "[!] %s\n", gitNote)
+	}
+
+	mcpCreated, mcpUpdated, mcpErr := writeMCPConfigs(root, dryRun)
+	created, updated = append(created, mcpCreated...), append(updated, mcpUpdated...)
+	if mcpErr != nil {
+		fmt.Fprintf(os.Stderr, "[!] MCP config left alone: %v\n", mcpErr)
+	}
+	return created, updated
+}
+
+func syncSkillsStep(root string, dryRun bool) (created, updated, skills []string, err error) {
+	c, err := seedDefaultSkills(root, dryRun)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if c {
-		created = append(created, "AGENTS.md")
-	} else if u {
-		updated = append(updated, "AGENTS.md")
+	created = append(created, c...)
+
+	wc, wu, err := syncWorkflowSkill(root, dryRun)
+	if err != nil {
+		return nil, nil, nil, err
 	}
+	created, updated = append(created, wc...), append(updated, wu...)
+	return created, updated, discoverSkills(root), nil
+}
 
-	// 3. Seed standard skills if missing
+func seedDefaultSkills(root string, dryRun bool) (created []string, err error) {
 	defaultSkills := map[string]string{
-		"copilot": `---
-name: copilot
-description: GitHub Copilot Custom Instructions & CI/CD Tool Template
----
-
-# GitHub Copilot Custom Instructions Template
-
-This template defines the custom rules and system instructions placed in .github/copilot-instructions.md.
-`,
-		"compliance": `---
-name: compliance
-description: Enterprise Architecture And Compliance Reference Framework
----
-
-# Enterprise Architecture And Compliance Reference Framework
-
-Reference criteria for domain isolation, SOLID principles, zero placeholders, and token economy.
-`,
+		"copilot":    "---\nname: copilot\ndescription: GitHub Copilot Custom Instructions & CI/CD Tool Template\n---\n\n# GitHub Copilot Custom Instructions Template\n\nThis template defines the custom rules and system instructions placed in .github/copilot-instructions.md.\n",
+		"compliance": "---\nname: compliance\ndescription: Enterprise Architecture And Compliance Reference Framework\n---\n\n# Enterprise Architecture And Compliance Reference Framework\n\nReference criteria for domain isolation, SOLID principles, zero placeholders, and token economy.\n",
 	}
 
 	for _, baseDir := range []string{filepath.Join(root, ".gemini", "skills"), filepath.Join(root, ".agents", "skills")} {
@@ -329,88 +439,51 @@ Reference criteria for domain isolation, SOLID principles, zero placeholders, an
 			}
 		}
 	}
+	return created, nil
+}
 
-	// 4. Managed dendrite-workflow skill: identical in every agent family's skill dir.
+func syncWorkflowSkill(root string, dryRun bool) (created, updated []string, err error) {
 	workflowSkill := renderDendriteWorkflowSkill()
 	for _, dir := range skillDirs {
 		target := filepath.Join(root, filepath.FromSlash(dir), DendriteWorkflowSkill, "SKILL.md")
 		c, u, err := writeOrUpdateFile(target, workflowSkill, dryRun)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 		rel, _ := filepath.Rel(root, target)
-		if c {
-			created = append(created, rel)
-		} else if u {
-			updated = append(updated, rel)
-		}
+		appendFileChange(&created, &updated, rel, c, u)
 	}
+	return created, updated, nil
+}
 
-	// 5. Per-agent entry files importing AGENTS.md, only when missing.
-	for _, name := range pointerFiles {
-		target := filepath.Join(root, name)
-		if fileExists(target) {
-			continue
-		}
-		if c, _, err := writeOrUpdateFile(target, pointerFileContent, dryRun); err != nil {
-			return nil, nil, nil, err
-		} else if c {
-			created = append(created, name)
-		}
-	}
-
-	// 6. Claude Code hook: stops a raw recursive search once and points at Dendrite's retrieval.
-	// An existing settings.json is merged into, never replaced; one that cannot be parsed is left alone.
-	settingsPath := filepath.Join(root, filepath.FromSlash(claudeSettingsPath))
-	existing, _ := os.ReadFile(settingsPath)
-	if merged, changed, err := mergeClaudeHooks(existing); err != nil {
-		fmt.Fprintf(os.Stderr, "[!] %v\n", err)
-	} else if changed {
-		if c, u, err := writeOrUpdateFile(settingsPath, string(merged), dryRun); err != nil {
-			return nil, nil, nil, err
-		} else if c {
-			created = append(created, claudeSettingsPath)
-		} else if u {
-			updated = append(updated, claudeSettingsPath)
-		}
-	}
-
-	// 7. Git pre-commit hook: the ticket lock for agents that do not go through Claude Code.
-	gitCreated, gitUpdated, gitNote, gitErr := installGitHook(root, dryRun)
-	created, updated = append(created, gitCreated...), append(updated, gitUpdated...)
-	if gitErr != nil {
-		fmt.Fprintf(os.Stderr, "[!] git pre-commit hook: %v\n", gitErr)
-	}
-	if gitNote != "" {
-		fmt.Fprintf(os.Stderr, "[!] %s\n", gitNote)
-	}
-
-	// 8. MCP configs for Claude, AGY and JetBrains: dendrite (core profile) and one server per synapse.
-	mcpCreated, mcpUpdated, mcpErr := writeMCPConfigs(root, dryRun)
-	created, updated = append(created, mcpCreated...), append(updated, mcpUpdated...)
-	if mcpErr != nil {
-		fmt.Fprintf(os.Stderr, "[!] MCP config left alone: %v\n", mcpErr)
-	}
-
-	// Discover existing skills in every agent family's skill dir
+func discoverSkills(root string) []string {
+	var skills []string
 	skillSet := make(map[string]bool)
 	for _, dir := range skillDirs {
 		dir = filepath.Join(root, filepath.FromSlash(dir))
 		entries, err := os.ReadDir(dir)
-		if err == nil {
-			for _, e := range entries {
-				if e.IsDir() {
-					skillPath := filepath.Join(dir, e.Name(), "SKILL.md")
-					if fileExists(skillPath) && !skillSet[e.Name()] {
-						skillSet[e.Name()] = true
-						skills = append(skills, e.Name())
-					}
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				skillPath := filepath.Join(dir, e.Name(), "SKILL.md")
+				if fileExists(skillPath) && !skillSet[e.Name()] {
+					skillSet[e.Name()] = true
+					skills = append(skills, e.Name())
 				}
 			}
 		}
 	}
+	return skills
+}
 
-	return created, updated, skills, nil
+func appendFileChange(created, updated *[]string, rel string, isCreated, isUpdated bool) {
+	if isCreated {
+		*created = append(*created, rel)
+	} else if isUpdated {
+		*updated = append(*updated, rel)
+	}
 }
 
 func ensureGitignoreEntries(root string, dryRun bool) (bool, bool) {

@@ -396,7 +396,18 @@ func TestRenderNeverTouchesAHandWrittenFile(t *testing.T) {
 	}
 }
 
-func TestRenderReportsWriteFailuresAndTakesNewArtifacts(t *testing.T) {
+func withArtifact(t *testing.T, a Artifact) {
+	t.Helper()
+	n := len(artifacts)
+	t.Cleanup(func() { artifacts = artifacts[:n] })
+	Register(a)
+}
+
+func constant(path, text string) Artifact {
+	return Artifact{Path: path, Content: func(string, Set) []byte { return []byte(text) }, Owns: func([]byte) bool { return true }}
+}
+
+func TestRenderReportsADirectoryWhereAFileBelongs(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Mkdir(filepath.Join(dir, "codecov.yml"), 0o755); err != nil {
 		t.Fatal(err)
@@ -404,24 +415,28 @@ func TestRenderReportsWriteFailuresAndTakesNewArtifacts(t *testing.T) {
 	if _, err := Render(dir, Defaults()); err == nil {
 		t.Error("a directory where a file belongs is an error")
 	}
-	n := len(artifacts)
-	defer func() { artifacts = artifacts[:n] }()
-	Register(Artifact{Path: "extra/x.txt", Content: func(string, Set) []byte { return []byte("x") }, Owns: func([]byte) bool { return true }})
-	clean := t.TempDir()
-	if res, err := Render(clean, Defaults()); err != nil || !contains(res.Written, "extra/x.txt") {
+}
+
+func TestRenderTakesANewArtifact(t *testing.T) {
+	withArtifact(t, constant("extra/x.txt", "x"))
+	if res, err := Render(t.TempDir(), Defaults()); err != nil || !contains(res.Written, "extra/x.txt") {
 		t.Errorf("a registered artifact is rendered: %+v, %v", res, err)
 	}
-	Register(Artifact{Path: "readonly/y.txt", Content: func(string, Set) []byte { return []byte("y") }, Owns: func([]byte) bool { return true }})
+}
+
+func TestRenderReportsAFileItCannotWrite(t *testing.T) {
+	withArtifact(t, constant("readonly/y.txt", "y"))
+	clean := t.TempDir()
 	if err := os.Mkdir(filepath.Join(clean, "readonly"), 0o500); err != nil {
 		t.Fatal(err)
 	}
 	// Whoever may write into a read-only directory (root) gets a write; everyone else gets the error.
 	canWrite := os.WriteFile(filepath.Join(clean, "readonly", "probe"), nil, 0o644) == nil
 	_, err := Render(clean, Defaults())
-	if canWrite && err != nil {
-		t.Errorf("this user can write into the directory, so Render must succeed: %v", err)
+	if canWrite != (err == nil) {
+		t.Errorf("canWrite=%v but err=%v", canWrite, err)
 	}
-	if !canWrite && (err == nil || !strings.Contains(err.Error(), "write readonly/y.txt")) {
+	if err != nil && !strings.Contains(err.Error(), "write readonly/y.txt") {
 		t.Errorf("a file that cannot be written is an error naming it: %v", err)
 	}
 }
@@ -435,7 +450,16 @@ func contains(list []string, want string) bool {
 	return false
 }
 
-func TestStrategiesRuleParsesValidatesAndAdvises(t *testing.T) {
+func strategiesFrom(text string) (got []string) {
+	for _, c := range Parse(text) {
+		if c.Key == "duplication.strategies" {
+			got = c.Value.([]string)
+		}
+	}
+	return got
+}
+
+func TestStrategiesRuleParsesFromText(t *testing.T) {
 	for text, want := range map[string][]string{
 		"use macros and helper functions to remove duplicated code": {"helper_function", "macro"},
 		"avoid copy-paste: extract a helper":                        {"helper_function"},
@@ -443,16 +467,13 @@ func TestStrategiesRuleParsesValidatesAndAdvises(t *testing.T) {
 		"use rstest parameterized tests against repeated tests":     {"rstest"},
 		"use macros": nil, // no word about duplication
 	} {
-		var got []string
-		for _, c := range Parse(text) {
-			if c.Key == "duplication.strategies" {
-				got = c.Value.([]string)
-			}
-		}
-		if !reflect.DeepEqual(got, want) {
+		if got := strategiesFrom(text); !reflect.DeepEqual(got, want) {
 			t.Errorf("%q: %v, want %v", text, got, want)
 		}
 	}
+}
+
+func TestStrategiesRuleValidates(t *testing.T) {
 	s := Defaults()
 	if err := s.Apply("duplication.strategies", []string{"macro", "magic"}); err == nil || !strings.Contains(err.Error(), "helper_function, macro and rstest") {
 		t.Errorf("an unknown strategy was accepted: %v", err)
@@ -460,6 +481,9 @@ func TestStrategiesRuleParsesValidatesAndAdvises(t *testing.T) {
 	if err := s.Apply("duplication.strategies", []string{"macro"}); err != nil || s.Duplication.Strategies[0] != "macro" {
 		t.Errorf("%v %v", err, s.Duplication.Strategies)
 	}
+}
+
+func TestStrategiesRuleAdvises(t *testing.T) {
 	advice := Defaults().Duplication.StrategyAdvice()
 	for _, w := range []string{"helper function", "macro", `rstest = "0.28.0"`, "#[case]", "#[fixture]"} {
 		if !strings.Contains(advice, w) {
@@ -472,9 +496,7 @@ func TestStrategiesRuleParsesValidatesAndAdvises(t *testing.T) {
 }
 
 func TestRenderSkipsAnArtifactTheProjectHasNoUseFor(t *testing.T) {
-	n := len(artifacts)
-	defer func() { artifacts = artifacts[:n] }()
-	Register(Artifact{Path: "unused.txt", Content: func(string, Set) []byte { return nil }, Owns: func([]byte) bool { return true }})
+	withArtifact(t, Artifact{Path: "unused.txt", Content: func(string, Set) []byte { return nil }, Owns: func([]byte) bool { return true }})
 	dir := t.TempDir()
 	res, err := Render(dir, Defaults())
 	if err != nil || contains(res.Written, "unused.txt") {

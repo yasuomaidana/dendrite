@@ -31,44 +31,52 @@ type Result struct {
 // is kept, unless adopt is set: then it is archived in .github/dendrite/ci.previous.yml (with the hand-written
 // quality.yml next to it) and replaced, and the notes name the jobs of the old file the new one lacks.
 func Scaffold(root string, set directive.Set, adopt, dryRun bool) (Result, error) {
-	var res Result
 	ext, err := LoadExtension(root)
+	if err != nil {
+		return Result{}, err
+	}
+	comps, notes := Detect(root)
+	res := Result{Notes: notes}
+	want := Render(comps, set, ext)
+	path := filepath.Join(root, filepath.FromSlash(WorkflowPath))
+	existing, found, err := fsutil.ReadIfPresent(path)
 	if err != nil {
 		return res, err
 	}
-	comps, notes := Detect(root)
-	res.Notes = notes
-	want := Render(comps, set, ext)
-	path := filepath.Join(root, filepath.FromSlash(WorkflowPath))
-	existing, readErr := os.ReadFile(path)
-	if readErr != nil && !os.IsNotExist(readErr) {
-		return res, readErr
-	}
-	if readErr == nil && !ownsWorkflow(existing) {
-		if !adopt {
-			res.Notes = append(res.Notes, "kept the hand-written "+WorkflowPath+": it does not carry the managed header, so Dendrite does not overwrite it (`dendrite soma prepare --adopt-ci` takes it over)")
-			return res, nil
-		}
-		adopted, err := adoptWorkflow(root, existing, want, dryRun)
-		res.Notes = append(res.Notes, adopted...)
-		if err != nil {
+	if found && !ownsWorkflow(existing) {
+		proceed, handNotes, err := handWritten(root, existing, want, adopt, dryRun)
+		res.Notes = append(res.Notes, handNotes...)
+		if err != nil || !proceed {
 			return res, err
 		}
 	}
-	if readErr == nil && bytes.Equal(existing, want) {
+	if found && bytes.Equal(existing, want) {
 		return res, nil
 	}
+	return res, writeWorkflow(path, want, found, dryRun, &res)
+}
+
+// handWritten decides what happens to a workflow Dendrite did not write: it stays, or --adopt-ci takes it over.
+func handWritten(root string, old, generated []byte, adopt, dryRun bool) (proceed bool, notes []string, err error) {
+	if !adopt {
+		return false, []string{"kept the hand-written " + WorkflowPath + ": it does not carry the managed header, so Dendrite does not overwrite it (`dendrite soma prepare --adopt-ci` takes it over)"}, nil
+	}
+	notes, err = adoptWorkflow(root, old, generated, dryRun)
+	return err == nil, notes, err
+}
+
+func writeWorkflow(path string, want []byte, existed, dryRun bool, res *Result) error {
 	if !dryRun {
 		if err := fsutil.WriteFileAtomic(path, want); err != nil {
-			return res, fmt.Errorf("write %s: %w", WorkflowPath, err)
+			return fmt.Errorf("write %s: %w", WorkflowPath, err)
 		}
 	}
-	if readErr != nil {
-		res.Created = append(res.Created, filepath.FromSlash(WorkflowPath))
-	} else {
+	if existed {
 		res.Updated = append(res.Updated, filepath.FromSlash(WorkflowPath))
+	} else {
+		res.Created = append(res.Created, filepath.FromSlash(WorkflowPath))
 	}
-	return res, nil
+	return nil
 }
 
 // adoptWorkflow archives the hand-written workflows the generated one replaces and says what moved.

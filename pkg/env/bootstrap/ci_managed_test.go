@@ -114,22 +114,29 @@ func TestPrepareGivesAProjectItsDefaultDirectivesOnce(t *testing.T) {
 	}
 }
 
-func TestEnsureDirectivesKeepsHandWrittenFilesAndHonoursDryRun(t *testing.T) {
+func TestEnsureDirectivesDryRunOnlyPlans(t *testing.T) {
 	root := t.TempDir()
 	created, _, notes, err := ensureDirectives(root, true)
 	if err != nil || len(created) == 0 || len(notes) != 0 || directive.Exists(root) {
 		t.Fatalf("a dry run only plans: %v %v %v", created, notes, err)
 	}
+}
+
+func TestEnsureDirectivesKeepsHandWrittenFiles(t *testing.T) {
+	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "codecov.yml"), []byte("coverage: {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	created, _, notes, err = ensureDirectives(root, false)
+	created, _, notes, err := ensureDirectives(root, false)
 	if err != nil || contains(created, "codecov.yml") || len(notes) != 1 || !strings.Contains(notes[0], "hand-written codecov.yml") {
 		t.Fatalf("%v %v %v", created, notes, err)
 	}
 	if body, _ := os.ReadFile(filepath.Join(root, "codecov.yml")); string(body) != "coverage: {}\n" {
 		t.Error("the hand-written codecov.yml must stay")
 	}
+}
+
+func TestEnsureDirectivesReportsDirectivesItCannotWrite(t *testing.T) {
 	blocked := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(blocked, ".github"), 0o755); err != nil {
 		t.Fatal(err)
@@ -139,6 +146,23 @@ func TestEnsureDirectivesKeepsHandWrittenFilesAndHonoursDryRun(t *testing.T) {
 	}
 	if _, _, _, err := ensureDirectives(blocked, false); err == nil {
 		t.Error("directives that cannot be written are an error")
+	}
+}
+
+func TestEnsureDirectivesRewritesALintConfigAfterALimitChange(t *testing.T) {
+	root := t.TempDir()
+	prepareCI(t, root)
+	set, err := directive.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set.Complexity.MaxCyclomatic = 5
+	if err := directive.Save(root, set); err != nil {
+		t.Fatal(err)
+	}
+	created, updated, _, err := ensureDirectives(root, false)
+	if err != nil || len(created) != 0 || !contains(updated, ".golangci.yml") {
+		t.Errorf("a changed limit rewrites the generated config: created %v updated %v err %v", created, updated, err)
 	}
 }
 
