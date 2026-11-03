@@ -199,49 +199,62 @@ func TestDaemon_ThermalAlertThresholds(t *testing.T) {
 	}
 }
 
-func TestDaemon_StartAndStop(t *testing.T) {
-	var mu sync.Mutex
-	var collected []TelemetryReport
+// awaitReports blocks until n reports arrived, failing the test after a generous timeout instead of racing a sleep.
+func awaitReports(t *testing.T, reports <-chan TelemetryReport, n int) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		select {
+		case <-reports:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("timed out waiting for report %d of %d", i+1, n)
+		}
+	}
+}
 
-	sensor := newFixedSensor(48.5)
-	daemon := NewDaemon(DaemonConfig{
-		Interval: 20 * time.Millisecond,
-	}, sensor, nil, nil, func(r TelemetryReport) {
-		mu.Lock()
-		defer mu.Unlock()
-		collected = append(collected, r)
+// startDaemon runs the daemon on ctx and returns the channel of its reports and a channel closed when Start returns.
+func startDaemon(ctx context.Context, interval time.Duration) (*Daemon, <-chan TelemetryReport, <-chan struct{}) {
+	reports := make(chan TelemetryReport, 64)
+	daemon := NewDaemon(DaemonConfig{Interval: interval}, newFixedSensor(48.5), nil, nil, func(r TelemetryReport) {
+		select {
+		case reports <- r:
+		default:
+		}
 	})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Start in background goroutine
-	started := make(chan struct{})
+	done := make(chan struct{})
 	go func() {
-		close(started)
+		defer close(done)
 		daemon.Start(ctx)
 	}()
-	<-started
+	return daemon, reports, done
+}
 
-	// Wait briefly so daemon sets d.running = true
-	time.Sleep(20 * time.Millisecond)
-
-	// Calling Start again while running should be an immediate no-op
-	daemon.Start(ctx)
-
-	// Wait for ticks
-	time.Sleep(60 * time.Millisecond)
-
-	mu.Lock()
-	count := len(collected)
-	mu.Unlock()
-
-	if count < 2 {
-		t.Errorf("expected at least 2 reports, got %d", count)
+func awaitDone(t *testing.T, done <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the daemon did not stop")
 	}
+}
 
-	// Test Stop()
+func TestDaemon_StopEndsTheLoop(t *testing.T) {
+	daemon, reports, done := startDaemon(context.Background(), 5*time.Millisecond)
+
+	awaitReports(t, reports, 3) // the immediate collection and two ticks
+	// Start while running returns at once, so this call is deterministic: the loop has set running before reporting.
+	daemon.Start(context.Background())
+
 	daemon.Stop()
-	// Test calling Stop() again (idempotent)
-	daemon.Stop()
+	awaitDone(t, done)
+	daemon.Stop() // idempotent once stopped
+}
+
+func TestDaemon_CanceledContextEndsTheLoop(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	daemon, reports, done := startDaemon(ctx, 5*time.Millisecond)
+
+	awaitReports(t, reports, 1)
+	cancel()
+	awaitDone(t, done)
+	daemon.Stop() // nothing is running any more
 }
