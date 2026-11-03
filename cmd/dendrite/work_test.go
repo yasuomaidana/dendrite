@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/pkg/env/bootstrap"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -31,6 +32,9 @@ func TestMain(m *testing.M) {
 	runCompose = func(context.Context, io.Writer, string, ...string) error { return nil }
 	restartRunningLiteLLM = func(context.Context) error { return nil }
 	dockerCmd = func(context.Context, ...string) ([]byte, error) { return nil, nil }
+	// Nor may a test change the developer's real Antigravity MCP registry.
+	agyRegister = func(string) ([]string, string) { return nil, "" }
+	agyMCPStatus = func(string) (bootstrap.AGYMCPState, error) { return bootstrap.AGYAbsent, nil }
 	stacksDir, stacksErr := os.MkdirTemp("", "dendrite-stacks-test-")
 	if stacksErr == nil {
 		_ = os.Setenv("DENDRITE_STACKS_DIR", stacksDir)

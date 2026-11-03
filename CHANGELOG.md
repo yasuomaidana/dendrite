@@ -19,7 +19,7 @@ First release from `develop` to `main` since 2026-10-19 (180 commits). Which com
 - **Synapses (DEN-373):** `synapse add|delete|remove-member`, per-synapse peer listing, and `chronos request` to file a ticket in a peer's project.
 - **Environment (DEN-366):** `soma secrets ensure|status`, `soma stacks migrate`, `soma migrate-state`.
 - **Diagnostics (DEN-326):** `dendrite inter probe`, a read-only pass/fail matrix over the MCP tools; `sensory usage`; `bouton jobs show|watch`.
-- **Syntax analysis in Rust (DEN-813):** `pkg/coreclient` talks to the `dendrite-core` sidecar (dendrite-core-rs) for complexity, signature folding, last complete node, changed symbols, token estimates and chunk identity. `pkg/assert`, `pkg/ai/importer` and `pkg/ai/tokenopt` use it. `dendrite-core` is required, with no Go fallback; `dendrite doctor` reports it.
+- **Syntax analysis in Rust (DEN-813):** `pkg/coreclient` talks to the `dendrite-core` sidecar (dendrite-core-rs) for complexity, signature folding, last complete node, changed symbols, token estimates and chunk identity. `pkg/assert`, `pkg/ai/importer` and `pkg/ai/tokenopt` use it. `dendrite-core` is required, with no Go fallback; `dendrite soma doctor` reports it.
 - **Complexity and structure gates (DEN-812):** directives `[complexity]` (`max_cyclomatic` 10, `max_cognitive` 15) and `[structure]` (`max_files_per_dir` 12, `max_dir_production_lines` 3000, `max_prefix_group` 4, `require_docs`, `docs_files`) and the `complexity` and `structure` checks of `dendrite allostasis gate` and `chronos finish`, run on the `dendrite-rag` sidecar (protocol 1.12). The structure check also requires a README and a CHANGELOG for every crate, module and repository root.
 - **Second opinion in CI (DEN-815):** `.github/workflows/complexity.yml` cross-checks complexity with `gocyclo` and `gocognit` (report only while DEN-816 is open) and `ruff` C901, reading the limits from the directives; see `docs/quality/complexity-second-opinion.md`.
 - **Pending moves (DEN-814, DEN-818):** Go files that will move to a Rust repository or to dendrite-mcp-hub carry a `TODO(move:<repo>,<TICKET>)` block (what, when, what stays), listed in `docs/architecture/subprojects.md`, which also states what each sub-project implements today.
@@ -39,15 +39,19 @@ First release from `develop` to `main` since 2026-10-19 (180 commits). Which com
 - Ticket resolution is one shared resolver with no substring matches (DEN-324); the finish gate lists its failing lines (DEN-401) and proves each verdict (DEN-406).
 - Tests cannot reach the real Docker or write the real stacks directory (DEN-371).
 - The Plane HITL sync reads comments from one `gh issue list`, 55 s down to 2.6 s on 128 tickets (DEN-338).
+- `DEV_STATUS.md` lists only the tickets of its own Plane project. Since DEN-984 it also pulled in every other project of the workspace, and copies of other projects' tickets that sat on the Dendrite board are no longer listed (DEN-828). A peer's file gets its own project name.
+- `soma prepare` registers the Dendrite MCP servers with Antigravity (`agy mcp add`), which ignores `.agents/mcp.json`, and `soma doctor` reports whether they are registered (DEN-830).
 
 ### Known limits
 
-- The new `complexity` and `structure` checks fail on this repository when run over everything: 829 functions are above cyclomatic 10 or cognitive 15 (DEN-816) and many directories hold more than 12 modules or a group of files sharing a name prefix. The gate and `chronos finish` judge only what a change touches, so work is not blocked; the CI cross-check reports the totals without failing.
+- The new `complexity` and `structure` checks fail on this repository when run over everything: 829 functions are above cyclomatic 10 or cognitive 15 (DEN-824) and `cmd/dendrite`, `pkg/mcpserver`, `pkg/tracker/plane`, `pkg/ticketlock`, `pkg/env/bootstrap` and `pkg/devtool` hold more modules than the structure check allows. The complexity check judges only what a change touches. The structure check does not, so `chronos finish` keeps reporting its findings (and stops short of Done) until DEN-822, DEN-823 and DEN-829 split those packages.
+- Dendrite itself is not on the generated CI workflow yet (DEN-824), and the peers (mcp-hub, rag-rs, plane-rs, embedag) have not adopted it either. These and the move-notice tooling (DEN-827) are the 0.2.0 scope.
+- `dendrite-git` is built and installed with the other sidecars, but no Go code calls it yet (DGIT-1, DGIT-4, DGIT-7); `soma doctor` says so.
 - Go code that duplicates a Rust sub-project is marked `TODO(move:...)` and listed in `docs/architecture/subprojects.md`; it is not removed yet.
 
 ### Security
 
-- The root `.env`, which held live credentials, is untracked and a test fails the build if an environment file is tracked again (DEN-901, DEN-343). The credentials that were committed before this release must be rotated; DEN-442 tracks that the live salt key equals the leaked master key.
+- The root `.env`, which held live credentials, is untracked and a test fails the build if an environment file is tracked again (DEN-901, DEN-343). The credentials that were committed before this release must be rotated; The keys were rotated and DEN-442 is closed.
 
 ### Quality
 

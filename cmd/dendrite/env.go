@@ -126,9 +126,17 @@ func newSomaPrepareCmd() *cobra.Command {
 	return cmd
 }
 
+// agyRegister and agyMCPStatus are the seams to Antigravity's own MCP registry; the tests replace them
+// so no test changes the developer's real AGY configuration.
+var (
+	agyRegister  = bootstrap.RegisterAGY
+	agyMCPStatus = bootstrap.AGYMCPStatus
+)
+
 func runSomaPrepare(ctx context.Context, o somaPrepareOptions, out io.Writer) error {
+	target := resolvePrepareTarget(o.Path)
 	report, err := bootstrap.NewPreparer().Prepare(ctx, bootstrap.PrepareOptions{
-		ProjectPath: resolvePrepareTarget(o.Path),
+		ProjectPath: target,
 		DefaultTool: o.Tool,
 		EnforceCICD: !o.NoCICD,
 		SyncSkills:  !o.NoSkills,
@@ -138,11 +146,32 @@ func runSomaPrepare(ctx context.Context, o somaPrepareOptions, out io.Writer) er
 	if err != nil {
 		return fmt.Errorf("prepare project environment: %w", err)
 	}
+	var agyLines []string
+	if !o.DryRun {
+		agyLines = registerWithAGY(target)
+	}
 	if globals.JSON {
 		return writeJSON(out, report)
 	}
 	printPrepareReport(out, report)
+	for _, line := range agyLines {
+		fmt.Fprintln(out, line)
+	}
 	return nil
+}
+
+// registerWithAGY adds the project's MCP servers to AGY's registry (AGY does not read .agents/mcp.json)
+// and returns the lines to show; it is silent when AGY is not installed.
+func registerWithAGY(target string) []string {
+	registered, note := agyRegister(target)
+	var lines []string
+	if len(registered) > 0 {
+		lines = append(lines, "[✓] AGY: registered MCP servers "+strings.Join(registered, ", "))
+	}
+	if note != "" {
+		lines = append(lines, "[!] AGY MCP registration: "+note)
+	}
+	return lines
 }
 
 // resolvePrepareTarget maps a registered project name to its directory; any other value is a path.
@@ -433,6 +462,7 @@ func runSomaDiagnose(ctx context.Context, ollamaURL string, out io.Writer) error
 	}
 	diagnosePlane(ctx, out)
 	diagnoseSidecars(out)
+	diagnoseAGY(out)
 	if _, err := os.Stat("DEV_STATUS.md"); err == nil {
 		fmt.Fprintln(out, "  [✓] Project Status: DEV_STATUS.md present")
 	} else {
@@ -445,12 +475,33 @@ func runSomaDiagnose(ctx context.Context, ollamaURL string, out io.Writer) error
 // diagnoseSidecars reports where each Rust sidecar Dendrite requires was found, or how to get it.
 func diagnoseSidecars(out io.Writer) {
 	loc := sidecar.DefaultLocator()
-	for _, name := range []string{coreclient.BinaryName, planesvc.BinaryName, "dendrite-rag"} {
+	// dendrite-git is installed with the others but no Go code calls it yet (DGIT-1, DGIT-4, DGIT-7).
+	for _, name := range []string{coreclient.BinaryName, planesvc.BinaryName, "dendrite-rag", "dendrite-git"} {
+		note := ""
+		if name == "dendrite-git" {
+			note = " (not called by Dendrite yet)"
+		}
 		if path, err := loc.Locate(name); err == nil {
-			fmt.Fprintf(out, "  [✓] Sidecar %s: %s\n", name, path)
+			fmt.Fprintf(out, "  [✓] Sidecar %s: %s%s\n", name, path, note)
 		} else {
 			fmt.Fprintf(out, "  [-] Sidecar %s: not found (%v); run `dendrite install`\n", name, err)
 		}
+	}
+}
+
+// diagnoseAGY reports whether Antigravity can reach the Dendrite MCP server. AGY keeps its own registry,
+// so a project's .agents/mcp.json alone does not give it the dendrite tools.
+func diagnoseAGY(out io.Writer) {
+	state, err := agyMCPStatus("dendrite")
+	switch state {
+	case bootstrap.AGYAbsent:
+		fmt.Fprintln(out, "  [i] AGY: not installed, nothing to register")
+	case bootstrap.AGYRegistered:
+		fmt.Fprintln(out, "  [✓] AGY: the dendrite MCP server is registered")
+	case bootstrap.AGYNotRegistered:
+		fmt.Fprintln(out, "  [-] AGY: the dendrite MCP server is not registered; run `dendrite soma prepare`")
+	default:
+		fmt.Fprintf(out, "  [-] AGY: cannot read its MCP registry (%v)\n", err)
 	}
 }
 
