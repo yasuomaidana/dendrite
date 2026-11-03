@@ -102,3 +102,23 @@ func Table[V comparable](t T, cases map[string]V, fn func(input string) V) {
 		Equal(t, input, fn(input), want)
 	}
 }
+
+// Contains reports every text that s does not contain, without stopping the test.
+func Contains(t T, s string, wants ...string) {
+	t.Helper()
+	for _, want := range wants {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in:\n%s", want, s)
+		}
+	}
+}
+
+// NotContains reports every text that s contains, without stopping the test.
+func NotContains(t T, s string, unwanted ...string) {
+	t.Helper()
+	for _, bad := range unwanted {
+		if strings.Contains(s, bad) {
+			t.Errorf("unexpected %q in:\n%s", bad, s)
+		}
+	}
+}

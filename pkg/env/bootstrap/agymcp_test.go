@@ -4,10 +4,11 @@ import (
 	"errors"
 	"os/exec"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/yasuomaidana/dendrite-mcp-hub/pkg/jetbrains"
+
+	"Dendrite/pkg/testkit"
 )
 
 // fakeAGY replaces the agy command for one test: installed says whether it is on PATH, answer
@@ -67,7 +68,7 @@ func TestRegisterAGYServersStopsAtARefusalAndNamesTheServer(t *testing.T) {
 	if !reflect.DeepEqual(got, []string{"dendrite"}) {
 		t.Errorf("registered %v", got)
 	}
-	expectContains(t, note, "dendrite-synapse-x", "not logged in")
+	testkit.Contains(t, note, "dendrite-synapse-x", "not logged in")
 }
 
 func TestRegisterAGYRegistersTheRepositorysOwnServers(t *testing.T) {
@@ -75,16 +76,6 @@ func TestRegisterAGYRegistersTheRepositorysOwnServers(t *testing.T) {
 	got, _ := RegisterAGY(t.TempDir())
 	if len(got) == 0 || got[0] != "dendrite" || len(*calls) != len(got) {
 		t.Errorf("registered %v with %d calls", got, len(*calls))
-	}
-}
-
-// expectContains fails for every text that s does not contain.
-func expectContains(t *testing.T, s string, wants ...string) {
-	t.Helper()
-	for _, w := range wants {
-		if !strings.Contains(s, w) {
-			t.Errorf("missing %q in %q", w, s)
-		}
 	}
 }
 

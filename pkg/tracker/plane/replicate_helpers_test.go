@@ -2,8 +2,9 @@ package plane
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
+
+	"Dendrite/pkg/testkit"
 )
 
 // issuesJSON is the body Plane answers an issue listing with.
@@ -24,25 +25,11 @@ func boardRules(projects, states, modules, issues string) []rule {
 	}
 }
 
-// expectIn fails for every text that md does not contain.
-func expectIn(t *testing.T, md string, wants ...string) {
-	t.Helper()
-	for _, want := range wants {
-		if !strings.Contains(md, want) {
-			t.Errorf("missing %q in:\n%s", want, md)
-		}
-	}
-}
-
-// expectNotIn fails for every text that md contains.
-func expectNotIn(t *testing.T, md string, unwanted ...string) {
-	t.Helper()
-	for _, bad := range unwanted {
-		if strings.Contains(md, bad) {
-			t.Errorf("unexpected %q in:\n%s", bad, md)
-		}
-	}
-}
+// expectIn and expectNotIn fail for every text md lacks or holds.
+var (
+	expectIn    = testkit.Contains
+	expectNotIn = testkit.NotContains
+)
 
 // counts is the per-state summary of a report: total, backlog, to do, in progress, to verify, done.
 func counts(r *StatusReplicationReport) [6]int {

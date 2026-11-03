@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -139,5 +140,23 @@ func TestTableChecksEveryInput(t *testing.T) {
 	Table(r, map[string]int{"ccc": 1}, func(in string) int { return len(in) })
 	if r.msg != "ccc = 3, want 1" {
 		t.Fatalf("mismatch reported %q", r.msg)
+	}
+}
+
+func TestContainsAndNotContainsReportEachMiss(t *testing.T) {
+	r := &recorder{}
+	Contains(r, "alpha beta", "alpha", "beta")
+	NotContains(r, "alpha beta", "gamma")
+	if r.msg != "" {
+		t.Fatalf("a clean text reported %q", r.msg)
+	}
+	Contains(r, "alpha", "alpha", "gamma")
+	if !strings.Contains(r.msg, `missing "gamma"`) {
+		t.Fatalf("missing text reported %q", r.msg)
+	}
+	r.msg = ""
+	NotContains(r, "alpha", "alpha")
+	if !strings.Contains(r.msg, `unexpected "alpha"`) {
+		t.Fatalf("unwanted text reported %q", r.msg)
 	}
 }
