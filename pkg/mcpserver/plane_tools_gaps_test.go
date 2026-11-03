@@ -13,13 +13,7 @@ func TestPlaneSyncToolsReportEachFailure(t *testing.T) {
 	if err := os.WriteFile(ledger, []byte("### Milestone 1: A\n- [ ] **DEN-1**: one\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	healthy := []apiRule{
-		on("GET", "/states/", 200, `{"results":[]}`),
-		on("GET", "/modules/", 200, `{"results":[]}`),
-		on("GET", "/issues/", 200, `{"results":[]}`),
-		on("GET", "/projects/", 200, `{"results":[{"id":"proj","identifier":"DEN"}]}`),
-		on("GET", "/pages/", 200, `[]`),
-	}
+	healthy := healthyPlaneRules()
 	with := func(first apiRule) []apiRule { return append([]apiRule{first}, healthy...) }
 
 	cases := []struct {
@@ -43,24 +37,39 @@ func TestPlaneSyncToolsReportEachFailure(t *testing.T) {
 			}
 		})
 	}
+}
 
-	t.Run("without a Plane client", func(t *testing.T) {
-		noEnvPlane(t)
-		srv := toolsWith(t, nil, "")
-		for _, tool := range []string{"dendrite_plane_replicate", "dendrite_plane_push_status", "dendrite_plane_doc_sync"} {
-			if text, isErr := callTool(t, srv, tool, `{}`); !isErr || !strings.Contains(text, "plane client error") {
-				t.Errorf("%s: %q (error %v)", tool, text, isErr)
-			}
+// healthyPlaneRules answers every read of a healthy, empty board; the project list goes last because
+// its path is a prefix of the others.
+func healthyPlaneRules() []apiRule {
+	return []apiRule{
+
+		on("GET", "/states/", 200, `{"results":[]}`),
+		on("GET", "/modules/", 200, `{"results":[]}`),
+		on("GET", "/issues/", 200, `{"results":[]}`),
+		on("GET", "/projects/", 200, `{"results":[{"id":"proj","identifier":"DEN"}]}`),
+		on("GET", "/pages/", 200, `[]`),
+	}
+}
+
+func TestPlaneSyncToolsNeedAPlaneClient(t *testing.T) {
+	noEnvPlane(t)
+	srv := toolsWith(t, nil, "")
+	for _, tool := range []string{"dendrite_plane_replicate", "dendrite_plane_push_status", "dendrite_plane_doc_sync"} {
+		if text, isErr := callTool(t, srv, tool, `{}`); !isErr || !strings.Contains(text, "plane client error") {
+			t.Errorf("%s: %q (error %v)", tool, text, isErr)
 		}
-	})
-	t.Run("document directions", func(t *testing.T) {
-		srv := toolsWith(t, newScriptedPlane(t, healthy...), "")
-		for _, direction := range []string{"to-plane", "push", "from-plane", "pull", "anything else", ""} {
-			if text, isErr := callTool(t, srv, "dendrite_plane_doc_sync", `{"direction":"`+direction+`","dir":"`+dir+`"}`); isErr {
-				t.Errorf("%q: %s", direction, text)
-			}
+	}
+}
+
+func TestPlaneDocSyncAcceptsEveryDirection(t *testing.T) {
+	dir := t.TempDir()
+	srv := toolsWith(t, newScriptedPlane(t, healthyPlaneRules()...), "")
+	for _, direction := range []string{"to-plane", "push", "from-plane", "pull", "anything else", ""} {
+		if text, isErr := callTool(t, srv, "dendrite_plane_doc_sync", `{"direction":"`+direction+`","dir":"`+dir+`"}`); isErr {
+			t.Errorf("%q: %s", direction, text)
 		}
-	})
+	}
 }
 
 func TestJetBrainsAndCommitToolsReportFailures(t *testing.T) {

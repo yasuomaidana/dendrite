@@ -2,7 +2,6 @@ package plane
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -185,97 +184,24 @@ func TestPushStatusToPlane(t *testing.T) {
 }
 
 func TestReplicateStatusFromPlane(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/workspaces/ws/projects/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": [{"id": "proj", "identifier": "DEN"}]}`))
-
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/states/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": [
-				{"id": "st-done", "name": "Done", "group": "completed"},
-				{"id": "st-prog", "name": "In Progress", "group": "started"},
-				{"id": "st-todo", "name": "To Do", "group": "unstarted"}
-			]}`))
-
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/modules/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": [{"id": "m-17", "name": "Milestone 17"}]}`))
-
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/issues/"):
-			w.WriteHeader(http.StatusOK)
-			issues := []PlaneIssue{
-				{
-					ID:                  "iss-35",
-					Name:                "[DEN-035] Unified Inference Engine Gateway",
-					SequenceID:          35,
-					State:               "st-done",
-					DescriptionStripped: "Target Package: pkg/inference",
-				},
-				{
-					ID:                  "iss-36",
-					Name:                "[DEN-036] k6 Performance Testing",
-					SequenceID:          36,
-					State:               "st-prog",
-					DescriptionStripped: "Target Package: pkg/perf",
-				},
-				{
-					ID:                  "iss-39",
-					Name:                "[DEN-039] Reverse Engineering Showcases",
-					SequenceID:          39,
-					State:               "st-todo",
-					DescriptionStripped: "Target Package: pkg/rea",
-				},
-			}
-			data, _ := json.Marshal(map[string]interface{}{"results": issues})
-			_, _ = w.Write(data)
-
-		default:
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{}`))
-		}
-	}))
-	defer server.Close()
-
-	client, err := NewClient(Config{
-		BaseURL:       server.URL,
-		WorkspaceSlug: "ws",
-		ProjectID:     "proj",
-		DirectToken:   "sec-key",
-	}, server.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ctx := context.Background()
-	rendered, rep, err := ReplicateStatusFromPlane(ctx, client)
+	sp := newScriptedPlane(t, boardRules(
+		`[{"id":"proj","identifier":"DEN"}]`,
+		`[{"id":"st-done","name":"Done","group":"completed"},{"id":"st-prog","name":"In Progress","group":"started"},{"id":"st-todo","name":"To Do","group":"unstarted"}]`,
+		`[{"id":"m-17","name":"Milestone 17"}]`,
+		issuesJSON(
+			PlaneIssue{ID: "iss-35", Name: "[DEN-035] Unified Inference Engine Gateway", SequenceID: 35, State: "st-done", DescriptionStripped: "Target Package: pkg/inference"},
+			PlaneIssue{ID: "iss-36", Name: "[DEN-036] k6 Performance Testing", SequenceID: 36, State: "st-prog", DescriptionStripped: "Target Package: pkg/perf"},
+			PlaneIssue{ID: "iss-39", Name: "[DEN-039] Reverse Engineering Showcases", SequenceID: 39, State: "st-todo", DescriptionStripped: "Target Package: pkg/rea"}),
+	)...)
+	rendered, rep, err := ReplicateStatusFromPlane(context.Background(), planeAt(t, sp.URL))
 	if err != nil {
 		t.Fatalf("ReplicateStatusFromPlane failed: %v", err)
 	}
-
-	if rep.TotalTickets != 3 {
-		t.Errorf("expected 3 tickets, got %d", rep.TotalTickets)
+	if got, want := counts(rep), [6]int{3, 0, 1, 1, 0, 1}; got != want {
+		t.Errorf("counts (total, backlog, todo, progress, verify, done) = %v, want %v", got, want)
 	}
-	if rep.CompletedTickets != 1 {
-		t.Errorf("expected 1 completed ticket, got %d", rep.CompletedTickets)
-	}
-	if rep.InProgressTickets != 1 {
-		t.Errorf("expected 1 in-progress ticket, got %d", rep.InProgressTickets)
-	}
-	if !strings.Contains(rep.CurrentFocus, "DEN-036") {
-		t.Errorf("expected DEN-036 in current focus, got %s", rep.CurrentFocus)
-	}
-	if !strings.Contains(rendered, "# Dendrite Project Development Status & Roadmap") {
-		t.Errorf("expected header in rendered markdown")
-	}
-	if !strings.Contains(rendered, "- [x] **DEN-035**") {
-		t.Errorf("expected completed DEN-035 in rendered markdown")
-	}
-	if !strings.Contains(rendered, "- [ ] **DEN-036**: k6 Performance Testing") {
-		t.Errorf("expected in-progress DEN-036 in rendered markdown")
-	}
+	expectIn(t, rep.CurrentFocus, "DEN-036")
+	expectIn(t, rendered, "# Dendrite Project Development Status & Roadmap", "- [x] **DEN-035**", "- [ ] **DEN-036**: k6 Performance Testing")
 }
 
 func TestReplicate_ErrorHandling(t *testing.T) {
@@ -309,118 +235,23 @@ func TestReplicate_ErrorHandling(t *testing.T) {
 }
 
 func TestAC1_KnownStatesAndSummaryCounts(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/workspaces/ws/projects/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": [{"id": "proj", "identifier": "DEN"}]}`))
-
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/states/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": [
-				{"id": "st-done", "name": "Done", "group": "completed"},
-				{"id": "st-verify", "name": "To Verify", "group": "started"},
-				{"id": "st-prog", "name": "In Progress", "group": "started"},
-				{"id": "st-todo", "name": "To Do", "group": "unstarted"},
-				{"id": "st-backlog", "name": "Backlog", "group": "backlog"}
-			]}`))
-
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/modules/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": [{"id": "m-17", "name": "Milestone 17"}]}`))
-
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/issues/"):
-			w.WriteHeader(http.StatusOK)
-			issues := []PlaneIssue{
-				{
-					ID:         "iss-1",
-					Name:       "[DEN-101] Backlog item",
-					SequenceID: 101,
-					State:      "st-backlog",
-					Priority:   "low",
-				},
-				{
-					ID:         "iss-2",
-					Name:       "[DEN-102] To Do item",
-					SequenceID: 102,
-					State:      "st-todo",
-					Priority:   "medium",
-				},
-				{
-					ID:         "iss-3",
-					Name:       "[DEN-103] In Progress item",
-					SequenceID: 103,
-					State:      "st-prog",
-					Priority:   "high",
-				},
-				{
-					ID:         "iss-4",
-					Name:       "[DEN-104] To Verify item",
-					SequenceID: 104,
-					State:      "st-verify",
-					Priority:   "urgent",
-				},
-				{
-					ID:         "iss-5",
-					Name:       "[DEN-105] Done item",
-					SequenceID: 105,
-					State:      "st-done",
-					Priority:   "medium",
-				},
-			}
-			data, _ := json.Marshal(map[string]interface{}{"results": issues})
-			_, _ = w.Write(data)
-
-		default:
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{}`))
-		}
-	}))
-	defer server.Close()
-
-	client, err := NewClient(Config{
-		BaseURL:       server.URL,
-		WorkspaceSlug: "ws",
-		ProjectID:     "proj",
-		DirectToken:   "sec-key",
-	}, server.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ctx := context.Background()
-	rendered, rep, err := PullStatusFromPlane(ctx, client)
+	sp := newScriptedPlane(t, boardRules(
+		`[{"id":"proj","identifier":"DEN"}]`,
+		`[{"id":"st-done","name":"Done","group":"completed"},{"id":"st-verify","name":"To Verify","group":"started"},{"id":"st-prog","name":"In Progress","group":"started"},{"id":"st-todo","name":"To Do","group":"unstarted"},{"id":"st-backlog","name":"Backlog","group":"backlog"}]`,
+		`[{"id":"m-17","name":"Milestone 17"}]`,
+		issuesJSON(
+			PlaneIssue{ID: "iss-1", Name: "[DEN-101] Backlog item", SequenceID: 101, State: "st-backlog", Priority: "low"},
+			PlaneIssue{ID: "iss-2", Name: "[DEN-102] To Do item", SequenceID: 102, State: "st-todo", Priority: "medium"},
+			PlaneIssue{ID: "iss-3", Name: "[DEN-103] In Progress item", SequenceID: 103, State: "st-prog", Priority: "high"},
+			PlaneIssue{ID: "iss-4", Name: "[DEN-104] To Verify item", SequenceID: 104, State: "st-verify", Priority: "urgent"},
+			PlaneIssue{ID: "iss-5", Name: "[DEN-105] Done item", SequenceID: 105, State: "st-done", Priority: "medium"}),
+	)...)
+	rendered, rep, err := PullStatusFromPlane(context.Background(), planeAt(t, sp.URL))
 	if err != nil {
 		t.Fatalf("PullStatusFromPlane failed: %v", err)
 	}
-
-	if rep.TotalTickets != 5 {
-		t.Errorf("expected 5 total tickets, got %d", rep.TotalTickets)
+	if got, want := counts(rep), [6]int{5, 1, 1, 1, 1, 1}; got != want {
+		t.Errorf("counts (total, backlog, todo, progress, verify, done) = %v, want %v", got, want)
 	}
-	if rep.BacklogTickets != 1 {
-		t.Errorf("expected 1 backlog ticket, got %d", rep.BacklogTickets)
-	}
-	if rep.TodoTickets != 1 {
-		t.Errorf("expected 1 todo ticket, got %d", rep.TodoTickets)
-	}
-	if rep.InProgressTickets != 1 {
-		t.Errorf("expected 1 in-progress ticket, got %d", rep.InProgressTickets)
-	}
-	if rep.ToVerifyTickets != 1 {
-		t.Errorf("expected 1 to-verify ticket, got %d", rep.ToVerifyTickets)
-	}
-	if rep.DoneTickets != 1 {
-		t.Errorf("expected 1 done ticket, got %d", rep.DoneTickets)
-	}
-
-	sum := rep.BacklogTickets + rep.TodoTickets + rep.InProgressTickets + rep.ToVerifyTickets + rep.DoneTickets
-	if sum != rep.TotalTickets {
-		t.Errorf("sum of states (%d) does not match total tickets (%d)", sum, rep.TotalTickets)
-	}
-
-	expectedSummary := "- **Summary**: Backlog: 1 | To Do: 1 | In Progress: 1 | To Verify: 1 | Done: 1 (Total: 5)"
-	if !strings.Contains(rendered, expectedSummary) {
-		t.Errorf("rendered markdown missing expected summary line. Got:\n%s", rendered)
-	}
+	expectIn(t, rendered, "- **Summary**: Backlog: 1 | To Do: 1 | In Progress: 1 | To Verify: 1 | Done: 1 (Total: 5)")
 }

@@ -2,274 +2,63 @@ package plane
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
 func TestAC2_EveryTicketOfTheProjectGroupedByModule(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/workspaces/ws/projects/":
-			w.WriteHeader(http.StatusOK)
-			projects := []PlaneProject{
-				{ID: "proj-den", Name: "Dendrite", Identifier: "DEN"},
-				{ID: "proj-dcore", Name: "Dendrite Core", Identifier: "DCORE"},
-				{ID: "proj-drag", Name: "Dendrite RAG", Identifier: "DRAG"},
-				{ID: "proj-dgit", Name: "Dendrite Git", Identifier: "DGIT"},
-				{ID: "proj-dmcp", Name: "Dendrite MCP", Identifier: "DMCP"},
-			}
-			data, _ := json.Marshal(map[string]interface{}{"results": projects})
-			_, _ = w.Write(data)
+	rules := append([]rule{
+		on("GET", "/modules/m-16/module-issues/", 200, `{"results":[{"id":"iss-35"}]}`),
+		on("GET", "/modules/m-17/module-issues/", 200, `{"results":[{"id":"iss-36"}]}`),
+		// Another project's board is never read.
+		on("GET", "/projects/proj-dcore/issues/", 200, issuesJSON(PlaneIssue{ID: "iss-dcore-1", Name: "[DCORE-001] Distributed Core Bus", SequenceID: 1, State: "st-done"})),
+	}, boardRules(
+		`[{"id":"proj-den","identifier":"DEN"},{"id":"proj-dcore","identifier":"DCORE"},{"id":"proj-drag","identifier":"DRAG"}]`,
+		`[{"id":"st-done","name":"Done","group":"completed"},{"id":"st-prog","name":"In Progress","group":"started"},{"id":"st-verify","name":"To Verify","group":"started"},{"id":"st-todo","name":"To Do","group":"unstarted"}]`,
+		`[{"id":"m-16","name":"Milestone 16: Pluggable Multi-Provider Inference Engines (FEAT-020)"},{"id":"m-17","name":"Milestone 17: Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)"}]`,
+		issuesJSON(
+			PlaneIssue{ID: "iss-35", Name: "[DEN-035] Unified Inference Engine Gateway", SequenceID: 35, State: "st-done", Priority: "medium", DescriptionStripped: "Target Package: pkg/inference"},
+			PlaneIssue{ID: "iss-36", Name: "[DEN-036] k6 Performance Testing", SequenceID: 36, State: "st-prog", Priority: "high", DescriptionStripped: "Target Package: pkg/perf"},
+			PlaneIssue{ID: "iss-984", Name: "[DEN-984] Mirror Plane in DEV_STATUS", SequenceID: 984, State: "st-verify", Priority: "urgent", DescriptionStripped: "Target Package: pkg/tracker/plane"},
+			// A copy of a peer's ticket on the DEN board belongs to the peer's file.
+			PlaneIssue{ID: "iss-copy", Name: "[DRAG-001] Semantic Index Pipeline", SequenceID: 985, State: "st-prog"}),
+	)...)
+	sp := newScriptedPlane(t, rules...)
 
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/projects/proj-den/states/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": [
-				{"id": "st-done", "name": "Done", "group": "completed"},
-				{"id": "st-prog", "name": "In Progress", "group": "started"},
-				{"id": "st-verify", "name": "To Verify", "group": "started"},
-				{"id": "st-todo", "name": "To Do", "group": "unstarted"}
-			]}`))
-
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/projects/proj-den/modules/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": [
-				{"id": "m-16", "name": "Milestone 16: Pluggable Multi-Provider Inference Engines (FEAT-020)"},
-				{"id": "m-17", "name": "Milestone 17: Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)"}
-			]}`))
-
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/modules/m-16/module-issues/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": [{"id": "iss-35"}]}`))
-
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/modules/m-17/module-issues/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": [{"id": "iss-36"}]}`))
-
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/projects/proj-den/issues/"):
-			w.WriteHeader(http.StatusOK)
-			issues := []PlaneIssue{
-				{
-					ID:                  "iss-35",
-					Name:                "[DEN-035] Unified Inference Engine Gateway",
-					SequenceID:          35,
-					State:               "st-done",
-					Priority:            "medium",
-					DescriptionStripped: "Target Package: pkg/inference",
-				},
-				{
-					ID:                  "iss-36",
-					Name:                "[DEN-036] k6 Performance Testing",
-					SequenceID:          36,
-					State:               "st-prog",
-					Priority:            "high",
-					DescriptionStripped: "Target Package: pkg/perf",
-				},
-				{
-					ID:                  "iss-984",
-					Name:                "[DEN-984] Mirror Plane in DEV_STATUS",
-					SequenceID:          984,
-					State:               "st-verify",
-					Priority:            "urgent",
-					DescriptionStripped: "Target Package: pkg/tracker/plane",
-				},
-			}
-			data, _ := json.Marshal(map[string]interface{}{"results": issues})
-			_, _ = w.Write(data)
-
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/projects/proj-dcore/issues/"):
-			w.WriteHeader(http.StatusOK)
-			issues := []PlaneIssue{
-				{
-					ID:                  "iss-dcore-1",
-					Name:                "[DCORE-001] Distributed Core Bus",
-					SequenceID:          1,
-					StateDetail:         PlaneStateDetail{Name: "Done", Group: "completed"},
-					Priority:            "urgent",
-					DescriptionStripped: "Target Package: pkg/core",
-				},
-			}
-			data, _ := json.Marshal(map[string]interface{}{"results": issues})
-			_, _ = w.Write(data)
-
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/projects/proj-drag/issues/"):
-			w.WriteHeader(http.StatusOK)
-			issues := []PlaneIssue{
-				{
-					ID:                  "iss-drag-1",
-					Name:                "[DRAG-001] Semantic Index Pipeline",
-					SequenceID:          1,
-					StateDetail:         PlaneStateDetail{Name: "In Progress", Group: "started"},
-					Priority:            "high",
-					DescriptionStripped: "Target Package: pkg/rag",
-				},
-			}
-			data, _ := json.Marshal(map[string]interface{}{"results": issues})
-			_, _ = w.Write(data)
-
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/projects/proj-dgit/issues/"):
-			w.WriteHeader(http.StatusOK)
-			issues := []PlaneIssue{
-				{
-					ID:                  "iss-dgit-1",
-					Name:                "[DGIT-001] Worktree Orchestrator",
-					SequenceID:          1,
-					StateDetail:         PlaneStateDetail{Name: "To Do", Group: "unstarted"},
-					Priority:            "medium",
-					DescriptionStripped: "Target Package: pkg/git",
-				},
-			}
-			data, _ := json.Marshal(map[string]interface{}{"results": issues})
-			_, _ = w.Write(data)
-
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/projects/proj-dmcp/issues/"):
-			w.WriteHeader(http.StatusOK)
-			issues := []PlaneIssue{
-				{
-					ID:                  "iss-dmcp-1",
-					Name:                "[DMCP-001] Native MCP Server",
-					SequenceID:          1,
-					StateDetail:         PlaneStateDetail{Name: "To Verify", Group: "started"},
-					Priority:            "urgent",
-					DescriptionStripped: "Target Package: pkg/mcpserver",
-				},
-			}
-			data, _ := json.Marshal(map[string]interface{}{"results": issues})
-			_, _ = w.Write(data)
-
-		default:
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": []}`))
-		}
-	}))
-	defer server.Close()
-
-	client, err := NewClient(Config{
-		BaseURL:       server.URL,
-		WorkspaceSlug: "ws",
-		ProjectID:     "proj-den",
-		DirectToken:   "sec-key",
-	}, server.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ctx := context.Background()
-	rendered, rep, err := PullStatusFromPlane(ctx, client)
+	rendered, rep, err := PullStatusFromPlane(context.Background(), planeFor(t, sp.URL, "proj-den"))
 	if err != nil {
 		t.Fatalf("PullStatusFromPlane failed: %v", err)
 	}
-
 	if rep.TotalTickets != 3 {
 		t.Errorf("expected the 3 DEN tickets and nothing from the other projects, got %d", rep.TotalTickets)
 	}
-
-	for _, expectedID := range []string{"DEN-035", "DEN-036", "DEN-984"} {
-		if !strings.Contains(rendered, expectedID) {
-			t.Errorf("expected rendered output to contain ticket %s", expectedID)
-		}
-	}
-	for _, foreign := range []string{"DCORE", "DRAG", "DGIT", "DMCP", "Other Plane Projects"} {
-		if strings.Contains(rendered, foreign) {
-			t.Errorf("DEV_STATUS.md of DEN must not mention %s:\n%s", foreign, rendered)
-		}
-	}
-
-	// Verify main modules
-	if !strings.Contains(rendered, "### Milestone 16: Pluggable Multi-Provider Inference Engines (FEAT-020)") {
-		t.Errorf("missing Milestone 16 section")
-	}
-	if !strings.Contains(rendered, "### Milestone 17: Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)") {
-		t.Errorf("missing Milestone 17 section")
-	}
-	if !strings.Contains(rendered, "### General") {
-		t.Errorf("missing General section for DEN-984")
-	}
-
-	// Verify state and priority formatting
-	if !strings.Contains(rendered, "[State: Done, Priority: Medium]") {
-		t.Errorf("missing Done/Medium state tag for DEN-035")
-	}
-	if !strings.Contains(rendered, "[State: In Progress, Priority: High]") {
-		t.Errorf("missing In Progress/High state tag for DEN-036")
-	}
-	if !strings.Contains(rendered, "[State: To Verify, Priority: Urgent]") {
-		t.Errorf("missing To Verify/Urgent state tag for DEN-984")
-	}
+	expectIn(t, rendered,
+		"DEN-035", "DEN-036", "DEN-984",
+		"### Milestone 16: Pluggable Multi-Provider Inference Engines (FEAT-020)",
+		"### Milestone 17: Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)",
+		"### General",
+		"[State: Done, Priority: Medium]", "[State: In Progress, Priority: High]", "[State: To Verify, Priority: Urgent]")
+	expectNotIn(t, rendered, "DCORE", "DRAG", "DGIT", "DMCP", "Other Plane Projects")
 }
 
 func TestAC3_DeterministicReplicationNoDiff(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/workspaces/ws/projects/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": [{"id": "proj", "identifier": "DEN"}]}`))
+	sp := newScriptedPlane(t, boardRules(
+		`[{"id":"proj","identifier":"DEN"}]`,
+		`[{"id":"st-done","name":"Done","group":"completed"},{"id":"st-prog","name":"In Progress","group":"started"},{"id":"st-todo","name":"To Do","group":"unstarted"}]`,
+		`[{"id":"m-17","name":"Milestone 17"}]`,
+		issuesJSON(
+			PlaneIssue{ID: "iss-2", Name: "[DEN-036] Performance", SequenceID: 36, State: "st-prog", Priority: "high"},
+			PlaneIssue{ID: "iss-1", Name: "[DEN-035] Unified", SequenceID: 35, State: "st-done", Priority: "medium"}),
+	)...)
+	client := planeAt(t, sp.URL)
 
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/states/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": [
-				{"id": "st-done", "name": "Done", "group": "completed"},
-				{"id": "st-prog", "name": "In Progress", "group": "started"},
-				{"id": "st-todo", "name": "To Do", "group": "unstarted"}
-			]}`))
-
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/modules/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": [{"id": "m-17", "name": "Milestone 17"}]}`))
-
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/issues/"):
-			w.WriteHeader(http.StatusOK)
-			issues := []PlaneIssue{
-				{
-					ID:         "iss-2",
-					Name:       "[DEN-036] Performance",
-					SequenceID: 36,
-					State:      "st-prog",
-					Priority:   "high",
-				},
-				{
-					ID:         "iss-1",
-					Name:       "[DEN-035] Unified",
-					SequenceID: 35,
-					State:      "st-done",
-					Priority:   "medium",
-				},
-			}
-			data, _ := json.Marshal(map[string]interface{}{"results": issues})
-			_, _ = w.Write(data)
-
-		default:
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{}`))
-		}
-	}))
-	defer server.Close()
-
-	client, err := NewClient(Config{
-		BaseURL:       server.URL,
-		WorkspaceSlug: "ws",
-		ProjectID:     "proj",
-		DirectToken:   "sec-key",
-	}, server.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ctx := context.Background()
-	rendered1, rep1, err := PullStatusFromPlane(ctx, client)
+	rendered1, rep1, err := PullStatusFromPlane(context.Background(), client)
 	if err != nil {
 		t.Fatalf("first pull failed: %v", err)
 	}
-
-	rendered2, rep2, err := PullStatusFromPlane(ctx, client)
+	rendered2, rep2, err := PullStatusFromPlane(context.Background(), client)
 	if err != nil {
 		t.Fatalf("second pull failed: %v", err)
 	}
-
 	if rendered1 != rendered2 {
 		t.Errorf("non-deterministic markdown rendering detected between runs")
 	}

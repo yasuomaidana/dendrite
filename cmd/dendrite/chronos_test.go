@@ -25,6 +25,30 @@ type boardServer struct {
 	patches   int
 }
 
+// boardLists are the collections the board answers by the end of the request path.
+var boardLists = []struct {
+	suffix string
+	body   any
+}{
+	{"/workspaces/ws/projects/", map[string]any{"results": []map[string]any{{"id": "proj", "identifier": "DEN"}}}},
+	{"/states/", []map[string]any{
+		{"id": "s-todo", "name": "Todo", "group": "unstarted"},
+		{"id": "s-done", "name": "Done", "group": "completed"},
+	}},
+	{"/modules/", []map[string]any{{"id": "mod-1", "name": "M1", "status": "in-progress"}}},
+	{"/pages/", []map[string]any{{"id": "page-1", "name": "Roadmap", "updated_at": "2026-10-01T10:00:00Z"}}},
+}
+
+// boardIssues is what the board lists: DEN-101 starts after DEN-100.
+var boardIssues = map[string]any{
+	"results": []map[string]any{
+		{"id": "uuid-100", "name": "[DEN-100] First", "sequence_id": 100, "state": "s-todo", "priority": "high"},
+		{"id": "uuid-101", "name": "[DEN-101] Second", "sequence_id": 101, "state": "s-todo", "priority": "low",
+			"start_date": "2026-10-01", "target_date": "2026-10-05"},
+	},
+	"next_page_results": false,
+}
+
 func (b *boardServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -35,45 +59,40 @@ func (b *boardServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	p := r.URL.Path
 	write := func(v any) { _ = json.NewEncoder(w).Encode(v) }
-	switch {
-	case strings.HasSuffix(p, "/issue-relation/") && r.Method == http.MethodPost:
-		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		b.relations = append(b.relations, body["relation_type"].(string))
-		w.WriteHeader(http.StatusCreated)
-		write([]any{})
-	case strings.HasSuffix(p, "/issue-relation/"):
-		if strings.Contains(p, "uuid-101") {
-			write(map[string]any{"blocked_by": []map[string]any{{"id": "uuid-100", "name": "[DEN-100] First"}}})
+	for _, l := range boardLists {
+		if strings.HasSuffix(p, l.suffix) {
+			write(l.body)
 			return
 		}
-		write(map[string]any{})
-	case strings.HasSuffix(p, "/workspaces/ws/projects/"):
-		write(map[string]any{"results": []map[string]any{{"id": "proj", "identifier": "DEN"}}})
-	case strings.HasSuffix(p, "/states/"):
-		write([]map[string]any{
-			{"id": "s-todo", "name": "Todo", "group": "unstarted"},
-			{"id": "s-done", "name": "Done", "group": "completed"},
-		})
-	case strings.HasSuffix(p, "/modules/"):
-		write([]map[string]any{{"id": "mod-1", "name": "M1", "status": "in-progress"}})
-	case strings.HasSuffix(p, "/pages/"):
-		write([]map[string]any{{"id": "page-1", "name": "Roadmap", "updated_at": "2026-10-01T10:00:00Z"}})
+	}
+	switch {
+	case strings.HasSuffix(p, "/issue-relation/"):
+		b.serveRelation(w, r, p, write)
 	case strings.HasSuffix(p, "/issues/") && r.Method == http.MethodGet:
-		write(map[string]any{
-			"results": []map[string]any{
-				{"id": "uuid-100", "name": "[DEN-100] First", "sequence_id": 100, "state": "s-todo", "priority": "high"},
-				{"id": "uuid-101", "name": "[DEN-101] Second", "sequence_id": 101, "state": "s-todo", "priority": "low",
-					"start_date": "2026-10-01", "target_date": "2026-10-05"},
-			},
-			"next_page_results": false,
-		})
+		write(boardIssues)
 	case r.Method == http.MethodPatch:
 		b.patches++
 		write(map[string]any{"id": "uuid-100", "name": "[DEN-100] First", "sequence_id": 100})
 	default:
 		write(map[string]any{})
 	}
+}
+
+// serveRelation records the relations posted and answers the one DEN-101 holds.
+func (b *boardServer) serveRelation(w http.ResponseWriter, r *http.Request, p string, write func(any)) {
+	if r.Method == http.MethodPost {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		b.relations = append(b.relations, body["relation_type"].(string))
+		w.WriteHeader(http.StatusCreated)
+		write([]any{})
+		return
+	}
+	if strings.Contains(p, "uuid-101") {
+		write(map[string]any{"blocked_by": []map[string]any{{"id": "uuid-100", "name": "[DEN-100] First"}}})
+		return
+	}
+	write(map[string]any{})
 }
 
 func serveBoard(t *testing.T) *boardServer {

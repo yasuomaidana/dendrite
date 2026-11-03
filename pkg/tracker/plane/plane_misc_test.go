@@ -83,22 +83,24 @@ func TestPullStatusNeverGuessesTheProject(t *testing.T) {
 }
 
 func TestPullStatusOfAPeerHasItsOwnHeaderAndNoDendrite(t *testing.T) {
-	sp := newScriptedPlane(t,
-		on("GET", "/projects/proj/states/", 200, `[{"id":"s","name":"Done","group":"completed"}]`),
-		on("GET", "/projects/proj/issues/", 200, `[{"id":"c1","name":"sidecar","state":"s","sequence_id":1}]`),
-		on("GET", "/projects/den/issues/", 200, `[{"id":"d1","name":"[DEN-001] not mine","state":"s","sequence_id":1}]`),
-		on("GET", "/workspaces/ws/projects/", 200, `[{"id":"proj","identifier":"DCORE"},{"id":"den","identifier":"DEN"}]`),
-	)
-	md, report, err := PullStatusFromPlane(context.Background(), planeAt(t, sp.URL))
+	var board []rule
+	for _, r := range [][2]string{
+		{"/projects/proj/states/", `[{"id":"s","name":"Done","group":"completed"}]`},
+		{"/projects/proj/issues/", `[{"id":"c1","name":"sidecar","state":"s","sequence_id":1}]`},
+		{"/projects/den/issues/", `[{"id":"d1","name":"[DEN-001] not mine","state":"s","sequence_id":1}]`},
+		{"/workspaces/ws/projects/", `[{"id":"proj","identifier":"DCORE"},{"id":"den","identifier":"DEN"}]`},
+	} {
+		board = append(board, on("GET", r[0], 200, r[1]))
+	}
+	md, report, err := PullStatusFromPlane(context.Background(), planeAt(t, newScriptedPlane(t, board...).URL))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if report.ProjectIdentifier != "DCORE" || report.TotalTickets != 1 || report.ActiveMilestone != "" {
 		t.Errorf("report = %+v", report)
 	}
-	if !strings.HasPrefix(md, "# DCORE Project Development Status") || !strings.Contains(md, "DCORE-001") || strings.Contains(md, "not mine") || strings.Contains(md, "Complexity Analysis") {
-		t.Errorf("peer file wrong:\n%s", md)
-	}
+	expectIn(t, md, "# DCORE Project Development Status", "DCORE-001")
+	expectNotIn(t, md, "not mine", "Complexity Analysis")
 }
 
 func TestConfigFromEnvFallsBackToDendriteCore(t *testing.T) {
