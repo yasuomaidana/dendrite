@@ -2,7 +2,7 @@
   ".": 89.6,
   "cmd/dendrite": 6.4,
   "pkg/agent": 97.8,
-  "pkg/agent/triage": 84.3,
+  "pkg/agent/triage": 96.5,
   "pkg/agentjobs": 95.0,
   "pkg/agentsearch": 87.9,
   "pkg/ai/importer": 93.5,

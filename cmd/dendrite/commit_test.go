@@ -8,6 +8,7 @@ import (
 )
 
 func setupCommitRepo(t *testing.T) string {
+	t.Setenv("DENDRITE_TICKET_GUARD", "off") // the tests use made-up ticket ids; never ask the real Plane
 	t.Helper()
 	repo := t.TempDir()
 	for k, v := range map[string]string{

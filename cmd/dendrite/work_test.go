@@ -68,6 +68,7 @@ func runGitT(t *testing.T, dir string, args ...string) string {
 
 // setupWorkRepo creates a repo with one commit and points the work CLI at it.
 func setupWorkRepo(t *testing.T) (repo, root string) {
+	t.Setenv("DENDRITE_TICKET_GUARD", "off") // the tests use made-up ticket ids; never ask the real Plane
 	t.Helper()
 	base := workcopy.Canon(t.TempDir())
 	repo = filepath.Join(base, "Proj")
