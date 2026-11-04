@@ -74,6 +74,32 @@ func componentCommand(c pipeline.Component, floor string) (name string, args []s
 	return "uv", []string{"run", "--with", "pytest-cov", "pytest", "--cov", "--cov-fail-under=" + floor}
 }
 
+// passedFloor words a coverage pass: against the directive's floor, or against the workflow's own (floor "").
+func passedFloor(label, floor string) string {
+	if floor == "" {
+		return label + " meets the coverage floor of its workflow"
+	}
+	return fmt.Sprintf("%s at or above %s%%", label, floor)
+}
+
+// workflowCoverage is the coverage command the project's own workflow runs for the component, so a floor set
+// there (cargo llvm-cov --fail-under-lines 90) is the floor the gate holds it to.
+func workflowCoverage(root string, c pipeline.Component) (script string, found bool) {
+	steps, err := ciSteps(root)
+	if err != nil {
+		return "", false
+	}
+	for _, s := range steps {
+		if s.Dir != filepath.ToSlash(filepath.Clean(c.Dir)) || !s.isCoverage() {
+			continue
+		}
+		if script, ok := s.script(); ok {
+			return script, true
+		}
+	}
+	return "", false
+}
+
 // toolAdvice says how to install what a component's coverage run needs.
 var toolAdvice = map[pipeline.Kind]string{
 	pipeline.Rust: "install it with `cargo install cargo-llvm-cov` and `rustup component add llvm-tools-preview`",
@@ -94,7 +120,7 @@ func touchesDir(s *Scope, dir string) bool {
 }
 
 func toolMissing(err error, out []byte) bool {
-	return errors.Is(err, exec.ErrNotFound) || strings.Contains(string(out), "no such command") || strings.Contains(string(out), "command not found")
+	return errors.Is(err, exec.ErrNotFound) || strings.Contains(string(out), "no such command") || strings.Contains(string(out), "command not found") || strings.Contains(string(out), ": not found")
 }
 
 // lastLines is the end of a command's output, enough to see why it failed.
@@ -120,6 +146,9 @@ func checkComponentCoverage(ctx context.Context, o Options, c pipeline.Component
 	}
 	floor := strconv.FormatFloat(o.Set.Coverage.MinPercent, 'f', -1, 64)
 	name, args := componentCommand(c, floor)
+	if script, found := workflowCoverage(o.Dir, c); found {
+		name, args, floor = "sh", []string{"-c", script}, ""
+	}
 	run := o.CoverageRunner
 	if run == nil {
 		run = cleanRunner
@@ -127,12 +156,12 @@ func checkComponentCoverage(ctx context.Context, o Options, c pipeline.Component
 	out, err := run(ctx, filepath.Join(o.Dir, filepath.FromSlash(c.Dir)), name, args...)
 	switch {
 	case err == nil:
-		return Check{Name: "coverage", Status: Pass, Summary: fmt.Sprintf("%s at or above %s%%", label, floor)}
+		return Check{Name: "coverage", Status: Pass, Summary: passedFloor(label, floor)}
 	case toolMissing(err, out):
 		return Check{Name: "coverage", Status: Error, Summary: label + ": " + name + " cannot run, so coverage was not measured", Advice: toolAdvice[c.Kind]}
 	}
-	return Check{Name: "coverage", Status: Fail, Summary: label + " is below the floor of " + floor + "% or its tests fail",
-		Findings: []string{label + ": " + lastLines(out, 3)}}
+	return Check{Name: "coverage", Status: Fail, Summary: label + " is below its coverage floor or its tests fail",
+		Findings: []string{label + ": " + lastLines(out, 8)}}
 }
 
 const baselineFile = ".github/coverage_baseline.json"

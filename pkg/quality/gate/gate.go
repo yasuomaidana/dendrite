@@ -1,5 +1,6 @@
 // Package gate runs the quality gates of a project's directives as one check: production lines per file,
-// repeated code, function complexity, directory structure, the Rust test structure and test coverage. It is
+// repeated code, function complexity, directory structure, the Rust test structure, the formatting and lint steps
+// of the project's workflows and test coverage. It is
 // what CI, `dendrite allostasis gate` and `dendrite chronos finish` all run, so the same rule holds everywhere.
 package gate
 
@@ -60,14 +61,15 @@ type Options struct {
 	Sidecar Sidecar
 	// Scope limits the gate to a change; nil checks the whole repository.
 	Scope *Scope
-	// Only and Skip pick checks by name (loc, clones, complexity, structure, rstest, coverage). Only wins when both are set.
+	// Only and Skip pick checks by name (loc, clones, complexity, structure, rstest, lint, coverage). Only wins when both are set.
 	Only, Skip []string
-	// CoverageRunner replaces the real `go test` of the coverage check (tests only).
+	// CoverageRunner replaces the real commands of the coverage and lint checks: `go test`, cargo, uv, git and the
+	// workflow steps (tests only).
 	CoverageRunner CommandRunner
 }
 
 // Names are the checks, in the order they run.
-var Names = []string{"loc", "clones", "complexity", "structure", "rstest", "coverage"}
+var Names = []string{"loc", "clones", "complexity", "structure", "rstest", "lint", "coverage"}
 
 var checks = map[string]func(context.Context, Options) Check{
 	"loc":        checkLoc,
@@ -75,6 +77,7 @@ var checks = map[string]func(context.Context, Options) Check{
 	"complexity": checkComplexity,
 	"structure":  checkStructure,
 	"rstest":     checkRstest,
+	"lint":       checkLint,
 	"coverage":   checkCoverage,
 }
 

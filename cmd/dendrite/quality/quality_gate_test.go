@@ -72,7 +72,7 @@ func TestAllostasisGateReportsAndExitsNonZeroOnAFailure(t *testing.T) {
 func TestAllostasisGateRefusesBadInput(t *testing.T) {
 	dir := gateProject(t, map[string]string{"a.go": "x := 1\n"})
 	for name, args := range map[string][]string{
-		"unknown check":    {"--only", "lint"},
+		"unknown check":    {"--only", "format"},
 		"unknown skip":     {"--skip", "nope"},
 		"unknown format":   {"--format", "xml"},
 		"since and ticket": {"--since", "develop", "--ticket", "DEN-1"},

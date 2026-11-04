@@ -60,7 +60,7 @@ func reportOfARepository(t *testing.T) Report {
 	write(t, dir, "c.go", lines(2))
 	write(t, dir, "r.rs", "REPEATED_TEST\n")
 	rep := Run(context.Background(), Options{Dir: dir, Set: tightSet(), Sidecar: rag.NewRetriever()})
-	if rep.Passed || rep.Scope != "repository" || len(rep.Checks) != 6 {
+	if rep.Passed || rep.Scope != "repository" || len(rep.Checks) != 7 {
 		t.Fatalf("%+v", rep)
 	}
 	return rep
@@ -91,27 +91,40 @@ func TestRunReportsTheRstestAndCoverageOfARepository(t *testing.T) {
 	}
 }
 
-func TestRunPassesACleanRepositoryAndOnlyRunsWhatWasAskedFor(t *testing.T) {
+// cleanRepo is a repository inside the tight limits.
+func cleanRepo(t *testing.T) string {
+	t.Helper()
 	ragtest.UseStandin(t, "1.12.0")
 	dir := t.TempDir()
 	write(t, dir, "a.go", lines(2))
 	write(t, dir, "b.go", lines(3))
-	rep := Run(context.Background(), Options{Dir: dir, Set: tightSet(), Sidecar: rag.NewRetriever()})
+	return dir
+}
+
+func TestRunPassesACleanRepository(t *testing.T) {
+	rep := Run(context.Background(), Options{Dir: cleanRepo(t), Set: tightSet(), Sidecar: rag.NewRetriever()})
 	if !rep.Passed || byName(rep, "rstest").Status != Skipped || !strings.Contains(byName(rep, "rstest").Summary, "no Rust files") {
 		t.Errorf("%+v", rep)
 	}
+}
+
+func TestRunOnlyRunsWhatWasAskedForInTheGatesOrder(t *testing.T) {
+	dir := cleanRepo(t)
 	only := Run(context.Background(), Options{Dir: dir, Set: tightSet(), Sidecar: rag.NewRetriever(), Only: []string{"loc", "CLONES"}, Skip: []string{"loc"}})
 	if len(only.Checks) != 2 || only.Checks[0].Name != "loc" || only.Checks[1].Name != "clones" {
 		t.Errorf("Only wins over Skip, in the gate's order: %+v", only.Checks)
 	}
-	skip := Run(context.Background(), Options{Dir: dir, Set: tightSet(), Sidecar: rag.NewRetriever(), Skip: []string{"loc", "clones", "complexity", "structure", "coverage"}})
+	skip := Run(context.Background(), Options{Dir: dir, Set: tightSet(), Sidecar: rag.NewRetriever(), Skip: []string{"loc", "clones", "complexity", "structure", "lint", "coverage"}})
 	if len(skip.Checks) != 1 || skip.Checks[0].Name != "rstest" {
 		t.Errorf("%+v", skip.Checks)
 	}
-	if err := Validate([]string{"loc", "Clones"}); err != nil {
+}
+
+func TestValidateKnowsTheChecks(t *testing.T) {
+	if err := Validate([]string{"loc", "Clones", "lint"}); err != nil {
 		t.Error(err)
 	}
-	if err := Validate([]string{"loc", "lint"}); err == nil || !strings.Contains(err.Error(), `unknown check "lint"`) {
+	if err := Validate([]string{"loc", "format"}); err == nil || !strings.Contains(err.Error(), `unknown check "format"`) {
 		t.Errorf("%v", err)
 	}
 }
