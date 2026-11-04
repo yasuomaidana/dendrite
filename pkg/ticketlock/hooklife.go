@@ -1,6 +1,7 @@
 package ticketlock
 
 import (
+	"Dendrite/pkg/branchpolicy"
 	"context"
 	"fmt"
 	"regexp"
@@ -73,17 +74,28 @@ func AutoHandoff(ctx context.Context, l *Lifecycle, board func() (Board, error),
 	return fmt.Sprintf("%s was still In Progress: blocked with an automatic handoff (needs-input)", claim.Ticket), nil
 }
 
-// completedWork lists what the branch holds: commits not yet on develop and the uncommitted changes.
+// unmergedCommits describes the commits of branch that are not yet on the integration branch, or "" when there
+// are none (or git cannot say).
+func unmergedCommits(dir, branch string) string {
+	for _, base := range branchpolicy.For(dir).Bases() {
+		out, err := gitBytes(dir, "log", "--oneline", "--max-count=15", base+"..HEAD")
+		if err != nil {
+			continue
+		}
+		if s := strings.TrimSpace(string(out)); s != "" {
+			return "Commits on " + branch + " not on " + base + ":\n" + s
+		}
+		return ""
+	}
+	return ""
+}
+
+// completedWork lists what the branch holds: commits not yet on the integration branch and the uncommitted changes.
 func (l *Lifecycle) completedWork(ctx context.Context, c Claim) string {
 	dir := firstNonEmpty(c.Worktree, l.Dir)
 	var parts []string
-	for _, base := range []string{"origin/develop", "develop"} {
-		if out, err := gitBytes(dir, "log", "--oneline", "--max-count=15", base+"..HEAD"); err == nil {
-			if s := strings.TrimSpace(string(out)); s != "" {
-				parts = append(parts, "Commits on "+c.Branch+" not on "+base+":\n"+s)
-			}
-			break
-		}
+	if s := unmergedCommits(dir, c.Branch); s != "" {
+		parts = append(parts, s)
 	}
 	if len(parts) == 0 { // the branch is merged: its commits are the ones that name the ticket
 		if _, lines := gate.TicketCommits(dir, c.Ticket); len(lines) > 0 {

@@ -1,6 +1,7 @@
 package branchpolicy
 
 import (
+	"Dendrite/pkg/projectid"
 	"path/filepath"
 	"testing"
 
@@ -111,6 +112,12 @@ func TestTargetBranchLists(t *testing.T) {
 	testkit.Equal(t, "remote form", got[1], "up/trunk")
 }
 
+func TestExplicitOnlyForChosenBranches(t *testing.T) {
+	testkit.Equal(t, "member", Target{Source: SourceMember}.Explicit(), true)
+	testkit.Equal(t, "directive", Target{Source: SourceDirective}.Explicit(), true)
+	testkit.Equal(t, "detected", Target{Source: SourceMain}.Explicit(), false)
+}
+
 func TestValidBranch(t *testing.T) {
 	for name, ok := range map[string]bool{
 		"develop": true, "release/1.2": true, "agent/DEN-1": true,
@@ -118,4 +125,69 @@ func TestValidBranch(t *testing.T) {
 	} {
 		testkit.Equal(t, name, ValidBranch(name), ok)
 	}
+}
+
+// synapseWorld is a Dendrite home with the given manifests and a git project that has an id.
+func synapseWorld(t *testing.T, manifests map[string]string) (project, id string) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("DENDRITE_HOME", home)
+	for name, body := range manifests {
+		testkit.WriteFile(t, filepath.Join(home, synapsesDir, name), body, 0o644)
+	}
+	project = repo(t, "main")
+	id, err := projectid.Ensure(project)
+	testkit.Check(t, err)
+	return project, id
+}
+
+func manifestWith(state, id, fields string) string {
+	return "id = \"s\"\nstate = \"" + state + "\"\n\n[[members]]\nproject_id = \"" + id + "\"\nalias = \"a\"\n" + fields
+}
+
+func TestForReadsTheSynapseMemberOfTheProject(t *testing.T) {
+	project, id := synapseWorld(t, nil)
+	testkit.Equal(t, "no synapse", For(project).Branch, "main")
+
+	home, _ := projectid.HomeDir()
+	for name, body := range map[string]string{
+		"a-archived.toml": manifestWith("archived", id, "branch = \"ignored\"\n"),
+		"b-plain.toml":    manifestWith("active", id, ""),
+		"c-forked.toml":   manifestWith("active", id, "branch = \"dev\"\npush_remote = \"fork\"\ntarget_remote = \"upstream\"\n"),
+		"d-later.toml":    manifestWith("active", id, "branch = \"later\"\n"),
+		"e-broken.toml":   "this is = not [valid",
+		"f-other.toml":    manifestWith("active", "dpid_other", "branch = \"other\"\n"),
+	} {
+		testkit.WriteFile(t, filepath.Join(home, synapsesDir, name), body, 0o644)
+	}
+	got := For(project)
+	testkit.Equal(t, "branch", got.Branch, "dev")
+	testkit.Equal(t, "push", got.PushRemote, "fork")
+	testkit.Equal(t, "target", got.Remote, "upstream")
+	testkit.Equal(t, "source", got.Source, SourceMember)
+}
+
+func TestMemberOverrideIsEmptyWithoutAProjectOrAHome(t *testing.T) {
+	plain := repo(t, "main")
+	t.Setenv("DENDRITE_HOME", t.TempDir())
+	testkit.Equal(t, "no project id", MemberOverride(plain), Override{})
+
+	project, _ := synapseWorld(t, nil)
+	t.Setenv("DENDRITE_HOME", "")
+	t.Setenv("HOME", "")
+	testkit.Equal(t, "no home", MemberOverride(project), Override{})
+
+	testkit.Equal(t, "unreadable file", memberIn(filepath.Join(t.TempDir(), "missing.toml"), "dpid_x"), Override{})
+}
+
+func TestBasesListTheRemoteTrackingBranchFirst(t *testing.T) {
+	got := Target{Branch: "release", Remote: "fork"}.Bases()
+	testkit.Equal(t, "remote first", got[0], "fork/release")
+	testkit.Equal(t, "local second", got[1], "release")
+}
+
+func TestMemberInIgnoresManifestsWithoutTheProject(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.toml")
+	testkit.WriteFile(t, path, manifestWith("active", "dpid_other", "branch = \"x\"\n"), 0o644)
+	testkit.Equal(t, "other project", memberIn(path, "dpid_me"), Override{})
 }

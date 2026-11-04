@@ -178,7 +178,7 @@ func checkCoverage(ctx context.Context, o Options) Check {
 	}
 	packages := []string{"./..."}
 	if o.Scope != nil {
-		packages = changedGoPackages(o.Scope)
+		packages = existingPackages(o.Dir, changedGoPackages(o.Scope))
 		if len(packages) == 0 {
 			return Check{Name: "coverage", Status: Skipped, Summary: "no Go package changed"}
 		}
@@ -215,6 +215,18 @@ func checkCoverage(ctx context.Context, o Options) Check {
 	}
 	sort.Strings(findings)
 	return verdict("coverage", fmt.Sprintf("%d packages measured against a %s", res.TotalPackages, mode), findings)
+}
+
+// existingPackages keeps the `go test` arguments whose directory still exists: a package the change deleted has
+// nothing to measure, and `go test` fails on it.
+func existingPackages(dir string, packages []string) []string {
+	var out []string
+	for _, p := range packages {
+		if info, err := os.Stat(filepath.Join(dir, filepath.FromSlash(p))); err == nil && info.IsDir() {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // changedGoPackages lists the packages (as `go test` arguments) holding Go files the change touched.

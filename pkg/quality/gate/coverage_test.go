@@ -20,6 +20,9 @@ func goProject(t *testing.T) (dir string, args *[]string) {
 	t.Helper()
 	dir = t.TempDir()
 	write(t, dir, "go.mod", "module mod\n\ngo 1.22\n")
+	for _, pkg := range []string{"pkg/b", "pkg/c"} {
+		write(t, dir, pkg+"/x.go", "package x\n")
+	}
 	return dir, new([]string)
 }
 
@@ -72,6 +75,19 @@ func TestCoverageOfAChangeCoversOnlyItsPackages(t *testing.T) {
 	write(t, dir, ".github/coverage_baseline.json", `{"pkg/b": 71.0}`)
 	if c := coverageOf(Options{Dir: dir, Set: directive.Defaults(), Scope: scope, CoverageRunner: runner(scopedOutput, nil, args)}); c.Status != Pass {
 		t.Errorf("a package that kept its coverage passes the ratchet: %+v", c)
+	}
+}
+
+func TestCoverageSkipsAPackageTheChangeDeleted(t *testing.T) {
+	dir, args := goProject(t)
+	scope := &Scope{lines: map[string][][2]int{"pkg/b/b.go": nil, "pkg/gone/gone.go": nil}}
+	coverageOf(Options{Dir: dir, Set: directive.Defaults(), Scope: scope, CoverageRunner: runner(scopedOutput, nil, args)})
+	if !reflect.DeepEqual(*args, []string{"test", "-cover", "./pkg/b"}) {
+		t.Errorf("a deleted package is not measured: %v", *args)
+	}
+	onlyGone := &Scope{lines: map[string][][2]int{"pkg/gone/gone.go": nil}}
+	if c := coverageOf(Options{Dir: dir, Set: directive.Defaults(), Scope: onlyGone, CoverageRunner: runner(scopedOutput, nil, args)}); c.Status != Skipped {
+		t.Errorf("nothing left to measure is skipped: %+v", c)
 	}
 }
 

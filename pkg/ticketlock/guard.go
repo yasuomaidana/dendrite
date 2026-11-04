@@ -1,6 +1,7 @@
 package ticketlock
 
 import (
+	"Dendrite/pkg/branchpolicy"
 	"context"
 	"errors"
 	"fmt"
@@ -105,6 +106,15 @@ func isMainCheckout(top string) bool {
 	return err == nil && st.IsDir()
 }
 
+// refuseProtectedMainCheckout locks writes while a protected branch (the integration branch, main, master) is
+// checked out in the main checkout, where only work copies may edit.
+func refuseProtectedMainCheckout(top, branch string) error {
+	if isMainCheckout(top) && branchpolicy.For(top).IsProtected(branch) {
+		return locked("%s is checked out in the main checkout; work in a dendrite-work/ copy", branch)
+	}
+	return nil
+}
+
 // Require is the single write guard. It returns nil when a write to target (an absolute path) is
 // allowed and an *ErrLocked when it is not. It fails closed: a missing token or claim, a ticket that
 // is not In Progress, and an unreadable claim all refuse. Repositories that are not Plane projects,
@@ -122,28 +132,35 @@ func Require(ctx context.Context, d Deps, target string) error {
 	}
 
 	branch := d.Branch(top)
-	switch branch {
-	case "develop", "main", "master":
-		if isMainCheckout(top) {
-			return locked("%s is checked out in the main checkout; work in a dendrite-work/ copy", branch)
-		}
+	if err := refuseProtectedMainCheckout(top, branch); err != nil {
+		return err
 	}
 
 	now := d.Now()
+	claim, err := claimOf(d, branch, now)
+	if err != nil {
+		return err
+	}
+	return checkState(ctx, d, top, claim, now)
+}
+
+// claimOf is the claim that lets the branch be written to: it needs a live session token, a readable claim and a
+// claim for the ticket the branch is named after.
+func claimOf(d Deps, branch string, now time.Time) (Claim, error) {
 	if _, ok := d.Store.LatestToken(now); !ok {
-		return locked("no Dendrite session/ticket claim")
+		return Claim{}, locked("no Dendrite session/ticket claim")
 	}
 	claim, err := d.Store.ClaimFor(branch)
 	if errors.Is(err, ErrNoClaim) {
-		return locked("no Dendrite session/ticket claim")
+		return Claim{}, locked("no Dendrite session/ticket claim")
 	}
 	if err != nil {
-		return locked("the claim of %s is unreadable (%v)", branch, err)
+		return Claim{}, locked("the claim of %s is unreadable (%v)", branch, err)
 	}
 	if want, ok := TicketOfBranch(branch); ok && !strings.EqualFold(want, claim.Ticket) {
-		return locked("branch %s belongs to %s but the claim is for %s", branch, want, claim.Ticket)
+		return Claim{}, locked("branch %s belongs to %s but the claim is for %s", branch, want, claim.Ticket)
 	}
-	return checkState(ctx, d, top, claim, now)
+	return claim, nil
 }
 
 // checkState confirms the claimed ticket is In Progress, from the claim's cache when it is fresh and

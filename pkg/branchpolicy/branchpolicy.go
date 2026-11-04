@@ -143,6 +143,17 @@ func (t Target) MergeTargets() []string {
 	return out
 }
 
+// For is Resolve with the settings of the project's synapse member (see MemberOverride).
+func For(dir string) Target { return Resolve(dir, MemberOverride(dir)) }
+
+// Explicit reports whether a person chose the integration branch (a synapse member or the directive), rather
+// than Dendrite detecting it.
+func (t Target) Explicit() bool { return t.Source == SourceMember || t.Source == SourceDirective }
+
+// Bases lists the refs to compare a branch against to see its own work, remote-tracking first:
+// e.g. "origin/develop", "develop".
+func (t Target) Bases() []string { return []string{t.Ref(), t.Branch} }
+
 // Resolve decides the Target of the project at dir. A malformed or invalid directive does not stop it:
 // detection takes over, because a branch must always be nameable.
 func Resolve(dir string, ov Override) Target {

@@ -12,6 +12,7 @@ package workcopy
 //   Until then: fix bugs here, but do not add features; add them in the Rust repository.
 
 import (
+	"Dendrite/pkg/branchpolicy"
 	"bytes"
 	"context"
 	"fmt"
@@ -34,9 +35,6 @@ const (
 	// storiesSuffix names the per-repo directory holding story-fork variants.
 	storiesSuffix = "-stories"
 )
-
-// mergeTargets are the integration branches a copy's branch is checked against.
-var mergeTargets = []string{"main", "master", "develop"}
 
 var unsafeNameChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
@@ -312,8 +310,9 @@ func hasUserChanges(status string) bool {
 }
 
 func (m *Manager) mergedInto(ctx context.Context, head string) string {
-	for _, target := range mergeTargets {
-		for _, ref := range []string{"refs/heads/" + target, "refs/remotes/origin/" + target} {
+	policy := branchpolicy.For(m.repoDir)
+	for _, target := range policy.Protected() {
+		for _, ref := range []string{"refs/heads/" + target, "refs/remotes/" + policy.Remote + "/" + target, "refs/remotes/origin/" + target} {
 			if _, err := m.git(ctx, m.repoDir, "rev-parse", "--verify", "--quiet", ref); err != nil {
 				continue
 			}

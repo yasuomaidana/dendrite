@@ -1,6 +1,7 @@
 package ticketlock
 
 import (
+	"Dendrite/pkg/branchpolicy"
 	"context"
 	"os"
 	"os/exec"
@@ -21,7 +22,7 @@ const gateTimeout = 30 * time.Minute
 
 // DefaultFinishChecks wires `finish` to the real world for the working copy in dir: the project's own test
 // and coverage run as the gate, the local model behind the LiteLLM gateway as the acceptance reviewer, the
-// branch's diff against develop, and the project's `[done] auto_done` directive (on when unset).
+// branch's diff against the integration branch, and the project's `[done] auto_done` directive (on when unset).
 func DefaultFinishChecks(dir string) FinishChecks {
 	return FinishChecks{Gate: qualityGate, Review: proofReviewer(dir).Review, Diff: branchDiff, AutoDone: AutoDone(dir)}
 }
@@ -106,11 +107,11 @@ var generatedPaths = []string{
 	":(exclude)docs/cli/**", ":(exclude)docs/mcp/**", ":(exclude).agents/**", ":(exclude).claude/**", ":(exclude).gemini/**",
 }
 
-// branchDiff is the work done for a ticket: the branch's changes against develop while they are not merged, and
+// branchDiff is the work done for a ticket: the branch's changes against the integration branch while they are not merged, and
 // the ticket's own commits (their subject starts with [TICKET]) once they are, so finishing after the merge
 // still shows the work.
 func branchDiff(dir, ticket string) string {
-	for _, base := range []string{"origin/develop", "develop"} {
+	for _, base := range branchpolicy.For(dir).Bases() {
 		args := append([]string{"diff", base + "...HEAD", "--", "."}, generatedPaths...)
 		if out, err := gitBytes(dir, args...); err == nil && len(strings.TrimSpace(string(out))) > 0 {
 			return string(out)
