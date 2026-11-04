@@ -46,3 +46,7 @@ human_review_labels = ["needs-human-review"]
 
 [languages]
 preference = ["rust", "python", "typescript", "go", "kotlin", "c", "cpp"]
+
+[git]
+integration_branch = ""
+feature_prefix = "feature/"

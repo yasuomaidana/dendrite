@@ -1,6 +1,7 @@
 package directive
 
 import (
+	"Dendrite/pkg/branchpolicy"
 	"context"
 	"os"
 	"path/filepath"
@@ -193,7 +194,7 @@ func TestParseValueReadsTypedText(t *testing.T) {
 
 func TestKeysAndDescribeCoverEverySetting(t *testing.T) {
 	ks := Keys()
-	testkit.Equal(t, "len(Keys)", len(ks), 26)
+	testkit.Equal(t, "len(Keys)", len(ks), 28)
 	testkit.Equal(t, "Keys[0]", ks[0], "complexity.exclude")
 	text := Describe()
 	for _, k := range ks {
@@ -322,6 +323,7 @@ func TestInterpretReturnsTheStoredValueOfEveryKey(t *testing.T) {
 		"structure.max_files_per_dir": "9", "structure.max_dir_production_lines": "2000", "structure.max_prefix_group": "3", "structure.require_docs": "false", "structure.docs_files": `["README.md"]`, "structure.exclude": `["d"]`,
 		"lint.strictness": `"standard"`, "security.fail_on": `"medium"`, "security.secrets": "false",
 		"done.auto_done": "false", "done.human_review_labels": `["x"]`, "languages.preference": `["go"]`,
+		"git.integration_branch": `"main"`, "git.feature_prefix": `"feat/"`,
 	}
 	for _, key := range Keys() {
 		answer := `[{"key":"` + key + `","value":` + sample[key] + `}]`
@@ -524,5 +526,42 @@ func TestPlanReportsWithoutWritingAndSplitsCreatedFromRewritten(t *testing.T) {
 	res, err := Plan(dir, stricter)
 	if err != nil || !contains(res.Written, "codecov.yml") || contains(res.Created, "codecov.yml") {
 		t.Errorf("a changed directive rewrites, it does not create: %+v, %v", res, err)
+	}
+}
+
+func TestGitDirectiveValidatesBranchNames(t *testing.T) {
+	for name, tc := range map[string]struct {
+		key, value string
+		ok         bool
+	}{
+		"plain":          {"git.integration_branch", "develop", true},
+		"nested":         {"git.integration_branch", "release/1.2", true},
+		"empty detects":  {"git.integration_branch", "", true},
+		"space":          {"git.integration_branch", "my branch", false},
+		"dotdot":         {"git.integration_branch", "a..b", false},
+		"leading dash":   {"git.integration_branch", "-x", false},
+		"trailing slash": {"git.integration_branch", "a/", false},
+		"lock suffix":    {"git.integration_branch", "a.lock", false},
+		"prefix slash":   {"git.feature_prefix", "feat/", true},
+		"prefix bare":    {"git.feature_prefix", "feat", false},
+		"prefix empty":   {"git.feature_prefix", "", false},
+	} {
+		s := Defaults()
+		err := s.Apply(tc.key, tc.value)
+		if (err == nil) != tc.ok {
+			t.Errorf("%s: %s=%q gave %v, want ok=%t", name, tc.key, tc.value, err, tc.ok)
+		}
+	}
+}
+
+func TestBranchPolicyReadsTheSameDirectivesFile(t *testing.T) {
+	testkit.Equal(t, "path", branchpolicy.DirectivePath, Path)
+	testkit.Equal(t, "prefix", branchpolicy.DefaultFeaturePrefix, Defaults().Git.FeaturePrefix)
+}
+
+func TestBranchSettingsNeedText(t *testing.T) {
+	s := Defaults()
+	if err := s.Apply("git.integration_branch", 5); err == nil || !strings.Contains(err.Error(), "want text") {
+		t.Errorf("a number for a branch: %v", err)
 	}
 }

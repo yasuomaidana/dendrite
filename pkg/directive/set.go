@@ -7,6 +7,8 @@ package directive
 import (
 	"fmt"
 	"strings"
+
+	"Dendrite/pkg/branchpolicy"
 )
 
 const (
@@ -30,6 +32,7 @@ type Set struct {
 	Security    Security    `toml:"security"`
 	Done        Done        `toml:"done"`
 	Languages   Languages   `toml:"languages"`
+	Git         Git         `toml:"git"`
 }
 
 // Loc limits the production lines of a file (tests, comments and blank lines do not count).
@@ -117,6 +120,26 @@ type Languages struct {
 	Preference []string `toml:"preference"`
 }
 
+// Git says where finished work merges. An empty IntegrationBranch lets Dendrite detect it (the remote's
+// default branch, then develop, then main); a synapse member's own branch overrides it.
+type Git struct {
+	IntegrationBranch string `toml:"integration_branch"`
+	// FeaturePrefix starts the branch that groups the sub-tickets of a parent ticket, e.g. "feature/".
+	FeaturePrefix string `toml:"feature_prefix"`
+}
+
+// validate reports the first Git setting that is not a usable branch name.
+func (g Git) validate() error {
+	if g.IntegrationBranch != "" && !branchpolicy.ValidBranch(g.IntegrationBranch) {
+		return fmt.Errorf("git.integration_branch %q is not a valid branch name", g.IntegrationBranch)
+	}
+	word := strings.TrimSuffix(g.FeaturePrefix, "/")
+	if word == g.FeaturePrefix || !branchpolicy.ValidBranch(word) {
+		return fmt.Errorf("git.feature_prefix %q must be a branch-safe word ending in /", g.FeaturePrefix)
+	}
+	return nil
+}
+
 // Defaults are the directives of a project that has none.
 func Defaults() Set {
 	return Set{
@@ -130,6 +153,7 @@ func Defaults() Set {
 		Security:    Security{FailOn: "high", Secrets: true},
 		Done:        Done{AutoDone: true, HumanReviewLabels: []string{"needs-human-review"}},
 		Languages:   Languages{Preference: []string{"rust", "python", "typescript", "go", "kotlin", "c", "cpp"}},
+		Git:         Git{FeaturePrefix: branchpolicy.DefaultFeaturePrefix},
 	}
 }
 
@@ -163,6 +187,7 @@ func (s Set) Validate() error {
 		check(oneOf(s.Lint.Strictness, "relaxed", "standard", "strict"), "lint.strictness must be relaxed, standard or strict"),
 		check(oneOf(s.Security.FailOn, "low", "medium", "high", "critical"), "security.fail_on must be low, medium, high or critical"),
 		check(len(s.Languages.Preference) > 0, "languages.preference needs at least one language"),
+		s.Git.validate(),
 	}
 	for _, err := range rules {
 		if err != nil {

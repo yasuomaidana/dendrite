@@ -10,7 +10,7 @@ import (
 
 // keyDef is one setting a rule can change: its value kind, what it means and how to store and read it.
 type keyDef struct {
-	kind string // int, float, bool, string, strings
+	kind string // int, float, bool, string, branch (text kept as typed, may be empty), strings
 	doc  string
 	set  func(*Set, any)
 	get  func(Set) any
@@ -43,6 +43,8 @@ var keys = map[string]keyDef{
 	"security.secrets":                   {"bool", "whether leaked secrets are scanned for", func(s *Set, v any) { s.Security.Secrets = v.(bool) }, func(s Set) any { return s.Security.Secrets }},
 	"done.auto_done":                     {"bool", "true lets an agent set a ticket to Done when every gate passes; false leaves it to a person", func(s *Set, v any) { s.Done.AutoDone = v.(bool) }, func(s Set) any { return s.Done.AutoDone }},
 	"done.human_review_labels":           {"strings", "ticket labels that always need a person", func(s *Set, v any) { s.Done.HumanReviewLabels = v.([]string) }, func(s Set) any { return s.Done.HumanReviewLabels }},
+	"git.integration_branch":             {"branch", "branch finished work merges into; empty detects it (remote default branch, then develop, then main)", func(s *Set, v any) { s.Git.IntegrationBranch = v.(string) }, func(s Set) any { return s.Git.IntegrationBranch }},
+	"git.feature_prefix":                 {"branch", "prefix of the branch that groups the sub-tickets of a parent ticket, ending in /", func(s *Set, v any) { s.Git.FeaturePrefix = v.(string) }, func(s Set) any { return s.Git.FeaturePrefix }},
 	"languages.preference":               {"strings", "languages in the order Dendrite proposes them for new code", func(s *Set, v any) { s.Languages.Preference = v.([]string) }, func(s Set) any { return s.Languages.Preference }},
 }
 
@@ -119,50 +121,80 @@ func (s *Set) ApplyAll(changes []Change) error {
 func convert(kind string, v any) (any, error) {
 	switch kind {
 	case "int":
-		switch n := v.(type) {
-		case int:
-			return n, nil
-		case float64:
-			if n == math.Trunc(n) {
-				return int(n), nil
-			}
-		}
-		return nil, fmt.Errorf("want a whole number, got %v", v)
+		return convertInt(v)
 	case "float":
-		switch n := v.(type) {
-		case int:
-			return float64(n), nil
-		case float64:
-			return n, nil
-		}
-		return nil, fmt.Errorf("want a number, got %v", v)
+		return convertFloat(v)
 	case "bool":
-		if b, ok := v.(bool); ok {
-			return b, nil
-		}
-		return nil, fmt.Errorf("want true or false, got %v", v)
+		return convertBool(v)
+	case "branch":
+		return convertText(v, true)
 	case "string":
-		if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
-			return strings.ToLower(strings.TrimSpace(s)), nil
-		}
-		return nil, fmt.Errorf("want a word, got %v", v)
-	default: // strings
-		switch list := v.(type) {
-		case []string:
-			return list, nil
-		case []any:
-			out := make([]string, 0, len(list))
-			for _, item := range list {
-				text, ok := item.(string)
-				if !ok {
-					return nil, fmt.Errorf("want a list of text, got %v", v)
-				}
-				out = append(out, text)
-			}
-			return out, nil
-		}
-		return nil, fmt.Errorf("want a list, got %v", v)
+		return convertText(v, false)
 	}
+	return convertList(v)
+}
+
+func convertInt(v any) (any, error) {
+	switch n := v.(type) {
+	case int:
+		return n, nil
+	case float64:
+		if n == math.Trunc(n) {
+			return int(n), nil
+		}
+	}
+	return nil, fmt.Errorf("want a whole number, got %v", v)
+}
+
+func convertFloat(v any) (any, error) {
+	switch n := v.(type) {
+	case int:
+		return float64(n), nil
+	case float64:
+		return n, nil
+	}
+	return nil, fmt.Errorf("want a number, got %v", v)
+}
+
+func convertBool(v any) (any, error) {
+	if b, ok := v.(bool); ok {
+		return b, nil
+	}
+	return nil, fmt.Errorf("want true or false, got %v", v)
+}
+
+// convertText reads text. A word is non-empty and lower-cased; a branch is kept as typed and may be empty,
+// because branch names are case-sensitive and empty means "detect".
+func convertText(v any, branch bool) (any, error) {
+	s, ok := v.(string)
+	if branch && !ok {
+		return nil, fmt.Errorf("want text, got %v", v)
+	}
+	if branch {
+		return strings.TrimSpace(s), nil
+	}
+	if ok && strings.TrimSpace(s) != "" {
+		return strings.ToLower(strings.TrimSpace(s)), nil
+	}
+	return nil, fmt.Errorf("want a word, got %v", v)
+}
+
+func convertList(v any) (any, error) {
+	switch list := v.(type) {
+	case []string:
+		return list, nil
+	case []any:
+		out := make([]string, 0, len(list))
+		for _, item := range list {
+			text, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("want a list of text, got %v", v)
+			}
+			out = append(out, text)
+		}
+		return out, nil
+	}
+	return nil, fmt.Errorf("want a list, got %v", v)
 }
 
 // ParseValue reads the text a person typed (`95`, `95%`, `true`, `a,b`) as a value of the key's kind.
@@ -187,7 +219,7 @@ func ParseValue(key, text string) (any, error) {
 			return false, nil
 		}
 		return nil, fmt.Errorf("%s: want true or false, got %q", key, text)
-	case "string":
+	case "string", "branch":
 		return text, nil
 	default:
 		var out []string

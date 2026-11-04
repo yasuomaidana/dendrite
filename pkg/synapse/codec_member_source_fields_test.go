@@ -74,3 +74,19 @@ func TestValidateMemberSource(t *testing.T) {
 		}
 	}
 }
+
+func TestMemberBranchFieldsSurviveTheCodec(t *testing.T) {
+	s := validSynapseFixture()
+	s.Members[0].Branch, s.Members[0].PushRemote, s.Members[0].TargetRemote = "dev", "fork", "upstream"
+	data, err := Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := Unmarshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Members[0] != s.Members[0] {
+		t.Fatalf("member = %+v, want %+v", back.Members[0], s.Members[0])
+	}
+}
