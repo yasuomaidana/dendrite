@@ -27,6 +27,8 @@ func main() {
 	}
 	mode := os.Getenv("TESTSIDECAR_MODE")
 	in := bufio.NewScanner(os.Stdin)
+	// A batch carries many files on one line, far past the scanner's 64 KB default.
+	in.Buffer(make([]byte, 0, 1<<20), 256<<20)
 	out := json.NewEncoder(os.Stdout)
 	for in.Scan() {
 		var req request
@@ -54,33 +56,35 @@ func main() {
 				Source string `json:"source"`
 			}
 			_ = json.Unmarshal(req.Params, &p)
-			if strings.Contains(p.Source, "broken(") || strings.Contains(p.Source, "FORCE_ERROR") {
+			if functions, failed := complexityOf(p.Source); failed {
 				resp["error"] = map[string]interface{}{"code": -32602, "message": "syntax error in source"}
-			} else if strings.Contains(p.Source, "ExceededFunc") || strings.Contains(p.Source, "FORCE_COMPLEXITY_HIGH") {
-				resp["result"] = []map[string]interface{}{
-					{"symbol": "ExceededFunc", "start_line": 1, "end_line": 45, "cyclomatic": 11, "cognitive": 10},
-				}
-			} else if strings.Contains(p.Source, "BoundaryFunc") {
-				resp["result"] = []map[string]interface{}{
-					{"symbol": "BoundaryFunc", "start_line": 1, "end_line": 45, "cyclomatic": 10, "cognitive": 9},
-				}
-			} else if strings.Contains(p.Source, "HighComplexity") {
-				resp["result"] = []map[string]interface{}{
-					{"symbol": "HighComplexity", "start_line": 1, "end_line": 10, "cyclomatic": 15, "cognitive": 15},
-				}
-			} else if strings.Contains(p.Source, "StripSpaces") {
-				resp["result"] = []map[string]interface{}{
-					{"symbol": "StripSpaces", "start_line": 1, "end_line": 15, "cyclomatic": 4, "cognitive": 4},
-				}
-			} else if strings.Contains(p.Source, "TestFunc") {
-				resp["result"] = []map[string]interface{}{
-					{"symbol": "TestFunc", "start_line": 1, "end_line": 10, "cyclomatic": 3, "cognitive": 2},
-				}
 			} else {
-				resp["result"] = []map[string]interface{}{
-					{"symbol": "DefaultFunc", "start_line": 1, "end_line": 5, "cyclomatic": 1, "cognitive": 0},
+				resp["result"] = functions
+			}
+		case "ast.complexity_batch":
+			var p struct {
+				Files []struct {
+					Lang   string `json:"lang"`
+					Source string `json:"source"`
+				} `json:"files"`
+			}
+			_ = json.Unmarshal(req.Params, &p)
+			if mode == "nobatch" {
+				resp["error"] = map[string]interface{}{"code": -32601, "message": "method not found: " + req.Method}
+				break
+			}
+			results := make([]map[string]interface{}, 0, len(p.Files))
+			for _, f := range p.Files {
+				if functions, failed := complexityOf(f.Source); failed {
+					results = append(results, map[string]interface{}{"error": "syntax error in source"})
+				} else {
+					results = append(results, map[string]interface{}{"functions": functions})
 				}
 			}
+			if mode == "shortbatch" && len(results) > 0 {
+				results = results[1:]
+			}
+			resp["result"] = map[string]interface{}{"results": results}
 		case "ast.fold_signatures":
 			var p struct {
 				Lang        string   `json:"lang"`
@@ -207,4 +211,27 @@ func contains(slice []string, val string) bool {
 		}
 	}
 	return false
+}
+
+// complexityOf answers ast.complexity for a source by the marker it contains; failed reports a source the
+// sidecar would reject.
+func complexityOf(source string) (functions []map[string]interface{}, failed bool) {
+	fn := func(symbol string, end, cyclomatic, cognitive int) []map[string]interface{} {
+		return []map[string]interface{}{{"symbol": symbol, "start_line": 1, "end_line": end, "cyclomatic": cyclomatic, "cognitive": cognitive}}
+	}
+	switch {
+	case strings.Contains(source, "broken(") || strings.Contains(source, "FORCE_ERROR"):
+		return nil, true
+	case strings.Contains(source, "ExceededFunc") || strings.Contains(source, "FORCE_COMPLEXITY_HIGH"):
+		return fn("ExceededFunc", 45, 11, 10), false
+	case strings.Contains(source, "BoundaryFunc"):
+		return fn("BoundaryFunc", 45, 10, 9), false
+	case strings.Contains(source, "HighComplexity"):
+		return fn("HighComplexity", 10, 15, 15), false
+	case strings.Contains(source, "StripSpaces"):
+		return fn("StripSpaces", 15, 4, 4), false
+	case strings.Contains(source, "TestFunc"):
+		return fn("TestFunc", 10, 3, 2), false
+	}
+	return fn("DefaultFunc", 5, 1, 0), false
 }

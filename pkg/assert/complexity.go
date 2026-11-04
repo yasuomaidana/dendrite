@@ -56,10 +56,8 @@ func CheckPackageComplexity(pkgDir string, threshold int) (Verdict, map[string]i
 		return "", nil, nil, fmt.Errorf("reading package directory %s: %w", pkgDir, err)
 	}
 
-	client := coreclient.Default()
-	ctx := context.Background()
-	var allFuncs []coreclient.FunctionMetrics
-
+	var paths []string
+	var files []coreclient.SourceFile
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
 			continue
@@ -69,11 +67,21 @@ func CheckPackageComplexity(pkgDir string, threshold int) (Verdict, map[string]i
 		if err != nil {
 			return "", nil, nil, fmt.Errorf("reading file %s: %w", filePath, err)
 		}
-		funcs, err := client.Complexity(ctx, "go", string(data))
-		if err != nil {
-			return "", nil, nil, fmt.Errorf("analyzing file %s: %w", filePath, err)
+		paths = append(paths, filePath)
+		files = append(files, coreclient.SourceFile{Lang: "go", Source: string(data)})
+	}
+
+	// One request for the whole package: dendrite-core measures the files on all its cores.
+	results, err := coreclient.Default().ComplexityBatch(context.Background(), files)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("analyzing package %s: %w", pkgDir, err)
+	}
+	var allFuncs []coreclient.FunctionMetrics
+	for i, r := range results {
+		if r.Error != "" {
+			return "", nil, nil, fmt.Errorf("analyzing file %s: %s", paths[i], r.Error)
 		}
-		allFuncs = append(allFuncs, funcs...)
+		allFuncs = append(allFuncs, r.Functions...)
 	}
 
 	cycloMap := make(map[string]int, len(allFuncs))

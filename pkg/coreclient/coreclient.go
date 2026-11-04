@@ -152,6 +152,43 @@ func (c *Client) Complexity(ctx context.Context, lang, source string) ([]Functio
 	return res, nil
 }
 
+// SourceFile is one file of a ComplexityBatch.
+type SourceFile struct {
+	Lang   string `json:"lang"`
+	Source string `json:"source"`
+}
+
+// FileComplexity is what the sidecar made of one file of a batch: its functions, or why it has none.
+type FileComplexity struct {
+	Functions []FunctionMetrics `json:"functions"`
+	Error     string            `json:"error"`
+}
+
+// ErrBatchUnsupported means the dendrite-core binary predates ast.complexity_batch (protocol 1.1.0).
+var ErrBatchUnsupported = errors.New("dendrite-core predates ast.complexity_batch: run `dendrite update --dev`")
+
+// ComplexityBatch measures many files in one request; the sidecar spreads them over its cores. The answers
+// are in the order of files, and a file the sidecar rejects reports its own Error without failing the rest.
+func (c *Client) ComplexityBatch(ctx context.Context, files []SourceFile) ([]FileComplexity, error) {
+	if len(files) == 0 {
+		return nil, nil
+	}
+	var res struct {
+		Results []FileComplexity `json:"results"`
+	}
+	if err := c.call(ctx, "ast.complexity_batch", map[string][]SourceFile{"files": files}, &res); err != nil {
+		var rpcErr *sidecar.RPCError
+		if errors.As(err, &rpcErr) && rpcErr.Code == -32601 {
+			return nil, ErrBatchUnsupported
+		}
+		return nil, err
+	}
+	if len(res.Results) != len(files) {
+		return nil, fmt.Errorf("dendrite-core answered %d files for %d", len(res.Results), len(files))
+	}
+	return res.Results, nil
+}
+
 // FoldSignatures prunes function bodies of symbols not in keepSymbols, replacing them with a placeholder.
 func (c *Client) FoldSignatures(ctx context.Context, lang, source string, keepSymbols []string) (*Folded, error) {
 	if keepSymbols == nil {
