@@ -25,22 +25,24 @@ The old `complexity.go` was recovered from `origin/develop` and built as a stand
 - `AnalyzeSourceComplexity`'s cognitive number was a line heuristic. `dendrite-core` implements the SonarSource rules (nesting, `else`, runs of boolean operators, labelled jumps, recursion), so cognitive values are different, and meaningful now.
 - Other languages (Rust, Python, TypeScript, JavaScript, C, C++) are measured too.
 
-## Speed: the 3x target is still not met
+## Speed: the 3x target is met for Go complexity
 
-`docs/ARCHITECTURE.md` of dendrite-core-rs sets a target of at least 3 times faster than the in-process Go providers. Measured on the same corpus (503 non-test Go files of this repository, 3.0 MB; 8-core Apple silicon; release builds):
+`docs/ARCHITECTURE.md` of dendrite-core-rs sets a target of at least 3 times faster than the in-process Go providers. The first measurement said the opposite (the sidecar was about 4 times slower), and an intermediate version of this page claimed "1.4 times faster" against a stale Go figure. The like-for-like numbers, from DCORE-13 (499 non-test Go files of this repository, 3.0 MB; 8-core Apple silicon; release builds; sources already in memory; best of several runs):
 
-| Run | Wall time |
+| Run | Time |
 |---|---|
-| Go analyzer, all files, one process, one thread | about 0.10 s |
-| `dendrite-core`, one `ast.complexity` request per file (first measure, DCORE-13) | about 0.40 s |
-| same, after DCORE-13: nodes classified by kind id, one cursor per tree | about 0.31 s |
-| `dendrite-core`, one `ast.complexity_batch` request for all files | about 0.07 s |
+| Go analyzer (`go/parser` and an AST walk), 1 thread | 61 ms |
+| same, 8 goroutines | 22 ms |
+| same, reading the files from disk as well, 1 thread / 8 goroutines | 88 ms / 30 ms |
+| `dendrite-core` through tree-sitter, 1 thread (the first sidecar) | 302 ms |
+| `dendrite-core`, Go fast scan, 1 thread | 8.8 ms |
+| same, `ast.complexity_batch` on 8 threads | 2.0 ms |
 
-What the profile of the 0.40 s run showed: the time was in walking the tree, not in parsing. Every node asked tree-sitter for its kind name (a C call, `strlen` and a UTF-8 check) several times, then compared it with string lists; and every node allocated its own cursor. `dendrite-core` now resolves the kind names once per language into flags indexed by kind id and walks each tree with one cursor. The output is byte-identical on all 503 files. What is left is mostly tree-sitter parsing (about two thirds of the time), which one thread cannot shorten.
+The sidecar's analysis is 7 times faster than the Go analyzer on one thread and 11 times on all cores. Through the sidecar process (JSON in and out, a cold start of about 3 ms) 503 single requests take about 19 ms and one batch request about 13 ms; the sidecar process is started once per session by `pkg/sidecar`, and what remains is the transport of megabytes of JSON, not the analysis.
 
-Concurrency does: files are independent, so the sidecar measures a batch on up to one thread per core. With four workers the corpus takes 0.09 s, with all cores 0.07 s, which is **1.4 times faster than the single-threaded Go analyzer**, not 3 times. Reaching 3 times would need 0.033 s, less than parsing 3 MB costs on this machine. A caller that measures one file per request has nothing to run in parallel; `assert.CheckPackageComplexity` therefore sends a package's files as one batch (`coreclient.ComplexityBatch`). An older `dendrite-core` without the method makes the call fail with `coreclient.ErrBatchUnsupported`, which says to run `dendrite update --dev`.
+**Why it was slow, and what changed.** Half of the first 302 ms was walking the tree (kind names compared as strings per node; fixed with numeric kind ids). The other half was the parse: tree-sitter is a general parser that builds a full syntax tree for any grammar, and `go/parser` is a hand-written parser for one language, so the gap is the algorithm and not Rust against Go. `dendrite-core` now analyses Go without a syntax tree (a lexer and a scan of the keywords, braces and operators the metrics read) and falls back to tree-sitter for what it cannot decide from tokens, which is under 0.2% of files. Its answers are identical to the parser's on the Go standard library (7,342 files) and on this repository, and identical on a 34,632-file module cache except for two files where tree-sitter-go misparses valid Go (`if !a.b { ... }` followed by a bare block), where the scan follows Go's own grammar. Other languages still use tree-sitter.
 
-For gate-sized work (a changed file, a few functions) the difference is milliseconds, and the process is started once per session by `pkg/sidecar`.
+`assert.CheckPackageComplexity` sends a package's files as one `ast.complexity_batch` request (`coreclient.ComplexityBatch`). An older `dendrite-core` without the method makes the call fail with `coreclient.ErrBatchUnsupported`, which says to run `dendrite update --dev`.
 
 ## Consequences
 
