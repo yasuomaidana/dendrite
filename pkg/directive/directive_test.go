@@ -96,6 +96,9 @@ func TestValidateNamesTheBrokenRule(t *testing.T) {
 		{"structure.max_files_per_dir", func(s *Set) { s.Structure.MaxFilesPerDir = 0 }},
 		{"structure.max_dir_production_lines", func(s *Set) { s.Structure.MaxDirProductionLines = 0 }},
 		{"structure.max_prefix_group", func(s *Set) { s.Structure.MaxPrefixGroup = 1 }},
+		{"immune.approve_max", func(s *Set) { s.Immune.ApproveMax = -1 }},
+		{"immune.hold_max", func(s *Set) { s.Immune.HoldMax = s.Immune.ApproveMax }},
+		{"immune.hold_max", func(s *Set) { s.Immune.HoldMax = 100 }},
 		{"lint.strictness", func(s *Set) { s.Lint.Strictness = "wild" }},
 		{"security.fail_on", func(s *Set) { s.Security.FailOn = "never" }},
 		{"languages.preference", func(s *Set) { s.Languages.Preference = nil }},
@@ -194,7 +197,7 @@ func TestParseValueReadsTypedText(t *testing.T) {
 
 func TestKeysAndDescribeCoverEverySetting(t *testing.T) {
 	ks := Keys()
-	testkit.Equal(t, "len(Keys)", len(ks), 28)
+	testkit.Equal(t, "len(Keys)", len(ks), 30)
 	testkit.Equal(t, "Keys[0]", ks[0], "complexity.exclude")
 	text := Describe()
 	for _, k := range ks {
@@ -321,6 +324,7 @@ func TestInterpretReturnsTheStoredValueOfEveryKey(t *testing.T) {
 		"duplication.max_percent": "5", "duplication.min_tokens": "20", "duplication.min_lines": "3", "duplication.include_tests": "false", "duplication.strategies": `["macro"]`,
 		"complexity.max_cyclomatic": "8", "complexity.max_cognitive": "12", "complexity.exclude": `["c"]`,
 		"structure.max_files_per_dir": "9", "structure.max_dir_production_lines": "2000", "structure.max_prefix_group": "3", "structure.require_docs": "false", "structure.docs_files": `["README.md"]`, "structure.exclude": `["d"]`,
+		"immune.approve_max": "10", "immune.hold_max": "40",
 		"lint.strictness": `"standard"`, "security.fail_on": `"medium"`, "security.secrets": "false",
 		"done.auto_done": "false", "done.human_review_labels": `["x"]`, "languages.preference": `["go"]`,
 		"git.integration_branch": `"main"`, "git.feature_prefix": `"feat/"`,

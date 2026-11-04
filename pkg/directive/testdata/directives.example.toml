@@ -33,6 +33,10 @@ require_docs = true
 docs_files = ["README.md", "CHANGELOG.md"]
 exclude = []
 
+[immune]
+approve_max = 20
+hold_max = 50
+
 [lint]
 strictness = "strict"
 

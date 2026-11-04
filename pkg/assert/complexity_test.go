@@ -2,11 +2,14 @@ package assert
 
 import (
 	"Dendrite/pkg/coreclient/coretest"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"Dendrite/pkg/coreclient"
+	"Dendrite/pkg/sidecar"
 	"Dendrite/pkg/testkit"
 )
 
@@ -168,4 +171,49 @@ func TestEvaluateComplexityMap_DefaultThreshold(t *testing.T) {
 	verdictSafe, reasonsSafe := EvaluateComplexityMap(safeMap, -1)
 	testkit.Equal(t, "safe verdict", verdictSafe, VerifiedComplete)
 	testkit.Equal(t, "safe reasons length", len(reasonsSafe), 0)
+}
+
+func TestCheckPackageComplexity_ManyFilesOneAnswer(t *testing.T) {
+	dir := t.TempDir()
+	testkit.WriteFile(t, filepath.Join(dir, "a.go"), "package p\nfunc StripSpaces() {}\n", 0644)
+	testkit.WriteFile(t, filepath.Join(dir, "b.go"), highComplexitySource, 0644)
+	testkit.WriteFile(t, filepath.Join(dir, "c.go"), "package p\nfunc TestFunc() {}\n", 0644)
+
+	verdict, cycloMap, reasons, err := CheckPackageComplexity(dir, 10)
+	testkit.Check(t, err)
+	testkit.Equal(t, "verdict", verdict, ComplexityExceeded)
+	testkit.Equal(t, "functions from every file", len(cycloMap), 3)
+	testkit.Equal(t, "StripSpaces", cycloMap["StripSpaces"], 4)
+	testkit.Equal(t, "TestFunc", cycloMap["TestFunc"], 3)
+	testkit.Equal(t, "one reason", len(reasons), 1)
+}
+
+func TestCheckPackageComplexity_ErrorNamesTheFile(t *testing.T) {
+	dir := t.TempDir()
+	testkit.WriteFile(t, filepath.Join(dir, "good.go"), "package p\nfunc StripSpaces() {}\n", 0644)
+	bad := filepath.Join(dir, "bad.go")
+	testkit.WriteFile(t, bad, "func broken(", 0644)
+
+	_, _, _, err := CheckPackageComplexity(dir, 10)
+	if err == nil {
+		t.Fatal("a file the sidecar rejects must fail the check")
+	}
+	testkit.Contains(t, err.Error(), bad)
+}
+
+func TestCheckPackageComplexity_NoSidecar(t *testing.T) {
+	t.Setenv(sidecar.EnvVar(coreclient.BinaryName), "")
+	missing := coreclient.New(sidecar.Locator{
+		Home:     t.TempDir(),
+		UserHome: t.TempDir(),
+		LookPath: func(string) (string, error) { return "", exec.ErrNotFound },
+	})
+	t.Cleanup(coreclient.SetDefault(missing))
+	dir := t.TempDir()
+	testkit.WriteFile(t, filepath.Join(dir, "a.go"), "package p\nfunc StripSpaces() {}\n", 0644)
+
+	_, _, _, err := CheckPackageComplexity(dir, 10)
+	if !errors.Is(err, coreclient.ErrBinaryMissing) {
+		t.Fatalf("a missing sidecar must say so, got %v", err)
+	}
 }

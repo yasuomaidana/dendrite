@@ -9,6 +9,7 @@ import (
 	"Dendrite/cmd/dendrite/cortex"
 	"Dendrite/cmd/dendrite/env"
 	"Dendrite/cmd/dendrite/hook"
+	"Dendrite/cmd/dendrite/immune"
 	"Dendrite/cmd/dendrite/inference"
 	"Dendrite/cmd/dendrite/install"
 	"Dendrite/cmd/dendrite/internal/cli"
@@ -39,7 +40,7 @@ func newRootCmd() *cobra.Command {
 		// Dendritic Arbor
 		knowledge.NewArborCmd(), knowledge.NewAfferentCmd(), bridge.NewRetroCmd(),
 		// Glial Regulation & Pruning
-		analysis.NewCognitionCmd(), analysis.NewPruneCmd(), quality.NewAllostasisCmd(), analysis.NewDirectiveCmd(),
+		analysis.NewCognitionCmd(), analysis.NewPruneCmd(), quality.NewAllostasisCmd(), analysis.NewDirectiveCmd(), immune.NewImmuneCmd(),
 		// Terminal Boutons & Vesicles
 		chronos.NewChronosCmd(), knowledge.NewVesicleCmd(), commit.NewQuantalCmd(), mesh.NewSyncCmd(),
 	)

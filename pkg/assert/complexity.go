@@ -51,29 +51,13 @@ func CheckSourceComplexity(source string, threshold int) (Verdict, map[string]in
 
 // CheckPackageComplexity parses all non-test Go files in pkgDir and evaluates cyclomatic complexity.
 func CheckPackageComplexity(pkgDir string, threshold int) (Verdict, map[string]int, []string, error) {
-	entries, err := os.ReadDir(pkgDir)
+	paths, files, err := readGoSources(pkgDir)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("reading package directory %s: %w", pkgDir, err)
+		return "", nil, nil, err
 	}
-
-	client := coreclient.Default()
-	ctx := context.Background()
-	var allFuncs []coreclient.FunctionMetrics
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
-		}
-		filePath := filepath.Join(pkgDir, entry.Name())
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			return "", nil, nil, fmt.Errorf("reading file %s: %w", filePath, err)
-		}
-		funcs, err := client.Complexity(ctx, "go", string(data))
-		if err != nil {
-			return "", nil, nil, fmt.Errorf("analyzing file %s: %w", filePath, err)
-		}
-		allFuncs = append(allFuncs, funcs...)
+	allFuncs, err := measurePackage(pkgDir, paths, files)
+	if err != nil {
+		return "", nil, nil, err
 	}
 
 	cycloMap := make(map[string]int, len(allFuncs))
@@ -83,6 +67,46 @@ func CheckPackageComplexity(pkgDir string, threshold int) (Verdict, map[string]i
 
 	verdict, reasons := CheckComplexity(allFuncs, threshold)
 	return verdict, cycloMap, reasons, nil
+}
+
+// readGoSources reads the non-test Go files of pkgDir: their paths and, in the same order, their sources.
+func readGoSources(pkgDir string) ([]string, []coreclient.SourceFile, error) {
+	entries, err := os.ReadDir(pkgDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading package directory %s: %w", pkgDir, err)
+	}
+	var paths []string
+	var files []coreclient.SourceFile
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		filePath := filepath.Join(pkgDir, entry.Name())
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("reading file %s: %w", filePath, err)
+		}
+		paths = append(paths, filePath)
+		files = append(files, coreclient.SourceFile{Lang: "go", Source: string(data)})
+	}
+	return paths, files, nil
+}
+
+// measurePackage sends the files as one request, so dendrite-core measures them on all its cores, and returns
+// every function; a file the sidecar rejects fails the check under its path.
+func measurePackage(pkgDir string, paths []string, files []coreclient.SourceFile) ([]coreclient.FunctionMetrics, error) {
+	results, err := coreclient.Default().ComplexityBatch(context.Background(), files)
+	if err != nil {
+		return nil, fmt.Errorf("analyzing package %s: %w", pkgDir, err)
+	}
+	var funcs []coreclient.FunctionMetrics
+	for i, r := range results {
+		if r.Error != "" {
+			return nil, fmt.Errorf("analyzing file %s: %s", paths[i], r.Error)
+		}
+		funcs = append(funcs, r.Functions...)
+	}
+	return funcs, nil
 }
 
 // EvaluateComplexityMap evaluates an existing function-to-complexity map against the threshold.

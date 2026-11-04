@@ -342,3 +342,51 @@ func TestClient_EnvironmentBinaryOrError(t *testing.T) {
 		}
 	}
 }
+
+func TestComplexityBatch(t *testing.T) {
+	client := testClient(t)
+	ctx := context.Background()
+
+	empty, err := client.ComplexityBatch(ctx, nil)
+	testkit.Check(t, err)
+	if empty != nil {
+		t.Fatalf("an empty batch must send nothing and answer nothing, got %v", empty)
+	}
+
+	got, err := client.ComplexityBatch(ctx, []SourceFile{
+		{Lang: "go", Source: "func ExceededFunc() {}"},
+		{Lang: "go", Source: "func broken("},
+		{Lang: "go", Source: "func StripSpaces() {}"},
+	})
+	testkit.Check(t, err)
+	testkit.Equal(t, "files answered", len(got), 3)
+	testkit.Equal(t, "first symbol", got[0].Functions[0].Symbol, "ExceededFunc")
+	testkit.Equal(t, "first cyclomatic", got[0].Functions[0].Cyclomatic, 11)
+	testkit.Contains(t, got[1].Error, "syntax error")
+	testkit.Equal(t, "a bad file has no functions", len(got[1].Functions), 0)
+	testkit.Equal(t, "third symbol", got[2].Functions[0].Symbol, "StripSpaces")
+}
+
+func TestComplexityBatch_Failures(t *testing.T) {
+	files := []SourceFile{{Lang: "go", Source: "func A() {}"}}
+	for name, tc := range map[string]struct {
+		mode string
+		want func(error) bool
+	}{
+		"an old sidecar":       {"nobatch", func(err error) bool { return errors.Is(err, ErrBatchUnsupported) }},
+		"a short answer":       {"shortbatch", func(err error) bool { return err != nil && !errors.Is(err, ErrBatchUnsupported) }},
+		"a sidecar that exits": {"exit", func(err error) bool { return err != nil }},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("TESTSIDECAR_MODE", tc.mode)
+			_, err := testClient(t).ComplexityBatch(context.Background(), files)
+			if !tc.want(err) {
+				t.Fatalf("err = %v", err)
+			}
+		})
+	}
+	var nilClient *Client
+	if _, err := nilClient.ComplexityBatch(context.Background(), files); !errors.Is(err, ErrBinaryMissing) {
+		t.Fatalf("a nil client must report ErrBinaryMissing, got %v", err)
+	}
+}
