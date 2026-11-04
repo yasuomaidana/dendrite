@@ -419,13 +419,18 @@ func testMCP_PlaneDAGToolsStep6(t *testing.T, callTool func(toolName string, arg
 
 // testMCP_PlaneDAGToolsStep7: 3. Test dendrite_plane_relation_link
 func testMCP_PlaneDAGToolsStep7(t *testing.T, callTool func(toolName string, args map[string]interface{}) *CallToolResult) {
-	linkRes := callTool("dendrite_plane_relation_link", map[string]interface{}{
+	expectDAGText(t, callTool, "dendrite_plane_relation_link", map[string]interface{}{
 		"issue_id":        "DEN-011",
 		"relation_type":   "blocked_by",
 		"target_issue_id": "DEN-010",
-	})
-	if !strings.Contains(linkRes.Content[0].Text, "gantt_connected") {
-		t.Errorf("expected gantt_connected in relation link output: %s", linkRes.Content[0].Text)
+	}, "gantt_connected")
+}
+
+// expectDAGText calls a plane DAG tool and requires want in its first text.
+func expectDAGText(t *testing.T, callTool func(toolName string, args map[string]interface{}) *CallToolResult, tool string, args map[string]interface{}, want string) {
+	t.Helper()
+	if text := callTool(tool, args).Content[0].Text; !strings.Contains(text, want) {
+		t.Errorf("expected %s in %s output: %s", want, tool, text)
 	}
 }
 
@@ -460,17 +465,14 @@ func testMCP_PlaneDAGToolsStep8(t *testing.T, mcpServer *Server) {
 }
 
 func testMCP_PlaneDAGToolsStep9(t *testing.T, callTool func(toolName string, args map[string]interface{}) *CallToolResult) {
-	createRes := callTool("dendrite_plane_issue_create", map[string]interface{}{
+	expectDAGText(t, callTool, "dendrite_plane_issue_create", map[string]interface{}{
 		"name":        "[DEN-100] New Feature",
 		"description": "Detailed acceptance criteria, DoD and implementation context",
 		"milestone":   "Milestone 1",
 		"priority":    "high",
 		"estimate":    8,
 		"blocked_by":  []interface{}{"DEN-010"},
-	})
-	if !strings.Contains(createRes.Content[0].Text, "gantt_plan_placed") {
-		t.Errorf("expected gantt_plan_placed in issue create output: %s", createRes.Content[0].Text)
-	}
+	}, "gantt_plan_placed")
 }
 
 func TestMCP_SmartSelect_LocalFallback(t *testing.T) {
@@ -1078,20 +1080,19 @@ func testTools_DendriteTicketUpdateStep3(t *testing.T, planeClient *plane.Client
 
 // testTools_DendriteTicketUpdateStep4: Missing ticket_id
 func testTools_DendriteTicketUpdateStep4(t *testing.T, srv *Server) {
-	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_ticket_update", "arguments": {"status": "DONE"}}}`
-	resp1 := srv.HandleRequest(context.Background(), []byte(req1))
-	if res, ok := resp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Errorf("expected error for missing ticket_id, got: %#v", resp1)
-	}
+	ticketUpdateRejected(t, srv, 1, `{"status": "DONE"}`, "ticket_id")
 }
 
 // testTools_DendriteTicketUpdateStep5: Missing status
 func testTools_DendriteTicketUpdateStep5(t *testing.T, srv *Server) {
-	req2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_ticket_update", "arguments": {"ticket_id": "DEN-001"}}}`
-	resp2 := srv.HandleRequest(context.Background(), []byte(req2))
-	if res, ok := resp2.Result.(CallToolResult); !ok || !res.IsError {
-		t.Errorf("expected error for missing status, got: %#v", resp2)
-	}
+	ticketUpdateRejected(t, srv, 2, `{"ticket_id": "DEN-001"}`, "status")
+}
+
+// ticketUpdateRejected requires dendrite_ticket_update to answer with an error result for args.
+func ticketUpdateRejected(t *testing.T, srv *Server, id int, args, missing string) {
+	t.Helper()
+	req := fmt.Sprintf(`{"jsonrpc": "2.0", "id": %d, "method": "tools/call", "params": {"name": "dendrite_ticket_update", "arguments": %s}}`, id, args)
+	mcptest.ExpectToolError(t, srv, req, "expected error for missing "+missing)
 }
 
 // testTools_DendriteTicketUpdateStep6: Success with markdown file
@@ -1164,18 +1165,8 @@ func TestTools_DendriteOllamaProbe(t *testing.T) {
 func TestTools_DendriteTopologyAdvisor(t *testing.T) {
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{})
-
-	// 1. With nodes string containing '='
-	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_topology_advisor", "arguments": {"nodes": "local=localhost"}}}`
-	mcptest.MustHandle(t, srv, req1, "expected success with nodes, got")
-
-	// 2. With node without '='
-	req2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_topology_advisor", "arguments": {"nodes": "localhost"}}}`
-	mcptest.MustHandle(t, srv, req2, "expected success with single node, got")
-
-	// 3. With empty arguments (defaults to local=localhost)
-	req3 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_topology_advisor", "arguments": {}}}`
-	mcptest.MustHandle(t, srv, req3, "expected success with empty args, got")
+	// a node list with and without '=', and no arguments at all (defaults to local=localhost)
+	mcptest.ExpectCalls(t, srv, "dendrite_topology_advisor", `{"nodes": "local=localhost"}`, `{"nodes": "localhost"}`, `{}`)
 }
 
 func TestTools_DendriteGatewayRender(t *testing.T) {

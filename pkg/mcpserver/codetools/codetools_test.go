@@ -186,21 +186,26 @@ func TestGraphAndDocusaurusToolsReportFailures(t *testing.T) {
 	}
 }
 
+// agentSearchCall sends one dendrite_agent_search request and fails the test when the server answers with an error.
+func agentSearchCall(t *testing.T, srv *Server, ctx context.Context, id int, args string) *JSONRPCResponse {
+	t.Helper()
+	req := fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":"dendrite_agent_search","arguments":%s}}`, id, args)
+	resp := srv.HandleRequest(ctx, []byte(req))
+	if resp.Error != nil {
+		t.Fatalf("unexpected error from dendrite_agent_search: %v", resp.Error)
+	}
+	return resp
+}
+
 func TestTools_AgentSearch(t *testing.T) {
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{})
 
-	// 1. Missing query (error)
-	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_agent_search", "arguments": {}}}`
-	mcptest.ExpectToolError(t, srv, req1, "expected error for missing query in agent_search")
-
-	// 2. Search mode (route = false)
-	req2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_agent_search", "arguments": {"query": "refactor mcp server", "target_package": "pkg/mcpserver", "target_symbols": ["NewServer"], "require_local": true, "max_cost": 0.05, "max_results": 3, "route": false}}}`
-	mcptest.MustHandle(t, srv, req2, "agent_search search mode failed")
-
-	// 3. Route mode (route = true)
-	req3 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_agent_search", "arguments": {"query": "refactor mcp server", "route": true}}}`
-	mcptest.MustHandle(t, srv, req3, "agent_search route mode failed")
+	req := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_agent_search", "arguments": {}}}`
+	mcptest.ExpectToolError(t, srv, req, "expected error for missing query in agent_search")
+	mcptest.ExpectCalls(t, srv, "dendrite_agent_search",
+		`{"query": "refactor mcp server", "target_package": "pkg/mcpserver", "target_symbols": ["NewServer"], "require_local": true, "max_cost": 0.05, "max_results": 3, "route": false}`,
+		`{"query": "refactor mcp server", "route": true}`)
 }
 
 func TestTools_TestGen(t *testing.T) {
@@ -465,105 +470,32 @@ func TestRAGShowArgumentsAndFailures(t *testing.T) {
 }
 
 func TestGraphTools(t *testing.T) {
-	srv, dir, ctx := testGraphToolsStep1(t)
-	res, err := testGraphToolsStep2(t, srv, dir, ctx)
-	res, err = testGraphToolsStep3(t, srv, dir, ctx, res, err)
-	res, err = testGraphToolsStep4(t, srv, dir, ctx, res, err)
-	err = testGraphToolsStep5(t, srv, dir, ctx, err)
-	err = testGraphToolsStep6(t, srv, dir, ctx, res, err)
-	testGraphToolsStep7(t, srv, dir, ctx, err)
-}
-
-func testGraphToolsStep1(t *testing.T) (*Server, string, context.Context) {
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{})
 	dir := testGraphProject(t)
 	ctx := context.Background()
-	return srv, dir, ctx
-}
-
-// testGraphToolsStep2: 1. dendrite_graph_communities
-func testGraphToolsStep2(t *testing.T, srv *Server, dir string, ctx context.Context) (*CallToolResult, error) {
-	res, err := invokeTool(ctx, srv, "dendrite_graph_communities", map[string]interface{}{
-		"project_path": dir,
-		"limit":        10,
-	})
-	if err != nil {
-		t.Fatalf("communities error: %v", err)
-	}
-	if len(res.Content) == 0 || res.Content[0].Text == "" {
-		t.Errorf("empty communities response")
-	}
-	return res, err
-}
-
-// testGraphToolsStep3: 2. dendrite_graph_god_nodes
-func testGraphToolsStep3(t *testing.T, srv *Server, dir string, ctx context.Context, res *CallToolResult, err error) (*CallToolResult, error) {
-	res, err = invokeTool(ctx, srv, "dendrite_graph_god_nodes", map[string]interface{}{
-		"project_path": dir,
-		"limit":        10,
-	})
-	if err != nil {
-		t.Fatalf("god nodes error: %v", err)
-	}
-	if len(res.Content) == 0 || res.Content[0].Text == "" {
-		t.Errorf("empty god nodes response")
-	}
-	return res, err
-}
-
-// testGraphToolsStep4: 3. dendrite_graph_path
-func testGraphToolsStep4(t *testing.T, srv *Server, dir string, ctx context.Context, res *CallToolResult, err error) (*CallToolResult, error) {
-	res, err = invokeTool(ctx, srv, "dendrite_graph_path", map[string]interface{}{
-		"project_path": dir,
-		"from":         "Run",
-		"to":           "LocateBinary",
-		"kinds":        []interface{}{"call"},
-	})
-	if err != nil {
-		t.Fatalf("path error: %v", err)
-	}
-	if len(res.Content) == 0 || res.Content[0].Text == "" {
-		t.Errorf("empty path response")
-	}
-	return res, err
-}
-
-// testGraphToolsStep5: 3b. dendrite_graph_path missing required args
-func testGraphToolsStep5(t *testing.T, srv *Server, dir string, ctx context.Context, err error) error {
-	_, err = invokeTool(ctx, srv, "dendrite_graph_path", map[string]interface{}{
-		"project_path": dir,
-		"from":         "",
-	})
-	if err == nil {
-		t.Errorf("expected error for missing 'to' in path")
-	}
-	return err
-}
-
-// testGraphToolsStep6: 4. dendrite_graph_explain
-func testGraphToolsStep6(t *testing.T, srv *Server, dir string, ctx context.Context, res *CallToolResult, err error) error {
-	res, err = invokeTool(ctx, srv, "dendrite_graph_explain", map[string]interface{}{
-		"project_path": dir,
-		"target":       "LocateBinary",
-	})
-	if err != nil {
-		t.Fatalf("explain error: %v", err)
-	}
-	if len(res.Content) == 0 || res.Content[0].Text == "" {
-		t.Errorf("empty explain response")
-	}
-	return err
-}
-
-// testGraphToolsStep7: 4b. dendrite_graph_explain missing target
-func testGraphToolsStep7(t *testing.T, srv *Server, dir string, ctx context.Context, err error) {
-	_, err = invokeTool(ctx, srv, "dendrite_graph_explain", map[string]interface{}{
-		"project_path": dir,
-		"target":       "",
-	})
-	if err == nil {
-		t.Errorf("expected error for empty target in explain")
+	for _, c := range []struct {
+		tool    string
+		args    map[string]interface{}
+		wantErr bool
+	}{
+		{"dendrite_graph_communities", map[string]interface{}{"limit": 10}, false},
+		{"dendrite_graph_god_nodes", map[string]interface{}{"limit": 10}, false},
+		{"dendrite_graph_path", map[string]interface{}{"from": "Run", "to": "LocateBinary", "kinds": []interface{}{"call"}}, false},
+		{"dendrite_graph_path", map[string]interface{}{"from": ""}, true},
+		{"dendrite_graph_explain", map[string]interface{}{"target": "LocateBinary"}, false},
+		{"dendrite_graph_explain", map[string]interface{}{"target": ""}, true},
+	} {
+		c.args["project_path"] = dir
+		res, err := invokeTool(ctx, srv, c.tool, c.args)
+		switch {
+		case c.wantErr && err == nil:
+			t.Errorf("%s %v: expected an error", c.tool, c.args)
+		case !c.wantErr && err != nil:
+			t.Fatalf("%s: %v", c.tool, err)
+		case !c.wantErr && (len(res.Content) == 0 || res.Content[0].Text == ""):
+			t.Errorf("%s: empty response", c.tool)
+		}
 	}
 }
 
@@ -845,24 +777,7 @@ func testDendriteAgentSearchMCPToolStep1(t *testing.T) (*Server, context.Context
 
 // testDendriteAgentSearchMCPToolStep2: 1. Test search query
 func testDendriteAgentSearchMCPToolStep2(t *testing.T, srv *Server, ctx context.Context) *JSONRPCResponse {
-	reqJSON := `{
-		"jsonrpc": "2.0",
-		"id": 201,
-		"method": "tools/call",
-		"params": {
-			"name": "dendrite_agent_search",
-			"arguments": {
-				"query": "refactor gateway limiter",
-				"target_package": "pkg/gateway",
-				"max_results": 2
-			}
-		}
-	}`
-	resp := srv.HandleRequest(ctx, []byte(reqJSON))
-	if resp.Error != nil {
-		t.Fatalf("unexpected error from dendrite_agent_search: %v", resp.Error)
-	}
-	return resp
+	return agentSearchCall(t, srv, ctx, 201, `{"query": "refactor gateway limiter","target_package": "pkg/gateway","max_results": 2}`)
 }
 
 func testDendriteAgentSearchMCPToolStep3(t *testing.T, resp *JSONRPCResponse) bool {
@@ -882,24 +797,7 @@ func testDendriteAgentSearchMCPToolStep3(t *testing.T, resp *JSONRPCResponse) bo
 
 // testDendriteAgentSearchMCPToolStep4: 2. Test route mode
 func testDendriteAgentSearchMCPToolStep4(t *testing.T, srv *Server, ctx context.Context) *JSONRPCResponse {
-	routeReq := `{
-		"jsonrpc": "2.0",
-		"id": 202,
-		"method": "tools/call",
-		"params": {
-			"name": "dendrite_agent_search",
-			"arguments": {
-				"query": "write rapid unit test for AST",
-				"require_local": true,
-				"route": true
-			}
-		}
-	}`
-	routeResp := srv.HandleRequest(ctx, []byte(routeReq))
-	if routeResp.Error != nil {
-		t.Fatalf("unexpected error from route: %v", routeResp.Error)
-	}
-	return routeResp
+	return agentSearchCall(t, srv, ctx, 202, `{"query": "write rapid unit test for AST","require_local": true,"route": true}`)
 }
 
 func testDendriteAgentSearchMCPToolStep5(t *testing.T, ok bool, routeResp *JSONRPCResponse) {
@@ -1220,24 +1118,25 @@ func testDistCodebaseMCPToolsStep6(t *testing.T, callTool func(name string, args
 	return coordID
 }
 
+// interopCaller calls an MCP tool by name.
+type interopCaller = func(name string, args map[string]interface{}) (*CallToolResult, error)
+
+// interopAction runs one dendrite_dist_interop action on a coordination and requires want in the answer.
+func interopAction(t *testing.T, callTool interopCaller, coordID, action, want string) {
+	t.Helper()
+	mcptest.ExpectContent(t, "failed to "+action+" interop", func() (*CallToolResult, error) {
+		return callTool("dendrite_dist_interop", map[string]interface{}{"action": action, "coordination_id": coordID})
+	}, want)
+}
+
 // testDistCodebaseMCPToolsStep7: Complete dependency feature
-func testDistCodebaseMCPToolsStep7(t *testing.T, callTool func(name string, args map[string]interface{}) (*CallToolResult, error), err error, coordID string) {
-	mcptest.ExpectContent(t, "failed to complete interop", func() (*CallToolResult, error) {
-		return callTool("dendrite_dist_interop", map[string]interface{}{
-			"action":          "complete",
-			"coordination_id": coordID,
-		})
-	}, "dependency_completed")
+func testDistCodebaseMCPToolsStep7(t *testing.T, callTool interopCaller, err error, coordID string) {
+	interopAction(t, callTool, coordID, "complete", "dependency_completed")
 }
 
 // testDistCodebaseMCPToolsStep8: Reconcile
-func testDistCodebaseMCPToolsStep8(t *testing.T, callTool func(name string, args map[string]interface{}) (*CallToolResult, error), err error, coordID string) {
-	mcptest.ExpectContent(t, "failed to reconcile interop", func() (*CallToolResult, error) {
-		return callTool("dendrite_dist_interop", map[string]interface{}{
-			"action":          "reconcile",
-			"coordination_id": coordID,
-		})
-	}, "successfully_reconciled")
+func testDistCodebaseMCPToolsStep8(t *testing.T, callTool interopCaller, err error, coordID string) {
+	interopAction(t, callTool, coordID, "reconcile", "successfully_reconciled")
 }
 
 // testDistCodebaseMCPToolsStep9: List

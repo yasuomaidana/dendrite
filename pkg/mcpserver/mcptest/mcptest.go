@@ -164,6 +164,32 @@ func ExpectToolError(t *testing.T, srv *Server, req, msg string) *JSONRPCRespons
 	return resp
 }
 
+// ExpectCalls calls tool once per argument object and fails the test unless every call is answered without an error.
+func ExpectCalls(t *testing.T, srv *Server, tool string, argsList ...string) {
+	t.Helper()
+	for _, args := range argsList {
+		AssertToolCallSuccess(t, srv, tool, args)
+	}
+}
+
+// ExpectFailures calls each tool with args and fails the test unless every one answers with an error naming want.
+func ExpectFailures(t *testing.T, srv *Server, args, want string, tools ...string) {
+	t.Helper()
+	for _, tool := range tools {
+		if text, isErr := CallTool(t, srv, tool, args); !isErr || !strings.Contains(text, want) {
+			t.Errorf("%s with %s: want an error naming %q, got %v: %s", tool, args, want, isErr, text)
+		}
+	}
+}
+
+// RunSteps runs each step against srv in order.
+func RunSteps(t *testing.T, srv *Server, steps ...func(*testing.T, *Server)) {
+	t.Helper()
+	for _, step := range steps {
+		step(t, srv)
+	}
+}
+
 // ExpectContent runs a tool call and fails the test, naming what, unless it returns without an error and its first
 // text holds every wanted fragment (any text at all when none is given).
 func ExpectContent(t *testing.T, what string, run func() (*CallToolResult, error), wants ...string) {

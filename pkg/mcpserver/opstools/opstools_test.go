@@ -614,32 +614,26 @@ func testREATools_RegistrationAndExecutionStep3(t *testing.T, handler ToolHandle
 	return err
 }
 
+// reaShowcase runs dendrite_rea_showcase for a target in a format and requires want in its only text.
+func reaShowcase(t *testing.T, handler ToolHandler, ctx context.Context, target, format, want string) {
+	t.Helper()
+	res, err := handler(ctx, map[string]interface{}{"target": target, "format": format})
+	if err != nil {
+		t.Fatalf("dendrite_rea_showcase %s failed: %v", format, err)
+	}
+	if len(res.Content) != 1 || !strings.Contains(res.Content[0].Text, want) {
+		t.Errorf("unexpected %s result: %+v", format, res.Content)
+	}
+}
+
 // testREATools_RegistrationAndExecutionStep4: 2. Execute json mode
 func testREATools_RegistrationAndExecutionStep4(t *testing.T, handler ToolHandler, ctx context.Context, err error) {
-	resJSON, err := handler(ctx, map[string]interface{}{
-		"target": "th04",
-		"format": "json",
-	})
-	if err != nil {
-		t.Fatalf("dendrite_rea_showcase json failed: %v", err)
-	}
-	if len(resJSON.Content) != 1 || !strings.Contains(resJSON.Content[0].Text, `"target": "th04"`) {
-		t.Errorf("unexpected json result: %+v", resJSON.Content)
-	}
+	reaShowcase(t, handler, ctx, "th04", "json", `"target": "th04"`)
 }
 
 // testREATools_RegistrationAndExecutionStep5: 3. Execute markdown mode
 func testREATools_RegistrationAndExecutionStep5(t *testing.T, handler ToolHandler, ctx context.Context, err error) {
-	resMD, err := handler(ctx, map[string]interface{}{
-		"target": "dxball",
-		"format": "markdown",
-	})
-	if err != nil {
-		t.Fatalf("dendrite_rea_showcase markdown failed: %v", err)
-	}
-	if len(resMD.Content) != 1 || !strings.Contains(resMD.Content[0].Text, "# Open-Source REA Showcase") {
-		t.Errorf("unexpected markdown result: %+v", resMD.Content)
-	}
+	reaShowcase(t, handler, ctx, "dxball", "markdown", "# Open-Source REA Showcase")
 }
 
 // testREATools_RegistrationAndExecutionStep6: 4. Unknown target error handling
@@ -995,15 +989,7 @@ func testTools_StoreStep8(t *testing.T, srv *Server) {
 }
 
 func TestTools_Scheduler(t *testing.T) {
-	srv := testTools_SchedulerStep1(t)
-	testTools_SchedulerStep2(t, srv)
-	testTools_SchedulerStep3(t, srv)
-	testTools_SchedulerStep4(t, srv)
-	testTools_SchedulerStep5(t, srv)
-	testTools_SchedulerStep6(t, srv)
-	testTools_SchedulerStep7(t, srv)
-	testTools_SchedulerStep8(t, srv)
-	testTools_SchedulerStep9(t, srv)
+	mcptest.RunSteps(t, testTools_SchedulerStep1(t), testTools_SchedulerStep2, testTools_SchedulerStep3, testTools_SchedulerStep4, testTools_SchedulerStep5, testTools_SchedulerStep6, testTools_SchedulerStep7, testTools_SchedulerStep8, testTools_SchedulerStep9)
 }
 
 func testTools_SchedulerStep1(t *testing.T) *Server {
@@ -1123,15 +1109,7 @@ func testTools_StoryStep6(t *testing.T, srv *Server) {
 }
 
 func TestTools_Audit(t *testing.T) {
-	srv := testTools_AuditStep1(t)
-	testTools_AuditStep2(t, srv)
-	testTools_AuditStep3(t, srv)
-	testTools_AuditStep4(t, srv)
-	testTools_AuditStep5(t, srv)
-	testTools_AuditStep6(t, srv)
-	testTools_AuditStep7(t, srv)
-	testTools_AuditStep8(t, srv)
-	testTools_AuditStep9(t, srv)
+	mcptest.RunSteps(t, testTools_AuditStep1(t), testTools_AuditStep2, testTools_AuditStep3, testTools_AuditStep4, testTools_AuditStep5, testTools_AuditStep6, testTools_AuditStep7, testTools_AuditStep8, testTools_AuditStep9)
 }
 
 func testTools_AuditStep1(t *testing.T) *Server {
@@ -1326,6 +1304,20 @@ func testTools_CanvasAndRAGStep12(t *testing.T, srv *Server, tmpDir string) {
 	mcptest.RequireResponse(t, srv, retReq2, "expected response for rag_retrieve")
 }
 
+func TestMCP_CanvasTools_Dispatch(t *testing.T) {
+	_, srv := fixtureMCPCanvasTools(t)
+	for _, c := range []struct{ name, tool, args, want string }{
+		{"write plan", "dendrite_canvas_action_dispatch", `{"action":"WRITE_PLAN","title":"UI Architecture Rollout","prompt":"Deliver Penpot Bridge and Plane state synchronization","mode":"DRAFT"}`, "UI Architecture Rollout"},
+		{"design ui", "dendrite_canvas_action_dispatch", `{"action":"DESIGN_UI_COMPONENT","prompt":"Interactive Canvas Workspace with side drawer","parameters":{"framework":"svelte","component_name":"WorkspaceCanvas"}}`, "WorkspaceCanvas"},
+		{"penpot relate", "dendrite_canvas_penpot_bridge", `{"subaction":"relate","ticket_id":"DEN-807","feature_name":"Canvas Workspace","comment":"Binding Plane ticket to Penpot design frame"}`, "DEN-807"},
+		{"penpot list", "dendrite_canvas_penpot_bridge", `{"subaction":"list"}`, "DEN-807"},
+	} {
+		if text, isErr := mcptest.CallTool(t, srv, c.tool, c.args); isErr || !strings.Contains(text, c.want) {
+			t.Errorf("%s: want %q in a successful result, got %v: %s", c.name, c.want, isErr, text)
+		}
+	}
+}
+
 // fixtureMCPCanvasTools is the setup TestMCP_CanvasTools and its subtests share.
 func fixtureMCPCanvasTools(t *testing.T) (context.Context, *Server) {
 	t.Helper()
@@ -1371,86 +1363,6 @@ func fixtureMCPCanvasTools(t *testing.T) (context.Context, *Server) {
 	_ = planeClient
 	_ = deps
 	return ctx, srv
-}
-
-func TestMCP_CanvasTools_DispatchWritePlan(t *testing.T) {
-	ctx, srv := fixtureMCPCanvasTools(t)
-	reqJSON := `{
-			"jsonrpc": "2.0",
-			"id": 1,
-			"method": "tools/call",
-			"params": {
-				"name": "dendrite_canvas_action_dispatch",
-				"arguments": {
-					"action": "WRITE_PLAN",
-					"title": "UI Architecture Rollout",
-					"prompt": "Deliver Penpot Bridge and Plane state synchronization",
-					"mode": "DRAFT"
-				}
-			}
-		}`
-	resp := srv.HandleRequest(ctx, []byte(reqJSON))
-	if resp.Error != nil {
-		t.Fatalf("call dendrite_canvas_action_dispatch failed: %v", resp.Error)
-	}
-	res, ok := resp.Result.(*CallToolResult)
-	if !ok || len(res.Content) == 0 || !strings.Contains(res.Content[0].Text, "UI Architecture Rollout") {
-		t.Errorf("expected plan output, got: %v", resp.Result)
-	}
-}
-
-func TestMCP_CanvasTools_DispatchDesignUI(t *testing.T) {
-	ctx, srv := fixtureMCPCanvasTools(t)
-	reqJSON := `{
-			"jsonrpc": "2.0",
-			"id": 2,
-			"method": "tools/call",
-			"params": {
-				"name": "dendrite_canvas_action_dispatch",
-				"arguments": {
-					"action": "DESIGN_UI_COMPONENT",
-					"prompt": "Interactive Canvas Workspace with side drawer",
-					"parameters": {
-						"framework": "svelte",
-						"component_name": "WorkspaceCanvas"
-					}
-				}
-			}
-		}`
-	resp := srv.HandleRequest(ctx, []byte(reqJSON))
-	if resp.Error != nil {
-		t.Fatalf("call design UI failed: %v", resp.Error)
-	}
-	res, ok := resp.Result.(*CallToolResult)
-	if !ok || !strings.Contains(res.Content[0].Text, "WorkspaceCanvas") {
-		t.Errorf("expected WorkspaceCanvas in output: %v", resp.Result)
-	}
-}
-
-func TestMCP_CanvasTools_PenpotBridgeRelate(t *testing.T) {
-	ctx, srv := fixtureMCPCanvasTools(t)
-	reqJSON := `{
-			"jsonrpc": "2.0",
-			"id": 3,
-			"method": "tools/call",
-			"params": {
-				"name": "dendrite_canvas_penpot_bridge",
-				"arguments": {
-					"subaction": "relate",
-					"ticket_id": "DEN-807",
-					"feature_name": "Canvas Workspace",
-					"comment": "Binding Plane ticket to Penpot design frame"
-				}
-			}
-		}`
-	resp := srv.HandleRequest(ctx, []byte(reqJSON))
-	if resp.Error != nil {
-		t.Fatalf("call relate failed: %v", resp.Error)
-	}
-	res, ok := resp.Result.(*CallToolResult)
-	if !ok || !strings.Contains(res.Content[0].Text, "DEN-807") {
-		t.Errorf("expected DEN-807 in output: %v", resp.Result)
-	}
 }
 
 func TestMCP_CanvasTools_PenpotBridgeSync(t *testing.T) {
@@ -1507,29 +1419,6 @@ func TestMCP_CanvasTools_PenpotBridgeUpdateState(t *testing.T) {
 	res, ok := resp.Result.(*CallToolResult)
 	if !ok || !strings.Contains(res.Content[0].Text, "To Verify") {
 		t.Errorf("expected To Verify in output: %v", resp.Result)
-	}
-}
-
-func TestMCP_CanvasTools_PenpotBridgeList(t *testing.T) {
-	ctx, srv := fixtureMCPCanvasTools(t)
-	reqJSON := `{
-			"jsonrpc": "2.0",
-			"id": 6,
-			"method": "tools/call",
-			"params": {
-				"name": "dendrite_canvas_penpot_bridge",
-				"arguments": {
-					"subaction": "list"
-				}
-			}
-		}`
-	resp := srv.HandleRequest(ctx, []byte(reqJSON))
-	if resp.Error != nil {
-		t.Fatalf("call list failed: %v", resp.Error)
-	}
-	res, ok := resp.Result.(*CallToolResult)
-	if !ok || !strings.Contains(res.Content[0].Text, "DEN-807") {
-		t.Errorf("expected list to contain DEN-807: %v", resp.Result)
 	}
 }
 
@@ -1960,17 +1849,10 @@ func testGitHubSyncAndHITLSyncToolsStep3(t *testing.T, ps *hitltest.PlaneServer,
 }
 
 func testGitHubSyncAndHITLSyncToolsStep4(t *testing.T, gh *hitltest.GHScript, srv *Server) {
-	for _, tool := range []string{"dendrite_github_sync", "dendrite_hitl_sync"} {
-		if text, isErr := mcptest.CallTool(t, srv, tool, `{"repo":"fail/me"}`); !isErr || !strings.Contains(text, "no plane") {
-			t.Errorf("%s setup failure: %s", tool, text)
-		}
-	}
+	syncTools := []string{"dendrite_github_sync", "dendrite_hitl_sync"}
+	mcptest.ExpectFailures(t, srv, `{"repo":"fail/me"}`, "no plane", syncTools...)
 	gh.On("gh issue list", "", errors.New("offline"))
-	for _, tool := range []string{"dendrite_github_sync", "dendrite_hitl_sync"} {
-		if text, isErr := mcptest.CallTool(t, srv, tool, `{}`); !isErr || !strings.Contains(text, "offline") {
-			t.Errorf("%s sync failure: %s", tool, text)
-		}
-	}
+	mcptest.ExpectFailures(t, srv, `{}`, "offline", syncTools...)
 }
 
 func TestHITLSyncToolReturnsEmptyList(t *testing.T) {
