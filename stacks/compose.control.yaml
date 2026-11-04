@@ -63,7 +63,7 @@ services:
       # Encrypts credentials stored in Postgres; must stay stable across master-key rotations.
       LITELLM_SALT_KEY: "${LITELLM_SALT_KEY:?LITELLM_SALT_KEY is unset - run 'dendrite env secrets ensure'}"
     volumes:
-      - ./:/etc/litellm
+      - ./:/etc/litellm:ro
       # GitHub Copilot OAuth token from the one-time device login (dendrite gateway copilot-login)
       - litellm-copilot-auth:/root/.config/litellm/github_copilot
     extra_hosts:

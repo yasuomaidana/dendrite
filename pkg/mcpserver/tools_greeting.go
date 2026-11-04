@@ -143,7 +143,10 @@ func registerGreetingTools(s *Server, deps Dependencies) {
 		}
 
 		eng := greeting.NewEngine()
-		res, _ := eng.Generate(ctx, uCtx, recentStyles) // Generate always settles on a style, so it does not fail
+		res, err := eng.Generate(ctx, uCtx, recentStyles)
+		if err != nil {
+			return errorResult("generate greeting: %v", err), nil
+		}
 
 		data := indentJSON(res)
 
