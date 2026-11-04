@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -132,3 +133,26 @@ func TestImmuneScanJSON(t *testing.T) {
 var runCmd = clitest.Runner(NewImmuneCmd)
 
 func TestMain(m *testing.M) { clitest.Main(m) }
+
+func TestImmuneScanOfAMissingPathFails(t *testing.T) {
+	var buf bytes.Buffer
+	err := runCmd(context.Background(), &buf, "immune", "scan", filepath.Join(t.TempDir(), "absent"))
+	testkit.Equal(t, "exit code", cli.ExitCodeFor(err), cli.ExitError)
+}
+
+// failingWriter is an output that cannot be written to.
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
+
+func TestImmuneScanReportsAFailureToWriteTheReport(t *testing.T) {
+	if _, err := immune.Locate(); err != nil {
+		return // TestImmuneScanExitCodes asserts the missing-scanner error
+	}
+	dir := t.TempDir()
+	testkit.WriteFile(t, filepath.Join(dir, "SKILL.md"), immuneHead+"Format the date.\n", 0o644)
+	err := runCmd(context.Background(), failingWriter{}, "--json", "immune", "scan", dir)
+	if err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Fatalf("a report that cannot be written must fail the command, got %v", err)
+	}
+}
