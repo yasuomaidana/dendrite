@@ -2,14 +2,15 @@ package ticketlock
 
 import (
 	"Dendrite/pkg/testkit"
-	"Dendrite/pkg/tracker"
-	"Dendrite/pkg/tracker/plane"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"Dendrite/pkg/tracker"
+	"Dendrite/pkg/tracker/plane"
 )
 
 func gitIn(t *testing.T, repo string, args ...string) string { return testkit.Git(t, repo, args...) }
