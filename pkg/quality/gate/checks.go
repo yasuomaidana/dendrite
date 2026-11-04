@@ -3,14 +3,8 @@ package gate
 import (
 	"context"
 	"fmt"
-	"io"
-	"os"
 	"path"
-	"path/filepath"
-	"sort"
 	"strings"
-
-	"Dendrite/pkg/quality/coverage"
 )
 
 const (
@@ -89,6 +83,30 @@ func checkLoc(ctx context.Context, o Options) Check {
 	return verdict("loc", fmt.Sprintf("%d files checked, %d over %d production lines", checked, len(findings), o.Set.Loc.MaxProductionLines), findings)
 }
 
+// cloneGroup is one block of repeated code and where it appears.
+type cloneGroup struct {
+	ID        int
+	Locations []struct {
+		Path      string `json:"path"`
+		StartLine int    `json:"start_line"`
+		EndLine   int    `json:"end_line"`
+	}
+}
+
+// finding describes the group and says whether it belongs to the change: any place in lines the change added,
+// or every group when there is no scope.
+func (g cloneGroup) finding(s *Scope) (text string, touched bool) {
+	var places []string
+	touched = s == nil
+	for _, l := range g.Locations {
+		places = append(places, fmt.Sprintf("%s:%d-%d", l.Path, l.StartLine, l.EndLine))
+		if s != nil && s.Touches(l.Path, l.StartLine, l.EndLine) {
+			touched = true
+		}
+	}
+	return fmt.Sprintf("the same code in %s", strings.Join(places, ", ")), touched
+}
+
 // checkClones fails when repeated code exceeds the allowance; scoped to a change, when a repeated block has a
 // place in lines the change added.
 func checkClones(ctx context.Context, o Options) Check {
@@ -97,14 +115,7 @@ func checkClones(ctx context.Context, o Options) Check {
 			Percent float64
 			Groups  int
 		}
-		Groups []struct {
-			ID        int
-			Locations []struct {
-				Path      string `json:"path"`
-				StartLine int    `json:"start_line"`
-				EndLine   int    `json:"end_line"`
-			}
-		}
+		Groups []cloneGroup
 	}
 	params := map[string]interface{}{
 		"max_percent": o.Set.Duplication.MaxPercent, "min_lines": o.Set.Duplication.MinLines,
@@ -115,16 +126,8 @@ func checkClones(ctx context.Context, o Options) Check {
 	}
 	var findings []string
 	for _, g := range rep.Groups {
-		var places []string
-		touched := o.Scope == nil
-		for _, l := range g.Locations {
-			places = append(places, fmt.Sprintf("%s:%d-%d", l.Path, l.StartLine, l.EndLine))
-			if o.Scope != nil && o.Scope.Touches(l.Path, l.StartLine, l.EndLine) {
-				touched = true
-			}
-		}
-		if touched {
-			findings = append(findings, fmt.Sprintf("the same code in %s", strings.Join(places, ", ")))
+		if finding, touched := g.finding(o.Scope); touched {
+			findings = append(findings, finding)
 		}
 	}
 	if o.Scope == nil && rep.Totals.Percent <= o.Set.Duplication.MaxPercent {
@@ -166,93 +169,3 @@ func checkRstest(ctx context.Context, o Options) Check {
 }
 
 // baselineFile is where the coverage ratchet keeps its per-package baseline.
-const baselineFile = ".github/coverage_baseline.json"
-
-// checkCoverage measures Go test coverage. The whole repository is held to the directive's floor. A change is
-// held to the ratchet when the project keeps a baseline (its packages may not lose coverage, new ones start at
-// 100%), so a ticket is not failed for the coverage debt of a package it only touched, and to the floor when it
-// does not.
-func checkCoverage(ctx context.Context, o Options) Check {
-	if _, err := os.Stat(filepath.Join(o.Dir, "go.mod")); err != nil {
-		return Check{Name: "coverage", Status: Skipped, Summary: "not a Go module (coverage for other languages is not wired yet)"}
-	}
-	packages := coveragePackages(o)
-	if len(packages) == 0 {
-		return Check{Name: "coverage", Status: Skipped, Summary: "no Go package changed"}
-	}
-	run := o.CoverageRunner
-	if run == nil {
-		run = cleanRunner
-	}
-	opts := coverage.Options{RepoDir: o.Dir, Packages: packages, Stdout: io.Discard, Stderr: io.Discard, CommandRunner: run}
-	mode := fmt.Sprintf("floor of %.0f%%", o.Set.Coverage.MinPercent)
-	_, baselineErr := os.Stat(filepath.Join(o.Dir, baselineFile))
-	if o.Scope != nil && baselineErr == nil {
-		opts.Ratchet, mode = true, "ratchet against "+baselineFile
-	} else {
-		opts.MinPercent, opts.ExemptGlobs = o.Set.Coverage.MinPercent, o.Set.Coverage.Exclude
-		if opts.MinPercent <= 0 {
-			return Check{Name: "coverage", Status: Skipped, Summary: "the directives set no coverage floor"}
-		}
-	}
-	res, err := coverage.Run(ctx, opts)
-	if err != nil {
-		return failed("coverage", err)
-	}
-	findings := coverageFindings(res, opts.Ratchet)
-	sort.Strings(findings)
-	return verdict("coverage", fmt.Sprintf("%d packages measured against a %s", res.TotalPackages, mode), findings)
-}
-
-// coverageFindings describes each package that fell short, or says the tests failed when none did.
-func coverageFindings(res *coverage.Result, ratchet bool) []string {
-	var findings []string
-	for _, off := range res.Offenders {
-		if ratchet {
-			findings = append(findings, fmt.Sprintf("%s: %.1f%%, it was %.1f%%", off.Package, off.CurrentPct, off.BaselinePct))
-		} else {
-			findings = append(findings, fmt.Sprintf("%s: %.1f%%", off.Package, off.CurrentPct))
-		}
-	}
-	if len(findings) == 0 && !res.Passed {
-		findings = []string{"the tests did not pass"}
-	}
-	return findings
-}
-
-// coveragePackages are the `go test` arguments to measure: the whole module, or the packages a change touched
-// that still exist.
-func coveragePackages(o Options) []string {
-	if o.Scope == nil {
-		return []string{"./..."}
-	}
-	return existingPackages(o.Dir, changedGoPackages(o.Scope))
-}
-
-// existingPackages keeps the `go test` arguments whose directory still exists: a package the change deleted has
-// nothing to measure, and `go test` fails on it.
-func existingPackages(dir string, packages []string) []string {
-	var out []string
-	for _, p := range packages {
-		if info, err := os.Stat(filepath.Join(dir, filepath.FromSlash(p))); err == nil && info.IsDir() {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-// changedGoPackages lists the packages (as `go test` arguments) holding Go files the change touched.
-func changedGoPackages(s *Scope) []string {
-	seen := map[string]bool{}
-	for _, f := range s.Files() {
-		if strings.HasSuffix(f, ".go") {
-			seen["./"+filepath.ToSlash(filepath.Dir(f))] = true
-		}
-	}
-	out := make([]string, 0, len(seen))
-	for p := range seen {
-		out = append(out, p)
-	}
-	sort.Strings(out)
-	return out
-}

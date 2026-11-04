@@ -3,6 +3,8 @@ package gate
 import (
 	"context"
 	"errors"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -102,16 +104,22 @@ func TestCoverageIsSkippedOrFailedWhenItCannotRun(t *testing.T) {
 	if c := coverageOf(Options{Dir: dir, Set: off, CoverageRunner: runner("", nil, args)}); c.Status != Skipped || !strings.Contains(c.Summary, "no coverage floor") {
 		t.Errorf("%+v", c)
 	}
-	if c := coverageOf(Options{Dir: t.TempDir(), Set: directive.Defaults()}); c.Status != Skipped || !strings.Contains(c.Summary, "not a Go module") {
+	if c := coverageOf(Options{Dir: t.TempDir(), Set: directive.Defaults()}); c.Status != Skipped || !strings.Contains(c.Summary, "no Go module") {
 		t.Errorf("%+v", c)
 	}
+}
 
+func TestCoverageFailsWhenTheGoTestsFail(t *testing.T) {
+	dir, args := goProject(t)
 	failing := "FAIL\tmod/pkg/a\t0.1s\n"
 	c := coverageOf(Options{Dir: dir, Set: directive.Defaults(), CoverageRunner: runner(failing, errors.New("exit status 1"), args)})
 	if c.Status != Fail || !reflect.DeepEqual(c.Findings, []string{"the tests did not pass"}) {
 		t.Errorf("tests that fail fail the check: %+v", c)
 	}
+}
 
+func TestCoverageIsAnErrorWhenTheBaselineIsBroken(t *testing.T) {
+	dir, args := goProject(t)
 	write(t, dir, ".github/coverage_baseline.json", "{not json")
 	scope := &Scope{lines: map[string][][2]int{"pkg/b/b.go": nil}}
 	if c := coverageOf(Options{Dir: dir, Set: directive.Defaults(), Scope: scope, CoverageRunner: runner(goTestOutput, nil, args)}); c.Status != Error || !strings.Contains(c.Summary, "baseline") {
@@ -146,5 +154,158 @@ func TestCoverageRunsTheRealGoTestWhenNoRunnerIsGiven(t *testing.T) {
 	write(t, dir, "q.go", "package probe\n\nfunc Sub(a, b int) int { return a - b }\n")
 	if c := coverageOf(Options{Dir: dir, Set: directive.Defaults()}); c.Status != Fail || len(c.Findings) != 1 {
 		t.Errorf("an uncovered function breaks it: %+v", c)
+	}
+}
+
+// stackRun records the command and directory a component's coverage run used and answers with out and err.
+func stackRun(out string, err error, got *[]string) CommandRunner {
+	return func(_ context.Context, dir, name string, a ...string) ([]byte, error) {
+		*got = append([]string{dir, name}, a...)
+		return []byte(out), err
+	}
+}
+
+func rustProject(t *testing.T, workspace bool) string {
+	t.Helper()
+	dir := t.TempDir()
+	manifest := "[package]\nname = \"x\"\n"
+	if workspace {
+		manifest = "[workspace]\nmembers = []\n"
+	}
+	write(t, dir, "Cargo.toml", manifest)
+	return dir
+}
+
+func TestCoverageRunsCargoLlvmCovForARustComponent(t *testing.T) {
+	var got []string
+	dir := rustProject(t, false)
+	c := coverageOf(Options{Dir: dir, Set: directive.Defaults(), CoverageRunner: stackRun("", nil, &got)})
+	want := []string{dir, "cargo", "llvm-cov", "--fail-under-lines", "100"}
+	if c.Status != Pass || !reflect.DeepEqual(got, want) || !strings.Contains(c.Summary, "rust . at or above 100%") {
+		t.Errorf("%+v ran %v, want %v", c, got, want)
+	}
+	ws := rustProject(t, true)
+	coverageOf(Options{Dir: ws, Set: directive.Defaults(), CoverageRunner: stackRun("", nil, &got)})
+	if !reflect.DeepEqual(got, []string{ws, "cargo", "llvm-cov", "--workspace", "--fail-under-lines", "100"}) {
+		t.Errorf("a workspace is measured whole: %v", got)
+	}
+}
+
+func TestCoverageRunsPytestCovForAPythonComponent(t *testing.T) {
+	var got []string
+	dir := t.TempDir()
+	write(t, dir, "pyproject.toml", "[project]\nname = \"x\"\n")
+	write(t, dir, "tests/test_x.py", "def test_x(): pass\n")
+	set := directive.Defaults()
+	set.Coverage.MinPercent = 95.5
+	c := coverageOf(Options{Dir: dir, Set: set, CoverageRunner: stackRun("", nil, &got)})
+	want := []string{dir, "uv", "run", "--with", "pytest-cov", "pytest", "--cov", "--cov-fail-under=95.5"}
+	if c.Status != Pass || !reflect.DeepEqual(got, want) {
+		t.Errorf("%+v ran %v, want %v", c, got, want)
+	}
+}
+
+func TestCoverageFailsAComponentBelowTheFloorWithTheEndOfItsOutput(t *testing.T) {
+	var got []string
+	dir := rustProject(t, false)
+	out := "Compiling x\nFinished\nTotal 80%\nerror: coverage 80.00% < required 100.00%\n"
+	c := coverageOf(Options{Dir: dir, Set: directive.Defaults(), CoverageRunner: stackRun(out, errors.New("exit status 1"), &got)})
+	if c.Status != Fail || len(c.Findings) != 1 || !strings.Contains(c.Findings[0], "coverage 80.00% < required 100.00%") {
+		t.Errorf("%+v", c)
+	}
+}
+
+func TestCoverageIsAnErrorWhenTheToolIsMissing(t *testing.T) {
+	var got []string
+	dir := rustProject(t, false)
+	for name, run := range map[string]CommandRunner{
+		"cargo subcommand": stackRun("error: no such command: `llvm-cov`", errors.New("exit status 101"), &got),
+		"binary":           stackRun("", &exec.Error{Name: "cargo", Err: exec.ErrNotFound}, &got),
+	} {
+		c := coverageOf(Options{Dir: dir, Set: directive.Defaults(), CoverageRunner: run})
+		if c.Status != Error || !strings.Contains(c.Advice, "cargo install cargo-llvm-cov") {
+			t.Errorf("%s: a tool that cannot run is not a skip: %+v", name, c)
+		}
+	}
+	py := t.TempDir()
+	write(t, py, "pyproject.toml", "[project]\nname = \"x\"\n")
+	write(t, py, "tests/test_x.py", "def test_x(): pass\n")
+	c := coverageOf(Options{Dir: py, Set: directive.Defaults(), CoverageRunner: stackRun("", &exec.Error{Name: "uv", Err: exec.ErrNotFound}, &got)})
+	if c.Status != Error || !strings.Contains(c.Advice, "install uv") {
+		t.Errorf("%+v", c)
+	}
+}
+
+func TestCoverageOfAComponentIsSkippedWhenTheProjectOrTheChangeSaysSo(t *testing.T) {
+	var got []string
+	dir := rustProject(t, false)
+	write(t, dir, ".github/dendrite/pipeline.yml", "skip_coverage_floor: true\n")
+	c := coverageOf(Options{Dir: dir, Set: directive.Defaults(), CoverageRunner: stackRun("", nil, &got)})
+	if c.Status != Skipped || !strings.Contains(c.Summary, "its own coverage ratchet") || got != nil {
+		t.Errorf("a project with its own ratchet is not measured: %+v ran %v", c, got)
+	}
+
+	other := t.TempDir()
+	elsewhere := &Scope{lines: map[string][][2]int{"docs/readme.md": nil}}
+	sub := filepath.Join(other, "crates")
+	write(t, sub, "Cargo.toml", "[package]\nname = \"y\"\n")
+	c = coverageOf(Options{Dir: other, Set: directive.Defaults(), Scope: elsewhere, CoverageRunner: stackRun("", nil, &got)})
+	if got != nil {
+		t.Errorf("a change that touched no file of the crate does not run it: ran %v, %+v", got, c)
+	}
+	touched := &Scope{lines: map[string][][2]int{"crates/src/lib.rs": nil}}
+	c = coverageOf(Options{Dir: other, Set: directive.Defaults(), Scope: touched, CoverageRunner: stackRun("", nil, &got)})
+	if c.Status != Pass || got[0] != sub {
+		t.Errorf("a change that touched the crate runs it there: %+v ran %v", c, got)
+	}
+
+	off := directive.Defaults()
+	off.Coverage.MinPercent = 0
+	got = nil
+	c = coverageOf(Options{Dir: rustProject(t, false), Set: off, CoverageRunner: stackRun("", nil, &got)})
+	if c.Status != Skipped || got != nil {
+		t.Errorf("without a floor nothing is measured: %+v", c)
+	}
+}
+
+func TestCoverageRejectsABrokenPipelineExtension(t *testing.T) {
+	dir := rustProject(t, false)
+	write(t, dir, ".github/dendrite/pipeline.yml", "nonsense: [")
+	if c := coverageOf(Options{Dir: dir, Set: directive.Defaults()}); c.Status != Error {
+		t.Errorf("%+v", c)
+	}
+}
+
+func TestMergeChecksRanksErrorOverFailOverPassOverSkip(t *testing.T) {
+	skip := Check{Status: Skipped, Summary: "s"}
+	pass := Check{Status: Pass, Summary: "p"}
+	fail := Check{Status: Fail, Summary: "f", Findings: []string{"b", "a"}, Advice: "fix"}
+	bad := Check{Status: Error, Summary: "e"}
+	for name, tc := range map[string]struct {
+		parts   []Check
+		status  Status
+		summary string
+	}{
+		"all skipped": {[]Check{skip, skip}, Skipped, "s; s"},
+		"pass":        {[]Check{skip, pass}, Pass, "p"},
+		"fail":        {[]Check{pass, fail, skip}, Fail, "p; f"},
+		"error":       {[]Check{fail, bad, pass}, Error, "f; e; p"},
+	} {
+		got := mergeChecks("coverage", tc.parts)
+		if got.Status != tc.status || got.Summary != tc.summary {
+			t.Errorf("%s: %+v", name, got)
+		}
+	}
+	got := mergeChecks("coverage", []Check{fail})
+	if !reflect.DeepEqual(got.Findings, []string{"a", "b"}) || got.Advice != "fix" {
+		t.Errorf("findings are sorted and advice kept: %+v", got)
+	}
+}
+
+func TestCoverageRunsTheRealToolsWithoutARunnerAndFindsThemMissing(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	c := coverageOf(Options{Dir: rustProject(t, false), Set: directive.Defaults()})
+	if c.Status != Error || !strings.Contains(c.Summary, "cargo cannot run") {
+		t.Errorf("%+v", c)
 	}
 }
