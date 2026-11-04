@@ -176,12 +176,9 @@ func checkCoverage(ctx context.Context, o Options) Check {
 	if _, err := os.Stat(filepath.Join(o.Dir, "go.mod")); err != nil {
 		return Check{Name: "coverage", Status: Skipped, Summary: "not a Go module (coverage for other languages is not wired yet)"}
 	}
-	packages := []string{"./..."}
-	if o.Scope != nil {
-		packages = existingPackages(o.Dir, changedGoPackages(o.Scope))
-		if len(packages) == 0 {
-			return Check{Name: "coverage", Status: Skipped, Summary: "no Go package changed"}
-		}
+	packages := coveragePackages(o)
+	if len(packages) == 0 {
+		return Check{Name: "coverage", Status: Skipped, Summary: "no Go package changed"}
 	}
 	run := o.CoverageRunner
 	if run == nil {
@@ -215,6 +212,15 @@ func checkCoverage(ctx context.Context, o Options) Check {
 	}
 	sort.Strings(findings)
 	return verdict("coverage", fmt.Sprintf("%d packages measured against a %s", res.TotalPackages, mode), findings)
+}
+
+// coveragePackages are the `go test` arguments to measure: the whole module, or the packages a change touched
+// that still exist.
+func coveragePackages(o Options) []string {
+	if o.Scope == nil {
+		return []string{"./..."}
+	}
+	return existingPackages(o.Dir, changedGoPackages(o.Scope))
 }
 
 // existingPackages keeps the `go test` arguments whose directory still exists: a package the change deleted has
