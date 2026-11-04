@@ -130,6 +130,12 @@ func TestServer_Ping(t *testing.T) {
 }
 
 func TestServer_ToolsListAndCall(t *testing.T) {
+	srv := testServer_ToolsListAndCallStep1(t)
+	ok := testServer_ToolsListAndCallStep2(t, srv)
+	testServer_ToolsListAndCallStep3(t, srv, ok)
+}
+
+func testServer_ToolsListAndCallStep1(t *testing.T) *Server {
 	srv := NewServer(ServerConfig{})
 	srv.RegisterTool(Tool{
 		Name:        "echo_tool",
@@ -141,24 +147,24 @@ func TestServer_ToolsListAndCall(t *testing.T) {
 			Content: []ContentItem{{Type: "text", Text: "echo: " + msg}},
 		}, nil
 	})
+	return srv
+}
 
-	// 1. tools/list
+// testServer_ToolsListAndCallStep2: 1. tools/list
+func testServer_ToolsListAndCallStep2(t *testing.T, srv *Server) bool {
 	listReq := `{"jsonrpc": "2.0", "id": 2, "method": "tools/list"}`
-	listResp := srv.HandleRequest(context.Background(), []byte(listReq))
-	if listResp == nil || listResp.Error != nil {
-		t.Fatalf("tools/list failed: %v", listResp)
-	}
+	listResp := mcptest.MustHandle(t, srv, listReq, "tools/list failed")
 	toolsRes, ok := listResp.Result.(ListToolsResult)
 	if !ok || len(toolsRes.Tools) != 1 || toolsRes.Tools[0].Name != "echo_tool" {
 		t.Fatalf("unexpected tools result: %v", listResp.Result)
 	}
+	return ok
+}
 
-	// 2. tools/call
+// testServer_ToolsListAndCallStep3: 2. tools/call
+func testServer_ToolsListAndCallStep3(t *testing.T, srv *Server, ok bool) {
 	callReq := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "echo_tool", "arguments": {"msg": "hello mcp"}}}`
-	callResp := srv.HandleRequest(context.Background(), []byte(callReq))
-	if callResp == nil || callResp.Error != nil {
-		t.Fatalf("tools/call failed: %v", callResp)
-	}
+	callResp := mcptest.MustHandle(t, srv, callReq, "tools/call failed")
 	callRes, ok := callResp.Result.(*CallToolResult)
 	if !ok {
 		t.Fatalf("expected *CallToolResult, got: %T", callResp.Result)
@@ -266,10 +272,7 @@ func TestServer_ToolHandlerError(t *testing.T) {
 	})
 
 	req := `{"jsonrpc": "2.0", "id": 100, "method": "tools/call", "params": {"name": "failing_tool"}}`
-	resp := srv.HandleRequest(context.Background(), []byte(req))
-	if resp == nil {
-		t.Fatal("expected response")
-	}
+	resp := mcptest.RequireResponse(t, srv, req, "expected response")
 	res, ok := resp.Result.(CallToolResult)
 	if !ok || !res.IsError || len(res.Content) == 0 || !strings.Contains(res.Content[0].Text, "simulated tool failure") {
 		t.Fatalf("expected CallToolResult with error, got: %#v", resp.Result)
@@ -536,6 +539,13 @@ func TestNewSynapseServerUnknownID(t *testing.T) {
 }
 
 func TestSynapseInfo(t *testing.T) {
+	st, dirs, s, call := testSynapseInfoStep1(t)
+	members := testSynapseInfoStep2(t, call)
+	testSynapseInfoStep3(t, dirs, call, members)
+	testSynapseInfoStep4(t, st, s)
+}
+
+func testSynapseInfoStep1(t *testing.T) (*synapse.Store, map[string]string, *Server, func() map[string]interface{}) {
 	st, dirs := synapseFixture(t)
 	s, err := NewSynapseServer(SynapseScope{Store: st, ID: "web-api"}, "test")
 	if err != nil {
@@ -554,7 +564,10 @@ func TestSynapseInfo(t *testing.T) {
 		out["isError"] = res.IsError
 		return out
 	}
+	return st, dirs, s, call
+}
 
+func testSynapseInfoStep2(t *testing.T, call func() map[string]interface{}) []interface{} {
 	out := call()
 	if out["id"] != "web-api" || out["state"] != "active" {
 		t.Fatalf("unexpected info: %v", out)
@@ -563,8 +576,11 @@ func TestSynapseInfo(t *testing.T) {
 	if members[0].(map[string]interface{})["status"] != "OK" {
 		t.Fatalf("member status = %v", members[0])
 	}
+	return members
+}
 
-	// Health is re-read mcptest.On every call.
+// testSynapseInfoStep3: Health is re-read mcptest.On every call.
+func testSynapseInfoStep3(t *testing.T, dirs map[string]string, call func() map[string]interface{}, members []interface{}) {
 	if err := os.RemoveAll(dirs["web"]); err != nil {
 		t.Fatal(err)
 	}
@@ -572,8 +588,10 @@ func TestSynapseInfo(t *testing.T) {
 	if members[1].(map[string]interface{})["status"] != "MISSING" {
 		t.Fatalf("web status after removal = %v", members[1])
 	}
+}
 
-	// Manifest deleted under a running server -> tool-level error, not a crash.
+// testSynapseInfoStep4: Manifest deleted under a running server -> tool-level error, not a crash.
+func testSynapseInfoStep4(t *testing.T, st *synapse.Store, s *Server) {
 	if err := st.Delete("web-api"); err != nil {
 		t.Fatal(err)
 	}
@@ -719,11 +737,21 @@ func TestSynapseSearchAnswersWithHits(t *testing.T) {
 }
 
 func TestSynapsePeersToolHandlesEveryRepositoryShape(t *testing.T) {
+	home, srv := testSynapsePeersToolHandlesEveryRepositoryShapeStep1(t)
+	identified := testSynapsePeersToolHandlesEveryRepositoryShapeStep2(t, srv)
+	testSynapsePeersToolHandlesEveryRepositoryShapeStep3(t, home, srv, identified)
+	testSynapsePeersToolHandlesEveryRepositoryShapeStep4(t, srv, identified)
+}
+
+func testSynapsePeersToolHandlesEveryRepositoryShapeStep1(t *testing.T) (string, *Server) {
 	home := t.TempDir()
 	t.Setenv("DENDRITE_HOME", home)
 	srv := NewServer(ServerConfig{})
 	RegisterSynapsePeersTool(srv)
+	return home, srv
+}
 
+func testSynapsePeersToolHandlesEveryRepositoryShapeStep2(t *testing.T, srv *Server) string {
 	if text, isErr := mcptest.CallTool(t, srv, "dendrite_synapse_peers", `{"dir":"`+t.TempDir()+`"}`); !isErr || !strings.Contains(text, "not inside a git repository") {
 		t.Errorf("outside a repository: %q (error %v)", text, isErr)
 	}
@@ -734,14 +762,19 @@ func TestSynapsePeersToolHandlesEveryRepositoryShape(t *testing.T) {
 	if text, isErr := mcptest.CallTool(t, srv, "dendrite_synapse_peers", `{"dir":"`+identified+`"}`); isErr || strings.TrimSpace(text) != "[]" {
 		t.Errorf("an identified repository with no synapse: %q (error %v)", text, isErr)
 	}
+	return identified
+}
 
+func testSynapsePeersToolHandlesEveryRepositoryShapeStep3(t *testing.T, home string, srv *Server, identified string) {
 	if err := os.WriteFile(filepath.Join(home, "synapses"), []byte("x"), 0o644); err == nil {
-		// DefaultStore keeps its manifests under home/synapses; a file there cannot be listed.
+
 		if text, isErr := mcptest.CallTool(t, srv, "dendrite_synapse_peers", `{"dir":"`+identified+`"}`); !isErr || !strings.Contains(text, "listing peers") {
 			t.Errorf("an unreadable store: %q (error %v)", text, isErr)
 		}
 	}
+}
 
+func testSynapsePeersToolHandlesEveryRepositoryShapeStep4(t *testing.T, srv *Server, identified string) {
 	t.Setenv("DENDRITE_HOME", "")
 	t.Setenv("HOME", "")
 	if text, isErr := mcptest.CallTool(t, srv, "dendrite_synapse_peers", `{"dir":"`+identified+`"}`); !isErr || !strings.Contains(text, "opening the synapse store") {

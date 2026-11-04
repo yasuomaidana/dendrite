@@ -228,10 +228,7 @@ func TestTools_Perf(t *testing.T) {
 
 	// 1. dendrite_bench_run mode "stress"
 	stressReq := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_bench_run", "arguments": {"mode": "stress", "virtual_users": 2}}}`
-	stressResp := srv.HandleRequest(context.Background(), []byte(stressReq))
-	if stressResp == nil || stressResp.Error != nil {
-		t.Fatalf("bench_run stress failed: %v", stressResp)
-	}
+	mcptest.MustHandle(t, srv, stressReq, "bench_run stress failed")
 
 	// 2. dendrite_bench_run mode "inference" with httptest server
 	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -270,25 +267,16 @@ func TestTools_Docusaurus(t *testing.T) {
 
 	// 1. dendrite_docusaurus_generate
 	genReq := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_docusaurus_generate", "arguments": {"docs_dir": %q, "target_dir": %q, "title": "My Site", "port": 3000, "sharing_tier": "federated"}}}`, docsDir, siteDir)
-	genResp := srv.HandleRequest(context.Background(), []byte(genReq))
-	if genResp == nil || genResp.Error != nil {
-		t.Fatalf("docusaurus_generate failed: %v", genResp)
-	}
+	mcptest.MustHandle(t, srv, genReq, "docusaurus_generate failed")
 
 	// 2. dendrite_docusaurus_share
 	bundlePath := filepath.Join(tmpDir, "bundle.tar.gz")
 	shareReq := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_docusaurus_share", "arguments": {"site_dir": %q, "bundle_path": %q}}}`, siteDir, bundlePath)
-	shareResp := srv.HandleRequest(context.Background(), []byte(shareReq))
-	if shareResp == nil || shareResp.Error != nil {
-		t.Fatalf("docusaurus_share failed: %v", shareResp)
-	}
+	mcptest.MustHandle(t, srv, shareReq, "docusaurus_share failed")
 
 	// 3. dendrite_docusaurus_audit
 	auditReq := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_docusaurus_audit", "arguments": {"project_root": %q, "docs_dir": %q}}}`, tmpDir, docsDir)
-	auditResp := srv.HandleRequest(context.Background(), []byte(auditReq))
-	if auditResp == nil || auditResp.Error != nil {
-		t.Fatalf("docusaurus_audit failed: %v", auditResp)
-	}
+	mcptest.MustHandle(t, srv, auditReq, "docusaurus_audit failed")
 }
 
 func TestTools_Triage(t *testing.T) {
@@ -297,10 +285,7 @@ func TestTools_Triage(t *testing.T) {
 
 	// 1. Missing prompt (error)
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_local_agent_triage", "arguments": {}}}`
-	resp1 := srv.HandleRequest(context.Background(), []byte(req1))
-	if res, ok := resp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing prompt in triage, got: %#v", resp1)
-	}
+	mcptest.ExpectToolError(t, srv, req1, "expected error for missing prompt in triage")
 
 	// 2. Valid triage across force_tier options and engines
 	tiers := []string{"local", "hybrid", "cloud"}
@@ -378,15 +363,30 @@ func TestAnalyzeTriggerReportsWhyAChunkCannotRun(t *testing.T) {
 }
 
 func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
+	srv, registered := testSchedulerTools_RegistrationAndExecutionStep1(t)
+	expectedTools := testSchedulerTools_RegistrationAndExecutionStep2(t)
+	ctx := testSchedulerTools_RegistrationAndExecutionStep3(t, registered, expectedTools)
+	policyHandler, err := testSchedulerTools_RegistrationAndExecutionStep4(t, srv, ctx)
+	testSchedulerTools_RegistrationAndExecutionStep5(t, ctx, policyHandler, err)
+	testSchedulerTools_RegistrationAndExecutionStep6(t, srv, ctx, err)
+	triggerHandler := testSchedulerTools_RegistrationAndExecutionStep7(t, srv, ctx, err)
+	testSchedulerTools_RegistrationAndExecutionStep8(t, ctx, err, triggerHandler)
+	testSchedulerTools_RegistrationAndExecutionStep9(t, ctx, err, triggerHandler)
+	testSchedulerTools_RegistrationAndExecutionStep10(t, srv, ctx, err)
+	testSchedulerTools_RegistrationAndExecutionStep11(t, srv, ctx, err)
+}
+
+func testSchedulerTools_RegistrationAndExecutionStep1(t *testing.T) (*Server, map[string]bool) {
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{})
-
-	// Verify tool registration
 	registered := make(map[string]bool)
 	for _, tool := range srv.ListTools() {
 		registered[tool.Name] = true
 	}
+	return srv, registered
+}
 
+func testSchedulerTools_RegistrationAndExecutionStep2(t *testing.T) []string {
 	expectedTools := []string{
 		"dendrite_analyze_policy",
 		"dendrite_analyze_status",
@@ -394,16 +394,21 @@ func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
 		"dendrite_analyze_switch",
 		"dendrite_tokens_status",
 	}
+	return expectedTools
+}
 
+func testSchedulerTools_RegistrationAndExecutionStep3(t *testing.T, registered map[string]bool, expectedTools []string) context.Context {
 	for _, toolName := range expectedTools {
 		if !registered[toolName] {
 			t.Errorf("expected tool %s to be registered", toolName)
 		}
 	}
-
 	ctx := context.Background()
+	return ctx
+}
 
-	// 1. Test dendrite_analyze_policy query
+// testSchedulerTools_RegistrationAndExecutionStep4: 1. Test dendrite_analyze_policy query
+func testSchedulerTools_RegistrationAndExecutionStep4(t *testing.T, srv *Server, ctx context.Context) (ToolHandler, error) {
 	policyHandler, _ := srv.Handler("dendrite_analyze_policy")
 	res, err := policyHandler(ctx, map[string]interface{}{})
 	if err != nil {
@@ -412,8 +417,11 @@ func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
 	if len(res.Content) == 0 || !strings.Contains(res.Content[0].Text, "night_window") {
 		t.Errorf("expected night_window in policy response: %+v", res.Content)
 	}
+	return policyHandler, err
+}
 
-	// 2. Test dendrite_analyze_policy update
+// testSchedulerTools_RegistrationAndExecutionStep5: 2. Test dendrite_analyze_policy update
+func testSchedulerTools_RegistrationAndExecutionStep5(t *testing.T, ctx context.Context, policyHandler ToolHandler, err error) {
 	resUpdate, err := policyHandler(ctx, map[string]interface{}{
 		"night_window":        "22:00-05:00",
 		"weekly_reset":        "MON 00:00",
@@ -428,8 +436,10 @@ func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
 	if !strings.Contains(resUpdate.Content[0].Text, `"updated": true`) {
 		t.Errorf("expected updated: true in response: %s", resUpdate.Content[0].Text)
 	}
+}
 
-	// 3. Test dendrite_analyze_status
+// testSchedulerTools_RegistrationAndExecutionStep6: 3. Test dendrite_analyze_status
+func testSchedulerTools_RegistrationAndExecutionStep6(t *testing.T, srv *Server, ctx context.Context, err error) {
 	statusHandler, _ := srv.Handler("dendrite_analyze_status")
 	resStatus, err := statusHandler(ctx, map[string]interface{}{
 		"remaining_quota": 0.85,
@@ -440,8 +450,10 @@ func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
 	if len(resStatus.Content) == 0 || !strings.Contains(resStatus.Content[0].Text, "active_tier") {
 		t.Errorf("expected active_tier in status response: %+v", resStatus.Content)
 	}
+}
 
-	// 4. Test dendrite_analyze_trigger
+// testSchedulerTools_RegistrationAndExecutionStep7: 4. Test dendrite_analyze_trigger
+func testSchedulerTools_RegistrationAndExecutionStep7(t *testing.T, srv *Server, ctx context.Context, err error) ToolHandler {
 	triggerHandler, _ := srv.Handler("dendrite_analyze_trigger")
 	resTrigger, err := triggerHandler(ctx, map[string]interface{}{
 		"chunk_id": "pkg/store/store.go",
@@ -452,8 +464,11 @@ func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
 	if len(resTrigger.Content) == 0 || !strings.Contains(resTrigger.Content[0].Text, "chunk-") && !strings.Contains(resTrigger.Content[0].Text, "pkg/store/store.go") {
 		t.Errorf("expected chunk in trigger response: %+v", resTrigger.Content)
 	}
+	return triggerHandler
+}
 
-	// 5. Test dendrite_analyze_trigger with simulated sprint
+// testSchedulerTools_RegistrationAndExecutionStep8: 5. Test dendrite_analyze_trigger with simulated sprint
+func testSchedulerTools_RegistrationAndExecutionStep8(t *testing.T, ctx context.Context, err error, triggerHandler ToolHandler) {
 	resSprint, err := triggerHandler(ctx, map[string]interface{}{
 		"chunk_id":        "pkg/ast/parser.go",
 		"simulate_sprint": true,
@@ -464,8 +479,10 @@ func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
 	if !strings.Contains(resSprint.Content[0].Text, "CLOUD_SPRINT") {
 		t.Errorf("expected CLOUD_SPRINT in simulated sprint trigger response: %s", resSprint.Content[0].Text)
 	}
+}
 
-	// 6. Test dendrite_analyze_trigger with simulated night
+// testSchedulerTools_RegistrationAndExecutionStep9: 6. Test dendrite_analyze_trigger with simulated night
+func testSchedulerTools_RegistrationAndExecutionStep9(t *testing.T, ctx context.Context, err error, triggerHandler ToolHandler) {
 	resNight, err := triggerHandler(ctx, map[string]interface{}{
 		"chunk_id":       "pkg/ast/parser.go",
 		"simulate_night": true,
@@ -476,8 +493,10 @@ func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
 	if !strings.Contains(resNight.Content[0].Text, "NIGHT_LOCAL") {
 		t.Errorf("expected NIGHT_LOCAL in simulated night trigger response: %s", resNight.Content[0].Text)
 	}
+}
 
-	// 7. Test dendrite_analyze_switch
+// testSchedulerTools_RegistrationAndExecutionStep10: 7. Test dendrite_analyze_switch
+func testSchedulerTools_RegistrationAndExecutionStep10(t *testing.T, srv *Server, ctx context.Context, err error) {
 	switchHandler, _ := srv.Handler("dendrite_analyze_switch")
 	resSwitch, err := switchHandler(ctx, map[string]interface{}{
 		"allow_zero": true,
@@ -489,8 +508,10 @@ func TestSchedulerTools_RegistrationAndExecution(t *testing.T) {
 	if !strings.Contains(resSwitch.Content[0].Text, `"allow_zero_drain": true`) {
 		t.Errorf("expected allow_zero_drain in switch response: %s", resSwitch.Content[0].Text)
 	}
+}
 
-	// 8. Test dendrite_tokens_status
+// testSchedulerTools_RegistrationAndExecutionStep11: 8. Test dendrite_tokens_status
+func testSchedulerTools_RegistrationAndExecutionStep11(t *testing.T, srv *Server, ctx context.Context, err error) {
 	tokensHandler, _ := srv.Handler("dendrite_tokens_status")
 	resTokens, err := tokensHandler(ctx, map[string]interface{}{
 		"model": "gemini-3.8-flash-high",
@@ -561,9 +582,21 @@ func TestContractTools_RegistrationAndExecution(t *testing.T) {
 }
 
 func TestREATools_RegistrationAndExecution(t *testing.T) {
+	srv := testREATools_RegistrationAndExecutionStep1(t)
+	handler, ctx := testREATools_RegistrationAndExecutionStep2(t, srv)
+	err := testREATools_RegistrationAndExecutionStep3(t, handler, ctx)
+	testREATools_RegistrationAndExecutionStep4(t, handler, ctx, err)
+	testREATools_RegistrationAndExecutionStep5(t, handler, ctx, err)
+	testREATools_RegistrationAndExecutionStep6(t, handler, ctx, err)
+}
+
+func testREATools_RegistrationAndExecutionStep1(t *testing.T) *Server {
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{DevStatus: "../../DEV_STATUS.md"})
+	return srv
+}
 
+func testREATools_RegistrationAndExecutionStep2(t *testing.T, srv *Server) (ToolHandler, context.Context) {
 	tools := srv.ListTools()
 	found := false
 	for _, tool := range tools {
@@ -575,15 +608,16 @@ func TestREATools_RegistrationAndExecution(t *testing.T) {
 	if !found {
 		t.Fatalf("expected dendrite_rea_showcase to be registered among tools")
 	}
-
 	handler, exists := srv.Handler("dendrite_rea_showcase")
 	if !exists {
 		t.Fatalf("handler for dendrite_rea_showcase not found")
 	}
-
 	ctx := context.Background()
+	return handler, ctx
+}
 
-	// 1. Execute summary mode
+// testREATools_RegistrationAndExecutionStep3: 1. Execute summary mode
+func testREATools_RegistrationAndExecutionStep3(t *testing.T, handler ToolHandler, ctx context.Context) error {
 	res, err := handler(ctx, map[string]interface{}{
 		"target": "all",
 		"format": "summary",
@@ -597,8 +631,11 @@ func TestREATools_RegistrationAndExecution(t *testing.T) {
 	if !strings.Contains(res.Content[0].Text, "REA Showcase Verification") {
 		t.Errorf("expected summary text, got: %s", res.Content[0].Text)
 	}
+	return err
+}
 
-	// 2. Execute json mode
+// testREATools_RegistrationAndExecutionStep4: 2. Execute json mode
+func testREATools_RegistrationAndExecutionStep4(t *testing.T, handler ToolHandler, ctx context.Context, err error) {
 	resJSON, err := handler(ctx, map[string]interface{}{
 		"target": "th04",
 		"format": "json",
@@ -609,8 +646,10 @@ func TestREATools_RegistrationAndExecution(t *testing.T) {
 	if len(resJSON.Content) != 1 || !strings.Contains(resJSON.Content[0].Text, `"target": "th04"`) {
 		t.Errorf("unexpected json result: %+v", resJSON.Content)
 	}
+}
 
-	// 3. Execute markdown mode
+// testREATools_RegistrationAndExecutionStep5: 3. Execute markdown mode
+func testREATools_RegistrationAndExecutionStep5(t *testing.T, handler ToolHandler, ctx context.Context, err error) {
 	resMD, err := handler(ctx, map[string]interface{}{
 		"target": "dxball",
 		"format": "markdown",
@@ -621,8 +660,10 @@ func TestREATools_RegistrationAndExecution(t *testing.T) {
 	if len(resMD.Content) != 1 || !strings.Contains(resMD.Content[0].Text, "# Open-Source REA Showcase") {
 		t.Errorf("unexpected markdown result: %+v", resMD.Content)
 	}
+}
 
-	// 4. Unknown target error handling
+// testREATools_RegistrationAndExecutionStep6: 4. Unknown target error handling
+func testREATools_RegistrationAndExecutionStep6(t *testing.T, handler ToolHandler, ctx context.Context, err error) {
 	_, err = handler(ctx, map[string]interface{}{
 		"target": "nonexistent_target_xyz",
 	})
@@ -720,15 +761,32 @@ func TestDendriteLocalAgentTriageTool(t *testing.T) {
 }
 
 func TestDocusaurusTools_RegistrationAndExecution(t *testing.T) {
+	srv := testDocusaurusTools_RegistrationAndExecutionStep1(t)
+	expectedTools := testDocusaurusTools_RegistrationAndExecutionStep2(t)
+	ctx := testDocusaurusTools_RegistrationAndExecutionStep3(t, srv, expectedTools)
+	tempSrc, err := testDocusaurusTools_RegistrationAndExecutionStep4(t)
+	tempDest := testDocusaurusTools_RegistrationAndExecutionStep5(t, tempSrc, err)
+	testDocusaurusTools_RegistrationAndExecutionStep6(t, srv, ctx, tempSrc, err, tempDest)
+	testDocusaurusTools_RegistrationAndExecutionStep7(t, srv, ctx, err, tempDest)
+	testDocusaurusTools_RegistrationAndExecutionStep8(t, srv, ctx, tempSrc, err)
+}
+
+func testDocusaurusTools_RegistrationAndExecutionStep1(t *testing.T) *Server {
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{DevStatus: "../../DEV_STATUS.md"})
+	return srv
+}
 
+func testDocusaurusTools_RegistrationAndExecutionStep2(t *testing.T) []string {
 	expectedTools := []string{
 		"dendrite_docusaurus_generate",
 		"dendrite_docusaurus_share",
 		"dendrite_docusaurus_audit",
 	}
+	return expectedTools
+}
 
+func testDocusaurusTools_RegistrationAndExecutionStep3(t *testing.T, srv *Server, expectedTools []string) context.Context {
 	tools := srv.ListTools()
 	for _, expected := range expectedTools {
 		found := false
@@ -742,25 +800,32 @@ func TestDocusaurusTools_RegistrationAndExecution(t *testing.T) {
 			t.Fatalf("expected tool %s to be registered", expected)
 		}
 	}
-
 	ctx := context.Background()
+	return ctx
+}
 
-	// Setup temporary dirs
+// testDocusaurusTools_RegistrationAndExecutionStep4: Setup temporary dirs
+func testDocusaurusTools_RegistrationAndExecutionStep4(t *testing.T) (string, error) {
 	tempSrc, err := os.MkdirTemp("", "mcp-docusaurus-src-*")
 	if err != nil {
 		t.Fatalf("failed to create temp src: %v", err)
 	}
-	defer os.RemoveAll(tempSrc)
+	t.Cleanup(func() { os.RemoveAll(tempSrc) })
+	return tempSrc, err
+}
 
+func testDocusaurusTools_RegistrationAndExecutionStep5(t *testing.T, tempSrc string, err error) string {
 	tempDest, err := os.MkdirTemp("", "mcp-docusaurus-dest-*")
 	if err != nil {
 		t.Fatalf("failed to create temp dest: %v", err)
 	}
-	defer os.RemoveAll(tempDest)
-
+	t.Cleanup(func() { os.RemoveAll(tempDest) })
 	_ = os.WriteFile(filepath.Join(tempSrc, "FEAT-100-test.md"), []byte("# FEAT-100\n## Acceptance Criteria\n- [x] pass\n"), 0644)
+	return tempDest
+}
 
-	// 1. Test dendrite_docusaurus_generate
+// testDocusaurusTools_RegistrationAndExecutionStep6: 1. Test dendrite_docusaurus_generate
+func testDocusaurusTools_RegistrationAndExecutionStep6(t *testing.T, srv *Server, ctx context.Context, tempSrc string, err error, tempDest string) {
 	genHandler, _ := srv.Handler("dendrite_docusaurus_generate")
 	resGen, err := genHandler(ctx, map[string]interface{}{
 		"docs_dir":     tempSrc,
@@ -775,8 +840,10 @@ func TestDocusaurusTools_RegistrationAndExecution(t *testing.T) {
 	if len(resGen.Content) == 0 || !strings.Contains(resGen.Content[0].Text, "site_directory") {
 		t.Errorf("unexpected generation result: %v", resGen.Content)
 	}
+}
 
-	// 2. Test dendrite_docusaurus_share
+// testDocusaurusTools_RegistrationAndExecutionStep7: 2. Test dendrite_docusaurus_share
+func testDocusaurusTools_RegistrationAndExecutionStep7(t *testing.T, srv *Server, ctx context.Context, err error, tempDest string) {
 	shareHandler, _ := srv.Handler("dendrite_docusaurus_share")
 	resShare, err := shareHandler(ctx, map[string]interface{}{
 		"site_dir": tempDest,
@@ -787,8 +854,10 @@ func TestDocusaurusTools_RegistrationAndExecution(t *testing.T) {
 	if len(resShare.Content) == 0 || !strings.Contains(resShare.Content[0].Text, "manifest_version") {
 		t.Errorf("unexpected share result: %v", resShare.Content)
 	}
+}
 
-	// 3. Test dendrite_docusaurus_audit
+// testDocusaurusTools_RegistrationAndExecutionStep8: 3. Test dendrite_docusaurus_audit
+func testDocusaurusTools_RegistrationAndExecutionStep8(t *testing.T, srv *Server, ctx context.Context, tempSrc string, err error) {
 	auditHandler, _ := srv.Handler("dendrite_docusaurus_audit")
 	resAudit, err := auditHandler(ctx, map[string]interface{}{
 		"project_root": tempSrc,
@@ -900,116 +969,126 @@ func TestQualityAuditReportsAScanThatCannotRun(t *testing.T) {
 }
 
 func TestTools_Store(t *testing.T) {
+	srv := testTools_StoreStep1(t)
+	testTools_StoreStep2(t, srv)
+	testTools_StoreStep3(t, srv)
+	testTools_StoreStep4(t, srv)
+	testTools_StoreStep5(t, srv)
+	testTools_StoreStep6(t, srv)
+	testTools_StoreStep7(t, srv)
+	testTools_StoreStep8(t, srv)
+}
+
+func testTools_StoreStep1(t *testing.T) *Server {
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{})
+	return srv
+}
 
-	// 1. dendrite_store_status
+// testTools_StoreStep2: 1. dendrite_store_status
+func testTools_StoreStep2(t *testing.T, srv *Server) {
 	stReq := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_store_status", "arguments": {"project": "proj-store"}}}`
-	stResp := srv.HandleRequest(context.Background(), []byte(stReq))
-	if stResp == nil || stResp.Error != nil {
-		t.Fatalf("store_status failed: %v", stResp)
-	}
+	mcptest.MustHandle(t, srv, stReq, "store_status failed")
+}
 
-	// 2. dendrite_store_commit_chunk (type: "file", is_final: false)
+// testTools_StoreStep3: 2. dendrite_store_commit_chunk (type: "file", is_final: false)
+func testTools_StoreStep3(t *testing.T, srv *Server) {
 	chunkReq1 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_store_commit_chunk", "arguments": {"project": "proj-store", "chunk_id": "chunk-1", "identifier": "main.go", "data": "package main", "type": "file", "is_final": false}}}`
-	chunkResp1 := srv.HandleRequest(context.Background(), []byte(chunkReq1))
-	if chunkResp1 == nil || chunkResp1.Error != nil {
-		t.Fatalf("commit_chunk 1 failed: %v", chunkResp1)
-	}
+	mcptest.MustHandle(t, srv, chunkReq1, "commit_chunk 1 failed")
+}
 
-	// 3. dendrite_store_commit_chunk (type: "", is_final: true)
+// testTools_StoreStep4: 3. dendrite_store_commit_chunk (type: "", is_final: true)
+func testTools_StoreStep4(t *testing.T, srv *Server) {
 	chunkReq2 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_store_commit_chunk", "arguments": {"project": "proj-store", "chunk_id": "chunk-2", "identifier": "helper.go", "data": "package helper", "is_final": true}}}`
-	chunkResp2 := srv.HandleRequest(context.Background(), []byte(chunkReq2))
-	if chunkResp2 == nil || chunkResp2.Error != nil {
-		t.Fatalf("commit_chunk 2 failed: %v", chunkResp2)
-	}
+	mcptest.MustHandle(t, srv, chunkReq2, "commit_chunk 2 failed")
+}
 
-	// 4. dendrite_store_query_partial
+// testTools_StoreStep5: 4. dendrite_store_query_partial
+func testTools_StoreStep5(t *testing.T, srv *Server) {
 	qpReq := `{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_store_query_partial", "arguments": {"project": "proj-store"}}}`
-	qpResp := srv.HandleRequest(context.Background(), []byte(qpReq))
-	if qpResp == nil || qpResp.Error != nil {
-		t.Fatalf("query_partial failed: %v", qpResp)
-	}
+	mcptest.MustHandle(t, srv, qpReq, "query_partial failed")
+}
 
-	// 5. dendrite_store_inspect
+// testTools_StoreStep6: 5. dendrite_store_inspect
+func testTools_StoreStep6(t *testing.T, srv *Server) {
 	inspReq := `{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "dendrite_store_inspect", "arguments": {"store_id": "proj-store"}}}`
-	inspResp := srv.HandleRequest(context.Background(), []byte(inspReq))
-	if inspResp == nil {
-		t.Fatal("expected response for store_inspect")
-	}
+	mcptest.RequireResponse(t, srv, inspReq, "expected response for store_inspect")
+}
 
-	// 6. dendrite_store_rm (force: false and force: true)
+// testTools_StoreStep7: 6. dendrite_store_rm (force: false and force: true)
+func testTools_StoreStep7(t *testing.T, srv *Server) {
 	rmReq1 := `{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "dendrite_store_rm", "arguments": {"store_id": "proj-store", "force": false}}}`
-	rmResp1 := srv.HandleRequest(context.Background(), []byte(rmReq1))
-	if rmResp1 == nil {
-		t.Fatal("expected response for store_rm force:false")
-	}
+	mcptest.RequireResponse(t, srv, rmReq1, "expected response for store_rm force:false")
+}
 
+func testTools_StoreStep8(t *testing.T, srv *Server) {
 	rmReq2 := `{"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "dendrite_store_rm", "arguments": {"store_id": "proj-store", "force": true}}}`
-	rmResp2 := srv.HandleRequest(context.Background(), []byte(rmReq2))
-	if rmResp2 == nil {
-		t.Fatal("expected response for store_rm force:true")
-	}
+	mcptest.RequireResponse(t, srv, rmReq2, "expected response for store_rm force:true")
 }
 
 func TestTools_Scheduler(t *testing.T) {
+	srv := testTools_SchedulerStep1(t)
+	testTools_SchedulerStep2(t, srv)
+	testTools_SchedulerStep3(t, srv)
+	testTools_SchedulerStep4(t, srv)
+	testTools_SchedulerStep5(t, srv)
+	testTools_SchedulerStep6(t, srv)
+	testTools_SchedulerStep7(t, srv)
+	testTools_SchedulerStep8(t, srv)
+	testTools_SchedulerStep9(t, srv)
+}
+
+func testTools_SchedulerStep1(t *testing.T) *Server {
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{})
+	return srv
+}
 
-	// 1. dendrite_analyze_policy: sprint_before_reset invalid duration error
+// testTools_SchedulerStep2: 1. dendrite_analyze_policy: sprint_before_reset invalid duration error
+func testTools_SchedulerStep2(t *testing.T, srv *Server) {
 	polReq1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_analyze_policy", "arguments": {"sprint_before_reset": "invalid-dur"}}}`
-	polResp1 := srv.HandleRequest(context.Background(), []byte(polReq1))
-	if res, ok := polResp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for invalid duration in policy, got: %#v", polResp1)
-	}
+	mcptest.ExpectToolError(t, srv, polReq1, "expected error for invalid duration in policy")
+}
 
-	// 2. dendrite_analyze_policy: valid options
+// testTools_SchedulerStep3: 2. dendrite_analyze_policy: valid options
+func testTools_SchedulerStep3(t *testing.T, srv *Server) {
 	polReq2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_analyze_policy", "arguments": {"night_window": "23:00-06:00", "weekly_reset": "SUN 23:59", "sprint_before_reset": "48h", "reserve_floor": 0.20, "allow_zero": true, "mode": "auto"}}}`
-	polResp2 := srv.HandleRequest(context.Background(), []byte(polReq2))
-	if polResp2 == nil || polResp2.Error != nil {
-		t.Fatalf("analyze_policy failed: %v", polResp2)
-	}
+	mcptest.MustHandle(t, srv, polReq2, "analyze_policy failed")
+}
 
-	// 3. dendrite_analyze_status
+// testTools_SchedulerStep4: 3. dendrite_analyze_status
+func testTools_SchedulerStep4(t *testing.T, srv *Server) {
 	statReq := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_analyze_status", "arguments": {"remaining_quota": 0.75}}}`
-	statResp := srv.HandleRequest(context.Background(), []byte(statReq))
-	if statResp == nil || statResp.Error != nil {
-		t.Fatalf("analyze_status failed: %v", statResp)
-	}
+	mcptest.MustHandle(t, srv, statReq, "analyze_status failed")
+}
 
-	// 4. dendrite_analyze_trigger: missing chunk_id error
+// testTools_SchedulerStep5: 4. dendrite_analyze_trigger: missing chunk_id error
+func testTools_SchedulerStep5(t *testing.T, srv *Server) {
 	trigReq1 := `{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_analyze_trigger", "arguments": {}}}`
-	trigResp1 := srv.HandleRequest(context.Background(), []byte(trigReq1))
-	if res, ok := trigResp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing chunk_id, got: %#v", trigResp1)
-	}
+	mcptest.ExpectToolError(t, srv, trigReq1, "expected error for missing chunk_id")
+}
 
-	// 5. dendrite_analyze_trigger: simulate_night and simulate_sprint
+// testTools_SchedulerStep6: 5. dendrite_analyze_trigger: simulate_night and simulate_sprint
+func testTools_SchedulerStep6(t *testing.T, srv *Server) {
 	trigReq2 := `{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "dendrite_analyze_trigger", "arguments": {"chunk_id": "chunk-101", "simulate_night": true}}}`
-	trigResp2 := srv.HandleRequest(context.Background(), []byte(trigReq2))
-	if trigResp2 == nil || trigResp2.Error != nil {
-		t.Fatalf("analyze_trigger simulate_night failed: %v", trigResp2)
-	}
+	mcptest.MustHandle(t, srv, trigReq2, "analyze_trigger simulate_night failed")
+}
 
+func testTools_SchedulerStep7(t *testing.T, srv *Server) {
 	trigReq3 := `{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "dendrite_analyze_trigger", "arguments": {"chunk_id": "chunk-102", "simulate_sprint": true}}}`
-	trigResp3 := srv.HandleRequest(context.Background(), []byte(trigReq3))
-	if trigResp3 == nil || trigResp3.Error != nil {
-		t.Fatalf("analyze_trigger simulate_sprint failed: %v", trigResp3)
-	}
+	mcptest.MustHandle(t, srv, trigReq3, "analyze_trigger simulate_sprint failed")
+}
 
-	// 6. dendrite_analyze_switch
+// testTools_SchedulerStep8: 6. dendrite_analyze_switch
+func testTools_SchedulerStep8(t *testing.T, srv *Server) {
 	swReq := `{"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "dendrite_analyze_switch", "arguments": {"allow_zero": true, "mode": "always"}}}`
-	swResp := srv.HandleRequest(context.Background(), []byte(swReq))
-	if swResp == nil || swResp.Error != nil {
-		t.Fatalf("analyze_switch failed: %v", swResp)
-	}
+	mcptest.MustHandle(t, srv, swReq, "analyze_switch failed")
+}
 
-	// 7. dendrite_tokens_status
+// testTools_SchedulerStep9: 7. dendrite_tokens_status
+func testTools_SchedulerStep9(t *testing.T, srv *Server) {
 	tokReq := `{"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "dendrite_tokens_status", "arguments": {"model": "gemini-3.8-flash-high", "probe": false}}}`
-	tokResp := srv.HandleRequest(context.Background(), []byte(tokReq))
-	if tokResp == nil || tokResp.Error != nil {
-		t.Fatalf("tokens_status failed: %v", tokResp)
-	}
+	mcptest.MustHandle(t, srv, tokReq, "tokens_status failed")
 }
 
 func TestTools_Contract(t *testing.T) {
@@ -1018,10 +1097,7 @@ func TestTools_Contract(t *testing.T) {
 
 	// 1. Missing schema_dirs error
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_contract_drift_check", "arguments": {}}}`
-	resp1 := srv.HandleRequest(context.Background(), []byte(req1))
-	if res, ok := resp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing schema_dirs, got: %#v", resp1)
-	}
+	mcptest.ExpectToolError(t, srv, req1, "expected error for missing schema_dirs")
 
 	// 2. Valid contract drift check
 	tmpDir := t.TempDir()
@@ -1030,112 +1106,119 @@ func TestTools_Contract(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(schemaDir, "test.proto"), []byte(`syntax = "proto3"; message Test { string id = 1; }`), 0644)
 
 	req2 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_contract_drift_check", "arguments": {"schema_dirs": [%q], "code_dirs": {"go": %q}}}}`, schemaDir, tmpDir)
-	resp2 := srv.HandleRequest(context.Background(), []byte(req2))
-	if resp2 == nil || resp2.Error != nil {
-		t.Fatalf("contract_drift_check failed: %v", resp2)
-	}
+	mcptest.MustHandle(t, srv, req2, "contract_drift_check failed")
 }
 
 func TestTools_Story(t *testing.T) {
+	srv := testTools_StoryStep1(t)
+	testTools_StoryStep2(t, srv)
+	testTools_StoryStep3(t, srv)
+	testTools_StoryStep4(t, srv)
+	testTools_StoryStep5(t, srv)
+	testTools_StoryStep6(t, srv)
+}
+
+func testTools_StoryStep1(t *testing.T) *Server {
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{})
+	return srv
+}
 
-	// 1. dendrite_story_fork: missing story_id
+// testTools_StoryStep2: 1. dendrite_story_fork: missing story_id
+func testTools_StoryStep2(t *testing.T, srv *Server) {
 	fReq1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_story_fork", "arguments": {"variants": ["v1", "v2"]}}}`
-	fResp1 := srv.HandleRequest(context.Background(), []byte(fReq1))
-	if res, ok := fResp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing story_id in story_fork, got: %#v", fResp1)
-	}
+	mcptest.ExpectToolError(t, srv, fReq1, "expected error for missing story_id in story_fork")
+}
 
-	// 2. dendrite_story_fork: < 2 variants
+// testTools_StoryStep3: 2. dendrite_story_fork: < 2 variants
+func testTools_StoryStep3(t *testing.T, srv *Server) {
 	fReq2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_story_fork", "arguments": {"story_id": "DEN-064", "variants": ["v1"]}}}`
-	fResp2 := srv.HandleRequest(context.Background(), []byte(fReq2))
-	if res, ok := fResp2.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for < 2 variants in story_fork, got: %#v", fResp2)
-	}
+	mcptest.ExpectToolError(t, srv, fReq2, "expected error for < 2 variants in story_fork")
+}
 
-	// 3. dendrite_story_benchmark: missing story_id
+// testTools_StoryStep4: 3. dendrite_story_benchmark: missing story_id
+func testTools_StoryStep4(t *testing.T, srv *Server) {
 	bReq1 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_story_benchmark", "arguments": {}}}`
-	bResp1 := srv.HandleRequest(context.Background(), []byte(bReq1))
-	if res, ok := bResp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing story_id in story_benchmark, got: %#v", bResp1)
-	}
+	mcptest.ExpectToolError(t, srv, bReq1, "expected error for missing story_id in story_benchmark")
+}
 
-	// 4. dendrite_story_resolve: missing story_id or winner
+// testTools_StoryStep5: 4. dendrite_story_resolve: missing story_id or winner
+func testTools_StoryStep5(t *testing.T, srv *Server) {
 	rReq1 := `{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_story_resolve", "arguments": {"story_id": "DEN-064"}}}`
-	rResp1 := srv.HandleRequest(context.Background(), []byte(rReq1))
-	if res, ok := rResp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing winner in story_resolve, got: %#v", rResp1)
-	}
+	mcptest.ExpectToolError(t, srv, rReq1, "expected error for missing winner in story_resolve")
+}
 
-	// 5. dendrite_story_abort: missing story_id
+// testTools_StoryStep6: 5. dendrite_story_abort: missing story_id
+func testTools_StoryStep6(t *testing.T, srv *Server) {
 	aReq1 := `{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "dendrite_story_abort", "arguments": {}}}`
-	aResp1 := srv.HandleRequest(context.Background(), []byte(aReq1))
-	if res, ok := aResp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing story_id in story_abort, got: %#v", aResp1)
-	}
+	mcptest.ExpectToolError(t, srv, aReq1, "expected error for missing story_id in story_abort")
 }
 
 func TestTools_Audit(t *testing.T) {
+	srv := testTools_AuditStep1(t)
+	testTools_AuditStep2(t, srv)
+	testTools_AuditStep3(t, srv)
+	testTools_AuditStep4(t, srv)
+	testTools_AuditStep5(t, srv)
+	testTools_AuditStep6(t, srv)
+	testTools_AuditStep7(t, srv)
+	testTools_AuditStep8(t, srv)
+	testTools_AuditStep9(t, srv)
+}
+
+func testTools_AuditStep1(t *testing.T) *Server {
 	chdirToScratchRepo(t)
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{})
+	return srv
+}
 
-	// 1. dendrite_vcs_guard (STANDARD and DEGRADED_BUDGET)
+// testTools_AuditStep2: 1. dendrite_vcs_guard (STANDARD and DEGRADED_BUDGET)
+func testTools_AuditStep2(t *testing.T, srv *Server) {
 	gReq1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_vcs_guard", "arguments": {"mode": "STANDARD"}}}`
-	gResp1 := srv.HandleRequest(context.Background(), []byte(gReq1))
-	if gResp1 == nil || gResp1.Error != nil {
-		t.Fatalf("vcs_guard STANDARD failed: %v", gResp1)
-	}
+	mcptest.MustHandle(t, srv, gReq1, "vcs_guard STANDARD failed")
+}
 
+func testTools_AuditStep3(t *testing.T, srv *Server) {
 	gReq2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_vcs_guard", "arguments": {"mode": "DEGRADED_BUDGET"}}}`
-	gResp2 := srv.HandleRequest(context.Background(), []byte(gReq2))
-	if gResp2 == nil || gResp2.Error != nil {
-		t.Fatalf("vcs_guard DEGRADED_BUDGET failed: %v", gResp2)
-	}
+	mcptest.MustHandle(t, srv, gReq2, "vcs_guard DEGRADED_BUDGET failed")
+}
 
-	// 2. dendrite_quality_audit: missing pkg error
+// testTools_AuditStep4: 2. dendrite_quality_audit: missing pkg error
+func testTools_AuditStep4(t *testing.T, srv *Server) {
 	qaReq1 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_quality_audit", "arguments": {}}}`
-	qaResp1 := srv.HandleRequest(context.Background(), []byte(qaReq1))
-	if res, ok := qaResp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing pkg, got: %#v", qaResp1)
-	}
+	mcptest.ExpectToolError(t, srv, qaReq1, "expected error for missing pkg")
+}
 
-	// 3. dendrite_quality_audit: valid
+// testTools_AuditStep5: 3. dendrite_quality_audit: valid
+func testTools_AuditStep5(t *testing.T, srv *Server) {
 	qaReq2 := `{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_quality_audit", "arguments": {"pkg": "pkg/mcpserver"}}}`
-	qaResp2 := srv.HandleRequest(context.Background(), []byte(qaReq2))
-	if qaResp2 == nil {
-		t.Fatal("expected response for quality_audit")
-	}
+	mcptest.RequireResponse(t, srv, qaReq2, "expected response for quality_audit")
+}
 
-	// 4. dendrite_audit_changes
+// testTools_AuditStep6: 4. dendrite_audit_changes
+func testTools_AuditStep6(t *testing.T, srv *Server) {
 	acReq := `{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "dendrite_audit_changes", "arguments": {"dry_run": true, "max_tokens": 2048, "model": "qwen3.8:27b"}}}`
-	acResp := srv.HandleRequest(context.Background(), []byte(acReq))
-	if acResp == nil {
-		t.Fatal("expected response for audit_changes")
-	}
+	mcptest.RequireResponse(t, srv, acReq, "expected response for audit_changes")
+}
 
-	// 5. dendrite_hitl_sync (offline: local Plane server and scripted gh)
+// testTools_AuditStep7: 5. dendrite_hitl_sync (offline: local Plane server and scripted gh)
+func testTools_AuditStep7(t *testing.T, srv *Server) {
 	offlineHITL(t)
 	hitlReq := `{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "dendrite_hitl_sync", "arguments": {}}}`
-	hitlResp := srv.HandleRequest(context.Background(), []byte(hitlReq))
-	if hitlResp == nil {
-		t.Fatal("expected response for hitl_sync")
-	}
+	mcptest.RequireResponse(t, srv, hitlReq, "expected response for hitl_sync")
+}
 
-	// 6. dendrite_remote_sync
+// testTools_AuditStep8: 6. dendrite_remote_sync
+func testTools_AuditStep8(t *testing.T, srv *Server) {
 	rsReq := `{"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "dendrite_remote_sync", "arguments": {"branch": "develop"}}}`
-	rsResp := srv.HandleRequest(context.Background(), []byte(rsReq))
-	if rsResp == nil {
-		t.Fatal("expected response for remote_sync")
-	}
+	mcptest.RequireResponse(t, srv, rsReq, "expected response for remote_sync")
+}
 
-	// 7. dendrite_github_sync
+// testTools_AuditStep9: 7. dendrite_github_sync
+func testTools_AuditStep9(t *testing.T, srv *Server) {
 	ghReq := `{"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "dendrite_github_sync", "arguments": {"repo": "yasuomaidana/dendrite"}}}`
-	ghResp := srv.HandleRequest(context.Background(), []byte(ghReq))
-	if ghResp == nil {
-		t.Fatal("expected response for github_sync")
-	}
+	mcptest.RequireResponse(t, srv, ghReq, "expected response for github_sync")
 }
 
 func TestTools_InferenceAndPenpot(t *testing.T) {
@@ -1144,31 +1227,19 @@ func TestTools_InferenceAndPenpot(t *testing.T) {
 
 	// 1. dendrite_inference_migrate_model: missing model error
 	mReq1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_inference_migrate_model", "arguments": {}}}`
-	mResp1 := srv.HandleRequest(context.Background(), []byte(mReq1))
-	if res, ok := mResp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing model, got: %#v", mResp1)
-	}
+	mcptest.ExpectToolError(t, srv, mReq1, "expected error for missing model")
 
 	// 2. dendrite_inference_migrate_model: valid
 	mReq2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_inference_migrate_model", "arguments": {"model": "qwen2.5:7b", "source_engine": "ollama", "target_engine": "oxillama", "delete_source": false, "dry_run": true}}}`
-	mResp2 := srv.HandleRequest(context.Background(), []byte(mReq2))
-	if mResp2 == nil {
-		t.Fatal("expected response for migrate_model")
-	}
+	mcptest.RequireResponse(t, srv, mReq2, "expected response for migrate_model")
 
 	// 3. dendrite_ui_penpot_sync: missing file error
 	pReq1 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_ui_penpot_sync", "arguments": {}}}`
-	pResp1 := srv.HandleRequest(context.Background(), []byte(pReq1))
-	if res, ok := pResp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing file, got: %#v", pResp1)
-	}
+	mcptest.ExpectToolError(t, srv, pReq1, "expected error for missing file")
 
 	// 4. dendrite_ui_penpot_sync: valid
 	pReq2 := `{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_ui_penpot_sync", "arguments": {"file": "Button.svelte", "ticket_id": "DEN-810", "dry_run": true, "comment_plane": false}}}`
-	pResp2 := srv.HandleRequest(context.Background(), []byte(pReq2))
-	if pResp2 == nil {
-		t.Fatal("expected response for ui_penpot_sync")
-	}
+	mcptest.RequireResponse(t, srv, pReq2, "expected response for ui_penpot_sync")
 }
 
 func TestTools_MigrateGreetingEnv(t *testing.T) {
@@ -1177,129 +1248,120 @@ func TestTools_MigrateGreetingEnv(t *testing.T) {
 
 	// 1. dendrite_service_move: missing target_host error
 	smReq1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_service_move", "arguments": {}}}`
-	smResp1 := srv.HandleRequest(context.Background(), []byte(smReq1))
-	if res, ok := smResp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing target_host, got: %#v", smResp1)
-	}
+	mcptest.ExpectToolError(t, srv, smReq1, "expected error for missing target_host")
 
 	// 2. dendrite_service_move: valid dry_run
 	smReq2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_service_move", "arguments": {"target_host": "127.0.0.1", "services": ["plane"], "ssh_port": 22, "target_ram_mb": 4096, "target_disk_gb": 500, "dry_run": true, "prune_local": false, "timeout_seconds": 60}}}`
-	smResp2 := srv.HandleRequest(context.Background(), []byte(smReq2))
-	if smResp2 == nil {
-		t.Fatal("expected response for service_move")
-	}
+	mcptest.RequireResponse(t, srv, smReq2, "expected response for service_move")
 
 	// 3. dendrite_service_plan
 	planReq := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_service_plan", "arguments": {"ram_mb": 4096, "disk_gb": 1000}}}`
-	planResp := srv.HandleRequest(context.Background(), []byte(planReq))
-	if planResp == nil || planResp.Error != nil {
-		t.Fatalf("service_plan failed: %v", planResp)
-	}
+	mcptest.MustHandle(t, srv, planReq, "service_plan failed")
 
 	// 4. dendrite_pcontext_greeting_generate
 	gReq := `{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_pcontext_greeting_generate", "arguments": {"topic": "Refactoring", "decision": "architecture", "milestone": "M1", "milestone_achieved": true, "event": "Launch", "days_until_event": 5, "unfinished_step": "test", "specific_challenge": "speed", "curiosity_angle": "wasm", "days_since_last_active": 2, "turn_count": 3, "high_stress": false, "low_pressure_hobby": true, "options": ["A", "B"], "recent_styles": ["G-01"]}}}`
-	gResp := srv.HandleRequest(context.Background(), []byte(gReq))
-	if gResp == nil || gResp.Error != nil {
-		t.Fatalf("greeting_generate failed: %v", gResp)
-	}
+	mcptest.MustHandle(t, srv, gReq, "greeting_generate failed")
 
 	// 5. dendrite_env_prepare (dry_run: true)
 	tmpDir := t.TempDir()
 	envReq := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "dendrite_env_prepare", "arguments": {"project_path": %q, "default_tool": "copilot", "enforce_cicd": true, "dry_run": true}}}`, tmpDir)
-	envResp := srv.HandleRequest(context.Background(), []byte(envReq))
-	if envResp == nil || envResp.Error != nil {
-		t.Fatalf("env_prepare failed: %v", envResp)
-	}
+	mcptest.MustHandle(t, srv, envReq, "env_prepare failed")
 }
 
 func TestTools_CanvasAndRAG(t *testing.T) {
-	srv := NewServer(ServerConfig{})
-	catalog.RegisterDefaultTools(srv, Dependencies{})
-
-	// 1. dendrite_canvas_action_dispatch: missing action error
-	cReq1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_canvas_action_dispatch", "arguments": {"prompt": "write test"}}}`
-	cResp1 := srv.HandleRequest(context.Background(), []byte(cReq1))
-	if res, ok := cResp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing action, got: %#v", cResp1)
-	}
-
-	// 2. dendrite_canvas_action_dispatch: valid
-	cReq2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_canvas_action_dispatch", "arguments": {"action": "WRITE_PLAN", "mode": "DRAFT", "title": "Test Plan", "prompt": "Outline tasks"}}}`
-	cResp2 := srv.HandleRequest(context.Background(), []byte(cReq2))
-	if cResp2 == nil || cResp2.Error != nil {
-		t.Fatalf("canvas action dispatch failed: %v", cResp2)
-	}
-
-	// 3. dendrite_canvas_penpot_bridge subactions
-	// relate
-	subReq1 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_canvas_penpot_bridge", "arguments": {"subaction": "relate", "ticket_id": "DEN-100", "feature_name": "Canvas", "file_path": "App.svelte"}}}`
-	subResp1 := srv.HandleRequest(context.Background(), []byte(subReq1))
-	if subResp1 == nil || subResp1.Error != nil {
-		t.Fatalf("penpot bridge relate failed: %v", subResp1)
-	}
-
-	// sync
-	subReq2 := `{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_canvas_penpot_bridge", "arguments": {"subaction": "sync", "ticket_id": "DEN-100", "file_path": "App.svelte", "dry_run": true}}}`
-	subResp2 := srv.HandleRequest(context.Background(), []byte(subReq2))
-	if subResp2 == nil || subResp2.Error != nil {
-		t.Fatalf("penpot bridge sync failed: %v", subResp2)
-	}
-
-	// update_state
-	subReq3 := `{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "dendrite_canvas_penpot_bridge", "arguments": {"subaction": "update_state", "ticket_id": "DEN-100", "target_state": "Done", "push_to_plane": false}}}`
-	subResp3 := srv.HandleRequest(context.Background(), []byte(subReq3))
-	if subResp3 == nil || subResp3.Error != nil {
-		t.Fatalf("penpot bridge update_state failed: %v", subResp3)
-	}
-
-	// list
-	subReq4 := `{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "dendrite_canvas_penpot_bridge", "arguments": {"subaction": "list"}}}`
-	subResp4 := srv.HandleRequest(context.Background(), []byte(subReq4))
-	if subResp4 == nil || subResp4.Error != nil {
-		t.Fatalf("penpot bridge list failed: %v", subResp4)
-	}
-
-	// unknown subaction error
-	subReq5 := `{"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "dendrite_canvas_penpot_bridge", "arguments": {"subaction": "invalid_subaction"}}}`
-	subResp5 := srv.HandleRequest(context.Background(), []byte(subReq5))
-	if res, ok := subResp5.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for unknown subaction, got: %#v", subResp5)
-	}
-
-	// 4. dendrite_rag_ask: missing question error
-	tmpDir := t.TempDir()
-	rReq1 := `{"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "dendrite_rag_ask", "arguments": {}}}`
-	rResp1 := srv.HandleRequest(context.Background(), []byte(rReq1))
-	if res, ok := rResp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing question in rag_ask, got: %#v", rResp1)
-	}
-
-	// dendrite_rag_ask: valid question
-	rReq2 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "dendrite_rag_ask", "arguments": {"question": "How does server work?", "project_path": %q, "auto_approve_paid": false, "top_k": 2}}}`, tmpDir)
-	rResp2 := srv.HandleRequest(context.Background(), []byte(rReq2))
-	if rResp2 == nil {
-		t.Fatal("expected response for rag_ask")
-	}
-
-	// 5. dendrite_rag_retrieve: missing query error
-	retReq1 := `{"jsonrpc": "2.0", "id": 10, "method": "tools/call", "params": {"name": "dendrite_rag_retrieve", "arguments": {}}}`
-	retResp1 := srv.HandleRequest(context.Background(), []byte(retReq1))
-	if res, ok := retResp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing query in rag_retrieve, got: %#v", retResp1)
-	}
-
-	// dendrite_rag_retrieve: valid query
-	retReq2 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "dendrite_rag_retrieve", "arguments": {"query": "Server", "project_path": %q, "top_k": 2, "min_score": 0.001}}}`, tmpDir)
-	retResp2 := srv.HandleRequest(context.Background(), []byte(retReq2))
-	if retResp2 == nil {
-		t.Fatal("expected response for rag_retrieve")
-	}
+	srv := testTools_CanvasAndRAGStep1(t)
+	testTools_CanvasAndRAGStep2(t, srv)
+	testTools_CanvasAndRAGStep3(t, srv)
+	testTools_CanvasAndRAGStep4(t, srv)
+	testTools_CanvasAndRAGStep5(t, srv)
+	testTools_CanvasAndRAGStep6(t, srv)
+	testTools_CanvasAndRAGStep7(t, srv)
+	testTools_CanvasAndRAGStep8(t, srv)
+	tmpDir := testTools_CanvasAndRAGStep9(t, srv)
+	testTools_CanvasAndRAGStep10(t, srv, tmpDir)
+	testTools_CanvasAndRAGStep11(t, srv)
+	testTools_CanvasAndRAGStep12(t, srv, tmpDir)
 }
 
-func TestMCP_CanvasTools(t *testing.T) {
-	ctx := context.Background()
+func testTools_CanvasAndRAGStep1(t *testing.T) *Server {
+	srv := NewServer(ServerConfig{})
+	catalog.RegisterDefaultTools(srv, Dependencies{})
+	return srv
+}
 
-	// Mock Plane Server
+// testTools_CanvasAndRAGStep2: 1. dendrite_canvas_action_dispatch: missing action error
+func testTools_CanvasAndRAGStep2(t *testing.T, srv *Server) {
+	cReq1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_canvas_action_dispatch", "arguments": {"prompt": "write test"}}}`
+	mcptest.ExpectToolError(t, srv, cReq1, "expected error for missing action")
+}
+
+// testTools_CanvasAndRAGStep3: 2. dendrite_canvas_action_dispatch: valid
+func testTools_CanvasAndRAGStep3(t *testing.T, srv *Server) {
+	cReq2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_canvas_action_dispatch", "arguments": {"action": "WRITE_PLAN", "mode": "DRAFT", "title": "Test Plan", "prompt": "Outline tasks"}}}`
+	mcptest.MustHandle(t, srv, cReq2, "canvas action dispatch failed")
+}
+
+// testTools_CanvasAndRAGStep4: 3. dendrite_canvas_penpot_bridge subactions
+// relate
+func testTools_CanvasAndRAGStep4(t *testing.T, srv *Server) {
+	subReq1 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_canvas_penpot_bridge", "arguments": {"subaction": "relate", "ticket_id": "DEN-100", "feature_name": "Canvas", "file_path": "App.svelte"}}}`
+	mcptest.MustHandle(t, srv, subReq1, "penpot bridge relate failed")
+}
+
+// testTools_CanvasAndRAGStep5: sync
+func testTools_CanvasAndRAGStep5(t *testing.T, srv *Server) {
+	subReq2 := `{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_canvas_penpot_bridge", "arguments": {"subaction": "sync", "ticket_id": "DEN-100", "file_path": "App.svelte", "dry_run": true}}}`
+	mcptest.MustHandle(t, srv, subReq2, "penpot bridge sync failed")
+}
+
+// testTools_CanvasAndRAGStep6: update_state
+func testTools_CanvasAndRAGStep6(t *testing.T, srv *Server) {
+	subReq3 := `{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "dendrite_canvas_penpot_bridge", "arguments": {"subaction": "update_state", "ticket_id": "DEN-100", "target_state": "Done", "push_to_plane": false}}}`
+	mcptest.MustHandle(t, srv, subReq3, "penpot bridge update_state failed")
+}
+
+// testTools_CanvasAndRAGStep7: list
+func testTools_CanvasAndRAGStep7(t *testing.T, srv *Server) {
+	subReq4 := `{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "dendrite_canvas_penpot_bridge", "arguments": {"subaction": "list"}}}`
+	mcptest.MustHandle(t, srv, subReq4, "penpot bridge list failed")
+}
+
+// testTools_CanvasAndRAGStep8: unknown subaction error
+func testTools_CanvasAndRAGStep8(t *testing.T, srv *Server) {
+	subReq5 := `{"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "dendrite_canvas_penpot_bridge", "arguments": {"subaction": "invalid_subaction"}}}`
+	mcptest.ExpectToolError(t, srv, subReq5, "expected error for unknown subaction")
+}
+
+// testTools_CanvasAndRAGStep9: 4. dendrite_rag_ask: missing question error
+func testTools_CanvasAndRAGStep9(t *testing.T, srv *Server) string {
+	tmpDir := t.TempDir()
+	rReq1 := `{"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "dendrite_rag_ask", "arguments": {}}}`
+	mcptest.ExpectToolError(t, srv, rReq1, "expected error for missing question in rag_ask")
+	return tmpDir
+}
+
+// testTools_CanvasAndRAGStep10: dendrite_rag_ask: valid question
+func testTools_CanvasAndRAGStep10(t *testing.T, srv *Server, tmpDir string) {
+	rReq2 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "dendrite_rag_ask", "arguments": {"question": "How does server work?", "project_path": %q, "auto_approve_paid": false, "top_k": 2}}}`, tmpDir)
+	mcptest.RequireResponse(t, srv, rReq2, "expected response for rag_ask")
+}
+
+// testTools_CanvasAndRAGStep11: 5. dendrite_rag_retrieve: missing query error
+func testTools_CanvasAndRAGStep11(t *testing.T, srv *Server) {
+	retReq1 := `{"jsonrpc": "2.0", "id": 10, "method": "tools/call", "params": {"name": "dendrite_rag_retrieve", "arguments": {}}}`
+	mcptest.ExpectToolError(t, srv, retReq1, "expected error for missing query in rag_retrieve")
+}
+
+// testTools_CanvasAndRAGStep12: dendrite_rag_retrieve: valid query
+func testTools_CanvasAndRAGStep12(t *testing.T, srv *Server, tmpDir string) {
+	retReq2 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "dendrite_rag_retrieve", "arguments": {"query": "Server", "project_path": %q, "top_k": 2, "min_score": 0.001}}}`, tmpDir)
+	mcptest.RequireResponse(t, srv, retReq2, "expected response for rag_retrieve")
+}
+
+// fixtureMCPCanvasTools is the setup TestMCP_CanvasTools and its subtests share.
+func fixtureMCPCanvasTools(t *testing.T) (context.Context, *Server) {
+	t.Helper()
+	ctx := context.Background()
 	planeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.HasSuffix(r.URL.Path, "/states/") {
@@ -1325,24 +1387,27 @@ func TestMCP_CanvasTools(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]string{"id": "ok"})
 	}))
-	defer planeServer.Close()
-
+	t.Cleanup(func() { planeServer.Close() })
 	planeClient, _ := plane.NewClient(plane.Config{
 		BaseURL:       planeServer.URL,
 		WorkspaceSlug: "dendrite-ws",
 		ProjectID:     "proj-test-1",
 		DirectToken:   "plane_token",
 	}, nil)
-
 	srv := NewServer(ServerConfig{Name: "dendrite", Version: "1.0.0"})
 	deps := Dependencies{
 		PlaneClient: planeClient,
 	}
 	opstools.RegisterCanvasTools(srv, deps)
+	_ = planeServer
+	_ = planeClient
+	_ = deps
+	return ctx, srv
+}
 
-	// 1. Test dendrite_canvas_action_dispatch (WRITE_PLAN)
-	t.Run("Dispatch_WritePlan", func(t *testing.T) {
-		reqJSON := `{
+func TestMCP_CanvasTools_DispatchWritePlan(t *testing.T) {
+	ctx, srv := fixtureMCPCanvasTools(t)
+	reqJSON := `{
 			"jsonrpc": "2.0",
 			"id": 1,
 			"method": "tools/call",
@@ -1356,19 +1421,19 @@ func TestMCP_CanvasTools(t *testing.T) {
 				}
 			}
 		}`
-		resp := srv.HandleRequest(ctx, []byte(reqJSON))
-		if resp.Error != nil {
-			t.Fatalf("call dendrite_canvas_action_dispatch failed: %v", resp.Error)
-		}
-		res, ok := resp.Result.(*CallToolResult)
-		if !ok || len(res.Content) == 0 || !strings.Contains(res.Content[0].Text, "UI Architecture Rollout") {
-			t.Errorf("expected plan output, got: %v", resp.Result)
-		}
-	})
+	resp := srv.HandleRequest(ctx, []byte(reqJSON))
+	if resp.Error != nil {
+		t.Fatalf("call dendrite_canvas_action_dispatch failed: %v", resp.Error)
+	}
+	res, ok := resp.Result.(*CallToolResult)
+	if !ok || len(res.Content) == 0 || !strings.Contains(res.Content[0].Text, "UI Architecture Rollout") {
+		t.Errorf("expected plan output, got: %v", resp.Result)
+	}
+}
 
-	// 2. Test dendrite_canvas_action_dispatch (DESIGN_UI_COMPONENT)
-	t.Run("Dispatch_DesignUI", func(t *testing.T) {
-		reqJSON := `{
+func TestMCP_CanvasTools_DispatchDesignUI(t *testing.T) {
+	ctx, srv := fixtureMCPCanvasTools(t)
+	reqJSON := `{
 			"jsonrpc": "2.0",
 			"id": 2,
 			"method": "tools/call",
@@ -1384,19 +1449,19 @@ func TestMCP_CanvasTools(t *testing.T) {
 				}
 			}
 		}`
-		resp := srv.HandleRequest(ctx, []byte(reqJSON))
-		if resp.Error != nil {
-			t.Fatalf("call design UI failed: %v", resp.Error)
-		}
-		res, ok := resp.Result.(*CallToolResult)
-		if !ok || !strings.Contains(res.Content[0].Text, "WorkspaceCanvas") {
-			t.Errorf("expected WorkspaceCanvas in output: %v", resp.Result)
-		}
-	})
+	resp := srv.HandleRequest(ctx, []byte(reqJSON))
+	if resp.Error != nil {
+		t.Fatalf("call design UI failed: %v", resp.Error)
+	}
+	res, ok := resp.Result.(*CallToolResult)
+	if !ok || !strings.Contains(res.Content[0].Text, "WorkspaceCanvas") {
+		t.Errorf("expected WorkspaceCanvas in output: %v", resp.Result)
+	}
+}
 
-	// 3. Test dendrite_canvas_penpot_bridge (relate)
-	t.Run("PenpotBridge_Relate", func(t *testing.T) {
-		reqJSON := `{
+func TestMCP_CanvasTools_PenpotBridgeRelate(t *testing.T) {
+	ctx, srv := fixtureMCPCanvasTools(t)
+	reqJSON := `{
 			"jsonrpc": "2.0",
 			"id": 3,
 			"method": "tools/call",
@@ -1410,23 +1475,23 @@ func TestMCP_CanvasTools(t *testing.T) {
 				}
 			}
 		}`
-		resp := srv.HandleRequest(ctx, []byte(reqJSON))
-		if resp.Error != nil {
-			t.Fatalf("call relate failed: %v", resp.Error)
-		}
-		res, ok := resp.Result.(*CallToolResult)
-		if !ok || !strings.Contains(res.Content[0].Text, "DEN-807") {
-			t.Errorf("expected DEN-807 in output: %v", resp.Result)
-		}
-	})
+	resp := srv.HandleRequest(ctx, []byte(reqJSON))
+	if resp.Error != nil {
+		t.Fatalf("call relate failed: %v", resp.Error)
+	}
+	res, ok := resp.Result.(*CallToolResult)
+	if !ok || !strings.Contains(res.Content[0].Text, "DEN-807") {
+		t.Errorf("expected DEN-807 in output: %v", resp.Result)
+	}
+}
 
-	// 4. Test dendrite_canvas_penpot_bridge (sync)
-	t.Run("PenpotBridge_Sync", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		uiPath := filepath.Join(tmpDir, "Header.svelte")
-		_ = os.WriteFile(uiPath, []byte(`<header class="bg-slate-900 p-4 text-white">Header</header>`), 0644)
+func TestMCP_CanvasTools_PenpotBridgeSync(t *testing.T) {
+	ctx, srv := fixtureMCPCanvasTools(t)
+	tmpDir := t.TempDir()
+	uiPath := filepath.Join(tmpDir, "Header.svelte")
+	_ = os.WriteFile(uiPath, []byte(`<header class="bg-slate-900 p-4 text-white">Header</header>`), 0644)
 
-		reqJSON := `{
+	reqJSON := `{
 			"jsonrpc": "2.0",
 			"id": 4,
 			"method": "tools/call",
@@ -1440,19 +1505,19 @@ func TestMCP_CanvasTools(t *testing.T) {
 				}
 			}
 		}`
-		resp := srv.HandleRequest(ctx, []byte(reqJSON))
-		if resp.Error != nil {
-			t.Fatalf("call sync failed: %v", resp.Error)
-		}
-		res, ok := resp.Result.(*CallToolResult)
-		if !ok || !strings.Contains(res.Content[0].Text, "Header") {
-			t.Errorf("expected Header in sync output: %v", resp.Result)
-		}
-	})
+	resp := srv.HandleRequest(ctx, []byte(reqJSON))
+	if resp.Error != nil {
+		t.Fatalf("call sync failed: %v", resp.Error)
+	}
+	res, ok := resp.Result.(*CallToolResult)
+	if !ok || !strings.Contains(res.Content[0].Text, "Header") {
+		t.Errorf("expected Header in sync output: %v", resp.Result)
+	}
+}
 
-	// 5. Test dendrite_canvas_penpot_bridge (update_state)
-	t.Run("PenpotBridge_UpdateState", func(t *testing.T) {
-		reqJSON := `{
+func TestMCP_CanvasTools_PenpotBridgeUpdateState(t *testing.T) {
+	ctx, srv := fixtureMCPCanvasTools(t)
+	reqJSON := `{
 			"jsonrpc": "2.0",
 			"id": 5,
 			"method": "tools/call",
@@ -1467,19 +1532,19 @@ func TestMCP_CanvasTools(t *testing.T) {
 				}
 			}
 		}`
-		resp := srv.HandleRequest(ctx, []byte(reqJSON))
-		if resp.Error != nil {
-			t.Fatalf("call update_state failed: %v", resp.Error)
-		}
-		res, ok := resp.Result.(*CallToolResult)
-		if !ok || !strings.Contains(res.Content[0].Text, "To Verify") {
-			t.Errorf("expected To Verify in output: %v", resp.Result)
-		}
-	})
+	resp := srv.HandleRequest(ctx, []byte(reqJSON))
+	if resp.Error != nil {
+		t.Fatalf("call update_state failed: %v", resp.Error)
+	}
+	res, ok := resp.Result.(*CallToolResult)
+	if !ok || !strings.Contains(res.Content[0].Text, "To Verify") {
+		t.Errorf("expected To Verify in output: %v", resp.Result)
+	}
+}
 
-	// 6. Test dendrite_canvas_penpot_bridge (list)
-	t.Run("PenpotBridge_List", func(t *testing.T) {
-		reqJSON := `{
+func TestMCP_CanvasTools_PenpotBridgeList(t *testing.T) {
+	ctx, srv := fixtureMCPCanvasTools(t)
+	reqJSON := `{
 			"jsonrpc": "2.0",
 			"id": 6,
 			"method": "tools/call",
@@ -1490,15 +1555,14 @@ func TestMCP_CanvasTools(t *testing.T) {
 				}
 			}
 		}`
-		resp := srv.HandleRequest(ctx, []byte(reqJSON))
-		if resp.Error != nil {
-			t.Fatalf("call list failed: %v", resp.Error)
-		}
-		res, ok := resp.Result.(*CallToolResult)
-		if !ok || !strings.Contains(res.Content[0].Text, "DEN-807") {
-			t.Errorf("expected list to contain DEN-807: %v", resp.Result)
-		}
-	})
+	resp := srv.HandleRequest(ctx, []byte(reqJSON))
+	if resp.Error != nil {
+		t.Fatalf("call list failed: %v", resp.Error)
+	}
+	res, ok := resp.Result.(*CallToolResult)
+	if !ok || !strings.Contains(res.Content[0].Text, "DEN-807") {
+		t.Errorf("expected list to contain DEN-807: %v", resp.Result)
+	}
 }
 
 func TestStoryForkTools_RegistrationAndExecution(t *testing.T) {
@@ -1704,26 +1768,38 @@ func TestAgentRunReportsASessionThatSucceeds(t *testing.T) {
 }
 
 func TestMCP_MigrateTools(t *testing.T) {
+	srv, ctx := testMCP_MigrateToolsStep1(t)
+	callRes, ok := testMCP_MigrateToolsStep2(t, srv, ctx)
+	testMCP_MigrateToolsStep3(t, callRes)
+	callMoveRes := testMCP_MigrateToolsStep4(t, srv, ctx, ok)
+	testMCP_MigrateToolsStep5(t, callMoveRes)
+}
+
+func testMCP_MigrateToolsStep1(t *testing.T) (*Server, context.Context) {
 	srv := NewServer(ServerConfig{
 		Name:    "test-dendrite",
 		Version: "0.1.0",
 	})
 	catalog.RegisterDefaultTools(srv, Dependencies{})
-
 	ctx := context.Background()
+	return srv, ctx
+}
 
-	// 1. Test dendrite_service_plan
+// testMCP_MigrateToolsStep2: 1. Test dendrite_service_plan
+func testMCP_MigrateToolsStep2(t *testing.T, srv *Server, ctx context.Context) (*CallToolResult, bool) {
 	planReq := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_service_plan", "arguments": {"ram_mb": 4096, "disk_gb": 1000}}}`
 	respPlan := srv.HandleRequest(ctx, []byte(planReq))
 	if respPlan == nil || respPlan.Error != nil {
 		t.Fatalf("unexpected error calling dendrite_service_plan: %v", respPlan)
 	}
-
 	callRes, ok := respPlan.Result.(*CallToolResult)
 	if !ok || len(callRes.Content) == 0 {
 		t.Fatalf("expected valid CallToolResult with content")
 	}
+	return callRes, ok
+}
 
+func testMCP_MigrateToolsStep3(t *testing.T, callRes *CallToolResult) {
 	var planData map[string]interface{}
 	if err := json.Unmarshal([]byte(callRes.Content[0].Text), &planData); err != nil {
 		t.Fatalf("failed to parse json response: %v", err)
@@ -1731,19 +1807,23 @@ func TestMCP_MigrateTools(t *testing.T) {
 	if recCmd, ok := planData["recommended_action"].(string); !ok || !strings.Contains(recCmd, "dendrite translocate run") {
 		t.Errorf("expected recommended action with dendrite move, got %v", recCmd)
 	}
+}
 
-	// 2. Test dendrite_service_move in dry-run mode
+// testMCP_MigrateToolsStep4: 2. Test dendrite_service_move in dry-run mode
+func testMCP_MigrateToolsStep4(t *testing.T, srv *Server, ctx context.Context, ok bool) *CallToolResult {
 	moveReq := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_service_move", "arguments": {"services": ["plane"], "target_host": "user@debian-server", "dry_run": true}}}`
 	respMove := srv.HandleRequest(ctx, []byte(moveReq))
 	if respMove == nil || respMove.Error != nil {
 		t.Fatalf("unexpected error calling dendrite_service_move: %v", respMove)
 	}
-
 	callMoveRes, ok := respMove.Result.(*CallToolResult)
 	if !ok || len(callMoveRes.Content) == 0 {
 		t.Fatalf("expected valid CallToolResult for move")
 	}
+	return callMoveRes
+}
 
+func testMCP_MigrateToolsStep5(t *testing.T, callMoveRes *CallToolResult) {
 	var moveData map[string]interface{}
 	if err := json.Unmarshal([]byte(callMoveRes.Content[0].Text), &moveData); err != nil {
 		t.Fatalf("failed to parse json move response: %v", err)
@@ -1753,15 +1833,20 @@ func TestMCP_MigrateTools(t *testing.T) {
 	}
 }
 
-func TestMCP_GreetingTools(t *testing.T) {
+// fixtureMCPGreetingTools is the setup TestMCP_GreetingTools and its subtests share.
+func fixtureMCPGreetingTools(t *testing.T) (*Server, context.Context) {
+	t.Helper()
 	srv := NewServer(ServerConfig{Name: "dendrite", Version: "1.0.0"})
 	catalog.RegisterDefaultTools(srv, Dependencies{
 		DevStatus: "DEV_STATUS.md",
 	})
 	ctx := context.Background()
+	return srv, ctx
+}
 
-	t.Run("generate greeting via MCP", func(t *testing.T) {
-		reqJSON := `{
+func TestMCP_GreetingTools_GenerateGreetingViaMCP(t *testing.T) {
+	srv, ctx := fixtureMCPGreetingTools(t)
+	reqJSON := `{
 			"jsonrpc": "2.0",
 			"id": 101,
 			"method": "tools/call",
@@ -1775,31 +1860,32 @@ func TestMCP_GreetingTools(t *testing.T) {
 			}
 		}`
 
-		resp := srv.HandleRequest(ctx, []byte(reqJSON))
-		if resp.Error != nil {
-			t.Fatalf("HandleRequest failed: %v", resp.Error)
-		}
+	resp := srv.HandleRequest(ctx, []byte(reqJSON))
+	if resp.Error != nil {
+		t.Fatalf("HandleRequest failed: %v", resp.Error)
+	}
 
-		res, ok := resp.Result.(*CallToolResult)
-		if !ok || len(res.Content) == 0 {
-			t.Fatalf("expected *CallToolResult with content")
-		}
+	res, ok := resp.Result.(*CallToolResult)
+	if !ok || len(res.Content) == 0 {
+		t.Fatalf("expected *CallToolResult with content")
+	}
 
-		var gen greeting.GeneratedGreeting
-		if err := json.Unmarshal([]byte(res.Content[0].Text), &gen); err != nil {
-			t.Fatalf("failed to unmarshal output: %v", err)
-		}
+	var gen greeting.GeneratedGreeting
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &gen); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
 
-		if gen.StyleID != greeting.StyleProgressCelebration {
-			t.Errorf("expected G-02, got %s", gen.StyleID)
-		}
-		if !strings.HasPrefix(gen.Headline, "# ") {
-			t.Errorf("expected headline to start with '# ', got %s", gen.Headline)
-		}
-	})
+	if gen.StyleID != greeting.StyleProgressCelebration {
+		t.Errorf("expected G-02, got %s", gen.StyleID)
+	}
+	if !strings.HasPrefix(gen.Headline, "# ") {
+		t.Errorf("expected headline to start with '# ', got %s", gen.Headline)
+	}
+}
 
-	t.Run("suppressed style via MCP", func(t *testing.T) {
-		reqJSON := `{
+func TestMCP_GreetingTools_SuppressedStyleViaMCP(t *testing.T) {
+	srv, ctx := fixtureMCPGreetingTools(t)
+	reqJSON := `{
 			"jsonrpc": "2.0",
 			"id": 102,
 			"method": "tools/call",
@@ -1814,28 +1900,29 @@ func TestMCP_GreetingTools(t *testing.T) {
 			}
 		}`
 
-		resp := srv.HandleRequest(ctx, []byte(reqJSON))
-		if resp.Error != nil {
-			t.Fatalf("HandleRequest failed: %v", resp.Error)
-		}
+	resp := srv.HandleRequest(ctx, []byte(reqJSON))
+	if resp.Error != nil {
+		t.Fatalf("HandleRequest failed: %v", resp.Error)
+	}
 
-		res, ok := resp.Result.(*CallToolResult)
-		if !ok || len(res.Content) == 0 {
-			t.Fatalf("expected *CallToolResult with content")
-		}
+	res, ok := resp.Result.(*CallToolResult)
+	if !ok || len(res.Content) == 0 {
+		t.Fatalf("expected *CallToolResult with content")
+	}
 
-		var gen greeting.GeneratedGreeting
-		if err := json.Unmarshal([]byte(res.Content[0].Text), &gen); err != nil {
-			t.Fatalf("failed to unmarshal output: %v", err)
-		}
+	var gen greeting.GeneratedGreeting
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &gen); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
 
-		if gen.StyleID == greeting.StyleProgressCelebration {
-			t.Errorf("expected G-02 to be suppressed, got %s", gen.StyleID)
-		}
-	})
+	if gen.StyleID == greeting.StyleProgressCelebration {
+		t.Errorf("expected G-02 to be suppressed, got %s", gen.StyleID)
+	}
+}
 
-	t.Run("all styles suppressed relaxes suppression instead of failing", func(t *testing.T) {
-		reqJSON := `{
+func TestMCP_GreetingTools_AllStylesSuppressedRelaxesSuppressionInsteadOfFailing(t *testing.T) {
+	srv, ctx := fixtureMCPGreetingTools(t)
+	reqJSON := `{
 			"jsonrpc": "2.0",
 			"id": 103,
 			"method": "tools/call",
@@ -1848,26 +1935,35 @@ func TestMCP_GreetingTools(t *testing.T) {
 			}
 		}`
 
-		resp := srv.HandleRequest(ctx, []byte(reqJSON))
-		if resp.Error != nil {
-			t.Fatalf("HandleRequest failed: %v", resp.Error)
-		}
+	resp := srv.HandleRequest(ctx, []byte(reqJSON))
+	if resp.Error != nil {
+		t.Fatalf("HandleRequest failed: %v", resp.Error)
+	}
 
-		res, ok := resp.Result.(*CallToolResult)
-		if !ok {
-			t.Fatalf("expected *CallToolResult, got %T", resp.Result)
-		}
-		if res.IsError {
-			t.Fatalf("expected a fallback greeting when every style is recent, got error %q", res.Content[0].Text)
-		}
-	})
+	res, ok := resp.Result.(*CallToolResult)
+	if !ok {
+		t.Fatalf("expected *CallToolResult, got %T", resp.Result)
+	}
+	if res.IsError {
+		t.Fatalf("expected a fallback greeting when every style is recent, got error %q", res.Content[0].Text)
+	}
 }
 
 func TestGitHubSyncAndHITLSyncTools(t *testing.T) {
+	ps, gh, srv := testGitHubSyncAndHITLSyncToolsStep1(t)
+	text, isErr := testGitHubSyncAndHITLSyncToolsStep2(t, gh, srv)
+	testGitHubSyncAndHITLSyncToolsStep3(t, ps, srv, text, isErr)
+	testGitHubSyncAndHITLSyncToolsStep4(t, gh, srv)
+}
+
+func testGitHubSyncAndHITLSyncToolsStep1(t *testing.T) (*hitltest.PlaneServer, *hitltest.GHScript, *Server) {
 	ps, gh := offlineHITL(t)
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{})
+	return ps, gh, srv
+}
 
+func testGitHubSyncAndHITLSyncToolsStep2(t *testing.T, gh *hitltest.GHScript, srv *Server) (string, bool) {
 	text, isErr := mcptest.CallTool(t, srv, "dendrite_github_sync", `{"dry_run":true}`)
 	if isErr || !strings.Contains(text, `"kind": "create"`) || !strings.Contains(text, `"dry_run": true`) {
 		t.Fatalf("dry run: %s", text)
@@ -1881,7 +1977,10 @@ func TestGitHubSyncAndHITLSyncTools(t *testing.T) {
 	if text, isErr = mcptest.CallTool(t, srv, "dendrite_github_sync", `{}`); isErr || gh.Called("gh issue create") != 1 {
 		t.Fatalf("apply: %s", text)
 	}
+	return text, isErr
+}
 
+func testGitHubSyncAndHITLSyncToolsStep3(t *testing.T, ps *hitltest.PlaneServer, srv *Server, text string, isErr bool) {
 	text, isErr = mcptest.CallTool(t, srv, "dendrite_hitl_sync", `{"dry_run":true}`)
 	var results []hitl.HITLResult
 	if isErr || json.Unmarshal([]byte(text), &results) != nil || len(results) != 2 || len(ps.Patches) != 0 {
@@ -1890,7 +1989,9 @@ func TestGitHubSyncAndHITLSyncTools(t *testing.T) {
 	if _, isErr = mcptest.CallTool(t, srv, "dendrite_hitl_sync", `{}`); isErr || ps.Patches["u-2"] != "st-done" {
 		t.Fatalf("hitl apply: patches %v", ps.Patches)
 	}
+}
 
+func testGitHubSyncAndHITLSyncToolsStep4(t *testing.T, gh *hitltest.GHScript, srv *Server) {
 	for _, tool := range []string{"dendrite_github_sync", "dendrite_hitl_sync"} {
 		if text, isErr := mcptest.CallTool(t, srv, tool, `{"repo":"fail/me"}`); !isErr || !strings.Contains(text, "no plane") {
 			t.Errorf("%s setup failure: %s", tool, text)
@@ -1947,10 +2048,7 @@ func TestTools_DendriteAgentRun(t *testing.T) {
 
 	// 1. Invalid agent type
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_agent_run", "arguments": {"agent_type": "invalid_agent", "task": "test"}}}`
-	resp1 := srv.HandleRequest(context.Background(), []byte(req1))
-	if res, ok := resp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for invalid agent type, got: %#v", resp1)
-	}
+	mcptest.ExpectToolError(t, srv, req1, "expected error for invalid agent type")
 
 	// 2. Multiple valid agent types (model default branches, sandbox, spend_limit)
 	agents := []string{"aider", "openhands", "opencode", "agy", "copilot"}
@@ -1964,57 +2062,66 @@ func TestTools_DendriteAgentRun(t *testing.T) {
 }
 
 func TestTools_DendriteTelemetryAndInference(t *testing.T) {
-	srv := NewServer(ServerConfig{})
-	catalog.RegisterDefaultTools(srv, Dependencies{})
-
-	// dendrite_telemetry
-	tReq := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_telemetry", "arguments": {}}}`
-	tResp := srv.HandleRequest(context.Background(), []byte(tReq))
-	if tResp == nil || tResp.Error != nil {
-		t.Fatalf("telemetry error: %v", tResp)
-	}
-
-	// dendrite_inference_list
-	lReq := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_inference_list", "arguments": {}}}`
-	lResp := srv.HandleRequest(context.Background(), []byte(lReq))
-	if lResp == nil || lResp.Error != nil {
-		t.Fatalf("inference list error: %v", lResp)
-	}
-
-	// dendrite_inference_probe all
-	pReq1 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_inference_probe", "arguments": {}}}`
-	pResp1 := srv.HandleRequest(context.Background(), []byte(pReq1))
-	if pResp1 == nil || pResp1.Error != nil {
-		t.Fatalf("inference probe all error: %v", pResp1)
-	}
-
-	// dendrite_inference_probe single engine
-	pReq2 := `{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_inference_probe", "arguments": {"engine_id": "oxillama-rust"}}}`
-	pResp2 := srv.HandleRequest(context.Background(), []byte(pReq2))
-	if pResp2 == nil || pResp2.Error != nil {
-		t.Fatalf("inference probe single error: %v", pResp2)
-	}
-
-	// dendrite_inference_probe non-existent engine
-	pReq3 := `{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "dendrite_inference_probe", "arguments": {"engine_id": "non-existent-engine"}}}`
-	pResp3 := srv.HandleRequest(context.Background(), []byte(pReq3))
-	if res, ok := pResp3.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for non-existent engine, got: %#v", pResp3)
-	}
+	srv := testTools_DendriteTelemetryAndInferenceStep1(t)
+	testTools_DendriteTelemetryAndInferenceStep2(t, srv)
+	testTools_DendriteTelemetryAndInferenceStep3(t, srv)
+	testTools_DendriteTelemetryAndInferenceStep4(t, srv)
+	testTools_DendriteTelemetryAndInferenceStep5(t, srv)
+	testTools_DendriteTelemetryAndInferenceStep6(t, srv)
 }
 
-func TestMCP_EnvPrepareTools(t *testing.T) {
+func testTools_DendriteTelemetryAndInferenceStep1(t *testing.T) *Server {
+	srv := NewServer(ServerConfig{})
+	catalog.RegisterDefaultTools(srv, Dependencies{})
+	return srv
+}
+
+// testTools_DendriteTelemetryAndInferenceStep2: dendrite_telemetry
+func testTools_DendriteTelemetryAndInferenceStep2(t *testing.T, srv *Server) {
+	tReq := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_telemetry", "arguments": {}}}`
+	mcptest.MustHandle(t, srv, tReq, "telemetry error")
+}
+
+// testTools_DendriteTelemetryAndInferenceStep3: dendrite_inference_list
+func testTools_DendriteTelemetryAndInferenceStep3(t *testing.T, srv *Server) {
+	lReq := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_inference_list", "arguments": {}}}`
+	mcptest.MustHandle(t, srv, lReq, "inference list error")
+}
+
+// testTools_DendriteTelemetryAndInferenceStep4: dendrite_inference_probe all
+func testTools_DendriteTelemetryAndInferenceStep4(t *testing.T, srv *Server) {
+	pReq1 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_inference_probe", "arguments": {}}}`
+	mcptest.MustHandle(t, srv, pReq1, "inference probe all error")
+}
+
+// testTools_DendriteTelemetryAndInferenceStep5: dendrite_inference_probe single engine
+func testTools_DendriteTelemetryAndInferenceStep5(t *testing.T, srv *Server) {
+	pReq2 := `{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_inference_probe", "arguments": {"engine_id": "oxillama-rust"}}}`
+	mcptest.MustHandle(t, srv, pReq2, "inference probe single error")
+}
+
+// testTools_DendriteTelemetryAndInferenceStep6: dendrite_inference_probe non-existent engine
+func testTools_DendriteTelemetryAndInferenceStep6(t *testing.T, srv *Server) {
+	pReq3 := `{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "dendrite_inference_probe", "arguments": {"engine_id": "non-existent-engine"}}}`
+	mcptest.ExpectToolError(t, srv, pReq3, "expected error for non-existent engine")
+}
+
+// fixtureMCPEnvPrepareTools is the setup TestMCP_EnvPrepareTools and its subtests share.
+func fixtureMCPEnvPrepareTools(t *testing.T) (*Server, context.Context, string) {
+	t.Helper()
 	srv := NewServer(ServerConfig{Name: "dendrite", Version: "1.0.0"})
 	catalog.RegisterDefaultTools(srv, Dependencies{
 		DevStatus: "DEV_STATUS.md",
 	})
 	ctx := context.Background()
-
 	tmpDir := t.TempDir()
 	os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module testmcp\n\ngo 1.24\n"), 0644)
+	return srv, ctx, tmpDir
+}
 
-	t.Run("dry run prepare via MCP", func(t *testing.T) {
-		reqJSON := `{
+func TestMCP_EnvPrepareTools_DryRunPrepareViaMCP(t *testing.T) {
+	srv, ctx, tmpDir := fixtureMCPEnvPrepareTools(t)
+	reqJSON := `{
 			"jsonrpc": "2.0",
 			"id": 201,
 			"method": "tools/call",
@@ -2028,34 +2135,35 @@ func TestMCP_EnvPrepareTools(t *testing.T) {
 			}
 		}`
 
-		resp := srv.HandleRequest(ctx, []byte(reqJSON))
-		if resp.Error != nil {
-			t.Fatalf("HandleRequest failed: %v", resp.Error)
-		}
+	resp := srv.HandleRequest(ctx, []byte(reqJSON))
+	if resp.Error != nil {
+		t.Fatalf("HandleRequest failed: %v", resp.Error)
+	}
 
-		res, ok := resp.Result.(*CallToolResult)
-		if !ok || len(res.Content) == 0 {
-			t.Fatalf("expected *CallToolResult with content")
-		}
+	res, ok := resp.Result.(*CallToolResult)
+	if !ok || len(res.Content) == 0 {
+		t.Fatalf("expected *CallToolResult with content")
+	}
 
-		var rep bootstrap.PrepareReport
-		if err := json.Unmarshal([]byte(res.Content[0].Text), &rep); err != nil {
-			t.Fatalf("failed to unmarshal output: %v", err)
-		}
+	var rep bootstrap.PrepareReport
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &rep); err != nil {
+		t.Fatalf("failed to unmarshal output: %v", err)
+	}
 
-		if !rep.Success {
-			t.Errorf("expected success true")
-		}
-		if rep.Stack.PrimaryStack != bootstrap.StackGo {
-			t.Errorf("expected StackGo, got %s", rep.Stack.PrimaryStack)
-		}
-		if rep.CICD.DefaultTool != "copilot" {
-			t.Errorf("expected copilot default, got %s", rep.CICD.DefaultTool)
-		}
-	})
+	if !rep.Success {
+		t.Errorf("expected success true")
+	}
+	if rep.Stack.PrimaryStack != bootstrap.StackGo {
+		t.Errorf("expected StackGo, got %s", rep.Stack.PrimaryStack)
+	}
+	if rep.CICD.DefaultTool != "copilot" {
+		t.Errorf("expected copilot default, got %s", rep.CICD.DefaultTool)
+	}
+}
 
-	t.Run("real prepare via MCP", func(t *testing.T) {
-		reqJSON := `{
+func TestMCP_EnvPrepareTools_RealPrepareViaMCP(t *testing.T) {
+	srv, ctx, tmpDir := fixtureMCPEnvPrepareTools(t)
+	reqJSON := `{
 			"jsonrpc": "2.0",
 			"id": 202,
 			"method": "tools/call",
@@ -2069,19 +2177,17 @@ func TestMCP_EnvPrepareTools(t *testing.T) {
 			}
 		}`
 
-		resp := srv.HandleRequest(ctx, []byte(reqJSON))
-		if resp.Error != nil {
-			t.Fatalf("HandleRequest failed: %v", resp.Error)
-		}
+	resp := srv.HandleRequest(ctx, []byte(reqJSON))
+	if resp.Error != nil {
+		t.Fatalf("HandleRequest failed: %v", resp.Error)
+	}
 
-		res, ok := resp.Result.(*CallToolResult)
-		if !ok || len(res.Content) == 0 {
-			t.Fatalf("expected *CallToolResult with content")
-		}
+	res, ok := resp.Result.(*CallToolResult)
+	if !ok || len(res.Content) == 0 {
+		t.Fatalf("expected *CallToolResult with content")
+	}
 
-		// Verify files written
-		if _, err := os.Stat(filepath.Join(tmpDir, ".github", "copilot-instructions.md")); err != nil {
-			t.Errorf("expected copilot-instructions.md to exist: %v", err)
-		}
-	})
+	if _, err := os.Stat(filepath.Join(tmpDir, ".github", "copilot-instructions.md")); err != nil {
+		t.Errorf("expected copilot-instructions.md to exist: %v", err)
+	}
 }

@@ -264,7 +264,19 @@ const smartIssues = `{"results":[
  {"id":"u3","name":"[DEN-003] Third","sequence_id":3,"state":"st-todo","priority":"high"}]}`
 
 func TestMCP_PlaneDAGTools(t *testing.T) {
-	// Setup mock Plane HTTP server
+	server := testMCP_PlaneDAGToolsStep1(t)
+	planeClient := testMCP_PlaneDAGToolsStep2(t, server)
+	mcpServer := testMCP_PlaneDAGToolsStep3(t, planeClient)
+	callTool := testMCP_PlaneDAGToolsStep4(t, mcpServer)
+	testMCP_PlaneDAGToolsStep5(t, callTool)
+	testMCP_PlaneDAGToolsStep6(t, callTool)
+	testMCP_PlaneDAGToolsStep7(t, callTool)
+	testMCP_PlaneDAGToolsStep8(t, mcpServer)
+	testMCP_PlaneDAGToolsStep9(t, callTool)
+}
+
+// testMCP_PlaneDAGToolsStep1: Setup mock Plane HTTP server
+func testMCP_PlaneDAGToolsStep1(t *testing.T) *httptest.Server {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -307,8 +319,11 @@ func TestMCP_PlaneDAGTools(t *testing.T) {
 			_, _ = w.Write([]byte(`{}`))
 		}
 	}))
-	defer server.Close()
+	t.Cleanup(func() { server.Close() })
+	return server
+}
 
+func testMCP_PlaneDAGToolsStep2(t *testing.T, server *httptest.Server) *plane.Client {
 	planeClient, err := plane.NewClient(plane.Config{
 		BaseURL:       server.URL,
 		WorkspaceSlug: "ws",
@@ -318,7 +333,10 @@ func TestMCP_PlaneDAGTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return planeClient
+}
 
+func testMCP_PlaneDAGToolsStep3(t *testing.T, planeClient *plane.Client) *Server {
 	mcpServer := NewServer(ServerConfig{
 		Name:    "Dendrite Test Server",
 		Version: "1.0.0",
@@ -327,7 +345,10 @@ func TestMCP_PlaneDAGTools(t *testing.T) {
 		PlaneClient: planeClient,
 		DevStatus:   "DEV_STATUS.md",
 	})
+	return mcpServer
+}
 
+func testMCP_PlaneDAGToolsStep4(t *testing.T, mcpServer *Server) func(toolName string, args map[string]interface{}) *CallToolResult {
 	callTool := func(toolName string, args map[string]interface{}) *CallToolResult {
 		reqBytes, _ := json.Marshal(map[string]interface{}{
 			"jsonrpc": "2.0",
@@ -348,10 +369,13 @@ func TestMCP_PlaneDAGTools(t *testing.T) {
 		}
 		return res
 	}
+	return callTool
+}
 
-	// 1. Test dendrite_ticket_smart_select
-	// In mock data: DEN-010 (Low, Todo) blocks DEN-011 (Urgent, Todo).
-	// Because DEN-010 unblocks Urgent DEN-011, DEN-010 should be selected first!
+// testMCP_PlaneDAGToolsStep5: 1. Test dendrite_ticket_smart_select
+// In mock data: DEN-010 (Low, Todo) blocks DEN-011 (Urgent, Todo).
+// Because DEN-010 unblocks Urgent DEN-011, DEN-010 should be selected first!
+func testMCP_PlaneDAGToolsStep5(t *testing.T, callTool func(toolName string, args map[string]interface{}) *CallToolResult) {
 	selectRes := callTool("dendrite_ticket_smart_select", map[string]interface{}{})
 	var selectOutput struct {
 		Status    string `json:"status"`
@@ -368,8 +392,10 @@ func TestMCP_PlaneDAGTools(t *testing.T) {
 	if selectOutput.Selection.SelectedTicket.ID != "DEN-010" {
 		t.Errorf("expected DEN-010 to be selected, got %s", selectOutput.Selection.SelectedTicket.ID)
 	}
+}
 
-	// 2. Test user override in dendrite_ticket_smart_select
+// testMCP_PlaneDAGToolsStep6: 2. Test user override in dendrite_ticket_smart_select
+func testMCP_PlaneDAGToolsStep6(t *testing.T, callTool func(toolName string, args map[string]interface{}) *CallToolResult) {
 	overrideRes := callTool("dendrite_ticket_smart_select", map[string]interface{}{
 		"ticket_id": "DEN-011",
 	})
@@ -388,8 +414,10 @@ func TestMCP_PlaneDAGTools(t *testing.T) {
 	if !overrideOutput.Selection.IsBlocked {
 		t.Errorf("expected DEN-011 to be flagged as blocked by DEN-010")
 	}
+}
 
-	// 3. Test dendrite_plane_relation_link
+// testMCP_PlaneDAGToolsStep7: 3. Test dendrite_plane_relation_link
+func testMCP_PlaneDAGToolsStep7(t *testing.T, callTool func(toolName string, args map[string]interface{}) *CallToolResult) {
 	linkRes := callTool("dendrite_plane_relation_link", map[string]interface{}{
 		"issue_id":        "DEN-011",
 		"relation_type":   "blocked_by",
@@ -398,9 +426,11 @@ func TestMCP_PlaneDAGTools(t *testing.T) {
 	if !strings.Contains(linkRes.Content[0].Text, "gantt_connected") {
 		t.Errorf("expected gantt_connected in relation link output: %s", linkRes.Content[0].Text)
 	}
+}
 
-	// 4. Test dendrite_plane_issue_create
-	// 4a. Verify rejection of empty description / context
+// testMCP_PlaneDAGToolsStep8: 4. Test dendrite_plane_issue_create
+// 4a. Verify rejection of empty description / context
+func testMCP_PlaneDAGToolsStep8(t *testing.T, mcpServer *Server) {
 	emptyReq, _ := json.Marshal(map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      1,
@@ -426,7 +456,9 @@ func TestMCP_PlaneDAGTools(t *testing.T) {
 	} else if !resVal.IsError {
 		t.Errorf("expected IsError=true when creating ticket with empty description")
 	}
+}
 
+func testMCP_PlaneDAGToolsStep9(t *testing.T, callTool func(toolName string, args map[string]interface{}) *CallToolResult) {
 	createRes := callTool("dendrite_plane_issue_create", map[string]interface{}{
 		"name":        "[DEN-100] New Feature",
 		"description": "Detailed acceptance criteria, DoD and implementation context",
@@ -609,26 +641,32 @@ func TestSmartSelectReportsALedgerItCannotScan(t *testing.T) {
 	}
 }
 
-func TestPlaneTicketSetResolvesRefsAndPatchesState(t *testing.T) {
-	var patched, body string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// ticketSetRig is a Plane that records the last PATCH and the dendrite_plane_ticket_set handler on top of it.
+type ticketSetRig struct {
+	patched, body string
+	h             ToolHandler
+}
+
+func newTicketSetRig(t *testing.T) *ticketSetRig {
+	r := &ticketSetRig{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/issues/"):
+		case req.Method == http.MethodGet && strings.HasSuffix(req.URL.Path, "/issues/"):
 			_, _ = w.Write([]byte(`{"results":[
 				{"id":"iss-fresh","name":"Fresh ticket","sequence_id":324,"state":"st-todo"},
 				{"id":"iss-old","name":"[DEN-1014] legacy","sequence_id":300,"state":"st-todo"}]}`))
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/states/"):
+		case req.Method == http.MethodGet && strings.HasSuffix(req.URL.Path, "/states/"):
 			_, _ = w.Write([]byte(`{"results":[{"id":"st-todo","name":"To Do","group":"unstarted"},{"id":"st-prog","name":"In Progress","group":"started"}]}`))
-		case r.Method == http.MethodPatch:
-			b, _ := io.ReadAll(r.Body)
-			patched, body = r.URL.Path, string(b)
+		case req.Method == http.MethodPatch:
+			b, _ := io.ReadAll(req.Body)
+			r.patched, r.body = req.URL.Path, string(b)
 			_, _ = w.Write([]byte(`{}`))
 		default:
 			_, _ = w.Write([]byte(`{}`))
 		}
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 	client, err := plane.NewClient(plane.Config{BaseURL: srv.URL, WorkspaceSlug: "ws", ProjectID: "proj", DirectToken: "k"}, srv.Client())
 	if err != nil {
 		t.Fatal(err)
@@ -639,15 +677,23 @@ func TestPlaneTicketSetResolvesRefsAndPatchesState(t *testing.T) {
 	if !ok {
 		t.Fatal("tool not registered")
 	}
+	r.h = h
+	return r
+}
 
-	if _, err := h(context.Background(), map[string]any{"ticket": "DEN-324", "status": "in progress"}); err != nil {
+func TestPlaneTicketSetResolvesARefAndPatchesItsState(t *testing.T) {
+	r := newTicketSetRig(t)
+	if _, err := r.h(context.Background(), map[string]any{"ticket": "DEN-324", "status": "in progress"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(patched, "/issues/iss-fresh/") || !strings.Contains(body, "st-prog") {
-		t.Errorf("patched %q with %q", patched, body)
+	if !strings.HasSuffix(r.patched, "/issues/iss-fresh/") || !strings.Contains(r.body, "st-prog") {
+		t.Errorf("patched %q with %q", r.patched, r.body)
 	}
+}
 
-	_, err = h(context.Background(), map[string]any{"ticket": "DEN-999", "status": "done"})
+func TestPlaneTicketSetRefusesAnUnknownTicketAndABogusStatus(t *testing.T) {
+	h := newTicketSetRig(t).h
+	_, err := h(context.Background(), map[string]any{"ticket": "DEN-999", "status": "done"})
 	if err == nil || !strings.Contains(err.Error(), "DEN-999") {
 		t.Errorf("unknown ticket error = %v", err)
 	}
@@ -655,7 +701,6 @@ func TestPlaneTicketSetResolvesRefsAndPatchesState(t *testing.T) {
 		t.Error("bogus status accepted")
 	}
 }
-
 func TestCoreProfileIncludesPlaneTicketSet(t *testing.T) {
 	if !ProfileCore.InProfile("dendrite_plane_ticket_set") {
 		t.Fatal("core must expose dendrite_plane_ticket_set")
@@ -680,9 +725,21 @@ func TestLifecycleToolsAreInTheCoreProfile(t *testing.T) {
 }
 
 func TestLifecycleToolsRunATicketFromClaimToHandoff(t *testing.T) {
+	r := testLifecycleToolsRunATicketFromClaimToHandoffStep1(t)
+	err := testLifecycleToolsRunATicketFromClaimToHandoffStep2(t, r)
+	testLifecycleToolsRunATicketFromClaimToHandoffStep3(t, r)
+	testLifecycleToolsRunATicketFromClaimToHandoffStep4(t, r, err)
+	testLifecycleToolsRunATicketFromClaimToHandoffStep5(t, r, err)
+	testLifecycleToolsRunATicketFromClaimToHandoffStep6(t, r, err)
+}
+
+func testLifecycleToolsRunATicketFromClaimToHandoffStep1(t *testing.T) *lifecycleRig {
 	r := newLifecycleRig(t, map[string]string{"DEN-377": "To Do"})
 	r.board.SetDescription("DEN-377", "<p>edit pkg/ticketlock/lifecycle.go</p><ul><li>[AC-1] tools listed</li></ul>")
+	return r
+}
 
+func testLifecycleToolsRunATicketFromClaimToHandoffStep2(t *testing.T, r *lifecycleRig) error {
 	claim, err := r.call("dendrite_ticket_claim", map[string]any{"ticket": "DEN-377", "agent": "claude", "model_tier": "9"})
 	if err != nil {
 		t.Fatal(err)
@@ -693,14 +750,19 @@ func TestLifecycleToolsRunATicketFromClaimToHandoff(t *testing.T) {
 	if got := r.board.LabelNames("DEN-377"); strings.Join(got, ",") != "agent:claude,tier:9" {
 		t.Errorf("labels = %v", got)
 	}
+	return err
+}
 
+func testLifecycleToolsRunATicketFromClaimToHandoffStep3(t *testing.T, r *lifecycleRig) {
 	if _, err := r.call("dendrite_ticket_comment", map[string]any{"ticket": "DEN-377", "kind": "progress", "body": "lock done"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.call("dendrite_ticket_comment", map[string]any{"ticket": "DEN-377", "kind": "shout", "body": "x"}); err == nil {
 		t.Error("an unknown comment kind is refused")
 	}
+}
 
+func testLifecycleToolsRunATicketFromClaimToHandoffStep4(t *testing.T, r *lifecycleRig, err error) {
 	plan, err := r.call("dendrite_ticket_upload_plan", map[string]any{"ticket": "DEN-377", "markdown": "- [x] lock\n- [ ] hooks"})
 	if err != nil {
 		t.Fatal(err)
@@ -712,7 +774,9 @@ func TestLifecycleToolsRunATicketFromClaimToHandoff(t *testing.T) {
 	if err != nil || got["markdown"] != "- [x] lock\n- [ ] hooks" || got["source"] != "plane" {
 		t.Errorf("get_plan = %v, err = %v", got, err)
 	}
+}
 
+func testLifecycleToolsRunATicketFromClaimToHandoffStep5(t *testing.T, r *lifecycleRig, err error) {
 	ctx, err := r.call("dendrite_query_context", map[string]any{"ticket": "DEN-377"})
 	if err != nil {
 		t.Fatal(err)
@@ -720,8 +784,10 @@ func TestLifecycleToolsRunATicketFromClaimToHandoff(t *testing.T) {
 	if acs, _ := ctx["acceptance_criteria"].([]any); len(acs) != 1 || acs[0] != "[AC-1] tools listed" {
 		t.Errorf("context = %v", ctx)
 	}
+}
 
-	// AC-2: blocked without the three sections is refused and the ticket stays put.
+// testLifecycleToolsRunATicketFromClaimToHandoffStep6: AC-2: blocked without the three sections is refused and the ticket stays put.
+func testLifecycleToolsRunATicketFromClaimToHandoffStep6(t *testing.T, r *lifecycleRig, err error) {
 	if _, err := r.call("dendrite_ticket_transition", map[string]any{"ticket": "DEN-377", "outcome": "blocked"}); err == nil || !strings.Contains(err.Error(), "needs a handoff") {
 		t.Errorf("blocked without a handoff: %v", err)
 	}
@@ -818,44 +884,61 @@ func TestDecisionAndCommentsTools(t *testing.T) {
 }
 
 func TestTools_PlaneDAG(t *testing.T) {
-	_, planeClient := createTestPlaneServer(t)
+	planeClient, tmpDir, devStatusFile := testTools_PlaneDAGStep1(t)
+	srv := testTools_PlaneDAGStep2(t, planeClient, devStatusFile)
+	testTools_PlaneDAGStep3(t, srv)
+	testTools_PlaneDAGStep4(t, srv)
+	srvFallback := testTools_PlaneDAGStep5(t, devStatusFile)
+	testTools_PlaneDAGStep6(t, tmpDir, srvFallback)
+	testTools_PlaneDAGStep7(t, srv)
+	testTools_PlaneDAGStep8(t, srv)
+	testTools_PlaneDAGStep9(t, srv)
+	testTools_PlaneDAGStep10(t, srv)
+	testTools_PlaneDAGStep11(t, srv)
+}
 
+func testTools_PlaneDAGStep1(t *testing.T) (*plane.Client, string, string) {
+	_, planeClient := createTestPlaneServer(t)
 	tmpDir := t.TempDir()
 	devStatusFile := filepath.Join(tmpDir, "DEV_STATUS.md")
 	mdContent := "# Development Status\n\n- **Active Milestone**: Milestone 1\n\n### Milestone 1: Core Foundation\n\n- [ ] **DEN-101**: Setup (`pkg/mcpserver`) [State: To Do, Priority: High]\n- [ ] **DEN-102**: Feature (`pkg/mcpserver`) [State: To Do, Priority: Medium]\n"
 	_ = os.WriteFile(devStatusFile, []byte(mdContent), 0644)
+	return planeClient, tmpDir, devStatusFile
+}
 
+func testTools_PlaneDAGStep2(t *testing.T, planeClient *plane.Client, devStatusFile string) *Server {
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{
 		DevStatus:   devStatusFile,
 		PlaneClient: planeClient,
 	})
+	return srv
+}
 
-	// 1. dendrite_ticket_smart_select (with planeClient)
+// testTools_PlaneDAGStep3: 1. dendrite_ticket_smart_select (with planeClient)
+func testTools_PlaneDAGStep3(t *testing.T, srv *Server) {
 	selReq1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_ticket_smart_select", "arguments": {"ticket_id": "DEN-101"}}}`
-	selResp1 := srv.HandleRequest(context.Background(), []byte(selReq1))
-	if selResp1 == nil || selResp1.Error != nil {
-		t.Fatalf("smart select with plane failed: %v", selResp1)
-	}
+	mcptest.MustHandle(t, srv, selReq1, "smart select with plane failed")
+}
 
-	// 2. dendrite_plane_ticket_smart_select (alias, with milestone filter)
+// testTools_PlaneDAGStep4: 2. dendrite_plane_ticket_smart_select (alias, with milestone filter)
+func testTools_PlaneDAGStep4(t *testing.T, srv *Server) {
 	selReq2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_plane_ticket_smart_select", "arguments": {"milestone": "Milestone 1"}}}`
-	selResp2 := srv.HandleRequest(context.Background(), []byte(selReq2))
-	if selResp2 == nil || selResp2.Error != nil {
-		t.Fatalf("plane smart select failed: %v", selResp2)
-	}
+	mcptest.MustHandle(t, srv, selReq2, "plane smart select failed")
+}
 
-	// 3. Fallback to markdown file when planeClient is nil (Plane pinned to an unreachable address)
+// testTools_PlaneDAGStep5: 3. Fallback to markdown file when planeClient is nil (Plane pinned to an unreachable address)
+func testTools_PlaneDAGStep5(t *testing.T, devStatusFile string) *Server {
 	t.Setenv("PLANE_BASE_URL", "http://127.0.0.1:1")
 	srvFallback := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srvFallback, Dependencies{DevStatus: devStatusFile})
 	selReq3 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_ticket_smart_select", "arguments": {"file": %q}}}`, devStatusFile)
-	selResp3 := srvFallback.HandleRequest(context.Background(), []byte(selReq3))
-	if selResp3 == nil || selResp3.Error != nil {
-		t.Fatalf("smart select fallback to markdown failed: %v", selResp3)
-	}
+	mcptest.MustHandle(t, srvFallback, selReq3, "smart select fallback to markdown failed")
+	return srvFallback
+}
 
-	// 4. Missing both Plane and file (error)
+// testTools_PlaneDAGStep6: 4. Missing both Plane and file (error)
+func testTools_PlaneDAGStep6(t *testing.T, tmpDir string, srvFallback *Server) {
 	missingFile := filepath.Join(tmpDir, "NON_EXISTENT.md")
 	selReq4 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_ticket_smart_select", "arguments": {"file": %q}}}`, missingFile)
 	selResp4 := srvFallback.HandleRequest(context.Background(), []byte(selReq4))
@@ -869,41 +952,36 @@ func TestTools_PlaneDAG(t *testing.T) {
 	if !isErr {
 		t.Fatalf("expected error when file missing and plane offline, got: %#v", selResp4)
 	}
+}
 
-	// 5. dendrite_plane_relation_link: missing arguments
+// testTools_PlaneDAGStep7: 5. dendrite_plane_relation_link: missing arguments
+func testTools_PlaneDAGStep7(t *testing.T, srv *Server) {
 	relReq1 := `{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "dendrite_plane_relation_link", "arguments": {"issue_id": "DEN-101"}}}`
-	relResp1 := srv.HandleRequest(context.Background(), []byte(relReq1))
-	if res, ok := relResp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing relation_type, got: %#v", relResp1)
-	}
+	mcptest.ExpectToolError(t, srv, relReq1, "expected error for missing relation_type")
+}
 
-	// 6. dendrite_plane_relation_link: valid
+// testTools_PlaneDAGStep8: 6. dendrite_plane_relation_link: valid
+func testTools_PlaneDAGStep8(t *testing.T, srv *Server) {
 	relReq2 := `{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "dendrite_plane_relation_link", "arguments": {"issue_id": "DEN-101", "relation_type": "blocking", "target_issue_id": "DEN-101"}}}`
-	relResp2 := srv.HandleRequest(context.Background(), []byte(relReq2))
-	if relResp2 == nil || relResp2.Error != nil {
-		t.Fatalf("plane relation link failed: %v", relResp2)
-	}
+	mcptest.MustHandle(t, srv, relReq2, "plane relation link failed")
+}
 
-	// 7. dendrite_plane_issue_create: missing name error
+// testTools_PlaneDAGStep9: 7. dendrite_plane_issue_create: missing name error
+func testTools_PlaneDAGStep9(t *testing.T, srv *Server) {
 	issReq1 := `{"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "dendrite_plane_issue_create", "arguments": {"description": "desc"}}}`
-	issResp1 := srv.HandleRequest(context.Background(), []byte(issReq1))
-	if res, ok := issResp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing name in issue_create, got: %#v", issResp1)
-	}
+	mcptest.ExpectToolError(t, srv, issReq1, "expected error for missing name in issue_create")
+}
 
-	// 8. dendrite_plane_issue_create: empty context error
+// testTools_PlaneDAGStep10: 8. dendrite_plane_issue_create: empty context error
+func testTools_PlaneDAGStep10(t *testing.T, srv *Server) {
 	issReq2 := `{"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "dendrite_plane_issue_create", "arguments": {"name": "DEN-999", "description": ""}}}`
-	issResp2 := srv.HandleRequest(context.Background(), []byte(issReq2))
-	if res, ok := issResp2.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for empty description, got: %#v", issResp2)
-	}
+	mcptest.ExpectToolError(t, srv, issReq2, "expected error for empty description")
+}
 
-	// 9. dendrite_plane_issue_create: valid
+// testTools_PlaneDAGStep11: 9. dendrite_plane_issue_create: valid
+func testTools_PlaneDAGStep11(t *testing.T, srv *Server) {
 	issReq3 := `{"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "dendrite_plane_issue_create", "arguments": {"name": "[DEN-103] Real Issue", "description": "Comprehensive feature specification with detailed acceptance criteria and DoD.", "milestone": "M1", "priority": "high", "estimate": 5, "blocked_by": ["DEN-101"]}}}`
-	issResp3 := srv.HandleRequest(context.Background(), []byte(issReq3))
-	if issResp3 == nil || issResp3.Error != nil {
-		t.Fatalf("plane issue create failed: %v", issResp3)
-	}
+	mcptest.MustHandle(t, srv, issReq3, "plane issue create failed")
 }
 
 func TestPlaneTicketSetNeedsArgumentsAndAClient(t *testing.T) {
@@ -922,10 +1000,7 @@ func TestTools_DendriteEnvStatus(t *testing.T) {
 	catalog.RegisterDefaultTools(srv, Dependencies{})
 
 	callReq := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_env_status", "arguments": {}}}`
-	resp := srv.HandleRequest(context.Background(), []byte(callReq))
-	if resp == nil || resp.Error != nil {
-		t.Fatalf("dendrite_env_status failed: %v", resp)
-	}
+	mcptest.MustHandle(t, srv, callReq, "dendrite_env_status failed")
 }
 
 func TestTools_DendriteTicketList(t *testing.T) {
@@ -946,28 +1021,19 @@ func TestTools_DendriteTicketList(t *testing.T) {
 
 	// 1. Success with markdown file
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_ticket_list", "arguments": {"file": "` + devStatusFile + `"}}}`
-	resp1 := srv.HandleRequest(context.Background(), []byte(req1))
-	if resp1 == nil || resp1.Error != nil {
-		t.Fatalf("expected success with markdown file, got: %v", resp1)
-	}
+	mcptest.MustHandle(t, srv, req1, "expected success with markdown file, got")
 
 	// 2. Markdown file missing, fallback to Plane
 	missingFile := filepath.Join(tmpDir, "NON_EXISTENT.md")
 	req2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_ticket_list", "arguments": {"file": "` + missingFile + `"}}}`
-	resp2 := srv.HandleRequest(context.Background(), []byte(req2))
-	if resp2 == nil || resp2.Error != nil {
-		t.Fatalf("expected fallback to Plane issues, got: %v", resp2)
-	}
+	mcptest.MustHandle(t, srv, req2, "expected fallback to Plane issues, got")
 
 	// 3. Markdown missing and Plane client nil / error
 	srvNoPlane := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srvNoPlane, Dependencies{DevStatus: missingFile})
 	t.Setenv("PLANE_BASE_URL", "http://127.0.0.1:0")
 	req3 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_ticket_list", "arguments": {"file": "` + missingFile + `"}}}`
-	resp3 := srvNoPlane.HandleRequest(context.Background(), []byte(req3))
-	if resp3 == nil {
-		t.Fatal("expected response")
-	}
+	resp3 := mcptest.RequireResponse(t, srvNoPlane, req3, "expected response")
 	callRes, ok := resp3.Result.(CallToolResult)
 	if !ok || !callRes.IsError {
 		t.Fatalf("expected error result when both markdown and plane fail, got: %#v", resp3.Result)
@@ -975,59 +1041,79 @@ func TestTools_DendriteTicketList(t *testing.T) {
 }
 
 func TestTools_DendriteTicketUpdate(t *testing.T) {
-	_, planeClient := createTestPlaneServer(t)
+	planeClient := testTools_DendriteTicketUpdateStep1(t)
+	tmpDir, devStatusFile := testTools_DendriteTicketUpdateStep2(t)
+	srv := testTools_DendriteTicketUpdateStep3(t, planeClient, devStatusFile)
+	testTools_DendriteTicketUpdateStep4(t, srv)
+	testTools_DendriteTicketUpdateStep5(t, srv)
+	testTools_DendriteTicketUpdateStep6(t, devStatusFile, srv)
+	missingFile := testTools_DendriteTicketUpdateStep7(t, tmpDir, srv)
+	testTools_DendriteTicketUpdateStep8(t, missingFile)
+}
 
+func testTools_DendriteTicketUpdateStep1(t *testing.T) *plane.Client {
+	_, planeClient := createTestPlaneServer(t)
+	return planeClient
+}
+
+func testTools_DendriteTicketUpdateStep2(t *testing.T) (string, string) {
 	tmpDir := t.TempDir()
 	devStatusFile := filepath.Join(tmpDir, "DEV_STATUS.md")
 	mdContent := "# Development Status\n\n- **Active Milestone**: Milestone 1\n\n### Milestone 1: Core Foundation\n\n- [ ] **DEN-001**: Initial Setup (`pkg/mcpserver`) [State: To Do, Priority: High]\n"
 	if err := os.WriteFile(devStatusFile, []byte(mdContent), 0644); err != nil {
 		t.Fatal(err)
 	}
+	return tmpDir, devStatusFile
+}
 
+func testTools_DendriteTicketUpdateStep3(t *testing.T, planeClient *plane.Client, devStatusFile string) *Server {
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{
 		DevStatus:   devStatusFile,
 		PlaneClient: planeClient,
 	})
+	return srv
+}
 
-	// Missing ticket_id
+// testTools_DendriteTicketUpdateStep4: Missing ticket_id
+func testTools_DendriteTicketUpdateStep4(t *testing.T, srv *Server) {
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_ticket_update", "arguments": {"status": "DONE"}}}`
 	resp1 := srv.HandleRequest(context.Background(), []byte(req1))
 	if res, ok := resp1.Result.(CallToolResult); !ok || !res.IsError {
 		t.Errorf("expected error for missing ticket_id, got: %#v", resp1)
 	}
+}
 
-	// Missing status
+// testTools_DendriteTicketUpdateStep5: Missing status
+func testTools_DendriteTicketUpdateStep5(t *testing.T, srv *Server) {
 	req2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_ticket_update", "arguments": {"ticket_id": "DEN-001"}}}`
 	resp2 := srv.HandleRequest(context.Background(), []byte(req2))
 	if res, ok := resp2.Result.(CallToolResult); !ok || !res.IsError {
 		t.Errorf("expected error for missing status, got: %#v", resp2)
 	}
+}
 
-	// Success with markdown file
+// testTools_DendriteTicketUpdateStep6: Success with markdown file
+func testTools_DendriteTicketUpdateStep6(t *testing.T, devStatusFile string, srv *Server) {
 	req3 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_ticket_update", "arguments": {"ticket_id": "DEN-001", "status": "IN_PROGRESS", "file": "` + devStatusFile + `"}}}`
-	resp3 := srv.HandleRequest(context.Background(), []byte(req3))
-	if resp3 == nil || resp3.Error != nil {
-		t.Fatalf("expected successful ticket update in markdown, got: %v", resp3)
-	}
+	mcptest.MustHandle(t, srv, req3, "expected successful ticket update in markdown, got")
+}
 
-	// Markdown fails, fallback to Plane succeeds
+// testTools_DendriteTicketUpdateStep7: Markdown fails, fallback to Plane succeeds
+func testTools_DendriteTicketUpdateStep7(t *testing.T, tmpDir string, srv *Server) string {
 	missingFile := filepath.Join(tmpDir, "NON_EXISTENT.md")
 	req4 := `{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_ticket_update", "arguments": {"ticket_id": "DEN-101", "status": "DONE", "file": "` + missingFile + `"}}}`
-	resp4 := srv.HandleRequest(context.Background(), []byte(req4))
-	if resp4 == nil || resp4.Error != nil {
-		t.Fatalf("expected fallback to Plane status update, got: %v", resp4)
-	}
+	mcptest.MustHandle(t, srv, req4, "expected fallback to Plane status update, got")
+	return missingFile
+}
 
-	// Both fail
+// testTools_DendriteTicketUpdateStep8: Both fail
+func testTools_DendriteTicketUpdateStep8(t *testing.T, missingFile string) {
 	srvNoPlane := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srvNoPlane, Dependencies{DevStatus: missingFile})
 	t.Setenv("PLANE_BASE_URL", "http://127.0.0.1:0")
 	req5 := `{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "dendrite_ticket_update", "arguments": {"ticket_id": "DEN-999", "status": "DONE", "file": "` + missingFile + `"}}}`
-	resp5 := srvNoPlane.HandleRequest(context.Background(), []byte(req5))
-	if res, ok := resp5.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error when both markdown and plane fail, got: %#v", resp5)
-	}
+	mcptest.ExpectToolError(t, srvNoPlane, req5, "expected error when both markdown and plane fail")
 }
 
 func TestTools_DendritePlaneIssues(t *testing.T) {
@@ -1037,10 +1123,7 @@ func TestTools_DendritePlaneIssues(t *testing.T) {
 
 	// Success
 	req := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_plane_issues", "arguments": {}}}`
-	resp := srv.HandleRequest(context.Background(), []byte(req))
-	if resp == nil || resp.Error != nil {
-		t.Fatalf("dendrite_plane_issues failed: %v", resp)
-	}
+	mcptest.MustHandle(t, srv, req, "dendrite_plane_issues failed")
 
 	// Error when server fails
 	badServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1056,10 +1139,7 @@ func TestTools_DendritePlaneIssues(t *testing.T) {
 
 	srvBad := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srvBad, Dependencies{PlaneClient: badClient})
-	respBad := srvBad.HandleRequest(context.Background(), []byte(req))
-	if res, ok := respBad.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error from dendrite_plane_issues with 500 server, got: %#v", respBad)
-	}
+	mcptest.ExpectToolError(t, srvBad, req, "expected error from dendrite_plane_issues with 500 server")
 }
 
 func TestTools_DendriteOllamaProbe(t *testing.T) {
@@ -1069,24 +1149,15 @@ func TestTools_DendriteOllamaProbe(t *testing.T) {
 
 	// 1. Success with custom URL
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_ollama_probe", "arguments": {"url": "` + ollamaSrv.URL + `"}}}`
-	resp1 := srv.HandleRequest(context.Background(), []byte(req1))
-	if resp1 == nil || resp1.Error != nil {
-		t.Fatalf("expected ollama probe success, got: %v", resp1)
-	}
+	mcptest.MustHandle(t, srv, req1, "expected ollama probe success, got")
 
 	// 2. Success with default URL
 	req2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_ollama_probe", "arguments": {}}}`
-	resp2 := srv.HandleRequest(context.Background(), []byte(req2))
-	if resp2 == nil || resp2.Error != nil {
-		t.Fatalf("expected ollama probe success with default url, got: %v", resp2)
-	}
+	mcptest.MustHandle(t, srv, req2, "expected ollama probe success with default url, got")
 
 	// 3. Error with unreachable URL
 	req3 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_ollama_probe", "arguments": {"url": "http://127.0.0.1:0"}}}`
-	resp3 := srv.HandleRequest(context.Background(), []byte(req3))
-	if res, ok := resp3.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error with unreachable url, got: %#v", resp3)
-	}
+	mcptest.ExpectToolError(t, srv, req3, "expected error with unreachable url")
 }
 
 func TestTools_DendriteTopologyAdvisor(t *testing.T) {
@@ -1095,24 +1166,15 @@ func TestTools_DendriteTopologyAdvisor(t *testing.T) {
 
 	// 1. With nodes string containing '='
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_topology_advisor", "arguments": {"nodes": "local=localhost"}}}`
-	resp1 := srv.HandleRequest(context.Background(), []byte(req1))
-	if resp1 == nil || resp1.Error != nil {
-		t.Fatalf("expected success with nodes, got: %v", resp1)
-	}
+	mcptest.MustHandle(t, srv, req1, "expected success with nodes, got")
 
 	// 2. With node without '='
 	req2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_topology_advisor", "arguments": {"nodes": "localhost"}}}`
-	resp2 := srv.HandleRequest(context.Background(), []byte(req2))
-	if resp2 == nil || resp2.Error != nil {
-		t.Fatalf("expected success with single node, got: %v", resp2)
-	}
+	mcptest.MustHandle(t, srv, req2, "expected success with single node, got")
 
 	// 3. With empty arguments (defaults to local=localhost)
 	req3 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_topology_advisor", "arguments": {}}}`
-	resp3 := srv.HandleRequest(context.Background(), []byte(req3))
-	if resp3 == nil || resp3.Error != nil {
-		t.Fatalf("expected success with empty args, got: %v", resp3)
-	}
+	mcptest.MustHandle(t, srv, req3, "expected success with empty args, got")
 }
 
 func TestTools_DendriteGatewayRender(t *testing.T) {
@@ -1126,10 +1188,7 @@ func TestTools_DendriteGatewayRender(t *testing.T) {
 
 	// Invalid scenario
 	reqInvalid := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_gateway_render", "arguments": {"scenario": "unknown-scenario"}}}`
-	respInvalid := srv.HandleRequest(context.Background(), []byte(reqInvalid))
-	if res, ok := respInvalid.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for invalid scenario, got: %#v", respInvalid)
-	}
+	mcptest.ExpectToolError(t, srv, reqInvalid, "expected error for invalid scenario")
 }
 
 func TestTools_DendriteGatewayUpdate(t *testing.T) {
@@ -1141,17 +1200,11 @@ func TestTools_DendriteGatewayUpdate(t *testing.T) {
 
 	// 1. Dry run
 	req1 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_gateway_update", "arguments": {"file": "%s", "dry_run": true, "use_container_host": false}}}`, cfgPath)
-	resp1 := srv.HandleRequest(context.Background(), []byte(req1))
-	if resp1 == nil || resp1.Error != nil {
-		t.Fatalf("dry_run gateway update failed: %v", resp1)
-	}
+	mcptest.MustHandle(t, srv, req1, "dry_run gateway update failed")
 
 	// 2. Real update
 	req2 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_gateway_update", "arguments": {"file": "%s", "dry_run": false, "use_container_host": true}}}`, cfgPath)
-	resp2 := srv.HandleRequest(context.Background(), []byte(req2))
-	if resp2 == nil || resp2.Error != nil {
-		t.Fatalf("real gateway update failed: %v", resp2)
-	}
+	mcptest.MustHandle(t, srv, req2, "real gateway update failed")
 }
 
 func TestTicketUpdateFallsBackToPlane(t *testing.T) {
@@ -1191,48 +1244,53 @@ func TestGatewayUpdateReportsAConfigItCannotWrite(t *testing.T) {
 }
 
 func TestTools_DendritePlaneReplicateAndPush(t *testing.T) {
-	_, planeClient := createTestPlaneServer(t)
+	tmpDir, devStatusFile, srv := testTools_DendritePlaneReplicateAndPushStep1(t)
+	testTools_DendritePlaneReplicateAndPushStep2(t, devStatusFile, srv)
+	testTools_DendritePlaneReplicateAndPushStep3(t, devStatusFile, srv)
+	testTools_DendritePlaneReplicateAndPushStep4(t, tmpDir, srv)
+	docsDir := testTools_DendritePlaneReplicateAndPushStep5(t, tmpDir, devStatusFile, srv)
+	testTools_DendritePlaneReplicateAndPushStep6(t, srv, docsDir)
+}
 
+func testTools_DendritePlaneReplicateAndPushStep1(t *testing.T) (string, string, *Server) {
+	_, planeClient := createTestPlaneServer(t)
 	tmpDir := t.TempDir()
 	devStatusFile := filepath.Join(tmpDir, "DEV_STATUS.md")
-
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{PlaneClient: planeClient})
+	return tmpDir, devStatusFile, srv
+}
 
-	// 1. dendrite_plane_replicate (dry_run: true)
+// testTools_DendritePlaneReplicateAndPushStep2: 1. dendrite_plane_replicate (dry_run: true)
+func testTools_DendritePlaneReplicateAndPushStep2(t *testing.T, devStatusFile string, srv *Server) {
 	repReq1 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_plane_replicate", "arguments": {"file": "%s", "dry_run": true}}}`, devStatusFile)
-	resp1 := srv.HandleRequest(context.Background(), []byte(repReq1))
-	if resp1 == nil || resp1.Error != nil {
-		t.Fatalf("plane replicate dry run failed: %v", resp1)
-	}
+	mcptest.MustHandle(t, srv, repReq1, "plane replicate dry run failed")
+}
 
-	// 2. dendrite_plane_replicate (dry_run: false)
+// testTools_DendritePlaneReplicateAndPushStep3: 2. dendrite_plane_replicate (dry_run: false)
+func testTools_DendritePlaneReplicateAndPushStep3(t *testing.T, devStatusFile string, srv *Server) {
 	repReq2 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_plane_replicate", "arguments": {"file": "%s", "dry_run": false}}}`, devStatusFile)
-	resp2 := srv.HandleRequest(context.Background(), []byte(repReq2))
-	if resp2 == nil || resp2.Error != nil {
-		t.Fatalf("plane replicate real run failed: %v", resp2)
-	}
+	mcptest.MustHandle(t, srv, repReq2, "plane replicate real run failed")
+}
 
-	// 3. dendrite_plane_push_status with missing file
+// testTools_DendritePlaneReplicateAndPushStep4: 3. dendrite_plane_push_status with missing file
+func testTools_DendritePlaneReplicateAndPushStep4(t *testing.T, tmpDir string, srv *Server) {
 	missingFile := filepath.Join(tmpDir, "NON_EXISTENT.md")
 	pushReq1 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_plane_push_status", "arguments": {"file": "%s"}}}`, missingFile)
-	respPush1 := srv.HandleRequest(context.Background(), []byte(pushReq1))
-	if res, ok := respPush1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error pushing non-existent file, got: %#v", respPush1)
-	}
+	mcptest.ExpectToolError(t, srv, pushReq1, "expected error pushing non-existent file")
+}
 
-	// 4. dendrite_plane_push_status with existing file
+// testTools_DendritePlaneReplicateAndPushStep5: 4. dendrite_plane_push_status with existing file
+func testTools_DendritePlaneReplicateAndPushStep5(t *testing.T, tmpDir string, devStatusFile string, srv *Server) string {
 	pushReq2 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_plane_push_status", "arguments": {"file": "%s"}}}`, devStatusFile)
-	respPush2 := srv.HandleRequest(context.Background(), []byte(pushReq2))
-	if respPush2 == nil || respPush2.Error != nil {
-		t.Fatalf("plane push status failed: %v", respPush2)
-	}
-
-	// 5. dendrite_plane_doc_sync with different directions
+	mcptest.MustHandle(t, srv, pushReq2, "plane push status failed")
 	docsDir := filepath.Join(tmpDir, "docs")
 	_ = os.MkdirAll(docsDir, 0755)
 	_ = os.WriteFile(filepath.Join(docsDir, "guide.md"), []byte("# Guide\nHello world\n"), 0644)
+	return docsDir
+}
 
+func testTools_DendritePlaneReplicateAndPushStep6(t *testing.T, srv *Server, docsDir string) {
 	directions := []string{"to-plane", "from-plane", "bidirectional", "default"}
 	for i, d := range directions {
 		syncReq := fmt.Sprintf(`{"jsonrpc": "2.0", "id": %d, "method": "tools/call", "params": {"name": "dendrite_plane_doc_sync", "arguments": {"dir": "%s", "direction": "%s"}}}`, 10+i, docsDir, d)
@@ -1251,17 +1309,11 @@ func TestTools_DendriteJetbrainsSetup(t *testing.T) {
 
 	// project_only = true
 	req1 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_jetbrains_setup", "arguments": {"project_only": true, "project_dir": %q}}}`, tmpDir)
-	resp1 := srv.HandleRequest(context.Background(), []byte(req1))
-	if resp1 == nil || resp1.Error != nil {
-		t.Fatalf("jetbrains project_only setup failed: %v", resp1)
-	}
+	mcptest.MustHandle(t, srv, req1, "jetbrains project_only setup failed")
 
 	// global_only = true
 	req2 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_jetbrains_setup", "arguments": {"global_only": true, "project_dir": %q}}}`, tmpDir)
-	resp2 := srv.HandleRequest(context.Background(), []byte(req2))
-	if resp2 == nil || resp2.Error != nil {
-		t.Fatalf("jetbrains global_only setup failed: %v", resp2)
-	}
+	mcptest.MustHandle(t, srv, req2, "jetbrains global_only setup failed")
 }
 
 func TestTools_DendriteCommit(t *testing.T) {
@@ -1276,17 +1328,11 @@ func TestTools_DendriteCommit(t *testing.T) {
 
 	// 1. Dry run
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_commit", "arguments": {"ticket_id": "DEN-098", "message": "feat: update readme", "files": ["README.md"], "dry_run": true, "stage_all": false, "use_local_model": false}}}`
-	resp1 := srv.HandleRequest(context.Background(), []byte(req1))
-	if resp1 == nil || resp1.Error != nil {
-		t.Fatalf("commit dry run failed: %v", resp1)
-	}
+	mcptest.MustHandle(t, srv, req1, "commit dry run failed")
 
 	// 2. Real commit
 	req2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_commit", "arguments": {"ticket_id": "DEN-098", "message": "feat: update readme real", "stage_all": true, "dry_run": false, "use_local_model": false}}}`
-	resp2 := srv.HandleRequest(context.Background(), []byte(req2))
-	if resp2 == nil || resp2.Error != nil {
-		t.Fatalf("real commit failed: %v", resp2)
-	}
+	mcptest.MustHandle(t, srv, req2, "real commit failed")
 }
 
 func TestPlaneSyncToolsReportEachFailure(t *testing.T) {
@@ -1368,10 +1414,7 @@ func TestDendriteGatewayUpdate_Tool(t *testing.T) {
 	catalog.RegisterDefaultTools(srv, Dependencies{})
 
 	callReq := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_gateway_update", "arguments": {"dry_run": true, "file": "/tmp/litellm_test_mcp.yaml", "use_container_host": false}}}`
-	resp := srv.HandleRequest(context.Background(), []byte(callReq))
-	if resp == nil || resp.Error != nil {
-		t.Fatalf("unexpected error calling dendrite_gateway_update: %v", resp)
-	}
+	resp := mcptest.MustHandle(t, srv, callReq, "unexpected error calling dendrite_gateway_update")
 
 	callRes, ok := resp.Result.(*CallToolResult)
 	if !ok || len(callRes.Content) == 0 {

@@ -133,6 +133,37 @@ func ToolsWith(t *testing.T, sp *ScriptedPlane, devStatus string) *Server {
 	return srv
 }
 
+// MustHandle sends a JSON-RPC request to the server and fails the test, naming what, unless an answer without an
+// error comes back.
+func MustHandle(t *testing.T, srv *Server, req, what string) *JSONRPCResponse {
+	t.Helper()
+	resp := srv.HandleRequest(context.Background(), []byte(req))
+	if resp == nil || resp.Error != nil {
+		t.Fatalf("%s: %v", what, resp)
+	}
+	return resp
+}
+
+// RequireResponse sends a request and fails the test with msg unless the server answers at all.
+func RequireResponse(t *testing.T, srv *Server, req, msg string) *JSONRPCResponse {
+	t.Helper()
+	resp := srv.HandleRequest(context.Background(), []byte(req))
+	if resp == nil {
+		t.Fatal(msg)
+	}
+	return resp
+}
+
+// ExpectToolError sends a request and fails the test with msg unless the tool answers with an error result.
+func ExpectToolError(t *testing.T, srv *Server, req, msg string) *JSONRPCResponse {
+	t.Helper()
+	resp := srv.HandleRequest(context.Background(), []byte(req))
+	if res, ok := resp.Result.(CallToolResult); !ok || !res.IsError {
+		t.Fatalf("%s: %#v", msg, resp)
+	}
+	return resp
+}
+
 // Main runs a package's tests with retrieval served from the dendrite-rag stand-in, never from a sidecar that
 // happens to be installed on the machine, and Plane from the real dendrite-plane build.
 func Main(m *testing.M) {

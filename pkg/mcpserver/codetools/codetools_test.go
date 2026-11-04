@@ -181,24 +181,15 @@ func TestTools_AgentSearch(t *testing.T) {
 
 	// 1. Missing query (error)
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_agent_search", "arguments": {}}}`
-	resp1 := srv.HandleRequest(context.Background(), []byte(req1))
-	if res, ok := resp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing query in agent_search, got: %#v", resp1)
-	}
+	mcptest.ExpectToolError(t, srv, req1, "expected error for missing query in agent_search")
 
 	// 2. Search mode (route = false)
 	req2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_agent_search", "arguments": {"query": "refactor mcp server", "target_package": "pkg/mcpserver", "target_symbols": ["NewServer"], "require_local": true, "max_cost": 0.05, "max_results": 3, "route": false}}}`
-	resp2 := srv.HandleRequest(context.Background(), []byte(req2))
-	if resp2 == nil || resp2.Error != nil {
-		t.Fatalf("agent_search search mode failed: %v", resp2)
-	}
+	mcptest.MustHandle(t, srv, req2, "agent_search search mode failed")
 
 	// 3. Route mode (route = true)
 	req3 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_agent_search", "arguments": {"query": "refactor mcp server", "route": true}}}`
-	resp3 := srv.HandleRequest(context.Background(), []byte(req3))
-	if resp3 == nil || resp3.Error != nil {
-		t.Fatalf("agent_search route mode failed: %v", resp3)
-	}
+	mcptest.MustHandle(t, srv, req3, "agent_search route mode failed")
 }
 
 func TestTools_TestGen(t *testing.T) {
@@ -207,10 +198,7 @@ func TestTools_TestGen(t *testing.T) {
 
 	// 1. Missing file parameter (error)
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_test_auto", "arguments": {}}}`
-	resp1 := srv.HandleRequest(context.Background(), []byte(req1))
-	if res, ok := resp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for missing file in test_auto, got: %#v", resp1)
-	}
+	mcptest.ExpectToolError(t, srv, req1, "expected error for missing file in test_auto")
 
 	// 2. Valid Go file
 	tmpDir := t.TempDir()
@@ -221,15 +209,25 @@ func TestTools_TestGen(t *testing.T) {
 	}
 
 	req2 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_test_auto", "arguments": {"file": %q, "with_testcontainers": false, "max_iterations": 1}}}`, sourceFile)
-	resp2 := srv.HandleRequest(context.Background(), []byte(req2))
-	if resp2 == nil {
-		t.Fatal("expected response for test_auto")
-	}
+	mcptest.RequireResponse(t, srv, req2, "expected response for test_auto")
 }
 
 func TestDendriteRAGTools(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir := testDendriteRAGToolsStep1(t)
+	testDendriteRAGToolsStep2(t, tmpDir)
+	srv := testDendriteRAGToolsStep3(t, tmpDir)
+	testDendriteRAGToolsStep4(t, tmpDir, srv)
+	respBad := testDendriteRAGToolsStep5(t, srv)
+	testDendriteRAGToolsStep6(t, respBad)
+	testDendriteRAGToolsStep7(t, srv)
+}
 
+func testDendriteRAGToolsStep1(t *testing.T) string {
+	tmpDir := t.TempDir()
+	return tmpDir
+}
+
+func testDendriteRAGToolsStep2(t *testing.T, tmpDir string) {
 	docFile := filepath.Join(tmpDir, "architecture.md")
 	docContent := `# System Architecture
 Dendrite connects IDEs and autonomous agents through Model Context Protocol and AST reachability analysis.
@@ -237,7 +235,9 @@ Dendrite connects IDEs and autonomous agents through Model Context Protocol and 
 	if err := os.WriteFile(docFile, []byte(docContent), 0644); err != nil {
 		t.Fatalf("failed to write doc: %v", err)
 	}
+}
 
+func testDendriteRAGToolsStep3(t *testing.T, tmpDir string) *Server {
 	codeFile := filepath.Join(tmpDir, "pipeline.go")
 	codeContent := `package pipeline
 
@@ -254,11 +254,13 @@ func (p *PromptEnhancer) Enhance(prompt string) string {
 	if err := os.WriteFile(codeFile, []byte(codeContent), 0644); err != nil {
 		t.Fatalf("failed to write code: %v", err)
 	}
-
 	srv := NewServer(ServerConfig{Name: "dendrite", Version: "1.0.0"})
 	catalog.RegisterDefaultTools(srv, Dependencies{})
+	return srv
+}
 
-	// 1. Test dendrite_rag_retrieve tool
+// testDendriteRAGToolsStep4: 1. Test dendrite_rag_retrieve tool
+func testDendriteRAGToolsStep4(t *testing.T, tmpDir string, srv *Server) {
 	retrieveJSON := `{
 		"jsonrpc": "2.0",
 		"id": 201,
@@ -272,23 +274,22 @@ func (p *PromptEnhancer) Enhance(prompt string) string {
 			}
 		}
 	}`
-
 	resp := srv.HandleRequest(context.Background(), []byte(retrieveJSON))
 	if resp.Error != nil {
 		t.Fatalf("unexpected error from dendrite_rag_retrieve: %v", resp.Error)
 	}
-
 	resultMap, ok := resp.Result.(*CallToolResult)
 	if !ok || len(resultMap.Content) == 0 {
 		t.Fatalf("expected valid CallToolResult with content")
 	}
-
 	text := resultMap.Content[0].Text
 	if !strings.Contains(text, "PromptEnhancer") && !strings.Contains(text, "Enhance") {
 		t.Errorf("expected retrieved content to contain AST symbols, got: %s", text)
 	}
+}
 
-	// 2. Error case: missing question mcptest.On dendrite_rag_ask
+// testDendriteRAGToolsStep5: 2. Error case: missing question mcptest.On dendrite_rag_ask
+func testDendriteRAGToolsStep5(t *testing.T, srv *Server) *JSONRPCResponse {
 	badAskJSON := `{
 		"jsonrpc": "2.0",
 		"id": 202,
@@ -302,8 +303,11 @@ func (p *PromptEnhancer) Enhance(prompt string) string {
 	if respBad == nil {
 		t.Fatalf("expected non-nil response for bad ask")
 	}
+	return respBad
+}
 
-	// Handler error wraps as CallToolResult with IsError: true
+// testDendriteRAGToolsStep6: Handler error wraps as CallToolResult with IsError: true
+func testDendriteRAGToolsStep6(t *testing.T, respBad *JSONRPCResponse) {
 	resBad, isCallRes := respBad.Result.(CallToolResult)
 	if isCallRes {
 		if !resBad.IsError {
@@ -312,8 +316,10 @@ func (p *PromptEnhancer) Enhance(prompt string) string {
 	} else if respBad.Error == nil {
 		t.Errorf("expected error or IsError mcptest.On missing question")
 	}
+}
 
-	// 3. Error case: missing query mcptest.On dendrite_rag_retrieve
+// testDendriteRAGToolsStep7: 3. Error case: missing query mcptest.On dendrite_rag_retrieve
+func testDendriteRAGToolsStep7(t *testing.T, srv *Server) {
 	badRetJSON := `{
 		"jsonrpc": "2.0",
 		"id": 203,
@@ -448,13 +454,25 @@ func TestRAGShowArgumentsAndFailures(t *testing.T) {
 }
 
 func TestGraphTools(t *testing.T) {
+	srv, dir, ctx := testGraphToolsStep1(t)
+	res, err := testGraphToolsStep2(t, srv, dir, ctx)
+	res, err = testGraphToolsStep3(t, srv, dir, ctx, res, err)
+	res, err = testGraphToolsStep4(t, srv, dir, ctx, res, err)
+	err = testGraphToolsStep5(t, srv, dir, ctx, err)
+	err = testGraphToolsStep6(t, srv, dir, ctx, res, err)
+	testGraphToolsStep7(t, srv, dir, ctx, err)
+}
+
+func testGraphToolsStep1(t *testing.T) (*Server, string, context.Context) {
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{})
 	dir := testGraphProject(t)
-
 	ctx := context.Background()
+	return srv, dir, ctx
+}
 
-	// 1. dendrite_graph_communities
+// testGraphToolsStep2: 1. dendrite_graph_communities
+func testGraphToolsStep2(t *testing.T, srv *Server, dir string, ctx context.Context) (*CallToolResult, error) {
 	res, err := invokeTool(ctx, srv, "dendrite_graph_communities", map[string]interface{}{
 		"project_path": dir,
 		"limit":        10,
@@ -465,8 +483,11 @@ func TestGraphTools(t *testing.T) {
 	if len(res.Content) == 0 || res.Content[0].Text == "" {
 		t.Errorf("empty communities response")
 	}
+	return res, err
+}
 
-	// 2. dendrite_graph_god_nodes
+// testGraphToolsStep3: 2. dendrite_graph_god_nodes
+func testGraphToolsStep3(t *testing.T, srv *Server, dir string, ctx context.Context, res *CallToolResult, err error) (*CallToolResult, error) {
 	res, err = invokeTool(ctx, srv, "dendrite_graph_god_nodes", map[string]interface{}{
 		"project_path": dir,
 		"limit":        10,
@@ -477,8 +498,11 @@ func TestGraphTools(t *testing.T) {
 	if len(res.Content) == 0 || res.Content[0].Text == "" {
 		t.Errorf("empty god nodes response")
 	}
+	return res, err
+}
 
-	// 3. dendrite_graph_path
+// testGraphToolsStep4: 3. dendrite_graph_path
+func testGraphToolsStep4(t *testing.T, srv *Server, dir string, ctx context.Context, res *CallToolResult, err error) (*CallToolResult, error) {
 	res, err = invokeTool(ctx, srv, "dendrite_graph_path", map[string]interface{}{
 		"project_path": dir,
 		"from":         "Run",
@@ -491,8 +515,11 @@ func TestGraphTools(t *testing.T) {
 	if len(res.Content) == 0 || res.Content[0].Text == "" {
 		t.Errorf("empty path response")
 	}
+	return res, err
+}
 
-	// 3b. dendrite_graph_path missing required args
+// testGraphToolsStep5: 3b. dendrite_graph_path missing required args
+func testGraphToolsStep5(t *testing.T, srv *Server, dir string, ctx context.Context, err error) error {
 	_, err = invokeTool(ctx, srv, "dendrite_graph_path", map[string]interface{}{
 		"project_path": dir,
 		"from":         "",
@@ -500,8 +527,11 @@ func TestGraphTools(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected error for missing 'to' in path")
 	}
+	return err
+}
 
-	// 4. dendrite_graph_explain
+// testGraphToolsStep6: 4. dendrite_graph_explain
+func testGraphToolsStep6(t *testing.T, srv *Server, dir string, ctx context.Context, res *CallToolResult, err error) error {
 	res, err = invokeTool(ctx, srv, "dendrite_graph_explain", map[string]interface{}{
 		"project_path": dir,
 		"target":       "LocateBinary",
@@ -512,8 +542,11 @@ func TestGraphTools(t *testing.T) {
 	if len(res.Content) == 0 || res.Content[0].Text == "" {
 		t.Errorf("empty explain response")
 	}
+	return err
+}
 
-	// 4b. dendrite_graph_explain missing target
+// testGraphToolsStep7: 4b. dendrite_graph_explain missing target
+func testGraphToolsStep7(t *testing.T, srv *Server, dir string, ctx context.Context, err error) {
 	_, err = invokeTool(ctx, srv, "dendrite_graph_explain", map[string]interface{}{
 		"project_path": dir,
 		"target":       "",
@@ -524,138 +557,150 @@ func TestGraphTools(t *testing.T) {
 }
 
 func TestTools_Pool(t *testing.T) {
+	srv, tmpDir := testTools_PoolStep1(t)
+	testTools_PoolStep2(t, srv)
+	projA, projB := testTools_PoolStep3(t, tmpDir)
+	testTools_PoolStep4(t, srv, projA, projB)
+	testTools_PoolStep5(t, srv)
+	testTools_PoolStep6(t, srv)
+	testTools_PoolStep7(t, srv, projA)
+	testTools_PoolStep8(t, srv, projA)
+	testTools_PoolStep9(t, srv, tmpDir, projA)
+}
+
+func testTools_PoolStep1(t *testing.T) (*Server, string) {
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{})
-
 	tmpDir := t.TempDir()
+	return srv, tmpDir
+}
 
-	// 1. dendrite_pool_resolve without directories (empty pool)
+// testTools_PoolStep2: 1. dendrite_pool_resolve without directories (empty pool)
+func testTools_PoolStep2(t *testing.T, srv *Server) {
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_pool_resolve", "arguments": {}}}`
-	resp1 := srv.HandleRequest(context.Background(), []byte(req1))
-	if resp1 == nil || resp1.Error != nil {
-		t.Fatalf("pool_resolve empty failed: %v", resp1)
-	}
+	mcptest.MustHandle(t, srv, req1, "pool_resolve empty failed")
+}
 
-	// 2. dendrite_pool_resolve with directories
+// testTools_PoolStep3: 2. dendrite_pool_resolve with directories
+func testTools_PoolStep3(t *testing.T, tmpDir string) (string, string) {
 	projA := filepath.Join(tmpDir, "projA")
 	projB := filepath.Join(tmpDir, "projB")
 	_ = os.MkdirAll(projA, 0755)
 	_ = os.MkdirAll(projB, 0755)
 	_ = os.WriteFile(filepath.Join(projA, "go.mod"), []byte("module projA\n\ngo 1.25\n"), 0644)
 	_ = os.WriteFile(filepath.Join(projB, "go.mod"), []byte("module projB\n\ngo 1.25\n"), 0644)
+	return projA, projB
+}
 
+func testTools_PoolStep4(t *testing.T, srv *Server, projA string, projB string) {
 	req2 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_pool_resolve", "arguments": {"directories": [%q, %q]}}}`, projA, projB)
-	resp2 := srv.HandleRequest(context.Background(), []byte(req2))
-	if resp2 == nil || resp2.Error != nil {
-		t.Fatalf("pool_resolve with dirs failed: %v", resp2)
-	}
+	mcptest.MustHandle(t, srv, req2, "pool_resolve with dirs failed")
+}
 
-	// 3. dendrite_pool_list
+// testTools_PoolStep5: 3. dendrite_pool_list
+func testTools_PoolStep5(t *testing.T, srv *Server) {
 	req3 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_pool_list", "arguments": {}}}`
-	resp3 := srv.HandleRequest(context.Background(), []byte(req3))
-	if resp3 == nil || resp3.Error != nil {
-		t.Fatalf("pool_list failed: %v", resp3)
-	}
+	mcptest.MustHandle(t, srv, req3, "pool_list failed")
+}
 
-	// 4. dendrite_pool_add: empty directories (error)
+// testTools_PoolStep6: 4. dendrite_pool_add: empty directories (error)
+func testTools_PoolStep6(t *testing.T, srv *Server) {
 	req4a := `{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_pool_add", "arguments": {"directories": []}}}`
-	resp4a := srv.HandleRequest(context.Background(), []byte(req4a))
-	if res, ok := resp4a.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for empty directories in pool_add, got: %#v", resp4a)
-	}
+	mcptest.ExpectToolError(t, srv, req4a, "expected error for empty directories in pool_add")
+}
 
-	// 5. dendrite_pool_add: valid directories
+// testTools_PoolStep7: 5. dendrite_pool_add: valid directories
+func testTools_PoolStep7(t *testing.T, srv *Server, projA string) {
 	req4b := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "dendrite_pool_add", "arguments": {"directories": [%q]}}}`, projA)
-	resp4b := srv.HandleRequest(context.Background(), []byte(req4b))
-	if resp4b == nil {
-		t.Fatal("expected response for pool_add")
-	}
+	mcptest.RequireResponse(t, srv, req4b, "expected response for pool_add")
+}
 
-	// 6. dendrite_pool_switch
+// testTools_PoolStep8: 6. dendrite_pool_switch
+func testTools_PoolStep8(t *testing.T, srv *Server, projA string) {
 	req5 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "dendrite_pool_switch", "arguments": {"target_project_dir": %q, "dependency_name": "projB", "mode": "published", "version": "v1.0.0"}}}`, projA)
-	resp5 := srv.HandleRequest(context.Background(), []byte(req5))
-	if resp5 == nil {
-		t.Fatal("expected response for pool_switch")
-	}
+	mcptest.RequireResponse(t, srv, req5, "expected response for pool_switch")
+}
 
-	// 7. dendrite_pool_split
+// testTools_PoolStep9: 7. dendrite_pool_split
+func testTools_PoolStep9(t *testing.T, srv *Server, tmpDir string, projA string) {
 	splitTarget := filepath.Join(tmpDir, "splitProj")
 	req6 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "dendrite_pool_split", "arguments": {"source_project_dir": %q, "module_subpath": "sub", "new_member_name": "splitProj", "target_directory": %q, "wire_local_mode": false, "register_in_pool": false}}}`, projA, splitTarget)
-	resp6 := srv.HandleRequest(context.Background(), []byte(req6))
-	if resp6 == nil {
-		t.Fatal("expected response for pool_split")
-	}
+	mcptest.RequireResponse(t, srv, req6, "expected response for pool_split")
 }
 
 func TestTools_Query(t *testing.T) {
-	// The reuse audit records ADRs under docs/adr relative to the CWD; keep them out of the package dir.
+	srv, tmpDir := testTools_QueryStep1(t)
+	testTools_QueryStep2(t, srv, tmpDir)
+	testTools_QueryStep3(t, srv, tmpDir)
+	testTools_QueryStep4(t, srv, tmpDir)
+	testTools_QueryStep5(t, srv, tmpDir)
+	testTools_QueryStep6(t, srv, tmpDir)
+	testTools_QueryStep7(t, srv)
+	testTools_QueryStep8(t, srv)
+	testTools_QueryStep9(t, srv)
+	testTools_QueryStep10(t, srv)
+}
+
+// testTools_QueryStep1: The reuse audit records ADRs under docs/adr relative to the CWD; keep them out of the package dir.
+func testTools_QueryStep1(t *testing.T) (*Server, string) {
 	t.Chdir(t.TempDir())
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{})
-
 	tmpDir := t.TempDir()
+	return srv, tmpDir
+}
 
-	// 1. dendrite_query_slice
+// testTools_QueryStep2: 1. dendrite_query_slice
+func testTools_QueryStep2(t *testing.T, srv *Server, tmpDir string) {
 	sliceReq := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_query_slice", "arguments": {"sources_path": %q, "entrypoint_symbol": "main", "intent": "extract core", "direction": "forward", "output_dir": %q}}}`, tmpDir, filepath.Join(tmpDir, "slice_out"))
-	sliceResp := srv.HandleRequest(context.Background(), []byte(sliceReq))
-	if sliceResp == nil {
-		t.Fatal("expected response for query_slice")
-	}
+	mcptest.RequireResponse(t, srv, sliceReq, "expected response for query_slice")
+}
 
-	// 2. dendrite_query_swap
+// testTools_QueryStep3: 2. dendrite_query_swap
+func testTools_QueryStep3(t *testing.T, srv *Server, tmpDir string) {
 	swapReq := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_query_swap", "arguments": {"sources_path": %q, "from_subsystem": "opengl", "to_subsystem": "wgpu", "target_language": "rust", "output_dir": %q}}}`, tmpDir, filepath.Join(tmpDir, "swap_out"))
-	swapResp := srv.HandleRequest(context.Background(), []byte(swapReq))
-	if swapResp == nil {
-		t.Fatal("expected response for query_swap")
-	}
+	mcptest.RequireResponse(t, srv, swapReq, "expected response for query_swap")
+}
 
-	// 3. dendrite_query_transpile
+// testTools_QueryStep4: 3. dendrite_query_transpile
+func testTools_QueryStep4(t *testing.T, srv *Server, tmpDir string) {
 	transReq := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_query_transpile", "arguments": {"sources_artifact": %q, "target_language": "rust", "no_std": true, "audit_library_reuse": true, "prompt": "safe rust", "output_dir": %q}}}`, tmpDir, filepath.Join(tmpDir, "trans_out"))
-	transResp := srv.HandleRequest(context.Background(), []byte(transReq))
-	if transResp == nil {
-		t.Fatal("expected response for query_transpile")
-	}
+	mcptest.RequireResponse(t, srv, transReq, "expected response for query_transpile")
+}
 
-	// 4. dendrite_query_fuse: < 2 sources (error)
+// testTools_QueryStep5: 4. dendrite_query_fuse: < 2 sources (error)
+func testTools_QueryStep5(t *testing.T, srv *Server, tmpDir string) {
 	fuseReq1 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_query_fuse", "arguments": {"sources": [%q], "fused_member_name": "fused", "target_directory": %q}}}`, tmpDir, filepath.Join(tmpDir, "fuse_out"))
-	fuseResp1 := srv.HandleRequest(context.Background(), []byte(fuseReq1))
-	if res, ok := fuseResp1.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for < 2 sources in query_fuse, got: %#v", fuseResp1)
-	}
+	mcptest.ExpectToolError(t, srv, fuseReq1, "expected error for < 2 sources in query_fuse")
+}
 
-	// 5. dendrite_query_fuse: valid sources
+// testTools_QueryStep6: 5. dendrite_query_fuse: valid sources
+func testTools_QueryStep6(t *testing.T, srv *Server, tmpDir string) {
 	fuseReq2 := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "dendrite_query_fuse", "arguments": {"sources": [%q, %q], "fused_member_name": "fused", "target_directory": %q, "target_language": "go", "register_in_pool": false}}}`, tmpDir, tmpDir, filepath.Join(tmpDir, "fuse_out"))
-	fuseResp2 := srv.HandleRequest(context.Background(), []byte(fuseReq2))
-	if fuseResp2 == nil {
-		t.Fatal("expected response for query_fuse")
-	}
+	mcptest.RequireResponse(t, srv, fuseReq2, "expected response for query_fuse")
+}
 
-	// 6. dendrite_query_reuse_audit
+// testTools_QueryStep7: 6. dendrite_query_reuse_audit
+func testTools_QueryStep7(t *testing.T, srv *Server) {
 	reuseReq := `{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "dendrite_query_reuse_audit", "arguments": {"capability": "linear_algebra", "language": "rust", "ticket_id": "DEN-001", "intent": "matrix ops"}}}`
-	reuseResp := srv.HandleRequest(context.Background(), []byte(reuseReq))
-	if reuseResp == nil {
-		t.Fatal("expected response for query_reuse_audit")
-	}
+	mcptest.RequireResponse(t, srv, reuseReq, "expected response for query_reuse_audit")
+}
 
-	// 7. dendrite_ref_list
+// testTools_QueryStep8: 7. dendrite_ref_list
+func testTools_QueryStep8(t *testing.T, srv *Server) {
 	refListReq := `{"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "dendrite_ref_list", "arguments": {}}}`
-	refListResp := srv.HandleRequest(context.Background(), []byte(refListReq))
-	if refListResp == nil {
-		t.Fatal("expected response for ref_list")
-	}
+	mcptest.RequireResponse(t, srv, refListReq, "expected response for ref_list")
+}
 
-	// 8. dendrite_ref_add (with name and without name)
+// testTools_QueryStep9: 8. dendrite_ref_add (with name and without name)
+func testTools_QueryStep9(t *testing.T, srv *Server) {
 	refAddReq1 := `{"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "dendrite_ref_add", "arguments": {"id": "ref-wgpu", "name": "wgpu-rs", "repository": "https://github.com/gfx-rs/wgpu", "language": "rust", "capabilities": ["graphics", "compute"], "license": "MIT"}}}`
-	refAddResp1 := srv.HandleRequest(context.Background(), []byte(refAddReq1))
-	if refAddResp1 == nil {
-		t.Fatal("expected response for ref_add with name")
-	}
+	mcptest.RequireResponse(t, srv, refAddReq1, "expected response for ref_add with name")
+}
 
+func testTools_QueryStep10(t *testing.T, srv *Server) {
 	refAddReq2 := `{"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "dendrite_ref_add", "arguments": {"id": "ref-turso", "repository": "https://github.com/tursodatabase/libsql"}}}`
-	refAddResp2 := srv.HandleRequest(context.Background(), []byte(refAddReq2))
-	if refAddResp2 == nil {
-		t.Fatal("expected response for ref_add without name")
-	}
+	mcptest.RequireResponse(t, srv, refAddReq2, "expected response for ref_add without name")
 }
 
 func TestPoolResolveSkipsNonStringsAndReportsACycle(t *testing.T) {
@@ -769,15 +814,26 @@ func TestQuerySliceAnswersWithTheSlice(t *testing.T) {
 }
 
 func TestDendriteAgentSearchMCPTool(t *testing.T) {
+	srv, ctx := testDendriteAgentSearchMCPToolStep1(t)
+	resp := testDendriteAgentSearchMCPToolStep2(t, srv, ctx)
+	ok := testDendriteAgentSearchMCPToolStep3(t, resp)
+	routeResp := testDendriteAgentSearchMCPToolStep4(t, srv, ctx)
+	testDendriteAgentSearchMCPToolStep5(t, ok, routeResp)
+	testDendriteAgentSearchMCPToolStep6(t, srv, ctx)
+}
+
+func testDendriteAgentSearchMCPToolStep1(t *testing.T) (*Server, context.Context) {
 	srv := NewServer(ServerConfig{Name: "dendrite", Version: "1.0.0"})
 	catalog.RegisterDefaultTools(srv, Dependencies{
 		DevStatus: "DEV_STATUS.md",
 		OllamaURL: "http://127.0.0.1:11434",
 	})
-
 	ctx := context.Background()
+	return srv, ctx
+}
 
-	// 1. Test search query
+// testDendriteAgentSearchMCPToolStep2: 1. Test search query
+func testDendriteAgentSearchMCPToolStep2(t *testing.T, srv *Server, ctx context.Context) *JSONRPCResponse {
 	reqJSON := `{
 		"jsonrpc": "2.0",
 		"id": 201,
@@ -791,12 +847,14 @@ func TestDendriteAgentSearchMCPTool(t *testing.T) {
 			}
 		}
 	}`
-
 	resp := srv.HandleRequest(ctx, []byte(reqJSON))
 	if resp.Error != nil {
 		t.Fatalf("unexpected error from dendrite_agent_search: %v", resp.Error)
 	}
+	return resp
+}
 
+func testDendriteAgentSearchMCPToolStep3(t *testing.T, resp *JSONRPCResponse) bool {
 	resultMap, ok := resp.Result.(*CallToolResult)
 	if !ok {
 		t.Fatalf("expected *CallToolResult, got %T", resp.Result)
@@ -804,13 +862,15 @@ func TestDendriteAgentSearchMCPTool(t *testing.T) {
 	if len(resultMap.Content) == 0 {
 		t.Fatalf("expected non-empty content list")
 	}
-
 	text := resultMap.Content[0].Text
 	if !strings.Contains(text, "aider") && !strings.Contains(text, "openhands") && !strings.Contains(text, "agy") {
 		t.Errorf("expected candidate agent in search results, got: %s", text)
 	}
+	return ok
+}
 
-	// 2. Test route mode
+// testDendriteAgentSearchMCPToolStep4: 2. Test route mode
+func testDendriteAgentSearchMCPToolStep4(t *testing.T, srv *Server, ctx context.Context) *JSONRPCResponse {
 	routeReq := `{
 		"jsonrpc": "2.0",
 		"id": 202,
@@ -824,24 +884,27 @@ func TestDendriteAgentSearchMCPTool(t *testing.T) {
 			}
 		}
 	}`
-
 	routeResp := srv.HandleRequest(ctx, []byte(routeReq))
 	if routeResp.Error != nil {
 		t.Fatalf("unexpected error from route: %v", routeResp.Error)
 	}
+	return routeResp
+}
 
+func testDendriteAgentSearchMCPToolStep5(t *testing.T, ok bool, routeResp *JSONRPCResponse) {
 	rMap := routeResp.Result.(*CallToolResult)
 	var decision map[string]interface{}
 	if err := json.Unmarshal([]byte(rMap.Content[0].Text), &decision); err != nil {
 		t.Fatalf("failed to unmarshal routing decision: %v", err)
 	}
-
 	agentObj, ok := decision["selected_agent"].(map[string]interface{})
 	if !ok || agentObj["id"] == "" {
 		t.Fatalf("expected valid selected_agent, got: %v", decision)
 	}
+}
 
-	// 3. Test empty query error
+// testDendriteAgentSearchMCPToolStep6: 3. Test empty query error
+func testDendriteAgentSearchMCPToolStep6(t *testing.T, srv *Server, ctx context.Context) {
 	badReq := `{
 		"jsonrpc": "2.0",
 		"id": 203,
@@ -861,15 +924,25 @@ func TestDendriteAgentSearchMCPTool(t *testing.T) {
 }
 
 func TestDendriteTestAutoMCPTool(t *testing.T) {
+	srv, ctx := testDendriteTestAutoMCPToolStep1(t)
+	sampleSrc := testDendriteTestAutoMCPToolStep2(t)
+	resp := testDendriteTestAutoMCPToolStep3(t, srv, ctx, sampleSrc)
+	testDendriteTestAutoMCPToolStep4(t, resp)
+	testDendriteTestAutoMCPToolStep5(t, srv, ctx)
+}
+
+func testDendriteTestAutoMCPToolStep1(t *testing.T) (*Server, context.Context) {
 	srv := NewServer(ServerConfig{Name: "dendrite", Version: "1.0.0"})
 	catalog.RegisterDefaultTools(srv, Dependencies{
 		DevStatus: "DEV_STATUS.md",
 		OllamaURL: "http://127.0.0.1:11434",
 	})
-
 	ctx := context.Background()
+	return srv, ctx
+}
 
-	// Create a sample source file in a temp dir
+// testDendriteTestAutoMCPToolStep2: Create a sample source file in a temp dir
+func testDendriteTestAutoMCPToolStep2(t *testing.T) string {
 	tmpDir := t.TempDir()
 	sampleSrc := filepath.Join(tmpDir, "calculator.go")
 	code := `package calc
@@ -881,8 +954,11 @@ func Add(a, b int) int {
 	if err := os.WriteFile(sampleSrc, []byte(code), 0644); err != nil {
 		t.Fatalf("failed to write sample source: %v", err)
 	}
+	return sampleSrc
+}
 
-	// 1. Test test synthesis mcptest.On the source file
+// testDendriteTestAutoMCPToolStep3: 1. Test test synthesis mcptest.On the source file
+func testDendriteTestAutoMCPToolStep3(t *testing.T, srv *Server, ctx context.Context, sampleSrc string) *JSONRPCResponse {
 	reqJSON := fmt.Sprintf(`{
 		"jsonrpc": "2.0",
 		"id": 301,
@@ -894,12 +970,14 @@ func Add(a, b int) int {
 			}
 		}
 	}`, sampleSrc)
-
 	resp := srv.HandleRequest(ctx, []byte(reqJSON))
 	if resp.Error != nil {
 		t.Fatalf("unexpected error from dendrite_test_auto: %v", resp.Error)
 	}
+	return resp
+}
 
+func testDendriteTestAutoMCPToolStep4(t *testing.T, resp *JSONRPCResponse) {
 	var ContentText string
 	switch r := resp.Result.(type) {
 	case *CallToolResult:
@@ -913,25 +991,23 @@ func Add(a, b int) int {
 	default:
 		t.Fatalf("unexpected result type: %T", resp.Result)
 	}
-
 	if ContentText == "" {
 		t.Fatalf("expected non-empty content text")
 	}
-
 	if strings.HasPrefix(ContentText, "Tool error:") {
 		t.Fatalf("Tool error: %s", ContentText)
 	}
-
 	var report map[string]interface{}
 	if err := json.Unmarshal([]byte(ContentText), &report); err != nil {
 		t.Fatalf("failed to parse report: %v", err)
 	}
-
 	if report["state"] != "Verified" {
 		t.Errorf("expected state Verified, got: %v", report["state"])
 	}
+}
 
-	// 2. Test empty file error
+// testDendriteTestAutoMCPToolStep5: 2. Test empty file error
+func testDendriteTestAutoMCPToolStep5(t *testing.T, srv *Server, ctx context.Context) {
 	badReq := `{
 		"jsonrpc": "2.0",
 		"id": 302,
@@ -954,86 +1030,105 @@ func Add(a, b int) int {
 }
 
 func TestTools_DistCodebase(t *testing.T) {
+	srv := testTools_DistCodebaseStep1(t)
+	testTools_DistCodebaseStep2(t, srv)
+	testTools_DistCodebaseStep3(t, srv)
+	testTools_DistCodebaseStep4(t, srv)
+	testTools_DistCodebaseStep5(t, srv)
+	testTools_DistCodebaseStep6(t, srv)
+	testTools_DistCodebaseStep7(t, srv)
+	testTools_DistCodebaseStep8(t, srv)
+	testTools_DistCodebaseStep9(t, srv)
+	testTools_DistCodebaseStep10(t, srv)
+	testTools_DistCodebaseStep11(t, srv)
+}
+
+func testTools_DistCodebaseStep1(t *testing.T) *Server {
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{})
+	return srv
+}
 
-	// 1. dendrite_dist_sources: query matching
+// testTools_DistCodebaseStep2: 1. dendrite_dist_sources: query matching
+func testTools_DistCodebaseStep2(t *testing.T, srv *Server) {
 	req1 := `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "dendrite_dist_sources", "arguments": {"query": "wgpu", "language": "rust"}}}`
-	resp1 := srv.HandleRequest(context.Background(), []byte(req1))
-	if resp1 == nil || resp1.Error != nil {
-		t.Fatalf("dist_sources matching query failed: %v", resp1)
-	}
+	mcptest.MustHandle(t, srv, req1, "dist_sources matching query failed")
+}
 
-	// 2. dendrite_dist_sources: filters (priority & language)
+// testTools_DistCodebaseStep3: 2. dendrite_dist_sources: filters (priority & language)
+func testTools_DistCodebaseStep3(t *testing.T, srv *Server) {
 	req2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_dist_sources", "arguments": {"priority": 1, "language": "rust"}}}`
-	resp2 := srv.HandleRequest(context.Background(), []byte(req2))
-	if resp2 == nil || resp2.Error != nil {
-		t.Fatalf("dist_sources with filters failed: %v", resp2)
-	}
+	mcptest.MustHandle(t, srv, req2, "dist_sources with filters failed")
+}
 
-	// 3. dendrite_dist_decompose: valid
+// testTools_DistCodebaseStep4: 3. dendrite_dist_decompose: valid
+func testTools_DistCodebaseStep4(t *testing.T, srv *Server) {
 	req3 := `{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "dendrite_dist_decompose", "arguments": {"project_name": "carla-rust", "modules": ["engine", "physics"], "user_custom_overrides": ["physics"]}}}`
-	resp3 := srv.HandleRequest(context.Background(), []byte(req3))
-	if resp3 == nil || resp3.Error != nil {
-		t.Fatalf("dist_decompose failed: %v", resp3)
-	}
+	mcptest.MustHandle(t, srv, req3, "dist_decompose failed")
+}
 
-	// 4. dendrite_dist_decompose: missing project_name (error)
+// testTools_DistCodebaseStep5: 4. dendrite_dist_decompose: missing project_name (error)
+func testTools_DistCodebaseStep5(t *testing.T, srv *Server) {
 	req3b := `{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_dist_decompose", "arguments": {}}}`
-	resp3b := srv.HandleRequest(context.Background(), []byte(req3b))
-	if res, ok := resp3b.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for decompose with missing project_name, got: %#v", resp3b)
-	}
+	mcptest.ExpectToolError(t, srv, req3b, "expected error for decompose with missing project_name")
+}
 
-	// 5. dendrite_dist_interop: action "coordinate"
+// testTools_DistCodebaseStep6: 5. dendrite_dist_interop: action "coordinate"
+func testTools_DistCodebaseStep6(t *testing.T, srv *Server) {
 	coordReq := `{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "dendrite_dist_interop", "arguments": {"action": "coordinate", "requester_project": "docula", "dependency_project": "oxipix", "feature_requested": "svg_render", "allow_fallback": true}}}`
-	coordResp := srv.HandleRequest(context.Background(), []byte(coordReq))
-	if coordResp == nil || coordResp.Error != nil {
-		t.Fatalf("interop coordinate failed: %v", coordResp)
-	}
+	mcptest.MustHandle(t, srv, coordReq, "interop coordinate failed")
+}
 
-	// 6. dendrite_dist_interop: action "list"
+// testTools_DistCodebaseStep7: 6. dendrite_dist_interop: action "list"
+func testTools_DistCodebaseStep7(t *testing.T, srv *Server) {
 	listReq := `{"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {"name": "dendrite_dist_interop", "arguments": {"action": "list"}}}`
-	listResp := srv.HandleRequest(context.Background(), []byte(listReq))
-	if listResp == nil || listResp.Error != nil {
-		t.Fatalf("interop list failed: %v", listResp)
-	}
+	mcptest.MustHandle(t, srv, listReq, "interop list failed")
+}
 
-	// 7. dendrite_dist_interop: action "complete" & "reconcile" with invalid coordination_id (error)
+// testTools_DistCodebaseStep8: 7. dendrite_dist_interop: action "complete" & "reconcile" with invalid coordination_id (error)
+func testTools_DistCodebaseStep8(t *testing.T, srv *Server) {
 	compReq := `{"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "dendrite_dist_interop", "arguments": {"action": "complete", "coordination_id": "non-existent"}}}`
-	compResp := srv.HandleRequest(context.Background(), []byte(compReq))
-	if res, ok := compResp.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for complete non-existent coordination, got: %#v", compResp)
-	}
+	mcptest.ExpectToolError(t, srv, compReq, "expected error for complete non-existent coordination")
+}
 
+func testTools_DistCodebaseStep9(t *testing.T, srv *Server) {
 	recReq := `{"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "dendrite_dist_interop", "arguments": {"action": "reconcile", "coordination_id": "non-existent"}}}`
-	recResp := srv.HandleRequest(context.Background(), []byte(recReq))
-	if res, ok := recResp.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for reconcile non-existent coordination, got: %#v", recResp)
-	}
+	mcptest.ExpectToolError(t, srv, recReq, "expected error for reconcile non-existent coordination")
+}
 
-	// 8. dendrite_dist_interop: unknown action (error)
+// testTools_DistCodebaseStep10: 8. dendrite_dist_interop: unknown action (error)
+func testTools_DistCodebaseStep10(t *testing.T, srv *Server) {
 	unknownReq := `{"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "dendrite_dist_interop", "arguments": {"action": "unknown_action"}}}`
-	unknownResp := srv.HandleRequest(context.Background(), []byte(unknownReq))
-	if res, ok := unknownResp.Result.(CallToolResult); !ok || !res.IsError {
-		t.Fatalf("expected error for unknown interop action, got: %#v", unknownResp)
-	}
+	mcptest.ExpectToolError(t, srv, unknownReq, "expected error for unknown interop action")
+}
 
-	// 9. dendrite_dist_spawn: valid spawn
+// testTools_DistCodebaseStep11: 9. dendrite_dist_spawn: valid spawn
+func testTools_DistCodebaseStep11(t *testing.T, srv *Server) {
 	spawnDir := filepath.Join(t.TempDir(), "subproj")
 	spawnReq := fmt.Sprintf(`{"jsonrpc": "2.0", "id": 10, "method": "tools/call", "params": {"name": "dendrite_dist_spawn", "arguments": {"project_name": "subproj", "identifier": "SUBP", "target_dir": %q, "language": "go", "is_satellite": true, "create_plane_project": false, "init_git": true, "description": "Sub project"}}}`, spawnDir)
-	spawnResp := srv.HandleRequest(context.Background(), []byte(spawnReq))
-	if spawnResp == nil || spawnResp.Error != nil {
-		t.Fatalf("dist_spawn failed: %v", spawnResp)
-	}
+	mcptest.MustHandle(t, srv, spawnReq, "dist_spawn failed")
 }
 
 func TestDistCodebaseMCPTools(t *testing.T) {
+	srv, ctx := testDistCodebaseMCPToolsStep1(t)
+	callTool := testDistCodebaseMCPToolsStep2(t, srv, ctx)
+	err := testDistCodebaseMCPToolsStep3(t, callTool)
+	testDistCodebaseMCPToolsStep4(t, callTool, err)
+	testDistCodebaseMCPToolsStep5(t, callTool, err)
+	coordID := testDistCodebaseMCPToolsStep6(t, callTool, err)
+	testDistCodebaseMCPToolsStep7(t, callTool, err, coordID)
+	testDistCodebaseMCPToolsStep8(t, callTool, err, coordID)
+	testDistCodebaseMCPToolsStep9(t, callTool, err, coordID)
+}
+
+func testDistCodebaseMCPToolsStep1(t *testing.T) (*Server, context.Context) {
 	srv := NewServer(ServerConfig{})
 	catalog.RegisterDefaultTools(srv, Dependencies{DevStatus: "../../DEV_STATUS.md"})
-
 	ctx := context.Background()
+	return srv, ctx
+}
 
+func testDistCodebaseMCPToolsStep2(t *testing.T, srv *Server, ctx context.Context) func(name string, args map[string]interface{}) (*CallToolResult, error) {
 	callTool := func(name string, args map[string]interface{}) (*CallToolResult, error) {
 		reqBytes, _ := json.Marshal(map[string]interface{}{
 			"jsonrpc": "2.0",
@@ -1054,8 +1149,11 @@ func TestDistCodebaseMCPTools(t *testing.T) {
 		}
 		return res, nil
 	}
+	return callTool
+}
 
-	// 1. Test dendrite_dist_sources: list all
+// testDistCodebaseMCPToolsStep3: 1. Test dendrite_dist_sources: list all
+func testDistCodebaseMCPToolsStep3(t *testing.T, callTool func(name string, args map[string]interface{}) (*CallToolResult, error)) error {
 	res, err := callTool("dendrite_dist_sources", map[string]interface{}{})
 	if err != nil {
 		t.Fatalf("failed to call dendrite_dist_sources: %v", err)
@@ -1063,8 +1161,11 @@ func TestDistCodebaseMCPTools(t *testing.T) {
 	if len(res.Content) == 0 || !strings.Contains(res.Content[0].Text, "wgpu") {
 		t.Errorf("expected wgpu in dist sources output, got: %v", res.Content)
 	}
+	return err
+}
 
-	// Test query resolution: "cte" -> diesel-cte-ext
+// testDistCodebaseMCPToolsStep4: Test query resolution: "cte" -> diesel-cte-ext
+func testDistCodebaseMCPToolsStep4(t *testing.T, callTool func(name string, args map[string]interface{}) (*CallToolResult, error), err error) {
 	resQuery, err := callTool("dendrite_dist_sources", map[string]interface{}{
 		"query": "cte",
 	})
@@ -1074,8 +1175,10 @@ func TestDistCodebaseMCPTools(t *testing.T) {
 	if !strings.Contains(resQuery.Content[0].Text, "diesel-cte-ext") {
 		t.Errorf("expected diesel-cte-ext in query resolution, got: %s", resQuery.Content[0].Text)
 	}
+}
 
-	// 2. Test dendrite_dist_decompose
+// testDistCodebaseMCPToolsStep5: 2. Test dendrite_dist_decompose
+func testDistCodebaseMCPToolsStep5(t *testing.T, callTool func(name string, args map[string]interface{}) (*CallToolResult, error), err error) {
 	resDecomp, err := callTool("dendrite_dist_decompose", map[string]interface{}{
 		"project_name": "CarlaEngine",
 		"language":     "rust",
@@ -1090,8 +1193,10 @@ func TestDistCodebaseMCPTools(t *testing.T) {
 	if !strings.Contains(resDecomp.Content[0].Text, "wgpu") {
 		t.Errorf("expected wgpu in render-pipeline decomposition, got: %s", resDecomp.Content[0].Text)
 	}
+}
 
-	// 3. Test dendrite_dist_interop
+// testDistCodebaseMCPToolsStep6: 3. Test dendrite_dist_interop
+func testDistCodebaseMCPToolsStep6(t *testing.T, callTool func(name string, args map[string]interface{}) (*CallToolResult, error), err error) string {
 	resInterop, err := callTool("dendrite_dist_interop", map[string]interface{}{
 		"action":             "coordinate",
 		"requester_project":  "Docula",
@@ -1105,13 +1210,15 @@ func TestDistCodebaseMCPTools(t *testing.T) {
 	if !strings.Contains(resInterop.Content[0].Text, "TODO(interop:Oxipix)") {
 		t.Errorf("expected Oxipix TODO in interop, got: %s", resInterop.Content[0].Text)
 	}
-
 	var coordMap map[string]interface{}
 	_ = json.Unmarshal([]byte(resInterop.Content[0].Text), &coordMap)
 	coordObj := coordMap["coordination"].(map[string]interface{})
 	coordID := coordObj["id"].(string)
+	return coordID
+}
 
-	// Complete dependency feature
+// testDistCodebaseMCPToolsStep7: Complete dependency feature
+func testDistCodebaseMCPToolsStep7(t *testing.T, callTool func(name string, args map[string]interface{}) (*CallToolResult, error), err error, coordID string) {
 	resComplete, err := callTool("dendrite_dist_interop", map[string]interface{}{
 		"action":          "complete",
 		"coordination_id": coordID,
@@ -1122,8 +1229,10 @@ func TestDistCodebaseMCPTools(t *testing.T) {
 	if !strings.Contains(resComplete.Content[0].Text, "dependency_completed") {
 		t.Errorf("expected dependency_completed, got: %s", resComplete.Content[0].Text)
 	}
+}
 
-	// Reconcile
+// testDistCodebaseMCPToolsStep8: Reconcile
+func testDistCodebaseMCPToolsStep8(t *testing.T, callTool func(name string, args map[string]interface{}) (*CallToolResult, error), err error, coordID string) {
 	resRec, err := callTool("dendrite_dist_interop", map[string]interface{}{
 		"action":          "reconcile",
 		"coordination_id": coordID,
@@ -1134,8 +1243,10 @@ func TestDistCodebaseMCPTools(t *testing.T) {
 	if !strings.Contains(resRec.Content[0].Text, "successfully_reconciled") {
 		t.Errorf("expected successfully_reconciled, got: %s", resRec.Content[0].Text)
 	}
+}
 
-	// List
+// testDistCodebaseMCPToolsStep9: List
+func testDistCodebaseMCPToolsStep9(t *testing.T, callTool func(name string, args map[string]interface{}) (*CallToolResult, error), err error, coordID string) {
 	resList, err := callTool("dendrite_dist_interop", map[string]interface{}{
 		"action": "list",
 	})
