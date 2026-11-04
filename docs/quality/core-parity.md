@@ -25,18 +25,20 @@ The old `complexity.go` was recovered from `origin/develop` and built as a stand
 - `AnalyzeSourceComplexity`'s cognitive number was a line heuristic. `dendrite-core` implements the SonarSource rules (nesting, `else`, runs of boolean operators, labelled jumps, recursion), so cognitive values are different, and meaningful now.
 - Other languages (Rust, Python, TypeScript, JavaScript, C, C++) are measured too.
 
-## Speed: the target is not met
+## Speed: the target is met
 
-`docs/ARCHITECTURE.md` of dendrite-core-rs sets a target of at least 3 times faster than the in-process Go providers. Measured on the same corpus:
+`docs/ARCHITECTURE.md` of dendrite-core-rs sets a target of at least 3 times faster than the in-process Go providers. The first measurement, taken when the Go analyzer was deleted, missed it: the same corpus took about 0.10 s in Go and about 0.40 s through the sidecar, which was then about 4 times **slower**, because every Go file went through tree-sitter. DCORE-13 closed the gap: `ast.complexity` for Go no longer builds a syntax tree (a lexer and a structural scan give the same metrics, and fall back to the parser for what a token scan cannot decide).
 
-| Run | Wall time |
+Measured again at dendrite-core-rs `f315402`, on the same 489 files (2.9 MB, recovered from `origin/develop` before DEN-813), release build, Apple silicon, 20 runs after one warm-up:
+
+| Run | Wall time (best / median) |
 |---|---|
-| Go analyzer, all 489 files, one process | about 0.10 s |
-| `dendrite-core`, same files as 489 JSON-RPC requests on stdin | about 0.40 s |
+| Go analyzer (`AnalyzeFileComplexity`, recovered from the commit before DEN-813), all 489 files, one process including its start | 87 ms / 99 ms |
+| `dendrite-core`, the same files as 489 JSON-RPC `ast.complexity` requests on stdin, one process including its start | 18 ms / 19 ms |
 
-So on this corpus the Rust sidecar is about 4 times **slower**, not faster. Part of the difference is not comparable work: the sidecar also computes cognitive complexity, parses 3.2 MB of JSON requests, and writes JSON responses, while the Go program only walked the AST. Parsing with tree-sitter is also slower than `go/parser` for Go. The measurement says the target is unmet and the cost is real; it does not say where the time goes. Profiling and the fix are tracked as DCORE-13.
+The sidecar finds the same 2,955 functions, with no errors, and is about 5 times **faster**: the 3x target is met. The two runs are not identical work, in both directions: the sidecar also computes cognitive complexity, parses 3.2 MB of JSON requests and writes JSON responses, while the Go program only walked the AST but read the files from disk. The first run after a fresh build took 0.36 s; every later run was within 18 to 20 ms. A batch request (`ast.complexity_batch`, protocol 1.1.0) and the in-memory figures are in `docs/ARCHITECTURE.md` of dendrite-core-rs.
 
-For gate-sized work (a changed file, a few functions) the difference is milliseconds, and the process is started once per session by `pkg/sidecar`.
+For gate-sized work (a changed file, a few functions) the difference is milliseconds, and the process is started once per session by `pkg/sidecar`. Other languages still go through tree-sitter and were not part of this comparison.
 
 ## Consequences
 
