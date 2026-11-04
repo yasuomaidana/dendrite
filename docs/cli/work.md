@@ -95,9 +95,10 @@ Aliases: `create`
 
 | Flag | Description |
 | :--- | :--- |
-| `--base` | Commit-ish to start from (default HEAD) |
+| `--base` | Commit-ish to start from (default HEAD, or the parent ticket's feature branch) |
 | `--branch` | Branch to create (default agent/<name>) |
 | `--no-ticket-guard` | Do not check or start the ticket in Plane (env DENDRITE_TICKET_GUARD=off) |
+| `--target` | Branch the work merges into (default: the parent ticket's feature branch, else the integration branch) |
 
 ## Examples
 
