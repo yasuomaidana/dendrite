@@ -148,15 +148,22 @@ func TestScanScannerWithoutReport(t *testing.T) {
 }
 
 func TestLocateOrder(t *testing.T) {
-	real, err := immune.Locate()
-	if err != nil {
-		return // no scanner on this machine: TestLocateMissing covers the error
+	real, _ := immune.Locate()
+	if real != "" {
+		t.Run("env wins", func(t *testing.T) {
+			t.Setenv(immune.BinaryEnv, real)
+			got, err := immune.Locate()
+			testkit.Check(t, err)
+			testkit.Equal(t, "path", got, real)
+		})
 	}
-	t.Run("env wins", func(t *testing.T) {
-		t.Setenv(immune.BinaryEnv, real)
+	t.Run("env override", func(t *testing.T) {
+		bin := scannerScript(t, `if [ "$1" = "--version" ]; then echo "skillspector-test 9.9"; exit 0; fi
+			echo '{"skill":{"name":"s"},"risk_assessment":{"score":0,"severity":"LOW"}}' > "$6"`)
+		t.Setenv(immune.BinaryEnv, bin)
 		got, err := immune.Locate()
 		testkit.Check(t, err)
-		testkit.Equal(t, "path", got, real)
+		testkit.Equal(t, "path", got, bin)
 	})
 	t.Run("not executable", func(t *testing.T) {
 		t.Setenv(immune.BinaryEnv, testkit.RegularFile(t))
@@ -180,6 +187,25 @@ func TestLocateOrder(t *testing.T) {
 		testkit.Check(t, err)
 		testkit.Equal(t, "path", got, filepath.Join(home, ".local", "bin", immune.BinaryName))
 	})
+	t.Run("path lookup", func(t *testing.T) {
+		bin := scannerScript(t, `if [ "$1" = "--version" ]; then echo "skillspector-test 9.9"; exit 0; fi
+			echo '{"skill":{"name":"s"},"risk_assessment":{"score":0,"severity":"LOW"}}' > "$6"`)
+		t.Setenv(immune.BinaryEnv, "")
+		t.Setenv("PATH", filepath.Dir(bin))
+		t.Setenv("HOME", t.TempDir())
+		got, err := immune.Locate()
+		testkit.Check(t, err)
+		testkit.Equal(t, "path", got, bin)
+	})
+}
+
+func TestScanVersionReportsTheScannerOutput(t *testing.T) {
+	bin := scannerScript(t, `if [ "$1" = "--version" ]; then echo "skillspector-test 9.9"; exit 0; fi
+		echo '{"skill":{"name":"s"},"risk_assessment":{"score":0,"severity":"LOW"}}' > "$6"`)
+	r, err := immune.Scanner{Bin: bin}.Scan(context.Background(), fixture(t, map[string]string{"SKILL.md": skillHead + "Format the date as ISO 8601.\n"}))
+	testkit.Check(t, err)
+	testkit.Equal(t, "version", r.ScannerVersion, "skillspector-test 9.9")
+	testkit.Equal(t, "verdict", r.Verdict, immune.Approve)
 }
 
 // scannerScript writes an executable that stands in for SkillSpector's command line and returns its path.
