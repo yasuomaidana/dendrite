@@ -2,6 +2,8 @@ package main
 
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/cmd/dendrite/internal/clitest"
+	"Dendrite/cmd/dendrite/session"
 	"bytes"
 	"context"
 	"errors"
@@ -20,35 +22,6 @@ func runCLI(ctx context.Context, out io.Writer, args ...string) error {
 	root.SetErr(out)
 	root.SetArgs(args)
 	return root.ExecuteContext(ctx)
-}
-
-// runWith executes args against a bare root holding only cmd, so a command can be tested before it is wired into newRootCmd.
-func runWith(ctx context.Context, out io.Writer, cmd *cobra.Command, args ...string) error {
-	root := cli.NewBareRootCmd()
-	root.AddCommand(cmd)
-	root.SetOut(out)
-	root.SetErr(out)
-	root.SetArgs(args)
-	return root.ExecuteContext(ctx)
-}
-
-// runSynapseCommand runs `dendrite synapse <args...>`.
-func runSynapseCommand(ctx context.Context, args []string, out io.Writer) error {
-	return runCLI(ctx, out, append([]string{"synapse"}, args...)...)
-}
-
-// runSessionCommand runs `dendrite session <args...>`.
-func runWorkCommand(ctx context.Context, args []string, out io.Writer) error {
-	return runCLI(ctx, out, append([]string{"work"}, args...)...)
-}
-
-// handleAgentJobsCommand runs `dendrite bouton jobs args...`, discarding output.
-func handleAgentJobsCommand(ctx context.Context, args []string) error {
-	return runCLI(ctx, io.Discard, append([]string{"bouton", "jobs"}, args...)...)
-}
-
-func runSessionCommand(ctx context.Context, args []string, out io.Writer) error {
-	return runCLI(ctx, out, append([]string{"session"}, args...)...)
 }
 
 func TestRootCmd_HelpShowsLoreGroups(t *testing.T) {
@@ -137,7 +110,7 @@ func TestExitCodes(t *testing.T) {
 
 func TestRunWith_SingleCommand(t *testing.T) {
 	var buf bytes.Buffer
-	if err := runWith(context.Background(), &buf, newSessionCmd(), "handoff", "--help"); err != nil {
+	if err := clitest.RunWith(context.Background(), &buf, session.NewSessionCmd(), "handoff", "--help"); err != nil {
 		t.Fatalf("runWith: %v", err)
 	}
 	if !strings.Contains(buf.String(), "checkpoint") {
@@ -222,3 +195,5 @@ func TestEveryLeafHasHelp(t *testing.T) {
 	}
 	walk(newRootCmd())
 }
+
+func TestMain(m *testing.M) { clitest.Main(m) }
