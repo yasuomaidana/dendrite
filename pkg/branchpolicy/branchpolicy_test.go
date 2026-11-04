@@ -191,3 +191,37 @@ func TestMemberInIgnoresManifestsWithoutTheProject(t *testing.T) {
 	testkit.WriteFile(t, path, manifestWith("active", "dpid_other", "branch = \"x\"\n"), 0o644)
 	testkit.Equal(t, "other project", memberIn(path, "dpid_me"), Override{})
 }
+
+func TestAnInstalledTargetOfTheCurrentBranchReplacesTheIntegrationBranch(t *testing.T) {
+	dir := repo(t, "main")
+	testkit.Git(t, dir, "branch", "develop")
+	testkit.Git(t, dir, "checkout", "-q", "-b", "agent/x")
+	testkit.Git(t, dir, "config", TargetKey("agent/x"), "feature/DEN-1-f")
+
+	got := For(dir)
+	testkit.Equal(t, "merge target", got.Branch, "feature/DEN-1-f")
+	testkit.Equal(t, "integration", got.Integration, "develop")
+	testkit.Equal(t, "source", got.Source, SourceTicket)
+	testkit.Equal(t, "protected first", got.Protected()[0], "feature/DEN-1-f")
+	testkit.Equal(t, "protected has integration", got.Protected()[1], "develop")
+	testkit.Equal(t, "no duplicates", len(got.Protected()), 4)
+	testkit.Equal(t, "named branch", ForBranch(dir, "agent/x").Branch, "feature/DEN-1-f")
+	testkit.Equal(t, "unrecorded branch", ForBranch(dir, "agent/y").Branch, "develop")
+}
+
+func TestARecordedTargetThatIsNotABranchNameOrChangesNothingIsIgnored(t *testing.T) {
+	dir := repo(t, "main")
+	testkit.Git(t, dir, "branch", "develop")
+	testkit.Git(t, dir, "checkout", "-q", "-b", "agent/x")
+	testkit.Git(t, dir, "config", TargetKey("agent/x"), "not a branch")
+	testkit.Equal(t, "invalid", For(dir).Branch, "develop")
+	testkit.Git(t, dir, "config", TargetKey("agent/x"), "develop")
+	testkit.Equal(t, "same as integration", For(dir).Source, SourceDevelop)
+}
+
+func TestForOnADetachedHeadUsesTheIntegrationBranch(t *testing.T) {
+	dir := repo(t, "main")
+	testkit.Git(t, dir, "branch", "develop")
+	testkit.Git(t, dir, "checkout", "-q", "--detach")
+	testkit.Equal(t, "detached", For(dir).Branch, "develop")
+}

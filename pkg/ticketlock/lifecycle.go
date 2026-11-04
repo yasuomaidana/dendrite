@@ -1,6 +1,7 @@
 package ticketlock
 
 import (
+	"Dendrite/pkg/featurebranch"
 	"context"
 	"errors"
 	"fmt"
@@ -265,4 +266,27 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// namePrefix splits a Plane title "[DEN-840] Roadmap" into its ticket id and the rest.
+var namePrefix = regexp.MustCompile(`^\[([A-Za-z][A-Za-z0-9]*-\d+)\]\s*(.*)$`)
+
+// Parent reports the parent ticket of ref, if it has one. It makes a Board a featurebranch.Source.
+func (b Board) Parent(ctx context.Context, ref string) (featurebranch.Ticket, bool, error) {
+	_, issue, err := b.Status(ctx, ref)
+	if err != nil {
+		return featurebranch.Ticket{}, false, err
+	}
+	if issue.Parent == nil || *issue.Parent == "" {
+		return featurebranch.Ticket{}, false, nil
+	}
+	parent, err := b.Svc.GetIssue(ctx, b.Client, *issue.Parent)
+	if err != nil {
+		return featurebranch.Ticket{}, false, err
+	}
+	m := namePrefix.FindStringSubmatch(parent.Name)
+	if m == nil {
+		return featurebranch.Ticket{}, false, fmt.Errorf("the parent of %s (%q) has no [ID] prefix in its title", ref, parent.Name)
+	}
+	return featurebranch.Ticket{ID: strings.ToUpper(m[1]), Title: m[2]}, true, nil
 }

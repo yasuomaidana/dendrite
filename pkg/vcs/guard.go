@@ -108,6 +108,7 @@ func (g *GitGuard) CurrentBranch(ctx context.Context) (string, error) {
 // work on main and moves to (creating when missing) develop. Choosing main in the directives lifts that rule.
 func (g *GitGuard) target() branchpolicy.Target {
 	t := branchpolicy.For(g.RepoDir)
+	t.Branch = t.Integration // the guard keeps agents on the integration branch, not on a ticket's feature branch
 	if !t.Explicit() && (t.Branch == "main" || t.Branch == "master") {
 		t.Branch = "develop"
 	}

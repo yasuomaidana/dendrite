@@ -44,6 +44,7 @@ type boardState struct{ ID, Name, Group string }
 
 type boardIssue struct {
 	ID, Name, Description, State string
+	Parent                       string // the parent issue's id, "" for none
 	Seq                          int
 	Labels, Assignees            []string
 }
@@ -115,6 +116,13 @@ func (b *Board) stateID(name string) string {
 		}
 	}
 	return ""
+}
+
+// SetParent makes parentRef the parent of the ticket ref (both DEN-n), as a sub-issue is in Plane.
+func (b *Board) SetParent(ref, parentRef string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.issue(ref).Parent = b.issue(parentRef).ID
 }
 
 func (b *Board) issue(ref string) *boardIssue {
@@ -192,8 +200,12 @@ func (b *Board) addComment(issueID, commentHTML string) *BoardComment {
 // issueJSON is an issue as the self-hosted Plane sends it: the state is a bare id, with no state_detail
 // (the sidecar resolves it through the states list), and the lists are [] and never null.
 func (b *Board) issueJSON(i *boardIssue) map[string]any {
+	var parent any // Plane sends null for an issue with no parent
+	if i.Parent != "" {
+		parent = i.Parent
+	}
 	return map[string]any{
-		"id": i.ID, "name": i.Name, "sequence_id": i.Seq, "state": i.State,
+		"id": i.ID, "name": i.Name, "sequence_id": i.Seq, "state": i.State, "parent": parent,
 		"description_html": i.Description, "description_stripped": strings.TrimSpace(htmlTag.ReplaceAllString(i.Description, " ")),
 		"labels": append([]string{}, i.Labels...), "assignees": append([]string{}, i.Assignees...),
 	}
@@ -275,6 +287,50 @@ func (b *Board) labelRoute(w http.ResponseWriter, r *http.Request, body map[stri
 	reply(w, map[string]any{"results": rows})
 }
 
+// patch applies the fields of a PATCH body that the stand-in keeps.
+func (i *boardIssue) patch(body map[string]any) {
+	if v, ok := body["state"].(string); ok {
+		i.State = v
+	}
+	if v, ok := body["name"].(string); ok {
+		i.Name = v
+	}
+	if v, ok := body["description_html"].(string); ok {
+		i.Description = v
+	}
+	if v, ok := body["parent"].(string); ok {
+		i.Parent = v
+	}
+	if _, ok := body["labels"]; ok {
+		i.Labels = ids(body["labels"])
+	}
+	if _, ok := body["assignees"]; ok {
+		i.Assignees = ids(body["assignees"])
+	}
+}
+
+// commentRoute serves the comments of one issue: list, add and edit.
+func (b *Board) commentRoute(w http.ResponseWriter, r *http.Request, issue *boardIssue, parts []string, body map[string]any) {
+	switch {
+	case len(parts) == 2 && r.Method == http.MethodPost:
+		html, _ := body["comment_html"].(string)
+		reply(w, b.addComment(issue.ID, html))
+	case len(parts) == 2:
+		reply(w, map[string]any{"results": b.commentRows(issue.ID)})
+	case len(parts) == 3 && r.Method == http.MethodPatch:
+		for _, c := range b.comments[issue.ID] {
+			if c.ID == parts[2] {
+				c.HTML, _ = body["comment_html"].(string)
+				reply(w, c)
+				return
+			}
+		}
+		http.NotFound(w, r)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
 func (b *Board) issueRoute(w http.ResponseWriter, r *http.Request, parts []string, body map[string]any) {
 	var issue *boardIssue
 	for _, i := range b.issues {
@@ -288,38 +344,12 @@ func (b *Board) issueRoute(w http.ResponseWriter, r *http.Request, parts []strin
 	}
 	switch {
 	case len(parts) == 1 && r.Method == http.MethodPatch:
-		if v, ok := body["state"].(string); ok {
-			issue.State = v
-		}
-		if v, ok := body["name"].(string); ok {
-			issue.Name = v
-		}
-		if v, ok := body["description_html"].(string); ok {
-			issue.Description = v
-		}
-		if _, ok := body["labels"]; ok {
-			issue.Labels = ids(body["labels"])
-		}
-		if _, ok := body["assignees"]; ok {
-			issue.Assignees = ids(body["assignees"])
-		}
+		issue.patch(body)
 		reply(w, b.issueJSON(issue))
 	case len(parts) == 1:
 		reply(w, b.issueJSON(issue))
-	case parts[1] == "comments" && len(parts) == 2 && r.Method == http.MethodPost:
-		html, _ := body["comment_html"].(string)
-		reply(w, b.addComment(issue.ID, html))
-	case parts[1] == "comments" && len(parts) == 2:
-		reply(w, map[string]any{"results": b.commentRows(issue.ID)})
-	case parts[1] == "comments" && len(parts) == 3 && r.Method == http.MethodPatch:
-		for _, c := range b.comments[issue.ID] {
-			if c.ID == parts[2] {
-				c.HTML, _ = body["comment_html"].(string)
-				reply(w, c)
-				return
-			}
-		}
-		http.NotFound(w, r)
+	case parts[1] == "comments":
+		b.commentRoute(w, r, issue, parts, body)
 	default:
 		http.NotFound(w, r)
 	}
@@ -348,4 +378,32 @@ func (b *Board) Texts(ref string) []string {
 		out = append(out, c.Text())
 	}
 	return out
+}
+
+// SetTitle replaces a ticket's whole title, including any [ID] prefix.
+func (b *Board) SetTitle(ref, title string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.issue(ref).Name = title
+}
+
+// SetParentID points a ticket at a parent issue id Plane does not have (a deleted parent).
+func (b *Board) SetParentID(ref, id string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.issue(ref).Parent = id
+}
+
+// ParentOf is the id of a ticket's parent issue ("" for none).
+func (b *Board) ParentOf(ref string) string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.issue(ref).Parent
+}
+
+// IDOf is the id of a ticket.
+func (b *Board) IDOf(ref string) string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.issue(ref).ID
 }

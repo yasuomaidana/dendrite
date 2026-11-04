@@ -29,7 +29,7 @@ func newWorkCmd() *cobra.Command {
 		"dendrite work gc --dry-run\n" +
 		"dendrite work adopt"
 
-	var branch, base string
+	var branch, base, target string
 	var noTicketGuard bool
 	newCmd := &cobra.Command{
 		Use:     "new <name>",
@@ -37,12 +37,13 @@ func newWorkCmd() *cobra.Command {
 		Short:   "Create an isolated working copy (branch agent/<name>)",
 		Args:    exactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runWorkNew(cmd.Context(), args[0], branch, base, noTicketGuard, cmd.OutOrStdout())
+			return runWorkNew(cmd.Context(), args[0], branch, base, target, noTicketGuard, cmd.OutOrStdout())
 		},
 	}
 	newCmd.Flags().BoolVar(&noTicketGuard, "no-ticket-guard", false, "Do not check or start the ticket in Plane (env "+devtool.TicketGuardEnv+"=off)")
 	newCmd.Flags().StringVar(&branch, "branch", "", "Branch to create (default agent/<name>)")
-	newCmd.Flags().StringVar(&base, "base", "", "Commit-ish to start from (default HEAD)")
+	newCmd.Flags().StringVar(&base, "base", "", "Commit-ish to start from (default HEAD, or the parent ticket's feature branch)")
+	newCmd.Flags().StringVar(&target, "target", "", "Branch the work merges into (default: the parent ticket's feature branch, else the integration branch)")
 
 	list := &cobra.Command{
 		Use:     "list",
@@ -96,25 +97,38 @@ func newWorkCmd() *cobra.Command {
 // ticketShaped matches names like DEN-123 or KAKEBO-12.
 var ticketShaped = regexp.MustCompile(`^[A-Z][A-Z0-9]*-[0-9]+$`)
 
-func runWorkNew(ctx context.Context, name, branch, base string, noTicketGuard bool, out io.Writer) error {
-	// A working copy named after a ticket starts that ticket: it must exist, and it moves to In Progress
-	// before any code is written, so the board shows the work from its first minute.
-	if ticketShaped.MatchString(name) && !noTicketGuard && devtool.GuardEnabled() {
-		g, err := devtool.EnsureTicketInProgress(ctx, "", name, devtool.GuardStart, false)
-		if err != nil {
-			return err
-		}
-		switch {
-		case g.Note != "":
-			fmt.Fprintf(out, "[✓] %s\n", g.Note)
-		case g.Skipped != "":
-			fmt.Fprintf(out, "[!] ticket %s not checked: %s\n", name, g.Skipped)
-		}
+// startTicketForCopy starts the ticket a working copy is named after: it must exist, and it moves to In Progress
+// before any code is written, so the board shows the work from its first minute.
+func startTicketForCopy(ctx context.Context, name string, noTicketGuard bool, out io.Writer) error {
+	if !ticketShaped.MatchString(name) || noTicketGuard || !devtool.GuardEnabled() {
+		return nil
 	}
-	path, err := newWorkManager().Create(ctx, name, branch, base)
+	g, err := devtool.EnsureTicketInProgress(ctx, "", name, devtool.GuardStart, false)
 	if err != nil {
 		return err
 	}
+	switch {
+	case g.Note != "":
+		fmt.Fprintf(out, "[✓] %s\n", g.Note)
+	case g.Skipped != "":
+		fmt.Fprintf(out, "[!] ticket %s not checked: %s\n", name, g.Skipped)
+	}
+	return nil
+}
+
+func runWorkNew(ctx context.Context, name, branch, base, target string, noTicketGuard bool, out io.Writer) error {
+	if err := startTicketForCopy(ctx, name, noTicketGuard, out); err != nil {
+		return err
+	}
+	wt, err := prepareWorkTarget(ctx, name, base, target, ticketShaped.MatchString(name) && !noTicketGuard && devtool.GuardEnabled(), out)
+	if err != nil {
+		return err
+	}
+	path, err := newWorkManager().Create(ctx, name, branch, wt.Base)
+	if err != nil {
+		return err
+	}
+	recordWorkTarget(name, branch, wt, out)
 	fmt.Fprintf(out, "[✓] Working copy created: %s\n", path)
 	if ticketShaped.MatchString(name) && !noTicketGuard && devtool.GuardEnabled() {
 		claimInCopy(ctx, name, path, out)

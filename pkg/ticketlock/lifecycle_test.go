@@ -324,3 +324,39 @@ func TestAnUnreadableStateIsNeverTakenForBacklog(t *testing.T) {
 		t.Errorf("state = %s: the ticket must not have been touched", got)
 	}
 }
+
+func TestBoardParentReadsTheParentTicket(t *testing.T) {
+	ctx := context.Background()
+	s := newSession(t, map[string]string{"DEN-1": "To Do", "DEN-2": "To Do", "DEN-3": "To Do"})
+	s.board.SetParent("DEN-2", "DEN-1")
+	if p, ok, err := s.Board.Parent(ctx, "DEN-2"); err != nil || !ok || p.ID != "DEN-1" || p.Title != "work" {
+		t.Fatalf("parent = %+v, %v, %v", p, ok, err)
+	}
+	if _, ok, err := s.Board.Parent(ctx, "DEN-3"); err != nil || ok {
+		t.Fatalf("a ticket with no parent: %v, %v", ok, err)
+	}
+	if _, _, err := s.Board.Parent(ctx, "DEN-99"); err == nil {
+		t.Fatal("an unknown ticket is an error")
+	}
+	s.board.Close()
+	if _, _, err := s.Board.Parent(ctx, "DEN-2"); err == nil {
+		t.Fatal("Plane down is an error, not 'no parent'")
+	}
+}
+
+func TestBoardParentNeedsAnIDInTheParentTitle(t *testing.T) {
+	s := newSession(t, map[string]string{"DEN-1": "To Do", "DEN-2": "To Do"})
+	s.board.SetParent("DEN-2", "DEN-1")
+	s.board.SetTitle("DEN-1", "untitled parent")
+	if _, _, err := s.Board.Parent(context.Background(), "DEN-2"); err == nil {
+		t.Fatal("expected an error for a parent without an [ID] prefix")
+	}
+}
+
+func TestBoardParentReportsAParentPlaneNoLongerHas(t *testing.T) {
+	s := newSession(t, map[string]string{"DEN-2": "To Do"})
+	s.board.SetParentID("DEN-2", "deleted-parent-id")
+	if _, _, err := s.Board.Parent(context.Background(), "DEN-2"); err == nil {
+		t.Fatal("a parent that cannot be read is an error")
+	}
+}

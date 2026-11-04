@@ -286,7 +286,7 @@ func (m *Manager) inspect(ctx context.Context, e worktreeEntry) Copy {
 	if md, err := readMeta(e.path); err == nil && md.Base == e.head {
 		c.Untouched = true
 	}
-	c.MergedInto = m.mergedInto(ctx, e.head)
+	c.MergedInto = m.mergedInto(ctx, e.head, e.branch)
 	if e.branch == "" {
 		return c // detached HEAD: no upstream to inspect
 	}
@@ -309,8 +309,9 @@ func hasUserChanges(status string) bool {
 	return false
 }
 
-func (m *Manager) mergedInto(ctx context.Context, head string) string {
-	policy := branchpolicy.For(m.repoDir)
+// mergedInto names the protected branch (or the recorded target, e.g. a feature branch) that already holds head.
+func (m *Manager) mergedInto(ctx context.Context, head, branch string) string {
+	policy := branchpolicy.ForBranch(m.repoDir, branch)
 	for _, target := range policy.Protected() {
 		for _, ref := range []string{"refs/heads/" + target, "refs/remotes/" + policy.Remote + "/" + target, "refs/remotes/origin/" + target} {
 			if _, err := m.git(ctx, m.repoDir, "rev-parse", "--verify", "--quiet", ref); err != nil {

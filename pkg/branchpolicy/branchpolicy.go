@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -75,6 +76,7 @@ type Source string
 const (
 	SourceMember     Source = "synapse member branch"
 	SourceDirective  Source = "directive git.integration_branch"
+	SourceTicket     Source = "ticket target recorded for this branch"
 	SourceDevelop    Source = "existing develop branch"
 	SourceRemoteHEAD Source = "remote default branch (origin/HEAD)"
 	SourceMain       Source = "existing main branch"
@@ -97,8 +99,11 @@ type Override struct {
 
 // Target is where finished work in a project goes.
 type Target struct {
-	// Branch is the integration branch.
+	// Branch is where finished work on the current branch merges: the project's integration branch, or the
+	// feature branch of the parent ticket the branch was started for (see TargetKey).
 	Branch string `json:"branch"`
+	// Integration is the project's integration branch, whatever Branch is.
+	Integration string `json:"integration"`
 	// Remote is the remote Branch lives on (the upstream of a fork, otherwise the push remote).
 	Remote string `json:"remote"`
 	// PushRemote is the remote branches are pushed to.
@@ -115,8 +120,8 @@ func (t Target) Ref() string { return t.Remote + "/" + t.Branch }
 // conventional trunk names.
 func (t Target) Protected() []string {
 	out := []string{t.Branch}
-	for _, b := range []string{"develop", "main", "master"} {
-		if b != t.Branch {
+	for _, b := range []string{t.Integration, "develop", "main", "master"} {
+		if b != "" && !slices.Contains(out, b) {
 			out = append(out, b)
 		}
 	}
@@ -143,8 +148,31 @@ func (t Target) MergeTargets() []string {
 	return out
 }
 
-// For is Resolve with the settings of the project's synapse member (see MemberOverride).
-func For(dir string) Target { return Resolve(dir, MemberOverride(dir)) }
+// TargetKey is the git config key (branch.<name>.dendrite-target) that records the branch finished work on
+// <name> merges into when that is not the integration branch, e.g. the feature branch of a parent ticket.
+func TargetKey(branch string) string { return "branch." + branch + ".dendrite-target" }
+
+// For is Resolve with the settings of the project's synapse member (see MemberOverride), and, when the branch
+// checked out in dir has a recorded target, that target in place of the integration branch.
+func For(dir string) Target {
+	t := Resolve(dir, MemberOverride(dir))
+	if cur, ok := git(dir, "symbolic-ref", "--short", "HEAD"); ok {
+		return t.withRecordedTarget(dir, cur)
+	}
+	return t
+}
+
+// ForBranch is For for a branch that need not be checked out in dir.
+func ForBranch(dir, branch string) Target {
+	return Resolve(dir, MemberOverride(dir)).withRecordedTarget(dir, branch)
+}
+
+func (t Target) withRecordedTarget(dir, branch string) Target {
+	if rec, ok := git(dir, "config", "--get", TargetKey(branch)); ok && ValidBranch(rec) && rec != t.Branch {
+		t.Branch, t.Source = rec, SourceTicket
+	}
+	return t
+}
 
 // Explicit reports whether a person chose the integration branch (a synapse member or the directive), rather
 // than Dendrite detecting it.
@@ -168,6 +196,7 @@ func Resolve(dir string, ov Override) Target {
 		t.FeaturePrefix = d.FeaturePrefix
 	}
 	t.Branch, t.Source = chooseBranch(dir, t.Remote, ov, d)
+	t.Integration = t.Branch
 	return t
 }
 
