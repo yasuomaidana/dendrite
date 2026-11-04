@@ -23,12 +23,14 @@ First release from `develop` to `main` since 2026-10-19 (180 commits). Which com
 - **Complexity and structure gates (DEN-812):** directives `[complexity]` (`max_cyclomatic` 10, `max_cognitive` 15) and `[structure]` (`max_files_per_dir` 12, `max_dir_production_lines` 3000, `max_prefix_group` 4, `require_docs`, `docs_files`) and the `complexity` and `structure` checks of `dendrite allostasis gate` and `chronos finish`, run on the `dendrite-rag` sidecar (protocol 1.12). The structure check also requires a README and a CHANGELOG for every crate, module and repository root.
 - **Second opinion in CI (DEN-815):** `.github/workflows/complexity.yml` cross-checks complexity with `gocyclo` and `gocognit` (report only while DEN-816 is open) and `ruff` C901, reading the limits from the directives; see `docs/quality/complexity-second-opinion.md`.
 - **Pending moves (DEN-814, DEN-818):** Go files that will move to a Rust repository or to dendrite-mcp-hub carry a `TODO(move:<repo>,<TICKET>)` block (what, when, what stays), listed in `docs/architecture/subprojects.md`, which also states what each sub-project implements today.
+- **Skill scan gate (DEN-425):** `dendrite immune scan <path>` runs SkillSpector on a skill and prints approve, hold or quarantine from its risk score; the bands are the `[immune]` directives. `immune update` and `immune enforce` are not part of this release.
 
 ### Changed
 
 - **The Go complexity, folding and token analyzers in `pkg/ast` and `pkg/ai/tokenopt` are deleted (DEN-813).** A one-off comparison on 489 files and 2,955 functions found identical cyclomatic values (`docs/quality/core-parity.md`). Re-measured after DCORE-13 (which replaced tree-sitter for Go with a lexer scan), the sidecar takes about 19 ms against about 99 ms for the removed analyzer on that corpus, about 5 times faster, so the 3x target is met; the first measurement, 0.40 s against 0.10 s, is kept in the page. `pkg/ast` keeps the symbol graph until it moves (DRAG-79).
 - API keys and vendor settings are configured once in `$DENDRITE_HOME/.env`; a project `.env` no longer overrides them (DEN-1057, DEN-343).
 - Plane, Jira and Linear clients, topology, the HTTP server and the inference engines share transport and stream helpers instead of repeating blocks (DEN-419, DEN-444).
+- **`cmd/dendrite` is one package per command group (DEN-839),** with shared code in `internal/cli`, `internal/clitest` and `internal/planecli`; the help output of all 274 commands is unchanged. `dendrite-core-rs` also now covers Java, Kotlin and Svelte and caches batch results (DCORE-20, DCORE-13), and the sidecar speed table in `docs/quality/core-parity.md` uses like-for-like numbers (DEN-838).
 - Go files over 500 production lines were split by responsibility (DEN-412, DEN-1053).
 - Flags and help text changed in `ask`, `cleft`, `prune`, `quantal`, `sync`, `vesicle` and `work`.
 
