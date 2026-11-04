@@ -47,59 +47,43 @@ func registerAgentSearchTools(s *Server, deps Dependencies) {
 				},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, agentSearchHandler())
+}
+
+// agentSearchHandler handles the dendrite_agent_search tool.
+func agentSearchHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		qStr, _ := args["query"].(string)
 		if qStr == "" {
 			return nil, fmt.Errorf("query is required")
 		}
-
 		targetPkg, _ := args["target_package"].(string)
 		requireLocal, _ := args["require_local"].(bool)
 		maxCost, _ := args["max_cost"].(float64)
 		routeMode, _ := args["route"].(bool)
 
-		maxResults := 5
-		if mr, ok := args["max_results"].(float64); ok && mr > 0 {
-			maxResults = int(mr)
-		}
-
-		var targetSymbols []string
-		if rawSyms, ok := args["target_symbols"].([]interface{}); ok {
-			for _, sym := range rawSyms {
-				if s, ok := sym.(string); ok {
-					targetSymbols = append(targetSymbols, s)
-				}
-			}
-		}
-
-		builder := agentsearch.NewQueryBuilder().
+		query := agentsearch.NewQueryBuilder().
 			WithText(qStr).
 			WithTargetPackage(targetPkg).
-			WithTargetSymbols(targetSymbols...).
+			WithTargetSymbols(stringList(args["target_symbols"])...).
 			RequireLocalInference(requireLocal).
 			WithMaxCost(maxCost).
-			WithMaxResults(maxResults)
-
-		query := builder.Build()
+			WithMaxResults(int(floatArgOr(args, "max_results", 5))).
+			Build()
 
 		// Ranked by the dendrite-rag sidecar
 		engine := agentsearch.NewSearchEngine(nil, nil, nil)
-
 		if routeMode {
 			decision, err := engine.Route(ctx, query)
 			if err != nil {
 				return nil, fmt.Errorf("agent routing failed: %w", err)
 			}
-			data := indentJSON(decision)
-			return textResult(string(data)), nil
+			return textResult(string(indentJSON(decision))), nil
 		}
-
 		results, err := engine.Search(ctx, query)
 		if err != nil {
 			return nil, fmt.Errorf("agent search failed: %w", err)
 		}
-
-		data := indentJSON(results)
-		return textResult(string(data)), nil
-	})
+		return textResult(string(indentJSON(results))), nil
+	}
 }

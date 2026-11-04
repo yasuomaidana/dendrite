@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"Dendrite/pkg/node/migrate"
@@ -59,73 +58,7 @@ func registerMigrateTools(s *Server, deps Dependencies) {
 				},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		targetHost, _ := args["target_host"].(string)
-		if targetHost == "" {
-			return nil, fmt.Errorf("target_host is required")
-		}
-
-		var services []string
-		if rawSvc, ok := args["services"].([]interface{}); ok {
-			for _, item := range rawSvc {
-				if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
-					services = append(services, strings.TrimSpace(s))
-				}
-			}
-		}
-		if len(services) == 0 {
-			services = []string{"debian"}
-		}
-
-		sshPort := 22
-		if p, ok := args["ssh_port"].(float64); ok && p > 0 {
-			sshPort = int(p)
-		}
-		sshUser, _ := args["ssh_user"].(string)
-
-		targetRAM := uint64(4096)
-		if r, ok := args["target_ram_mb"].(float64); ok && r > 0 {
-			targetRAM = uint64(r)
-		}
-		targetDisk := uint64(1000)
-		if d, ok := args["target_disk_gb"].(float64); ok && d > 0 {
-			targetDisk = uint64(d)
-		}
-
-		dryRun, _ := args["dry_run"].(bool)
-		pruneLocal := true
-		if p, ok := args["prune_local"].(bool); ok {
-			pruneLocal = p
-		}
-
-		timeout := 120 * time.Second
-		if t, ok := args["timeout_seconds"].(float64); ok && t > 0 {
-			timeout = time.Duration(t) * time.Second
-		}
-
-		migrator := migrate.NewMigrator(nil, nil)
-		req := migrate.MigrationRequest{
-			Services:     services,
-			TargetHost:   targetHost,
-			SSHPort:      sshPort,
-			SSHUser:      sshUser,
-			TargetRAMMB:  targetRAM,
-			TargetDiskGB: targetDisk,
-			AutoApprove:  true, // MCP invocations have confirmed programmatic consent
-			DryRun:       dryRun,
-			PruneLocal:   pruneLocal,
-			Timeout:      timeout,
-		}
-
-		res, err := migrator.Migrate(ctx, req)
-		if err != nil {
-			return nil, fmt.Errorf("migration failed: %w", err)
-		}
-
-		data := indentJSON(res)
-
-		return textResult(string(data)), nil
-	})
+	}, serviceMoveHandler())
 
 	// dendrite_service_plan
 	s.RegisterTool(Tool{
@@ -144,7 +77,45 @@ func registerMigrateTools(s *Server, deps Dependencies) {
 				},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, servicePlanHandler())
+}
+
+// serviceMoveHandler handles the dendrite_service_move tool.
+func serviceMoveHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		targetHost, _ := args["target_host"].(string)
+		if targetHost == "" {
+			return nil, fmt.Errorf("target_host is required")
+		}
+		services := trimmedStrings(args["services"])
+		if len(services) == 0 {
+			services = []string{"debian"}
+		}
+		sshUser, _ := args["ssh_user"].(string)
+		dryRun, _ := args["dry_run"].(bool)
+
+		res, err := migrate.NewMigrator(nil, nil).Migrate(ctx, migrate.MigrationRequest{
+			Services:     services,
+			TargetHost:   targetHost,
+			SSHPort:      int(floatArgOr(args, "ssh_port", 22)),
+			SSHUser:      sshUser,
+			TargetRAMMB:  uint64(floatArgOr(args, "target_ram_mb", 4096)),
+			TargetDiskGB: uint64(floatArgOr(args, "target_disk_gb", 1000)),
+			AutoApprove:  true, // MCP invocations have confirmed programmatic consent
+			DryRun:       dryRun,
+			PruneLocal:   boolArgOr(args, "prune_local", true),
+			Timeout:      time.Duration(floatArgOr(args, "timeout_seconds", 120)) * time.Second,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("migration failed: %w", err)
+		}
+		return textResult(string(indentJSON(res))), nil
+	}
+}
+
+// servicePlanHandler handles the dendrite_service_plan tool.
+func servicePlanHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		ramMB := uint64(4096)
 		if r, ok := args["ram_mb"].(float64); ok && r > 0 {
 			ramMB = uint64(r)
@@ -158,5 +129,5 @@ func registerMigrateTools(s *Server, deps Dependencies) {
 		data := indentJSON(plan)
 
 		return textResult(string(data)), nil
-	})
+	}
 }

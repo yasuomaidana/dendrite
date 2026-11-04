@@ -31,42 +31,29 @@ func registerContractTools(s *Server, deps Dependencies) {
 			},
 			"required": []interface{}{"schema_dirs"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		schemaDirsRaw, ok := args["schema_dirs"].([]interface{})
-		if !ok || len(schemaDirsRaw) == 0 {
-			return nil, fmt.Errorf("missing required 'schema_dirs' parameter")
-		}
+	}, contractDriftCheckHandler())
+}
 
-		schemaDirs := make([]string, 0, len(schemaDirsRaw))
-		for _, s := range schemaDirsRaw {
-			if sStr, ok := s.(string); ok && sStr != "" {
-				schemaDirs = append(schemaDirs, sStr)
+// contractDriftCheckHandler handles the dendrite_contract_drift_check tool.
+func contractDriftCheckHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		schemaDirs := nonEmptyStrings(args["schema_dirs"])
+		if len(schemaDirs) == 0 {
+			if raw, ok := args["schema_dirs"].([]interface{}); !ok || len(raw) == 0 {
+				return nil, fmt.Errorf("missing required 'schema_dirs' parameter")
 			}
 		}
-
 		codeDirs := make(map[contract.TargetLanguage]string)
-		if cMap, ok := args["code_dirs"].(map[string]interface{}); ok {
-			for langStr, pathVal := range cMap {
-				if pStr, ok := pathVal.(string); ok && pStr != "" {
-					codeDirs[contract.TargetLanguage(langStr)] = pStr
-				}
+		cMap, _ := args["code_dirs"].(map[string]interface{})
+		for langStr, pathVal := range cMap {
+			if pStr, ok := pathVal.(string); ok && pStr != "" {
+				codeDirs[contract.TargetLanguage(langStr)] = pStr
 			}
 		}
-
 		report, err := defaultContractMonitor.CheckDrift(schemaDirs, codeDirs)
 		if err != nil {
 			return nil, fmt.Errorf("contract drift check failed: %w", err)
 		}
-
-		data := indentJSON(report)
-
-		return &CallToolResult{
-			Content: []ContentItem{
-				{
-					Type: "text",
-					Text: string(data),
-				},
-			},
-		}, nil
-	})
+		return textResult(string(indentJSON(report))), nil
+	}
 }

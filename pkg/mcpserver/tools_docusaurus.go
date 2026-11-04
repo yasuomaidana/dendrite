@@ -25,7 +25,38 @@ func registerDocusaurusTools(s *Server, deps Dependencies) {
 				"sharing_tier": map[string]interface{}{"type": "string", "description": "Distribution visibility tier: 'public', 'internal', 'federated' (default: federated)"},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, docusaurusGenerateHandler(svc))
+
+	// dendrite_docusaurus_share
+	s.RegisterTool(Tool{
+		Name:        "dendrite_docusaurus_share",
+		Description: "Package Docusaurus documentation into a portable distribution bundle (.tar.gz) with cryptographic SHA-256 sharing-manifest.json",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"site_dir":    map[string]interface{}{"type": "string", "description": "Generated Docusaurus site directory (default: website)"},
+				"bundle_path": map[string]interface{}{"type": "string", "description": "Destination archive path (default: <site_dir>/dendrite-docs.tar.gz)"},
+			},
+		},
+	}, docusaurusShareHandler(svc))
+
+	// dendrite_docusaurus_audit
+	s.RegisterTool(Tool{
+		Name:        "dendrite_docusaurus_audit",
+		Description: "Audit documentation completeness, frontmatter compliance, and feature traceability against codebase packages and Plane tickets",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"project_root": map[string]interface{}{"type": "string", "description": "Project root directory (default: .)"},
+				"docs_dir":     map[string]interface{}{"type": "string", "description": "Documentation source directory (default: docs)"},
+			},
+		},
+	}, docusaurusAuditHandler(svc))
+}
+
+// docusaurusGenerateHandler handles the dendrite_docusaurus_generate tool.
+func docusaurusGenerateHandler(svc docusaurus.Service) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		docsDir := stringArgOr(args, "docs_dir", "docs")
 		targetDir := stringArgOr(args, "target_dir", "website")
 		title := stringArgOr(args, "title", "Dendrite Documentation")
@@ -57,20 +88,12 @@ func registerDocusaurusTools(s *Server, deps Dependencies) {
 
 		data := indentJSON(res)
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// dendrite_docusaurus_share
-	s.RegisterTool(Tool{
-		Name:        "dendrite_docusaurus_share",
-		Description: "Package Docusaurus documentation into a portable distribution bundle (.tar.gz) with cryptographic SHA-256 sharing-manifest.json",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"site_dir":    map[string]interface{}{"type": "string", "description": "Generated Docusaurus site directory (default: website)"},
-				"bundle_path": map[string]interface{}{"type": "string", "description": "Destination archive path (default: <site_dir>/dendrite-docs.tar.gz)"},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// docusaurusShareHandler handles the dendrite_docusaurus_share tool.
+func docusaurusShareHandler(svc docusaurus.Service) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		siteDir := stringArgOr(args, "site_dir", "website")
 		bundlePath, _ := args["bundle_path"].(string)
 
@@ -81,20 +104,12 @@ func registerDocusaurusTools(s *Server, deps Dependencies) {
 
 		data := indentJSON(manifest)
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// dendrite_docusaurus_audit
-	s.RegisterTool(Tool{
-		Name:        "dendrite_docusaurus_audit",
-		Description: "Audit documentation completeness, frontmatter compliance, and feature traceability against codebase packages and Plane tickets",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"project_root": map[string]interface{}{"type": "string", "description": "Project root directory (default: .)"},
-				"docs_dir":     map[string]interface{}{"type": "string", "description": "Documentation source directory (default: docs)"},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// docusaurusAuditHandler handles the dendrite_docusaurus_audit tool.
+func docusaurusAuditHandler(svc docusaurus.Service) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		projRoot := stringArgOr(args, "project_root", ".")
 		docsDir := stringArgOr(args, "docs_dir", "docs")
 
@@ -105,5 +120,5 @@ func registerDocusaurusTools(s *Server, deps Dependencies) {
 
 		data := indentJSON(summary)
 		return textResult(string(data)), nil
-	})
+	}
 }

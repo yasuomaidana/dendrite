@@ -25,7 +25,67 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 				"query":    map[string]interface{}{"type": "string", "description": "Capability or library name query (e.g. wgpu, cte, turso, pixels)"},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, distSourcesHandler())
+
+	// 17. dendrite_dist_decompose
+	s.RegisterTool(Tool{
+		Name:        "dendrite_dist_decompose",
+		Description: "Forcibly decompose target project or REA evidence into reusable modules and map ecosystem libraries",
+		InputSchema: map[string]interface{}{
+			"type":     "object",
+			"required": []string{"project_name"},
+			"properties": map[string]interface{}{
+				"project_name":          map[string]interface{}{"type": "string", "description": "Name of the project to decompose"},
+				"target_binary_or_spec": map[string]interface{}{"type": "string", "description": "Target binary path or specification file"},
+				"language":              map[string]interface{}{"type": "string", "description": "Target language (default: rust)"},
+				"modules":               map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Custom module names if overriding default modular split"},
+				"user_custom_overrides": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Modules where user explicitly forces in-house custom development"},
+			},
+		},
+	}, distDecomposeHandler())
+
+	// 18. dendrite_dist_interop
+	s.RegisterTool(Tool{
+		Name:        "dendrite_dist_interop",
+		Description: "Coordinate cross-project dependencies across owned repositories (e.g. Docula -> Oxipix), generate unblocking fallbacks and reconcile",
+		InputSchema: map[string]interface{}{
+			"type":     "object",
+			"required": []string{"action"},
+			"properties": map[string]interface{}{
+				"action":             map[string]interface{}{"type": "string", "enum": []string{"coordinate", "complete", "reconcile", "list"}, "description": "Interop coordination action"},
+				"coordination_id":    map[string]interface{}{"type": "string", "description": "Coordination record ID (for complete/reconcile)"},
+				"requester_project":  map[string]interface{}{"type": "string", "description": "Project requesting capability (e.g. Docula)"},
+				"dependency_project": map[string]interface{}{"type": "string", "description": "Project supplying capability (e.g. Oxipix)"},
+				"feature_requested":  map[string]interface{}{"type": "string", "description": "Feature name or signature to add"},
+				"allow_fallback":     map[string]interface{}{"type": "boolean", "description": "Whether to unblock requester immediately with interim fallback and TODO"},
+			},
+		},
+	}, distInteropHandler())
+
+	// 19. dendrite_dist_spawn
+	s.RegisterTool(Tool{
+		Name:        "dendrite_dist_spawn",
+		Description: "Spawn parallel sub-projects or generative satellite projects with git, scaffolding, and Plane integration",
+		InputSchema: map[string]interface{}{
+			"type":     "object",
+			"required": []string{"project_name"},
+			"properties": map[string]interface{}{
+				"project_name":         map[string]interface{}{"type": "string", "description": "Name of the sub-project or satellite project"},
+				"identifier":           map[string]interface{}{"type": "string", "description": "Short code identifier (e.g. CSEN)"},
+				"target_dir":           map[string]interface{}{"type": "string", "description": "Target filesystem directory path"},
+				"language":             map[string]interface{}{"type": "string", "description": "Project language (rust, go, typescript, python)"},
+				"is_satellite":         map[string]interface{}{"type": "boolean", "description": "True if spawned as a side-project (e.g. Carla Rust rewrite)"},
+				"create_plane_project": map[string]interface{}{"type": "boolean", "description": "Whether to create a dedicated project in Plane v2"},
+				"init_git":             map[string]interface{}{"type": "boolean", "description": "Whether to run git init (default: true)"},
+				"description":          map[string]interface{}{"type": "string", "description": "Description of the sub-project"},
+			},
+		},
+	}, distSpawnHandler(deps))
+}
+
+// distSourcesHandler handles the dendrite_dist_sources tool.
+func distSourcesHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		priorityFilter, _ := args["priority"].(float64)
 		langFilter, _ := args["language"].(string)
 		query, _ := args["query"].(string)
@@ -62,81 +122,34 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 		}
 		data := indentJSON(res)
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// 17. dendrite_dist_decompose
-	s.RegisterTool(Tool{
-		Name:        "dendrite_dist_decompose",
-		Description: "Forcibly decompose target project or REA evidence into reusable modules and map ecosystem libraries",
-		InputSchema: map[string]interface{}{
-			"type":     "object",
-			"required": []string{"project_name"},
-			"properties": map[string]interface{}{
-				"project_name":          map[string]interface{}{"type": "string", "description": "Name of the project to decompose"},
-				"target_binary_or_spec": map[string]interface{}{"type": "string", "description": "Target binary path or specification file"},
-				"language":              map[string]interface{}{"type": "string", "description": "Target language (default: rust)"},
-				"modules":               map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Custom module names if overriding default modular split"},
-				"user_custom_overrides": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Modules where user explicitly forces in-house custom development"},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// distDecomposeHandler handles the dendrite_dist_decompose tool.
+func distDecomposeHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		pName, _ := args["project_name"].(string)
 		target, _ := args["target_binary_or_spec"].(string)
 		lang, _ := args["language"].(string)
-
-		var customMods []string
-		if rawMods, ok := args["modules"].([]interface{}); ok {
-			for _, m := range rawMods {
-				if sVal, ok := m.(string); ok {
-					customMods = append(customMods, sVal)
-				}
-			}
-		}
-
-		var userOverrides []string
-		if rawOverrides, ok := args["user_custom_overrides"].([]interface{}); ok {
-			for _, o := range rawOverrides {
-				if sVal, ok := o.(string); ok {
-					userOverrides = append(userOverrides, sVal)
-				}
-			}
-		}
-
-		decomposer := distcodebase.NewDecomposer(globalDistRegistry)
 		forced := true
-		plan, err := decomposer.DecomposeProject(distcodebase.DecomposeRequest{
+		plan, err := distcodebase.NewDecomposer(globalDistRegistry).DecomposeProject(distcodebase.DecomposeRequest{
 			ProjectName:         pName,
 			TargetBinaryOrSpec:  target,
 			Language:            lang,
 			ForcedModular:       &forced,
-			RequestedModules:    customMods,
-			UserCustomOverrides: userOverrides,
+			RequestedModules:    stringList(args["modules"]),
+			UserCustomOverrides: stringList(args["user_custom_overrides"]),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("decomposition failed: %w", err)
 		}
+		return textResult(string(indentJSON(plan))), nil
+	}
+}
 
-		data := indentJSON(plan)
-		return textResult(string(data)), nil
-	})
-
-	// 18. dendrite_dist_interop
-	s.RegisterTool(Tool{
-		Name:        "dendrite_dist_interop",
-		Description: "Coordinate cross-project dependencies across owned repositories (e.g. Docula -> Oxipix), generate unblocking fallbacks and reconcile",
-		InputSchema: map[string]interface{}{
-			"type":     "object",
-			"required": []string{"action"},
-			"properties": map[string]interface{}{
-				"action":             map[string]interface{}{"type": "string", "enum": []string{"coordinate", "complete", "reconcile", "list"}, "description": "Interop coordination action"},
-				"coordination_id":    map[string]interface{}{"type": "string", "description": "Coordination record ID (for complete/reconcile)"},
-				"requester_project":  map[string]interface{}{"type": "string", "description": "Project requesting capability (e.g. Docula)"},
-				"dependency_project": map[string]interface{}{"type": "string", "description": "Project supplying capability (e.g. Oxipix)"},
-				"feature_requested":  map[string]interface{}{"type": "string", "description": "Feature name or signature to add"},
-				"allow_fallback":     map[string]interface{}{"type": "boolean", "description": "Whether to unblock requester immediately with interim fallback and TODO"},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// distInteropHandler handles the dendrite_dist_interop tool.
+func distInteropHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		action, _ := args["action"].(string)
 
 		switch action {
@@ -189,27 +202,12 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 		default:
 			return nil, fmt.Errorf("unknown interop action: %s", action)
 		}
-	})
+	}
+}
 
-	// 19. dendrite_dist_spawn
-	s.RegisterTool(Tool{
-		Name:        "dendrite_dist_spawn",
-		Description: "Spawn parallel sub-projects or generative satellite projects with git, scaffolding, and Plane integration",
-		InputSchema: map[string]interface{}{
-			"type":     "object",
-			"required": []string{"project_name"},
-			"properties": map[string]interface{}{
-				"project_name":         map[string]interface{}{"type": "string", "description": "Name of the sub-project or satellite project"},
-				"identifier":           map[string]interface{}{"type": "string", "description": "Short code identifier (e.g. CSEN)"},
-				"target_dir":           map[string]interface{}{"type": "string", "description": "Target filesystem directory path"},
-				"language":             map[string]interface{}{"type": "string", "description": "Project language (rust, go, typescript, python)"},
-				"is_satellite":         map[string]interface{}{"type": "boolean", "description": "True if spawned as a side-project (e.g. Carla Rust rewrite)"},
-				"create_plane_project": map[string]interface{}{"type": "boolean", "description": "Whether to create a dedicated project in Plane v2"},
-				"init_git":             map[string]interface{}{"type": "boolean", "description": "Whether to run git init (default: true)"},
-				"description":          map[string]interface{}{"type": "string", "description": "Description of the sub-project"},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// distSpawnHandler handles the dendrite_dist_spawn tool.
+func distSpawnHandler(deps Dependencies) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		pName, _ := args["project_name"].(string)
 		ident, _ := args["identifier"].(string)
 		targetDir, _ := args["target_dir"].(string)
@@ -238,5 +236,5 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 
 		data := indentJSON(result)
 		return textResult(string(data)), nil
-	})
+	}
 }

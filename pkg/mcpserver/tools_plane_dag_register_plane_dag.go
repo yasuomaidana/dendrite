@@ -78,46 +78,7 @@ func registerPlaneDAGTools(s *Server, deps Dependencies) {
 			},
 			"required": []interface{}{"issue_id", "relation_type", "target_issue_id"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		issueID, _ := args["issue_id"].(string)
-		relationType, _ := args["relation_type"].(string)
-		targetIssueID, _ := args["target_issue_id"].(string)
-
-		if issueID == "" || relationType == "" || targetIssueID == "" {
-			return nil, fmt.Errorf("issue_id, relation_type, and target_issue_id are all required")
-		}
-
-		client, err := planeClientOf(deps)
-		if err != nil {
-			return nil, err
-		}
-
-		sourceUUID, err := resolveIssueUUID(ctx, client, issueID)
-		if err != nil {
-			return nil, err
-		}
-		targetUUID, err := resolveIssueUUID(ctx, client, targetIssueID)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := client.AddIssueRelation(ctx, sourceUUID, relationType, []string{targetUUID}); err != nil {
-			return nil, fmt.Errorf("failed to create relation in Plane: %w", err)
-		}
-
-		res := map[string]interface{}{
-			"status":          "success",
-			"relation_type":   relationType,
-			"source_ticket":   issueID,
-			"source_uuid":     sourceUUID,
-			"target_ticket":   targetIssueID,
-			"target_uuid":     targetUUID,
-			"gantt_connected": true,
-		}
-
-		data := indentJSON(res)
-		return textResult(string(data)), nil
-	})
+	}, planeRelationLinkHandler(deps))
 
 	// 4. dendrite_plane_issue_create
 	s.RegisterTool(Tool{
@@ -168,126 +129,7 @@ func registerPlaneDAGTools(s *Server, deps Dependencies) {
 			},
 			"required": []interface{}{"name", "description"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		name, _ := args["name"].(string)
-		if strings.TrimSpace(name) == "" {
-			return nil, fmt.Errorf("missing required 'name' parameter")
-		}
-		desc, _ := args["description"].(string)
-		if desc == "" {
-			desc, _ = args["context"].(string)
-		}
-		if plane.IsEmptyContext(desc) {
-			return nil, fmt.Errorf("ticket context/description cannot be empty: acceptance criteria and architectural context are mandatory")
-		}
-		mName, _ := args["milestone"].(string)
-		prio, _ := args["priority"].(string)
-		if prio == "" {
-			prio = dag.PriorityMedium
-		}
-
-		var estimate *int
-		if estFloat, ok := args["estimate"].(float64); ok {
-			e := int(estFloat)
-			estimate = &e
-		}
-
-		sDate, _ := args["start_date"].(string)
-		tDate, _ := args["target_date"].(string)
-
-		client, err := planeClientOf(deps)
-		if err != nil {
-			return nil, err
-		}
-
-		// Auto-calculate dates if omitted
-		if sDate == "" || tDate == "" {
-			now := time.Now().Truncate(24 * time.Hour)
-			days := 4
-			if estimate != nil {
-				days = dag.EstimateDays(*estimate, 0)
-			}
-			if sDate == "" {
-				sDate = now.Format("2006-01-02")
-			}
-			if tDate == "" {
-				tDate = now.AddDate(0, 0, days).Format("2006-01-02")
-			}
-		}
-
-		// Resolve or create module
-		var moduleID string
-		if mName != "" {
-			modules, err := client.ListModules(ctx)
-			if err == nil {
-				for _, mod := range modules {
-					if strings.Contains(strings.ToLower(mod.Name), strings.ToLower(mName)) || mod.ID == mName {
-						moduleID = mod.ID
-						break
-					}
-				}
-			}
-			if moduleID == "" {
-				newMod, err := client.CreateModuleWithDates(ctx, mName, "in-progress", fmt.Sprintf("Milestone tracking for %s", mName), &sDate, &tDate)
-				if err == nil && newMod != nil {
-					moduleID = newMod.ID
-				}
-			}
-		}
-
-		// Resolve blocker tickets
-		var blockerUUIDs []string
-		if rawBlockers, ok := args["blocked_by"].([]interface{}); ok {
-			existingIssues, _ := client.ListPlaneIssues(ctx)
-			for _, rb := range rawBlockers {
-				bStr, ok := rb.(string)
-				if !ok || bStr == "" {
-					continue
-				}
-				if len(bStr) == 36 && strings.Count(bStr, "-") == 4 {
-					blockerUUIDs = append(blockerUUIDs, bStr)
-				} else {
-					for _, iss := range existingIssues {
-						if strings.Contains(iss.Name, "["+bStr+"]") || strings.Contains(iss.Name, bStr) {
-							blockerUUIDs = append(blockerUUIDs, iss.ID)
-							break
-						}
-					}
-				}
-			}
-		}
-
-		descHTML := fmt.Sprintf("<div><p>%s</p></div>", desc)
-		created, _, err := planesvc.Default().CreateIssue(ctx, client, plane.CreateIssueRequest{
-			Name:            name,
-			DescriptionHTML: descHTML,
-			Priority:        prio,
-			EstimatePoint:   estimate,
-			StartDate:       &sDate,
-			TargetDate:      &tDate,
-			ModuleID:        moduleID,
-			BlockedBy:       blockerUUIDs,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create issue in Plane: %w", err)
-		}
-
-		res := map[string]interface{}{
-			"status":            "success",
-			"issue_id":          created.ID,
-			"sequence_id":       created.SequenceID,
-			"name":              created.Name,
-			"priority":          prio,
-			"start_date":        sDate,
-			"target_date":       tDate,
-			"module_id":         moduleID,
-			"blockers_count":    len(blockerUUIDs),
-			"gantt_plan_placed": true,
-		}
-
-		data := indentJSON(res)
-		return textResult(string(data)), nil
-	})
+	}, planeIssueCreateHandler(deps))
 }
 
 // resolveIssueUUID turns a ticket reference (DEN-036, a sequence number or a UUID) into the issue's UUID.
@@ -303,4 +145,169 @@ func resolveIssueUUID(ctx context.Context, client *plane.Client, raw string) (st
 		return iss.ID, nil
 	}
 	return "", fmt.Errorf("ticket '%s' not found in Plane", raw)
+}
+
+// planeRelationLinkHandler handles the dendrite_plane_relation_link tool.
+func planeRelationLinkHandler(deps Dependencies) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		issueID, _ := args["issue_id"].(string)
+		relationType, _ := args["relation_type"].(string)
+		targetIssueID, _ := args["target_issue_id"].(string)
+
+		if issueID == "" || relationType == "" || targetIssueID == "" {
+			return nil, fmt.Errorf("issue_id, relation_type, and target_issue_id are all required")
+		}
+
+		client, err := planeClientOf(deps)
+		if err != nil {
+			return nil, err
+		}
+
+		sourceUUID, err := resolveIssueUUID(ctx, client, issueID)
+		if err != nil {
+			return nil, err
+		}
+		targetUUID, err := resolveIssueUUID(ctx, client, targetIssueID)
+		if err != nil {
+			return nil, err
+		}
+
+		if err := client.AddIssueRelation(ctx, sourceUUID, relationType, []string{targetUUID}); err != nil {
+			return nil, fmt.Errorf("failed to create relation in Plane: %w", err)
+		}
+
+		res := map[string]interface{}{
+			"status":          "success",
+			"relation_type":   relationType,
+			"source_ticket":   issueID,
+			"source_uuid":     sourceUUID,
+			"target_ticket":   targetIssueID,
+			"target_uuid":     targetUUID,
+			"gantt_connected": true,
+		}
+
+		data := indentJSON(res)
+		return textResult(string(data)), nil
+	}
+}
+
+// planeIssueCreateHandler handles the dendrite_plane_issue_create tool.
+func planeIssueCreateHandler(deps Dependencies) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		name, _ := args["name"].(string)
+		if strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("missing required 'name' parameter")
+		}
+		desc := stringArgOr(args, "description", stringArgOr(args, "context", ""))
+		if plane.IsEmptyContext(desc) {
+			return nil, fmt.Errorf("ticket context/description cannot be empty: acceptance criteria and architectural context are mandatory")
+		}
+		client, err := planeClientOf(deps)
+		if err != nil {
+			return nil, err
+		}
+		var estimate *int
+		if estFloat, ok := args["estimate"].(float64); ok {
+			e := int(estFloat)
+			estimate = &e
+		}
+		sDate, tDate := issueDates(args, estimate)
+		mName, _ := args["milestone"].(string)
+		moduleID := resolveModuleID(ctx, client, mName, sDate, tDate)
+		blockerUUIDs := resolveBlockers(ctx, client, args["blocked_by"])
+		prio := stringArgOr(args, "priority", dag.PriorityMedium)
+
+		created, _, err := planesvc.Default().CreateIssue(ctx, client, plane.CreateIssueRequest{
+			Name:            name,
+			DescriptionHTML: fmt.Sprintf("<div><p>%s</p></div>", desc),
+			Priority:        prio,
+			EstimatePoint:   estimate,
+			StartDate:       &sDate,
+			TargetDate:      &tDate,
+			ModuleID:        moduleID,
+			BlockedBy:       blockerUUIDs,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create issue in Plane: %w", err)
+		}
+		return textResult(string(indentJSON(map[string]interface{}{
+			"status":            "success",
+			"issue_id":          created.ID,
+			"sequence_id":       created.SequenceID,
+			"name":              created.Name,
+			"priority":          prio,
+			"start_date":        sDate,
+			"target_date":       tDate,
+			"module_id":         moduleID,
+			"blockers_count":    len(blockerUUIDs),
+			"gantt_plan_placed": true,
+		}))), nil
+	}
+}
+
+// issueDates are the start and target dates of a new ticket: the ones given, otherwise today and today plus the
+// estimate's duration (four days without an estimate).
+func issueDates(args map[string]interface{}, estimate *int) (start, target string) {
+	start, _ = args["start_date"].(string)
+	target, _ = args["target_date"].(string)
+	if start != "" && target != "" {
+		return start, target
+	}
+	now := time.Now().Truncate(24 * time.Hour)
+	days := 4
+	if estimate != nil {
+		days = dag.EstimateDays(*estimate, 0)
+	}
+	if start == "" {
+		start = now.Format("2006-01-02")
+	}
+	if target == "" {
+		target = now.AddDate(0, 0, days).Format("2006-01-02")
+	}
+	return start, target
+}
+
+// resolveModuleID finds the module (milestone) whose name contains mName, or creates it; "" for no milestone.
+func resolveModuleID(ctx context.Context, client *plane.Client, mName, sDate, tDate string) string {
+	if mName == "" {
+		return ""
+	}
+	if modules, err := client.ListModules(ctx); err == nil {
+		for _, mod := range modules {
+			if strings.Contains(strings.ToLower(mod.Name), strings.ToLower(mName)) || mod.ID == mName {
+				return mod.ID
+			}
+		}
+	}
+	newMod, err := client.CreateModuleWithDates(ctx, mName, "in-progress", fmt.Sprintf("Milestone tracking for %s", mName), &sDate, &tDate)
+	if err != nil || newMod == nil {
+		return ""
+	}
+	return newMod.ID
+}
+
+// resolveBlockers turns the blocked_by argument (ticket ids or issue UUIDs) into issue UUIDs.
+func resolveBlockers(ctx context.Context, client *plane.Client, raw interface{}) []string {
+	rawBlockers, ok := raw.([]interface{})
+	if !ok {
+		return nil
+	}
+	existingIssues, _ := client.ListPlaneIssues(ctx)
+	var uuids []string
+	for _, rb := range rawBlockers {
+		bStr, ok := rb.(string)
+		switch {
+		case !ok || bStr == "":
+		case len(bStr) == 36 && strings.Count(bStr, "-") == 4:
+			uuids = append(uuids, bStr)
+		default:
+			for _, iss := range existingIssues {
+				if strings.Contains(iss.Name, bStr) {
+					uuids = append(uuids, iss.ID)
+					break
+				}
+			}
+		}
+	}
+	return uuids
 }

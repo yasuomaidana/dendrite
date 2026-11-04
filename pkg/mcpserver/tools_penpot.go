@@ -39,7 +39,12 @@ func registerPenpotTools(s *Server, deps Dependencies) {
 			},
 			"required": []interface{}{"file"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, uiPenpotSyncHandler(deps))
+}
+
+// uiPenpotSyncHandler handles the dendrite_ui_penpot_sync tool.
+func uiPenpotSyncHandler(deps Dependencies) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		file, _ := args["file"].(string)
 		if strings.TrimSpace(file) == "" {
 			return nil, fmt.Errorf("file argument is required")
@@ -66,5 +71,5 @@ func registerPenpotTools(s *Server, deps Dependencies) {
 
 		data := indentJSON(res)
 		return textResult(string(data)), nil
-	})
+	}
 }

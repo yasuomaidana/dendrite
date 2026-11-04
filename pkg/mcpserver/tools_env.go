@@ -34,7 +34,12 @@ func registerEnvPrepareTools(s *Server, deps Dependencies) {
 				},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, envPrepareHandler())
+}
+
+// envPrepareHandler handles the dendrite_env_prepare tool.
+func envPrepareHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		path := "."
 		if p, ok := args["project_path"].(string); ok && strings.TrimSpace(p) != "" {
 			path = p
@@ -66,5 +71,5 @@ func registerEnvPrepareTools(s *Server, deps Dependencies) {
 
 		data := indentJSON(report)
 		return textResult(string(data)), nil
-	})
+	}
 }

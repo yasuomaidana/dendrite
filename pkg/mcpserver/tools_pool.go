@@ -20,84 +20,19 @@ func registerPoolTools(s *Server, deps Dependencies) {
 		propsSchema(map[string]interface{}{
 			"directories": listProp("string", "Optional ad-hoc list of directory paths to resolve directly without loading pool config"),
 		}),
-		func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-			var projects []dag.ProjectInfo
-
-			if rawDirs, ok := args["directories"].([]interface{}); ok && len(rawDirs) > 0 {
-				scanner := dag.NewManifestScanner()
-				for _, d := range rawDirs {
-					dirStr, ok := d.(string)
-					if !ok {
-						continue
-					}
-					info, err := scanner.ScanProject(dirStr)
-					if err != nil {
-						return nil, fmt.Errorf("scanning %s: %w", dirStr, err)
-					}
-					projects = append(projects, *info)
-				}
-			} else {
-				_ = defaultMCPPoolManager.Load()
-				projects = defaultMCPPoolManager.List()
-			}
-
-			if len(projects) == 0 {
-				return textResult("[-] Pool is empty. No projects registered."), nil
-			}
-
-			res, err := defaultMCPDAGSolver.Resolve(projects)
-			return resultOrError(res, err, "[-] Dependency resolution failed: %v"), nil
-		})
+		poolResolveHandler())
 
 	// 27. dendrite_pool_list
 	addTool(s, "dendrite_pool_list", "List all registered project members in the multi-project pool",
 		propsSchema(map[string]interface{}{}),
-		func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-			_ = defaultMCPPoolManager.Load()
-			projects := defaultMCPPoolManager.List()
-
-			data := indentJSON(map[string]interface{}{
-				"count":    len(projects),
-				"projects": projects,
-			})
-
-			return textResult(string(data)), nil
-		})
+		poolListHandler())
 
 	// 28. dendrite_pool_add
 	addTool(s, "dendrite_pool_add", "Register one or more project directories into .dendrite/pool.json",
 		objectSchema([]string{"directories"}, map[string]interface{}{
 			"directories": listProp("string", "List of project directory paths to register"),
 		}),
-		func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-			rawDirs, ok := args["directories"].([]interface{})
-			if !ok || len(rawDirs) == 0 {
-				return nil, fmt.Errorf("directories array is required and must not be empty")
-			}
-
-			var dirs []string
-			for _, d := range rawDirs {
-				if str, ok := d.(string); ok {
-					dirs = append(dirs, str)
-				}
-			}
-
-			added, err := defaultMCPPoolManager.Add(dirs...)
-			if err != nil {
-				return errorResult("[-] Failed adding projects: %v", err), nil
-			}
-
-			if err := defaultMCPPoolManager.Save(); err != nil {
-				return nil, fmt.Errorf("saving pool config: %w", err)
-			}
-
-			data := indentJSON(map[string]interface{}{
-				"status": "success",
-				"added":  added,
-			})
-
-			return textResult(string(data)), nil
-		})
+		poolAddHandler())
 
 	// 29. dendrite_pool_switch
 	addTool(s, "dendrite_pool_switch", "Atomically transition a dependency mode across Published, Branch, Local, or Fork with JetBrains scope sync",
@@ -113,34 +48,7 @@ func registerPoolTools(s *Server, deps Dependencies) {
 			"fork_branch":        typedProp("string", "Remote branch on fork (optional for fork mode)"),
 			"sync_ide":           typedProp("boolean", "Whether to synchronize JetBrains IDE scopes (.idea/scopes)"),
 		}),
-		func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-			targetDir, _ := args["target_project_dir"].(string)
-			depName, _ := args["dependency_name"].(string)
-			modeStr, _ := args["mode"].(string)
-			version, _ := args["version"].(string)
-			branchName, _ := args["branch_name"].(string)
-			commitSHA, _ := args["commit_sha"].(string)
-			localPath, _ := args["local_path"].(string)
-			forkURL, _ := args["fork_url"].(string)
-			forkBranch, _ := args["fork_branch"].(string)
-			syncIDE, _ := args["sync_ide"].(bool)
-
-			req := switcher.SwitchRequest{
-				TargetProjectDir: targetDir,
-				DependencyName:   depName,
-				Mode:             switcher.DependencyMode(modeStr),
-				Version:          version,
-				BranchName:       branchName,
-				CommitSHA:        commitSHA,
-				LocalPath:        localPath,
-				ForkURL:          forkURL,
-				ForkBranch:       forkBranch,
-				SyncIDE:          syncIDE,
-			}
-
-			result, err := defaultMCPSwitcher.Switch(ctx, req)
-			return resultOrError(result, err, "[-] Dependency mode switch failed: %v"), nil
-		})
+		poolSwitchHandler())
 
 	// 30. dendrite_pool_split
 	addTool(s, "dendrite_pool_split", "Extract an AST slice and its tests into a new standalone pool member project",
@@ -152,24 +60,148 @@ func registerPoolTools(s *Server, deps Dependencies) {
 			"wire_local_mode":    typedProp("boolean", "Wire parent project to depend on new member in local mode"),
 			"register_in_pool":   typedProp("boolean", "Register newly extracted project in .dendrite/pool.json"),
 		}),
-		func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-			srcDir, _ := args["source_project_dir"].(string)
-			modSubpath, _ := args["module_subpath"].(string)
-			memberName, _ := args["new_member_name"].(string)
-			targetDir, _ := args["target_directory"].(string)
-			wireLocal, _ := args["wire_local_mode"].(bool)
-			regPool, _ := args["register_in_pool"].(bool)
+		poolSplitHandler())
+}
 
-			req := split.SplitRequest{
-				SourceProjectDir: srcDir,
-				ModuleSubpath:    modSubpath,
-				NewMemberName:    memberName,
-				TargetDirectory:  targetDir,
-				WireLocalMode:    wireLocal,
-				RegisterInPool:   regPool,
+// projectsToResolve are the projects a pool_resolve call works on: the scanned directories it names, otherwise the
+// registered pool.
+func projectsToResolve(args map[string]interface{}) ([]dag.ProjectInfo, error) {
+	rawDirs, _ := args["directories"].([]interface{})
+	if len(rawDirs) == 0 {
+		_ = defaultMCPPoolManager.Load()
+		return defaultMCPPoolManager.List(), nil
+	}
+	var projects []dag.ProjectInfo
+	scanner := dag.NewManifestScanner()
+	for _, d := range rawDirs {
+		dirStr, ok := d.(string)
+		if !ok {
+			continue
+		}
+		info, err := scanner.ScanProject(dirStr)
+		if err != nil {
+			return nil, fmt.Errorf("scanning %s: %w", dirStr, err)
+		}
+		projects = append(projects, *info)
+	}
+	return projects, nil
+}
+
+// poolResolveHandler handles the dendrite_pool_resolve tool.
+func poolResolveHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		projects, err := projectsToResolve(args)
+		if err != nil {
+			return nil, err
+		}
+		if len(projects) == 0 {
+			return textResult("[-] Pool is empty. No projects registered."), nil
+		}
+		res, err := defaultMCPDAGSolver.Resolve(projects)
+		return resultOrError(res, err, "[-] Dependency resolution failed: %v"), nil
+	}
+}
+
+// poolAddHandler handles the dendrite_pool_add tool.
+func poolAddHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		rawDirs, ok := args["directories"].([]interface{})
+		if !ok || len(rawDirs) == 0 {
+			return nil, fmt.Errorf("directories array is required and must not be empty")
+		}
+
+		var dirs []string
+		for _, d := range rawDirs {
+			if str, ok := d.(string); ok {
+				dirs = append(dirs, str)
 			}
+		}
 
-			result, err := defaultMCPSplitter.Split(ctx, req)
-			return resultOrError(result, err, "[-] Project split failed: %v"), nil
+		added, err := defaultMCPPoolManager.Add(dirs...)
+		if err != nil {
+			return errorResult("[-] Failed adding projects: %v", err), nil
+		}
+
+		if err := defaultMCPPoolManager.Save(); err != nil {
+			return nil, fmt.Errorf("saving pool config: %w", err)
+		}
+
+		data := indentJSON(map[string]interface{}{
+			"status": "success",
+			"added":  added,
 		})
+
+		return textResult(string(data)), nil
+	}
+}
+
+// poolSwitchHandler handles the dendrite_pool_switch tool.
+func poolSwitchHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		targetDir, _ := args["target_project_dir"].(string)
+		depName, _ := args["dependency_name"].(string)
+		modeStr, _ := args["mode"].(string)
+		version, _ := args["version"].(string)
+		branchName, _ := args["branch_name"].(string)
+		commitSHA, _ := args["commit_sha"].(string)
+		localPath, _ := args["local_path"].(string)
+		forkURL, _ := args["fork_url"].(string)
+		forkBranch, _ := args["fork_branch"].(string)
+		syncIDE, _ := args["sync_ide"].(bool)
+
+		req := switcher.SwitchRequest{
+			TargetProjectDir: targetDir,
+			DependencyName:   depName,
+			Mode:             switcher.DependencyMode(modeStr),
+			Version:          version,
+			BranchName:       branchName,
+			CommitSHA:        commitSHA,
+			LocalPath:        localPath,
+			ForkURL:          forkURL,
+			ForkBranch:       forkBranch,
+			SyncIDE:          syncIDE,
+		}
+
+		result, err := defaultMCPSwitcher.Switch(ctx, req)
+		return resultOrError(result, err, "[-] Dependency mode switch failed: %v"), nil
+	}
+}
+
+// poolSplitHandler handles the dendrite_pool_split tool.
+func poolSplitHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		srcDir, _ := args["source_project_dir"].(string)
+		modSubpath, _ := args["module_subpath"].(string)
+		memberName, _ := args["new_member_name"].(string)
+		targetDir, _ := args["target_directory"].(string)
+		wireLocal, _ := args["wire_local_mode"].(bool)
+		regPool, _ := args["register_in_pool"].(bool)
+
+		req := split.SplitRequest{
+			SourceProjectDir: srcDir,
+			ModuleSubpath:    modSubpath,
+			NewMemberName:    memberName,
+			TargetDirectory:  targetDir,
+			WireLocalMode:    wireLocal,
+			RegisterInPool:   regPool,
+		}
+
+		result, err := defaultMCPSplitter.Split(ctx, req)
+		return resultOrError(result, err, "[-] Project split failed: %v"), nil
+	}
+}
+
+// poolListHandler handles the dendrite_pool_list tool.
+func poolListHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		_ = defaultMCPPoolManager.Load()
+		projects := defaultMCPPoolManager.List()
+
+		data := indentJSON(map[string]interface{}{
+			"count":    len(projects),
+			"projects": projects,
+		})
+
+		return textResult(string(data)), nil
+	}
 }

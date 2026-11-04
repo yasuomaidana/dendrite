@@ -40,7 +40,107 @@ func registerQueryTools(s *Server, deps Dependencies) {
 			},
 			"required": []interface{}{"sources_path", "entrypoint_symbol"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, querySliceHandler())
+
+	// 32. dendrite_query_swap
+	s.RegisterTool(Tool{
+		Name:        "dendrite_query_swap",
+		Description: "Transforms legacy graphics/IO subsystems into clean trait boundaries and modern adapters (wgpu/threejs) while verifying kinematic parity",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"sources_path":    map[string]interface{}{"type": "string", "description": "Path to legacy application sources"},
+				"from_subsystem":  map[string]interface{}{"type": "string", "enum": []string{"opengl", "directx", "vulkan", "wgpu", "threejs"}, "description": "Current legacy subsystem"},
+				"to_subsystem":    map[string]interface{}{"type": "string", "enum": []string{"opengl", "directx", "vulkan", "wgpu", "threejs"}, "description": "Target modern subsystem"},
+				"target_language": map[string]interface{}{"type": "string", "enum": []string{"rust", "go", "typescript"}, "description": "Target implementation language"},
+				"output_dir":      map[string]interface{}{"type": "string", "description": "Optional destination directory to emit trait boundary & adapter"},
+			},
+			"required": []interface{}{"sources_path", "from_subsystem", "to_subsystem"},
+		},
+	}, querySwapHandler())
+
+	// 33. dendrite_query_transpile
+	s.RegisterTool(Tool{
+		Name:        "dendrite_query_transpile",
+		Description: "Translates legacy binaries or repos to safe, idiomatic Rust with Newtypes, zero unsafe blocks, and differential tests",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"sources_artifact":    map[string]interface{}{"type": "string", "description": "Target compiled binary or repository path"},
+				"target_language":     map[string]interface{}{"type": "string", "description": "Target language (default: rust)"},
+				"no_std":              map[string]interface{}{"type": "boolean", "description": "Generate no_std compatible embedded crate"},
+				"audit_library_reuse": map[string]interface{}{"type": "boolean", "description": "Enforce 3-tier library reuse hierarchy"},
+				"prompt":              map[string]interface{}{"type": "string", "description": "Natural language architectural guidance"},
+				"output_dir":          map[string]interface{}{"type": "string", "description": "Destination directory for synthesized crate"},
+			},
+			"required": []interface{}{"sources_artifact"},
+		},
+	}, queryTranspileHandler())
+
+	// 34. dendrite_query_fuse
+	s.RegisterTool(Tool{
+		Name:        "dendrite_query_fuse",
+		Description: "Combines multiple binaries/projects, deduplicating libraries and synthesizing zero-copy in-process channels",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"sources":           map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "List of source project or artifact paths"},
+				"fused_member_name": map[string]interface{}{"type": "string", "description": "Identifier for the combined member"},
+				"target_language":   map[string]interface{}{"type": "string", "enum": []string{"rust", "go"}, "description": "Target unified language"},
+				"target_directory":  map[string]interface{}{"type": "string", "description": "Destination directory for unified project"},
+				"register_in_pool":  map[string]interface{}{"type": "boolean", "description": "Register unified member in .dendrite/pool.json"},
+			},
+			"required": []interface{}{"sources", "fused_member_name", "target_directory"},
+		},
+	}, queryFuseHandler())
+	// 35. dendrite_query_reuse_audit
+	s.RegisterTool(Tool{
+		Name:        "dendrite_query_reuse_audit",
+		Description: "Evaluates strict 3-tier library reuse hierarchy (Source Refs > Pool Members > Ecosystem Registries) and emits an Architecture Decision Record (ADR)",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"capability": map[string]interface{}{"type": "string", "description": "Capability or domain required (e.g. linear_algebra, serialization, kinematics)"},
+				"language":   map[string]interface{}{"type": "string", "description": "Target programming language (e.g. rust, go, typescript, python)"},
+				"ticket_id":  map[string]interface{}{"type": "string", "description": "Associated Plane ticket identifier (e.g. DEN-058)"},
+				"intent":     map[string]interface{}{"type": "string", "description": "Contextual intent or user prompt description"},
+			},
+			"required": []interface{}{"capability"},
+		},
+	}, queryReuseAuditHandler())
+
+	// 36. dendrite_ref_list
+	s.RegisterTool(Tool{
+		Name:        "dendrite_ref_list",
+		Description: "Lists registered Tier 1 source references for library reuse",
+		InputSchema: map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{},
+		},
+	}, refListHandler())
+
+	// 37. dendrite_ref_add
+	s.RegisterTool(Tool{
+		Name:        "dendrite_ref_add",
+		Description: "Registers a new Tier 1 source reference repository for library reuse",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"id":           map[string]interface{}{"type": "string", "description": "Unique reference ID (e.g. ref-custom)"},
+				"name":         map[string]interface{}{"type": "string", "description": "Repository or library name"},
+				"repository":   map[string]interface{}{"type": "string", "description": "Git repository URL or local path"},
+				"language":     map[string]interface{}{"type": "string", "description": "Primary language"},
+				"capabilities": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "List of capability tags"},
+				"license":      map[string]interface{}{"type": "string", "description": "Open source or proprietary license"},
+			},
+			"required": []interface{}{"id", "repository"},
+		},
+	}, refAddHandler())
+}
+
+// querySliceHandler handles the dendrite_query_slice tool.
+func querySliceHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		sourcesPath, _ := args["sources_path"].(string)
 		entrypoint, _ := args["entrypoint_symbol"].(string)
 		intent, _ := args["intent"].(string)
@@ -63,24 +163,12 @@ func registerQueryTools(s *Server, deps Dependencies) {
 		data := indentJSON(result)
 
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// 32. dendrite_query_swap
-	s.RegisterTool(Tool{
-		Name:        "dendrite_query_swap",
-		Description: "Transforms legacy graphics/IO subsystems into clean trait boundaries and modern adapters (wgpu/threejs) while verifying kinematic parity",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"sources_path":    map[string]interface{}{"type": "string", "description": "Path to legacy application sources"},
-				"from_subsystem":  map[string]interface{}{"type": "string", "enum": []string{"opengl", "directx", "vulkan", "wgpu", "threejs"}, "description": "Current legacy subsystem"},
-				"to_subsystem":    map[string]interface{}{"type": "string", "enum": []string{"opengl", "directx", "vulkan", "wgpu", "threejs"}, "description": "Target modern subsystem"},
-				"target_language": map[string]interface{}{"type": "string", "enum": []string{"rust", "go", "typescript"}, "description": "Target implementation language"},
-				"output_dir":      map[string]interface{}{"type": "string", "description": "Optional destination directory to emit trait boundary & adapter"},
-			},
-			"required": []interface{}{"sources_path", "from_subsystem", "to_subsystem"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// querySwapHandler handles the dendrite_query_swap tool.
+func querySwapHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		sourcesPath, _ := args["sources_path"].(string)
 		fromStr, _ := args["from_subsystem"].(string)
 		toStr, _ := args["to_subsystem"].(string)
@@ -103,25 +191,12 @@ func registerQueryTools(s *Server, deps Dependencies) {
 		data := indentJSON(result)
 
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// 33. dendrite_query_transpile
-	s.RegisterTool(Tool{
-		Name:        "dendrite_query_transpile",
-		Description: "Translates legacy binaries or repos to safe, idiomatic Rust with Newtypes, zero unsafe blocks, and differential tests",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"sources_artifact":    map[string]interface{}{"type": "string", "description": "Target compiled binary or repository path"},
-				"target_language":     map[string]interface{}{"type": "string", "description": "Target language (default: rust)"},
-				"no_std":              map[string]interface{}{"type": "boolean", "description": "Generate no_std compatible embedded crate"},
-				"audit_library_reuse": map[string]interface{}{"type": "boolean", "description": "Enforce 3-tier library reuse hierarchy"},
-				"prompt":              map[string]interface{}{"type": "string", "description": "Natural language architectural guidance"},
-				"output_dir":          map[string]interface{}{"type": "string", "description": "Destination directory for synthesized crate"},
-			},
-			"required": []interface{}{"sources_artifact"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// queryTranspileHandler handles the dendrite_query_transpile tool.
+func queryTranspileHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		artifact, _ := args["sources_artifact"].(string)
 		targetLang, _ := args["target_language"].(string)
 		noStd, _ := args["no_std"].(bool)
@@ -146,24 +221,12 @@ func registerQueryTools(s *Server, deps Dependencies) {
 		data := indentJSON(result)
 
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// 34. dendrite_query_fuse
-	s.RegisterTool(Tool{
-		Name:        "dendrite_query_fuse",
-		Description: "Combines multiple binaries/projects, deduplicating libraries and synthesizing zero-copy in-process channels",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"sources":           map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "List of source project or artifact paths"},
-				"fused_member_name": map[string]interface{}{"type": "string", "description": "Identifier for the combined member"},
-				"target_language":   map[string]interface{}{"type": "string", "enum": []string{"rust", "go"}, "description": "Target unified language"},
-				"target_directory":  map[string]interface{}{"type": "string", "description": "Destination directory for unified project"},
-				"register_in_pool":  map[string]interface{}{"type": "boolean", "description": "Register unified member in .dendrite/pool.json"},
-			},
-			"required": []interface{}{"sources", "fused_member_name", "target_directory"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// queryFuseHandler handles the dendrite_query_fuse tool.
+func queryFuseHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		rawSources, ok := args["sources"].([]interface{})
 		if !ok || len(rawSources) < 2 {
 			return nil, fmt.Errorf("sources must contain at least two entries")
@@ -196,22 +259,12 @@ func registerQueryTools(s *Server, deps Dependencies) {
 		data := indentJSON(result)
 
 		return textResult(string(data)), nil
-	})
-	// 35. dendrite_query_reuse_audit
-	s.RegisterTool(Tool{
-		Name:        "dendrite_query_reuse_audit",
-		Description: "Evaluates strict 3-tier library reuse hierarchy (Source Refs > Pool Members > Ecosystem Registries) and emits an Architecture Decision Record (ADR)",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"capability": map[string]interface{}{"type": "string", "description": "Capability or domain required (e.g. linear_algebra, serialization, kinematics)"},
-				"language":   map[string]interface{}{"type": "string", "description": "Target programming language (e.g. rust, go, typescript, python)"},
-				"ticket_id":  map[string]interface{}{"type": "string", "description": "Associated Plane ticket identifier (e.g. DEN-058)"},
-				"intent":     map[string]interface{}{"type": "string", "description": "Contextual intent or user prompt description"},
-			},
-			"required": []interface{}{"capability"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}
+}
+
+// queryReuseAuditHandler handles the dendrite_query_reuse_audit tool.
+func queryReuseAuditHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		cap, _ := args["capability"].(string)
 		lang, _ := args["language"].(string)
 		ticket, _ := args["ticket_id"].(string)
@@ -232,17 +285,12 @@ func registerQueryTools(s *Server, deps Dependencies) {
 		data := indentJSON(res)
 
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// 36. dendrite_ref_list
-	s.RegisterTool(Tool{
-		Name:        "dendrite_ref_list",
-		Description: "Lists registered Tier 1 source references for library reuse",
-		InputSchema: map[string]interface{}{
-			"type":       "object",
-			"properties": map[string]interface{}{},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// refListHandler handles the dendrite_ref_list tool.
+func refListHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		refs, err := defaultMCPRefMgr.ListRefs()
 		if err != nil {
 			return errorResult("[-] Failed to list refs: %v", err), nil
@@ -251,25 +299,12 @@ func registerQueryTools(s *Server, deps Dependencies) {
 		data := indentJSON(refs)
 
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// 37. dendrite_ref_add
-	s.RegisterTool(Tool{
-		Name:        "dendrite_ref_add",
-		Description: "Registers a new Tier 1 source reference repository for library reuse",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"id":           map[string]interface{}{"type": "string", "description": "Unique reference ID (e.g. ref-custom)"},
-				"name":         map[string]interface{}{"type": "string", "description": "Repository or library name"},
-				"repository":   map[string]interface{}{"type": "string", "description": "Git repository URL or local path"},
-				"language":     map[string]interface{}{"type": "string", "description": "Primary language"},
-				"capabilities": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "List of capability tags"},
-				"license":      map[string]interface{}{"type": "string", "description": "Open source or proprietary license"},
-			},
-			"required": []interface{}{"id", "repository"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// refAddHandler handles the dendrite_ref_add tool.
+func refAddHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		id, _ := args["id"].(string)
 		name, _ := args["name"].(string)
 		repo, _ := args["repository"].(string)
@@ -302,5 +337,5 @@ func registerQueryTools(s *Server, deps Dependencies) {
 		}
 
 		return textResult(fmt.Sprintf("[+] Successfully registered Tier 1 source reference %s (%s)", name, repo)), nil
-	})
+	}
 }

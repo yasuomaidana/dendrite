@@ -48,47 +48,7 @@ func registerCanvasTools(s *Server, deps Dependencies) {
 			},
 			"required": []interface{}{"action", "prompt"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		actionStr, _ := args["action"].(string)
-		if strings.TrimSpace(actionStr) == "" {
-			return nil, fmt.Errorf("action is required")
-		}
-
-		promptStr, _ := args["prompt"].(string)
-		titleStr, _ := args["title"].(string)
-		modeStr, _ := args["mode"].(string)
-		currentContent, _ := args["current_content"].(string)
-
-		params, _ := args["parameters"].(map[string]interface{})
-		if params == nil {
-			params = make(map[string]interface{})
-		}
-
-		req := canvas.ActionRequest{
-			Action:         canvas.ActionID(strings.TrimSpace(actionStr)),
-			Mode:           canvas.WritingMode(strings.TrimSpace(modeStr)),
-			Title:          titleStr,
-			Prompt:         promptStr,
-			CurrentContent: currentContent,
-			Parameters:     params,
-		}
-
-		resp, err := registry.Dispatch(ctx, req)
-		if err != nil {
-			return nil, err
-		}
-
-		data := indentJSON(resp)
-
-		return &CallToolResult{
-			Content: []ContentItem{
-				{
-					Type: "text",
-					Text: string(data),
-				},
-			},
-		}, nil
-	})
+	}, canvasActionDispatchHandler(registry))
 
 	// 2. dendrite_canvas_penpot_bridge
 	s.RegisterTool(Tool{
@@ -136,82 +96,42 @@ func registerCanvasTools(s *Server, deps Dependencies) {
 			},
 			"required": []interface{}{"subaction"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		subaction, _ := args["subaction"].(string)
-		ticketID, _ := args["ticket_id"].(string)
-		featureName, _ := args["feature_name"].(string)
-		filePath, _ := args["file_path"].(string)
-		targetState, _ := args["target_state"].(string)
-		penpotURL, _ := args["penpot_frame_url"].(string)
-		comment, _ := args["comment"].(string)
-		dryRun, _ := args["dry_run"].(bool)
-		pushToPlane := true
-		if p, ok := args["push_to_plane"].(bool); ok {
-			pushToPlane = p
+	}, canvasPenpotBridgeHandler(deps, bridge))
+}
+
+// canvasActionDispatchHandler handles the dendrite_canvas_action_dispatch tool.
+func canvasActionDispatchHandler(registry *canvas.Registry) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		actionStr, _ := args["action"].(string)
+		if strings.TrimSpace(actionStr) == "" {
+			return nil, fmt.Errorf("action is required")
 		}
 
-		// Ensure planeClient is initialized from env if not in deps
-		activeBridge := bridge
-		if deps.PlaneClient == nil {
-			if client, err := plane.NewClientFromEnv(); err == nil && client != nil {
-				activeBridge = canvas.NewPenpotUIBridge(client, "http://localhost:9000")
-			}
+		promptStr, _ := args["prompt"].(string)
+		titleStr, _ := args["title"].(string)
+		modeStr, _ := args["mode"].(string)
+		currentContent, _ := args["current_content"].(string)
+
+		params, _ := args["parameters"].(map[string]interface{})
+		if params == nil {
+			params = make(map[string]interface{})
 		}
 
-		var result interface{}
-
-		switch strings.ToLower(strings.TrimSpace(subaction)) {
-		case "relate":
-			rel := canvas.TicketFeatureRelation{
-				TicketID:       ticketID,
-				FeatureName:    featureName,
-				ComponentPath:  filePath,
-				PenpotFrameURL: penpotURL,
-				Description:    comment,
-			}
-			if err := activeBridge.RelateTicketToFeature(ctx, rel); err != nil {
-				return nil, err
-			}
-			saved, _ := activeBridge.GetTicketFeatureRelation(ticketID)
-			result = map[string]interface{}{
-				"status":   "success",
-				"message":  fmt.Sprintf("Ticket '%s' bound to feature '%s'", ticketID, featureName),
-				"relation": saved,
-			}
-
-		case "sync":
-			res, err := activeBridge.SyncComponentWithPenpot(ctx, ticketID, filePath, dryRun)
-			if err != nil {
-				return nil, err
-			}
-			result = res
-
-		case "update_state", "update-state", "transition":
-			req := canvas.ProjectStateUpdateRequest{
-				TicketID:       ticketID,
-				TargetState:    targetState,
-				Comment:        comment,
-				PenpotFrameURL: penpotURL,
-				PushToPlane:    pushToPlane,
-			}
-			res, err := activeBridge.UpdateProjectState(ctx, req)
-			if err != nil {
-				return nil, err
-			}
-			result = res
-
-		case "list":
-			relations := activeBridge.ListTicketRelations()
-			result = map[string]interface{}{
-				"count":     len(relations),
-				"relations": relations,
-			}
-
-		default:
-			return nil, fmt.Errorf("unknown subaction: %s (expected: 'relate', 'sync', 'update_state', or 'list')", subaction)
+		req := canvas.ActionRequest{
+			Action:         canvas.ActionID(strings.TrimSpace(actionStr)),
+			Mode:           canvas.WritingMode(strings.TrimSpace(modeStr)),
+			Title:          titleStr,
+			Prompt:         promptStr,
+			CurrentContent: currentContent,
+			Parameters:     params,
 		}
 
-		data := indentJSON(result)
+		resp, err := registry.Dispatch(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+
+		data := indentJSON(resp)
 
 		return &CallToolResult{
 			Content: []ContentItem{
@@ -221,5 +141,86 @@ func registerCanvasTools(s *Server, deps Dependencies) {
 				},
 			},
 		}, nil
+	}
+}
+
+// penpotBridgeFor is the bridge a call uses: the registered one, or one on the Plane client of the environment when
+// the server was given none.
+func penpotBridgeFor(deps Dependencies, bridge *canvas.PenpotUIBridge) *canvas.PenpotUIBridge {
+	if deps.PlaneClient == nil {
+		if client, err := plane.NewClientFromEnv(); err == nil && client != nil {
+			return canvas.NewPenpotUIBridge(client, "http://localhost:9000")
+		}
+	}
+	return bridge
+}
+
+func penpotRelate(ctx context.Context, b *canvas.PenpotUIBridge, args map[string]interface{}) (interface{}, error) {
+	ticketID, _ := args["ticket_id"].(string)
+	featureName, _ := args["feature_name"].(string)
+	filePath, _ := args["file_path"].(string)
+	penpotURL, _ := args["penpot_frame_url"].(string)
+	comment, _ := args["comment"].(string)
+	rel := canvas.TicketFeatureRelation{TicketID: ticketID, FeatureName: featureName, ComponentPath: filePath, PenpotFrameURL: penpotURL, Description: comment}
+	if err := b.RelateTicketToFeature(ctx, rel); err != nil {
+		return nil, err
+	}
+	saved, _ := b.GetTicketFeatureRelation(ticketID)
+	return map[string]interface{}{
+		"status":   "success",
+		"message":  fmt.Sprintf("Ticket '%s' bound to feature '%s'", ticketID, featureName),
+		"relation": saved,
+	}, nil
+}
+
+func penpotSync(ctx context.Context, b *canvas.PenpotUIBridge, args map[string]interface{}) (interface{}, error) {
+	ticketID, _ := args["ticket_id"].(string)
+	filePath, _ := args["file_path"].(string)
+	dryRun, _ := args["dry_run"].(bool)
+	return b.SyncComponentWithPenpot(ctx, ticketID, filePath, dryRun)
+}
+
+func penpotTransition(ctx context.Context, b *canvas.PenpotUIBridge, args map[string]interface{}) (interface{}, error) {
+	ticketID, _ := args["ticket_id"].(string)
+	targetState, _ := args["target_state"].(string)
+	penpotURL, _ := args["penpot_frame_url"].(string)
+	comment, _ := args["comment"].(string)
+	return b.UpdateProjectState(ctx, canvas.ProjectStateUpdateRequest{
+		TicketID:       ticketID,
+		TargetState:    targetState,
+		Comment:        comment,
+		PenpotFrameURL: penpotURL,
+		PushToPlane:    boolArgOr(args, "push_to_plane", true),
 	})
+}
+
+func penpotList(b *canvas.PenpotUIBridge) interface{} {
+	relations := b.ListTicketRelations()
+	return map[string]interface{}{"count": len(relations), "relations": relations}
+}
+
+// canvasPenpotBridgeHandler handles the dendrite_canvas_penpot_bridge tool.
+func canvasPenpotBridgeHandler(deps Dependencies, bridge *canvas.PenpotUIBridge) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		subaction, _ := args["subaction"].(string)
+		b := penpotBridgeFor(deps, bridge)
+		var result interface{}
+		var err error
+		switch strings.ToLower(strings.TrimSpace(subaction)) {
+		case "relate":
+			result, err = penpotRelate(ctx, b, args)
+		case "sync":
+			result, err = penpotSync(ctx, b, args)
+		case "update_state", "update-state", "transition":
+			result, err = penpotTransition(ctx, b, args)
+		case "list":
+			result = penpotList(b)
+		default:
+			err = fmt.Errorf("unknown subaction: %s (expected: 'relate', 'sync', 'update_state', or 'list')", subaction)
+		}
+		if err != nil {
+			return nil, err
+		}
+		return textResult(string(indentJSON(result))), nil
+	}
 }

@@ -30,25 +30,7 @@ func registerGraphTools(s *Server, deps Dependencies) {
 				},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		projectPath := "."
-		if p, ok := args["project_path"].(string); ok && p != "" {
-			projectPath = p
-		}
-		limit := positiveIntArg(args, "limit")
-		minSize := positiveIntArg(args, "min_size")
-
-		communities, err := rag.NewRetriever().Communities(ctx, projectPath, rag.CommunitiesOptions{
-			Limit:   limit,
-			MinSize: minSize,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("graph communities failed for %s: %w", projectPath, err)
-		}
-
-		data := indentJSON(communities)
-		return textResult(string(data)), nil
-	})
+	}, graphCommunitiesHandler())
 
 	// dendrite_graph_god_nodes
 	s.RegisterTool(Tool{
@@ -71,25 +53,7 @@ func registerGraphTools(s *Server, deps Dependencies) {
 				},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		projectPath := "."
-		if p, ok := args["project_path"].(string); ok && p != "" {
-			projectPath = p
-		}
-		minInDegree := positiveIntArg(args, "min_in_degree")
-		limit := positiveIntArg(args, "limit")
-
-		nodes, err := rag.NewRetriever().GodNodes(ctx, projectPath, rag.GodNodesOptions{
-			MinInDegree: minInDegree,
-			Limit:       limit,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("graph god nodes failed for %s: %w", projectPath, err)
-		}
-
-		data := indentJSON(nodes)
-		return textResult(string(data)), nil
-	})
+	}, graphGodNodesHandler())
 
 	// dendrite_graph_path
 	s.RegisterTool(Tool{
@@ -122,42 +86,7 @@ func registerGraphTools(s *Server, deps Dependencies) {
 			},
 			"required": []interface{}{"from", "to"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		from, _ := args["from"].(string)
-		to, _ := args["to"].(string)
-		if strings.TrimSpace(from) == "" || strings.TrimSpace(to) == "" {
-			return nil, fmt.Errorf("from and to are required")
-		}
-
-		projectPath := "."
-		if p, ok := args["project_path"].(string); ok && p != "" {
-			projectPath = p
-		}
-
-		var kinds []string
-		if rawKinds, ok := args["kinds"].([]interface{}); ok {
-			for _, rk := range rawKinds {
-				if s, ok := rk.(string); ok && s != "" {
-					kinds = append(kinds, s)
-				}
-			}
-		} else if strKinds, ok := args["kinds"].([]string); ok {
-			kinds = strKinds
-		}
-
-		maxHops := positiveIntArg(args, "max_hops")
-
-		path, err := rag.NewRetriever().Path(ctx, projectPath, from, to, rag.PathOptions{
-			Kinds:   kinds,
-			MaxHops: maxHops,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("graph path failed for %s: %w", projectPath, err)
-		}
-
-		data := indentJSON(path)
-		return textResult(string(data)), nil
-	})
+	}, graphPathHandler())
 
 	// dendrite_graph_explain
 	s.RegisterTool(Tool{
@@ -177,7 +106,86 @@ func registerGraphTools(s *Server, deps Dependencies) {
 			},
 			"required": []interface{}{"target"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, graphExplainHandler())
+}
+
+// graphCommunitiesHandler handles the dendrite_graph_communities tool.
+func graphCommunitiesHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		projectPath := "."
+		if p, ok := args["project_path"].(string); ok && p != "" {
+			projectPath = p
+		}
+		limit := positiveIntArg(args, "limit")
+		minSize := positiveIntArg(args, "min_size")
+
+		communities, err := rag.NewRetriever().Communities(ctx, projectPath, rag.CommunitiesOptions{
+			Limit:   limit,
+			MinSize: minSize,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("graph communities failed for %s: %w", projectPath, err)
+		}
+
+		data := indentJSON(communities)
+		return textResult(string(data)), nil
+	}
+}
+
+// graphGodNodesHandler handles the dendrite_graph_god_nodes tool.
+func graphGodNodesHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		projectPath := "."
+		if p, ok := args["project_path"].(string); ok && p != "" {
+			projectPath = p
+		}
+		minInDegree := positiveIntArg(args, "min_in_degree")
+		limit := positiveIntArg(args, "limit")
+
+		nodes, err := rag.NewRetriever().GodNodes(ctx, projectPath, rag.GodNodesOptions{
+			MinInDegree: minInDegree,
+			Limit:       limit,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("graph god nodes failed for %s: %w", projectPath, err)
+		}
+
+		data := indentJSON(nodes)
+		return textResult(string(data)), nil
+	}
+}
+
+// kindsArg reads the edge kinds of a path call: a JSON array or a Go string slice, empty items dropped.
+func kindsArg(raw interface{}) []string {
+	if kinds, ok := raw.([]string); ok {
+		return kinds
+	}
+	return nonEmptyStrings(raw)
+}
+
+// graphPathHandler handles the dendrite_graph_path tool.
+func graphPathHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		from, _ := args["from"].(string)
+		to, _ := args["to"].(string)
+		if strings.TrimSpace(from) == "" || strings.TrimSpace(to) == "" {
+			return nil, fmt.Errorf("from and to are required")
+		}
+		projectPath := stringArgOr(args, "project_path", ".")
+		path, err := rag.NewRetriever().Path(ctx, projectPath, from, to, rag.PathOptions{
+			Kinds:   kindsArg(args["kinds"]),
+			MaxHops: positiveIntArg(args, "max_hops"),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("graph path failed for %s: %w", projectPath, err)
+		}
+		return textResult(string(indentJSON(path))), nil
+	}
+}
+
+// graphExplainHandler handles the dendrite_graph_explain tool.
+func graphExplainHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		target, _ := args["target"].(string)
 		if strings.TrimSpace(target) == "" {
 			return nil, fmt.Errorf("target is required")
@@ -195,5 +203,5 @@ func registerGraphTools(s *Server, deps Dependencies) {
 
 		data := indentJSON(matches)
 		return textResult(string(data)), nil
-	})
+	}
 }

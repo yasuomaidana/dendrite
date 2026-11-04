@@ -39,7 +39,12 @@ func registerInferenceTools(s *Server, deps Dependencies) {
 			},
 			"required": []interface{}{"model"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, inferenceMigrateModelHandler())
+}
+
+// inferenceMigrateModelHandler handles the dendrite_inference_migrate_model tool.
+func inferenceMigrateModelHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		model, _ := args["model"].(string)
 		if strings.TrimSpace(model) == "" {
 			return nil, fmt.Errorf("model name is required")
@@ -66,5 +71,5 @@ func registerInferenceTools(s *Server, deps Dependencies) {
 
 		data := indentJSON(res)
 		return textResult(string(data)), nil
-	})
+	}
 }

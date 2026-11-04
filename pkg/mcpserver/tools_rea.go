@@ -26,7 +26,12 @@ func registerREATools(s *Server, deps Dependencies) {
 				},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, reaShowcaseHandler())
+}
+
+// reaShowcaseHandler handles the dendrite_rea_showcase tool.
+func reaShowcaseHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		target := stringArgOr(args, "target", "all")
 		format := stringArgOr(args, "format", "summary")
 
@@ -54,5 +59,5 @@ func registerREATools(s *Server, deps Dependencies) {
 				},
 			}, nil
 		}
-	})
+	}
 }

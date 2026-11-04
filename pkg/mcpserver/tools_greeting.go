@@ -82,74 +82,72 @@ func registerGreetingTools(s *Server, deps Dependencies) {
 				},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		uCtx := greeting.UserJourneyContext{}
+	}, pcontextGreetingGenerateHandler())
+}
 
-		if v, ok := args["topic"].(string); ok {
-			uCtx.Topic = v
-		}
-		if v, ok := args["decision"].(string); ok {
-			uCtx.Decision = v
-		}
-		if v, ok := args["milestone"].(string); ok {
-			uCtx.Milestone = v
-		}
-		if v, ok := args["milestone_achieved"].(bool); ok {
-			uCtx.MilestoneAchieved = v
-		}
-		if v, ok := args["event"].(string); ok {
-			uCtx.Event = v
-		}
-		if v, ok := args["days_until_event"].(float64); ok {
-			uCtx.DaysUntilEvent = int(v)
-		}
-		if v, ok := args["unfinished_step"].(string); ok {
-			uCtx.UnfinishedStep = v
-		}
-		if v, ok := args["specific_challenge"].(string); ok {
-			uCtx.SpecificChallenge = v
-		}
-		if v, ok := args["curiosity_angle"].(string); ok {
-			uCtx.CuriosityAngle = v
-		}
-		if v, ok := args["days_since_last_active"].(float64); ok {
-			uCtx.DaysSinceLastActive = int(v)
-		}
-		if v, ok := args["turn_count"].(float64); ok {
-			uCtx.TurnCount = int(v)
-		}
-		if v, ok := args["high_stress"].(bool); ok {
-			uCtx.HighStress = v
-		}
-		if v, ok := args["low_pressure_hobby"].(bool); ok {
-			uCtx.LowPressureHobby = v
-		}
-
-		if rawOpts, ok := args["options"].([]interface{}); ok {
-			for _, o := range rawOpts {
-				if s, ok := o.(string); ok {
-					uCtx.Options = append(uCtx.Options, s)
-				}
-			}
-		}
-
+// pcontextGreetingGenerateHandler handles the dendrite_pcontext_greeting_generate tool.
+func pcontextGreetingGenerateHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		var recentStyles []greeting.StyleID
-		if rawStyles, ok := args["recent_styles"].([]interface{}); ok {
-			for _, r := range rawStyles {
-				if s, ok := r.(string); ok {
-					recentStyles = append(recentStyles, greeting.StyleID(s))
-				}
-			}
+		for _, s := range stringList(args["recent_styles"]) {
+			recentStyles = append(recentStyles, greeting.StyleID(s))
 		}
-
-		eng := greeting.NewEngine()
-		res, err := eng.Generate(ctx, uCtx, recentStyles)
+		res, err := greeting.NewEngine().Generate(ctx, journeyContext(args), recentStyles)
 		if err != nil {
 			return errorResult("generate greeting: %v", err), nil
 		}
+		return textResult(string(indentJSON(res))), nil
+	}
+}
 
-		data := indentJSON(res)
+// journeyContext reads the user-journey fields a greeting tool call carries.
+func journeyContext(args map[string]interface{}) greeting.UserJourneyContext {
+	u := greeting.UserJourneyContext{Options: stringList(args["options"])}
+	for key, dst := range map[string]*string{
+		"topic": &u.Topic, "decision": &u.Decision, "milestone": &u.Milestone, "event": &u.Event,
+		"unfinished_step": &u.UnfinishedStep, "specific_challenge": &u.SpecificChallenge, "curiosity_angle": &u.CuriosityAngle,
+	} {
+		setString(args, key, dst)
+	}
+	for key, dst := range map[string]*bool{
+		"milestone_achieved": &u.MilestoneAchieved, "high_stress": &u.HighStress, "low_pressure_hobby": &u.LowPressureHobby,
+	} {
+		setBool(args, key, dst)
+	}
+	for key, dst := range map[string]*int{
+		"days_until_event": &u.DaysUntilEvent, "days_since_last_active": &u.DaysSinceLastActive, "turn_count": &u.TurnCount,
+	} {
+		setInt(args, key, dst)
+	}
+	return u
+}
 
-		return textResult(string(data)), nil
-	})
+func setString(args map[string]interface{}, key string, dst *string) {
+	if v, ok := args[key].(string); ok {
+		*dst = v
+	}
+}
+
+func setBool(args map[string]interface{}, key string, dst *bool) {
+	if v, ok := args[key].(bool); ok {
+		*dst = v
+	}
+}
+
+func setInt(args map[string]interface{}, key string, dst *int) {
+	if v, ok := args[key].(float64); ok {
+		*dst = int(v)
+	}
+}
+
+// stringList reads a JSON array of strings; items that are not text are skipped.
+func stringList(raw interface{}) []string {
+	var out []string
+	items, _ := raw.([]interface{})
+	for _, o := range items {
+		if s, ok := o.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
 }

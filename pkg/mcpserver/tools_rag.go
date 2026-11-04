@@ -55,73 +55,7 @@ func registerRAGTools(s *Server, deps Dependencies) {
 			},
 			"required": []interface{}{"question"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		question, ok := args["question"].(string)
-		if !ok || strings.TrimSpace(question) == "" {
-			return nil, fmt.Errorf("question is required")
-		}
-
-		projectPath := "."
-		if p, ok := args["project_path"].(string); ok && p != "" {
-			projectPath = p
-		}
-
-		autoApprove, _ := args["auto_approve_paid"].(bool)
-		paidModel := "gemini-2.5-pro"
-		if pm, ok := args["paid_model"].(string); ok && pm != "" {
-			paidModel = pm
-		}
-
-		localModel, _ := args["local_model"].(string)
-		topK := 4
-		// An explicit 0 asks for the context pack, which the documentation share applies to.
-		if tk, ok := args["top_k"].(float64); ok && tk >= 0 {
-			topK = int(tk)
-		} else if tkInt, ok := args["top_k"].(int); ok && tkInt >= 0 {
-			topK = tkInt
-		}
-
-		corpus, _ := args["corpus"].(string)
-		projectPath, corpus, err := ticketindex.Resolve(ctx, projectPath, corpus)
-		if err != nil {
-			return nil, err
-		}
-		docsShare, err := docsShareArg(args)
-		if err != nil {
-			return nil, err
-		}
-		if _, set := args["top_k"]; docsShare != nil && !set {
-			topK = 0 // a share only applies to the context pack
-		}
-		engine := rag.NewAskEngine()
-		req := rag.AskRequest{
-			Corpus:          corpus,
-			DocsShare:       docsShare,
-			Question:        question,
-			ProjectPath:     projectPath,
-			AutoApprovePaid: autoApprove,
-			PaidModel:       paidModel,
-			LocalModel:      localModel,
-			TopK:            topK,
-			Input:           strings.NewReader("n\n"),
-		}
-
-		res, err := engine.Ask(ctx, req)
-		if err != nil {
-			return nil, fmt.Errorf("rag ask failed: %w", err)
-		}
-
-		data := indentJSON(res)
-
-		return &CallToolResult{
-			Content: []ContentItem{
-				{
-					Type: "text",
-					Text: string(data),
-				},
-			},
-		}, nil
-	})
+	}, ragAskHandler())
 
 	// 47. dendrite_rag_retrieve
 	s.RegisterTool(Tool{
@@ -169,67 +103,7 @@ func registerRAGTools(s *Server, deps Dependencies) {
 			},
 			"required": []interface{}{"query"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		query, ok := args["query"].(string)
-		if !ok || strings.TrimSpace(query) == "" {
-			return nil, fmt.Errorf("query is required")
-		}
-
-		projectPath := "."
-		if p, ok := args["project_path"].(string); ok && p != "" {
-			projectPath = p
-		}
-
-		topK := 4
-		if tk, ok := args["top_k"].(float64); ok && tk > 0 {
-			topK = int(tk)
-		} else if tkInt, ok := args["top_k"].(int); ok && tkInt > 0 {
-			topK = tkInt
-		}
-
-		var minScore float32
-		if ms, ok := args["min_score"].(float64); ok && ms > 0 {
-			minScore = float32(ms)
-		}
-
-		corpus, _ := args["corpus"].(string)
-		var retrieval rag.Retrieval
-		projectPath, corpus, err := ticketindex.Resolve(ctx, projectPath, corpus)
-		if err != nil {
-			return nil, err
-		}
-		if detail, _ := args["detail"].(string); detail != "" {
-			budget := rag.AskContextTokens
-			if b, ok := args["token_budget"].(float64); ok && b > 0 {
-				budget = int(b)
-			}
-			docsShare, shareErr := docsShareArg(args)
-			if shareErr != nil {
-				return nil, shareErr
-			}
-			retrieval, err = rag.NewRetriever().ContextWith(ctx, projectPath, query, budget, rag.ContextOptions{Corpus: corpus, Detail: detail, DocsShare: docsShare}, false)
-		} else {
-			retrieval, err = rag.NewRetriever().Retrieve(ctx, projectPath, query, rag.SearchOptions{
-				TopK:     topK,
-				MinScore: minScore,
-				Corpus:   corpus,
-			}, false)
-		}
-		if err != nil {
-			return nil, fmt.Errorf("rag retrieval failed for %s: %w", projectPath, err)
-		}
-
-		data := indentJSON(retrieval.Chunks)
-
-		return &CallToolResult{
-			Content: []ContentItem{
-				{
-					Type: "text",
-					Text: string(data),
-				},
-			},
-		}, nil
-	})
+	}, ragRetrieveHandler())
 
 	// 48. dendrite_rag_show
 	s.RegisterTool(Tool{
@@ -250,7 +124,123 @@ func registerRAGTools(s *Server, deps Dependencies) {
 			},
 			"required": []interface{}{"ids"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, ragShowHandler())
+}
+
+// docsShareArg reads the optional "docs_share" argument: nil when absent, an error outside
+// 0 to 1.
+func docsShareArg(args map[string]interface{}) (*float64, error) {
+	v, ok := args["docs_share"].(float64)
+	if !ok {
+		return nil, nil
+	}
+	if v < 0 || v > 1 {
+		return nil, fmt.Errorf("docs_share must be from 0 to 1, got %v", v)
+	}
+	return &v, nil
+}
+
+// askTopK is how many chunks a question retrieves: the argument when given (an explicit 0 asks for the context pack,
+// which the documentation share applies to), otherwise 4.
+func askTopK(args map[string]interface{}) int {
+	switch v := args["top_k"].(type) {
+	case float64:
+		if v >= 0 {
+			return int(v)
+		}
+	case int:
+		if v >= 0 {
+			return v
+		}
+	}
+	return 4
+}
+
+// ragAskHandler handles the dendrite_rag_ask tool.
+func ragAskHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		question, ok := args["question"].(string)
+		if !ok || strings.TrimSpace(question) == "" {
+			return nil, fmt.Errorf("question is required")
+		}
+		corpus, _ := args["corpus"].(string)
+		projectPath, corpus, err := ticketindex.Resolve(ctx, stringArgOr(args, "project_path", "."), corpus)
+		if err != nil {
+			return nil, err
+		}
+		docsShare, err := docsShareArg(args)
+		if err != nil {
+			return nil, err
+		}
+		topK := askTopK(args)
+		if _, set := args["top_k"]; docsShare != nil && !set {
+			topK = 0 // a share only applies to the context pack
+		}
+		autoApprove, _ := args["auto_approve_paid"].(bool)
+		localModel, _ := args["local_model"].(string)
+		res, err := rag.NewAskEngine().Ask(ctx, rag.AskRequest{
+			Corpus:          corpus,
+			DocsShare:       docsShare,
+			Question:        question,
+			ProjectPath:     projectPath,
+			AutoApprovePaid: autoApprove,
+			PaidModel:       stringArgOr(args, "paid_model", "gemini-2.5-pro"),
+			LocalModel:      localModel,
+			TopK:            topK,
+			Input:           strings.NewReader("n\n"),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("rag ask failed: %w", err)
+		}
+		return textResult(string(indentJSON(res))), nil
+	}
+}
+
+// ragRetrieveHandler handles the dendrite_rag_retrieve tool.
+func ragRetrieveHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		query, ok := args["query"].(string)
+		if !ok || strings.TrimSpace(query) == "" {
+			return nil, fmt.Errorf("query is required")
+		}
+		corpus, _ := args["corpus"].(string)
+		projectPath, corpus, err := ticketindex.Resolve(ctx, stringArgOr(args, "project_path", "."), corpus)
+		if err != nil {
+			return nil, err
+		}
+		retrieval, err := retrieveFor(ctx, args, projectPath, corpus, query)
+		if err != nil {
+			return nil, fmt.Errorf("rag retrieval failed for %s: %w", projectPath, err)
+		}
+		return textResult(string(indentJSON(retrieval.Chunks))), nil
+	}
+}
+
+// retrieveFor answers a retrieve call: a token-budgeted context pack when a detail level is asked for, otherwise the
+// top chunks above the minimum score.
+func retrieveFor(ctx context.Context, args map[string]interface{}, projectPath, corpus, query string) (rag.Retrieval, error) {
+	if detail, _ := args["detail"].(string); detail != "" {
+		docsShare, err := docsShareArg(args)
+		if err != nil {
+			return rag.Retrieval{}, err
+		}
+		budget := int(floatArgOr(args, "token_budget", float64(rag.AskContextTokens)))
+		return rag.NewRetriever().ContextWith(ctx, projectPath, query, budget, rag.ContextOptions{Corpus: corpus, Detail: detail, DocsShare: docsShare}, false)
+	}
+	topK := positiveIntArg(args, "top_k")
+	if topK == 0 {
+		topK = 4
+	}
+	return rag.NewRetriever().Retrieve(ctx, projectPath, query, rag.SearchOptions{
+		TopK:     topK,
+		MinScore: float32(floatArgOr(args, "min_score", 0)),
+		Corpus:   corpus,
+	}, false)
+}
+
+// ragShowHandler handles the dendrite_rag_show tool.
+func ragShowHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		raw, _ := args["ids"].([]interface{})
 		var ids []string
 		for _, v := range raw {
@@ -271,18 +261,5 @@ func registerRAGTools(s *Server, deps Dependencies) {
 		}
 		data := indentJSON(chunks)
 		return textResult(string(data)), nil
-	})
-}
-
-// docsShareArg reads the optional "docs_share" argument: nil when absent, an error outside
-// 0 to 1.
-func docsShareArg(args map[string]interface{}) (*float64, error) {
-	v, ok := args["docs_share"].(float64)
-	if !ok {
-		return nil, nil
 	}
-	if v < 0 || v > 1 {
-		return nil, fmt.Errorf("docs_share must be from 0 to 1, got %v", v)
-	}
-	return &v, nil
 }

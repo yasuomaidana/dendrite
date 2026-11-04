@@ -82,7 +82,35 @@ func registerSynapseTools(s *Server, sc SynapseScope) {
 		Name:        "synapse_info",
 		Description: "Describes this synapse: members, roles, contracts, sync strategy and per-member path health",
 		InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, synapseInfoHandler(sc))
+
+	s.RegisterTool(Tool{
+		Name: "synapse_sync_status",
+		Description: "Reports where every member of this synapse stands against its tracked ref: source (local/remote), " +
+			"locked commit, ahead/behind, dirty files, remote branches with changes the checkout lacks, and drift. " +
+			"Read-only: never pulls, links or rewrites the manifest (use `dendrite synapse sync` for that)",
+		InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{
+			"fetch": map[string]interface{}{"type": "boolean", "description": "Fetch remotes and resolve remote refs first (network); default false"},
+		}},
+	}, synapseSyncStatusHandler(sc))
+
+	s.RegisterTool(Tool{
+		Name: "synapse_search",
+		Description: "Searches the code and documentation of every member of this synapse with one query and merges the answers " +
+			"by rank, each hit tagged with its member. Use it when a question crosses projects (who calls this API, where is " +
+			"this contract implemented). Hits are chunk outlines with paths relative to the member's root",
+		InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{
+			"query":   map[string]interface{}{"type": "string", "description": "What to look for"},
+			"top_k":   map[string]interface{}{"type": "integer", "description": "Merged hits to return (default 10)"},
+			"corpus":  map[string]interface{}{"type": "string", "enum": []interface{}{"all", "code", "docs"}, "description": "Corpora searched (default all)"},
+			"members": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Only these member aliases (default: all)"},
+		}, "required": []interface{}{"query"}},
+	}, synapseSearchHandler(sc))
+}
+
+// synapseInfoHandler handles the synapse_info tool.
+func synapseInfoHandler(sc SynapseScope) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		syn, err := sc.load()
 		if err != nil {
 			return errorResult("loading synapse: %v", err), nil
@@ -104,58 +132,35 @@ func registerSynapseTools(s *Server, sc SynapseScope) {
 			"sync":      syn.Sync,
 			"parity":    syn.Parity,
 		})
-	})
+	}
+}
 
-	s.RegisterTool(Tool{
-		Name: "synapse_sync_status",
-		Description: "Reports where every member of this synapse stands against its tracked ref: source (local/remote), " +
-			"locked commit, ahead/behind, dirty files, remote branches with changes the checkout lacks, and drift. " +
-			"Read-only: never pulls, links or rewrites the manifest (use `dendrite synapse sync` for that)",
-		InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{
-			"fetch": map[string]interface{}{"type": "boolean", "description": "Fetch remotes and resolve remote refs first (network); default false"},
-		}},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// synapseSyncStatusHandler handles the synapse_sync_status tool.
+func synapseSyncStatusHandler(sc SynapseScope) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		syn, err := sc.load()
 		if err != nil {
 			return errorResult("loading synapse: %v", err), nil
 		}
 		fetch, _ := args["fetch"].(bool)
 		return jsonResult(synapse.SyncSynapse(ctx, syn, synapse.SyncOptions{NoFetch: !fetch}))
-	})
+	}
+}
 
-	s.RegisterTool(Tool{
-		Name: "synapse_search",
-		Description: "Searches the code and documentation of every member of this synapse with one query and merges the answers " +
-			"by rank, each hit tagged with its member. Use it when a question crosses projects (who calls this API, where is " +
-			"this contract implemented). Hits are chunk outlines with paths relative to the member's root",
-		InputSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{
-			"query":   map[string]interface{}{"type": "string", "description": "What to look for"},
-			"top_k":   map[string]interface{}{"type": "integer", "description": "Merged hits to return (default 10)"},
-			"corpus":  map[string]interface{}{"type": "string", "enum": []interface{}{"all", "code", "docs"}, "description": "Corpora searched (default all)"},
-			"members": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Only these member aliases (default: all)"},
-		}, "required": []interface{}{"query"}},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// synapseSearchHandler handles the synapse_search tool.
+func synapseSearchHandler(sc SynapseScope) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		query, _ := args["query"].(string)
 		syn, err := sc.load()
 		if err != nil {
 			return errorResult("loading synapse: %v", err), nil
 		}
-		opts := synapsesearch.Options{}
-		if v, ok := args["top_k"].(float64); ok && v > 0 {
-			opts.TopK = int(v)
-		}
+		opts := synapsesearch.Options{TopK: positiveIntArg(args, "top_k"), Members: stringList(args["members"])}
 		opts.Corpus, _ = args["corpus"].(string)
-		if list, ok := args["members"].([]interface{}); ok {
-			for _, m := range list {
-				if alias, ok := m.(string); ok {
-					opts.Members = append(opts.Members, alias)
-				}
-			}
-		}
 		hits, notes, err := synapsesearch.Search(ctx, syn, query, opts, nil)
 		if err != nil {
 			return errorResult("%v", err), nil
 		}
 		return jsonResult(map[string]interface{}{"hits": hits, "skipped_members": notes})
-	})
+	}
 }

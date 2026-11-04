@@ -25,38 +25,7 @@ func registerPlaneSyncAndIDETools(s *Server, deps Dependencies) {
 				"dry_run": map[string]interface{}{"type": "boolean", "description": "If true, simulates replication without modifying disk"},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		client, err := planeClientOf(deps)
-		if err != nil {
-			return nil, err
-		}
-		targetFile := "DEV_STATUS.md"
-		if f, ok := args["file"].(string); ok && f != "" {
-			targetFile = f
-		}
-		dryRun, _ := args["dry_run"].(bool)
-
-		rendered, report, err := plane.ReplicateStatusFromPlane(ctx, client)
-		if err != nil {
-			return nil, fmt.Errorf("replication failed: %w", err)
-		}
-
-		if !dryRun {
-			if err := os.WriteFile(targetFile, []byte(rendered), 0644); err != nil {
-				return nil, fmt.Errorf("failed to write %s: %w", targetFile, err)
-			}
-		}
-
-		res := map[string]interface{}{
-			"status":    "success",
-			"ownership": "Plane Service",
-			"file":      targetFile,
-			"dry_run":   dryRun,
-			"report":    report,
-		}
-		data := indentJSON(res)
-		return textResult(string(data)), nil
-	})
+	}, planeReplicateHandler(deps))
 
 	// 13. dendrite_plane_push_status
 	s.RegisterTool(Tool{
@@ -68,33 +37,7 @@ func registerPlaneSyncAndIDETools(s *Server, deps Dependencies) {
 				"file": map[string]interface{}{"type": "string", "description": "Source markdown file path (default: DEV_STATUS.md)"},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		client, err := planeClientOf(deps)
-		if err != nil {
-			return nil, err
-		}
-		sourceFile := "DEV_STATUS.md"
-		if f, ok := args["file"].(string); ok && f != "" {
-			sourceFile = f
-		}
-		content, err := os.ReadFile(sourceFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read %s: %w", sourceFile, err)
-		}
-
-		report, err := plane.PushStatusToPlane(ctx, client, string(content))
-		if err != nil {
-			return nil, fmt.Errorf("push to plane failed: %w", err)
-		}
-
-		res := map[string]interface{}{
-			"status": "success",
-			"file":   sourceFile,
-			"report": report,
-		}
-		data := indentJSON(res)
-		return textResult(string(data)), nil
-	})
+	}, planePushStatusHandler(deps))
 
 	// 14. dendrite_plane_doc_sync
 	s.RegisterTool(Tool{
@@ -107,35 +50,7 @@ func registerPlaneSyncAndIDETools(s *Server, deps Dependencies) {
 				"dir":       map[string]interface{}{"type": "string", "description": "Documentation directory path (default: docs)"},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		client, err := planeClientOf(deps)
-		if err != nil {
-			return nil, err
-		}
-		dir := "docs"
-		if d, ok := args["dir"].(string); ok && d != "" {
-			dir = d
-		}
-		direction := plane.DirectionBidirectional
-		if dirStr, ok := args["direction"].(string); ok && dirStr != "" {
-			switch strings.ToLower(dirStr) {
-			case "to-plane", "push":
-				direction = plane.DirectionToPlane
-			case "from-plane", "pull":
-				direction = plane.DirectionFromPlane
-			default:
-				direction = plane.DirectionBidirectional
-			}
-		}
-
-		report, err := plane.SyncDocs(ctx, client, dir, direction)
-		if err != nil {
-			return nil, fmt.Errorf("documentation sync failed: %w", err)
-		}
-
-		data := indentJSON(report)
-		return textResult(string(data)), nil
-	})
+	}, planeDocSyncHandler(deps))
 
 	// 15. dendrite_jetbrains_setup
 	s.RegisterTool(Tool{
@@ -149,27 +64,7 @@ func registerPlaneSyncAndIDETools(s *Server, deps Dependencies) {
 				"global_only":  map[string]interface{}{"type": "boolean", "description": "Configure only user-level global files (~/.ai/mcp/mcp.json)"},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		pDir, _ := args["project_dir"].(string)
-		projectOnly, _ := args["project_only"].(bool)
-		globalOnly, _ := args["global_only"].(bool)
-
-		opts := jetbrains.SetupOptions{
-			ProjectDir:             pDir,
-			ConfigureProjectMCP:    !globalOnly,
-			ConfigureGlobalMCP:     !projectOnly,
-			ConfigureRunConfigs:    !globalOnly,
-			ConfigureExternalTools: !globalOnly,
-		}
-
-		res, err := jetbrains.SetupJetBrainsToolset(opts)
-		if err != nil {
-			return nil, fmt.Errorf("jetbrains setup failed: %w", err)
-		}
-
-		data := indentJSON(res)
-		return textResult(string(data)), nil
-	})
+	}, jetbrainsSetupHandler())
 }
 
 // registerCommitTool registers dendrite_commit.
@@ -214,46 +109,153 @@ func registerCommitTool(s *Server, deps Dependencies) {
 				},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		ticketID, _ := args["ticket_id"].(string)
-		msg, _ := args["message"].(string)
-		model, _ := args["model"].(string)
+	}, commitHandler())
+}
+
+// planeReplicateHandler handles the dendrite_plane_replicate tool.
+func planeReplicateHandler(deps Dependencies) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		client, err := planeClientOf(deps)
+		if err != nil {
+			return nil, err
+		}
+		targetFile := "DEV_STATUS.md"
+		if f, ok := args["file"].(string); ok && f != "" {
+			targetFile = f
+		}
 		dryRun, _ := args["dry_run"].(bool)
 
-		stageAll := true
-		if sa, ok := args["stage_all"].(bool); ok {
-			stageAll = sa
-		}
-		useLocal := true
-		if ul, ok := args["use_local_model"].(bool); ok {
-			useLocal = ul
+		rendered, report, err := plane.ReplicateStatusFromPlane(ctx, client)
+		if err != nil {
+			return nil, fmt.Errorf("replication failed: %w", err)
 		}
 
-		var files []string
-		if rawFiles, ok := args["files"].([]interface{}); ok {
-			for _, rf := range rawFiles {
-				if s, ok := rf.(string); ok && s != "" {
-					files = append(files, s)
-				}
+		if !dryRun {
+			if err := os.WriteFile(targetFile, []byte(rendered), 0644); err != nil {
+				return nil, fmt.Errorf("failed to write %s: %w", targetFile, err)
 			}
 		}
 
-		opts := devtool.CommitOptions{
-			TicketID:      ticketID,
-			Message:       msg,
-			Files:         files,
-			StageAll:      stageAll,
-			UseLocalModel: useLocal,
-			Model:         model,
-			DryRun:        dryRun,
+		res := map[string]interface{}{
+			"status":    "success",
+			"ownership": "Plane Service",
+			"file":      targetFile,
+			"dry_run":   dryRun,
+			"report":    report,
+		}
+		data := indentJSON(res)
+		return textResult(string(data)), nil
+	}
+}
+
+// planePushStatusHandler handles the dendrite_plane_push_status tool.
+func planePushStatusHandler(deps Dependencies) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		client, err := planeClientOf(deps)
+		if err != nil {
+			return nil, err
+		}
+		sourceFile := "DEV_STATUS.md"
+		if f, ok := args["file"].(string); ok && f != "" {
+			sourceFile = f
+		}
+		content, err := os.ReadFile(sourceFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read %s: %w", sourceFile, err)
 		}
 
-		res, err := devtool.ExecuteCommit(ctx, opts)
+		report, err := plane.PushStatusToPlane(ctx, client, string(content))
 		if err != nil {
-			return nil, fmt.Errorf("commit failed: %w", err)
+			return nil, fmt.Errorf("push to plane failed: %w", err)
+		}
+
+		res := map[string]interface{}{
+			"status": "success",
+			"file":   sourceFile,
+			"report": report,
+		}
+		data := indentJSON(res)
+		return textResult(string(data)), nil
+	}
+}
+
+// planeDocSyncHandler handles the dendrite_plane_doc_sync tool.
+func planeDocSyncHandler(deps Dependencies) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		client, err := planeClientOf(deps)
+		if err != nil {
+			return nil, err
+		}
+		dir := "docs"
+		if d, ok := args["dir"].(string); ok && d != "" {
+			dir = d
+		}
+		direction := plane.DirectionBidirectional
+		if dirStr, ok := args["direction"].(string); ok && dirStr != "" {
+			switch strings.ToLower(dirStr) {
+			case "to-plane", "push":
+				direction = plane.DirectionToPlane
+			case "from-plane", "pull":
+				direction = plane.DirectionFromPlane
+			default:
+				direction = plane.DirectionBidirectional
+			}
+		}
+
+		report, err := plane.SyncDocs(ctx, client, dir, direction)
+		if err != nil {
+			return nil, fmt.Errorf("documentation sync failed: %w", err)
+		}
+
+		data := indentJSON(report)
+		return textResult(string(data)), nil
+	}
+}
+
+// jetbrainsSetupHandler handles the dendrite_jetbrains_setup tool.
+func jetbrainsSetupHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		pDir, _ := args["project_dir"].(string)
+		projectOnly, _ := args["project_only"].(bool)
+		globalOnly, _ := args["global_only"].(bool)
+
+		opts := jetbrains.SetupOptions{
+			ProjectDir:             pDir,
+			ConfigureProjectMCP:    !globalOnly,
+			ConfigureGlobalMCP:     !projectOnly,
+			ConfigureRunConfigs:    !globalOnly,
+			ConfigureExternalTools: !globalOnly,
+		}
+
+		res, err := jetbrains.SetupJetBrainsToolset(opts)
+		if err != nil {
+			return nil, fmt.Errorf("jetbrains setup failed: %w", err)
 		}
 
 		data := indentJSON(res)
 		return textResult(string(data)), nil
-	})
+	}
+}
+
+// commitHandler handles the dendrite_commit tool.
+func commitHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		ticketID, _ := args["ticket_id"].(string)
+		msg, _ := args["message"].(string)
+		model, _ := args["model"].(string)
+		dryRun, _ := args["dry_run"].(bool)
+		res, err := devtool.ExecuteCommit(ctx, devtool.CommitOptions{
+			TicketID:      ticketID,
+			Message:       msg,
+			Files:         nonEmptyStrings(args["files"]),
+			StageAll:      boolArgOr(args, "stage_all", true),
+			UseLocalModel: boolArgOr(args, "use_local_model", true),
+			Model:         model,
+			DryRun:        dryRun,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("commit failed: %w", err)
+		}
+		return textResult(string(indentJSON(res))), nil
+	}
 }

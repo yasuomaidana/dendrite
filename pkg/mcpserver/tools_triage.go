@@ -43,7 +43,24 @@ func registerTriageTools(s *Server, deps Dependencies) {
 				},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, localAgentTriageHandler(deps))
+}
+
+// triageTiers and triageEngines name the tiers and engines a caller may force; others mean "decide".
+var (
+	triageTiers = map[string]triage.ExecutionTier{
+		"local": triage.TierLocal, "hybrid": triage.TierHybrid, "cloud": triage.TierCloud,
+	}
+	triageEngines = map[string]triage.SupportedEngine{
+		"ollama": triage.EngineOllama, "ollama-validated": triage.EngineOllamaValidated,
+		"huggingface": triage.EngineHuggingFace, "hf": triage.EngineHuggingFace,
+		"candle": triage.EngineCandle, "oxillama": triage.EngineOxiLLaMa,
+	}
+)
+
+// localAgentTriageHandler handles the dendrite_local_agent_triage tool.
+func localAgentTriageHandler(deps Dependencies) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		prompt, _ := args["prompt"].(string)
 		if prompt == "" {
 			return nil, fmt.Errorf("prompt is required")
@@ -77,17 +94,5 @@ func registerTriageTools(s *Server, deps Dependencies) {
 		data := indentJSON(res)
 
 		return textResult(string(data)), nil
-	})
+	}
 }
-
-// triageTiers and triageEngines name the tiers and engines a caller may force; others mean "decide".
-var (
-	triageTiers = map[string]triage.ExecutionTier{
-		"local": triage.TierLocal, "hybrid": triage.TierHybrid, "cloud": triage.TierCloud,
-	}
-	triageEngines = map[string]triage.SupportedEngine{
-		"ollama": triage.EngineOllama, "ollama-validated": triage.EngineOllamaValidated,
-		"huggingface": triage.EngineHuggingFace, "hf": triage.EngineHuggingFace,
-		"candle": triage.EngineCandle, "oxillama": triage.EngineOxiLLaMa,
-	}
-)

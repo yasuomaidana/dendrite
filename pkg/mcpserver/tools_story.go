@@ -42,7 +42,72 @@ func registerStoryForkTools(s *Server, deps Dependencies) {
 			},
 			"required": []interface{}{"story_id", "variants"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, storyForkHandler())
+
+	// 48. dendrite_story_benchmark
+	s.RegisterTool(Tool{
+		Name:        "dendrite_story_benchmark",
+		Description: "Run comparative differential performance benchmarks (TTFT, TPS, memory, CPU) across variant worktrees",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"story_id": map[string]interface{}{
+					"type":        "string",
+					"description": "Target story identifier",
+				},
+				"iterations": map[string]interface{}{
+					"type":        "integer",
+					"description": "Number of benchmark iterations per variant (default: 100)",
+				},
+				"virtual_users": map[string]interface{}{
+					"type":        "integer",
+					"description": "Number of simulated concurrent users (default: 1)",
+				},
+			},
+			"required": []interface{}{"story_id"},
+		},
+	}, storyBenchmarkHandler())
+
+	// 49. dendrite_story_resolve
+	s.RegisterTool(Tool{
+		Name:        "dendrite_story_resolve",
+		Description: "Merge winning variant worktree, persist benchmark metrics into store, and purge alternate worktrees",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"story_id": map[string]interface{}{
+					"type":        "string",
+					"description": "Target story identifier",
+				},
+				"winner": map[string]interface{}{
+					"type":        "string",
+					"description": "Name of the winning variant to merge (e.g. 'v2' or 'astar-bitvec')",
+				},
+			},
+			"required": []interface{}{"story_id", "winner"},
+		},
+	}, storyResolveHandler())
+
+	// 50. dendrite_story_abort
+	s.RegisterTool(Tool{
+		Name:        "dendrite_story_abort",
+		Description: "Safely abort and purge all speculative worktrees and branches for a story without merging",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"story_id": map[string]interface{}{
+					"type":        "string",
+					"description": "Target story identifier to clean up",
+				},
+			},
+			"required": []interface{}{"story_id"},
+		},
+	}, storyAbortHandler())
+}
+
+// storyForkHandler handles the dendrite_story_fork tool.
+func storyForkHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		storyID, _ := args["story_id"].(string)
 		if storyID == "" {
 			return nil, fmt.Errorf("missing required 'story_id' parameter")
@@ -70,31 +135,12 @@ func registerStoryForkTools(s *Server, deps Dependencies) {
 
 		data := indentJSON(manifest)
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// 48. dendrite_story_benchmark
-	s.RegisterTool(Tool{
-		Name:        "dendrite_story_benchmark",
-		Description: "Run comparative differential performance benchmarks (TTFT, TPS, memory, CPU) across variant worktrees",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"story_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Target story identifier",
-				},
-				"iterations": map[string]interface{}{
-					"type":        "integer",
-					"description": "Number of benchmark iterations per variant (default: 100)",
-				},
-				"virtual_users": map[string]interface{}{
-					"type":        "integer",
-					"description": "Number of simulated concurrent users (default: 1)",
-				},
-			},
-			"required": []interface{}{"story_id"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// storyBenchmarkHandler handles the dendrite_story_benchmark tool.
+func storyBenchmarkHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		storyID, _ := args["story_id"].(string)
 		if storyID == "" {
 			return nil, fmt.Errorf("missing required 'story_id' parameter")
@@ -122,27 +168,12 @@ func registerStoryForkTools(s *Server, deps Dependencies) {
 
 		data := indentJSON(scorecard)
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// 49. dendrite_story_resolve
-	s.RegisterTool(Tool{
-		Name:        "dendrite_story_resolve",
-		Description: "Merge winning variant worktree, persist benchmark metrics into store, and purge alternate worktrees",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"story_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Target story identifier",
-				},
-				"winner": map[string]interface{}{
-					"type":        "string",
-					"description": "Name of the winning variant to merge (e.g. 'v2' or 'astar-bitvec')",
-				},
-			},
-			"required": []interface{}{"story_id", "winner"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// storyResolveHandler handles the dendrite_story_resolve tool.
+func storyResolveHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		storyID, _ := args["story_id"].(string)
 		winner, _ := args["winner"].(string)
 		if storyID == "" || winner == "" {
@@ -156,23 +187,12 @@ func registerStoryForkTools(s *Server, deps Dependencies) {
 
 		data := indentJSON(res)
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// 50. dendrite_story_abort
-	s.RegisterTool(Tool{
-		Name:        "dendrite_story_abort",
-		Description: "Safely abort and purge all speculative worktrees and branches for a story without merging",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"story_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Target story identifier to clean up",
-				},
-			},
-			"required": []interface{}{"story_id"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// storyAbortHandler handles the dendrite_story_abort tool.
+func storyAbortHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		storyID, _ := args["story_id"].(string)
 		if storyID == "" {
 			return nil, fmt.Errorf("missing required 'story_id' parameter")
@@ -183,5 +203,5 @@ func registerStoryForkTools(s *Server, deps Dependencies) {
 		}
 
 		return textResult(fmt.Sprintf("[✓] Speculative story '%s' successfully aborted and cleaned.", storyID)), nil
-	})
+	}
 }

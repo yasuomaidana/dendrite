@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"encoding/json"
+	"strings"
 
 	"Dendrite/pkg/tracker/plane"
 )
@@ -60,6 +61,36 @@ func stringArgOr(args map[string]interface{}, key, def string) string {
 		return v
 	}
 	return def
+}
+
+// floatArgOr reads a positive number argument, using def when it is absent or not positive.
+func floatArgOr(args map[string]interface{}, key string, def float64) float64 {
+	if v, ok := args[key].(float64); ok && v > 0 {
+		return v
+	}
+	return def
+}
+
+// nonEmptyStrings reads a JSON array of strings, dropping empty items and items that are not text.
+func nonEmptyStrings(raw interface{}) []string {
+	var out []string
+	for _, s := range stringList(raw) {
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// trimmedStrings reads a JSON array of strings, trimmed, dropping empty items and items that are not text.
+func trimmedStrings(raw interface{}) []string {
+	var out []string
+	for _, s := range stringList(raw) {
+		if t := strings.TrimSpace(s); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // boolArgOr reads a boolean argument, using def when it is absent.

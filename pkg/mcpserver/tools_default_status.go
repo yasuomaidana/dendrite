@@ -25,15 +25,7 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 			"type":       "object",
 			"properties": map[string]interface{}{},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		detector := env.NewDetector(nil)
-		host, _ := detector.Detect(ctx) // Detect reports what it could read and never fails
-		replicator := env.NewReplicator(nil, *host)
-		statuses := replicator.AuditComponents(ctx)
-
-		data := indentJSON(statuses)
-		return textResult(string(data)), nil
-	})
+	}, envStatusHandler())
 
 	// 2. dendrite_ticket_list
 	s.RegisterTool(Tool{
@@ -48,29 +40,7 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 				},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		file := deps.DevStatus
-		if f, ok := args["file"].(string); ok && strings.TrimSpace(f) != "" {
-			file = f
-		}
-		tr := tracker.NewMemoryTracker(file)
-		if err := tr.LoadFromMarkdown(file); err != nil {
-			pClient := deps.PlaneClient
-			if pClient == nil {
-				pClient, _ = plane.NewClientFromEnv()
-			}
-			if pClient != nil {
-				issues, pErr := pClient.ListPlaneIssues(ctx)
-				if pErr == nil && len(issues) > 0 {
-					return textResult(string(indentJSON(issues))), nil
-				}
-			}
-			return nil, fmt.Errorf("failed to load markdown tickets: %w", err)
-		}
-		tickets, _ := tr.ListTickets(ctx) // an in-memory list cannot fail
-		data := indentJSON(tickets)
-		return textResult(string(data)), nil
-	})
+	}, ticketListHandler(deps))
 
 	// 3. dendrite_ticket_update
 	s.RegisterTool(Tool{
@@ -94,36 +64,7 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 				},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		tid, ok := args["ticket_id"].(string)
-		if !ok || strings.TrimSpace(tid) == "" {
-			return nil, fmt.Errorf("missing ticket_id")
-		}
-		stStr, ok := args["status"].(string)
-		if !ok || strings.TrimSpace(stStr) == "" {
-			return nil, fmt.Errorf("missing status")
-		}
-		file := deps.DevStatus
-		if f, ok := args["file"].(string); ok && strings.TrimSpace(f) != "" {
-			file = f
-		}
-
-		st := tracker.Status(strings.ToUpper(strings.TrimSpace(stStr)))
-		if err := devtool.UpdateTicketInMarkdown(ctx, file, tid, st); err != nil {
-			pClient := deps.PlaneClient
-			if pClient == nil {
-				pClient, _ = plane.NewClientFromEnv()
-			}
-			if pClient != nil {
-				if _, pErr := planesvc.Default().SetStatus(ctx, pClient, tracker.TicketID(tid), st); pErr == nil {
-					return textResult(fmt.Sprintf("Successfully updated %s to %s in Plane service", tid, st)), nil
-				}
-			}
-			return nil, fmt.Errorf("failed to update ticket in markdown: %w", err)
-		}
-
-		return textResult(fmt.Sprintf("Successfully updated %s to %s in %s", tid, st, file)), nil
-	})
+	}, ticketUpdateHandler(deps))
 
 	// 4. dendrite_plane_issues
 	s.RegisterTool(Tool{
@@ -136,20 +77,7 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 				"project":   map[string]interface{}{"type": "string", "description": "Project ID or Identifier (default: DEN)"},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
-		client, err := planeClientOf(deps)
-		if err != nil {
-			return nil, err
-		}
-
-		issues, err := client.ListPlaneIssues(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to Plane: %w", err)
-		}
-
-		data := indentJSON(issues)
-		return textResult(string(data)), nil
-	})
+	}, planeIssuesHandler(deps))
 }
 
 // registerOllamaAndGatewayTools registers dendrite_ollama_probe, dendrite_topology_advisor, dendrite_gateway_render and dendrite_gateway_update.
@@ -164,7 +92,165 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 				"url": map[string]interface{}{"type": "string", "description": "Ollama base URL (default: http://127.0.0.1:11434)"},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, ollamaProbeHandler(deps))
+
+	// 6. dendrite_topology_advisor
+	s.RegisterTool(Tool{
+		Name:        "dendrite_topology_advisor",
+		Description: "Evaluate hardware capabilities of compute nodes and calculate optimal placement of Dendrite microservices",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"nodes": map[string]interface{}{
+					"type":        "string",
+					"description": "Comma-separated node definitions (e.g. 'local=localhost,worker=100.84.12.25')",
+				},
+			},
+		},
+	}, topologyAdvisorHandler())
+
+	// 7. dendrite_gateway_render
+	s.RegisterTool(Tool{
+		Name:        "dendrite_gateway_render",
+		Description: "Render dynamic LiteLLM YAML routing configuration for a given topology scenario",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"scenario": map[string]interface{}{
+					"type":        "string",
+					"description": "Topology scenario: 'local-hybrid', 'cloud-burst', 'full-local'",
+				},
+			},
+		},
+	}, gatewayRenderHandler())
+
+	// dendrite_gateway_update
+	s.RegisterTool(Tool{
+		Name:        "dendrite_gateway_update",
+		Description: "Dynamically discover live inference engines (Ollama, OxiLLaMa, etc.), score loaded models by intelligence, and update LiteLLM routing table (default: ~/.dendrite/stacks/litellm_config.yaml)",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"file": map[string]interface{}{
+					"type":        "string",
+					"description": "Target litellm_config.yaml path (default: ~/.dendrite/stacks/litellm_config.yaml)",
+				},
+				"dry_run": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Simulate update without modifying disk (default: false)",
+				},
+				"use_container_host": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Use host.docker.internal for container networking (default: true for the stacks directory)",
+				},
+			},
+		},
+	}, gatewayUpdateHandler())
+}
+
+// envStatusHandler handles the dendrite_env_status tool.
+func envStatusHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		detector := env.NewDetector(nil)
+		host, _ := detector.Detect(ctx) // Detect reports what it could read and never fails
+		replicator := env.NewReplicator(nil, *host)
+		statuses := replicator.AuditComponents(ctx)
+
+		data := indentJSON(statuses)
+		return textResult(string(data)), nil
+	}
+}
+
+// ticketListHandler handles the dendrite_ticket_list tool.
+func ticketListHandler(deps Dependencies) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		file := ledgerFile(deps, args)
+		tr := tracker.NewMemoryTracker(file)
+		if err := tr.LoadFromMarkdown(file); err != nil {
+			if client := planeFallback(deps); client != nil {
+				if issues, pErr := client.ListPlaneIssues(ctx); pErr == nil && len(issues) > 0 {
+					return textResult(string(indentJSON(issues))), nil
+				}
+			}
+			return nil, fmt.Errorf("failed to load markdown tickets: %w", err)
+		}
+		tickets, _ := tr.ListTickets(ctx) // an in-memory list cannot fail
+		return textResult(string(indentJSON(tickets))), nil
+	}
+}
+
+// ledgerFile is the status ledger a call names with "file", otherwise the configured one.
+func ledgerFile(deps Dependencies, args map[string]interface{}) string {
+	if f, ok := args["file"].(string); ok && strings.TrimSpace(f) != "" {
+		return f
+	}
+	return deps.DevStatus
+}
+
+// planeFallback is the Plane client a tool falls back to when the markdown ledger cannot be used, nil when there is none.
+func planeFallback(deps Dependencies) *plane.Client {
+	if deps.PlaneClient != nil {
+		return deps.PlaneClient
+	}
+	client, _ := plane.NewClientFromEnv()
+	return client
+}
+
+// requiredText reads a non-blank text argument or fails with "missing <key>".
+func requiredText(args map[string]interface{}, key string) (string, error) {
+	v, ok := args[key].(string)
+	if !ok || strings.TrimSpace(v) == "" {
+		return "", fmt.Errorf("missing %s", key)
+	}
+	return v, nil
+}
+
+// ticketUpdateHandler handles the dendrite_ticket_update tool.
+func ticketUpdateHandler(deps Dependencies) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		tid, err := requiredText(args, "ticket_id")
+		if err != nil {
+			return nil, err
+		}
+		stStr, err := requiredText(args, "status")
+		if err != nil {
+			return nil, err
+		}
+		file := ledgerFile(deps, args)
+		st := tracker.Status(strings.ToUpper(strings.TrimSpace(stStr)))
+		if err := devtool.UpdateTicketInMarkdown(ctx, file, tid, st); err != nil {
+			if client := planeFallback(deps); client != nil {
+				if _, pErr := planesvc.Default().SetStatus(ctx, client, tracker.TicketID(tid), st); pErr == nil {
+					return textResult(fmt.Sprintf("Successfully updated %s to %s in Plane service", tid, st)), nil
+				}
+			}
+			return nil, fmt.Errorf("failed to update ticket in markdown: %w", err)
+		}
+		return textResult(fmt.Sprintf("Successfully updated %s to %s in %s", tid, st, file)), nil
+	}
+}
+
+// planeIssuesHandler handles the dendrite_plane_issues tool.
+func planeIssuesHandler(deps Dependencies) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		client, err := planeClientOf(deps)
+		if err != nil {
+			return nil, err
+		}
+
+		issues, err := client.ListPlaneIssues(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect to Plane: %w", err)
+		}
+
+		data := indentJSON(issues)
+		return textResult(string(data)), nil
+	}
+}
+
+// ollamaProbeHandler handles the dendrite_ollama_probe tool.
+func ollamaProbeHandler(deps Dependencies) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		target := deps.OllamaURL
 		if u, ok := args["url"].(string); ok && u != "" {
 			target = u
@@ -180,22 +266,12 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 		}
 		data := indentJSON(result)
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// 6. dendrite_topology_advisor
-	s.RegisterTool(Tool{
-		Name:        "dendrite_topology_advisor",
-		Description: "Evaluate hardware capabilities of compute nodes and calculate optimal placement of Dendrite microservices",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"nodes": map[string]interface{}{
-					"type":        "string",
-					"description": "Comma-separated node definitions (e.g. 'local=localhost,worker=100.84.12.25')",
-				},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// topologyAdvisorHandler handles the dendrite_topology_advisor tool.
+func topologyAdvisorHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		nodeArgs := "local=localhost"
 		if n, ok := args["nodes"].(string); ok && n != "" {
 			nodeArgs = n
@@ -229,22 +305,12 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 
 		data := indentJSON(plan)
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// 7. dendrite_gateway_render
-	s.RegisterTool(Tool{
-		Name:        "dendrite_gateway_render",
-		Description: "Render dynamic LiteLLM YAML routing configuration for a given topology scenario",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"scenario": map[string]interface{}{
-					"type":        "string",
-					"description": "Topology scenario: 'local-hybrid', 'cloud-burst', 'full-local'",
-				},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// gatewayRenderHandler handles the dendrite_gateway_render tool.
+func gatewayRenderHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		scStr := "local-hybrid"
 		if s, ok := args["scenario"].(string); ok && s != "" {
 			scStr = s
@@ -260,30 +326,12 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 		})
 		yamlData, _ := gateway.RenderForTopology(top)
 		return textResult(string(yamlData)), nil
-	})
+	}
+}
 
-	// dendrite_gateway_update
-	s.RegisterTool(Tool{
-		Name:        "dendrite_gateway_update",
-		Description: "Dynamically discover live inference engines (Ollama, OxiLLaMa, etc.), score loaded models by intelligence, and update LiteLLM routing table (default: ~/.dendrite/stacks/litellm_config.yaml)",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"file": map[string]interface{}{
-					"type":        "string",
-					"description": "Target litellm_config.yaml path (default: ~/.dendrite/stacks/litellm_config.yaml)",
-				},
-				"dry_run": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Simulate update without modifying disk (default: false)",
-				},
-				"use_container_host": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Use host.docker.internal for container networking (default: true for the stacks directory)",
-				},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// gatewayUpdateHandler handles the dendrite_gateway_update tool.
+func gatewayUpdateHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		opts := gateway.DefaultUpdaterOptions()
 		if f, ok := args["file"].(string); ok && strings.TrimSpace(f) != "" {
 			opts.ConfigPath = strings.TrimSpace(f)
@@ -303,5 +351,5 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 
 		data := indentJSON(rep)
 		return textResult(string(data)), nil
-	})
+	}
 }

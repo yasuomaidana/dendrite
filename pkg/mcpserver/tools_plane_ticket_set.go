@@ -25,7 +25,12 @@ func registerPlaneTicketSetTool(s *Server, deps Dependencies) {
 			},
 			"required": []string{"ticket", "status"},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, planeTicketSetHandler(deps))
+}
+
+// planeTicketSetHandler handles the dendrite_plane_ticket_set tool.
+func planeTicketSetHandler(deps Dependencies) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		ticket, _ := args["ticket"].(string)
 		statusArg, _ := args["status"].(string)
 		if strings.TrimSpace(ticket) == "" || strings.TrimSpace(statusArg) == "" {
@@ -46,5 +51,5 @@ func registerPlaneTicketSetTool(s *Server, deps Dependencies) {
 		}
 		data := indentJSON(map[string]string{"ticket": ticket, "status": string(st), "source": "plane"})
 		return textResult(string(data)), nil
-	})
+	}
 }

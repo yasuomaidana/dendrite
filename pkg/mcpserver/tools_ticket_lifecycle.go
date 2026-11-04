@@ -80,10 +80,7 @@ func registerTicketLifecycleTools(s *Server, deps Dependencies) {
 			"model_tier": map[string]interface{}{"type": "string", "description": "Model tier of this session (default: DENDRITE_MODEL_TIER)"},
 			"steal":      map[string]interface{}{"type": "boolean", "description": "Take the ticket over from another live session"},
 		}),
-		func(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
-			steal, _ := a["steal"].(bool)
-			return l.Claim(ctx, stringArg(a, "ticket"), ticketlock.ClaimOptions{Agent: stringArg(a, "agent"), Tier: stringArg(a, "model_tier"), Steal: steal})
-		})
+		ticketClaimRun)
 
 	register("dendrite_ticket_comment",
 		"Post a structured progress, milestone, note or handoff comment on a ticket (marker, text, and a footer naming session, agent, tier, branch and commit).",
@@ -92,12 +89,7 @@ func registerTicketLifecycleTools(s *Server, deps Dependencies) {
 			"kind": map[string]interface{}{"type": "string", "description": strings.Join(ticketlock.CommentKinds, ", ")},
 			"body": map[string]interface{}{"type": "string", "description": "The comment text"},
 		}),
-		func(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
-			if err := l.Comment(ctx, stringArg(a, "ticket"), stringArg(a, "kind"), stringArg(a, "body")); err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{"ok": true}, nil
-		})
+		ticketCommentRun)
 
 	register("dendrite_ticket_decision",
 		"Record a question you asked the user and the answer you got, or a decision you took, on a ticket. Do it for every decision that shapes the work; Claude Code's AskUserQuestion is recorded by a hook, other agents call this.",
@@ -108,20 +100,7 @@ func registerTicketLifecycleTools(s *Server, deps Dependencies) {
 			"options":  map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Options that were on the table"},
 			"note":     map[string]interface{}{"type": "string", "description": "Why, or what follows from it"},
 		}),
-		func(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
-			d := ticketlock.Decision{Question: stringArg(a, "question"), Answer: stringArg(a, "answer"), Note: stringArg(a, "note")}
-			if raw, ok := a["options"].([]interface{}); ok {
-				for _, o := range raw {
-					if text, ok := o.(string); ok {
-						d.Options = append(d.Options, text)
-					}
-				}
-			}
-			if err := l.RecordDecisions(ctx, stringArg(a, "ticket"), []ticketlock.Decision{d}, ""); err != nil {
-				return nil, err
-			}
-			return map[string]interface{}{"ok": true}, nil
-		})
+		ticketDecisionRun)
 
 	register("dendrite_ticket_comments",
 		"Read the comments of a ticket: claims, progress, decisions, handoffs and plans. Filter by kind, or take only the last N. Use it to read a handoff or the decisions already taken before you start.",
@@ -130,11 +109,7 @@ func registerTicketLifecycleTools(s *Server, deps Dependencies) {
 			"kind": map[string]interface{}{"type": "string", "description": "claim, progress, milestone, note, handoff, decision or plan"},
 			"last": map[string]interface{}{"type": "number", "description": "Only the last N comments"},
 		}),
-		func(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
-			last, _ := a["last"].(float64)
-			rows, err := l.Comments(ctx, stringArg(a, "ticket"), stringArg(a, "kind"), int(last))
-			return map[string]interface{}{"comments": rows}, err
-		})
+		ticketCommentsRun)
 
 	register("dendrite_ticket_upload_plan",
 		"Store the plan of a ticket (markdown with `- [ ]` / `- [x]` steps) in Plane, as one comment edited in place, and in the local plan store. Call it when the plan changes so a resumed session continues from the next unchecked step.",
@@ -142,17 +117,12 @@ func registerTicketLifecycleTools(s *Server, deps Dependencies) {
 			"ticket": ticketProp, "worktree": worktreeProp,
 			"markdown": map[string]interface{}{"type": "string", "description": "The plan, with `- [ ]` and `- [x]` steps"},
 		}),
-		func(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
-			md, _ := a["markdown"].(string)
-			return l.UploadPlan(ctx, stringArg(a, "ticket"), md)
-		})
+		ticketUploadPlanRun)
 
 	register("dendrite_ticket_get_plan",
 		"Read the plan of a ticket: from Plane, or from the local plan store when Plane is down. Returns the markdown, its version and the next unchecked step.",
 		objectSchema([]string{"ticket"}, map[string]interface{}{"ticket": ticketProp, "worktree": worktreeProp}),
-		func(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
-			return l.GetPlan(ctx, stringArg(a, "ticket"))
-		})
+		ticketGetPlanRun)
 
 	register("dendrite_ticket_transition",
 		"End or pause work on a ticket: verify (finished, awaiting a human), blocked (needs a handoff with completed, challenges and missing), cancelled or backlog. done is set only by `dendrite chronos finish`.",
@@ -169,27 +139,84 @@ func registerTicketLifecycleTools(s *Server, deps Dependencies) {
 				},
 			},
 		}),
-		func(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
-			var h ticketlock.Handoff
-			if raw, ok := a["handoff"].(map[string]interface{}); ok {
-				h.Completed, _ = raw["completed"].(string)
-				h.Challenges, _ = raw["challenges"].(string)
-				h.Missing, _ = raw["missing"].(string)
-			}
-			return l.Transition(ctx, stringArg(a, "ticket"), stringArg(a, "outcome"), h)
-		})
+		ticketTransitionRun)
 
 	register("dendrite_ticket_finish",
 		"Finish a ticket: run the quality gate and check the branch's diff against each [AC-n]. Sets Done when the project allows it and the ticket has no needs-human-review label, To Verify otherwise, and Blocked with a handoff when a check fails.",
 		objectSchema([]string{"ticket"}, map[string]interface{}{"ticket": ticketProp, "worktree": worktreeProp}),
-		func(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
-			return l.Finish(ctx, stringArg(a, "ticket"), ticketlock.DefaultFinishChecks(l.Dir))
-		})
+		ticketFinishRun)
 
 	register("dendrite_query_context",
 		"Everything needed to start on a ticket: description, acceptance criteria, plan, state and the files it names. Call it right after claiming.",
 		objectSchema([]string{"ticket"}, map[string]interface{}{"ticket": ticketProp, "worktree": worktreeProp}),
-		func(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
-			return l.QueryContext(ctx, stringArg(a, "ticket"))
-		})
+		queryContextRun)
+}
+
+// ticketClaimRun runs the dendrite_ticket_claim tool.
+func ticketClaimRun(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
+	steal, _ := a["steal"].(bool)
+	return l.Claim(ctx, stringArg(a, "ticket"), ticketlock.ClaimOptions{Agent: stringArg(a, "agent"), Tier: stringArg(a, "model_tier"), Steal: steal})
+}
+
+// ticketCommentRun runs the dendrite_ticket_comment tool.
+func ticketCommentRun(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
+	if err := l.Comment(ctx, stringArg(a, "ticket"), stringArg(a, "kind"), stringArg(a, "body")); err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"ok": true}, nil
+}
+
+// ticketDecisionRun runs the dendrite_ticket_decision tool.
+func ticketDecisionRun(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
+	d := ticketlock.Decision{Question: stringArg(a, "question"), Answer: stringArg(a, "answer"), Note: stringArg(a, "note")}
+	if raw, ok := a["options"].([]interface{}); ok {
+		for _, o := range raw {
+			if text, ok := o.(string); ok {
+				d.Options = append(d.Options, text)
+			}
+		}
+	}
+	if err := l.RecordDecisions(ctx, stringArg(a, "ticket"), []ticketlock.Decision{d}, ""); err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"ok": true}, nil
+}
+
+// ticketCommentsRun runs the dendrite_ticket_comments tool.
+func ticketCommentsRun(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
+	last, _ := a["last"].(float64)
+	rows, err := l.Comments(ctx, stringArg(a, "ticket"), stringArg(a, "kind"), int(last))
+	return map[string]interface{}{"comments": rows}, err
+}
+
+// ticketUploadPlanRun runs the dendrite_ticket_upload_plan tool.
+func ticketUploadPlanRun(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
+	md, _ := a["markdown"].(string)
+	return l.UploadPlan(ctx, stringArg(a, "ticket"), md)
+}
+
+// ticketGetPlanRun runs the dendrite_ticket_get_plan tool.
+func ticketGetPlanRun(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
+	return l.GetPlan(ctx, stringArg(a, "ticket"))
+}
+
+// ticketTransitionRun runs the dendrite_ticket_transition tool.
+func ticketTransitionRun(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
+	var h ticketlock.Handoff
+	if raw, ok := a["handoff"].(map[string]interface{}); ok {
+		h.Completed, _ = raw["completed"].(string)
+		h.Challenges, _ = raw["challenges"].(string)
+		h.Missing, _ = raw["missing"].(string)
+	}
+	return l.Transition(ctx, stringArg(a, "ticket"), stringArg(a, "outcome"), h)
+}
+
+// ticketFinishRun runs the dendrite_ticket_finish tool.
+func ticketFinishRun(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
+	return l.Finish(ctx, stringArg(a, "ticket"), ticketlock.DefaultFinishChecks(l.Dir))
+}
+
+// queryContextRun runs the dendrite_query_context tool.
+func queryContextRun(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
+	return l.QueryContext(ctx, stringArg(a, "ticket"))
 }

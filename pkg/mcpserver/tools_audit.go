@@ -37,7 +37,117 @@ func registerAuditTools(s *Server, deps Dependencies) {
 				},
 			},
 		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+	}, auditChangesHandler())
+
+	// dendrite_github_sync
+	s.RegisterTool(Tool{
+		Name:        "dendrite_github_sync",
+		Description: "Mirror Plane verification state onto GitHub issues: open a HITL verification issue for every To Verify ticket, add missing labels, and close issues of tickets Done in Plane. Tickets come from Plane and the repository from the git origin remote.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"repo": map[string]interface{}{
+					"type":        "string",
+					"description": "Target GitHub repository in owner/repo format (default: the origin remote of the working directory)",
+				},
+				"dry_run": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Plan the GitHub changes without applying them",
+				},
+				"tickets": map[string]interface{}{
+					"type":        "array",
+					"items":       map[string]interface{}{"type": "string"},
+					"description": "Limit the sync to these ticket IDs (default: every ticket)",
+				},
+			},
+		},
+	}, githubSyncHandler(deps))
+
+	// dendrite_vcs_guard
+	s.RegisterTool(Tool{
+		Name:        "dendrite_vcs_guard",
+		Description: "Check or enforce Git branch guardrails (prohibits direct work on main/master, guarantees develop default).",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"mode": map[string]interface{}{
+					"type":        "string",
+					"description": "Execution mode: 'STANDARD', 'DEGRADED_BUDGET', or 'AUDIT_CHANGES' (default: STANDARD)",
+				},
+			},
+		},
+	}, vcsGuardHandler())
+
+	// dendrite_remote_sync
+	s.RegisterTool(Tool{
+		Name:        "dendrite_remote_sync",
+		Description: "Fetch and detect remote commits/hotfixes, pull with rebase, and reconcile tickets.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"branch": map[string]interface{}{
+					"type":        "string",
+					"description": "Branch to sync (default: active branch)",
+				},
+			},
+		},
+	}, remoteSyncHandler())
+
+	// dendrite_quality_audit
+	s.RegisterTool(Tool{
+		Name:        "dendrite_quality_audit",
+		Description: "Execute anti-mock static scan and 100% coverage profiler against a package.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"pkg": map[string]interface{}{
+					"type":        "string",
+					"description": "Package path to audit (e.g. pkg/vcs)",
+				},
+			},
+			"required": []interface{}{"pkg"},
+		},
+	}, qualityAuditHandler())
+
+	// dendrite_hitl_sync
+	s.RegisterTool(Tool{
+		Name:        "dendrite_hitl_sync",
+		Description: "Poll the GitHub verification issue of every Plane To Verify ticket: issues closed as completed move the ticket to Done, reviewer comments are reported as feedback.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"repo": map[string]interface{}{
+					"type":        "string",
+					"description": "Target GitHub repository in owner/repo format (default: the origin remote of the working directory)",
+				},
+				"dry_run": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Report approvals without moving tickets to Done",
+				},
+			},
+		},
+	}, hitlSyncHandler(deps))
+}
+
+// newHITLSyncer builds the Plane/GitHub verification syncer, reusing the server's
+// Plane client when one is configured. It is a seam so tests stay offline.
+var newHITLSyncer = func(ctx context.Context, deps Dependencies, repo string) (*hitl.Syncer, error) {
+	if deps.PlaneClient == nil {
+		return hitl.NewFromEnv(ctx, repo, ".")
+	}
+	if repo == "" {
+		detected, err := github.DetectRepo(ctx, &github.DefaultCommandExecutor{}, ".")
+		if err != nil {
+			return nil, err
+		}
+		repo = detected
+	}
+	return hitl.New(deps.PlaneClient, github.NewGitHubClient(repo), "."), nil
+}
+
+// auditChangesHandler handles the dendrite_audit_changes tool.
+func auditChangesHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		targetBranch, _ := args["branch"].(string)
 		dryRun, _ := args["dry_run"].(bool)
 		maxTokens := 4096
@@ -63,31 +173,12 @@ func registerAuditTools(s *Server, deps Dependencies) {
 
 		data := indentJSON(summary)
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// dendrite_github_sync
-	s.RegisterTool(Tool{
-		Name:        "dendrite_github_sync",
-		Description: "Mirror Plane verification state onto GitHub issues: open a HITL verification issue for every To Verify ticket, add missing labels, and close issues of tickets Done in Plane. Tickets come from Plane and the repository from the git origin remote.",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"repo": map[string]interface{}{
-					"type":        "string",
-					"description": "Target GitHub repository in owner/repo format (default: the origin remote of the working directory)",
-				},
-				"dry_run": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Plan the GitHub changes without applying them",
-				},
-				"tickets": map[string]interface{}{
-					"type":        "array",
-					"items":       map[string]interface{}{"type": "string"},
-					"description": "Limit the sync to these ticket IDs (default: every ticket)",
-				},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// githubSyncHandler handles the dendrite_github_sync tool.
+func githubSyncHandler(deps Dependencies) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		repo, _ := args["repo"].(string)
 		dryRun, _ := args["dry_run"].(bool)
 		syncer, err := newHITLSyncer(ctx, deps, repo)
@@ -106,22 +197,12 @@ func registerAuditTools(s *Server, deps Dependencies) {
 			return nil, fmt.Errorf("github sync failed: %w", err)
 		}
 		return jsonResult(res)
-	})
+	}
+}
 
-	// dendrite_vcs_guard
-	s.RegisterTool(Tool{
-		Name:        "dendrite_vcs_guard",
-		Description: "Check or enforce Git branch guardrails (prohibits direct work on main/master, guarantees develop default).",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"mode": map[string]interface{}{
-					"type":        "string",
-					"description": "Execution mode: 'STANDARD', 'DEGRADED_BUDGET', or 'AUDIT_CHANGES' (default: STANDARD)",
-				},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// vcsGuardHandler handles the dendrite_vcs_guard tool.
+func vcsGuardHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		modeStr, _ := args["mode"].(string)
 		mode := vcs.ModeStandard
 		if modeStr != "" {
@@ -147,22 +228,12 @@ func registerAuditTools(s *Server, deps Dependencies) {
 
 		data := indentJSON(res)
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// dendrite_remote_sync
-	s.RegisterTool(Tool{
-		Name:        "dendrite_remote_sync",
-		Description: "Fetch and detect remote commits/hotfixes, pull with rebase, and reconcile tickets.",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"branch": map[string]interface{}{
-					"type":        "string",
-					"description": "Branch to sync (default: active branch)",
-				},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// remoteSyncHandler handles the dendrite_remote_sync tool.
+func remoteSyncHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		branch, _ := args["branch"].(string)
 		guard := vcs.NewGitGuard(".", vcs.ModeStandard)
 		watcher := vcs.NewRemoteSyncWatcher(guard, nil)
@@ -172,23 +243,12 @@ func registerAuditTools(s *Server, deps Dependencies) {
 		}
 		data := indentJSON(status)
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// dendrite_quality_audit
-	s.RegisterTool(Tool{
-		Name:        "dendrite_quality_audit",
-		Description: "Execute anti-mock static scan and 100% coverage profiler against a package.",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"pkg": map[string]interface{}{
-					"type":        "string",
-					"description": "Package path to audit (e.g. pkg/vcs)",
-				},
-			},
-			"required": []interface{}{"pkg"},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// qualityAuditHandler handles the dendrite_quality_audit tool.
+func qualityAuditHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		pkgPath, _ := args["pkg"].(string)
 		if pkgPath == "" {
 			return nil, fmt.Errorf("missing pkg parameter")
@@ -214,26 +274,12 @@ func registerAuditTools(s *Server, deps Dependencies) {
 		}
 		data := indentJSON(out)
 		return textResult(string(data)), nil
-	})
+	}
+}
 
-	// dendrite_hitl_sync
-	s.RegisterTool(Tool{
-		Name:        "dendrite_hitl_sync",
-		Description: "Poll the GitHub verification issue of every Plane To Verify ticket: issues closed as completed move the ticket to Done, reviewer comments are reported as feedback.",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"repo": map[string]interface{}{
-					"type":        "string",
-					"description": "Target GitHub repository in owner/repo format (default: the origin remote of the working directory)",
-				},
-				"dry_run": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Report approvals without moving tickets to Done",
-				},
-			},
-		},
-	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+// hitlSyncHandler handles the dendrite_hitl_sync tool.
+func hitlSyncHandler(deps Dependencies) ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		repo, _ := args["repo"].(string)
 		dryRun, _ := args["dry_run"].(bool)
 		syncer, err := newHITLSyncer(ctx, deps, repo)
@@ -248,21 +294,5 @@ func registerAuditTools(s *Server, deps Dependencies) {
 			results = []hitl.HITLResult{}
 		}
 		return jsonResult(results)
-	})
-}
-
-// newHITLSyncer builds the Plane/GitHub verification syncer, reusing the server's
-// Plane client when one is configured. It is a seam so tests stay offline.
-var newHITLSyncer = func(ctx context.Context, deps Dependencies, repo string) (*hitl.Syncer, error) {
-	if deps.PlaneClient == nil {
-		return hitl.NewFromEnv(ctx, repo, ".")
 	}
-	if repo == "" {
-		detected, err := github.DetectRepo(ctx, &github.DefaultCommandExecutor{}, ".")
-		if err != nil {
-			return nil, err
-		}
-		repo = detected
-	}
-	return hitl.New(deps.PlaneClient, github.NewGitHubClient(repo), "."), nil
 }
