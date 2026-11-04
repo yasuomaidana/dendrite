@@ -1,6 +1,7 @@
 package devtool
 
 import (
+	"Dendrite/pkg/projectid"
 	"context"
 	"os"
 	"os/exec"
@@ -165,4 +166,57 @@ func TestPushCurrentBranch_Guards(t *testing.T) {
 			t.Fatal("expected error outside a git repo")
 		}
 	})
+}
+
+// withFork gives repo a second remote named fork.
+func withFork(t *testing.T, repo string) {
+	t.Helper()
+	fork := t.TempDir()
+	gitIn(t, fork, "init", "-q", "--bare")
+	gitIn(t, repo, "remote", "add", "fork", fork)
+}
+
+// pushPreferring pushes a fresh commit of a repository with origin and fork remotes, preferring the given remote.
+func pushPreferring(t *testing.T, prefer string) PushOutcome {
+	t.Helper()
+	t.Setenv("DENDRITE_COMMIT_PUSH", "")
+	repo, _ := setupCommitRepoWithRemote(t, "feature")
+	withFork(t, repo)
+	commitFile(t, repo, "a.txt")
+	return pushBranch(newGitRunner(context.Background(), repo), prefer)
+}
+
+func TestPushGoesToThePreferredRemoteOrFallsBackToOrigin(t *testing.T) {
+	for prefer, want := range map[string]string{"fork": "fork", "nowhere": "origin", "": "origin"} {
+		if out := pushPreferring(t, prefer); !out.Pushed || out.Remote != want {
+			t.Errorf("prefer %q: %+v, want a push to %s", prefer, out, want)
+		}
+	}
+}
+
+func TestPushRemoteForReadsTheSynapseMember(t *testing.T) {
+	t.Setenv("DENDRITE_HOME", t.TempDir())
+	repo, _ := setupCommitRepoWithRemote(t, "feature")
+	if got := pushRemoteFor(repo); got != "" {
+		t.Fatalf("no synapse means the default choice, got %q", got)
+	}
+	id, err := projectid.Ensure(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := "id = \"s\"\nstate = \"active\"\n\n[[members]]\nproject_id = \"" + id + "\"\nalias = \"a\"\npush_remote = \"fork\"\n"
+	dir := filepath.Join(os.Getenv("DENDRITE_HOME"), "synapses")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "s.toml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := pushRemoteFor(repo); got != "fork" {
+		t.Fatalf("pushRemoteFor = %q, want fork", got)
+	}
+	t.Chdir(repo)
+	if got := pushRemoteFor(""); got != "fork" {
+		t.Fatalf("an empty dir means the working directory: %q", got)
+	}
 }

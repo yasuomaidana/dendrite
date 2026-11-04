@@ -3,6 +3,7 @@ package chronos
 import (
 	"Dendrite/cmd/dendrite/internal/clitest"
 	"Dendrite/pkg/planesvc"
+	"Dendrite/pkg/synapse"
 	"Dendrite/pkg/tracker/plane"
 	"bytes"
 	"context"
@@ -259,5 +260,17 @@ func TestPlaneRequest_FromLinksTheSourceTicketAndLinkResolvesPeerTickets(t *test
 	}
 	if _, err := resolvePlaneTicketUUID(context.Background(), fx.client, "OXI-99"); err == nil {
 		t.Error("an unknown peer ticket must not resolve")
+	}
+}
+
+func TestRequestBodyNamesThePeersMergeTarget(t *testing.T) {
+	g := synapse.PeerGroup{Synapse: "eco", Self: "control"}
+	with := requestBody("DEN", g, synapse.Peer{Alias: "core", Branch: "release/2"}, planeRequestOptions{Desc: "do it"})
+	if !strings.Contains(with, "Merge target: <code>release/2</code>") || !strings.Contains(with, "core declares in synapse <code>eco</code>") {
+		t.Errorf("body = %s", with)
+	}
+	without := requestBody("DEN", g, synapse.Peer{Alias: "core"}, planeRequestOptions{Desc: "do it"})
+	if strings.Contains(without, "Merge target") {
+		t.Errorf("a peer with the default branch names none: %s", without)
 	}
 }

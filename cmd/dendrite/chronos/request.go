@@ -60,32 +60,42 @@ func newChronosRequestCmd() *cobra.Command {
 	return cmd
 }
 
-func planeRequest(ctx context.Context, client *plane.Client, svc *planesvc.Service, startDir string, o planeRequestOptions, out io.Writer) error {
-	if strings.TrimSpace(o.Name) == "" || strings.TrimSpace(o.Desc) == "" {
-		return cli.UsageErrorf("a request needs both --name and --desc")
-	}
+// requesterPeers is the Plane link of the repository at startDir and the groups of peers it has through its
+// synapses.
+func requesterPeers(startDir string) (*plane.ProjectLink, []synapse.PeerGroup, error) {
 	root, err := plane.FindRepoRoot(startDir)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	selfID, err := projectid.Read(root)
 	if err != nil {
-		return fmt.Errorf("%s has no project identity: run `dendrite chronos project ensure`: %w", root, err)
+		return nil, nil, fmt.Errorf("%s has no project identity: run `dendrite chronos project ensure`: %w", root, err)
 	}
 	self, _, err := plane.LinkForDir(root)
 	if err != nil {
-		return fmt.Errorf("%s is not linked to a Plane project: run `dendrite chronos project ensure`: %w", root, err)
+		return nil, nil, fmt.Errorf("%s is not linked to a Plane project: run `dendrite chronos project ensure`: %w", root, err)
 	}
 
 	st, err := synapse.DefaultStore()
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	var ix *projectid.Index
 	if p, err := projectid.DefaultIndexPath(); err == nil {
 		ix, _ = projectid.LoadIndex(p)
 	}
 	groups, err := synapse.PeersOf(st, ix, selfID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return self, groups, nil
+}
+
+func planeRequest(ctx context.Context, client *plane.Client, svc *planesvc.Service, startDir string, o planeRequestOptions, out io.Writer) error {
+	if strings.TrimSpace(o.Name) == "" || strings.TrimSpace(o.Desc) == "" {
+		return cli.UsageErrorf("a request needs both --name and --desc")
+	}
+	self, groups, err := requesterPeers(startDir)
 	if err != nil {
 		return err
 	}
@@ -105,7 +115,7 @@ func planeRequest(ctx context.Context, client *plane.Client, svc *planesvc.Servi
 	sum := sha1.Sum([]byte(strings.ToLower(strings.TrimSpace(o.Name))))
 	req := plane.CreateIssueRequest{
 		Name:            strings.TrimSpace(o.Name),
-		DescriptionHTML: requestBody(self.Identifier, group, o),
+		DescriptionHTML: requestBody(self.Identifier, group, peer, o),
 		ExternalSource:  requestSourcePrefix + group.Synapse,
 		ExternalID:      self.Identifier + ":" + hex.EncodeToString(sum[:])[:12],
 	}
@@ -176,13 +186,16 @@ func pickPeer(groups []synapse.PeerGroup, target, only string) (synapse.PeerGrou
 	return synapse.PeerGroup{}, synapse.Peer{}, fmt.Errorf("%q is a peer in several synapses (%s): pass --synapse to say which one this request belongs to", target, strings.Join(ids, ", "))
 }
 
-func requestBody(requester string, g synapse.PeerGroup, o planeRequestOptions) string {
+func requestBody(requester string, g synapse.PeerGroup, peer synapse.Peer, o planeRequestOptions) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "<p>Requested by <b>%s</b> (%s) through synapse <code>%s</code>.</p>", html.EscapeString(requester), html.EscapeString(g.Self), html.EscapeString(g.Synapse))
 	for _, para := range strings.Split(strings.TrimSpace(o.Desc), "\n") {
 		if para = strings.TrimSpace(para); para != "" {
 			fmt.Fprintf(&sb, "<p>%s</p>", html.EscapeString(para))
 		}
+	}
+	if peer.Branch != "" {
+		fmt.Fprintf(&sb, "<p>Merge target: <code>%s</code> (the branch %s declares in synapse <code>%s</code>).</p>", html.EscapeString(peer.Branch), html.EscapeString(peer.Alias), html.EscapeString(g.Synapse))
 	}
 	if o.From != "" {
 		fmt.Fprintf(&sb, "<p>Needed by <b>%s</b> in %s.</p>", html.EscapeString(o.From), html.EscapeString(requester))

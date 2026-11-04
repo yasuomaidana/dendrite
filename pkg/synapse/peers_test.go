@@ -55,3 +55,19 @@ func TestPeersOf_GroupsPeersPerSynapseAndFillsPlaneFromTheIndex(t *testing.T) {
 		t.Errorf("a project in no synapse has no peers, got %+v", g)
 	}
 }
+
+func TestPeersOfCarriesTheBranchAMemberDeclares(t *testing.T) {
+	e := newHealEnv(t)
+	aDir, aID := e.project("ws/a")
+	bDir, bID := e.project("ws/b")
+	e.synapse("s",
+		Member{ProjectID: aID, Alias: "a", Role: RoleConsumer, PathHint: aDir},
+		Member{ProjectID: bID, Alias: "b", Role: RoleProducer, PathHint: bDir, Branch: "release/2"})
+	groups, err := PeersOf(e.store, e.index, aID)
+	if err != nil || len(groups) != 1 {
+		t.Fatalf("groups = %+v, %v", groups, err)
+	}
+	if got := groups[0].Peers[0].Branch; got != "release/2" {
+		t.Errorf("peer branch = %q, want release/2", got)
+	}
+}

@@ -143,10 +143,13 @@ type Member struct {
 func (m Member) IsRemote() bool { return m.Source == SourceRemote }
 
 // TrackedRef is the ref the member follows on channel c: its own Ref (an override) when
-// set, otherwise the channel's branch.
+// set, otherwise its integration Branch, otherwise the channel's branch.
 func (m Member) TrackedRef(c Channel) string {
 	if m.Ref != "" {
 		return m.Ref
+	}
+	if m.Branch != "" {
+		return m.Branch
 	}
 	return c.DefaultRef()
 }
