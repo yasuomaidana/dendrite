@@ -1,13 +1,12 @@
 package main
 
 import (
+	"Dendrite/pkg/env/bootstrap"
 	"bytes"
 	"context"
 	"errors"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/env/bootstrap"
 )
 
 func TestDiagnoseAGYReportsEachState(t *testing.T) {

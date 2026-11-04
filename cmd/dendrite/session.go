@@ -1,6 +1,10 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/agentjobs"
+	"Dendrite/pkg/statedir"
+	"Dendrite/pkg/ticketlock"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,15 +14,11 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-
-	"Dendrite/pkg/agentjobs"
-	"Dendrite/pkg/statedir"
-	"Dendrite/pkg/ticketlock"
 )
 
 // newSessionCmd builds `dendrite session`: orchestrator checkpoint and resume.
 func newSessionCmd() *cobra.Command {
-	cmd := newGroupCmd("session", "Session checkpoint and resume for multi-agent coordination", "cleft", "handoff")
+	cmd := cli.NewGroupCmd("session", "Session checkpoint and resume for multi-agent coordination", "cleft", "handoff")
 	cmd.Example = "dendrite session resume\ndendrite session checkpoint --next DEN-123 --note \"waiting on review\""
 	cmd.AddCommand(newSessionCheckpointCmd(), newSessionResumeCmd())
 	return cmd
@@ -38,7 +38,7 @@ func newSessionCheckpointCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "checkpoint",
 		Short:   "Record session state into .dendrite/session/handoff.md",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite session checkpoint --worktree ../wt --decision \"keep X\" --next DEN-123 --note \"blocked on CI\"",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSessionCheckpoint(cmd.Context(), o, cmd.OutOrStdout())
@@ -58,10 +58,10 @@ func newSessionResumeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "resume",
 		Short:   "Resume from the handoff checkpoint and report job status deltas",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite session resume\ndendrite session resume --json --path handoff.md",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSessionResume(cmd.Context(), path, globals.JSON, cmd.OutOrStdout())
+			return runSessionResume(cmd.Context(), path, cli.Globals.JSON, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&path, "path", "", "Handoff file path")
@@ -94,7 +94,7 @@ func runSessionCheckpoint(ctx context.Context, o sessionCheckpointOptions, out i
 		return fmt.Errorf("write checkpoint failed: %w", err)
 	}
 
-	if globals.JSON {
+	if cli.Globals.JSON {
 		data, _ := json.MarshalIndent(cp, "", "  ")
 		fmt.Fprintln(out, string(data))
 		autoCleanWorkCopies(ctx, io.Discard)

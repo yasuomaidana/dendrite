@@ -1,15 +1,15 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"io"
-	"strings"
-
+	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/pool/dag"
 	"Dendrite/pkg/pool/split"
 	"Dendrite/pkg/pool/switcher"
 	"Dendrite/pkg/ui/modal"
+	"context"
+	"fmt"
+	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -19,7 +19,7 @@ func newPoolManager() *dag.PoolManager { return dag.NewPoolManager("") }
 
 // newPlexusCmd builds `dendrite plexus` (alias pool): the multi-directory project pool and its dependency DAG.
 func newPlexusCmd() *cobra.Command {
-	cmd := newGroupCmd("plexus", "Multi-directory dependency inference & topological DAG solver", "soma",
+	cmd := cli.NewGroupCmd("plexus", "Multi-directory dependency inference & topological DAG solver", "soma",
 		"pool", "connectome-pool", "plexus-pool", "connectome", "plx")
 	cmd.Example = "dendrite plexus add ../core ../api\n" +
 		"dendrite plexus resolve --json\n" +
@@ -48,7 +48,7 @@ func newPlexusAddCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "add <dir>...",
 		Short: "Register project directories in the pool",
-		Args:  minArgs(1),
+		Args:  cli.MinArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pm := newPoolManager()
 			added, err := pm.Add(args...)
@@ -59,8 +59,8 @@ func newPlexusAddCmd() *cobra.Command {
 				return fmt.Errorf("save pool: %w", err)
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, added)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, added)
 			}
 			fmt.Fprintf(out, "[+] Successfully registered %d project(s) in pool:\n", len(added))
 			for _, p := range added {
@@ -83,7 +83,7 @@ func newPlexusRemoveCmd() *cobra.Command {
 		Use:     "remove <name|path>",
 		Aliases: []string{"rm"},
 		Short:   "Remove a project from the pool",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pm := newPoolManager()
 			if err := pm.Remove(args[0]); err != nil {
@@ -103,15 +103,15 @@ func newPlexusListCmd() *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List pool members",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projects := newPoolManager().List()
 			out := cmd.OutOrStdout()
-			if globals.JSON {
+			if cli.Globals.JSON {
 				if projects == nil {
 					projects = []dag.ProjectInfo{}
 				}
-				return writeJSON(out, projects)
+				return cli.WriteJSON(out, projects)
 			}
 			fmt.Fprintf(out, "[+] Registered Pool Members (%d):\n", len(projects))
 			if len(projects) == 0 {
@@ -133,7 +133,7 @@ func newPlexusResolveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "resolve",
 		Short: "Compute the topological build order and detect dependency cycles",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPlexusResolve(newPoolManager().List(), cmd.OutOrStdout())
 		},
@@ -148,8 +148,8 @@ func runPlexusResolve(projects []dag.ProjectInfo, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("dependency DAG resolution: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, res)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, res)
 	}
 	fmt.Fprintln(out, "[+] Autonomous Multi-Directory DAG Resolution:")
 	fmt.Fprintf(out, "    Nodes: %d | Edges: %d\n", len(res.Nodes), len(res.Edges))
@@ -179,7 +179,7 @@ func newPlexusSwitchCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "switch <dependency>",
 		Short: "Switch how a project consumes a dependency: published, branch, local or fork",
-		Args:  exactArgs(1),
+		Args:  cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			req.DependencyName = args[0]
 			req.Mode = switcher.DependencyMode(mode)
@@ -197,7 +197,7 @@ func newPlexusSwitchCmd() *cobra.Command {
 	f.StringVar(&req.ForkURL, "fork-url", "", "Fork repository URL (mode fork)")
 	f.StringVar(&req.ForkBranch, "fork-branch", "", "Fork branch (mode fork)")
 	f.BoolVar(&noSyncIDE, "no-sync-ide", false, "Do not update the JetBrains scopes")
-	requireFlags(cmd, "mode")
+	cli.RequireFlags(cmd, "mode")
 	return cmd
 }
 
@@ -206,8 +206,8 @@ func runPlexusSwitch(ctx context.Context, req switcher.SwitchRequest, out io.Wri
 	if err != nil {
 		return fmt.Errorf("dependency mode switch: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, result)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, result)
 	}
 	fmt.Fprintf(out, "[+] Successfully switched '%s' dependency mode:\n", result.DependencyName)
 	fmt.Fprintf(out, "    Target Project:     %s\n", result.TargetProject)
@@ -225,7 +225,7 @@ func newPlexusSplitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "split",
 		Short: "Extract a module into a new pool member (asks for the destination when --target-dir is empty)",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			req.WireLocalMode = !noWire
 			req.RegisterInPool = !noRegister
@@ -241,7 +241,7 @@ func newPlexusSplitCmd() *cobra.Command {
 	f.StringVar(&req.TargetDirectory, "target-dir", "", "Destination directory")
 	f.BoolVar(&noWire, "no-wire-local", false, "Do not switch the parent to the local dependency")
 	f.BoolVar(&noRegister, "no-register-pool", false, "Do not add the new member to the pool")
-	requireFlags(cmd, "module", "name")
+	cli.RequireFlags(cmd, "module", "name")
 	return cmd
 }
 
@@ -250,8 +250,8 @@ func runPlexusSplit(ctx context.Context, req split.SplitRequest, out io.Writer) 
 	if err != nil {
 		return fmt.Errorf("project split: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, result)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, result)
 	}
 	fmt.Fprintf(out, "[+] Successfully split module into new pool member '%s':\n", result.NewMemberName)
 	fmt.Fprintf(out, "    Destination:      %s\n", result.TargetDirectory)

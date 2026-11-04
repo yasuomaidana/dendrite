@@ -1,6 +1,11 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/synapse"
+	"Dendrite/pkg/synapsesync"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -11,11 +16,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"Dendrite/pkg/devtool"
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/synapse"
-	"Dendrite/pkg/synapsesync"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -238,8 +238,8 @@ func parseSyncArgs(args []string) (synapsesync.Options, syncCLI, bool, error) {
 	var f syncFlags
 	cmd := &cobra.Command{Use: "sync"}
 	f.bind(cmd)
-	globals = globalOptions{}
-	cmd.Flags().BoolVar(&globals.JSON, "json", false, "")
+	cli.Globals = cli.GlobalOptions{}
+	cmd.Flags().BoolVar(&cli.Globals.JSON, "json", false, "")
 	if err := cmd.ParseFlags(args); err != nil {
 		if errors.Is(err, pflag.ErrHelp) {
 			return synapsesync.Options{}, syncCLI{}, false, nil

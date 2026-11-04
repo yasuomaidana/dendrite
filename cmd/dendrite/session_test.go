@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/pkg/agentjobs"
 	"Dendrite/pkg/testkit"
 	"bytes"
 	"context"
@@ -10,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"Dendrite/pkg/agentjobs"
 )
 
 func initTestGitRepo(t *testing.T, dir, branch string) { testkit.GitInit(t, dir, branch) }

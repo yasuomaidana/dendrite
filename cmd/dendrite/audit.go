@@ -1,14 +1,14 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"io"
-
+	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/audit"
 	"Dendrite/pkg/inference"
 	"Dendrite/pkg/tracker/github"
 	"Dendrite/pkg/vcs"
+	"context"
+	"fmt"
+	"io"
 
 	"github.com/spf13/cobra"
 )
@@ -21,11 +21,11 @@ func newPruneCmd() *cobra.Command {
 		Aliases: []string{"audit-changes", "microglial-prune", "synaptic-pruning", "prn"},
 		Short:   "Topological vendor audit and rebase engine for local/* branches",
 		GroupID: "glia",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite prune --dry-run\ndendrite prune --branch local/module-a --max-tokens 8192",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.MaxTokens <= 0 {
-				return usageErrorf("--max-tokens must be positive")
+				return cli.UsageErrorf("--max-tokens must be positive")
 			}
 			if opts.Model == "" { // the local model of the ask tier, resolved when the command runs
 				opts.Model = inference.ChatModel(inference.TierAsk)
@@ -34,9 +34,9 @@ func newPruneCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&opts.TargetBranch, "branch", "b", "", "Audit only this branch (default: every pending local/* branch)")
-	addDryRunFlag(cmd, &opts.DryRun)
+	cli.AddDryRunFlag(cmd, &opts.DryRun)
 	cmd.Flags().IntVar(&opts.MaxTokens, "max-tokens", opts.MaxTokens, "Token budget for the audit payload")
-	addModelFlag(cmd, &opts.Model, opts.Model)
+	cli.AddModelFlag(cmd, &opts.Model, opts.Model)
 	return cmd
 }
 
@@ -58,8 +58,8 @@ func runPrune(ctx context.Context, opts audit.AuditOptions, out io.Writer) error
 	if err != nil {
 		return fmt.Errorf("audit: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, summary)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, summary)
 	}
 	fmt.Fprintln(out, "[✓] Audit Process Completed:")
 	fmt.Fprintf(out, "    - Branches Evaluated: %d\n", summary.BranchesAudited)

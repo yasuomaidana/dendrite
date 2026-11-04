@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,8 +28,8 @@ func TestArbor_UsageErrors(t *testing.T) {
 		{"arbor", "keep only parsing"},
 		{"query", "swap", "extra"},
 	} {
-		if out, code := cliOutput(t, args...); code != ExitUsage {
-			t.Errorf("%v: exit %d, want %d\n%s", args, code, ExitUsage, out)
+		if out, code := cliOutput(t, args...); code != cli.ExitUsage {
+			t.Errorf("%v: exit %d, want %d\n%s", args, code, cli.ExitUsage, out)
 		}
 	}
 }
@@ -37,10 +38,10 @@ func TestArbor_UsageErrors(t *testing.T) {
 // empty graph), so from the CLI every entrypoint is reported missing.
 func TestArbor_SliceErrors(t *testing.T) {
 	dir := writeGoSources(t)
-	if out, code := cliOutput(t, "arbor", "slice", "--sources", dir, "--entrypoint", "Entry", "keep"); code != ExitError || !strings.Contains(out, "not found in knowledge graph") {
+	if out, code := cliOutput(t, "arbor", "slice", "--sources", dir, "--entrypoint", "Entry", "keep"); code != cli.ExitError || !strings.Contains(out, "not found in knowledge graph") {
 		t.Fatalf("slice: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "arbor", "slice", "--sources", filepath.Join(dir, "missing"), "--entrypoint", "Entry"); code != ExitError || !strings.Contains(out, "sources path does not exist") {
+	if out, code := cliOutput(t, "arbor", "slice", "--sources", filepath.Join(dir, "missing"), "--entrypoint", "Entry"); code != cli.ExitError || !strings.Contains(out, "sources path does not exist") {
 		t.Fatalf("missing sources: exit %d\n%s", code, out)
 	}
 }
@@ -62,7 +63,7 @@ func TestArbor_SwapTranspileReuse(t *testing.T) {
 	t.Chdir(t.TempDir())
 	for _, s := range steps {
 		out, code := cliOutput(t, s.args...)
-		if code != ExitOK || !strings.Contains(out, s.want) {
+		if code != cli.ExitOK || !strings.Contains(out, s.want) {
 			t.Errorf("%v: exit %d\n%s", s.args, code, out)
 		}
 	}
@@ -72,7 +73,7 @@ func TestArbor_Fuse(t *testing.T) {
 	a, b := writeGoSources(t), writeGoSources(t)
 	target := filepath.Join(t.TempDir(), "fused")
 	out, code := cliOutput(t, "arbor", "fuse", "--sources", a+","+b, "--name", "fused", "--target-dir", target, "--no-register-pool")
-	if code != ExitOK || !strings.Contains(out, "Unified Member:      fused") {
+	if code != cli.ExitOK || !strings.Contains(out, "Unified Member:      fused") {
 		t.Fatalf("fuse: exit %d\n%s", code, out)
 	}
 }

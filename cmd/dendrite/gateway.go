@@ -1,7 +1,10 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/gateway"
 	"Dendrite/pkg/memfit"
+	"Dendrite/pkg/topology"
 	"context"
 	"fmt"
 	"io"
@@ -11,15 +14,12 @@ import (
 	"strings"
 	"syscall"
 
-	"Dendrite/pkg/gateway"
-	"Dendrite/pkg/topology"
-
 	"github.com/spf13/cobra"
 )
 
 // newCleftCmd builds `dendrite cleft` (alias gateway): LiteLLM routing table updates and config rendering.
 func newCleftCmd() *cobra.Command {
-	cmd := newGroupCmd("cleft", "LiteLLM token gateway rendering, dynamic routing updater & scheduler", "cleft",
+	cmd := cli.NewGroupCmd("cleft", "LiteLLM token gateway rendering, dynamic routing updater & scheduler", "cleft",
 		"gateway", "synaptic-cleft", "gate")
 	cmd.Example = "dendrite cleft update --dry-run\n" +
 		"dendrite cleft schedule --interval 12h\n" +
@@ -30,7 +30,7 @@ func newCleftCmd() *cobra.Command {
 
 // addGatewayConfigFlags registers the flags shared by update and schedule.
 func addGatewayConfigFlags(cmd *cobra.Command, opts *gateway.UpdaterOptions) {
-	addFileFlag(cmd, &opts.ConfigPath, opts.ConfigPath, "LiteLLM config file to rewrite")
+	cli.AddFileFlag(cmd, &opts.ConfigPath, opts.ConfigPath, "LiteLLM config file to rewrite")
 	cmd.Flags().BoolVar(&opts.UseContainerHost, "docker", opts.UseContainerHost, "Rewrite engine hosts for LiteLLM running in Docker (--docker=false for a host install)")
 }
 
@@ -40,13 +40,13 @@ func newCleftUpdateCmd() *cobra.Command {
 		Use:     "update",
 		Aliases: []string{"sync", "refresh"},
 		Short:   "Discover live inference engines and rewrite the LiteLLM routing table",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCleftUpdate(cmd.Context(), opts, cmd.OutOrStdout())
 		},
 	}
 	addGatewayConfigFlags(cmd, &opts)
-	addDryRunFlag(cmd, &opts.DryRun)
+	cli.AddDryRunFlag(cmd, &opts.DryRun)
 	return cmd
 }
 
@@ -58,8 +58,8 @@ func runCleftUpdate(ctx context.Context, opts gateway.UpdaterOptions, out io.Wri
 	if err != nil {
 		return fmt.Errorf("update LiteLLM routing table: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, report)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, report)
 	}
 
 	modeStr := "Updated"
@@ -111,10 +111,10 @@ func newCleftScheduleCmd() *cobra.Command {
 		Use:     "schedule",
 		Aliases: []string{"daemon", "watch"},
 		Short:   "Keep the LiteLLM routing table updated on an interval (foreground; Ctrl+C stops it)",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.Interval <= 0 {
-				return usageErrorf("--interval must be positive")
+				return cli.UsageErrorf("--interval must be positive")
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -171,7 +171,7 @@ func parseScenarioArg(args []string) (topology.Scenario, error) {
 	}
 	sc, err := topology.ParseScenario(name)
 	if err != nil {
-		return "", usageErrorf("invalid scenario %q: use %s", name, strings.Join(scenarioNames(), ", "))
+		return "", cli.UsageErrorf("invalid scenario %q: use %s", name, strings.Join(scenarioNames(), ", "))
 	}
 	return sc, nil
 }
@@ -192,7 +192,7 @@ func newCleftRenderCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:       "render [scenario]",
 		Short:     "Render the LiteLLM config for a topology scenario (default local-hybrid)",
-		Args:      maxArgs(1),
+		Args:      cli.MaxArgs(1),
 		ValidArgs: scenarioNames(),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			sc, err := parseScenarioArg(args)

@@ -1,10 +1,9 @@
 package main
 
 import (
+	"Dendrite/pkg/rag"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/rag"
 )
 
 func TestChatModelsDropsEmbeddersAndOrdersSmallestFirst(t *testing.T) {

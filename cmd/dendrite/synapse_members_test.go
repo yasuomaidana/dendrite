@@ -1,6 +1,10 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/synapse"
+	"Dendrite/pkg/tracker/plane"
 	"bytes"
 	"context"
 	"errors"
@@ -10,21 +14,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/synapse"
-	"Dendrite/pkg/tracker/plane"
 )
 
 func plainTestOutput(t *testing.T) {
 	t.Helper()
-	prevJSON := globals.JSON
-	prevYes := globals.Yes
-	globals.JSON = false
-	globals.Yes = false
+	prevJSON := cli.Globals.JSON
+	prevYes := cli.Globals.Yes
+	cli.Globals.JSON = false
+	cli.Globals.Yes = false
 	t.Cleanup(func() {
-		globals.JSON = prevJSON
-		globals.Yes = prevYes
+		cli.Globals.JSON = prevJSON
+		cli.Globals.Yes = prevYes
 	})
 }
 
@@ -376,9 +376,9 @@ func TestSynapseCommand_Delete(t *testing.T) {
 	}
 
 	// 4. Interactive confirmation test
-	prevIsTerminal := isTerminal
-	isTerminal = func(io.Reader) bool { return true }
-	t.Cleanup(func() { isTerminal = prevIsTerminal })
+	prevIsTerminal := cli.IsTerminal
+	cli.IsTerminal = func(io.Reader) bool { return true }
+	t.Cleanup(func() { cli.IsTerminal = prevIsTerminal })
 
 	// Create another synapse for prompt test
 	buf.Reset()

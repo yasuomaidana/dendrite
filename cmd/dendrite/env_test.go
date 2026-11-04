@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"bytes"
 	"context"
 	"net/http"
@@ -23,8 +24,8 @@ func TestSoma_UsageErrors(t *testing.T) {
 	} {
 		var buf bytes.Buffer
 		err := runCLI(ctx, &buf, args...)
-		if got := exitCodeFor(err); got != ExitUsage {
-			t.Errorf("%v: exit %d, want %d (err %v)", args, got, ExitUsage, err)
+		if got := cli.ExitCodeFor(err); got != cli.ExitUsage {
+			t.Errorf("%v: exit %d, want %d (err %v)", args, got, cli.ExitUsage, err)
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"bytes"
 	"context"
 	"io"
@@ -31,10 +32,10 @@ func TestSpikePruneListsRemovesAndRefusesWithoutAConfirmation(t *testing.T) {
 	t.Setenv("DENDRITE_HOME", t.TempDir()) // no stored tiers, no gateway config
 	t.Setenv("LITELLM_PROXY_URL", "")
 	srv, deleted := fakeOllama(t)
-	prevYes, prevTerm := globals.Yes, isTerminal
-	t.Cleanup(func() { globals.Yes, isTerminal = prevYes, prevTerm })
+	prevYes, prevTerm := cli.Globals.Yes, cli.IsTerminal
+	t.Cleanup(func() { cli.Globals.Yes, cli.IsTerminal = prevYes, prevTerm })
 
-	globals.Yes, isTerminal = false, func(io.Reader) bool { return false }
+	cli.Globals.Yes, cli.IsTerminal = false, func(io.Reader) bool { return false }
 	var out bytes.Buffer
 	if err := runSpikePrune(context.Background(), srv.URL, nil, strings.NewReader(""), &out); err == nil || len(*deleted) != 0 {
 		t.Errorf("no terminal and no -y must refuse: %v %v", err, *deleted)
@@ -43,7 +44,7 @@ func TestSpikePruneListsRemovesAndRefusesWithoutAConfirmation(t *testing.T) {
 		t.Errorf("listing:\n%s", out.String())
 	}
 
-	isTerminal = func(io.Reader) bool { return true }
+	cli.IsTerminal = func(io.Reader) bool { return true }
 	out.Reset()
 	if err := runSpikePrune(context.Background(), srv.URL, nil, strings.NewReader("n\n"), &out); err != nil || len(*deleted) != 0 || !strings.Contains(out.String(), "Left as it was") {
 		t.Errorf("declined: %v %v\n%s", err, *deleted, out.String())
@@ -53,7 +54,7 @@ func TestSpikePruneListsRemovesAndRefusesWithoutAConfirmation(t *testing.T) {
 		t.Errorf("confirmed: %v %v\n%s", err, *deleted, out.String())
 	}
 
-	globals.Yes = true
+	cli.Globals.Yes = true
 	out.Reset()
 	if err := runSpikePrune(context.Background(), srv.URL, []string{"big-unused:70b"}, strings.NewReader(""), &out); err != nil || !strings.Contains(out.String(), "nothing to remove") {
 		t.Errorf("--keep: %v\n%s", err, out.String())

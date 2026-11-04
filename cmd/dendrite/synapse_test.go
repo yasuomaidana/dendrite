@@ -1,6 +1,9 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/synapse"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,9 +12,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/synapse"
 )
 
 func TestSynapseCommand_CreateAndInspect(t *testing.T) {
@@ -431,7 +431,7 @@ func TestSynapseCommand_UnknownActionAndUsage(t *testing.T) {
 	var buf bytes.Buffer
 
 	err := runSynapseCommand(context.Background(), []string{"unknown-action"}, &buf)
-	if !isUsageError(err) || !strings.Contains(err.Error(), `unknown command "unknown-action"`) {
+	if !cli.IsUsageError(err) || !strings.Contains(err.Error(), `unknown command "unknown-action"`) {
 		t.Fatalf("expected usage error for unknown action, got: %v", err)
 	}
 

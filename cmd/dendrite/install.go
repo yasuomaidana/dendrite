@@ -1,6 +1,9 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/ecosystem"
+	"Dendrite/pkg/synapse"
 	"context"
 	"errors"
 	"fmt"
@@ -8,9 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"Dendrite/pkg/ecosystem"
-	"Dendrite/pkg/synapse"
 
 	"github.com/spf13/cobra"
 )
@@ -54,7 +54,7 @@ func (f installFlags) options() (installOptions, error) {
 	for _, spec := range f.refs {
 		alias, ref, ok := strings.Cut(spec, "=")
 		if !ok || alias == "" {
-			return o, usageErrorf("invalid --ref %q: expected <alias>=<branch>", spec)
+			return o, cli.UsageErrorf("invalid --ref %q: expected <alias>=<branch>", spec)
 		}
 		o.refs[alias] = ref
 	}
@@ -77,7 +77,7 @@ func newInstallCmd() *cobra.Command {
 			"with uncommitted changes stops the install. Working copies in dendrite-work/ are left alone.\n" +
 			"Then every member is built into $DENDRITE_HOME/bin and dendrite itself is rebuilt.",
 		GroupID: "cortex",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite install\ndendrite install --dev\ndendrite install --dev --ref rag-rs=feat/ann\ndendrite install --dev --ref rag-rs=",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o, err := f.options()

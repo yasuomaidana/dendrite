@@ -1,7 +1,11 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/planesvc"
+	"Dendrite/pkg/tracker"
+	"Dendrite/pkg/tracker/dag"
+	"Dendrite/pkg/tracker/plane"
 	"context"
 	"errors"
 	"fmt"
@@ -11,10 +15,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
-	"Dendrite/pkg/tracker"
-	"Dendrite/pkg/tracker/dag"
-	"Dendrite/pkg/tracker/plane"
 
 	"github.com/spf13/cobra"
 )
@@ -41,7 +41,7 @@ func planeRun(fn func(*plane.Client) error) error {
 
 // newChronosCmd builds `dendrite chronos` (alias plane): Plane issue tracking, Gantt alignment and DAG scheduling.
 func newChronosCmd() *cobra.Command {
-	cmd := newGroupCmd("chronos", "Sovereign issue tracking, Gantt alignment, and DAG scheduler", "boutons",
+	cmd := cli.NewGroupCmd("chronos", "Sovereign issue tracking, Gantt alignment, and DAG scheduler", "boutons",
 		"plane", "chronos-tracker", "pln")
 	cmd.Example = "dendrite chronos next --json\n" +
 		"dendrite chronos create --name \"[DEN-123] Title\" --desc-file spec.md --blocked-by DEN-100\n" +
@@ -83,15 +83,15 @@ func newChronosReplicateCmd() *cobra.Command {
 		Use:     "replicate",
 		Aliases: []string{"pull", "status", "pull-status"},
 		Short:   "Rewrite DEV_STATUS.md from the Plane board",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeRun(func(c *plane.Client) error {
 				return runChronosReplicate(cmd.Context(), c, file, dryRun, cmd.OutOrStdout())
 			})
 		},
 	}
-	addFileFlag(cmd, &file, devStatusFile, "Status file to write")
-	addDryRunFlag(cmd, &dryRun)
+	cli.AddFileFlag(cmd, &file, devStatusFile, "Status file to write")
+	cli.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -126,14 +126,14 @@ func newChronosPushCmd() *cobra.Command {
 		Use:     "push",
 		Aliases: []string{"push-status"},
 		Short:   "Push DEV_STATUS.md to Plane with Gantt timelines and dependencies",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeRun(func(c *plane.Client) error {
 				return runChronosPush(cmd.Context(), c, file, cmd.OutOrStdout())
 			})
 		},
 	}
-	addFileFlag(cmd, &file, devStatusFile, "Status file to read")
+	cli.AddFileFlag(cmd, &file, devStatusFile, "Status file to read")
 	return cmd
 }
 
@@ -163,7 +163,7 @@ func newChronosNextCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "next",
 		Short:   "Pick the next ticket by priority and DAG reachability",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite chronos next\ndendrite chronos next --ticket DEN-123 --json\ndendrite chronos next --milestone M3",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeRun(func(c *plane.Client) error {
@@ -171,7 +171,7 @@ func newChronosNextCmd() *cobra.Command {
 			})
 		},
 	}
-	addTicketFlag(cmd, &ticket, "")
+	cli.AddTicketFlag(cmd, &ticket, "")
 	cmd.Flags().StringVarP(&milestone, "milestone", "m", "", "Only consider tickets whose name contains this milestone")
 	cmd.Flags().StringVar(&synapseID, "synapse", "", "Only consider requests that peers filed through this synapse (`chronos request`)")
 	return cmd
@@ -269,8 +269,8 @@ func runChronosNext(ctx context.Context, client *plane.Client, ticket, milestone
 	if err != nil {
 		return fmt.Errorf("smart selection: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, res)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, res)
 	}
 
 	fmt.Fprintln(out, "[+] Smart Ticket Prioritization & DAG Reachability (Source: Plane v2)")
@@ -303,12 +303,12 @@ func newChronosLinkCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:       "link <ticket-a> <relation> <ticket-b>",
 		Short:     "Add one relation between two tickets (" + strings.Join(relationTypes, ", ") + ")",
-		Args:      exactArgs(3),
+		Args:      cli.ExactArgs(3),
 		ValidArgs: relationTypes,
 		Example:   "dendrite chronos link DEN-123 blocked_by DEN-100\ndendrite chronos link DEN-123 relates_to DEN-950",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !slices.Contains(relationTypes, args[1]) {
-				return usageErrorf("unknown relation %q: use %s", args[1], strings.Join(relationTypes, ", "))
+				return cli.UsageErrorf("unknown relation %q: use %s", args[1], strings.Join(relationTypes, ", "))
 			}
 			return planeRun(func(c *plane.Client) error {
 				return runChronosLink(cmd.Context(), c, args[0], args[1], args[2], cmd.OutOrStdout())
@@ -349,7 +349,7 @@ func newChronosRelateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "relate",
 		Short:   "Set a ticket's priority and dates and add several relations at once",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite chronos relate --ticket DEN-123 --priority high --blocked-by DEN-100,DEN-101 --relates-to DEN-950",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.Priority = strings.ToLower(o.Priority)
@@ -358,8 +358,8 @@ func newChronosRelateCmd() *cobra.Command {
 			})
 		},
 	}
-	addTicketFlag(cmd, &o.Ticket, "")
-	requireFlags(cmd, "ticket")
+	cli.AddTicketFlag(cmd, &o.Ticket, "")
+	cli.RequireFlags(cmd, "ticket")
 	f := cmd.Flags()
 	f.StringVarP(&o.Priority, "priority", "p", "", "New priority (urgent, high, medium, low, none)")
 	f.StringSliceVarP(&o.BlockedBy, "blocked-by", "b", nil, "Tickets that block this one (comma-separated)")
@@ -424,7 +424,7 @@ func newChronosGanttSyncCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "gantt-sync",
 		Short: "Align milestone dates, ticket schedules and dependency arrows on the Plane Gantt view",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeRun(func(c *plane.Client) error {
 				return runChronosGanttSync(cmd.Context(), c, cmd.OutOrStdout())

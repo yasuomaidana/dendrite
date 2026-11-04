@@ -1,14 +1,14 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/gateway"
 	"bytes"
 	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/gateway"
 )
 
 // cliOutput runs the real tree and returns what a user would see (output, then any
@@ -20,7 +20,7 @@ func cliOutput(t *testing.T, args ...string) (string, int) {
 	if err != nil {
 		fmt.Fprintf(&buf, "[-] %v\n", err)
 	}
-	return buf.String(), exitCodeFor(err)
+	return buf.String(), cli.ExitCodeFor(err)
 }
 
 // isolateEngines points every inference engine at a closed port so probes fail fast.
@@ -33,15 +33,15 @@ func isolateEngines(t *testing.T) {
 
 func TestCleft_Render(t *testing.T) {
 	out, code := cliOutput(t, "cleft", "render")
-	if code != ExitOK || !strings.Contains(out, "scenario 'local-hybrid'") {
+	if code != cli.ExitOK || !strings.Contains(out, "scenario 'local-hybrid'") {
 		t.Fatalf("render default: exit %d\n%s", code, out)
 	}
 	t.Setenv("TAILSCALE_CONTROL_PLANE_IP", "100.1.1.1")
 	t.Setenv("TAILSCALE_EXECUTION_PLANE_IP", "100.1.1.2")
-	if out, code := cliOutput(t, "gateway", "render", "distributed"); code != ExitOK || !strings.Contains(out, "scenario 'distributed'") {
+	if out, code := cliOutput(t, "gateway", "render", "distributed"); code != cli.ExitOK || !strings.Contains(out, "scenario 'distributed'") {
 		t.Fatalf("render distributed: exit %d\n%s", code, out)
 	}
-	if _, code := cliOutput(t, "cleft", "render", "moon-base"); code != ExitUsage {
+	if _, code := cliOutput(t, "cleft", "render", "moon-base"); code != cli.ExitUsage {
 		t.Fatalf("bad scenario: exit %d", code)
 	}
 }
@@ -60,10 +60,10 @@ func TestCleft_UpdateDryRun(t *testing.T) {
 	isolateEngines(t)
 	cfg := filepath.Join(t.TempDir(), "litellm_config.yaml")
 	out, code := cliOutput(t, "cleft", "update", "--dry-run", "--file", cfg)
-	if code != ExitOK || !strings.Contains(out, "Simulated Update (Dry-Run)") {
+	if code != cli.ExitOK || !strings.Contains(out, "Simulated Update (Dry-Run)") {
 		t.Fatalf("update --dry-run: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "cleft", "update", "--dry-run", "-f", cfg, "--json"); code != ExitOK || !strings.HasPrefix(strings.TrimSpace(out), "{") {
+	if out, code := cliOutput(t, "cleft", "update", "--dry-run", "-f", cfg, "--json"); code != cli.ExitOK || !strings.HasPrefix(strings.TrimSpace(out), "{") {
 		t.Fatalf("update --json: exit %d\n%s", code, out)
 	}
 }
@@ -86,7 +86,7 @@ func TestCleft_ScheduleStopsWithContext(t *testing.T) {
 
 func TestAxon_Inspect(t *testing.T) {
 	out, code := cliOutput(t, "axon", "inspect")
-	if code != ExitOK || !strings.Contains(out, "Active Scenario: local-hybrid") {
+	if code != cli.ExitOK || !strings.Contains(out, "Active Scenario: local-hybrid") {
 		t.Fatalf("inspect: exit %d\n%s", code, out)
 	}
 	// Placements print in a stable order.
@@ -94,26 +94,26 @@ func TestAxon_Inspect(t *testing.T) {
 	if again != out {
 		t.Fatal("inspect output is not deterministic")
 	}
-	if out, code := cliOutput(t, "topology", "show", "distributed", "--json"); code != ExitOK || !strings.Contains(out, `"stack_placement"`) {
+	if out, code := cliOutput(t, "topology", "show", "distributed", "--json"); code != cli.ExitOK || !strings.Contains(out, `"stack_placement"`) {
 		t.Fatalf("inspect --json: exit %d\n%s", code, out)
 	}
-	if _, code := cliOutput(t, "axon", "inspect", "nowhere"); code != ExitUsage {
+	if _, code := cliOutput(t, "axon", "inspect", "nowhere"); code != cli.ExitUsage {
 		t.Fatalf("bad scenario: exit %d", code)
 	}
-	if _, code := cliOutput(t, "axon", "local-hybrid"); code != ExitUsage {
+	if _, code := cliOutput(t, "axon", "local-hybrid"); code != cli.ExitUsage {
 		t.Fatalf("bare scenario is no longer a subcommand: exit %d", code)
 	}
 }
 
 func TestAxon_AdvisorLocal(t *testing.T) {
 	out, code := cliOutput(t, "axon", "advisor", "--json")
-	if code != ExitOK {
+	if code != cli.ExitOK {
 		t.Fatalf("advisor --json: exit %d\n%s", code, out)
 	}
 	if !strings.HasPrefix(strings.TrimSpace(out), "{") || strings.Contains(out, "Probing") {
 		t.Fatalf("JSON mode must print only the plan:\n%s", out)
 	}
-	if out, code := cliOutput(t, "axon", "advise"); code != ExitOK || !strings.Contains(out, "Probing 1 compute node") {
+	if out, code := cliOutput(t, "axon", "advise"); code != cli.ExitOK || !strings.Contains(out, "Probing 1 compute node") {
 		t.Fatalf("advisor: exit %d\n%s", code, out)
 	}
 }
@@ -135,8 +135,8 @@ func TestParseNodeTargets(t *testing.T) {
 func expectUsageErrors(t *testing.T, cases [][]string) {
 	t.Helper()
 	for _, args := range cases {
-		if _, code := cliOutput(t, args...); code != ExitUsage {
-			t.Errorf("%v: exit %d, want %d", args, code, ExitUsage)
+		if _, code := cliOutput(t, args...); code != cli.ExitUsage {
+			t.Errorf("%v: exit %d, want %d", args, code, cli.ExitUsage)
 		}
 	}
 }

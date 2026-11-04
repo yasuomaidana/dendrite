@@ -1,10 +1,10 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/personalcontext/greeting"
 	"fmt"
 	"strings"
-
-	"Dendrite/pkg/personalcontext/greeting"
 
 	"github.com/spf13/cobra"
 )
@@ -18,7 +18,7 @@ func newGreetingCmd() *cobra.Command {
 		Aliases: []string{"greet", "pcontext-greeting"},
 		Short:   "Generate dynamic 10-style greeting with cliché suppression",
 		GroupID: "cleft",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite greeting --topic DEN-985\n" +
 			"dendrite greeting --event launch --days 3 --stress\n" +
 			"dendrite greeting --suppress G-01,G-02 --json",
@@ -36,8 +36,8 @@ func newGreetingCmd() *cobra.Command {
 				return fmt.Errorf("generate greeting: %w", err)
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, res)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, res)
 			}
 			fmt.Fprintln(out, "[+] Dynamic 10-Style Greeting Matrix Resolution:")
 			fmt.Fprintf(out, "    - Style:    [%s] %s\n", res.StyleID, res.StyleName)

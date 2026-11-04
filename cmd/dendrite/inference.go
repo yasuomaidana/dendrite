@@ -1,6 +1,12 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/dotenv"
+	"Dendrite/pkg/gateway"
+	"Dendrite/pkg/inference"
+	"Dendrite/pkg/statedir"
 	"context"
 	"fmt"
 	"io"
@@ -12,18 +18,12 @@ import (
 	"strings"
 	"syscall"
 
-	"Dendrite/pkg/devtool"
-	"Dendrite/pkg/dotenv"
-	"Dendrite/pkg/gateway"
-	"Dendrite/pkg/inference"
-	"Dendrite/pkg/statedir"
-
 	"github.com/spf13/cobra"
 )
 
 // newSpikeCmd builds `dendrite spike` (alias inference): the multi-provider inference engine manager.
 func newSpikeCmd() *cobra.Command {
-	cmd := newGroupCmd("spike", "Unified multi-provider inference engine gateway (Ollama, OxiLLaMa, vLLM, TGI)", "cleft",
+	cmd := cli.NewGroupCmd("spike", "Unified multi-provider inference engine gateway (Ollama, OxiLLaMa, vLLM, TGI)", "cleft",
 		"inference", "action-potential", "inf")
 	cmd.Example = "dendrite spike list\n" +
 		"dendrite spike models\n" +
@@ -55,7 +55,7 @@ func newSpikeListCmd() *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List registered engines, their models and the failover cascade",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSpikeList(inference.DefaultManager(), cmd.OutOrStdout())
 		},
@@ -65,7 +65,7 @@ func newSpikeListCmd() *cobra.Command {
 func runSpikeList(mgr *inference.Manager, out io.Writer) error {
 	engines := mgr.ListEngines()
 	cascade := mgr.GetCascadeOrder()
-	if globals.JSON {
+	if cli.Globals.JSON {
 		type engineInfo struct {
 			ID       string   `json:"id"`
 			Type     string   `json:"type"`
@@ -78,7 +78,7 @@ func runSpikeList(mgr *inference.Manager, out io.Writer) error {
 			cfg := eng.Config()
 			list = append(list, engineInfo{eng.ID(), string(eng.Type()), cfg.Endpoint, cfg.Models, inference.IsEngineZeroCost(eng)})
 		}
-		return writeJSON(out, map[string]any{"engines": list, "cascade": cascade})
+		return cli.WriteJSON(out, map[string]any{"engines": list, "cascade": cascade})
 	}
 	fmt.Fprintf(out, "[+] Registered Multi-Provider Inference Engines (%d):\n", len(engines))
 	for _, eng := range engines {
@@ -106,12 +106,12 @@ func newSpikeProbeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "probe [engine-id]",
 		Short: "Check engine reachability, latency and models (all engines, one engine, or a raw Ollama endpoint)",
-		Args:  maxArgs(1),
+		Args:  cli.MaxArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			if endpoint != "" {
 				if len(args) > 0 {
-					return usageErrorf("give either an engine id or --endpoint, not both")
+					return cli.UsageErrorf("give either an engine id or --endpoint, not both")
 				}
 				return runSpikeProbeEndpoint(cmd.Context(), endpoint, out)
 			}
@@ -131,14 +131,14 @@ func runSpikeProbe(ctx context.Context, mgr *inference.Manager, id string, out i
 	if id != "" {
 		eng, err := mgr.GetEngine(id)
 		if err != nil {
-			return usageErrorf("unknown inference engine %q", id)
+			return cli.UsageErrorf("unknown inference engine %q", id)
 		}
-		if !globals.JSON {
+		if !cli.Globals.JSON {
 			fmt.Fprintf(out, "[+] Probing engine '%s' (%s at %s)...\n", eng.ID(), eng.Type(), eng.Config().Endpoint)
 		}
 		results = []inference.EngineHealth{eng.Health(ctx)}
 	} else {
-		if !globals.JSON {
+		if !cli.Globals.JSON {
 			fmt.Fprintln(out, "[+] Probing all registered inference engines (< 2s concurrent health check)...")
 		}
 		all := mgr.PollHealthAll(ctx)
@@ -146,8 +146,8 @@ func runSpikeProbe(ctx context.Context, mgr *inference.Manager, id string, out i
 			results = append(results, all[id])
 		}
 	}
-	if globals.JSON {
-		return writeJSON(out, results)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, results)
 	}
 	for _, h := range results {
 		printEngineHealth(out, h)
@@ -173,7 +173,7 @@ func newSpikeSwitchCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "switch <engine-id>",
 		Short: "Move an engine to the front of the failover cascade",
-		Args:  exactArgs(1),
+		Args:  cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSpikeSwitch(inference.DefaultManager(), args[0], cmd.OutOrStdout())
 		},
@@ -182,7 +182,7 @@ func newSpikeSwitchCmd() *cobra.Command {
 
 func runSpikeSwitch(mgr *inference.Manager, primaryID string, out io.Writer) error {
 	if _, err := mgr.GetEngine(primaryID); err != nil {
-		return usageErrorf("unknown inference engine %q", primaryID)
+		return cli.UsageErrorf("unknown inference engine %q", primaryID)
 	}
 	newOrder := []string{primaryID}
 	for _, id := range mgr.GetCascadeOrder() {
@@ -202,7 +202,7 @@ func newSpikeRenderCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "render",
 		Short: "Render the registered engines' model routes as LiteLLM config",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			yamlBytes, err := gateway.RenderForInferenceManager(inference.DefaultManager())
 			if err != nil {
@@ -220,7 +220,7 @@ func newSpikeMigrateCmd() *cobra.Command {
 		Use:     "migrate <model>",
 		Aliases: []string{"move"},
 		Short:   "Copy a model's blobs between engines (default Ollama to OxiLLaMa, which runs prompts on the CPU), optionally evicting the source",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.ModelName = args[0]
 			return runSpikeMigrate(cmd.Context(), opts, cmd.OutOrStdout())
@@ -230,7 +230,7 @@ func newSpikeMigrateCmd() *cobra.Command {
 	f.StringVar(&opts.SourceEngine, "from", opts.SourceEngine, "Source engine")
 	f.StringVar(&opts.TargetEngine, "to", opts.TargetEngine, "Target engine")
 	f.BoolVar(&opts.DeleteSource, "delete-source", false, "Evict the model from the source after copying")
-	addDryRunFlag(cmd, &opts.DryRun)
+	cli.AddDryRunFlag(cmd, &opts.DryRun)
 	return cmd
 }
 
@@ -265,7 +265,7 @@ func newSpikeServeCmd() *cobra.Command {
 		Use:     "serve",
 		Aliases: []string{"start"},
 		Short:   "Run the OxiLLaMa OpenAI-compatible server in the foreground (Ctrl+C stops it)",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -297,7 +297,7 @@ func newSpikeStopCmd() *cobra.Command {
 		Use:     "stop",
 		Aliases: []string{"kill"},
 		Short:   "Stop a running OxiLLaMa server and free its port",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSpikeStop(cmd.Context(), port, cmd.OutOrStdout())
 		},
@@ -307,7 +307,7 @@ func newSpikeStopCmd() *cobra.Command {
 }
 
 func newSpikeZeroCostCmd() *cobra.Command {
-	cmd := newGroupCmd("zero-cost", "Manage the zero-cost (self-hosted) model and prefix rules", "", "zerocost")
+	cmd := cli.NewGroupCmd("zero-cost", "Manage the zero-cost (self-hosted) model and prefix rules", "", "zerocost")
 	cmd.Example = "dendrite spike zero-cost list\n" +
 		"dendrite spike zero-cost add local/ --prefix\n" +
 		"dendrite spike zero-cost test qwen2.5-coder:14b"
@@ -316,7 +316,7 @@ func newSpikeZeroCostCmd() *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List zero-cost models and prefixes",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runZeroCostList(inference.GetZeroCostRegistry(), cmd.OutOrStdout())
 		},
@@ -326,7 +326,7 @@ func newSpikeZeroCostCmd() *cobra.Command {
 	add := &cobra.Command{
 		Use:   "add <model|prefix/>",
 		Short: "Register a zero-cost model or prefix rule",
-		Args:  exactArgs(1),
+		Args:  cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runZeroCostAdd(inference.GetZeroCostRegistry(), args[0], forcePrefix, addEnv, cmd.OutOrStdout())
 		},
@@ -339,7 +339,7 @@ func newSpikeZeroCostCmd() *cobra.Command {
 		Use:     "remove <model|prefix/>",
 		Aliases: []string{"rm", "delete"},
 		Short:   "Unregister a zero-cost model or prefix rule",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runZeroCostRemove(inference.GetZeroCostRegistry(), args[0], removeEnv, cmd.OutOrStdout())
 		},
@@ -350,11 +350,11 @@ func newSpikeZeroCostCmd() *cobra.Command {
 		Use:     "test <model>",
 		Aliases: []string{"check"},
 		Short:   "Check whether a model qualifies as zero-cost",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ok, reason := inference.GetZeroCostRegistry().Test(args[0])
-			if globals.JSON {
-				return writeJSON(cmd.OutOrStdout(), map[string]any{"model": args[0], "zero_cost": ok, "reason": reason})
+			if cli.Globals.JSON {
+				return cli.WriteJSON(cmd.OutOrStdout(), map[string]any{"model": args[0], "zero_cost": ok, "reason": reason})
 			}
 			mark := "[-]"
 			if ok {
@@ -368,7 +368,7 @@ func newSpikeZeroCostCmd() *cobra.Command {
 	reset := &cobra.Command{
 		Use:   "reset",
 		Short: "Restore the default rules plus the active .env configuration",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			reg := inference.GetZeroCostRegistry()
 			reg.Reset()
@@ -387,8 +387,8 @@ func newSpikeZeroCostCmd() *cobra.Command {
 
 func runZeroCostList(reg *inference.ZeroCostRegistry, out io.Writer) error {
 	details := reg.GetDetails()
-	if globals.JSON {
-		return writeJSON(out, details)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, details)
 	}
 	rule := "    --------------------------------------------------------------------------------"
 	fmt.Fprintf(out, "[+] Configured Zero-Cost & Self-Hosted Models / Prefixes (%d active):\n", details.Total)
@@ -448,7 +448,7 @@ func runZeroCostAdd(reg *inference.ZeroCostRegistry, target string, forcePrefix,
 		ok, isPrefix = reg.Add(target)
 	}
 	if !ok {
-		return usageErrorf("invalid zero-cost pattern %q", target)
+		return cli.UsageErrorf("invalid zero-cost pattern %q", target)
 	}
 	fmt.Fprintf(out, "[✓] Registered '%s' as zero-cost %s\n", target, zeroCostKind(isPrefix))
 	return saveZeroCost(reg, syncEnv, out)
@@ -458,7 +458,7 @@ func runZeroCostAdd(reg *inference.ZeroCostRegistry, target string, forcePrefix,
 func runZeroCostRemove(reg *inference.ZeroCostRegistry, target string, syncEnv bool, out io.Writer) error {
 	ok, isPrefix := reg.Remove(target)
 	if !ok {
-		return usageErrorf("invalid zero-cost pattern %q", target)
+		return cli.UsageErrorf("invalid zero-cost pattern %q", target)
 	}
 	fmt.Fprintf(out, "[✓] Removed '%s' from zero-cost %s\n", target, zeroCostKind(isPrefix))
 	return saveZeroCost(reg, syncEnv, out)

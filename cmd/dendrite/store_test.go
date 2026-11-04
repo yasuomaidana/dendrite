@@ -1,12 +1,12 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/store/segmented"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/store/segmented"
 )
 
 // useTempStore points engram and cognition at a segmented store under t.TempDir().
@@ -29,22 +29,22 @@ func TestEngram_Lifecycle(t *testing.T) {
 		code int
 		want string
 	}{
-		{[]string{"engram", "commit", "--project", "demo", "--chunk", "c1", "--file", file}, ExitOK, "Committed chunk 'c1' for project 'demo'"},
-		{[]string{"store", "commit", "--project", "demo", "-c", "c2", "-f", file, "--final"}, ExitOK, "Committed chunk 'c2'"},
-		{[]string{"engram", "status"}, ExitOK, "Persistent Segmented Store Status"},
-		{[]string{"engram", "status", "--project", "demo", "--json"}, ExitOK, "{"},
-		{[]string{"engram", "chunks"}, ExitOK, "Registered Chunk Checkpoints (2)"},
-		{[]string{"engram", "checkpoints", "--project", "demo", "--json"}, ExitOK, `"c1"`},
-		{[]string{"engram", "query", "--project", "demo"}, ExitOK, "graph.json"},
-		{[]string{"engram", "query", "--project", "demo", "--json"}, ExitOK, "["},
-		{[]string{"engram", "inspect", "demo"}, ExitOK, "Store Analysis Details: demo"},
-		{[]string{"engram", "inspect", "demo", "--json"}, ExitOK, "{"},
-		{[]string{"engram", "rm", "demo"}, ExitUsage, "needs --force"},
-		{[]string{"engram", "rm", "demo", "--force"}, ExitOK, "Safely removed store 'demo'"},
-		{[]string{"engram", "purge", "--project", "demo"}, ExitOK, "purged all segmented analysis data for project: demo"},
-		{[]string{"engram", "query"}, ExitUsage, ""},
-		{[]string{"engram", "commit", "--project", "demo"}, ExitUsage, ""},
-		{[]string{"engram", "commit", "--project", "demo", "--chunk", "c3", "--file", filepath.Join(t.TempDir(), "missing")}, ExitError, "read input file"},
+		{[]string{"engram", "commit", "--project", "demo", "--chunk", "c1", "--file", file}, cli.ExitOK, "Committed chunk 'c1' for project 'demo'"},
+		{[]string{"store", "commit", "--project", "demo", "-c", "c2", "-f", file, "--final"}, cli.ExitOK, "Committed chunk 'c2'"},
+		{[]string{"engram", "status"}, cli.ExitOK, "Persistent Segmented Store Status"},
+		{[]string{"engram", "status", "--project", "demo", "--json"}, cli.ExitOK, "{"},
+		{[]string{"engram", "chunks"}, cli.ExitOK, "Registered Chunk Checkpoints (2)"},
+		{[]string{"engram", "checkpoints", "--project", "demo", "--json"}, cli.ExitOK, `"c1"`},
+		{[]string{"engram", "query", "--project", "demo"}, cli.ExitOK, "graph.json"},
+		{[]string{"engram", "query", "--project", "demo", "--json"}, cli.ExitOK, "["},
+		{[]string{"engram", "inspect", "demo"}, cli.ExitOK, "Store Analysis Details: demo"},
+		{[]string{"engram", "inspect", "demo", "--json"}, cli.ExitOK, "{"},
+		{[]string{"engram", "rm", "demo"}, cli.ExitUsage, "needs --force"},
+		{[]string{"engram", "rm", "demo", "--force"}, cli.ExitOK, "Safely removed store 'demo'"},
+		{[]string{"engram", "purge", "--project", "demo"}, cli.ExitOK, "purged all segmented analysis data for project: demo"},
+		{[]string{"engram", "query"}, cli.ExitUsage, ""},
+		{[]string{"engram", "commit", "--project", "demo"}, cli.ExitUsage, ""},
+		{[]string{"engram", "commit", "--project", "demo", "--chunk", "c3", "--file", filepath.Join(t.TempDir(), "missing")}, cli.ExitError, "read input file"},
 	}
 	for _, s := range steps {
 		out, code := cliOutput(t, s.args...)
@@ -52,7 +52,7 @@ func TestEngram_Lifecycle(t *testing.T) {
 			t.Errorf("%v: exit %d (want %d)\n%s", s.args, code, s.code, out)
 		}
 	}
-	if out, code := cliOutput(t, "-y", "engram", "rm", "gone"); code == ExitUsage {
+	if out, code := cliOutput(t, "-y", "engram", "rm", "gone"); code == cli.ExitUsage {
 		t.Errorf("--yes should confirm removal, got usage error\n%s", out)
 	}
 }
@@ -68,7 +68,7 @@ func TestEngram_StoreUnavailable(t *testing.T) {
 	}
 	t.Cleanup(func() { openSegmentedStore = prev })
 	for _, args := range [][]string{{"engram", "status"}, {"cognition", "status"}} {
-		if out, code := cliOutput(t, args...); code != ExitError || !strings.Contains(out, "open segmented store") {
+		if out, code := cliOutput(t, args...); code != cli.ExitError || !strings.Contains(out, "open segmented store") {
 			t.Errorf("%v: exit %d\n%s", args, code, out)
 		}
 	}

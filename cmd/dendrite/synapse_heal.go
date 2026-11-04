@@ -1,6 +1,10 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/synapse"
+	"Dendrite/pkg/synapseide"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,10 +13,6 @@ import (
 	"sort"
 	"strings"
 	"text/tabwriter"
-
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/synapse"
-	"Dendrite/pkg/synapseide"
 )
 
 // loadDefaultIndex opens the global project index (~/.dendrite/projects.json or $DENDRITE_HOME).
@@ -45,7 +45,7 @@ type synapseHealOptions struct {
 
 func runSynapseHeal(ctx context.Context, o synapseHealOptions, jsonMode bool, out io.Writer) error {
 	if o.Depth < 0 {
-		return usageErrorf("invalid --depth %d: expected a positive integer", o.Depth)
+		return cli.UsageErrorf("invalid --depth %d: expected a positive integer", o.Depth)
 	}
 	ix, err := loadDefaultIndex()
 	if err != nil {

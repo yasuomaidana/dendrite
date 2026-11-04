@@ -1,14 +1,13 @@
 package main
 
 import (
+	"Dendrite/pkg/synapse"
 	"Dendrite/pkg/testkit"
 	"bytes"
 	"context"
 	"fmt"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/synapse"
 )
 
 func TestSplitPlaneSuffix(t *testing.T) {

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/synapse"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,8 +11,6 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
-
-	"Dendrite/pkg/synapse"
 )
 
 // synapseSyncOptions are the `synapse status` / `synapse sync` flags.
@@ -29,7 +29,7 @@ func newSynapseStatusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "status <id>",
 		Short:   "Fetch every member and report ahead/behind, dirty files and drift against its tracked ref",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		Example: "dendrite synapse status dendrite-ecosystem\ndendrite synapse status dendrite-ecosystem --no-fetch --json",
 		RunE: func(c *cobra.Command, args []string) error {
 			return runSynapseSync(c.Context(), args[0], o, false, c.OutOrStdout())
@@ -48,7 +48,7 @@ func newSynapseSyncCmd() *cobra.Command {
 		Long: "Fast-forwards every local member that is on its tracked branch, resolves remote members,\n" +
 			"records each member's commit as its lock and applies the sync strategy. --enforce also\n" +
 			"switches clean members that sit on another branch back to their tracked branch.",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		Example: "dendrite synapse sync dendrite-ecosystem\ndendrite synapse sync dendrite-ecosystem --enforce\ndendrite synapse sync dendrite-ecosystem --merge mcp-hub=feat/x",
 		RunE: func(c *cobra.Command, args []string) error {
 			return runSynapseSync(c.Context(), args[0], o, true, c.OutOrStdout())
@@ -78,7 +78,7 @@ func runSynapseSync(ctx context.Context, id string, o synapseSyncOptions, pull b
 	for _, val := range o.Merge {
 		alias, branch, ok := strings.Cut(val, "=")
 		if !ok || alias == "" || branch == "" {
-			return usageErrorf("invalid --merge %q: expected <alias>=<branch>", val)
+			return cli.UsageErrorf("invalid --merge %q: expected <alias>=<branch>", val)
 		}
 		opts.Merge[alias] = branch
 	}
@@ -104,7 +104,7 @@ func runSynapseSync(ctx context.Context, id string, o synapseSyncOptions, pull b
 		}
 	}
 
-	if globals.JSON {
+	if cli.Globals.JSON {
 		data, err := json.MarshalIndent(rep, "", "  ")
 		if err != nil {
 			return err
@@ -121,7 +121,7 @@ func printSynapseSyncReport(out io.Writer, rep *synapse.SyncReport) {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "MEMBER\tSOURCE\tTRACKING\tHEAD\tAHEAD/BEHIND\tDIRTY\tSTATUS")
 	for _, m := range rep.Members {
-		tracking, head, ab, dirty := m.Ref, short(m.LockedSHA), "-", "-"
+		tracking, head, ab, dirty := m.Ref, cli.Short(m.LockedSHA), "-", "-"
 		status := "ok"
 		if r := m.Repo; r != nil {
 			if r.Target != "" {
@@ -181,14 +181,4 @@ func printSynapseSyncReport(out io.Writer, rep *synapse.SyncReport) {
 		}
 		fmt.Fprintln(out, line)
 	}
-}
-
-func short(sha string) string {
-	if sha == "" {
-		return "-"
-	}
-	if len(sha) > 7 {
-		return sha[:7]
-	}
-	return sha
 }

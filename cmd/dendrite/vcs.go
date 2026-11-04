@@ -1,18 +1,18 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/vcs"
 	"context"
 	"fmt"
 	"io"
-
-	"Dendrite/pkg/vcs"
 
 	"github.com/spf13/cobra"
 )
 
 // newMyelinCmd builds `dendrite myelin` (alias vcs): branch guardrails, remote sync and GitHub issue sync.
 func newMyelinCmd() *cobra.Command {
-	cmd := newGroupCmd("myelin", "Git branch guardrails prohibiting main pushes and ensuring rebase integrity", "axon",
+	cmd := cli.NewGroupCmd("myelin", "Git branch guardrails prohibiting main pushes and ensuring rebase integrity", "axon",
 		"vcs", "hillock-guard", "myelin-guard", "guard")
 	cmd.Example = "dendrite myelin check\n" +
 		"dendrite myelin sync-remote\n" +
@@ -24,7 +24,7 @@ func newMyelinCmd() *cobra.Command {
 			Use:     "check",
 			Aliases: []string{"guard", "status"},
 			Short:   "Check the branch policy; on main/master, move to develop and exit 1",
-			Args:    noArgs,
+			Args:    cli.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return runMyelinCheck(cmd.Context(), guard(), cmd.OutOrStdout())
 			},
@@ -33,7 +33,7 @@ func newMyelinCmd() *cobra.Command {
 			Use:     "sync-remote",
 			Aliases: []string{"remote-sync"},
 			Short:   "Fetch and rebase remote fixes and reconcile their tickets",
-			Args:    noArgs,
+			Args:    cli.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return runMyelinSyncRemote(cmd.Context(), guard(), cmd.OutOrStdout())
 			},
@@ -41,7 +41,7 @@ func newMyelinCmd() *cobra.Command {
 		&cobra.Command{
 			Use:   "evacuate",
 			Short: "Check out develop, creating it when missing",
-			Args:  noArgs,
+			Args:  cli.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				if err := guard().EnsureAndCheckoutDevelop(cmd.Context()); err != nil {
 					return fmt.Errorf("checkout develop: %w", err)
@@ -74,8 +74,8 @@ func runMyelinSyncRemote(ctx context.Context, g *vcs.GitGuard, out io.Writer) er
 	if err != nil {
 		return fmt.Errorf("remote sync: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, status)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, status)
 	}
 	fmt.Fprintf(out, "[✓] Remote Sync Status for branch %s:\n", status.Branch)
 	fmt.Fprintf(out, "    - Divergence: Ahead %d, Behind %d\n", status.Ahead, status.Behind)

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/inference"
 	"bytes"
 	"context"
 	"net"
@@ -10,26 +12,24 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/inference"
 )
 
 func TestSpike_ListAndProbe(t *testing.T) {
 	isolateEngines(t)
-	if out, code := cliOutput(t, "spike", "list"); code != ExitOK || !strings.Contains(out, "ollama-metal") || !strings.Contains(out, "Cascade Failover") {
+	if out, code := cliOutput(t, "spike", "list"); code != cli.ExitOK || !strings.Contains(out, "ollama-metal") || !strings.Contains(out, "Cascade Failover") {
 		t.Fatalf("list: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "inference", "ls", "--json"); code != ExitOK || !strings.Contains(out, `"cascade"`) {
+	if out, code := cliOutput(t, "inference", "ls", "--json"); code != cli.ExitOK || !strings.Contains(out, `"cascade"`) {
 		t.Fatalf("list --json: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "spike", "probe", "ollama-metal"); code != ExitOK || !strings.Contains(out, "[Offline] Engine: ollama-metal") {
+	if out, code := cliOutput(t, "spike", "probe", "ollama-metal"); code != cli.ExitOK || !strings.Contains(out, "[Offline] Engine: ollama-metal") {
 		t.Fatalf("probe one: exit %d\n%s", code, out)
 	}
 	out, code := cliOutput(t, "spike", "probe")
-	if code != ExitOK || strings.Index(out, "candle") > strings.Index(out, "ollama-metal") {
+	if code != cli.ExitOK || strings.Index(out, "candle") > strings.Index(out, "ollama-metal") {
 		t.Fatalf("probe all should list engines sorted: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "spike", "probe", "--json"); code != ExitOK || !strings.HasPrefix(strings.TrimSpace(out), "[") {
+	if out, code := cliOutput(t, "spike", "probe", "--json"); code != cli.ExitOK || !strings.HasPrefix(strings.TrimSpace(out), "[") {
 		t.Fatalf("probe --json: exit %d\n%s", code, out)
 	}
 	for _, args := range [][]string{
@@ -39,8 +39,8 @@ func TestSpike_ListAndProbe(t *testing.T) {
 		{"spike", "switch"},
 		{"spike", "migrate"},
 	} {
-		if _, code := cliOutput(t, args...); code != ExitUsage {
-			t.Errorf("%v: exit %d, want %d", args, code, ExitUsage)
+		if _, code := cliOutput(t, args...); code != cli.ExitUsage {
+			t.Errorf("%v: exit %d, want %d", args, code, cli.ExitUsage)
 		}
 	}
 }
@@ -50,27 +50,27 @@ func TestSpike_ProbeEndpoint(t *testing.T) {
 		_, _ = w.Write([]byte(`{"models":[{"name":"qwen"}]}`))
 	}))
 	defer srv.Close()
-	if out, code := cliOutput(t, "spike", "probe", "--endpoint", srv.URL); code != ExitOK || !strings.Contains(out, "- qwen") {
+	if out, code := cliOutput(t, "spike", "probe", "--endpoint", srv.URL); code != cli.ExitOK || !strings.Contains(out, "- qwen") {
 		t.Fatalf("probe --endpoint: exit %d\n%s", code, out)
 	}
-	if _, code := cliOutput(t, "spike", "probe", "--endpoint", "http://127.0.0.1:1"); code != ExitError {
+	if _, code := cliOutput(t, "spike", "probe", "--endpoint", "http://127.0.0.1:1"); code != cli.ExitError {
 		t.Fatalf("unreachable endpoint: exit %d", code)
 	}
 }
 
 func TestSpike_SwitchAndRender(t *testing.T) {
 	isolateEngines(t)
-	if out, code := cliOutput(t, "spike", "switch", "oxillama-rust"); code != ExitOK || !strings.Contains(out, "New cascade: oxillama-rust ->") {
+	if out, code := cliOutput(t, "spike", "switch", "oxillama-rust"); code != cli.ExitOK || !strings.Contains(out, "New cascade: oxillama-rust ->") {
 		t.Fatalf("switch: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "spike", "render"); code != ExitOK || !strings.Contains(out, "Rendered LiteLLM Configuration") {
+	if out, code := cliOutput(t, "spike", "render"); code != cli.ExitOK || !strings.Contains(out, "Rendered LiteLLM Configuration") {
 		t.Fatalf("render: exit %d\n%s", code, out)
 	}
 }
 
 func TestSpike_MigrateMissingModelFails(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	if _, code := cliOutput(t, "spike", "migrate", "no-such-model:1b", "--dry-run"); code != ExitError {
+	if _, code := cliOutput(t, "spike", "migrate", "no-such-model:1b", "--dry-run"); code != cli.ExitError {
 		t.Fatalf("migrate of a missing model: exit %d", code)
 	}
 }
@@ -122,17 +122,17 @@ func TestSpike_ZeroCost(t *testing.T) {
 		code int
 		want string
 	}{
-		{[]string{"spike", "zero-cost", "add", "acme-local-7b"}, ExitOK, "as zero-cost exact model"},
-		{[]string{"spike", "zero-cost", "add", "acme", "--prefix"}, ExitOK, "as zero-cost prefix rule"},
-		{[]string{"spike", "zero-cost", "test", "acme-local-7b"}, ExitOK, "Zero-Cost: TRUE"},
-		{[]string{"spike", "zerocost", "check", "gpt-9-ultra", "--json"}, ExitOK, `"zero_cost": false`},
-		{[]string{"spike", "zero-cost", "list"}, ExitOK, "acme-local-7b"},
-		{[]string{"spike", "zero-cost", "ls", "--json"}, ExitOK, `"acme-local-7b"`},
-		{[]string{"spike", "zero-cost", "rm", "acme-local-7b"}, ExitOK, "Synchronized with environment file: " + filepath.Join(home, ".env")},
-		{[]string{"spike", "zero-cost", "remove", "never-added"}, ExitOK, "Removed 'never-added'"},
-		{[]string{"spike", "zero-cost", "remove", " "}, ExitUsage, ""},
-		{[]string{"spike", "zero-cost", "add", " "}, ExitUsage, ""},
-		{[]string{"spike", "zero-cost", "reset"}, ExitOK, "reset zero-cost models"},
+		{[]string{"spike", "zero-cost", "add", "acme-local-7b"}, cli.ExitOK, "as zero-cost exact model"},
+		{[]string{"spike", "zero-cost", "add", "acme", "--prefix"}, cli.ExitOK, "as zero-cost prefix rule"},
+		{[]string{"spike", "zero-cost", "test", "acme-local-7b"}, cli.ExitOK, "Zero-Cost: TRUE"},
+		{[]string{"spike", "zerocost", "check", "gpt-9-ultra", "--json"}, cli.ExitOK, `"zero_cost": false`},
+		{[]string{"spike", "zero-cost", "list"}, cli.ExitOK, "acme-local-7b"},
+		{[]string{"spike", "zero-cost", "ls", "--json"}, cli.ExitOK, `"acme-local-7b"`},
+		{[]string{"spike", "zero-cost", "rm", "acme-local-7b"}, cli.ExitOK, "Synchronized with environment file: " + filepath.Join(home, ".env")},
+		{[]string{"spike", "zero-cost", "remove", "never-added"}, cli.ExitOK, "Removed 'never-added'"},
+		{[]string{"spike", "zero-cost", "remove", " "}, cli.ExitUsage, ""},
+		{[]string{"spike", "zero-cost", "add", " "}, cli.ExitUsage, ""},
+		{[]string{"spike", "zero-cost", "reset"}, cli.ExitOK, "reset zero-cost models"},
 	}
 	for _, s := range steps {
 		out, code := cliOutput(t, s.args...)
@@ -176,7 +176,7 @@ func TestSpike_ModelsFlagsWhatDoesNotFit(t *testing.T) {
 	}))
 	defer srv.Close()
 	out, code := cliOutput(t, "spike", "models", "--ollama", srv.URL, "--oxillama", "http://127.0.0.1:1")
-	if code != ExitOK {
+	if code != cli.ExitOK {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
 	for _, want := range []string{"12.0 GB budget", "huge:30b", "TOO LARGE", "small:4b", "Best available now: small:4b on ollama", "OxiLLaMa is not reachable"} {

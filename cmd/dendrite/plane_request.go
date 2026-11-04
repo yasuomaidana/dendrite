@@ -1,6 +1,11 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/planesvc"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/synapse"
+	"Dendrite/pkg/tracker/plane"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
@@ -11,11 +16,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-
-	"Dendrite/pkg/planesvc"
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/synapse"
-	"Dendrite/pkg/tracker/plane"
 )
 
 // requestSourcePrefix tags a request in the peer's Plane project with the synapse it came from
@@ -41,7 +41,7 @@ func newChronosRequestCmd() *cobra.Command {
 			"(external source dendrite-synapse:<id>) so the peer can filter its board with `chronos next --synapse`.\n" +
 			"Asking twice with the same name returns the existing ticket. --from names the ticket here that\n" +
 			"depends on the request.",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		Example: "dendrite chronos request oxipix --name \"Expose a batch resize API\" --desc \"docula needs ...\" --from DOC-12",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.Target = args[0]
@@ -55,13 +55,13 @@ func newChronosRequestCmd() *cobra.Command {
 	f.StringVar(&o.Desc, "desc", "", "What is needed and why (goal and acceptance criteria)")
 	f.StringVar(&o.Synapse, "synapse", "", "The synapse the request belongs to (required when several are shared)")
 	f.StringVar(&o.From, "from", "", "Ticket in this project that depends on the request")
-	requireFlags(cmd, "name", "desc")
+	cli.RequireFlags(cmd, "name", "desc")
 	return cmd
 }
 
 func planeRequest(ctx context.Context, client *plane.Client, svc *planesvc.Service, startDir string, o planeRequestOptions, out io.Writer) error {
 	if strings.TrimSpace(o.Name) == "" || strings.TrimSpace(o.Desc) == "" {
-		return usageErrorf("a request needs both --name and --desc")
+		return cli.UsageErrorf("a request needs both --name and --desc")
 	}
 	root, err := plane.FindRepoRoot(startDir)
 	if err != nil {

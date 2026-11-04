@@ -1,21 +1,21 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/topology"
+	"Dendrite/pkg/topology/advisor"
 	"context"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
 
-	"Dendrite/pkg/topology"
-	"Dendrite/pkg/topology/advisor"
-
 	"github.com/spf13/cobra"
 )
 
 // newAxonCmd builds `dendrite axon` (alias topology): multi-node placement and topology inspection.
 func newAxonCmd() *cobra.Command {
-	cmd := newGroupCmd("axon", "Multi-node placement models and hardware service router", "axon",
+	cmd := cli.NewGroupCmd("axon", "Multi-node placement models and hardware service router", "axon",
 		"topology", "axon-pathway", "top")
 	cmd.Example = "dendrite axon advisor --nodes local=localhost,gpu=10.0.0.5\n" +
 		"dendrite axon advisor --json\n" +
@@ -26,7 +26,7 @@ func newAxonCmd() *cobra.Command {
 		Use:     "advisor",
 		Aliases: []string{"advise"},
 		Short:   "Probe compute nodes and recommend a service placement",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAxonAdvisor(cmd.Context(), parseNodeTargets(nodes), cmd.OutOrStdout())
 		},
@@ -37,7 +37,7 @@ func newAxonCmd() *cobra.Command {
 		Use:       "inspect [scenario]",
 		Aliases:   []string{"show"},
 		Short:     "Show stack placements and compose profiles for a scenario (default local-hybrid)",
-		Args:      maxArgs(1),
+		Args:      cli.MaxArgs(1),
 		ValidArgs: scenarioNames(),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			sc, err := parseScenarioArg(args)
@@ -57,8 +57,8 @@ func runAxonInspect(sc topology.Scenario, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("construct topology: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, cfg)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, cfg)
 	}
 	fmt.Fprintf(out, "[+] Active Scenario: %s\n", cfg.Scenario)
 	fmt.Fprintln(out, "[+] Stack Placements:")
@@ -82,7 +82,7 @@ func runAxonInspect(sc topology.Scenario, out io.Writer) error {
 func runAxonAdvisor(ctx context.Context, targets []advisor.NodeTarget, out io.Writer) error {
 	// In JSON mode stdout carries only the plan.
 	progress := out
-	if globals.JSON {
+	if cli.Globals.JSON {
 		progress = io.Discard
 	}
 	fmt.Fprintf(progress, "[+] Probing %d compute node(s) for hardware metrics...\n", len(targets))
@@ -105,8 +105,8 @@ func runAxonAdvisor(ctx context.Context, targets []advisor.NodeTarget, out io.Wr
 	if err != nil {
 		return fmt.Errorf("placement advisor: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, plan)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, plan)
 	}
 	fmt.Fprint(out, plan.FormatTable())
 	return nil

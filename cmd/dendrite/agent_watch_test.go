@@ -1,6 +1,8 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/agentjobs"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"Dendrite/pkg/agentjobs"
 )
 
 func watchFixture(t *testing.T, status agentjobs.Status) (*agentjobs.Watcher, *agentjobs.Ledger, *agentjobs.Job) {
@@ -25,9 +25,9 @@ func watchFixture(t *testing.T, status agentjobs.Status) (*agentjobs.Watcher, *a
 
 func jsonOutput(t *testing.T, on bool) {
 	t.Helper()
-	old := globals.JSON
-	globals.JSON = on
-	t.Cleanup(func() { globals.JSON = old })
+	old := cli.Globals.JSON
+	cli.Globals.JSON = on
+	t.Cleanup(func() { cli.Globals.JSON = old })
 }
 
 func TestRunJobsWatchStopsAtAFinalState(t *testing.T) {

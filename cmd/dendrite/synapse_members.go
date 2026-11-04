@@ -1,17 +1,16 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/synapse"
+	"Dendrite/pkg/tracker/plane"
 	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
-
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/synapse"
-	"Dendrite/pkg/tracker/plane"
 )
 
 // buildMembers parses a comma-separated member spec string, determines Plane project bindings,
@@ -170,12 +169,6 @@ func runSynapseRemoveMember(_ context.Context, id, memberRef string, out io.Writ
 	return nil
 }
 
-// isTerminal reports whether in is the process's interactive stdin; a seam for tests.
-var isTerminal = func(in io.Reader) bool {
-	f, ok := in.(*os.File)
-	return ok && f == os.Stdin && stdinIsTerminal()
-}
-
 // runSynapseDelete deletes a synapse manifest by ID.
 func runSynapseDelete(_ context.Context, id string, in io.Reader, out io.Writer) error {
 	st, err := synapse.DefaultStore()
@@ -183,8 +176,8 @@ func runSynapseDelete(_ context.Context, id string, in io.Reader, out io.Writer)
 		return err
 	}
 
-	if !globals.Yes {
-		if !isTerminal(in) {
+	if !cli.Globals.Yes {
+		if !cli.IsTerminal(in) {
 			return fmt.Errorf("cannot delete synapse %q in non-interactive mode; pass --yes to confirm", id)
 		}
 		fmt.Fprintf(out, "Delete synapse %q? [y/N]: ", id)

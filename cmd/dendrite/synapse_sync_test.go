@@ -1,6 +1,8 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/synapse"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,8 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/synapse"
 )
 
 type synapseCmdErrCase struct {
@@ -160,7 +160,7 @@ func TestPrintSyncReportVariants(t *testing.T) {
 			t.Fatalf("missing %q:\n%s", want, out.String())
 		}
 	}
-	if short("") != "-" || short("abc") != "abc" {
+	if cli.Short("") != "-" || cli.Short("abc") != "abc" {
 		t.Fatal("short")
 	}
 }

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/agentjobs"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,8 +10,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	"Dendrite/pkg/agentjobs"
 
 	"github.com/spf13/cobra"
 )
@@ -25,17 +25,17 @@ func newJobsWatchCmd() *cobra.Command {
 			"Model requests come from agy's own log, so a quiet line with a growing request count is a busy agent;\n" +
 			"no requests, no changed files and a shrinking stall countdown is a stuck one.",
 		Example: "dendrite bouton jobs watch --ticket DEN-123\ndendrite bouton jobs watch DEN-123-20261029T053329Z-ab7522 --once --json",
-		Args:    maxArgs(1),
+		Args:    cli.MaxArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var id string
 			if len(args) == 1 {
 				id = args[0]
 			}
 			if (id == "") == (ticket == "") {
-				return usageErrorf("specify exactly one of <job-id> and --ticket")
+				return cli.UsageErrorf("specify exactly one of <job-id> and --ticket")
 			}
 			if interval <= 0 {
-				return usageErrorf("--interval must be positive")
+				return cli.UsageErrorf("--interval must be positive")
 			}
 			l, id, err := resolveJob(agentjobs.NewLedger(""), id, ticket)
 			if err != nil {
@@ -44,7 +44,7 @@ func newJobsWatchCmd() *cobra.Command {
 			return runJobsWatch(cmd.Context(), agentjobs.NewWatcher(l, nil), id, once, interval, cmd.OutOrStdout())
 		},
 	}
-	addTicketFlag(cmd, &ticket, "")
+	cli.AddTicketFlag(cmd, &ticket, "")
 	cmd.Flags().BoolVar(&once, "once", false, "Print one snapshot and exit")
 	cmd.Flags().DurationVar(&interval, "interval", interval, "Time between snapshots")
 	return cmd
@@ -79,8 +79,8 @@ func runJobsWatch(ctx context.Context, w *agentjobs.Watcher, id string, once boo
 		if err != nil {
 			return err
 		}
-		if globals.JSON {
-			if err := writeJSON(out, s); err != nil {
+		if cli.Globals.JSON {
+			if err := cli.WriteJSON(out, s); err != nil {
 				return err
 			}
 		} else {
@@ -103,12 +103,12 @@ func newJobsListCmd() *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List jobs",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runJobsList(agentjobs.NewLedger(""), ticket, cmd.OutOrStdout())
 		},
 	}
-	addTicketFlag(cmd, &ticket, "")
+	cli.AddTicketFlag(cmd, &ticket, "")
 	return cmd
 }
 
@@ -128,11 +128,11 @@ func runJobsList(l *agentjobs.Ledger, ticket string, out io.Writer) error {
 			return fmt.Errorf("list jobs: %w", err)
 		}
 	}
-	if globals.JSON {
+	if cli.Globals.JSON {
 		if jobs == nil {
 			jobs = []*agentjobs.Job{}
 		}
-		return writeJSON(out, jobs)
+		return cli.WriteJSON(out, jobs)
 	}
 	fmt.Fprintf(out, "[+] Agent Jobs (%d):\n", len(jobs))
 	if len(jobs) == 0 {
@@ -151,22 +151,22 @@ func newJobsShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show [<job-id>]",
 		Short: "Show a job's specification and event history",
-		Args:  maxArgs(1),
+		Args:  cli.MaxArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var id string
 			if len(args) == 1 {
 				id = args[0]
 			}
 			if id == "" && ticket == "" {
-				return usageErrorf("specify a <job-id> or --ticket")
+				return cli.UsageErrorf("specify a <job-id> or --ticket")
 			}
 			if id != "" && ticket != "" {
-				return usageErrorf("<job-id> and --ticket are mutually exclusive")
+				return cli.UsageErrorf("<job-id> and --ticket are mutually exclusive")
 			}
 			return runJobsShowEntry(agentjobs.NewLedger(""), id, ticket, cmd.OutOrStdout())
 		},
 	}
-	addTicketFlag(cmd, &ticket, "")
+	cli.AddTicketFlag(cmd, &ticket, "")
 	return cmd
 }
 
@@ -199,8 +199,8 @@ func runJobsShow(l *agentjobs.Ledger, id string, out io.Writer) error {
 		return fmt.Errorf("load job %q: %w", id, err)
 	}
 	events, _ := l.Events(id)
-	if globals.JSON {
-		return writeJSON(out, map[string]any{"job": job, "events": events})
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, map[string]any{"job": job, "events": events})
 	}
 	fmt.Fprintf(out, "[+] Job Specification: %s\n", job.ID)
 	fmt.Fprintf(out, "    Ticket:          %s\n", job.Ticket)
@@ -231,7 +231,7 @@ func runJobsShow(l *agentjobs.Ledger, id string, out io.Writer) error {
 
 func runJobsTail(l *agentjobs.Ledger, id string, n int, out io.Writer) error {
 	if n <= 0 {
-		return usageErrorf("--lines must be positive")
+		return cli.UsageErrorf("--lines must be positive")
 	}
 	data, err := os.ReadFile(l.AgentLogPath(id))
 	if err != nil {

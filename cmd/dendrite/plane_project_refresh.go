@@ -1,15 +1,15 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/synapse"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/synapse"
 )
 
 type planeProjectRefreshOptions struct {
@@ -28,7 +28,7 @@ func newChronosProjectRefreshCmd() *cobra.Command {
 			"by its project ID, then its root commit, then a unique origin remote, under the IDE project folders and\n" +
 			"--roots; its index entry, synapse path hints and pool files are rewritten. Entries that cannot be found\n" +
 			"are reported, and removed with --prune. Several candidates are reported and never guessed.",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite chronos project refresh --dry-run\ndendrite chronos project refresh --prune --roots ~/work",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeProjectRefresh(o, cmd.OutOrStdout())
@@ -38,7 +38,7 @@ func newChronosProjectRefreshCmd() *cobra.Command {
 	f.StringSliceVar(&o.Roots, "roots", nil, "Extra directories to search (comma-separated)")
 	f.IntVar(&o.Depth, "depth", 0, "Maximum search depth below each root")
 	f.BoolVar(&o.Prune, "prune", false, "Remove entries whose project cannot be found")
-	addDryRunFlag(cmd, &o.DryRun)
+	cli.AddDryRunFlag(cmd, &o.DryRun)
 	return cmd
 }
 
@@ -63,8 +63,8 @@ func planeProjectRefresh(o planeProjectRefreshOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if globals.JSON {
-		return writeJSON(out, rows)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, rows)
 	}
 
 	counts := map[synapse.RefreshStatus]int{}

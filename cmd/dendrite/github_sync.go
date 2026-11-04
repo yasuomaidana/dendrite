@@ -1,14 +1,14 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/tracker/github"
+	"Dendrite/pkg/tracker/hitl"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
-
-	"Dendrite/pkg/tracker/github"
-	"Dendrite/pkg/tracker/hitl"
 
 	"github.com/spf13/cobra"
 )
@@ -41,7 +41,7 @@ func newMyelinGitHubSyncCmd() *cobra.Command {
 		Use:     "github-sync",
 		Aliases: []string{"sync-github", "saltatory-sync", "gsync"},
 		Short:   "Open a GitHub verification issue for every Plane To Verify ticket and close those of Done tickets (--hitl then polls them)",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite myelin github-sync --dry-run\ndendrite myelin github-sync --ticket DEN-123\ndendrite myelin github-sync --hitl",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := runGitHubSync(cmd.Context(), o, cmd.OutOrStdout()); err != nil {
@@ -70,7 +70,7 @@ func runGitHubSync(ctx context.Context, o githubSyncOptions, out io.Writer) erro
 	if err != nil {
 		return err
 	}
-	if globals.JSON {
+	if cli.Globals.JSON {
 		data, _ := json.MarshalIndent(res, "", "  ")
 		fmt.Fprintln(out, string(data))
 		return nil
@@ -120,7 +120,7 @@ func newAllostasisHITLSyncCmd() *cobra.Command {
 		Use:     "hitl-sync",
 		Aliases: []string{"sync-hitl"},
 		Short:   "Poll the GitHub issue of every Plane To Verify ticket; closed as completed moves it to Done",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite allostasis hitl-sync --dry-run\ndendrite allostasis hitl-sync --ticket DEN-123",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runHITLSync(cmd.Context(), o, cmd.OutOrStdout())
@@ -141,7 +141,7 @@ func runHITLSync(ctx context.Context, o githubSyncOptions, out io.Writer) error 
 	if err != nil {
 		return err
 	}
-	if globals.JSON {
+	if cli.Globals.JSON {
 		if results == nil {
 			results = []hitl.HITLResult{}
 		}

@@ -1,12 +1,7 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"io"
-	"os"
-	"strings"
-
+	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/agent"
 	"Dendrite/pkg/coreclient"
 	"Dendrite/pkg/devtool"
@@ -16,15 +11,20 @@ import (
 	"Dendrite/pkg/ollama"
 	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/sidecar"
-
 	"Dendrite/pkg/tracker/plane"
-	"github.com/spf13/cobra"
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 // newSomaCmd builds `dendrite soma` (alias env): environment preparation, replication and diagnostics.
 func newSomaCmd() *cobra.Command {
-	cmd := newGroupCmd("soma", "Manage and replicate development environments", "soma",
+	cmd := cli.NewGroupCmd("soma", "Manage and replicate development environments", "soma",
 		"env", "homeostasis", "soma-homeostasis")
 	cmd.Example = "dendrite soma prepare --dry-run\n" +
 		"dendrite soma plan --mode host --with-plane\n" +
@@ -62,7 +62,7 @@ func addModeFlag(cmd *cobra.Command, p *string) {
 func parseMode(s string) (env.InstallMode, error) {
 	m := env.InstallMode(s)
 	if !m.IsValid() {
-		return "", usageErrorf("invalid --mode %q: use container, host or hybrid", s)
+		return "", cli.UsageErrorf("invalid --mode %q: use container, host or hybrid", s)
 	}
 	return m, nil
 }
@@ -102,12 +102,12 @@ func newSomaPrepareCmd() *cobra.Command {
 		Use:     "prepare [path|project]",
 		Aliases: []string{"sync", "update", "configure"},
 		Short:   "Sync agent rules and skills, and enforce CI/CD tooling defaults",
-		Args:    maxArgs(1),
+		Args:    cli.MaxArgs(1),
 		Example: "dendrite soma prepare\ndendrite soma prepare ../other-repo --dry-run\ndendrite soma prepare --json",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 1 {
 				if cmd.Flags().Changed("path") {
-					return usageErrorf("give the target either as an argument or with --path, not both")
+					return cli.UsageErrorf("give the target either as an argument or with --path, not both")
 				}
 				o.Path = args[0]
 			}
@@ -122,7 +122,7 @@ func newSomaPrepareCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&o.NoCICD, "no-cicd", false, "Disable CI/CD and Copilot enforcement")
 	cmd.Flags().BoolVar(&o.NoSkills, "no-skills", false, "Disable agent rules and skills synchronization")
 	cmd.Flags().BoolVar(&o.AdoptCI, "adopt-ci", false, "Replace a hand-written CI workflow with the generated one (the old file is archived in .github/dendrite/)")
-	addDryRunFlag(cmd, &o.DryRun)
+	cli.AddDryRunFlag(cmd, &o.DryRun)
 	return cmd
 }
 
@@ -150,8 +150,8 @@ func runSomaPrepare(ctx context.Context, o somaPrepareOptions, out io.Writer) er
 	if !o.DryRun {
 		agyLines = registerWithAGY(target)
 	}
-	if globals.JSON {
-		return writeJSON(out, report)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, report)
 	}
 	printPrepareReport(out, report)
 	for _, line := range agyLines {
@@ -237,7 +237,7 @@ func newSomaPlanCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "plan",
 		Short:   "Show the replication plan for this host",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite soma plan\ndendrite soma plan --mode host --with-plane --with-grafana",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := parseMode(mode)
@@ -267,8 +267,8 @@ func runSomaPlan(ctx context.Context, req env.ReplicationRequest, out io.Writer)
 	if err != nil {
 		return fmt.Errorf("plan replication: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, plan)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, plan)
 	}
 	fmt.Fprintf(out, "[+] Replication Plan (Mode: %s, Est. Time: ~%ds):\n", plan.Mode, plan.EstimatedSecs)
 	for i, a := range plan.Actions {
@@ -289,7 +289,7 @@ func newSomaReplicateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "replicate",
 		Short:   "Execute the replication plan (compose files, services, status)",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite soma replicate --dry-run\ndendrite soma replicate --with-plane --no-plane-ui",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := parseMode(mode)
@@ -306,7 +306,7 @@ func newSomaReplicateCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&noLinear, "no-linear", false, "Skip Linear")
 	cmd.Flags().BoolVar(&req.WithPlane, "with-plane", false, "Include Plane")
 	addPlaneUIFlags(cmd)
-	addDryRunFlag(cmd, &req.DryRun)
+	cli.AddDryRunFlag(cmd, &req.DryRun)
 	return cmd
 }
 
@@ -362,7 +362,7 @@ func newSomaInstallCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "install <target>",
 		Short: "Install an agent (aider, openhands, copilot, agy) or a service (plane, litellm, ollama, ...)",
-		Args:  exactArgs(1),
+		Args:  cli.ExactArgs(1),
 		Example: "dendrite soma install agy --yes\n" +
 			"dendrite soma install litellm --mode host",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -379,7 +379,7 @@ func newSomaInstallCmd() *cobra.Command {
 
 func runSomaInstall(ctx context.Context, name string, mode env.InstallMode, in io.Reader, out io.Writer) error {
 	if aType := agent.AgentType(strings.ToLower(name)); aType.IsValid() {
-		if err := agent.PromptAndInstallAgent(ctx, aType, globals.Yes, in, out); err != nil {
+		if err := agent.PromptAndInstallAgent(ctx, aType, cli.Globals.Yes, in, out); err != nil {
 			return fmt.Errorf("install %s: %w", aType, err)
 		}
 		return nil
@@ -410,7 +410,7 @@ func newSomaStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show real-time status of environment components",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSomaStatus(cmd.Context(), cmd.OutOrStdout())
 		},
@@ -423,8 +423,8 @@ func runSomaStatus(ctx context.Context, out io.Writer) error {
 		return err
 	}
 	statuses := replicator.AuditComponents(ctx)
-	if globals.JSON {
-		return writeJSON(out, statuses)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, statuses)
 	}
 	fmt.Fprintln(out, "[+] Real-Time Environment Component Status:")
 	for _, s := range statuses {
@@ -442,7 +442,7 @@ func newSomaDiagnoseCmd() *cobra.Command {
 		Use:     "diagnose",
 		Aliases: []string{"doctor", "diag"},
 		Short:   "Run environment pre-flight diagnostics (local Ollama, project status)",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSomaDiagnose(cmd.Context(), ollama.DefaultBaseURL, cmd.OutOrStdout())
 		},

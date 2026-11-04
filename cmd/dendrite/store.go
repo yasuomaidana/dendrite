@@ -1,14 +1,14 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/store/segmented"
+	"Dendrite/pkg/store/status"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"time"
-
-	"Dendrite/pkg/store/segmented"
-	"Dendrite/pkg/store/status"
 
 	"github.com/spf13/cobra"
 )
@@ -30,7 +30,7 @@ func shortHash(h string) string { return h[:min(12, len(h))] }
 
 // newEngramCmd builds `dendrite engram` (alias store): the persistent segmented analysis store.
 func newEngramCmd() *cobra.Command {
-	cmd := newGroupCmd("engram", "Persistent segmented store, memory checkpointer, and chunk query", "soma",
+	cmd := cli.NewGroupCmd("engram", "Persistent segmented store, memory checkpointer, and chunk query", "soma",
 		"store", "engram-store", "gram")
 	cmd.Example = "dendrite engram status\n" +
 		"dendrite engram inspect dendrite --json\n" +
@@ -41,19 +41,19 @@ func newEngramCmd() *cobra.Command {
 	statusCmd := &cobra.Command{
 		Use:   "status",
 		Short: "Summarize every stored project (segments, bytes, progress)",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withStore(func(st *segmented.SegmentedStore) error {
 				return runEngramStatus(cmd.Context(), st, project, cmd.OutOrStdout())
 			})
 		},
 	}
-	addProjectFlag(statusCmd, &project, "", "Only this project")
+	cli.AddProjectFlag(statusCmd, &project, "", "Only this project")
 
 	inspect := &cobra.Command{
 		Use:   "inspect <id>",
 		Short: "Show one store's checkpoints and sample segments",
-		Args:  exactArgs(1),
+		Args:  cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withStore(func(st *segmented.SegmentedStore) error {
 				return runEngramInspect(cmd.Context(), st, args[0], cmd.OutOrStdout())
@@ -66,10 +66,10 @@ func newEngramCmd() *cobra.Command {
 		Use:     "rm <id>",
 		Aliases: []string{"remove"},
 		Short:   "Delete a store's segments and blobs (needs --force or --yes)",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !force && !globals.Yes {
-				return usageErrorf("deleting all stored analysis for '%s' needs --force (or --yes)", args[0])
+			if !force && !cli.Globals.Yes {
+				return cli.UsageErrorf("deleting all stored analysis for '%s' needs --force (or --yes)", args[0])
 			}
 			return withStore(func(st *segmented.SegmentedStore) error {
 				res, err := status.NewStoreInspector(st).RemoveStore(cmd.Context(), args[0], true)
@@ -89,7 +89,7 @@ func newEngramCmd() *cobra.Command {
 		Use:     "chunks",
 		Aliases: []string{"checkpoints"},
 		Short:   "List chunk checkpoints",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withStore(func(st *segmented.SegmentedStore) error {
 				cps, err := st.ListCheckpoints(cmd.Context(), chunksProject)
@@ -97,8 +97,8 @@ func newEngramCmd() *cobra.Command {
 					return fmt.Errorf("list checkpoints: %w", err)
 				}
 				out := cmd.OutOrStdout()
-				if globals.JSON {
-					return writeJSON(out, cps)
+				if cli.Globals.JSON {
+					return cli.WriteJSON(out, cps)
 				}
 				fmt.Fprintf(out, "[+] Registered Chunk Checkpoints (%d):\n", len(cps))
 				for _, cp := range cps {
@@ -109,13 +109,13 @@ func newEngramCmd() *cobra.Command {
 			})
 		},
 	}
-	addProjectFlag(chunks, &chunksProject, "", "Only this project")
+	cli.AddProjectFlag(chunks, &chunksProject, "", "Only this project")
 
 	var queryProject string
 	query := &cobra.Command{
 		Use:   "query",
 		Short: "List the committed segments of a project, including partial chunks",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withStore(func(st *segmented.SegmentedStore) error {
 				segs, err := st.QueryPartial(cmd.Context(), queryProject)
@@ -123,8 +123,8 @@ func newEngramCmd() *cobra.Command {
 					return fmt.Errorf("query: %w", err)
 				}
 				out := cmd.OutOrStdout()
-				if globals.JSON {
-					return writeJSON(out, segs)
+				if cli.Globals.JSON {
+					return cli.WriteJSON(out, segs)
 				}
 				fmt.Fprintf(out, "[+] Querying Segments for Project '%s' (%d available):\n", queryProject, len(segs))
 				for _, s := range segs {
@@ -134,14 +134,14 @@ func newEngramCmd() *cobra.Command {
 			})
 		},
 	}
-	addProjectFlag(query, &queryProject, "", "Project to query")
-	requireFlags(query, "project")
+	cli.AddProjectFlag(query, &queryProject, "", "Project to query")
+	cli.RequireFlags(query, "project")
 
 	var purgeProject string
 	purge := &cobra.Command{
 		Use:   "purge",
 		Short: "Delete all segmented analysis data of a project",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withStore(func(st *segmented.SegmentedStore) error {
 				if err := st.PurgeProject(cmd.Context(), purgeProject); err != nil {
@@ -152,8 +152,8 @@ func newEngramCmd() *cobra.Command {
 			})
 		},
 	}
-	addProjectFlag(purge, &purgeProject, "", "Project to purge")
-	requireFlags(purge, "project")
+	cli.AddProjectFlag(purge, &purgeProject, "", "Project to purge")
+	cli.RequireFlags(purge, "project")
 
 	cmd.AddCommand(statusCmd, inspect, rm, chunks, query, purge, newEngramCommitCmd())
 	return cmd
@@ -164,8 +164,8 @@ func runEngramStatus(ctx context.Context, st *segmented.SegmentedStore, project 
 	if err != nil {
 		return fmt.Errorf("inspect store status: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, report)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, report)
 	}
 	fmt.Fprintln(out, "[+] Persistent Segmented Store Status:")
 	fmt.Fprint(out, status.FormatTable(report))
@@ -179,8 +179,8 @@ func runEngramInspect(ctx context.Context, st *segmented.SegmentedStore, id stri
 	if err != nil {
 		return fmt.Errorf("inspect store '%s': %w", id, err)
 	}
-	if globals.JSON {
-		return writeJSON(out, details)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, details)
 	}
 	s := details.Summary
 	fmt.Fprintf(out, "[+] Store Analysis Details: %s\n", s.StoreID)
@@ -216,18 +216,18 @@ func newEngramCommitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "commit",
 		Short: "Commit a file as one segment of a chunk checkpoint",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withStore(func(st *segmented.SegmentedStore) error {
 				return runEngramCommit(cmd.Context(), st, o, cmd.OutOrStdout())
 			})
 		},
 	}
-	addProjectFlag(cmd, &o.Project, "", "Project the chunk belongs to")
+	cli.AddProjectFlag(cmd, &o.Project, "", "Project the chunk belongs to")
 	cmd.Flags().StringVarP(&o.Chunk, "chunk", "c", "", "Chunk ID")
-	addFileFlag(cmd, &o.File, "", "File to store")
+	cli.AddFileFlag(cmd, &o.File, "", "File to store")
 	cmd.Flags().BoolVar(&o.Final, "final", false, "Mark the chunk as complete")
-	requireFlags(cmd, "project", "chunk", "file")
+	cli.RequireFlags(cmd, "project", "chunk", "file")
 	return cmd
 }
 

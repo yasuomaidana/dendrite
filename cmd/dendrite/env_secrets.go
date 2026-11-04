@@ -1,20 +1,20 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/dotenv"
+	"Dendrite/pkg/env"
 	"bufio"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
-	"Dendrite/pkg/dotenv"
-	"Dendrite/pkg/env"
-
 	"github.com/spf13/cobra"
 )
 
 func newSomaSecretsCmd() *cobra.Command {
-	cmd := newGroupCmd("secrets", "Create .env from the published defaults and change them at install", "")
+	cmd := cli.NewGroupCmd("secrets", "Create .env from the published defaults and change them at install", "")
 	cmd.Example = "dendrite soma secrets ensure\n" +
 		"dendrite soma secrets ensure --set POSTGRES_PASSWORD=mine --set LITELLM_MASTER_KEY=sk-mine\n" +
 		"dendrite soma secrets ensure --generate\n" +
@@ -36,18 +36,18 @@ func newSomaSecretsEnsureCmd() *cobra.Command {
 			"Change a value with --set KEY=VALUE, answer the prompts (in a terminal), or use --generate for random values on\n" +
 			"every key still at its default. --rotate also replaces custom values. Docker publishes Postgres, Redis, LiteLLM\n" +
 			"and Plane on all interfaces, so change the defaults on any machine other people can reach.",
-		Args: noArgs,
+		Args: cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			set := map[string]string{}
 			for _, kv := range sets {
 				k, v, ok := strings.Cut(kv, "=")
 				if !ok || strings.TrimSpace(k) == "" {
-					return usageErrorf("--set wants KEY=VALUE, got %q", kv)
+					return cli.UsageErrorf("--set wants KEY=VALUE, got %q", kv)
 				}
 				set[strings.TrimSpace(k)] = v
 			}
 			opts := env.SecretsOptions{Dir: dotenv.ProjectRoot("."), GlobalPath: globalEnvPath(), Local: local, Set: set, Generate: generate, Rotate: rotate}
-			if len(set) == 0 && !generate && !globals.Yes && stdinIsTerminal() {
+			if len(set) == 0 && !generate && !cli.Globals.Yes && cli.StdinIsTerminal() {
 				opts.Prompt = promptSecret(os.Stdin, cmd.OutOrStdout())
 			}
 			res, err := env.EnsureSecrets(opts)
@@ -84,8 +84,8 @@ func promptSecret(in io.Reader, out io.Writer) func(string, bool) (string, error
 }
 
 func reportSecrets(out io.Writer, res *env.SecretsResult) error {
-	if globals.JSON {
-		return writeJSON(out, res)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, res)
 	}
 	switch {
 	case res.Created:
@@ -125,15 +125,15 @@ func newSomaSecretsStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show which credentials are the published default, custom or missing (never prints values)",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			st, err := env.SecretState(dotenv.ProjectRoot("."), globalEnvPath())
 			if err != nil {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, st)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, st)
 			}
 			for _, k := range env.ManagedSecrets {
 				fmt.Fprintf(out, "    %-24s %s\n", k, st[k])

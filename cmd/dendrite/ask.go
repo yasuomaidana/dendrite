@@ -1,14 +1,14 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/rag"
 	"Dendrite/pkg/ticketindex"
 	"context"
 	"fmt"
 	"io"
 	"strings"
 	"time"
-
-	"Dendrite/pkg/rag"
 
 	"github.com/spf13/cobra"
 )
@@ -43,7 +43,7 @@ func newAskCmd() *cobra.Command {
 			"keeps (default: [ask] docs_share in .dendrite/rag.toml or DENDRITE_RAG_ASK_DOCS_SHARE, e.g. in\n" +
 			"$DENDRITE_HOME/rag.env, else 0.2).",
 		GroupID: "cortex",
-		Args:    minArgs(1),
+		Args:    cli.MinArgs(1),
 		Example: "dendrite ask \"how do I check the available LLMs?\"\n" +
 			"dendrite ask --hybrid \"how does the token gateway work?\"\n" +
 			"dendrite ask --server http://100.84.12.10:3456 \"where is telemetry defined?\"\n" +
@@ -60,21 +60,21 @@ func newAskCmd() *cobra.Command {
 				o.Hybrid = true
 			case "local":
 			default:
-				return usageErrorf("invalid --tier %q: use local, hybrid or paid", o.Tier)
+				return cli.UsageErrorf("invalid --tier %q: use local, hybrid or paid", o.Tier)
 			}
 			if o.TopK < 0 {
-				return usageErrorf("--top-k must not be negative")
+				return cli.UsageErrorf("--top-k must not be negative")
 			}
 			corpus := strings.ToLower(o.Corpus)
 			switch corpus {
 			case "", "code", "all", "docs", ticketindex.Corpus:
 			default:
-				return usageErrorf("invalid --corpus %q: use code, all, docs or tickets", o.Corpus)
+				return cli.UsageErrorf("invalid --corpus %q: use code, all, docs or tickets", o.Corpus)
 			}
 			shared := cmd.Flags().Changed("docs-share")
 			if o.Docs || (shared && corpus == "") {
 				if corpus != "" && corpus != "all" {
-					return usageErrorf("-d/--docs searches code and documentation; it conflicts with --corpus %s", corpus)
+					return cli.UsageErrorf("-d/--docs searches code and documentation; it conflicts with --corpus %s", corpus)
 				}
 				corpus = "all"
 			}
@@ -84,17 +84,17 @@ func newAskCmd() *cobra.Command {
 			var docsShare *float64
 			if shared {
 				if corpus != "all" {
-					return usageErrorf("--docs-share splits code and documentation; it needs --corpus all (or -d), not %s", corpus)
+					return cli.UsageErrorf("--docs-share splits code and documentation; it needs --corpus all (or -d), not %s", corpus)
 				}
 				if o.DocsShare < 0 || o.DocsShare > 1 {
-					return usageErrorf("--docs-share must be from 0 to 1, got %v", o.DocsShare)
+					return cli.UsageErrorf("--docs-share must be from 0 to 1, got %v", o.DocsShare)
 				}
 				docsShare = &o.DocsShare
 			}
 			project := o.Project
 			if corpus == ticketindex.Corpus {
 				if o.Docs || shared {
-					return usageErrorf("--corpus tickets searches the rendered tickets only; it conflicts with -d and --docs-share")
+					return cli.UsageErrorf("--corpus tickets searches the rendered tickets only; it conflicts with -d and --docs-share")
 				}
 				var err error
 				if project, corpus, err = ticketindex.Resolve(cmd.Context(), o.Project, corpus); err != nil {
@@ -106,7 +106,7 @@ func newAskCmd() *cobra.Command {
 				DocsShare:       docsShare,
 				Question:        strings.Join(args, " "),
 				ProjectPath:     project,
-				AutoApprovePaid: globals.Yes,
+				AutoApprovePaid: cli.Globals.Yes,
 				ForcePaid:       o.Paid,
 				HybridMode:      o.Hybrid,
 				UpdateIndex:     o.UpdateIndex,
@@ -126,7 +126,7 @@ func newAskCmd() *cobra.Command {
 	f.BoolVar(&o.UpdateIndex, "update-index", false, "Rebuild the project index and ask the model again instead of reusing a cached answer")
 	f.StringVar(&o.Server, "server", "", "Ask a central Dendrite RAG service instead (e.g. http://host:3456)")
 	f.StringVar(&o.Tier, "tier", "", "Shortcut for the tier: local, hybrid or paid")
-	addProjectFlag(cmd, &o.Project, ".", "Project directory to index and search")
+	cli.AddProjectFlag(cmd, &o.Project, ".", "Project directory to index and search")
 	f.StringVar(&o.PaidModel, "paid-model", "gemini-4-argon-medium", "Paid fallback model")
 	f.StringVar(&o.LocalModel, "local-model", "", "Local model on the LiteLLM gateway (default: [ask] local_model in .dendrite/rag.toml, else the gateway's local model on the most preferred reachable GPU engine; never OxiLLaMa, which prefills on the CPU)")
 	f.IntVarP(&o.TopK, "top-k", "k", 0, "Retrieve the N best chunks instead of a token-budgeted context pack")
@@ -147,8 +147,8 @@ func runAsk(ctx context.Context, req rag.AskRequest, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("query: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, res)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, res)
 	}
 
 	tierDisplay := "Zero-Cost Local LLM"

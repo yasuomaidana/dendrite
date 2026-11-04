@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"strings"
 	"testing"
 )
@@ -11,11 +12,11 @@ func TestSensory(t *testing.T) {
 		code int
 		want string
 	}{
-		{[]string{"sensory"}, ExitOK, "Instantaneous Telemetry Snapshot"},
-		{[]string{"telemetry", "snapshot", "--json"}, ExitOK, `"node_status"`},
-		{[]string{"sensory", "metrics"}, ExitOK, "# "},
-		{[]string{"sensory", "prometheus"}, ExitOK, "# "},
-		{[]string{"sensory", "bogus"}, ExitUsage, ""},
+		{[]string{"sensory"}, cli.ExitOK, "Instantaneous Telemetry Snapshot"},
+		{[]string{"telemetry", "snapshot", "--json"}, cli.ExitOK, `"node_status"`},
+		{[]string{"sensory", "metrics"}, cli.ExitOK, "# "},
+		{[]string{"sensory", "prometheus"}, cli.ExitOK, "# "},
+		{[]string{"sensory", "bogus"}, cli.ExitUsage, ""},
 	}
 	for _, s := range steps {
 		out, code := cliOutput(t, s.args...)

@@ -1,16 +1,16 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/inference"
+	"Dendrite/pkg/ticketlock"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
-
-	"Dendrite/pkg/devtool"
-	"Dendrite/pkg/inference"
-	"Dendrite/pkg/ticketlock"
 
 	"github.com/spf13/cobra"
 )
@@ -27,7 +27,7 @@ func newQuantalCmd() *cobra.Command {
 		Long: "Commits the staged changes (or --files / --all), references the ticket, and pushes to the remote.\n" +
 			"It never pushes main/master; --no-push or DENDRITE_COMMIT_PUSH=false skips the push.",
 		GroupID: "boutons",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite quantal --ticket DEN-123\n" +
 			"dendrite quantal -t DEN-123 --no-smart -m \"fix(cli): handle empty args\"\n" +
 			"dendrite quantal --files cmd/a.go,cmd/b.go --dry-run\n" +
@@ -51,7 +51,7 @@ func newQuantalCmd() *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	addTicketFlag(cmd, &opts.TicketID, "")
+	cli.AddTicketFlag(cmd, &opts.TicketID, "")
 	f.StringVarP(&opts.Message, "message", "m", "", "Commit message (skips message generation)")
 	f.StringSliceVarP(&opts.Files, "files", "f", nil, "Files to stage (comma-separated)")
 	f.BoolVarP(&opts.StageAll, "all", "a", false, "Stage all modified and untracked files")
@@ -59,10 +59,10 @@ func newQuantalCmd() *cobra.Command {
 	f.BoolVar(&opts.NoPush, "no-push", false, "Do not push after committing")
 	f.Bool("smart", true, "Resolve the active ticket from Plane when --ticket is not given (default)")
 	f.BoolVar(&noSmart, "no-smart", false, "Do not resolve the ticket automatically")
-	addModelFlag(cmd, &opts.Model, opts.Model)
+	cli.AddModelFlag(cmd, &opts.Model, opts.Model)
 	f.Bool("local", true, "Generate the message with the local model (default)")
 	f.BoolVar(&noLocal, "no-local", false, "Do not use the local model for the message")
-	addDryRunFlag(cmd, &opts.DryRun)
+	cli.AddDryRunFlag(cmd, &opts.DryRun)
 	f.BoolVar(&opts.AllowMocks, "allow-mocks", false, "Bypass the zero-mock gate (emergencies only)")
 	f.BoolVar(&opts.NoTicketGuard, "no-ticket-guard", false, "Skip the ticket lifecycle check (the ticket must exist and be In Progress; env "+devtool.TicketGuardEnv+"=off)")
 	f.StringVar(&synapseID, "synapse", "", "Then check every synapse peer (of this synapse, or every one holding the project): offer to commit dirty peers (-y: without asking), push peers ahead")
@@ -90,9 +90,9 @@ func runQuantalSynapse(ctx context.Context, opts devtool.CommitOptions, synapseI
 	}
 	var confirm peerConfirm // nil: non-interactive without --yes, report only
 	switch {
-	case globals.Yes:
+	case cli.Globals.Yes:
 		confirm = func(string, int) bool { return true }
-	case stdinIsTerminal():
+	case cli.StdinIsTerminal():
 		confirm = linePrompter(in, out)
 	}
 	return errors.Join(err, commitSynapsePeers(ctx, out, cwd, synapseID, opts, confirm))

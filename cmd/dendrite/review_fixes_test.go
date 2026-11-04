@@ -1,6 +1,11 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/agentjobs"
+	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/ticketlock"
+	"Dendrite/pkg/tracker/plane"
 	"bytes"
 	"context"
 	"errors"
@@ -9,11 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/agentjobs"
-	"Dendrite/pkg/devtool"
-	"Dendrite/pkg/ticketlock"
-	"Dendrite/pkg/tracker/plane"
 )
 
 func TestPreCommitHonoursTheGuardBypass(t *testing.T) {
@@ -165,7 +165,7 @@ func TestChronosFinishExitsNonZeroWhenBlockedAndRefusesAWrongState(t *testing.T)
 	r.claim()
 	var out bytes.Buffer
 	err := runChronosFinish(ctx, lifecycleIn(mustClient(t), r.repo), "DEN-377", finishChecks(false), &out)
-	var usage *usageError
+	var usage *cli.UsageError
 	if !errors.As(err, &usage) || !strings.Contains(err.Error(), "DEN-377 was blocked") {
 		t.Fatalf("a blocked finish is a usage error: %v", err)
 	}

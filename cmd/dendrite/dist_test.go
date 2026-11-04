@@ -1,15 +1,15 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/tracker/plane"
+	"Dendrite/pkg/workspace"
 	"bytes"
 	"context"
 	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/tracker/plane"
-	"Dendrite/pkg/workspace"
 )
 
 func TestMesh_ReadCommands(t *testing.T) {
@@ -18,17 +18,17 @@ func TestMesh_ReadCommands(t *testing.T) {
 		code int
 		want string
 	}{
-		{[]string{"mesh", "sources"}, ExitOK, "Distributed Codebase Sources"},
-		{[]string{"dist", "list-sources", "--json"}, ExitOK, `"libraries"`},
-		{[]string{"mesh", "decompose", "emu", "spec.md"}, ExitOK, "Forced Modular Decomposition Plan for 'emu'"},
-		{[]string{"mesh", "decompose", "emu", "--json"}, ExitOK, "{"},
-		{[]string{"mesh", "resolve", "no-such-capability-xyz"}, ExitError, ""},
-		{[]string{"mesh", "resolve"}, ExitUsage, ""},
-		{[]string{"mesh", "interop", "list"}, ExitOK, "Active Interop Coordinations (0)"},
-		{[]string{"mesh", "interop", "complete", "missing"}, ExitError, ""},
-		{[]string{"mesh", "interop", "reconcile", "missing"}, ExitError, ""},
-		{[]string{"mesh", "interop", "coordinate", "a", "b"}, ExitUsage, ""},
-		{[]string{"mesh", "spawn", "only-name"}, ExitUsage, ""},
+		{[]string{"mesh", "sources"}, cli.ExitOK, "Distributed Codebase Sources"},
+		{[]string{"dist", "list-sources", "--json"}, cli.ExitOK, `"libraries"`},
+		{[]string{"mesh", "decompose", "emu", "spec.md"}, cli.ExitOK, "Forced Modular Decomposition Plan for 'emu'"},
+		{[]string{"mesh", "decompose", "emu", "--json"}, cli.ExitOK, "{"},
+		{[]string{"mesh", "resolve", "no-such-capability-xyz"}, cli.ExitError, ""},
+		{[]string{"mesh", "resolve"}, cli.ExitUsage, ""},
+		{[]string{"mesh", "interop", "list"}, cli.ExitOK, "Active Interop Coordinations (0)"},
+		{[]string{"mesh", "interop", "complete", "missing"}, cli.ExitError, ""},
+		{[]string{"mesh", "interop", "reconcile", "missing"}, cli.ExitError, ""},
+		{[]string{"mesh", "interop", "coordinate", "a", "b"}, cli.ExitUsage, ""},
+		{[]string{"mesh", "spawn", "only-name"}, cli.ExitUsage, ""},
 	}
 	for _, s := range steps {
 		out, code := cliOutput(t, s.args...)
@@ -44,10 +44,10 @@ func TestMesh_ReadCommands(t *testing.T) {
 		t.Fatal("no capabilities listed")
 	}
 	capability := strings.TrimSpace(strings.Split(strings.SplitN(out[i+len("Capabilities: "):], "\n", 2)[0], ",")[0])
-	if out, code := cliOutput(t, "mesh", "resolve", capability); code != ExitOK || !strings.Contains(out, "Highest Priority Match") {
+	if out, code := cliOutput(t, "mesh", "resolve", capability); code != cli.ExitOK || !strings.Contains(out, "Highest Priority Match") {
 		t.Fatalf("resolve %q: exit %d\n%s", capability, code, out)
 	}
-	if out, code := cliOutput(t, "mesh", "resolve", capability, "--json"); code != ExitOK || !strings.Contains(out, "{") {
+	if out, code := cliOutput(t, "mesh", "resolve", capability, "--json"); code != cli.ExitOK || !strings.Contains(out, "{") {
 		t.Fatalf("resolve --json: exit %d\n%s", code, out)
 	}
 }
@@ -71,7 +71,7 @@ func TestMesh_Spawn(t *testing.T) {
 
 	dir := filepath.Join(t.TempDir(), "svc")
 	out, code := cliOutput(t, "mesh", "spawn", "svc", dir, "go", "--satellite", "--identifier", "svc", "--desc", "demo")
-	if code != ExitOK || !strings.Contains(out, "Spawned Project 'svc'") {
+	if code != cli.ExitOK || !strings.Contains(out, "Spawned Project 'svc'") {
 		t.Fatalf("spawn: exit %d\n%s", code, out)
 	}
 	if _, err := workspace.NewRegistry(filepath.Join(t.TempDir(), "c.json"), t.TempDir()); err != nil {

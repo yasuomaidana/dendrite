@@ -1,12 +1,12 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/inference"
+	"Dendrite/pkg/memfit"
 	"context"
 	"fmt"
 	"io"
-
-	"Dendrite/pkg/inference"
-	"Dendrite/pkg/memfit"
 
 	"github.com/spf13/cobra"
 )
@@ -20,7 +20,7 @@ func newSpikeModelsCmd() *cobra.Command {
 			"hold (50% of RAM; set DENDRITE_MODEL_MEM_BUDGET_GB to change it) and, for each model, whether it can run without\n" +
 			"starving the machine. Models marked too large get no gateway route and are refused at call time.",
 		Example: "dendrite spike models\ndendrite spike models --json",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSpikeModels(cmd.Context(), cmd.OutOrStdout(), ollamaURL, oxiURL)
 		},
@@ -32,8 +32,8 @@ func newSpikeModelsCmd() *cobra.Command {
 
 func runSpikeModels(ctx context.Context, out io.Writer, ollamaURL, oxiURL string) error {
 	r := memfit.Assess(ctx, ollamaURL, oxiURL)
-	if globals.JSON {
-		return writeJSON(out, r)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, r)
 	}
 	fmt.Fprintf(out, "[+] Memory: %s RAM, %s budget for local models, %s held by loaded models\n",
 		memfit.GB(r.TotalRAMBytes), memfit.GB(r.BudgetBytes), memfit.GB(r.ResidentBytes))

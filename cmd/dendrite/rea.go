@@ -1,20 +1,20 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/rea/showcase"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
-	"Dendrite/pkg/rea/showcase"
-
 	"github.com/spf13/cobra"
 )
 
 // newRetroCmd builds `dendrite retro` (alias rea): cleanroom reverse-engineering showcases and parity checks.
 func newRetroCmd() *cobra.Command {
-	cmd := newGroupCmd("retro", "Reverse engineering cleanroom analysis and parity verification", "arbor",
+	cmd := cli.NewGroupCmd("retro", "Reverse engineering cleanroom analysis and parity verification", "arbor",
 		"rea", "retrograde-analysis")
 	cmd.Example = "dendrite retro list\n" +
 		"dendrite retro showcase\n" +
@@ -25,7 +25,7 @@ func newRetroCmd() *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"targets", "ls"},
 		Short:   "List the open-source showcase targets",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runRetroList(cmd.OutOrStdout())
 		},
@@ -39,7 +39,7 @@ func newRetroCmd() *cobra.Command {
 	showcaseCmd := &cobra.Command{
 		Use:       "showcase [target]",
 		Short:     "Run cleanroom analysis and parity verification for one target or all (" + strings.Join(targetIDs, ", ") + ")",
-		Args:      maxArgs(1),
+		Args:      cli.MaxArgs(1),
 		ValidArgs: targetIDs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target := "all"
@@ -47,10 +47,10 @@ func newRetroCmd() *cobra.Command {
 				target = args[0]
 			}
 			f := strings.ToLower(format)
-			if globals.JSON {
+			if cli.Globals.JSON {
 				f = "json"
 			} else if f != "text" && f != "markdown" && f != "md" {
-				return usageErrorf("invalid --format %q: use text or markdown (--json for JSON)", format)
+				return cli.UsageErrorf("invalid --format %q: use text or markdown (--json for JSON)", format)
 			}
 			return runRetroShowcase(cmd, target, f, output)
 		},
@@ -64,8 +64,8 @@ func newRetroCmd() *cobra.Command {
 
 func runRetroList(out io.Writer) error {
 	targets := showcase.ListTargets()
-	if globals.JSON {
-		return writeJSON(out, targets)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, targets)
 	}
 	fmt.Fprintf(out, "[+] Registered Open-Source REA Showcase Targets (%d):\n\n", len(targets))
 	fmt.Fprintf(out, "    %-12s | %-32s | %-12s | %-8s | %s\n", "ID", "Name", "License (SPDX)", "Format", "Upstream Repository")

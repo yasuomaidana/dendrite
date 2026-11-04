@@ -1,6 +1,10 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/directive"
+	"Dendrite/pkg/llmchat"
+	"Dendrite/pkg/llmchat/llmchattest"
 	"bytes"
 	"context"
 	"errors"
@@ -9,10 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/directive"
-	"Dendrite/pkg/llmchat"
-	"Dendrite/pkg/llmchat/llmchattest"
 )
 
 // directiveRig is a project directory, -y off, a non-terminal stdin and a model that is never asked unless a
@@ -24,11 +24,11 @@ type directiveRig struct {
 
 func newDirectiveRig(t *testing.T) *directiveRig {
 	t.Helper()
-	prevYes, prevTerm, prevChat := globals.Yes, isTerminal, directiveChat
-	globals.Yes = false
-	isTerminal = func(io.Reader) bool { return false }
+	prevYes, prevTerm, prevChat := cli.Globals.Yes, cli.IsTerminal, directiveChat
+	cli.Globals.Yes = false
+	cli.IsTerminal = func(io.Reader) bool { return false }
 	directiveChat = func(string) llmchat.Completer { return llmchat.Client{URL: "http://127.0.0.1:1"} } // nothing listens: asking fails
-	t.Cleanup(func() { globals.Yes, isTerminal, directiveChat = prevYes, prevTerm, prevChat })
+	t.Cleanup(func() { cli.Globals.Yes, cli.IsTerminal, directiveChat = prevYes, prevTerm, prevChat })
 	return &directiveRig{t: t, dir: t.TempDir()}
 }
 
@@ -56,7 +56,7 @@ func (r *directiveRig) read(rel string) string {
 
 func TestDirectiveRuleShowsTheDiffSavesAndRegenerates(t *testing.T) {
 	r := newDirectiveRig(t)
-	globals.Yes = true
+	cli.Globals.Yes = true
 	out, err := r.run("enforce 95% code coverage")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
@@ -82,7 +82,7 @@ func TestDirectiveAsksInATerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := r.run("max 300 lines")
-	var usage *usageError
+	var usage *cli.UsageError
 	if !errors.As(err, &usage) || !strings.Contains(err.Error(), "pass -y") {
 		t.Fatalf("without a terminal or -y it refuses: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestDirectiveAsksInATerminal(t *testing.T) {
 		t.Error("a refused change writes nothing")
 	}
 
-	isTerminal = func(io.Reader) bool { return true }
+	cli.IsTerminal = func(io.Reader) bool { return true }
 	for _, tc := range []struct{ answer, wantLimit, want string }{{"n\n", "500", "Left as it was"}, {"y\n", "300", "Saved"}} {
 		cmd := newDirectiveCmd()
 		cmd.SetArgs([]string{"max 300 lines", "--path", r.dir})
@@ -110,7 +110,7 @@ func TestDirectiveAsksInATerminal(t *testing.T) {
 
 func TestDirectiveReadsUnknownRulesThroughTheModel(t *testing.T) {
 	r := newDirectiveRig(t)
-	globals.Yes = true
+	cli.Globals.Yes = true
 	relax := llmchattest.New(t, `[{"key":"lint.strictness","value":"standard","rationale":"asked to relax lint"}]`)
 	directiveChat = func(string) llmchat.Completer { return relax.Client }
 	out, err := r.run("go easier on the linters")
@@ -134,7 +134,7 @@ func TestDirectiveReadsUnknownRulesThroughTheModel(t *testing.T) {
 
 func TestDirectiveSetListAndApply(t *testing.T) {
 	r := newDirectiveRig(t)
-	globals.Yes = true
+	cli.Globals.Yes = true
 	out, err := r.run("set", "coverage.min_percent=90%", "loc.max_production_lines=400", "loc.warn_at=350")
 	if err != nil || !strings.Contains(out, "[✓] Saved") {
 		t.Fatalf("%v\n%s", err, out)
@@ -177,7 +177,7 @@ func TestDirectiveWithoutArgumentsShowsHelpAndBrokenFilesAreErrors(t *testing.T)
 	if err := os.WriteFile(filepath.Join(r.dir, filepath.FromSlash(directive.Path)), []byte("[loc\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	globals.Yes = true
+	cli.Globals.Yes = true
 	for _, args := range [][]string{{"max 300 lines"}, {"list"}, {"apply"}, {"set", "loc.warn_at=1"}} {
 		if _, err := r.run(args...); err == nil || !strings.Contains(err.Error(), directive.Path) {
 			t.Errorf("%v with a broken file: %v", args, err)

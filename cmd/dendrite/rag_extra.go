@@ -1,12 +1,12 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/rag"
 	"context"
 	"fmt"
 	"io"
 	"strings"
-
-	"Dendrite/pkg/rag"
 
 	"github.com/spf13/cobra"
 )
@@ -29,7 +29,7 @@ func ragLeaf[R any](use, short string, args cobra.PositionalArgs, flags func(*co
 			return printResult(cmd, result, func(out io.Writer) { show(out, result, args) })
 		},
 	}
-	addProjectFlag(cmd, &project, ".", "Project directory")
+	cli.AddProjectFlag(cmd, &project, ".", "Project directory")
 	if flags != nil {
 		flags(cmd)
 	}
@@ -38,7 +38,7 @@ func ragLeaf[R any](use, short string, args cobra.PositionalArgs, flags func(*co
 
 func newRagSymbolsCmd() *cobra.Command {
 	var refs bool
-	return ragLeaf("symbols <name>", "Find definitions or references of a symbol name", exactArgs(1),
+	return ragLeaf("symbols <name>", "Find definitions or references of a symbol name", cli.ExactArgs(1),
 		func(c *cobra.Command) {
 			c.Flags().BoolVar(&refs, "refs", false, "Find callers and users instead of definitions")
 		},
@@ -60,7 +60,7 @@ func newRagSymbolsCmd() *cobra.Command {
 func newRagGrepCmd() *cobra.Command {
 	var paths []string
 	var maxResults int
-	return ragLeaf("grep <pattern>", "Regex search over indexable repository files", exactArgs(1),
+	return ragLeaf("grep <pattern>", "Regex search over indexable repository files", cli.ExactArgs(1),
 		func(c *cobra.Command) {
 			c.Flags().StringSliceVar(&paths, "path", nil, "Filter glob patterns (repeatable)")
 			c.Flags().IntVar(&maxResults, "max", 200, "Maximum matches")
@@ -77,7 +77,7 @@ func newRagGrepCmd() *cobra.Command {
 
 func newRagHistoryCmd() *cobra.Command {
 	var topK int
-	return ragLeaf("history <query...>", "Search Git commit messages and per-file diffs", minArgs(1),
+	return ragLeaf("history <query...>", "Search Git commit messages and per-file diffs", cli.MinArgs(1),
 		func(c *cobra.Command) { c.Flags().IntVarP(&topK, "top-k", "k", 10, "Maximum commits") },
 		func(ctx context.Context, project string, args []string) ([]rag.HistoryHit, error) {
 			return rag.NewRetriever().History(ctx, project, strings.Join(args, " "), topK)
@@ -96,7 +96,7 @@ func newRagHistoryCmd() *cobra.Command {
 
 func newRagGraphCmd() *cobra.Command {
 	var project string
-	cmd := newGroupCmd("graph", "Query Leiden communities, god nodes, paths, and explanations", "")
+	cmd := cli.NewGroupCmd("graph", "Query Leiden communities, god nodes, paths, and explanations", "")
 	cmd.AddCommand(
 		&cobra.Command{
 			Use:   "communities",
@@ -129,12 +129,12 @@ func newRagGraphCmd() *cobra.Command {
 			},
 		},
 	)
-	addProjectFlag(cmd, &project, ".", "Project directory")
+	cli.AddProjectFlag(cmd, &project, ".", "Project directory")
 	return cmd
 }
 
 func newRagSyncCmd() *cobra.Command {
-	return ragLeaf("sync", "Replay journaled offline commits to shared tier", noArgs, nil,
+	return ragLeaf("sync", "Replay journaled offline commits to shared tier", cli.NoArgs, nil,
 		func(ctx context.Context, project string, _ []string) (int, error) {
 			return rag.NewRetriever().Sync(ctx, project)
 		},
@@ -144,7 +144,7 @@ func newRagSyncCmd() *cobra.Command {
 }
 
 func newRagPullCmd() *cobra.Command {
-	return ragLeaf("pull", "Fetch missing embeddings from shared tier for offline use", noArgs, nil,
+	return ragLeaf("pull", "Fetch missing embeddings from shared tier for offline use", cli.NoArgs, nil,
 		func(ctx context.Context, project string, _ []string) (rag.PullReport, error) {
 			return rag.NewRetriever().Pull(ctx, project)
 		},
@@ -155,7 +155,7 @@ func newRagPullCmd() *cobra.Command {
 
 func newRagPushCmd() *cobra.Command {
 	var dryRun bool
-	return ragLeaf("push", "Upload local index to PostgreSQL shared tier", noArgs,
+	return ragLeaf("push", "Upload local index to PostgreSQL shared tier", cli.NoArgs,
 		func(c *cobra.Command) {
 			c.Flags().BoolVar(&dryRun, "dry-run", false, "Simulate push without modifying shared tier")
 		},
@@ -170,8 +170,8 @@ func newRagPushCmd() *cobra.Command {
 // printResult writes v as JSON with --json, otherwise lets text print the human form.
 func printResult(cmd *cobra.Command, v interface{}, text func(out io.Writer)) error {
 	out := cmd.OutOrStdout()
-	if globals.JSON {
-		return writeJSON(out, v)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, v)
 	}
 	text(out)
 	return nil

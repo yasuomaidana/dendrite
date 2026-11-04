@@ -1,13 +1,12 @@
 package main
 
 import (
+	"Dendrite/pkg/agentjobs"
 	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/agentjobs"
 )
 
 func installTestExecutableScript(t *testing.T, dir, name, body string) string {

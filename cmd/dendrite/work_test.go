@@ -1,7 +1,10 @@
 package main
 
 import (
+	"Dendrite/pkg/dotenv"
 	"Dendrite/pkg/env/bootstrap"
+	"Dendrite/pkg/planesvc/planetest"
+	"Dendrite/pkg/workcopy"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -12,10 +15,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/dotenv"
-	"Dendrite/pkg/planesvc/planetest"
-	"Dendrite/pkg/workcopy"
 )
 
 // TestMain keeps every test in this package away from the real dendrite-work/

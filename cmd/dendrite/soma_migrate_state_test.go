@@ -1,15 +1,15 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/tracker/plane"
 	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/tracker/plane"
 )
 
 func migrateGit(t *testing.T, dir string, args ...string) string {
@@ -25,9 +25,9 @@ func migrateGit(t *testing.T, dir string, args ...string) string {
 // plainOutput makes the command print its human report whatever an earlier test left in globals.
 func plainOutput(t *testing.T) {
 	t.Helper()
-	prev := globals.JSON
-	globals.JSON = false
-	t.Cleanup(func() { globals.JSON = prev })
+	prev := cli.Globals.JSON
+	cli.Globals.JSON = false
+	t.Cleanup(func() { cli.Globals.JSON = prev })
 }
 
 func TestSomaMigrateState_UntracksDendriteAndRecordsIdentity(t *testing.T) {

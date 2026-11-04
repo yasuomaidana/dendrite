@@ -1,13 +1,12 @@
 package main
 
 import (
+	"Dendrite/pkg/synapse"
 	"bytes"
 	"context"
 	"os"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/synapse"
 )
 
 func TestSynapseCommand_TreeRegistration(t *testing.T) {

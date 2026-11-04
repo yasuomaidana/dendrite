@@ -1,10 +1,10 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/personalcontext/canvas"
 	"fmt"
 	"strings"
-
-	"Dendrite/pkg/personalcontext/canvas"
 
 	"github.com/spf13/cobra"
 )
@@ -17,7 +17,7 @@ func newCanvasBridge() *canvas.PenpotUIBridge {
 
 // newCortexCanvasCmd builds `dendrite cortex canvas`: writing actions and the Penpot UI creative bridge.
 func newCortexCanvasCmd() *cobra.Command {
-	cmd := newGroupCmd("canvas", "Interactive writing canvas and Penpot UI creative action bridge", "",
+	cmd := cli.NewGroupCmd("canvas", "Interactive writing canvas and Penpot UI creative action bridge", "",
 		"creative-canvas")
 	cmd.Example = "dendrite cortex canvas actions\n" +
 		"dendrite cortex canvas dispatch --action WRITE_PLAN --prompt \"Q4 roadmap\"\n" +
@@ -39,12 +39,12 @@ func newCanvasActionsCmd() *cobra.Command {
 		Use:     "actions",
 		Aliases: []string{"list-actions"},
 		Short:   "List the supported canvas actions",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			actions := canvas.NewDefaultRegistry(newCanvasBridge()).ListActions()
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, actions)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, actions)
 			}
 			fmt.Fprintf(out, "[✓] Supported Canvas Creative Actions (%d total):\n", len(actions))
 			for _, a := range actions {
@@ -68,10 +68,10 @@ func newCanvasDispatchCmd() *cobra.Command {
 		Use:     "dispatch",
 		Aliases: []string{"run"},
 		Short:   "Run one canvas writing or UI creative action",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if req.Prompt == "" && req.CurrentContent == "" {
-				return usageErrorf("give --prompt or --content")
+				return cli.UsageErrorf("give --prompt or --content")
 			}
 			req.Action, req.Mode = canvas.ActionID(action), canvas.WritingMode(mode)
 			req.Parameters = map[string]any{
@@ -85,8 +85,8 @@ func newCanvasDispatchCmd() *cobra.Command {
 				return fmt.Errorf("dispatch %s: %w", action, err)
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, resp)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, resp)
 			}
 			fmt.Fprintf(out, "[✓] Action %s [%s] executed successfully\n", resp.Action, resp.Mode)
 			if resp.Title != "" {
@@ -110,8 +110,8 @@ func newCanvasDispatchCmd() *cobra.Command {
 	f.StringVar(&req.CurrentContent, "content", "", "Existing content to refine or critique")
 	f.StringVar(&framework, "framework", "svelte", "Frontend framework: svelte, react or html")
 	f.StringVar(&component, "component", "CanvasComponent", "Component name for UI generation")
-	addTicketFlag(cmd, &ticket, "")
-	addFileFlag(cmd, &file, "", "Target UI component file")
+	cli.AddTicketFlag(cmd, &ticket, "")
+	cli.AddFileFlag(cmd, &file, "", "Target UI component file")
 	return cmd
 }
 
@@ -120,7 +120,7 @@ func newCanvasRelateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "relate",
 		Short: "Bind a Plane ticket to a UI feature and Penpot frame",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			bridge := newCanvasBridge()
 			if err := bridge.RelateTicketToFeature(cmd.Context(), rel); err != nil {
@@ -131,8 +131,8 @@ func newCanvasRelateCmd() *cobra.Command {
 				return fmt.Errorf("relation for %s was not saved", rel.TicketID)
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, saved)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, saved)
 			}
 			fmt.Fprintf(out, "[✓] Bound Plane ticket '%s' to feature '%s'\n", saved.TicketID, saved.FeatureName)
 			fmt.Fprintf(out, "  Penpot Frame URL: %s\n", saved.PenpotFrameURL)
@@ -143,12 +143,12 @@ func newCanvasRelateCmd() *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	addTicketFlag(cmd, &rel.TicketID, "")
+	cli.AddTicketFlag(cmd, &rel.TicketID, "")
 	f.StringVar(&rel.FeatureName, "feature", "", "Feature name")
 	f.StringVar(&rel.ComponentPath, "component", "", "Component file path")
 	f.StringVar(&rel.PenpotFrameID, "frame", "", "Penpot frame ID or slug")
 	f.StringVar(&rel.Description, "desc", "", "Description or acceptance context")
-	requireFlags(cmd, "ticket", "feature")
+	cli.RequireFlags(cmd, "ticket", "feature")
 	return cmd
 }
 
@@ -158,15 +158,15 @@ func newCanvasSyncCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Sync a UI component with its Penpot frame and Plane ticket",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			res, err := newCanvasBridge().SyncComponentWithPenpot(cmd.Context(), ticket, file, dryRun)
 			if err != nil {
 				return fmt.Errorf("sync component: %w", err)
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, res)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, res)
 			}
 			fmt.Fprintf(out, "[✓] Synchronized component '%s' with Penpot Frame\n", res.FeatureName)
 			fmt.Fprintf(out, "  Frame URL:     %s\n", res.PenpotFrameURL)
@@ -176,10 +176,10 @@ func newCanvasSyncCmd() *cobra.Command {
 			return nil
 		},
 	}
-	addFileFlag(cmd, &file, "", "UI component file")
-	addTicketFlag(cmd, &ticket, "")
-	addDryRunFlag(cmd, &dryRun)
-	requireFlags(cmd, "file")
+	cli.AddFileFlag(cmd, &file, "", "UI component file")
+	cli.AddTicketFlag(cmd, &ticket, "")
+	cli.AddDryRunFlag(cmd, &dryRun)
+	cli.RequireFlags(cmd, "file")
 	return cmd
 }
 
@@ -189,7 +189,7 @@ func newCanvasUpdateStateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update-state",
 		Short: "Move a ticket to a new state and record a note",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			req.PushToPlane = !noPlane
 			res, err := newCanvasBridge().UpdateProjectState(cmd.Context(), req)
@@ -197,8 +197,8 @@ func newCanvasUpdateStateCmd() *cobra.Command {
 				return fmt.Errorf("update state: %w", err)
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, res)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, res)
 			}
 			fmt.Fprintf(out, "[✓] %s\n", res.Message)
 			fmt.Fprintf(out, "  Ticket ID:    %s\n", res.TicketID)
@@ -208,12 +208,12 @@ func newCanvasUpdateStateCmd() *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	addTicketFlag(cmd, &req.TicketID, "")
+	cli.AddTicketFlag(cmd, &req.TicketID, "")
 	f.StringVar(&req.TargetState, "state", "", "Target state (In Progress, To Verify, Done)")
 	f.StringVar(&req.Comment, "comment", "", "Status note or verification remark")
 	f.StringVar(&req.PenpotFrameURL, "penpot-url", "", "Penpot frame deep link")
 	f.BoolVar(&noPlane, "no-plane", false, "Do not push the change to Plane")
-	requireFlags(cmd, "ticket", "state")
+	cli.RequireFlags(cmd, "ticket", "state")
 	return cmd
 }
 
@@ -222,12 +222,12 @@ func newCanvasListCmd() *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List ticket-to-feature relations",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			relations := newCanvasBridge().ListTicketRelations()
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, relations)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, relations)
 			}
 			fmt.Fprintf(out, "[✓] Registered Ticket-Feature Relations (%d total):\n", len(relations))
 			for _, r := range relations {

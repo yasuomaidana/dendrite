@@ -1,15 +1,15 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/mcpserver"
+	"Dendrite/pkg/ollama"
+	"Dendrite/pkg/synapse"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"time"
-
-	"Dendrite/pkg/mcpserver"
-	"Dendrite/pkg/ollama"
-	"Dendrite/pkg/synapse"
 
 	"github.com/spf13/cobra"
 )
@@ -18,7 +18,7 @@ import (
 func buildMCPServer(profile mcpserver.Profile) *mcpserver.Server {
 	srv := mcpserver.NewServer(mcpserver.ServerConfig{
 		Name:    "Dendrite Control Plane MCP Server",
-		Version: version,
+		Version: cli.Version,
 	})
 	mcpserver.RegisterDefaultTools(srv, mcpserver.Dependencies{
 		DevStatus: "DEV_STATUS.md",
@@ -33,12 +33,12 @@ func buildSynapseMCPServer(id string) (*mcpserver.Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return mcpserver.NewSynapseServer(mcpserver.SynapseScope{Store: st, ID: id}, version)
+	return mcpserver.NewSynapseServer(mcpserver.SynapseScope{Store: st, ID: id}, cli.Version)
 }
 
 // newInterCmd builds `dendrite inter` (alias mcp): the Model Context Protocol server over stdio.
 func newInterCmd() *cobra.Command {
-	cmd := newGroupCmd("inter", "Model Context Protocol (MCP) server over stdio", "cleft", "mcp", "interneuron-mcp")
+	cmd := cli.NewGroupCmd("inter", "Model Context Protocol (MCP) server over stdio", "cleft", "mcp", "interneuron-mcp")
 	cmd.Example = "dendrite inter serve\n" +
 		"dendrite inter serve --synapse web-api\n" +
 		"dendrite inter tools\n" +
@@ -55,7 +55,7 @@ func newInterCmd() *cobra.Command {
 			profile, err = mcpserver.ProfileFromEnv(mcpserver.ProfileCore)
 		}
 		if err != nil {
-			return nil, usageErrorf("%v", err)
+			return nil, cli.UsageErrorf("%v", err)
 		}
 		return buildMCPServer(profile), nil
 	}
@@ -64,7 +64,7 @@ func newInterCmd() *cobra.Command {
 		Use:     "serve",
 		Aliases: []string{"stdio"},
 		Short:   "Serve MCP over stdin/stdout",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			srv, err := server()
 			if err != nil {
@@ -80,7 +80,7 @@ func newInterCmd() *cobra.Command {
 		Use:     "tools",
 		Aliases: []string{"list", "ls"},
 		Short:   "List the registered MCP tools",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			srv, err := server()
 			if err != nil {
@@ -92,12 +92,12 @@ func newInterCmd() *cobra.Command {
 	call := &cobra.Command{
 		Use:   "call <tool> [arguments-json]",
 		Short: "Call one MCP tool and print its result",
-		Args:  rangeArgs(1, 2),
+		Args:  cli.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			callArgs := map[string]any{}
 			if len(args) > 1 {
 				if err := json.Unmarshal([]byte(args[1]), &callArgs); err != nil {
-					return usageErrorf("arguments must be a JSON object: %v", err)
+					return cli.UsageErrorf("arguments must be a JSON object: %v", err)
 				}
 			}
 			srv, err := server()
@@ -114,7 +114,7 @@ func newInterCmd() *cobra.Command {
 		Long: "probe calls only tools that read (never create, update or delete anything) and reports PASS, FAIL or SKIP\n" +
 			"for each. Plane, Ollama and the RAG sidecar must be running for their tools to pass; a FAIL names the\n" +
 			"reason. Run it against the profile you ship: tools outside the profile are SKIP.",
-		Args: noArgs,
+		Args: cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			srv, err := server()
 			if err != nil {
@@ -140,8 +140,8 @@ func newInterCmd() *cobra.Command {
 
 func runInterTools(srv *mcpserver.Server, out io.Writer) error {
 	tools := srv.ListTools()
-	if globals.JSON {
-		return writeJSON(out, tools)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, tools)
 	}
 	fmt.Fprintf(out, "[+] Registered Dendrite MCP Tools (%d):\n", len(tools))
 	for _, t := range tools {
@@ -166,5 +166,5 @@ func runInterCall(ctx context.Context, srv *mcpserver.Server, tool string, callA
 	if resp.Error != nil {
 		return fmt.Errorf("MCP error (%d): %s", resp.Error.Code, resp.Error.Message)
 	}
-	return writeJSON(out, resp.Result)
+	return cli.WriteJSON(out, resp.Result)
 }

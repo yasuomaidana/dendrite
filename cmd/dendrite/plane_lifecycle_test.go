@@ -1,7 +1,9 @@
 package main
 
 import (
+	"Dendrite/pkg/planesvc/planetest"
 	"Dendrite/pkg/testkit"
+	"Dendrite/pkg/tracker/plane"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,9 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/planesvc/planetest"
-	"Dendrite/pkg/tracker/plane"
 )
 
 // lifecycleCLI points `dendrite chronos` at a stateful Plane board and a working copy on branch agent/den-377.

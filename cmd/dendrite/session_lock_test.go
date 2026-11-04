@@ -1,6 +1,8 @@
 package main
 
 import (
+	"Dendrite/pkg/ticketlock"
+	"Dendrite/pkg/tracker"
 	"bytes"
 	"context"
 	"os"
@@ -8,9 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"Dendrite/pkg/ticketlock"
-	"Dendrite/pkg/tracker"
 )
 
 // inRepoOnBranch makes a git repository on branch, runs the test inside it and isolates the state

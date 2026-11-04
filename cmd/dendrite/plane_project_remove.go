@@ -1,6 +1,11 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/planesvc"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/synapse"
+	"Dendrite/pkg/tracker/plane"
 	"bufio"
 	"context"
 	"errors"
@@ -11,11 +16,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-
-	"Dendrite/pkg/planesvc"
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/synapse"
-	"Dendrite/pkg/tracker/plane"
 )
 
 type planeProjectRemoveOptions struct {
@@ -45,12 +45,12 @@ func newChronosProjectRemoveCmd() *cobra.Command {
 			"project leaves the global index, and it is remembered in ~/.dendrite/untracked.json so\n" +
 			"`chronos project audit` does not report it. Projects that are members of a synapse are refused\n" +
 			"unless --force. Without --yes (-y) you confirm (--purge: by typing each project's name).",
-		Args:    minArgs(1),
+		Args:    cli.MinArgs(1),
 		Example: "dendrite chronos project remove OLDPROJ\ndendrite chronos project remove ~/work/old-repo --purge --yes",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o.Refs = args
-			o.Yes = globals.Yes
-			o.Interactive = stdinIsTerminal()
+			o.Yes = cli.Globals.Yes
+			o.Interactive = cli.StdinIsTerminal()
 			return planeRun(func(c *plane.Client) error {
 				return planeProjectRemove(cmd.Context(), c, planesvc.Default(), o, cmd.InOrStdin(), cmd.OutOrStdout())
 			})

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,10 +30,10 @@ func TestPlexus_Lifecycle(t *testing.T) {
 	core := writeGoModule(t, root, "core", "")
 	api := writeGoModule(t, root, "api", "core")
 
-	if out, code := cliOutput(t, "plexus", "resolve"); code != ExitError {
+	if out, code := cliOutput(t, "plexus", "resolve"); code != cli.ExitError {
 		t.Fatalf("resolve on an empty pool: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "plexus", "list"); code != ExitOK || !strings.Contains(out, "No projects registered") {
+	if out, code := cliOutput(t, "plexus", "list"); code != cli.ExitOK || !strings.Contains(out, "No projects registered") {
 		t.Fatalf("empty list: exit %d\n%s", code, out)
 	}
 	steps := []struct {
@@ -48,11 +49,11 @@ func TestPlexus_Lifecycle(t *testing.T) {
 	}
 	for _, s := range steps {
 		out, code := cliOutput(t, s.args...)
-		if code != ExitOK || !strings.Contains(out, s.want) {
+		if code != cli.ExitOK || !strings.Contains(out, s.want) {
 			t.Errorf("%v: exit %d\n%s", s.args, code, out)
 		}
 	}
-	if _, code := cliOutput(t, "plexus", "add", filepath.Join(root, "missing")); code != ExitError {
+	if _, code := cliOutput(t, "plexus", "add", filepath.Join(root, "missing")); code != cli.ExitError {
 		t.Errorf("adding a missing directory should fail: exit %d", code)
 	}
 }
@@ -64,8 +65,8 @@ func TestPlexus_UsageErrors(t *testing.T) {
 		{"plexus", "split", "--module", "pkg/x"},
 		{"plexus", "remove"},
 	} {
-		if out, code := cliOutput(t, args...); code != ExitUsage {
-			t.Errorf("%v: exit %d, want %d\n%s", args, code, ExitUsage, out)
+		if out, code := cliOutput(t, args...); code != cli.ExitUsage {
+			t.Errorf("%v: exit %d, want %d\n%s", args, code, cli.ExitUsage, out)
 		}
 	}
 }
@@ -73,10 +74,10 @@ func TestPlexus_UsageErrors(t *testing.T) {
 func TestPlexus_SwitchAndSplitFailures(t *testing.T) {
 	t.Setenv("DENDRITE_STATE_DIR", t.TempDir())
 	dir := t.TempDir()
-	if _, code := cliOutput(t, "plexus", "switch", "core", "--in", dir, "--mode", "bogus"); code != ExitError {
+	if _, code := cliOutput(t, "plexus", "switch", "core", "--in", dir, "--mode", "bogus"); code != cli.ExitError {
 		t.Errorf("switch with a bad mode: exit %d", code)
 	}
-	if _, code := cliOutput(t, "plexus", "split", "--from", dir, "--module", "nope", "--name", "x", "--target-dir", filepath.Join(dir, "out")); code != ExitError {
+	if _, code := cliOutput(t, "plexus", "split", "--from", dir, "--module", "nope", "--name", "x", "--target-dir", filepath.Join(dir, "out")); code != cli.ExitError {
 		t.Errorf("split of a missing module: exit %d", code)
 	}
 }

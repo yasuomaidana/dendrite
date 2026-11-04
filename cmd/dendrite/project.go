@@ -1,11 +1,11 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/workspace"
 	"fmt"
 	"io"
 	"time"
-
-	"Dendrite/pkg/workspace"
 
 	"github.com/spf13/cobra"
 )
@@ -15,7 +15,7 @@ var newProjectRegistry = func() (*workspace.Registry, error) { return workspace.
 
 // newGanglionCmd builds `dendrite ganglion` (alias project): the multi-project workspace registry.
 func newGanglionCmd() *cobra.Command {
-	cmd := newGroupCmd("ganglion", "Manage multi-project isolated workspaces", "soma",
+	cmd := cli.NewGroupCmd("ganglion", "Manage multi-project isolated workspaces", "soma",
 		"project", "ganglion-workspace", "prj")
 	cmd.Example = "dendrite ganglion add dendrite ~/GoLandProjects/Dendrite\n" +
 		"dendrite ganglion switch dendrite\n" +
@@ -25,7 +25,7 @@ func newGanglionCmd() *cobra.Command {
 	add := &cobra.Command{
 		Use:   "add <name> <path>",
 		Short: "Register a project and its isolated data directory",
-		Args:  exactArgs(2),
+		Args:  cli.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withRegistry(func(reg *workspace.Registry) error {
 				return runGanglionAdd(reg, args[0], args[1], cmd.OutOrStdout())
@@ -35,7 +35,7 @@ func newGanglionCmd() *cobra.Command {
 	switchCmd := &cobra.Command{
 		Use:   "switch <name>",
 		Short: "Make a registered project the active context",
-		Args:  exactArgs(1),
+		Args:  cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withRegistry(func(reg *workspace.Registry) error {
 				return runGanglionSwitch(reg, args[0], cmd.OutOrStdout())
@@ -46,7 +46,7 @@ func newGanglionCmd() *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List registered projects (* marks the active one)",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withRegistry(func(reg *workspace.Registry) error {
 				return runGanglionList(reg, cmd.OutOrStdout())
@@ -58,7 +58,7 @@ func newGanglionCmd() *cobra.Command {
 		Use:     "remove <name>",
 		Aliases: []string{"rm"},
 		Short:   "Unregister a project",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withRegistry(func(reg *workspace.Registry) error {
 				return runGanglionRemove(reg, args[0], purge, cmd.OutOrStdout())
@@ -84,8 +84,8 @@ func runGanglionAdd(reg *workspace.Registry, name, path string, out io.Writer) e
 	if err != nil {
 		return fmt.Errorf("register project: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, entry)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, entry)
 	}
 	fmt.Fprintf(out, "[✓] Project '%s' registered successfully (Virtual Key: %s)\n", entry.Name, entry.VirtualKeyAlias)
 	fmt.Fprintf(out, "    - Code Path:   %s\n", entry.Path)
@@ -101,8 +101,8 @@ func runGanglionSwitch(reg *workspace.Registry, name string, out io.Writer) erro
 	if err != nil {
 		return fmt.Errorf("switch project: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, entry)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, entry)
 	}
 	fmt.Fprintf(out, "[✓] Switched active context to '%s' in %v\n", entry.Name, time.Since(start))
 	fmt.Fprintf(out, "    - Virtual Key Alias: %s\n", entry.VirtualKeyAlias)
@@ -112,11 +112,11 @@ func runGanglionSwitch(reg *workspace.Registry, name string, out io.Writer) erro
 
 func runGanglionList(reg *workspace.Registry, out io.Writer) error {
 	projects := reg.ListProjects()
-	if globals.JSON {
+	if cli.Globals.JSON {
 		if projects == nil {
 			projects = []workspace.ProjectEntry{}
 		}
-		return writeJSON(out, projects)
+		return cli.WriteJSON(out, projects)
 	}
 	activeName := ""
 	if active, _ := reg.GetActiveProject(); active != nil {

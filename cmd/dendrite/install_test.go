@@ -1,13 +1,12 @@
 package main
 
 import (
+	"Dendrite/pkg/synapse"
 	"bytes"
 	"context"
 	"io"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/synapse"
 
 	"github.com/spf13/cobra"
 )

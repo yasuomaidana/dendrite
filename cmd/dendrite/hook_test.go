@@ -1,11 +1,11 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/searchguard"
 	"bytes"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/searchguard"
 )
 
 func TestPreToolHookBlocksOnceAllowsTheRepeatAndFailsOpen(t *testing.T) {
@@ -13,8 +13,8 @@ func TestPreToolHookBlocksOnceAllowsTheRepeatAndFailsOpen(t *testing.T) {
 	event := `{"session_id":"s","cwd":"/r","tool_name":"Bash","tool_input":{"command":"rg Foo pkg/"}}`
 
 	err := runPreTool(strings.NewReader(event), g)
-	if err == nil || exitCodeFor(err) != ExitUsage || !strings.Contains(err.Error(), "dendrite rag search") {
-		t.Fatalf("first attempt: err = %v (exit %d), want exit 2 with the dendrite equivalents", err, exitCodeFor(err))
+	if err == nil || cli.ExitCodeFor(err) != cli.ExitUsage || !strings.Contains(err.Error(), "dendrite rag search") {
+		t.Fatalf("first attempt: err = %v (exit %d), want exit 2 with the dendrite equivalents", err, cli.ExitCodeFor(err))
 	}
 	if err := runPreTool(strings.NewReader(event), g); err != nil {
 		t.Errorf("the repeat was blocked: %v", err)

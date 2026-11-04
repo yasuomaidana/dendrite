@@ -1,11 +1,11 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/query/reuse"
 	"fmt"
 	"io"
 	"strings"
-
-	"Dendrite/pkg/query/reuse"
 
 	"github.com/spf13/cobra"
 )
@@ -15,7 +15,7 @@ func newRefManager() *reuse.RefManager { return reuse.NewRefManager("") }
 
 // newAfferentCmd builds `dendrite afferent` (alias ref): Tier 1 source references for reuse and cleanroom synthesis.
 func newAfferentCmd() *cobra.Command {
-	cmd := newGroupCmd("afferent", "Manage Tier 1 source references for library reuse and cleanroom synthesis", "arbor",
+	cmd := cli.NewGroupCmd("afferent", "Manage Tier 1 source references for library reuse and cleanroom synthesis", "arbor",
 		"ref", "dendritic-afferent", "aff")
 	cmd.Example = "dendrite afferent list --json\n" +
 		"dendrite afferent add --id totp-go --repo https://github.com/pquerna/otp --lang go --caps totp,hotp\n" +
@@ -25,7 +25,7 @@ func newAfferentCmd() *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List registered source references",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAfferentList(newRefManager(), cmd.OutOrStdout())
 		},
@@ -35,7 +35,7 @@ func newAfferentCmd() *cobra.Command {
 	add := &cobra.Command{
 		Use:   "add",
 		Short: "Register a source reference",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if ref.Name == "" {
 				ref.Name = ref.ID
@@ -54,13 +54,13 @@ func newAfferentCmd() *cobra.Command {
 	f.StringVar(&ref.Language, "lang", "", "Primary language")
 	f.StringSliceVar(&ref.Capabilities, "caps", nil, "Capabilities (comma-separated)")
 	f.StringVar(&ref.License, "license", "", "SPDX license identifier")
-	requireFlags(add, "id", "repo")
+	cli.RequireFlags(add, "id", "repo")
 
 	remove := &cobra.Command{
 		Use:     "remove <id>",
 		Aliases: []string{"rm"},
 		Short:   "Remove a source reference",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := newRefManager().RemoveRef(args[0]); err != nil {
 				return fmt.Errorf("remove reference %s: %w", args[0], err)
@@ -79,11 +79,11 @@ func runAfferentList(mgr *reuse.RefManager, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("list source references: %w", err)
 	}
-	if globals.JSON {
+	if cli.Globals.JSON {
 		if refs == nil {
 			refs = []reuse.SourceReference{}
 		}
-		return writeJSON(out, refs)
+		return cli.WriteJSON(out, refs)
 	}
 	fmt.Fprintf(out, "[+] Registered Source References (Tier 1: %d repos):\n", len(refs))
 	for _, r := range refs {

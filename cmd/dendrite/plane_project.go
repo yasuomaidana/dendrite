@@ -1,6 +1,11 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/projectaudit"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/synapse"
+	"Dendrite/pkg/tracker/plane"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,11 +17,6 @@ import (
 	"sort"
 	"strings"
 	"text/tabwriter"
-
-	"Dendrite/pkg/projectaudit"
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/synapse"
-	"Dendrite/pkg/tracker/plane"
 
 	"github.com/spf13/cobra"
 )
@@ -35,14 +35,14 @@ type planeProjectEnsureOptions struct {
 
 // newChronosProjectCmd builds `chronos project`: the repository's Plane project link and the project rule audit.
 func newChronosProjectCmd() *cobra.Command {
-	cmd := newGroupCmd("project", "Link the repository to its Plane project and audit the project rule", "")
+	cmd := cli.NewGroupCmd("project", "Link the repository to its Plane project and audit the project rule", "")
 	var eo planeProjectEnsureOptions
 	ensure := &cobra.Command{
 		Use:   "ensure [dir]",
 		Short: "Adopt or create the repository's Plane project, converge its states, and write .dendrite/plane.json",
 		Long: "Adopt or create the repository's Plane project, converge its states, and write .dendrite/plane.json.\n" +
 			"--import loads a markdown checklist (e.g. DEV_STATUS.md) as issues, one module per milestone.",
-		Args:    maxArgs(1),
+		Args:    cli.MaxArgs(1),
 		Example: "dendrite chronos project ensure\ndendrite chronos project ensure ../dendrite-git-rs --identifier DGIT --import DEV_STATUS.md",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			eo.Dir = "."
@@ -63,7 +63,7 @@ func newChronosProjectCmd() *cobra.Command {
 	show := &cobra.Command{
 		Use:     "show [dir]",
 		Short:   "Print the Plane project linked to the repository",
-		Args:    maxArgs(1),
+		Args:    cli.MaxArgs(1),
 		Example: "dendrite chronos project show",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := "."
@@ -80,7 +80,7 @@ func newChronosProjectCmd() *cobra.Command {
 		Short: "Check that every editable repository is a Plane project and related repositories share a synapse",
 		Long: "Check the rule: every editable repository is a Plane project, and repositories that\n" +
 			"depend on each other share a synapse. Exits non-zero when a repository breaks it.",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite chronos project audit\ndendrite chronos project audit --roots ~/GoLandProjects,~/RustRoverProjects --json",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeProjectAudit(roots, owners, cmd.OutOrStdout())
@@ -211,7 +211,7 @@ func planeProjectAudit(rawRoots, owners []string, out io.Writer) error {
 
 	rep := projectaudit.Audit(projectaudit.Discover(roots), owners, syns)
 	rep.MissingProject = withoutUntracked(rep.MissingProject)
-	if globals.JSON {
+	if cli.Globals.JSON {
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(rep); err != nil {

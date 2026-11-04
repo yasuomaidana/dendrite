@@ -1,6 +1,9 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/synapsesync"
+	"Dendrite/pkg/tracker/plane"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,9 +15,6 @@ import (
 	"syscall"
 	"text/tabwriter"
 	"time"
-
-	"Dendrite/pkg/synapsesync"
-	"Dendrite/pkg/tracker/plane"
 
 	"github.com/spf13/cobra"
 )
@@ -70,20 +70,20 @@ func (f syncFlags) options(intervalSet bool) (synapsesync.Options, syncCLI, erro
 	if opts.DefaultPlaneProject == "" {
 		opts.DefaultPlaneProject = os.Getenv("PLANE_PROJECT_ID")
 	}
-	cli := syncCLI{asJSON: globals.JSON, watch: f.Watch, interval: synapsesync.IntervalFromEnv()}
+	mode := syncCLI{asJSON: cli.Globals.JSON, watch: f.Watch, interval: synapsesync.IntervalFromEnv()}
 	if intervalSet {
 		if f.Interval <= 0 {
-			return opts, cli, usageErrorf("invalid --interval %s", f.Interval)
+			return opts, mode, cli.UsageErrorf("invalid --interval %s", f.Interval)
 		}
-		cli.interval = f.Interval
+		mode.interval = f.Interval
 	}
 	if opts.GitOnly && opts.PlaneOnly {
-		return opts, cli, usageErrorf("--git-only and --plane-only are mutually exclusive")
+		return opts, mode, cli.UsageErrorf("--git-only and --plane-only are mutually exclusive")
 	}
-	if cli.watch && cli.interval <= 0 {
-		return opts, cli, usageErrorf("--watch needs a positive interval (DENDRITE_SYNC_INTERVAL=0 disables it)")
+	if mode.watch && mode.interval <= 0 {
+		return opts, mode, cli.UsageErrorf("--watch needs a positive interval (DENDRITE_SYNC_INTERVAL=0 disables it)")
 	}
-	return opts, cli, nil
+	return opts, mode, nil
 }
 
 // newSyncCmd builds `dendrite sync` (alias propagate): push commits and refresh Plane across synapse peers.
@@ -96,16 +96,16 @@ func newSyncCmd() *cobra.Command {
 		Long: "Pushes unpushed commits and refreshes the Plane board of the current project and of\n" +
 			"every project linked to it through a synapse, then records each synapse's health.",
 		GroupID: "boutons",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite sync\ndendrite sync --all --watch --interval 10m\ndendrite sync --synapse dendrite-ecosystem --dry-run\ndendrite sync --all --git-only",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts, cli, err := f.options(cmd.Flags().Changed("interval"))
+			opts, mode, err := f.options(cmd.Flags().Changed("interval"))
 			if err != nil {
 				return err
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			return runSync(ctx, opts, cli, cmd.OutOrStdout())
+			return runSync(ctx, opts, mode, cmd.OutOrStdout())
 		},
 	}
 	f.bind(cmd)
@@ -113,7 +113,7 @@ func newSyncCmd() *cobra.Command {
 }
 
 // runSync executes `dendrite sync`, writing the report to out.
-func runSync(ctx context.Context, opts synapsesync.Options, cli syncCLI, out io.Writer) error {
+func runSync(ctx context.Context, opts synapsesync.Options, mode syncCLI, out io.Writer) error {
 	var err error
 	if !opts.All {
 		if opts.StartDir, err = os.Getwd(); err != nil {
@@ -126,15 +126,15 @@ func runSync(ctx context.Context, opts synapsesync.Options, cli syncCLI, out io.
 		}
 	}
 
-	if cli.watch {
-		fmt.Fprintf(out, "[+] Watching: syncing every %s (Ctrl-C to stop)\n", cli.interval)
-		return synapsesync.Watch(ctx, opts, cli.interval, func(report *synapsesync.Report, err error) {
+	if mode.watch {
+		fmt.Fprintf(out, "[+] Watching: syncing every %s (Ctrl-C to stop)\n", mode.interval)
+		return synapsesync.Watch(ctx, opts, mode.interval, func(report *synapsesync.Report, err error) {
 			fmt.Fprintf(out, "\n[%s] sync pass\n", time.Now().Format(time.RFC3339))
 			if err != nil {
 				fmt.Fprintf(out, "[-] %v\n", err)
 				return
 			}
-			_ = emitSyncReport(out, report, cli.asJSON)
+			_ = emitSyncReport(out, report, mode.asJSON)
 		})
 	}
 
@@ -142,7 +142,7 @@ func runSync(ctx context.Context, opts synapsesync.Options, cli syncCLI, out io.
 	if err != nil {
 		return err
 	}
-	if err := emitSyncReport(out, report, cli.asJSON); err != nil {
+	if err := emitSyncReport(out, report, mode.asJSON); err != nil {
 		return err
 	}
 	if report.Failed() {

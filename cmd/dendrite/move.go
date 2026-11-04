@@ -1,6 +1,8 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/node/migrate"
 	"context"
 	"fmt"
 	"io"
@@ -10,14 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"Dendrite/pkg/node/migrate"
-
 	"github.com/spf13/cobra"
 )
 
 // newTranslocateCmd builds `dendrite translocate` (alias move): capacity planning and SSH service migration.
 func newTranslocateCmd() *cobra.Command {
-	cmd := newGroupCmd("translocate", "Zero-credential interactive service migration across SSH nodes", "axon",
+	cmd := cli.NewGroupCmd("translocate", "Zero-credential interactive service migration across SSH nodes", "axon",
 		"move", "axonal-translocation", "mv")
 	cmd.Example = "dendrite translocate plan --ram 4GB --disk 1TB\n" +
 		"dendrite translocate run plane litellm --ssh user@debian-server --dry-run\n" +
@@ -27,15 +27,15 @@ func newTranslocateCmd() *cobra.Command {
 	plan := &cobra.Command{
 		Use:   "plan",
 		Short: "Show which services fit on a target server of the given size",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ram, disk, err := parseCapacity(ramStr, diskStr)
 			if err != nil {
 				return err
 			}
 			p := migrate.EvaluateDebianServer(ram, disk)
-			if globals.JSON {
-				return writeJSON(cmd.OutOrStdout(), p)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(cmd.OutOrStdout(), p)
 			}
 			printDebianCapacityPlan(cmd.OutOrStdout(), p)
 			return nil
@@ -55,11 +55,11 @@ func addCapacityFlags(cmd *cobra.Command, ram, disk *string) {
 func parseCapacity(ramStr, diskStr string) (ramMB, diskGB uint64, err error) {
 	ramMB, ok := parseSizeToMB(ramStr)
 	if !ok {
-		return 0, 0, usageErrorf("invalid --ram %q: use a size like 4GB or 4096MB", ramStr)
+		return 0, 0, cli.UsageErrorf("invalid --ram %q: use a size like 4GB or 4096MB", ramStr)
 	}
 	diskGB, ok = parseSizeToGB(diskStr)
 	if !ok {
-		return 0, 0, usageErrorf("invalid --disk %q: use a size like 1TB or 1000GB", diskStr)
+		return 0, 0, cli.UsageErrorf("invalid --disk %q: use a size like 1TB or 1000GB", diskStr)
 	}
 	return ramMB, diskGB, nil
 }
@@ -71,7 +71,7 @@ func newTranslocateRunCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run <service>...",
 		Short: "Move services (or 'debian' for the full eligible set) to a host over SSH",
-		Args:  minArgs(1),
+		Args:  cli.MinArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ram, disk, err := parseCapacity(ramStr, diskStr)
 			if err != nil {
@@ -86,7 +86,7 @@ func newTranslocateRunCmd() *cobra.Command {
 			}
 			req.TargetRAMMB, req.TargetDiskGB = ram, disk
 			req.PruneLocal = !noPrune
-			req.AutoApprove = globals.Yes
+			req.AutoApprove = cli.Globals.Yes
 			req.In, req.Out = cmd.InOrStdin(), cmd.OutOrStdout()
 			return runTranslocate(cmd.Context(), req, cmd.OutOrStdout())
 		},
@@ -97,10 +97,10 @@ func newTranslocateRunCmd() *cobra.Command {
 	f.StringVarP(&req.SSHUser, "user", "u", "", "SSH user (default from the host or the deployer)")
 	f.StringVarP(&req.KeyPath, "key", "i", "", "SSH identity file (default: ssh-agent)")
 	addCapacityFlags(cmd, &ramStr, &diskStr)
-	addDryRunFlag(cmd, &req.DryRun)
+	cli.AddDryRunFlag(cmd, &req.DryRun)
 	f.BoolVar(&noPrune, "no-prune", false, "Keep the local containers running after the move")
 	f.DurationVar(&req.Timeout, "timeout", req.Timeout, "Remote health check timeout")
-	requireFlags(cmd, "ssh")
+	cli.RequireFlags(cmd, "ssh")
 	return cmd
 }
 

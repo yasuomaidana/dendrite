@@ -1,13 +1,12 @@
 package main
 
 import (
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/synapse"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/synapse"
 )
 
 func projectWithID(t *testing.T, name string) (dir, id string) {

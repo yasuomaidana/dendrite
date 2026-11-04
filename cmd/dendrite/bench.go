@@ -1,16 +1,16 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/inference"
+	"Dendrite/pkg/perf"
+	"Dendrite/pkg/telemetry"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"time"
-
-	"Dendrite/pkg/inference"
-	"Dendrite/pkg/perf"
-	"Dendrite/pkg/telemetry"
 
 	"github.com/spf13/cobra"
 )
@@ -19,7 +19,7 @@ const ollamaFailoverEndpoint = "http://127.0.0.1:11434/v1/chat/completions"
 
 // newVelocityCmd builds `dendrite velocity` (alias bench): TTFT/TPS and gateway resilience benchmarks.
 func newVelocityCmd() *cobra.Command {
-	cmd := newGroupCmd("velocity", "TTFT, TPS, and gateway resilience benchmarking suite", "axon",
+	cmd := cli.NewGroupCmd("velocity", "TTFT, TPS, and gateway resilience benchmarking suite", "axon",
 		"bench", "benchmark", "conduction-velocity", "bnch")
 	cmd.Example = "dendrite velocity inference --engine oxillama --vus 5 --duration 15s\n" +
 		"dendrite velocity gateway --fault 429 --output gateway.md\n" +
@@ -44,10 +44,10 @@ func addBenchLoadFlags(cmd *cobra.Command, l *benchLoad, vus int, duration time.
 
 func (l benchLoad) validate() error {
 	if l.VUs <= 0 {
-		return usageErrorf("--vus must be positive")
+		return cli.UsageErrorf("--vus must be positive")
 	}
 	if l.Duration <= 0 {
-		return usageErrorf("--duration must be positive")
+		return cli.UsageErrorf("--duration must be positive")
 	}
 	return nil
 }
@@ -85,7 +85,7 @@ func newVelocityInferenceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "inference",
 		Short: "Benchmark an inference engine's TTFT and TPS",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := load.validate(); err != nil {
 				return err
@@ -121,7 +121,7 @@ func newVelocityInferenceCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&engineID, "engine", "oxillama", "Inference engine ID")
-	addModelFlag(cmd, &model, "qwen2.5-coder-7b")
+	cli.AddModelFlag(cmd, &model, "qwen2.5-coder-7b")
 	cmd.Flags().StringVar(&endpoint, "endpoint", "", "Target API endpoint (default: the engine's endpoint)")
 	addBenchLoadFlags(cmd, &load, 5, 15*time.Second)
 	return cmd
@@ -137,7 +137,7 @@ func parseFault(s string) (perf.FaultInjectionType, error) {
 	case "node-glitch-503", "503":
 		return perf.FaultNodeGlitch503, nil
 	}
-	return "", usageErrorf("unknown --fault %q: use none, 429 (rate-limit-429) or 503 (node-glitch-503)", s)
+	return "", cli.UsageErrorf("unknown --fault %q: use none, 429 (rate-limit-429) or 503 (node-glitch-503)", s)
 }
 
 func newVelocityGatewayCmd() *cobra.Command {
@@ -146,7 +146,7 @@ func newVelocityGatewayCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "gateway",
 		Short: "Stress-test the LiteLLM gateway's fallback cascade under fault injection",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fault, err := parseFault(faultStr)
 			if err != nil {
@@ -160,7 +160,7 @@ func newVelocityGatewayCmd() *cobra.Command {
 			fmt.Fprintf(out, "    Virtual Users: %d | Duration: %v\n", load.VUs, load.Duration)
 			summary, err := runBenchmark(cmd.Context(), perf.BenchmarkConfig{
 				Mode:              perf.ModeGateway,
-				TargetEndpoint:    gatewayV1URL() + "/chat/completions",
+				TargetEndpoint:    cli.GatewayV1URL() + "/chat/completions",
 				FailoverEndpoint:  ollamaFailoverEndpoint,
 				EngineID:          "litellm-gateway",
 				Model:             "qwen2.5-coder:14b",
@@ -187,7 +187,7 @@ func newVelocityMatrixCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "matrix",
 		Short: "Benchmark every registered engine and compare them in one table",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := load.validate(); err != nil {
 				return err
@@ -249,10 +249,10 @@ func newVelocityStressCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stress",
 		Short: "Concurrency stress test of the sliding-window budget limiter",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if vus <= 0 || spends <= 0 {
-				return usageErrorf("--vus and --spends must be positive")
+				return cli.UsageErrorf("--vus and --spends must be positive")
 			}
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "[+] Executing Budget Limiter Concurrency Stress Test (%d VUs, %d spends)...\n", vus, spends)
@@ -263,8 +263,8 @@ func newVelocityStressCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("stress test: %w", err)
 			}
-			if globals.JSON {
-				return writeJSON(out, res)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, res)
 			}
 			fmt.Fprintf(out, "[✓] Stress Test Completed in %v (%.2f ops/sec, Race Detected: %v)\n",
 				res.Duration, res.OpsPerSec, res.RaceDetected)

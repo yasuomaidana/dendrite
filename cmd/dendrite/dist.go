@@ -1,20 +1,20 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/distcodebase"
+	"Dendrite/pkg/tracker/plane"
 	"context"
 	"fmt"
 	"io"
 	"strings"
-
-	"Dendrite/pkg/distcodebase"
-	"Dendrite/pkg/tracker/plane"
 
 	"github.com/spf13/cobra"
 )
 
 // newMeshCmd builds `dendrite mesh` (alias dist): the distributed codebase registry, decomposer and spawner.
 func newMeshCmd() *cobra.Command {
-	cmd := newGroupCmd("mesh", "Distributed codebase spawner, modular REA, and repo coordinator", "axon",
+	cmd := cli.NewGroupCmd("mesh", "Distributed codebase spawner, modular REA, and repo coordinator", "axon",
 		"dist", "distcodebase", "distributed", "neural-mesh")
 	cmd.Example = "dendrite mesh sources\n" +
 		"dendrite mesh resolve totp go\n" +
@@ -27,7 +27,7 @@ func newMeshCmd() *cobra.Command {
 			Use:     "sources",
 			Aliases: []string{"list-sources"},
 			Short:   "List codebase sources and registered libraries",
-			Args:    noArgs,
+			Args:    cli.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return runMeshSources(reg, cmd.OutOrStdout())
 			},
@@ -35,7 +35,7 @@ func newMeshCmd() *cobra.Command {
 		&cobra.Command{
 			Use:   "resolve <capability> [language]",
 			Short: "Find the highest-priority library that provides a capability",
-			Args:  rangeArgs(1, 2),
+			Args:  cli.RangeArgs(1, 2),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				lang := ""
 				if len(args) > 1 {
@@ -47,7 +47,7 @@ func newMeshCmd() *cobra.Command {
 		&cobra.Command{
 			Use:   "decompose <project> [target-spec]",
 			Short: "Plan a forced modular decomposition into reused libraries, custom modules and satellites",
-			Args:  rangeArgs(1, 2),
+			Args:  cli.RangeArgs(1, 2),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				target := ""
 				if len(args) > 1 {
@@ -64,8 +64,8 @@ func newMeshCmd() *cobra.Command {
 
 func runMeshSources(reg *distcodebase.Registry, out io.Writer) error {
 	sources, libs := reg.ListSources(), reg.ListLibraries()
-	if globals.JSON {
-		return writeJSON(out, map[string]any{"sources": sources, "libraries": libs})
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, map[string]any{"sources": sources, "libraries": libs})
 	}
 	fmt.Fprintf(out, "[+] Distributed Codebase Sources (%d):\n", len(sources))
 	for _, s := range sources {
@@ -88,8 +88,8 @@ func runMeshResolve(reg *distcodebase.Registry, capability, lang string, out io.
 	if !found {
 		return fmt.Errorf("no library provides capability '%s'", capability)
 	}
-	if globals.JSON {
-		return writeJSON(out, lib)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, lib)
 	}
 	fmt.Fprintf(out, "[+] Highest Priority Match for '%s':\n", capability)
 	fmt.Fprintf(out, "    Library:     %s (Priority %d, Owned: %t)\n", lib.Name, lib.Priority, lib.IsOwned)
@@ -110,8 +110,8 @@ func runMeshDecompose(reg *distcodebase.Registry, project, target string, out io
 	if err != nil {
 		return fmt.Errorf("decomposition: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, plan)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, plan)
 	}
 	fmt.Fprintf(out, "[+] Forced Modular Decomposition Plan for '%s':\n", project)
 	fmt.Fprintf(out, "    Total Modules:     %d\n", plan.TotalModules)
@@ -135,13 +135,13 @@ func runMeshDecompose(reg *distcodebase.Registry, project, target string, out io
 // newMeshInteropCmd builds the cross-project feature coordination subtree.
 // Coordinations live in memory, so complete and reconcile only see ones made in the same process.
 func newMeshInteropCmd(reg *distcodebase.Registry) *cobra.Command {
-	cmd := newGroupCmd("interop", "Coordinate a feature an owned dependency is missing", "")
+	cmd := cli.NewGroupCmd("interop", "Coordinate a feature an owned dependency is missing", "")
 	coord := distcodebase.NewInteropCoordinator(reg)
 	cmd.AddCommand(
 		&cobra.Command{
 			Use:   "coordinate <requester> <dependency> <feature>",
 			Short: "Open a coordination and emit an unblocking fallback marker",
-			Args:  exactArgs(3),
+			Args:  cli.ExactArgs(3),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				c, err := coord.CoordinateFeature(distcodebase.InteropRequest{
 					RequesterProject:  args[0],
@@ -153,8 +153,8 @@ func newMeshInteropCmd(reg *distcodebase.Registry) *cobra.Command {
 					return fmt.Errorf("interop coordination: %w", err)
 				}
 				out := cmd.OutOrStdout()
-				if globals.JSON {
-					return writeJSON(out, c)
+				if cli.Globals.JSON {
+					return cli.WriteJSON(out, c)
 				}
 				fmt.Fprintf(out, "[+] Interop Coordination Initialized (%s):\n", c.ID)
 				fmt.Fprintf(out, "    Requester:  %s\n", c.RequesterProject)
@@ -168,7 +168,7 @@ func newMeshInteropCmd(reg *distcodebase.Registry) *cobra.Command {
 		&cobra.Command{
 			Use:   "complete <coordination-id>",
 			Short: "Mark the dependency's feature as delivered",
-			Args:  exactArgs(1),
+			Args:  cli.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				c, err := coord.CompleteDependencyFeature(args[0])
 				if err != nil {
@@ -181,7 +181,7 @@ func newMeshInteropCmd(reg *distcodebase.Registry) *cobra.Command {
 		&cobra.Command{
 			Use:   "reconcile <coordination-id>",
 			Short: "Replace the fallback in the requester with the delivered feature",
-			Args:  exactArgs(1),
+			Args:  cli.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				rec, err := coord.ReconcileProject(args[0])
 				if err != nil {
@@ -196,12 +196,12 @@ func newMeshInteropCmd(reg *distcodebase.Registry) *cobra.Command {
 			Use:     "list",
 			Aliases: []string{"ls"},
 			Short:   "List coordinations",
-			Args:    noArgs,
+			Args:    cli.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				list := coord.ListCoordinations()
 				out := cmd.OutOrStdout()
-				if globals.JSON {
-					return writeJSON(out, list)
+				if cli.Globals.JSON {
+					return cli.WriteJSON(out, list)
 				}
 				fmt.Fprintf(out, "[+] Active Interop Coordinations (%d):\n", len(list))
 				for _, c := range list {
@@ -226,7 +226,7 @@ func newMeshSpawnCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "spawn <project> <target-dir> [language]",
 		Short: "Create a parallel or satellite project (git repo, workspace entry and Plane project)",
-		Args:  rangeArgs(2, 3),
+		Args:  cli.RangeArgs(2, 3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			lang := "rust"
 			if len(args) > 2 {

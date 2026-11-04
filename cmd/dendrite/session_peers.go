@@ -1,13 +1,12 @@
 package main
 
 import (
-	"fmt"
-	"io"
-	"strings"
-
 	"Dendrite/pkg/projectid"
 	"Dendrite/pkg/synapse"
 	"Dendrite/pkg/tracker/plane"
+	"fmt"
+	"io"
+	"strings"
 )
 
 // printSynapsePeers prints one line per synapse the repository containing dir belongs to, naming

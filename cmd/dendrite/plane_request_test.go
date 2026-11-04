@@ -1,6 +1,10 @@
 package main
 
 import (
+	"Dendrite/pkg/planesvc"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/synapse"
+	"Dendrite/pkg/tracker/plane"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -12,11 +16,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"Dendrite/pkg/planesvc"
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/synapse"
-	"Dendrite/pkg/tracker/plane"
 )
 
 // requestAPI is a workspace with three projects (DOC = this repository, OXI = a peer, TAX = a

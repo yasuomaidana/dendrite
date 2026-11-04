@@ -1,6 +1,10 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/env/bootstrap"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/tracker/plane"
 	"fmt"
 	"io"
 	"os"
@@ -8,10 +12,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-
-	"Dendrite/pkg/env/bootstrap"
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/tracker/plane"
 )
 
 // stateIgnoreLine is what keeps a repository's .dendrite/ out of git.
@@ -36,13 +36,13 @@ func newSomaMigrateStateCmd() *cobra.Command {
 			"its root commit and Plane binding in the index (so a fresh clone recovers both), adds\n" +
 			".dendrite/ to .gitignore and runs `git rm -r --cached .dendrite`. The files stay on disk and\n" +
 			"the changes are left uncommitted for you to review and commit per repository.",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite soma migrate-state --dry-run\ndendrite soma migrate-state",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSomaMigrateState(dryRun, cmd.OutOrStdout())
 		},
 	}
-	addDryRunFlag(cmd, &dryRun)
+	cli.AddDryRunFlag(cmd, &dryRun)
 	return cmd
 }
 
@@ -65,8 +65,8 @@ func runSomaMigrateState(dryRun bool, out io.Writer) error {
 			return err
 		}
 	}
-	if globals.JSON {
-		return writeJSON(out, reports)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, reports)
 	}
 	for _, r := range reports {
 		switch {

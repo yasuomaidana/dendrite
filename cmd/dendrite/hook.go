@@ -1,6 +1,9 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/searchguard"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,9 +13,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/searchguard"
 )
 
 // searchGuardDir is where the guard keeps its state and the usage log: Dendrite's home, so one log
@@ -27,7 +27,7 @@ func searchGuardDir() string {
 
 // newHookCmd builds `dendrite hook`: entry points that agent runtimes call around their tools.
 func newHookCmd() *cobra.Command {
-	cmd := newGroupCmd("hook", "Entry points agent runtimes call around their tools (not for typing by hand)", "boutons")
+	cmd := cli.NewGroupCmd("hook", "Entry points agent runtimes call around their tools (not for typing by hand)", "boutons")
 	cmd.Example = "# .claude/settings.json (written by `dendrite soma prepare`)\n" +
 		"#   \"PreToolUse\": [{\"matcher\": \"Bash|Grep|mcp__dendrite.*\", \"hooks\": [{\"type\": \"command\", \"command\": \"dendrite hook pre-tool\"}]}]"
 	cmd.AddCommand(&cobra.Command{
@@ -37,7 +37,7 @@ func newHookCmd() *cobra.Command {
 			"(rg, grep -r, the Grep tool) it exits 2 with the Dendrite equivalents on stderr; repeating the same\n" +
 			"command goes through. " + searchguard.AllowEnv + "=1 bypasses. Dendrite calls are only counted\n" +
 			"(see `dendrite sensory usage`). Any malformed input is allowed: a hook must never break the agent.",
-		Args: noArgs,
+		Args: cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPreTool(cmd.InOrStdin(), searchguard.New(searchGuardDir()))
 		},
@@ -56,7 +56,7 @@ func runPreTool(stdin io.Reader, g *searchguard.Guard) error {
 		return nil
 	}
 	if d := g.Check(in); d.Block {
-		return usageErrorf("%s", d.Message)
+		return cli.UsageErrorf("%s", d.Message)
 	}
 	return nil
 }
@@ -74,8 +74,8 @@ func runSensoryUsage(out io.Writer, since time.Duration) error {
 	}
 	defer f.Close()
 	s := searchguard.Summarize(f, time.Now().Add(-since))
-	if globals.JSON {
-		return writeJSON(out, s)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, s)
 	}
 	raw := 0
 	for _, n := range s.RawSearches {

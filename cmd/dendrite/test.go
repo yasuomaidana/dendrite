@@ -1,20 +1,20 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/testgen"
+	"Dendrite/pkg/uitest"
 	"context"
 	"fmt"
 	"io"
 	"time"
-
-	"Dendrite/pkg/testgen"
-	"Dendrite/pkg/uitest"
 
 	"github.com/spf13/cobra"
 )
 
 // newReflexCmd builds `dendrite reflex` (alias test): test synthesis and UI journey testing.
 func newReflexCmd() *cobra.Command {
-	cmd := newGroupCmd("reflex", "Table-driven test synthesis, Testcontainers & UI tests", "effectors",
+	cmd := cli.NewGroupCmd("reflex", "Table-driven test synthesis, Testcontainers & UI tests", "effectors",
 		"test", "myotatic-reflex", "tst")
 	cmd.Example = "dendrite reflex auto pkg/env/detector.go\n" +
 		"dendrite reflex auto --file pkg/env/detector.go --with-testcontainers\n" +
@@ -28,21 +28,21 @@ func newReflexAutoCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auto [file]",
 		Short: "Synthesize table-driven tests for a source file with a self-healing loop",
-		Args:  maxArgs(1),
+		Args:  cli.MaxArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 1 {
 				if cfg.SourceFile != "" {
-					return usageErrorf("give the file either as an argument or with --file, not both")
+					return cli.UsageErrorf("give the file either as an argument or with --file, not both")
 				}
 				cfg.SourceFile = args[0]
 			}
 			if cfg.SourceFile == "" {
-				return usageErrorf("give a source file")
+				return cli.UsageErrorf("give a source file")
 			}
 			return runReflexAuto(cmd.Context(), cfg, cmd.OutOrStdout())
 		},
 	}
-	addFileFlag(cmd, &cfg.SourceFile, "", "Go source file to cover")
+	cli.AddFileFlag(cmd, &cfg.SourceFile, "", "Go source file to cover")
 	cmd.Flags().BoolVar(&cfg.WithTestcontainers, "with-testcontainers", false, "Generate Testcontainers fixtures for detected dependencies")
 	return cmd
 }
@@ -53,8 +53,8 @@ func runReflexAuto(ctx context.Context, cfg testgen.TestSynthesisConfig, out io.
 	if err != nil {
 		return fmt.Errorf("test synthesis: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, report)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, report)
 	}
 	fmt.Fprintf(out, "[✓] Test Synthesis Succeeded! (Run ID: %s, State: %s)\n", report.RunID, report.State)
 	fmt.Fprintf(out, "    - Generated Test: %s\n", report.TestFile)
@@ -71,7 +71,7 @@ func newReflexUICmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ui",
 		Short: "Run the web UI browser journeys and a WebSocket telemetry burst test",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runReflexUI(cmd.Context(), baseURL, !noHeadless, cmd.OutOrStdout())
 		},

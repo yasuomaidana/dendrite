@@ -1,14 +1,14 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/agentjobs"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"time"
-
-	"Dendrite/pkg/agentjobs"
 
 	"github.com/spf13/cobra"
 )
@@ -19,15 +19,15 @@ func newJobsWaitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "wait",
 		Short: "Block until the matching jobs finish",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if timeout <= 0 || interval <= 0 {
-				return usageErrorf("--timeout and --interval must be positive")
+				return cli.UsageErrorf("--timeout and --interval must be positive")
 			}
 			return runJobsWait(cmd.Context(), agentjobs.NewLedger(""), ticket, timeout, interval, cmd.OutOrStdout())
 		},
 	}
-	addTicketFlag(cmd, &ticket, "")
+	cli.AddTicketFlag(cmd, &ticket, "")
 	cmd.Flags().DurationVar(&timeout, "timeout", timeout, "Give up after this long")
 	cmd.Flags().DurationVar(&interval, "interval", interval, "Polling interval")
 	return cmd
@@ -113,7 +113,7 @@ func newJobsDaemonCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "daemon",
 		Short: "Run the stall watcher (foreground), once, or install it as a LaunchAgent",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if install {
 				plist, err := agentjobs.InstallLaunchAgent("", "")
@@ -128,7 +128,7 @@ func newJobsDaemonCmd() *cobra.Command {
 				return w.Tick(cmd.Context())
 			}
 			if interval <= 0 {
-				return usageErrorf("--interval must be positive")
+				return cli.UsageErrorf("--interval must be positive")
 			}
 			return runJobsDaemon(cmd.Context(), w, interval, idleExit, cmd.ErrOrStderr())
 		},

@@ -1,13 +1,15 @@
 package main
 
 import (
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/selfupdate"
+	"Dendrite/pkg/synapse"
 	"Dendrite/pkg/testkit"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/spf13/cobra"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,9 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/selfupdate"
-	"Dendrite/pkg/synapse"
+	"github.com/spf13/cobra"
 )
 
 func TestParseUpdateArgs(t *testing.T) {

@@ -1,13 +1,12 @@
 package main
 
 import (
+	"Dendrite/pkg/projectid"
 	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/projectid"
 )
 
 func TestPlaneProjectRefresh_RelocatesMovedProjectsAndPrunesVanishedOnes(t *testing.T) {

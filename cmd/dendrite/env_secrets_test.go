@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,10 +31,10 @@ func secretsProject(t *testing.T) string {
 func TestSomaSecrets_EnsureStatusAndSet(t *testing.T) {
 	dir := secretsProject(t)
 	out, code := cliOutput(t, "soma", "secrets", "ensure")
-	if code != ExitOK || !strings.Contains(out, "Nothing to change") || !strings.Contains(out, "published defaults") {
+	if code != cli.ExitOK || !strings.Contains(out, "Nothing to change") || !strings.Contains(out, "published defaults") {
 		t.Fatalf("ensure: exit %d\n%s", code, out)
 	}
-	if out, code = cliOutput(t, "soma", "secrets", "ensure", "--set", "POSTGRES_PASSWORD=mine"); code != ExitOK || !strings.Contains(out, "changed: POSTGRES_PASSWORD") {
+	if out, code = cliOutput(t, "soma", "secrets", "ensure", "--set", "POSTGRES_PASSWORD=mine"); code != cli.ExitOK || !strings.Contains(out, "changed: POSTGRES_PASSWORD") {
 		t.Fatalf("--set: exit %d\n%s", code, out)
 	}
 	home := os.Getenv("DENDRITE_HOME")
@@ -47,7 +48,7 @@ func TestSomaSecrets_EnsureStatusAndSet(t *testing.T) {
 	if committed, _ := os.ReadFile(filepath.Join(dir, ".env")); strings.Contains(string(committed), "mine") {
 		t.Error("the committed .env was edited")
 	}
-	if out, code = cliOutput(t, "soma", "secrets", "ensure", "--local", "--set", "LITELLM_MASTER_KEY=sk-here-only"); code != ExitOK {
+	if out, code = cliOutput(t, "soma", "secrets", "ensure", "--local", "--set", "LITELLM_MASTER_KEY=sk-here-only"); code != cli.ExitOK {
 		t.Fatalf("--local: exit %d\n%s", code, out)
 	}
 	if local, _ := os.ReadFile(filepath.Join(dir, ".env.local")); !strings.Contains(string(local), "LITELLM_MASTER_KEY=sk-here-only") {
@@ -55,10 +56,10 @@ func TestSomaSecrets_EnsureStatusAndSet(t *testing.T) {
 	}
 
 	out, code = cliOutput(t, "soma", "secrets", "status")
-	if code != ExitOK || !strings.Contains(out, "POSTGRES_PASSWORD") || strings.Contains(out, "mine") || strings.Contains(out, "sk-default") {
+	if code != cli.ExitOK || !strings.Contains(out, "POSTGRES_PASSWORD") || strings.Contains(out, "mine") || strings.Contains(out, "sk-default") {
 		t.Fatalf("status leaked a value or failed: exit %d\n%s", code, out)
 	}
-	if _, code = cliOutput(t, "soma", "secrets", "ensure", "--set", "NOPE"); code != ExitUsage {
-		t.Errorf("malformed --set: exit %d, want %d", code, ExitUsage)
+	if _, code = cliOutput(t, "soma", "secrets", "ensure", "--set", "NOPE"); code != cli.ExitUsage {
+		t.Errorf("malformed --set: exit %d, want %d", code, cli.ExitUsage)
 	}
 }

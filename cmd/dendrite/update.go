@@ -1,6 +1,11 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/selfupdate"
+	"Dendrite/pkg/stacks"
+	"Dendrite/pkg/synapse"
 	"bufio"
 	"context"
 	"errors"
@@ -11,11 +16,6 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
-
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/selfupdate"
-	"Dendrite/pkg/stacks"
-	"Dendrite/pkg/synapse"
 
 	"github.com/spf13/cobra"
 )
@@ -60,7 +60,7 @@ func newUpdateCmd() *cobra.Command {
 			"channel also switches clean members back to their tracked branch), builds the\n" +
 			"binaries of the local members, then rebuilds and swaps dendrite itself.",
 		GroupID: "cortex",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite update\ndendrite update --dev\ndendrite update --dev --synapse dendrite-ecosystem --no-members",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runUpdate(cmd.Context(), o, cmd.OutOrStdout())

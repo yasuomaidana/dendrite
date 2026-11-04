@@ -1,15 +1,15 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/projectid"
 	"bytes"
 	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/devtool"
-	"Dendrite/pkg/projectid"
 )
 
 func TestCommitSynapsePeers(t *testing.T) {
@@ -107,7 +107,7 @@ func TestLinePrompter(t *testing.T) {
 	if strings.Count(out.String(), "[y/N/a]") != 3 {
 		t.Errorf("expected 3 prompts, got %q", out.String())
 	}
-	_ = stdinIsTerminal()
+	_ = cli.StdinIsTerminal()
 }
 
 // A peer that moved since the manifest was written (stale path_hint, known to the project index)

@@ -1,14 +1,14 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/workspace"
 	"bytes"
 	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/workspace"
 )
 
 // useTempRegistry points the ganglion commands at a registry under t.TempDir().
@@ -57,15 +57,15 @@ func TestGanglion_Errors(t *testing.T) {
 		args []string
 		code int
 	}{
-		{[]string{"ganglion", "add", "only-name"}, ExitUsage},
-		{[]string{"ganglion", "switch", "missing"}, ExitError},
-		{[]string{"ganglion", "remove", "missing"}, ExitError},
-		{[]string{"ganglion", "list", "extra"}, ExitUsage},
+		{[]string{"ganglion", "add", "only-name"}, cli.ExitUsage},
+		{[]string{"ganglion", "switch", "missing"}, cli.ExitError},
+		{[]string{"ganglion", "remove", "missing"}, cli.ExitError},
+		{[]string{"ganglion", "list", "extra"}, cli.ExitUsage},
 	}
 	for _, c := range cases {
 		var buf bytes.Buffer
 		err := runCLI(ctx, &buf, c.args...)
-		if got := exitCodeFor(err); got != c.code {
+		if got := cli.ExitCodeFor(err); got != c.code {
 			t.Errorf("%v: exit %d, want %d (err %v)", c.args, got, c.code, err)
 		}
 	}

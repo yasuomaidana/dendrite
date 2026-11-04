@@ -1,14 +1,14 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/scheduler/governor"
+	"Dendrite/pkg/scheduler/token"
 	"context"
 	"fmt"
 	"io"
 	"strings"
 	"time"
-
-	"Dendrite/pkg/scheduler/governor"
-	"Dendrite/pkg/scheduler/token"
 
 	"github.com/spf13/cobra"
 )
@@ -36,7 +36,7 @@ func withGovernor(fn func(*token.TokenScheduler, *governor.QuotaGovernor) error)
 
 // newCognitionCmd builds `dendrite cognition` (alias analyze): the token-aware scheduler and quota governor.
 func newCognitionCmd() *cobra.Command {
-	cmd := newGroupCmd("cognition", "Cognitive complexity analyzer, structural anti-pattern scanner, and policy router", "glia",
+	cmd := cli.NewGroupCmd("cognition", "Cognitive complexity analyzer, structural anti-pattern scanner, and policy router", "glia",
 		"analyze", "cognitive-analysis", "anlz")
 	cmd.Example = "dendrite cognition status --json\n" +
 		"dendrite cognition policy --night-window 22:00-06:00 --reserve-floor 0.25\n" +
@@ -60,7 +60,7 @@ func newCognitionPolicyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "policy",
 		Short: "Show the scheduler policy, or change it with flags",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCognitionPolicy(cmd, p, cmd.OutOrStdout())
 		},
@@ -81,7 +81,7 @@ func runCognitionPolicy(cmd *cobra.Command, set token.Policy, out io.Writer) err
 	pol := sched.GetPolicy()
 	f := cmd.Flags()
 	if f.Changed("reserve-floor") && (set.ReserveFloor < 0 || set.ReserveFloor > 1) {
-		return usageErrorf("--reserve-floor must be between 0.0 and 1.0")
+		return cli.UsageErrorf("--reserve-floor must be between 0.0 and 1.0")
 	}
 	updated := false
 	apply := func(name string, fn func()) {
@@ -103,8 +103,8 @@ func runCognitionPolicy(cmd *cobra.Command, set token.Policy, out io.Writer) err
 	}
 
 	active := sched.GetPolicy()
-	if globals.JSON {
-		return writeJSON(out, map[string]any{"updated": updated, "policy": active})
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, map[string]any{"updated": updated, "policy": active})
 	}
 	if updated {
 		fmt.Fprintln(out, "[✓] Successfully updated Token-Aware Hybrid Scheduler policy:")
@@ -124,7 +124,7 @@ func newCognitionStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show the scheduler's tier, windows, countdowns and the governor state",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withGovernor(func(sched *token.TokenScheduler, gov *governor.QuotaGovernor) error {
 				return runCognitionStatus(sched, gov, cmd.OutOrStdout())
@@ -139,8 +139,8 @@ func runCognitionStatus(sched *token.TokenScheduler, gov *governor.QuotaGovernor
 		return fmt.Errorf("evaluate scheduler status: %w", err)
 	}
 	govState := gov.GetState()
-	if globals.JSON {
-		return writeJSON(out, map[string]any{"scheduler": st, "governor": govState})
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, map[string]any{"scheduler": st, "governor": govState})
 	}
 	fmt.Fprintln(out, "=== Token-Aware Hybrid Scheduler & Quota Governor Status ===")
 	fmt.Fprintf(out, "Current Time:           %s\n", st.CurrentTime.Format(time.RFC3339))
@@ -170,7 +170,7 @@ func parseOnOff(s string) (bool, error) {
 	case "off", "false", "0", "disable", "no":
 		return false, nil
 	}
-	return false, usageErrorf("invalid switch value %q: use on or off", s)
+	return false, cli.UsageErrorf("invalid switch value %q: use on or off", s)
 }
 
 func newCognitionSwitchCmd() *cobra.Command {
@@ -178,7 +178,7 @@ func newCognitionSwitchCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "switch",
 		Short: "Set runtime feature switches",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			enabled, err := parseOnOff(allowZero)
 			if err != nil {
@@ -198,7 +198,7 @@ func newCognitionSwitchCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&allowZero, "allow-zero", "", "Allow-zero drain override: on or off")
-	requireFlags(cmd, "allow-zero")
+	cli.RequireFlags(cmd, "allow-zero")
 	return cmd
 }
 
@@ -206,7 +206,7 @@ func newCognitionModeCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:       "mode [always|policy|paused]",
 		Short:     "Show or set the analysis operating mode",
-		Args:      maxArgs(1),
+		Args:      cli.MaxArgs(1),
 		ValidArgs: []string{"always", "policy", "paused"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var mode governor.AnalysisMode
@@ -219,7 +219,7 @@ func newCognitionModeCmd() *cobra.Command {
 				case "paused", "pause":
 					mode = governor.ModePaused
 				default:
-					return usageErrorf("invalid mode %q: use always, policy or paused", args[0])
+					return cli.UsageErrorf("invalid mode %q: use always, policy or paused", args[0])
 				}
 			}
 			return withGovernor(func(_ *token.TokenScheduler, gov *governor.QuotaGovernor) error {
@@ -243,7 +243,7 @@ func newCognitionPauseResumeCmd(use, short string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   use,
 		Short: short,
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withGovernor(func(_ *token.TokenScheduler, gov *governor.QuotaGovernor) error {
 				ctx, out := cmd.Context(), cmd.OutOrStdout()
@@ -262,7 +262,7 @@ func newCognitionPauseResumeCmd(use, short string) *cobra.Command {
 			})
 		},
 	}
-	addProjectFlag(cmd, &project, "", "Project of the active chunk")
+	cli.AddProjectFlag(cmd, &project, "", "Project of the active chunk")
 	cmd.Flags().StringVarP(&chunk, "chunk", "c", "", "Active chunk ID")
 	return cmd
 }
@@ -273,7 +273,7 @@ func newCognitionRunCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run one analysis pass on a chunk under scheduler governance",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withGovernor(func(sched *token.TokenScheduler, gov *governor.QuotaGovernor) error {
 				if simNight || simSprint {
@@ -292,7 +292,7 @@ func newCognitionRunCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&chunk, "chunk", "c", "project-ast-chunk", "Chunk ID")
-	addProjectFlag(cmd, &project, "dendrite", "Project")
+	cli.AddProjectFlag(cmd, &project, "dendrite", "Project")
 	cmd.Flags().BoolVar(&simNight, "simulate-night", false, "Run as if inside the night window")
 	cmd.Flags().BoolVar(&simSprint, "simulate-sprint", false, "Run as if inside the sprint window")
 	cmd.MarkFlagsMutuallyExclusive("simulate-night", "simulate-sprint")
@@ -314,8 +314,8 @@ func runCognitionChunk(ctx context.Context, sched *token.TokenScheduler, gov *go
 	if err != nil {
 		return fmt.Errorf("process chunk: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, res)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, res)
 	}
 	fmt.Fprintln(out, "[✓] Chunk Execution Outcome:")
 	fmt.Fprintf(out, "    Chunk ID:       %s\n", res.ChunkID)

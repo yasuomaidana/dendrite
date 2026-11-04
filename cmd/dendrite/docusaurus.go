@@ -1,6 +1,9 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/docgen/reflect"
+	"Dendrite/pkg/docusaurus"
 	"Dendrite/pkg/mcpserver"
 	"context"
 	"fmt"
@@ -11,9 +14,6 @@ import (
 	"strings"
 	"syscall"
 
-	"Dendrite/pkg/docgen/reflect"
-	"Dendrite/pkg/docusaurus"
-
 	"github.com/spf13/cobra"
 )
 
@@ -21,7 +21,7 @@ const defaultSiteDir = "website"
 
 // newCodexCmd builds `dendrite codex` (alias doc, docs): reference docs, the Docusaurus site and Plane page sync.
 func newCodexCmd() *cobra.Command {
-	cmd := newGroupCmd("codex", "Docs-as-Code reflection, Docusaurus synthesis and portal", "cortex",
+	cmd := cli.NewGroupCmd("codex", "Docs-as-Code reflection, Docusaurus synthesis and portal", "cortex",
 		"doc", "docs", "engram-codex")
 	cmd.Example = "dendrite codex generate --reference\n" +
 		"dendrite codex audit --strict\n" +
@@ -46,7 +46,7 @@ func newCodexGenerateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "generate",
 		Short: "Generate the Docusaurus site, or with --reference the CLI and MCP reference pages",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if o.Reference {
 				return runCodexReference(o.Docs, cmd.OutOrStdout())
@@ -81,7 +81,7 @@ var sharingTiers = []docusaurus.SharingTier{
 
 func runCodexSite(ctx context.Context, svc docusaurus.Service, o codexGenerateOptions, out io.Writer) error {
 	if !slices.Contains(sharingTiers, docusaurus.SharingTier(o.Tier)) {
-		return usageErrorf("invalid --tier %q: use public, internal, federated or private", o.Tier)
+		return cli.UsageErrorf("invalid --tier %q: use public, internal, federated or private", o.Tier)
 	}
 	cfg, err := docusaurus.NewSiteConfigBuilder().
 		WithTitle(o.Title).
@@ -89,7 +89,7 @@ func runCodexSite(ctx context.Context, svc docusaurus.Service, o codexGenerateOp
 		WithSharingTier(docusaurus.SharingTier(o.Tier)).
 		Build()
 	if err != nil {
-		return usageErrorf("site configuration: %v", err)
+		return cli.UsageErrorf("site configuration: %v", err)
 	}
 	fmt.Fprintf(out, "[+] Synthesizing Docusaurus documentation from '%s' into '%s'...\n", o.Docs, o.Out)
 	result, err := svc.Generate(ctx, o.Docs, o.Out, cfg)
@@ -114,7 +114,7 @@ func newCodexAuditCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "audit",
 		Short: "Audit the reference docs against the code (--strict fails on drift), or the site's coverage",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if strict || reference {
 				return runCodexReferenceAudit(docsDir, strict, cmd.OutOrStdout())
@@ -162,8 +162,8 @@ func runCodexSiteAudit(ctx context.Context, svc docusaurus.Service, root, docsDi
 	if err != nil {
 		return fmt.Errorf("site audit: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, summary)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, summary)
 	}
 	rule := strings.Repeat("=", 50)
 	fmt.Fprintln(out, rule)
@@ -190,7 +190,7 @@ func newCodexReflectCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "reflect",
 		Short: "Mirror a reference docs taxonomy onto another source tree",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "[+] Reflecting documentation taxonomy from '%s' to '%s' (source: '%s')...\n", refDir, targetDir, srcDir)
@@ -217,13 +217,13 @@ func addSiteDirFlag(cmd *cobra.Command, p *string) {
 
 // newCodexSiteCmd builds `codex site`: scaffold, export, preview and build the Docusaurus site.
 func newCodexSiteCmd() *cobra.Command {
-	cmd := newGroupCmd("site", "Scaffold, share, preview and build the Docusaurus site", "", "docusaurus")
+	cmd := cli.NewGroupCmd("site", "Scaffold, share, preview and build the Docusaurus site", "", "docusaurus")
 
 	var initDir string
 	initCmd := &cobra.Command{
 		Use:   "init",
 		Short: "Scaffold a blank Docusaurus project",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(cmd.OutOrStdout(), "[+] Initializing blank Docusaurus site layout in '%s'...\n", initDir)
 			if err := docusaurus.NewService().Init(cmd.Context(), initDir); err != nil {
@@ -239,7 +239,7 @@ func newCodexSiteCmd() *cobra.Command {
 	share := &cobra.Command{
 		Use:   "share",
 		Short: "Export a portable documentation bundle with a SHA-256 manifest",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "[+] Creating standalone documentation sharing bundle for '%s'...\n", shareSite)
@@ -247,8 +247,8 @@ func newCodexSiteCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("export sharing bundle: %w", err)
 			}
-			if globals.JSON {
-				return writeJSON(out, manifest)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, manifest)
 			}
 			fmt.Fprintf(out, "[✓] Successfully exported documentation sharing bundle for '%s' (v%s)!\n", manifest.ProjectName, manifest.Version)
 			fmt.Fprintf(out, "    - Documents:  %d\n", manifest.TotalDocuments)
@@ -265,7 +265,7 @@ func newCodexSiteCmd() *cobra.Command {
 	serve := &cobra.Command{
 		Use:   "serve",
 		Short: "Serve the site preview and sharing portal in the foreground (Ctrl+C stops it)",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -279,7 +279,7 @@ func newCodexSiteCmd() *cobra.Command {
 	build := &cobra.Command{
 		Use:   "build",
 		Short: "Run the production npm build of the site",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(cmd.OutOrStdout(), "[+] Building production Docusaurus static assets in '%s'...\n", buildSite)
 			if err := docusaurus.NewService().Build(cmd.Context(), buildSite); err != nil {
@@ -312,7 +312,7 @@ func runCodexServe(ctx context.Context, svc docusaurus.Service, site string, por
 
 // newCodexPlaneCmd builds `codex plane`: sync the docs directory with Plane pages.
 func newCodexPlaneCmd() *cobra.Command {
-	cmd := newGroupCmd("plane", "Sync the docs directory with Plane pages", "")
+	cmd := cli.NewGroupCmd("plane", "Sync the docs directory with Plane pages", "")
 	var dir string
 	cmd.PersistentFlags().StringVarP(&dir, "dir", "d", "docs", "Documentation directory")
 	for _, d := range []struct{ use, short string }{
@@ -324,7 +324,7 @@ func newCodexPlaneCmd() *cobra.Command {
 		cmd.AddCommand(&cobra.Command{
 			Use:   direction,
 			Short: d.short,
-			Args:  noArgs,
+			Args:  cli.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return runPlaneDocSync(cmd.Context(), direction, dir, cmd.OutOrStdout())
 			},

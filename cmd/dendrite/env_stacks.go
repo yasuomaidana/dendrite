@@ -1,6 +1,9 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/dotenv"
+	"Dendrite/pkg/stacks"
 	"context"
 	"fmt"
 	"io"
@@ -8,14 +11,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"Dendrite/pkg/dotenv"
-	"Dendrite/pkg/stacks"
-
 	"github.com/spf13/cobra"
 )
 
 func newSomaStacksCmd() *cobra.Command {
-	cmd := newGroupCmd("stacks", "Where the compose files and litellm_config.yaml live (~/.dendrite/stacks)", "")
+	cmd := cli.NewGroupCmd("stacks", "Where the compose files and litellm_config.yaml live (~/.dendrite/stacks)", "")
 	cmd.Example = "dendrite soma stacks path\n" +
 		"dendrite soma stacks migrate --dry-run\n" +
 		"dendrite soma stacks migrate --up"
@@ -27,7 +27,7 @@ func newSomaStacksPathCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "path",
 		Short: "Print the stacks directory",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), stacks.Dir())
 			return err
@@ -47,20 +47,20 @@ func newSomaStacksMigrateCmd() *cobra.Command {
 			"Credentials and templates (.env*) are never copied. With --up the control stack is then started from the new\n" +
 			"location (docker compose up -d), which recreates the containers whose mounts moved; named volumes (Postgres\n" +
 			"data, Copilot login) are preserved.",
-		Args: noArgs,
+		Args: cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			src := from
 			if src == "" {
 				src = stacks.CheckoutStacks(dotenv.ProjectRoot("."))
 			}
 			if src == "" {
-				return usageErrorf("no checkout stacks/ folder found here; pass --from <dir>")
+				return cli.UsageErrorf("no checkout stacks/ folder found here; pass --from <dir>")
 			}
 			return runStacksMigrate(cmd.Context(), cmd.OutOrStdout(), src, dryRun, up)
 		},
 	}
 	cmd.Flags().StringVar(&from, "from", "", "Source stacks folder (default: this checkout's stacks/)")
-	addDryRunFlag(cmd, &dryRun)
+	cli.AddDryRunFlag(cmd, &dryRun)
 	cmd.Flags().BoolVar(&up, "up", false, "Then start the control stack from the new location (recreates containers whose mounts moved)")
 	return cmd
 }
@@ -71,8 +71,8 @@ func runStacksMigrate(ctx context.Context, out io.Writer, src string, dryRun, up
 	if err != nil {
 		return err
 	}
-	if globals.JSON {
-		return writeJSON(out, rep)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, rep)
 	}
 	verb := "Copied"
 	if dryRun {

@@ -1,14 +1,14 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/agentjobs"
 	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os/exec"
 	"strings"
-
-	"Dendrite/pkg/agentjobs"
 
 	"github.com/spf13/cobra"
 )
@@ -17,7 +17,7 @@ import (
 // pkg/agentjobs re-executes `<binary> agent jobs run <id>` and `agent jobs daemon`, so those
 // paths must keep working through the agent alias.
 func newBoutonJobsCmd() *cobra.Command {
-	cmd := newGroupCmd("jobs", "Submit, watch and manage delegated agent jobs", "")
+	cmd := cli.NewGroupCmd("jobs", "Submit, watch and manage delegated agent jobs", "")
 	cmd.Example = "dendrite bouton jobs submit --ticket DEN-123 --agent agy --scope pkg/foo --prompt-file prompt.md --isolate\n" +
 		"dendrite bouton jobs list --ticket DEN-123\n" +
 		"dendrite bouton jobs show --ticket DEN-123\n" +
@@ -27,7 +27,7 @@ func newBoutonJobsCmd() *cobra.Command {
 		return &cobra.Command{
 			Use:   use + " <job-id>",
 			Short: short,
-			Args:  exactArgs(1),
+			Args:  cli.ExactArgs(1),
 			RunE:  func(cmd *cobra.Command, args []string) error { return run(cmd, args[0]) },
 		}
 	}
@@ -68,7 +68,7 @@ func newBoutonJobsCmd() *cobra.Command {
 		&cobra.Command{
 			Use:   "models",
 			Short: "Refresh the cached `agy models` listing and show the AGY models Dendrite schedules",
-			Args:  noArgs,
+			Args:  cli.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return runJobsModels(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 			},
@@ -99,7 +99,7 @@ func newJobsSubmitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "submit",
 		Short: "Submit a job to an agent (runs detached)",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !spec.Isolate && spec.Worktree == "" {
 				if out, sErr := exec.CommandContext(cmd.Context(), "git", "status", "--porcelain").Output(); sErr == nil && len(bytes.TrimSpace(out)) > 0 {
@@ -111,8 +111,8 @@ func newJobsSubmitCmd() *cobra.Command {
 				return fmt.Errorf("submit job: %w", err)
 			}
 			ensureJobWatcher(agentjobs.DefaultDispatcher, cmd.ErrOrStderr())
-			if globals.JSON {
-				return writeJSON(cmd.OutOrStdout(), map[string]string{"id": id})
+			if cli.Globals.JSON {
+				return cli.WriteJSON(cmd.OutOrStdout(), map[string]string{"id": id})
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "[✓] Job submitted successfully: %s\n", id)
 			if job, lErr := agentjobs.DefaultDispatcher.Ledger.Load(id); lErr == nil {
@@ -123,9 +123,9 @@ func newJobsSubmitCmd() *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	addTicketFlag(cmd, &spec.Ticket, "")
+	cli.AddTicketFlag(cmd, &spec.Ticket, "")
 	f.StringVar(&spec.Agent, "agent", spec.Agent, "Agent: agy, aider, copilot, ...")
-	addModelFlag(cmd, &spec.Model, "")
+	cli.AddModelFlag(cmd, &spec.Model, "")
 	f.Lookup("model").Usage = "LLM model name, or auto to pick by complexity"
 	f.StringSliceVar(&spec.Scope, "scope", nil, "Paths the agent may change (comma-separated)")
 	f.StringVar(&spec.PromptFile, "prompt-file", "", "File with the prompt")
@@ -133,7 +133,7 @@ func newJobsSubmitCmd() *cobra.Command {
 	f.StringVar(&spec.Worktree, "worktree", "", "Run in this checkout")
 	f.BoolVar(&spec.Isolate, "isolate", false, "Run in the ticket's dendrite-work/ copy")
 	f.IntVar(&spec.Complexity, "complexity", spec.Complexity, "Task complexity (1-10); picks the model tier")
-	requireFlags(cmd, "ticket")
+	cli.RequireFlags(cmd, "ticket")
 	cmd.MarkFlagsOneRequired("prompt-file", "prompt")
 	cmd.MarkFlagsMutuallyExclusive("prompt-file", "prompt")
 	cmd.MarkFlagsMutuallyExclusive("worktree", "isolate")

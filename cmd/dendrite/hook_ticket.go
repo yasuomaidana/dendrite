@@ -1,15 +1,15 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/ticketlock"
+	"Dendrite/pkg/tracker/plane"
 	"context"
 	"fmt"
 	"io"
 
 	"github.com/spf13/cobra"
-
-	"Dendrite/pkg/devtool"
-	"Dendrite/pkg/ticketlock"
-	"Dendrite/pkg/tracker/plane"
 )
 
 // hookDeps builds the dependencies of the ticket hooks (a seam for tests).
@@ -29,7 +29,7 @@ func ticketHookCmds() []*cobra.Command {
 			"allowed. Malformed input is allowed: only a judged write is ever refused.\n" +
 			"Writes made through the shell (sed -i, redirects) are not seen here; the git pre-commit hook is the backstop.\n" +
 			"The bypass for both hooks is " + devtool.TicketGuardEnv + "=off (quantal --no-ticket-guard sets it for its commit).",
-		Args: noArgs,
+		Args: cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPreEdit(cmd.Context(), cmd.InOrStdin(), hookDeps())
 		},
@@ -37,7 +37,7 @@ func ticketHookCmds() []*cobra.Command {
 	preCommit := &cobra.Command{
 		Use:   "pre-commit",
 		Short: "Git pre-commit hook: the same guard for every staged path, so agents cannot bypass it through git",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPreCommit(cmd.Context(), hookDeps(), ".")
 		},
@@ -45,7 +45,7 @@ func ticketHookCmds() []*cobra.Command {
 	planSaved := &cobra.Command{
 		Use:   "plan-saved",
 		Short: "Post-ExitPlanMode hook: store the plan on the claimed ticket (kept locally when there is none)",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPlanSaved(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
 		},
@@ -53,7 +53,7 @@ func ticketHookCmds() []*cobra.Command {
 	sessionEnd := &cobra.Command{
 		Use:   "session-end",
 		Short: "Session-end hook: a ticket still In Progress gets an automatic handoff and is blocked (needs-input)",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSessionEnd(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
 		},
@@ -61,7 +61,7 @@ func ticketHookCmds() []*cobra.Command {
 	decision := &cobra.Command{
 		Use:   "decision",
 		Short: "Post-AskUserQuestion hook: record the questions and the user's answers on the claimed ticket (kept locally until a claim)",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDecision(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
 		},
@@ -76,7 +76,7 @@ func runPreEdit(ctx context.Context, stdin io.Reader, d ticketlock.Deps) error {
 		return nil
 	}
 	if err := ticketlock.CheckEdit(ctx, d, in); err != nil {
-		return usageErrorf("%s", err.Error())
+		return cli.UsageErrorf("%s", err.Error())
 	}
 	return nil
 }
@@ -87,7 +87,7 @@ func runPreCommit(ctx context.Context, d ticketlock.Deps, dir string) error {
 		return nil
 	}
 	if err := ticketlock.CheckStaged(ctx, d, dir); err != nil {
-		return usageErrorf("%s", err.Error())
+		return cli.UsageErrorf("%s", err.Error())
 	}
 	return nil
 }

@@ -1,16 +1,16 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/directive"
+	"Dendrite/pkg/quality/coverage"
+	"Dendrite/pkg/rag/ragtest"
 	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/directive"
-	"Dendrite/pkg/quality/coverage"
-	"Dendrite/pkg/rag/ragtest"
 )
 
 // withDocs adds the README and CHANGELOG every project unit needs, unless the test brings its own.
@@ -47,7 +47,7 @@ func TestAllostasisGateReportsAndExitsNonZeroOnAFailure(t *testing.T) {
 		directive.Path: "schema = 1\n[loc]\nmax_production_lines = 50\nwarn_at = 40\n[duplication]\nmax_percent = 100.0\n",
 	})
 	out, code := cliOutput(t, "allostasis", "gate", "--path", dir, "--skip", "coverage")
-	if code != ExitError || !strings.Contains(out, "FAIL  loc") || !strings.Contains(out, "a.go: 60 production lines, the limit is 50") || !strings.Contains(out, "quality gate (repository): FAILED") {
+	if code != cli.ExitError || !strings.Contains(out, "FAIL  loc") || !strings.Contains(out, "a.go: 60 production lines, the limit is 50") || !strings.Contains(out, "quality gate (repository): FAILED") {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
 	if !strings.Contains(out, "PASS  clones") {
@@ -56,15 +56,15 @@ func TestAllostasisGateReportsAndExitsNonZeroOnAFailure(t *testing.T) {
 	for _, format := range []string{"markdown", "json"} {
 		o, c := cliOutput(t, "allostasis", "gate", "--path", dir, "--only", "loc", "--format", format)
 		want := map[string]string{"markdown": "Quality gate (repository): **failed**", "json": `"passed": false`}[format]
-		if c != ExitError || !strings.Contains(o, want) {
+		if c != cli.ExitError || !strings.Contains(o, want) {
 			t.Errorf("%s: exit %d\n%s", format, c, o)
 		}
 	}
-	if o, c := cliOutput(t, "--json", "allostasis", "gate", "--path", dir, "--only", "loc"); c != ExitError || !strings.Contains(o, `"scope": "repository"`) {
+	if o, c := cliOutput(t, "--json", "allostasis", "gate", "--path", dir, "--only", "loc"); c != cli.ExitError || !strings.Contains(o, `"scope": "repository"`) {
 		t.Errorf("--json: exit %d\n%s", c, o)
 	}
 	clean := gateProject(t, map[string]string{"a.go": "x := 1\n"})
-	if o, c := cliOutput(t, "allostasis", "gate", "--path", clean, "--skip", "coverage"); c != ExitOK || !strings.Contains(o, "quality gate (repository): passed") {
+	if o, c := cliOutput(t, "allostasis", "gate", "--path", clean, "--skip", "coverage"); c != cli.ExitOK || !strings.Contains(o, "quality gate (repository): passed") {
 		t.Errorf("a clean project: exit %d\n%s", c, o)
 	}
 }
@@ -78,7 +78,7 @@ func TestAllostasisGateRefusesBadInput(t *testing.T) {
 		"since and ticket": {"--since", "develop", "--ticket", "DEN-1"},
 		"stray argument":   {"extra"},
 	} {
-		if out, code := cliOutput(t, append([]string{"allostasis", "gate", "--path", dir}, args...)...); code != ExitUsage {
+		if out, code := cliOutput(t, append([]string{"allostasis", "gate", "--path", dir}, args...)...); code != cli.ExitUsage {
 			t.Errorf("%s: exit %d\n%s", name, code, out)
 		}
 	}
@@ -91,7 +91,7 @@ func TestAllostasisGateRefusesBadInput(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(directive.Path)), []byte("[loc\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, code := cliOutput(t, "allostasis", "gate", "--path", dir); code != ExitError || !strings.Contains(out, directive.Path) {
+	if out, code := cliOutput(t, "allostasis", "gate", "--path", dir); code != cli.ExitError || !strings.Contains(out, directive.Path) {
 		t.Errorf("broken directives: exit %d\n%s", code, out)
 	}
 }
@@ -119,11 +119,11 @@ func TestAllostasisGateCanJudgeOnlyAChange(t *testing.T) {
 
 	for _, args := range [][]string{{"--since", "develop"}, {"--ticket", "DEN-3"}} {
 		out, code := cliOutput(t, append([]string{"allostasis", "gate", "--path", dir, "--only", "loc"}, args...)...)
-		if code != ExitOK || !strings.Contains(out, "quality gate (changes): passed") || !strings.Contains(out, "1 files checked") {
+		if code != cli.ExitOK || !strings.Contains(out, "quality gate (changes): passed") || !strings.Contains(out, "1 files checked") {
 			t.Errorf("%v: old.go is over the limit but the change did not touch it: exit %d\n%s", args, code, out)
 		}
 	}
-	if out, code := cliOutput(t, "allostasis", "gate", "--path", dir, "--only", "loc"); code != ExitError {
+	if out, code := cliOutput(t, "allostasis", "gate", "--path", dir, "--only", "loc"); code != cli.ExitError {
 		t.Errorf("the whole repository does fail: exit %d\n%s", code, out)
 	}
 }
@@ -134,7 +134,7 @@ func TestAllostasisCoverageFloorFlags(t *testing.T) {
 		got = o
 		return &coverage.Result{Passed: false}, nil
 	})
-	if out, code := cliOutput(t, "allostasis", "coverage", "--min", "85"); code != ExitError || got.MinPercent != 85 || !strings.Contains(out, "coverage floor failed: a package is below 85.0%") {
+	if out, code := cliOutput(t, "allostasis", "coverage", "--min", "85"); code != cli.ExitError || got.MinPercent != 85 || !strings.Contains(out, "coverage floor failed: a package is below 85.0%") {
 		t.Fatalf("--min: exit %d %+v\n%s", code, got, out)
 	}
 	dir := t.TempDir()
@@ -145,16 +145,16 @@ func TestAllostasisCoverageFloorFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(dir)
-	if _, code := cliOutput(t, "allostasis", "coverage", "--floor"); code != ExitError || got.MinPercent != 92.5 || len(got.ExemptGlobs) != 1 || got.ExemptGlobs[0] != "cmd/**" {
+	if _, code := cliOutput(t, "allostasis", "coverage", "--floor"); code != cli.ExitError || got.MinPercent != 92.5 || len(got.ExemptGlobs) != 1 || got.ExemptGlobs[0] != "cmd/**" {
 		t.Fatalf("--floor reads the directives: exit %d %+v", code, got)
 	}
-	if _, code := cliOutput(t, "allostasis", "coverage", "--floor", "--min", "50"); code != ExitUsage {
+	if _, code := cliOutput(t, "allostasis", "coverage", "--floor", "--min", "50"); code != cli.ExitUsage {
 		t.Errorf("--min and --floor exclude each other: exit %d", code)
 	}
 	if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(directive.Path)), []byte("[coverage\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, code := cliOutput(t, "allostasis", "coverage", "--floor"); code != ExitError || !strings.Contains(out, directive.Path) {
+	if out, code := cliOutput(t, "allostasis", "coverage", "--floor"); code != cli.ExitError || !strings.Contains(out, directive.Path) {
 		t.Errorf("--floor with broken directives: exit %d\n%s", code, out)
 	}
 }

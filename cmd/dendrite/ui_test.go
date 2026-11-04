@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/testkit"
 	"bytes"
 	"context"
@@ -47,16 +48,16 @@ func writeSvelte(t *testing.T) string {
 func TestCortex_Sync(t *testing.T) {
 	serveBoard(t)
 	file := writeSvelte(t)
-	if out, code := cliOutput(t, "cortex", "sync", "--file", file, "--dry-run", "--endpoint", "http://127.0.0.1:1"); code != ExitOK || !strings.Contains(out, "Successfully synchronized UI component") {
+	if out, code := cliOutput(t, "cortex", "sync", "--file", file, "--dry-run", "--endpoint", "http://127.0.0.1:1"); code != cli.ExitOK || !strings.Contains(out, "Successfully synchronized UI component") {
 		t.Fatalf("sync: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "ui", "penpot", "-f", file, "--dry-run", "--json"); code != ExitOK || !strings.Contains(out, "{") {
+	if out, code := cliOutput(t, "ui", "penpot", "-f", file, "--dry-run", "--json"); code != cli.ExitOK || !strings.Contains(out, "{") {
 		t.Fatalf("sync --json: exit %d\n%s", code, out)
 	}
-	if _, code := cliOutput(t, "cortex", "sync"); code != ExitUsage {
+	if _, code := cliOutput(t, "cortex", "sync"); code != cli.ExitUsage {
 		t.Fatalf("sync without --file: exit %d", code)
 	}
-	if _, code := cliOutput(t, "cortex", "sync", "--file", filepath.Join(t.TempDir(), "missing.svelte")); code != ExitError {
+	if _, code := cliOutput(t, "cortex", "sync", "--file", filepath.Join(t.TempDir(), "missing.svelte")); code != cli.ExitError {
 		t.Fatalf("sync of a missing file: exit %d", code)
 	}
 }
@@ -71,24 +72,24 @@ func TestCortex_Canvas(t *testing.T) {
 		code int
 		want string
 	}{
-		{[]string{"cortex", "canvas", "actions"}, ExitOK, "Supported Canvas Creative Actions"},
-		{[]string{"cortex", "canvas", "list-actions", "--json"}, ExitOK, "WRITE_PLAN"},
-		{[]string{"cortex", "canvas", "dispatch", "--prompt", "Q4 roadmap", "--title", "Plan"}, ExitOK, "Action WRITE_PLAN [DRAFT] executed"},
-		{[]string{"cortex", "canvas", "run", "--content", "draft text", "--mode", "CRITIQUE", "--json"}, ExitOK, "{"},
-		{[]string{"cortex", "canvas", "dispatch"}, ExitUsage, ""},
-		{[]string{"cortex", "canvas", "dispatch", "--action", "NO_SUCH_ACTION", "--prompt", "x"}, ExitError, ""},
-		{[]string{"cortex", "canvas", "relate", "--ticket", "DEN-100", "--feature", "login", "--frame", "login-v2", "--component", file}, ExitOK, "Bound Plane ticket 'DEN-100' to feature 'login'"},
-		{[]string{"cortex", "canvas", "relate", "--ticket", "DEN-100", "--feature", "login", "--json"}, ExitOK, `"login"`},
-		{[]string{"cortex", "canvas", "relate", "--ticket", "DEN-100"}, ExitUsage, ""},
-		{[]string{"cortex", "canvas", "list"}, ExitOK, "[DEN-100] login"},
-		{[]string{"cortex", "canvas", "ls", "--json"}, ExitOK, `"DEN-100"`},
-		{[]string{"cortex", "canvas", "sync", "--file", file, "--ticket", "DEN-100", "--dry-run"}, ExitOK, "Synchronized component"},
-		{[]string{"cortex", "canvas", "sync", "--file", file, "--dry-run", "--json"}, ExitOK, "{"},
-		{[]string{"cortex", "canvas", "sync"}, ExitUsage, ""},
-		{[]string{"cortex", "canvas", "update-state", "--ticket", "DEN-100", "--state", "In Progress", "--no-plane"}, ExitOK, "Ticket ID:    DEN-100"},
-		{[]string{"cortex", "canvas", "update-state", "--ticket", "DEN-100", "--state", "To Verify", "--no-plane", "--json"}, ExitOK, "{"},
-		{[]string{"cortex", "canvas", "update-state", "--ticket", "DEN-100"}, ExitUsage, ""},
-		{[]string{"canvas", "list"}, ExitUsage, ""},
+		{[]string{"cortex", "canvas", "actions"}, cli.ExitOK, "Supported Canvas Creative Actions"},
+		{[]string{"cortex", "canvas", "list-actions", "--json"}, cli.ExitOK, "WRITE_PLAN"},
+		{[]string{"cortex", "canvas", "dispatch", "--prompt", "Q4 roadmap", "--title", "Plan"}, cli.ExitOK, "Action WRITE_PLAN [DRAFT] executed"},
+		{[]string{"cortex", "canvas", "run", "--content", "draft text", "--mode", "CRITIQUE", "--json"}, cli.ExitOK, "{"},
+		{[]string{"cortex", "canvas", "dispatch"}, cli.ExitUsage, ""},
+		{[]string{"cortex", "canvas", "dispatch", "--action", "NO_SUCH_ACTION", "--prompt", "x"}, cli.ExitError, ""},
+		{[]string{"cortex", "canvas", "relate", "--ticket", "DEN-100", "--feature", "login", "--frame", "login-v2", "--component", file}, cli.ExitOK, "Bound Plane ticket 'DEN-100' to feature 'login'"},
+		{[]string{"cortex", "canvas", "relate", "--ticket", "DEN-100", "--feature", "login", "--json"}, cli.ExitOK, `"login"`},
+		{[]string{"cortex", "canvas", "relate", "--ticket", "DEN-100"}, cli.ExitUsage, ""},
+		{[]string{"cortex", "canvas", "list"}, cli.ExitOK, "[DEN-100] login"},
+		{[]string{"cortex", "canvas", "ls", "--json"}, cli.ExitOK, `"DEN-100"`},
+		{[]string{"cortex", "canvas", "sync", "--file", file, "--ticket", "DEN-100", "--dry-run"}, cli.ExitOK, "Synchronized component"},
+		{[]string{"cortex", "canvas", "sync", "--file", file, "--dry-run", "--json"}, cli.ExitOK, "{"},
+		{[]string{"cortex", "canvas", "sync"}, cli.ExitUsage, ""},
+		{[]string{"cortex", "canvas", "update-state", "--ticket", "DEN-100", "--state", "In Progress", "--no-plane"}, cli.ExitOK, "Ticket ID:    DEN-100"},
+		{[]string{"cortex", "canvas", "update-state", "--ticket", "DEN-100", "--state", "To Verify", "--no-plane", "--json"}, cli.ExitOK, "{"},
+		{[]string{"cortex", "canvas", "update-state", "--ticket", "DEN-100"}, cli.ExitUsage, ""},
+		{[]string{"canvas", "list"}, cli.ExitUsage, ""},
 	}
 	for _, s := range steps {
 		out, code := cliOutput(t, s.args...)

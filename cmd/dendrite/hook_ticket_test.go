@@ -1,6 +1,11 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/planesvc/planetest"
+	"Dendrite/pkg/ticketlock"
+	"Dendrite/pkg/tracker"
+	"Dendrite/pkg/tracker/plane"
 	"bytes"
 	"context"
 	"errors"
@@ -9,11 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/planesvc/planetest"
-	"Dendrite/pkg/ticketlock"
-	"Dendrite/pkg/tracker"
-	"Dendrite/pkg/tracker/plane"
 )
 
 // hookRig is a Plane board plus a working copy on agent/den-377, with the environment pointing the hooks at it.
@@ -104,7 +104,7 @@ func TestPreEditRefusesUntilTheTicketIsClaimed(t *testing.T) {
 	file := filepath.Join(r.repo, "pkg", "new.go")
 
 	err := runPreEdit(ctx, r.event("Edit", file, ""), r.deps)
-	var usage *usageError
+	var usage *cli.UsageError
 	if !errors.As(err, &usage) || !strings.Contains(err.Error(), "blocked: no Dendrite session/ticket claim") ||
 		!strings.Contains(err.Error(), "dendrite_ticket_claim") {
 		t.Fatalf("an unclaimed edit must be a usage error (exit 2) that says how to claim: %v", err)
@@ -162,7 +162,7 @@ func TestPreCommitChecksTheStagedPaths(t *testing.T) {
 	if out, err := exec.Command("git", "-C", r.repo, "add", "a.go").CombinedOutput(); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	var usage *usageError
+	var usage *cli.UsageError
 	if err := runPreCommit(ctx, r.deps, r.repo); !errors.As(err, &usage) {
 		t.Fatalf("staged work without a claim must be refused with a usage error: %v", err)
 	}

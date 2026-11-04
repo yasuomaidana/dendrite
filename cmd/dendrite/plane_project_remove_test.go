@@ -1,6 +1,10 @@
 package main
 
 import (
+	"Dendrite/pkg/planesvc"
+	"Dendrite/pkg/projectaudit"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/tracker/plane"
 	"bytes"
 	"context"
 	"net/http"
@@ -10,11 +14,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"Dendrite/pkg/planesvc"
-	"Dendrite/pkg/projectaudit"
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/tracker/plane"
 )
 
 // removeAPI is a Plane that lists three projects and records the archive and delete calls the

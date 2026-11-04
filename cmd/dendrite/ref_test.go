@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,12 +17,12 @@ func TestAfferent_LifecycleHonorsStateDir(t *testing.T) {
 		code int
 		want string
 	}{
-		{[]string{"afferent", "list", "--json", "--state-dir", state}, ExitOK, "["},
-		{[]string{"--state-dir", state, "afferent", "add", "--id", "otp", "--repo", "https://example.com/otp", "--lang", "go", "--caps", "totp,hotp"}, ExitOK, "Registered Tier 1 Source Reference: otp"},
-		{[]string{"ref", "ls", "--state-dir", state}, ExitOK, "Capabilities: totp, hotp"},
-		{[]string{"afferent", "add", "--id", "x"}, ExitUsage, ""},
-		{[]string{"afferent", "rm", "otp", "--state-dir", state}, ExitOK, "Removed Tier 1 Source Reference: otp"},
-		{[]string{"afferent", "remove"}, ExitUsage, ""},
+		{[]string{"afferent", "list", "--json", "--state-dir", state}, cli.ExitOK, "["},
+		{[]string{"--state-dir", state, "afferent", "add", "--id", "otp", "--repo", "https://example.com/otp", "--lang", "go", "--caps", "totp,hotp"}, cli.ExitOK, "Registered Tier 1 Source Reference: otp"},
+		{[]string{"ref", "ls", "--state-dir", state}, cli.ExitOK, "Capabilities: totp, hotp"},
+		{[]string{"afferent", "add", "--id", "x"}, cli.ExitUsage, ""},
+		{[]string{"afferent", "rm", "otp", "--state-dir", state}, cli.ExitOK, "Removed Tier 1 Source Reference: otp"},
+		{[]string{"afferent", "remove"}, cli.ExitUsage, ""},
 	}
 	for _, s := range steps {
 		out, code := cliOutput(t, s.args...)

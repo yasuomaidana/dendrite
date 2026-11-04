@@ -1,16 +1,16 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/agentjobs"
 	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/ticketlock"
+	"Dendrite/pkg/workcopy"
 	"context"
 	"fmt"
 	"io"
 	"regexp"
 	"strings"
-
-	"Dendrite/pkg/agentjobs"
-	"Dendrite/pkg/ticketlock"
-	"Dendrite/pkg/workcopy"
 
 	"github.com/spf13/cobra"
 )
@@ -20,7 +20,7 @@ var newWorkManager = func() *workcopy.Manager { return workcopy.New(".") }
 
 // newWorkCmd builds `dendrite work`: model-owned working copies in dendrite-work/.
 func newWorkCmd() *cobra.Command {
-	cmd := newGroupCmd("work", "Manage model-owned working copies in dendrite-work/ (create, list, remove, auto-clean merged)", "soma",
+	cmd := cli.NewGroupCmd("work", "Manage model-owned working copies in dendrite-work/ (create, list, remove, auto-clean merged)", "soma",
 		"workcopy", "wc")
 	cmd.Long = "Model-owned working copies live in dendrite-work/ next to the main checkout ($DENDRITE_WORK_DIR overrides)."
 	cmd.Example = "dendrite work new DEN-123\n" +
@@ -35,7 +35,7 @@ func newWorkCmd() *cobra.Command {
 		Use:     "new <name>",
 		Aliases: []string{"create"},
 		Short:   "Create an isolated working copy (branch agent/<name>)",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWorkNew(cmd.Context(), args[0], branch, base, noTicketGuard, cmd.OutOrStdout())
 		},
@@ -48,7 +48,7 @@ func newWorkCmd() *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List working copies and their cleanup status",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWorkList(cmd.Context(), cmd.OutOrStdout())
 		},
@@ -59,7 +59,7 @@ func newWorkCmd() *cobra.Command {
 		Use:     "done <name|path>",
 		Aliases: []string{"remove", "rm"},
 		Short:   "Remove a copy (refuses uncommitted/unpushed work unless --force)",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWorkDone(cmd.Context(), args[0], force, cmd.OutOrStdout())
 		},
@@ -71,23 +71,23 @@ func newWorkCmd() *cobra.Command {
 		Use:     "gc",
 		Aliases: []string{"prune"},
 		Short:   "Remove copies that are merged (or whose upstream is gone) and clean",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWorkGC(cmd.Context(), gcDryRun, cmd.OutOrStdout())
 		},
 	}
-	addDryRunFlag(gc, &gcDryRun)
+	cli.AddDryRunFlag(gc, &gcDryRun)
 
 	var adoptDryRun bool
 	adopt := &cobra.Command{
 		Use:   "adopt",
 		Short: "Move this repo's worktrees that live outside dendrite-work/ into it",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWorkAdopt(cmd.Context(), adoptDryRun, cmd.OutOrStdout())
 		},
 	}
-	addDryRunFlag(adopt, &adoptDryRun)
+	cli.AddDryRunFlag(adopt, &adoptDryRun)
 
 	cmd.AddCommand(newCmd, list, done, gc, adopt)
 	return cmd
@@ -143,11 +143,11 @@ func runWorkList(ctx context.Context, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if globals.JSON {
+	if cli.Globals.JSON {
 		if copies == nil {
 			copies = []workcopy.Copy{}
 		}
-		return writeJSON(out, copies)
+		return cli.WriteJSON(out, copies)
 	}
 
 	root, err := m.Root(ctx)

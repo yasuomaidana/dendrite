@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/pkg/tracker/plane"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -14,8 +15,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"Dendrite/pkg/tracker/plane"
 )
 
 // planeAPI emulates the slice of the Plane API that `plane project` uses.

@@ -1,11 +1,11 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/perf"
 	"strings"
 	"testing"
 	"time"
-
-	"Dendrite/pkg/perf"
 )
 
 func TestVelocity_UsageErrors(t *testing.T) {
@@ -30,10 +30,10 @@ func TestParseFault(t *testing.T) {
 }
 
 func TestVelocity_Stress(t *testing.T) {
-	if out, code := cliOutput(t, "velocity", "stress", "--vus", "2", "--spends", "20"); code != ExitOK || !strings.Contains(out, "Allowed Spends") {
+	if out, code := cliOutput(t, "velocity", "stress", "--vus", "2", "--spends", "20"); code != cli.ExitOK || !strings.Contains(out, "Allowed Spends") {
 		t.Fatalf("stress: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "velocity", "stress", "--vus", "2", "--spends", "20", "--json"); code != ExitOK || !strings.HasPrefix(strings.TrimSpace(out[strings.Index(out, "\n")+1:]), "{") {
+	if out, code := cliOutput(t, "velocity", "stress", "--vus", "2", "--spends", "20", "--json"); code != cli.ExitOK || !strings.HasPrefix(strings.TrimSpace(out[strings.Index(out, "\n")+1:]), "{") {
 		t.Fatalf("stress --json: exit %d\n%s", code, out)
 	}
 }

@@ -1,6 +1,10 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/gateway"
+	"Dendrite/pkg/inference"
+	"Dendrite/pkg/inference/prune"
 	"bufio"
 	"context"
 	"fmt"
@@ -11,10 +15,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-
-	"Dendrite/pkg/gateway"
-	"Dendrite/pkg/inference"
-	"Dendrite/pkg/inference/prune"
 )
 
 func newSpikePruneCmd() *cobra.Command {
@@ -27,7 +27,7 @@ func newSpikePruneCmd() *cobra.Command {
 			"an override in the environment, or routed in the gateway's litellm_config.yaml. Embedding models are never\n" +
 			"removed. Every removal prints the command that restores the model; without -y the command lists and asks.",
 		Example: "dendrite spike prune\ndendrite spike prune --keep gpt-oss:20b -y",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSpikePrune(cmd.Context(), ollamaURL, keep, cmd.InOrStdin(), cmd.OutOrStdout())
 		},
@@ -68,9 +68,9 @@ func runSpikePrune(ctx context.Context, ollamaURL string, keep []string, in io.R
 		fmt.Fprintf(out, "    - %-34s %8s   restore: %s\n", m.Name, prune.GB(m.SizeBytes), prune.RestoreNote(m.Name))
 	}
 	fmt.Fprintf(out, "[i] %d unused models, %s to reclaim.\n", len(unused), prune.GB(total))
-	if !globals.Yes {
-		if !isTerminal(in) {
-			return usageErrorf("this removes models: run it in a terminal to confirm, or pass -y")
+	if !cli.Globals.Yes {
+		if !cli.IsTerminal(in) {
+			return cli.UsageErrorf("this removes models: run it in a terminal to confirm, or pass -y")
 		}
 		fmt.Fprint(out, "[?] Remove them? [y/N] ")
 		answer, _ := bufio.NewReader(in).ReadString('\n')

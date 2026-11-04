@@ -1,18 +1,18 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/planesvc"
+	"Dendrite/pkg/tracker"
+	"Dendrite/pkg/tracker/dag"
+	"Dendrite/pkg/tracker/plane"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"time"
-
-	"Dendrite/pkg/devtool"
-	"Dendrite/pkg/planesvc"
-	"Dendrite/pkg/tracker"
-	"Dendrite/pkg/tracker/dag"
-	"Dendrite/pkg/tracker/plane"
 
 	"github.com/spf13/cobra"
 )
@@ -50,7 +50,7 @@ func newChronosCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a ticket, place it on the Gantt plan and link its blockers",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		Example: "dendrite chronos create --name \"[DEN-123] Title\" --desc-file spec.md\n" +
 			"dendrite chronos create --name \"[DEN-124] Title\" --desc \"Goal and acceptance criteria\" --milestone M3 --priority high --estimate 5 --blocked-by DEN-100,DEN-101",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -59,10 +59,10 @@ func newChronosCreateCmd() *cobra.Command {
 				return err
 			}
 			if strings.TrimSpace(o.Name) == "" {
-				return usageErrorf("--name must not be empty")
+				return cli.UsageErrorf("--name must not be empty")
 			}
 			if plane.IsEmptyContext(desc) {
-				return usageErrorf("a ticket needs a description: give --desc or --desc-file with the goal and acceptance criteria")
+				return cli.UsageErrorf("a ticket needs a description: give --desc or --desc-file with the goal and acceptance criteria")
 			}
 			o.Desc = desc
 			var estimate *int
@@ -81,7 +81,7 @@ func newChronosCreateCmd() *cobra.Command {
 	f.StringVarP(&o.Priority, "priority", "p", "medium", "Priority (urgent, high, medium, low, none)")
 	f.IntVarP(&o.Estimate, "estimate", "e", 0, "Estimate in points; sets the Gantt duration")
 	f.StringSliceVarP(&o.BlockedBy, "blocked-by", "b", nil, "Blocking tickets or issue UUIDs (comma-separated)")
-	requireFlags(cmd, "name")
+	cli.RequireFlags(cmd, "name")
 	return cmd
 }
 
@@ -148,8 +148,8 @@ func runChronosCreate(ctx context.Context, client *plane.Client, o chronosCreate
 		return fmt.Errorf("create issue in Plane: %w", err)
 	}
 	created = prefixTicketTitle(ctx, client, created)
-	if globals.JSON {
-		return writeJSON(out, created)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, created)
 	}
 
 	fmt.Fprintln(out, "[✓] Successfully created ticket in Plane & placed on Gantt development plan:")
@@ -171,7 +171,7 @@ func newChronosUpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "update",
 		Short:   "Rename a ticket or replace its description",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite chronos update --ticket DEN-123 --desc-file spec.md\ndendrite chronos update -t DEN-123 --name \"[DEN-123] New title\"",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			d, err := descriptionFrom(desc, descFile)
@@ -179,15 +179,15 @@ func newChronosUpdateCmd() *cobra.Command {
 				return err
 			}
 			if name == "" && plane.IsEmptyContext(d) {
-				return usageErrorf("nothing to update: give --name, --desc or --desc-file")
+				return cli.UsageErrorf("nothing to update: give --name, --desc or --desc-file")
 			}
 			return planeRun(func(c *plane.Client) error {
 				return runChronosUpdate(cmd.Context(), c, ticket, name, d, cmd.OutOrStdout())
 			})
 		},
 	}
-	addTicketFlag(cmd, &ticket, "")
-	requireFlags(cmd, "ticket")
+	cli.AddTicketFlag(cmd, &ticket, "")
+	cli.RequireFlags(cmd, "ticket")
 	cmd.Flags().StringVarP(&name, "name", "n", "", "New ticket title")
 	addDescFlags(cmd, &desc, &descFile)
 	return cmd
@@ -220,7 +220,7 @@ func newChronosIssuesCmd() *cobra.Command {
 		Use:     "issues",
 		Aliases: []string{"list", "ls"},
 		Short:   "List the project's Plane issues",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeRun(func(c *plane.Client) error {
 				return runChronosIssues(cmd.Context(), c, cmd.OutOrStdout())
@@ -234,11 +234,11 @@ func runChronosIssues(ctx context.Context, client *plane.Client, out io.Writer) 
 	if err != nil {
 		return fmt.Errorf("list Plane issues: %w", err)
 	}
-	if globals.JSON {
+	if cli.Globals.JSON {
 		if issues == nil {
 			issues = []plane.PlaneIssue{}
 		}
-		return writeJSON(out, issues)
+		return cli.WriteJSON(out, issues)
 	}
 	fmt.Fprintf(out, "[+] Plane Issues (%d) for Project '%s':\n", len(issues), client.ProjectID())
 	for _, iss := range issues {
@@ -264,7 +264,7 @@ func newChronosModulesCmd() *cobra.Command {
 		Use:     "modules",
 		Aliases: []string{"milestones"},
 		Short:   "List Plane modules (milestones)",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeRun(func(c *plane.Client) error {
 				return runChronosModules(cmd.Context(), c, cmd.OutOrStdout())
@@ -278,8 +278,8 @@ func runChronosModules(ctx context.Context, client *plane.Client, out io.Writer)
 	if err != nil {
 		return fmt.Errorf("list Plane modules: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, modules)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, modules)
 	}
 	fmt.Fprintf(out, "[+] Plane Modules / Milestones (%d):\n", len(modules))
 	for _, mod := range modules {
@@ -296,7 +296,7 @@ func newChronosPagesCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "pages",
 		Short: "List Plane documentation pages",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeRun(func(c *plane.Client) error {
 				return runChronosPages(cmd.Context(), c, cmd.OutOrStdout())
@@ -310,8 +310,8 @@ func runChronosPages(ctx context.Context, client *plane.Client, out io.Writer) e
 	if err != nil {
 		return fmt.Errorf("list Plane pages: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, pages)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, pages)
 	}
 	fmt.Fprintf(out, "[+] Plane Documentation Pages (%d):\n", len(pages))
 	for _, p := range pages {
@@ -321,13 +321,13 @@ func runChronosPages(ctx context.Context, client *plane.Client, out io.Writer) e
 }
 
 func newChronosTicketCmd() *cobra.Command {
-	cmd := newGroupCmd("ticket", "Read or set ticket status in DEV_STATUS.md and Plane", "")
+	cmd := cli.NewGroupCmd("ticket", "Read or set ticket status in DEV_STATUS.md and Plane", "")
 	var file string
 	list := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List tickets from DEV_STATUS.md (falls back to Plane)",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runChronosTicketList(cmd.Context(), file, cmd.OutOrStdout())
 		},
@@ -335,12 +335,12 @@ func newChronosTicketCmd() *cobra.Command {
 	set := &cobra.Command{
 		Use:     "set <ticket> <status>",
 		Short:   "Set a ticket's status in Plane and DEV_STATUS.md (backlog, todo, in progress, to verify, done)",
-		Args:    exactArgs(2),
+		Args:    cli.ExactArgs(2),
 		Example: "dendrite chronos ticket set DEN-123 done\ndendrite chronos ticket set DEN-123 \"to verify\"",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			st, err := tracker.ParseStatus(args[1])
 			if err != nil {
-				return usageErrorf("%v. Accepted: backlog, todo, in progress, to verify, done", err)
+				return cli.UsageErrorf("%v. Accepted: backlog, todo, in progress, to verify, done", err)
 			}
 			return runChronosTicketSet(cmd.Context(), file, args[0], st, cmd.OutOrStdout())
 		},
@@ -369,8 +369,8 @@ func runChronosTicketList(ctx context.Context, file string, out io.Writer) error
 	if err != nil {
 		return err
 	}
-	if globals.JSON {
-		return writeJSON(out, tickets)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, tickets)
 	}
 	fmt.Fprintf(out, "[+] Registered Tickets (%d):\n", len(tickets))
 	for _, t := range tickets {
@@ -413,7 +413,7 @@ func runPlaneDocSync(ctx context.Context, direction, dir string, out io.Writer) 
 	case "sync", "both", "bidirectional":
 		d = plane.DirectionBidirectional
 	default:
-		return usageErrorf("unknown sync direction %q: use push, pull or sync", direction)
+		return cli.UsageErrorf("unknown sync direction %q: use push, pull or sync", direction)
 	}
 	return planeRun(func(client *plane.Client) error {
 		fmt.Fprintf(out, "[+] Synchronizing project documentation (%s) with Plane (%s)...\n", d, dir)

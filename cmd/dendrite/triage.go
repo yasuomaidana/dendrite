@@ -1,14 +1,14 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/agent/triage"
+	"Dendrite/pkg/ollama"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
-
-	"Dendrite/pkg/agent/triage"
-	"Dendrite/pkg/ollama"
 
 	"github.com/spf13/cobra"
 )
@@ -44,7 +44,7 @@ func newTriageCmd() *cobra.Command {
 		Aliases: []string{"triage", "trg"},
 		Short:   "Resolve local agent task triage and priority routing",
 		GroupID: "effectors",
-		Args:    minArgs(1),
+		Args:    cli.MinArgs(1),
 		Example: "dendrite inhibitory-triage \"rename this variable\" --file main.go\n" +
 			"dendrite triage \"design a sharded cache\" --tier cloud\n" +
 			"dendrite triage \"summarize the docs\" --rag --local",
@@ -59,14 +59,14 @@ func newTriageCmd() *cobra.Command {
 			if o.Tier != "" {
 				t, ok := triageTiers[strings.ToLower(o.Tier)]
 				if !ok {
-					return usageErrorf("invalid --tier %q: use local, hybrid or cloud", o.Tier)
+					return cli.UsageErrorf("invalid --tier %q: use local, hybrid or cloud", o.Tier)
 				}
 				req.ForceTier = t
 			}
 			if o.Engine != "" {
 				e, ok := triageEngines[strings.ToLower(o.Engine)]
 				if !ok {
-					return usageErrorf("invalid --engine %q: use ollama, ollama-validated, huggingface, candle or oxillama", o.Engine)
+					return cli.UsageErrorf("invalid --engine %q: use ollama, ollama-validated, huggingface, candle or oxillama", o.Engine)
 				}
 				req.TargetEngine = e
 			}
@@ -80,7 +80,7 @@ func newTriageCmd() *cobra.Command {
 			return runTriage(cmd.Context(), req, cmd.OutOrStdout())
 		},
 	}
-	addFileFlag(cmd, &o.File, "", "Active file whose content is triaged with the prompt")
+	cli.AddFileFlag(cmd, &o.File, "", "Active file whose content is triaged with the prompt")
 	cmd.Flags().StringVar(&o.Tier, "tier", "", "Force a tier: local, hybrid or cloud")
 	cmd.Flags().StringVarP(&o.Engine, "engine", "e", "", "Local engine: ollama, ollama-validated, huggingface, candle or oxillama")
 	cmd.Flags().BoolVarP(&o.Local, "local", "l", false, "Execute on the local engine when the tier allows it")
@@ -93,8 +93,8 @@ func runTriage(ctx context.Context, req triage.TriageRequest, out io.Writer) err
 	if err != nil {
 		return fmt.Errorf("triage: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, res)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, res)
 	}
 	fmt.Fprintln(out, "[+] Local Agent Triage Decision:")
 	fmt.Fprintf(out, "    - Assigned Tier:      %s\n", strings.ToUpper(string(res.Tier)))

@@ -1,17 +1,16 @@
 package main
 
 import (
+	"Dendrite/pkg/tracker/github"
+	"Dendrite/pkg/tracker/hitl"
+	"Dendrite/pkg/tracker/hitl/hitltest"
+	"Dendrite/pkg/tracker/plane"
 	"bytes"
 	"context"
 	"errors"
 	"io"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/tracker/github"
-	"Dendrite/pkg/tracker/hitl"
-	"Dendrite/pkg/tracker/hitl/hitltest"
-	"Dendrite/pkg/tracker/plane"
 )
 
 // offlineSyncer points github-sync and hitl-sync at a local Plane server and a

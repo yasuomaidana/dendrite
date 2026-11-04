@@ -1,6 +1,9 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/synapse"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,9 +13,6 @@ import (
 	"sort"
 	"strings"
 	"text/tabwriter"
-
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/synapse"
 )
 
 type memberJSON struct {
@@ -178,7 +178,7 @@ func runSynapseCreate(ctx context.Context, id string, o synapseCreateOptions, ou
 	for _, pair := range o.Parity {
 		k, v, ok := strings.Cut(pair, "=")
 		if !ok || k == "" || v == "" {
-			return usageErrorf("invalid parity command %q: expected alias=cmd", pair)
+			return cli.UsageErrorf("invalid parity command %q: expected alias=cmd", pair)
 		}
 		parityCmds[k] = v
 	}

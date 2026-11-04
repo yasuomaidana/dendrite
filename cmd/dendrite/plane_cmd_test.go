@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -99,7 +100,7 @@ func TestPlaneCommand_Create_WithDescFile(t *testing.T) {
 		"--estimate", "5",
 		"--blocked-by", "DEN-001,b23b10b0-0000-0000-0000-000000000000",
 	}
-	expectChronos(t, ExitOK, append([]string{"create"}, args...)...)
+	expectChronos(t, cli.ExitOK, append([]string{"create"}, args...)...)
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -155,21 +156,21 @@ func TestPlaneCommand_Create_EdgeCasesAndErrors(t *testing.T) {
 	t.Setenv("PLANE_PROJECT_ID", "proj")
 
 	// 1. Missing name and desc
-	expectChronos(t, ExitUsage, "create")
+	expectChronos(t, cli.ExitUsage, "create")
 
 	// 2. Name provided, but empty desc
-	expectChronos(t, ExitUsage, "create", "--name", "Ticket Without Context", "--desc", "")
+	expectChronos(t, cli.ExitUsage, "create", "--name", "Ticket Without Context", "--desc", "")
 
 	// 3. Nonexistent desc file
-	expectChronos(t, ExitError, "create", "--name", "Test", "--desc-file", "/nonexistent/path/spec.md")
+	expectChronos(t, cli.ExitError, "create", "--name", "Test", "--desc-file", "/nonexistent/path/spec.md")
 
 	// 5. Server error on create
 	tmpDir := t.TempDir()
 	specFile := filepath.Join(tmpDir, "spec.md")
 	_ = os.WriteFile(specFile, []byte("Valid ticket context"), 0644)
-	expectChronos(t, ExitError, "create", "--name", "[DEN-500] Error Case", "--desc-file", specFile)
-	expectChronos(t, ExitUsage, "create", "--name", "x", "--desc", "y", "--desc-file", specFile)
-	expectChronos(t, ExitUsage, "create", "--name", "x", "--desc", "y", "--estimate", "five")
+	expectChronos(t, cli.ExitError, "create", "--name", "[DEN-500] Error Case", "--desc-file", specFile)
+	expectChronos(t, cli.ExitUsage, "create", "--name", "x", "--desc", "y", "--desc-file", specFile)
+	expectChronos(t, cli.ExitUsage, "create", "--name", "x", "--desc", "y", "--estimate", "five")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -234,7 +235,7 @@ func TestPlaneCommand_Update_WithDescFile(t *testing.T) {
 	}
 
 	// 1. Successful update of exactly [DEN-100]
-	expectChronos(t, ExitOK, "update", "--ticket", "DEN-100", "--desc-file", specFile)
+	expectChronos(t, cli.ExitOK, "update", "--ticket", "DEN-100", "--desc-file", specFile)
 
 	mu.Lock()
 	if patchCalls != 1 {
@@ -262,7 +263,7 @@ func TestPlaneCommand_Update_WithDescFile(t *testing.T) {
 	patchedIssueID = ""
 	mu.Unlock()
 
-	expectChronos(t, ExitError, "update", "--ticket", "DEN-999", "--desc-file", specFile)
+	expectChronos(t, cli.ExitError, "update", "--ticket", "DEN-999", "--desc-file", specFile)
 
 	mu.Lock()
 	if patchCalls != 0 {
@@ -272,7 +273,7 @@ func TestPlaneCommand_Update_WithDescFile(t *testing.T) {
 	mu.Unlock()
 
 	// 3. Rename with an inline description
-	expectChronos(t, ExitOK, "update", "--ticket", "DEN-100", "--name", "[DEN-100] New Title", "--desc", "inline **context**")
+	expectChronos(t, cli.ExitOK, "update", "--ticket", "DEN-100", "--name", "[DEN-100] New Title", "--desc", "inline **context**")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -304,19 +305,19 @@ func TestPlaneCommand_Update_EdgeCasesAndErrors(t *testing.T) {
 	t.Setenv("PLANE_PROJECT_ID", "proj")
 
 	// Empty args
-	expectChronos(t, ExitUsage, "update")
+	expectChronos(t, cli.ExitUsage, "update")
 
 	// Ticket given but no desc or name
-	expectChronos(t, ExitUsage, "update", "--ticket", "DEN-100")
+	expectChronos(t, cli.ExitUsage, "update", "--ticket", "DEN-100")
 
 	// Bad desc file path
-	expectChronos(t, ExitError, "update", "--ticket", "DEN-100", "--desc-file", "/nonexistent/spec.md")
+	expectChronos(t, cli.ExitError, "update", "--ticket", "DEN-100", "--desc-file", "/nonexistent/spec.md")
 
 	// Server error on ListPlaneIssues
 	tmpDir := t.TempDir()
 	specFile := filepath.Join(tmpDir, "spec.md")
 	_ = os.WriteFile(specFile, []byte("Content"), 0644)
-	expectChronos(t, ExitError, "update", "--ticket", "DEN-100", "--desc-file", specFile)
+	expectChronos(t, cli.ExitError, "update", "--ticket", "DEN-100", "--desc-file", specFile)
 
 	// Server error on PATCH
 	patchErrServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -340,7 +341,7 @@ func TestPlaneCommand_Update_EdgeCasesAndErrors(t *testing.T) {
 	defer patchErrServer.Close()
 
 	t.Setenv("PLANE_BASE_URL", patchErrServer.URL)
-	expectChronos(t, ExitError, "update", "--ticket", "DEN-500", "--desc-file", specFile)
+	expectChronos(t, cli.ExitError, "update", "--ticket", "DEN-500", "--desc-file", specFile)
 }
 
 func TestPlaneCommand_States(t *testing.T) {
@@ -401,7 +402,7 @@ func TestPlaneCommand_States(t *testing.T) {
 	t.Setenv("PLANE_PROJECT_ID", "proj-default")
 
 	// 1. states ensure --project <uuid>
-	expectChronos(t, ExitOK, "states", "ensure", "--project", "proj-custom-uuid")
+	expectChronos(t, cli.ExitOK, "states", "ensure", "--project", "proj-custom-uuid")
 
 	mu.Lock()
 	if requestedProjectID != "proj-custom-uuid" {
@@ -419,7 +420,7 @@ func TestPlaneCommand_States(t *testing.T) {
 	postCount = 0
 	mu.Unlock()
 
-	expectChronos(t, ExitOK, "states", "ensure")
+	expectChronos(t, cli.ExitOK, "states", "ensure")
 
 	mu.Lock()
 	if requestedProjectID != "proj-default" {
@@ -433,7 +434,7 @@ func TestPlaneCommand_States(t *testing.T) {
 	mu.Unlock()
 
 	// 3. reconcile by identifier, dry run and --all
-	expectChronos(t, ExitOK, "states", "reconcile", "--project", "DGIT", "--dry-run")
+	expectChronos(t, cli.ExitOK, "states", "reconcile", "--project", "DGIT", "--dry-run")
 	mu.Lock()
 	if requestedProjectID != "proj-dgit-uuid" {
 		t.Errorf("expected DGIT resolved to proj-dgit-uuid, got: %s", requestedProjectID)
@@ -442,13 +443,13 @@ func TestPlaneCommand_States(t *testing.T) {
 		t.Errorf("dry run must not POST, got %d", postCount)
 	}
 	mu.Unlock()
-	expectChronos(t, ExitOK, "states", "reconcile", "--all")
+	expectChronos(t, cli.ExitOK, "states", "reconcile", "--all")
 
 	// 4. Bad inputs
-	expectChronos(t, ExitOK, "states")
-	expectChronos(t, ExitUsage, "states", "invalid-subcommand")
-	expectChronos(t, ExitUsage, "states", "ensure", "--project")
-	expectChronos(t, ExitUsage, "states", "ensure", "--invalid-flag")
+	expectChronos(t, cli.ExitOK, "states")
+	expectChronos(t, cli.ExitUsage, "states", "invalid-subcommand")
+	expectChronos(t, cli.ExitUsage, "states", "ensure", "--project")
+	expectChronos(t, cli.ExitUsage, "states", "ensure", "--invalid-flag")
 
 	// 5. Server error
 	errServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -457,8 +458,8 @@ func TestPlaneCommand_States(t *testing.T) {
 	defer errServer.Close()
 
 	t.Setenv("PLANE_BASE_URL", errServer.URL)
-	expectChronos(t, ExitError, "states", "ensure")
-	expectChronos(t, ExitError, "states", "reconcile", "--all")
+	expectChronos(t, cli.ExitError, "states", "ensure")
+	expectChronos(t, cli.ExitError, "states", "reconcile", "--all")
 }
 
 func TestPlaneCommand_DefaultAndFallback(t *testing.T) {
@@ -472,7 +473,7 @@ func TestPlaneCommand_DefaultAndFallback(t *testing.T) {
 	t.Setenv("PLANE_WORKSPACE_SLUG", "ws")
 	t.Setenv("PLANE_PROJECT_ID", "proj")
 
-	expectChronos(t, ExitUsage, "nonexistent-action")
+	expectChronos(t, cli.ExitUsage, "nonexistent-action")
 }
 
 // expectChronos runs `dendrite chronos args...` and checks the exit code.
@@ -480,7 +481,7 @@ func expectChronos(t *testing.T, want int, args ...string) {
 	t.Helper()
 	var buf bytes.Buffer
 	err := runCLI(context.Background(), &buf, append([]string{"chronos"}, args...)...)
-	if got := exitCodeFor(err); got != want {
+	if got := cli.ExitCodeFor(err); got != want {
 		t.Errorf("chronos %v: exit %d, want %d (err %v)\n%s", args, got, want, err, buf.String())
 	}
 }

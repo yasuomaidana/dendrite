@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/plane"
 	"bytes"
@@ -155,14 +156,14 @@ func TestChronos_SmartSelectPicksBlockedTicketWarning(t *testing.T) {
 func TestChronos_LinkAndRelate(t *testing.T) {
 	b := serveBoard(t)
 
-	expectChronos(t, ExitOK, "link", "DEN-101", "relates_to", "DEN-100")
-	expectChronos(t, ExitUsage, "link", "DEN-101", "bogus", "DEN-100")
-	expectChronos(t, ExitUsage, "link", "DEN-101", "relates_to")
-	expectChronos(t, ExitError, "link", "DEN-999", "relates_to", "DEN-100")
-	expectChronos(t, ExitError, "link", "DEN-101", "relates_to", "DEN-999")
+	expectChronos(t, cli.ExitOK, "link", "DEN-101", "relates_to", "DEN-100")
+	expectChronos(t, cli.ExitUsage, "link", "DEN-101", "bogus", "DEN-100")
+	expectChronos(t, cli.ExitUsage, "link", "DEN-101", "relates_to")
+	expectChronos(t, cli.ExitError, "link", "DEN-999", "relates_to", "DEN-100")
+	expectChronos(t, cli.ExitError, "link", "DEN-101", "relates_to", "DEN-999")
 
-	expectChronos(t, ExitUsage, "relate", "--priority", "high")
-	expectChronos(t, ExitError, "relate", "--ticket", "DEN-999")
+	expectChronos(t, cli.ExitUsage, "relate", "--priority", "high")
+	expectChronos(t, cli.ExitError, "relate", "--ticket", "DEN-999")
 	out, err := chronosOutput(t, "relate", "--ticket", "DEN-101", "--priority", "HIGH", "--start", "2026-10-01", "--target", "2026-10-09",
 		"--blocked-by", "DEN-100", "--blocking", "100", "--relates-to", "DEN-100,DEN-999,", "--reason", "shared parser")
 	if err == nil || !strings.Contains(err.Error(), "relates_to DEN-999") {
@@ -204,8 +205,8 @@ func TestChronos_TicketListAndSet(t *testing.T) {
 		t.Fatalf("Plane fallback: %v\n%s", err, out)
 	}
 
-	expectChronos(t, ExitUsage, "ticket", "set", "DEN-100", "bogus-status")
-	expectChronos(t, ExitUsage, "ticket", "set", "DEN-100")
+	expectChronos(t, cli.ExitUsage, "ticket", "set", "DEN-100", "bogus-status")
+	expectChronos(t, cli.ExitUsage, "ticket", "set", "DEN-100")
 	out, err = chronosOutput(t, "ticket", "set", "DEN-100", "todo", "--file", status)
 	if err != nil {
 		t.Fatalf("ticket set: %v\n%s", err, out)
@@ -221,9 +222,9 @@ func TestChronos_TicketWithoutPlane(t *testing.T) {
 	t.Cleanup(func() { newPlaneClient = prev })
 	dir := t.TempDir()
 
-	expectChronos(t, ExitError, "ticket", "list", "--file", filepath.Join(dir, "missing.md"))
-	expectChronos(t, ExitError, "ticket", "set", "DEN-1", "done", "--file", filepath.Join(dir, "missing.md"))
-	expectChronos(t, ExitError, "issues")
+	expectChronos(t, cli.ExitError, "ticket", "list", "--file", filepath.Join(dir, "missing.md"))
+	expectChronos(t, cli.ExitError, "ticket", "set", "DEN-1", "done", "--file", filepath.Join(dir, "missing.md"))
+	expectChronos(t, cli.ExitError, "issues")
 	if err := runPlaneDocSync(context.Background(), "push", dir, io.Discard); err == nil {
 		t.Fatal("doc sync without Plane should fail")
 	}
@@ -241,7 +242,7 @@ func TestChronos_ServerFailures(t *testing.T) {
 		{"replicate", "--dry-run"}, {"push", "--file", status}, {"push", "--file", filepath.Join(dir, "missing.md")},
 		{"ticket", "set", "DEN-1", "todo", "--file", status},
 	} {
-		expectChronos(t, ExitError, args...)
+		expectChronos(t, cli.ExitError, args...)
 	}
 }
 
@@ -270,7 +271,7 @@ func TestChronos_ReplicateAndPush(t *testing.T) {
 func TestRunPlaneDocSync(t *testing.T) {
 	serveBoard(t)
 	dir := t.TempDir()
-	if err := runPlaneDocSync(context.Background(), "sideways", dir, io.Discard); !isUsageError(err) {
+	if err := runPlaneDocSync(context.Background(), "sideways", dir, io.Discard); !cli.IsUsageError(err) {
 		t.Fatalf("bad direction should be a usage error, got %v", err)
 	}
 	for _, d := range []string{"push", "pull", "sync"} {

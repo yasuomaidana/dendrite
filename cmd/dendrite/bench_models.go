@@ -1,6 +1,11 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/inference/bench"
+	"Dendrite/pkg/ollama"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/rag"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,11 +18,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-
-	"Dendrite/pkg/inference/bench"
-	"Dendrite/pkg/ollama"
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/rag"
 )
 
 // benchSystemPrompt is the system prompt `dendrite ask` sends, so the benchmark measures the real workload.
@@ -51,7 +51,7 @@ func newSpikeBenchCmd() *cobra.Command {
 			"time to first visible word, swap growth and (with --judge) answer quality, then applies the selection rule:\n" +
 			"the best-scoring model that answers within --budget at the median without growing swap.",
 		Example: "dendrite spike bench --models hermes3:8b,gpt-oss:20b --judge gemini-3.8-flash-medium --budget 60s",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			w := cmd.OutOrStdout()
 			list, err := splitModels(models, ollamaURL)

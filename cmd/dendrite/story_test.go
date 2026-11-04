@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,15 +15,15 @@ func TestSaga_ContractsAndUsage(t *testing.T) {
 		code int
 		want string
 	}{
-		{[]string{"saga", "start", "cache"}, ExitOK, "Story 'cache' initialized."},
-		{[]string{"saga", "start", "cache", "--sync-contracts", "--schema-dir", "schemas", "--code-dir", "go=pkg"}, ExitOK, "Schema scan notice"},
-		{[]string{"story", "check-contracts"}, ExitError, "no protobuf"},
-		{[]string{"saga", "fork", "cache", "--variants", "only-one"}, ExitUsage, ""},
-		{[]string{"saga", "fork", "cache"}, ExitUsage, ""},
-		{[]string{"saga", "benchmark", "cache", "--iterations", "0"}, ExitUsage, ""},
-		{[]string{"saga", "resolve", "cache"}, ExitUsage, ""},
-		{[]string{"saga", "status", "cache"}, ExitError, "has no active fork"},
-		{[]string{"saga", "next"}, ExitUsage, ""},
+		{[]string{"saga", "start", "cache"}, cli.ExitOK, "Story 'cache' initialized."},
+		{[]string{"saga", "start", "cache", "--sync-contracts", "--schema-dir", "schemas", "--code-dir", "go=pkg"}, cli.ExitOK, "Schema scan notice"},
+		{[]string{"story", "check-contracts"}, cli.ExitError, "no protobuf"},
+		{[]string{"saga", "fork", "cache", "--variants", "only-one"}, cli.ExitUsage, ""},
+		{[]string{"saga", "fork", "cache"}, cli.ExitUsage, ""},
+		{[]string{"saga", "benchmark", "cache", "--iterations", "0"}, cli.ExitUsage, ""},
+		{[]string{"saga", "resolve", "cache"}, cli.ExitUsage, ""},
+		{[]string{"saga", "status", "cache"}, cli.ExitError, "has no active fork"},
+		{[]string{"saga", "next"}, cli.ExitUsage, ""},
 	}
 	for _, s := range steps {
 		out, code := cliOutput(t, s.args...)
@@ -38,16 +39,16 @@ func TestSaga_ForkStatusAbort(t *testing.T) {
 	for k, v := range map[string]string{"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com"} {
 		t.Setenv(k, v)
 	}
-	if out, code := cliOutput(t, "saga", "fork", "cache", "--variants", "lru,arc"); code != ExitOK || !strings.Contains(out, "Variant 'arc'") {
+	if out, code := cliOutput(t, "saga", "fork", "cache", "--variants", "lru,arc"); code != cli.ExitOK || !strings.Contains(out, "Variant 'arc'") {
 		t.Fatalf("fork: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "saga", "status", "cache"); code != ExitOK || !strings.Contains(out, "Variants (2)") {
+	if out, code := cliOutput(t, "saga", "status", "cache"); code != cli.ExitOK || !strings.Contains(out, "Variants (2)") {
 		t.Fatalf("status: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "saga", "status", "cache", "--json"); code != ExitOK || !strings.Contains(out, "{") {
+	if out, code := cliOutput(t, "saga", "status", "cache", "--json"); code != cli.ExitOK || !strings.Contains(out, "{") {
 		t.Fatalf("status --json: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "saga", "abort", "cache"); code != ExitOK || !strings.Contains(out, "successfully purged") {
+	if out, code := cliOutput(t, "saga", "abort", "cache"); code != cli.ExitOK || !strings.Contains(out, "successfully purged") {
 		t.Fatalf("abort: exit %d\n%s", code, out)
 	}
 }
@@ -63,7 +64,7 @@ func TestSaga_CheckContractsWithSchema(t *testing.T) {
 	}
 	for _, args := range [][]string{{"saga", "check-contracts"}, {"saga", "check-contracts", "--json"}, {"saga", "start", "s", "--sync-contracts"}} {
 		out, code := cliOutput(t, args...)
-		if code == ExitUsage || !(strings.Contains(out, "Scanned Contract Specifications") || strings.Contains(out, "scanned_contracts")) {
+		if code == cli.ExitUsage || !(strings.Contains(out, "Scanned Contract Specifications") || strings.Contains(out, "scanned_contracts")) {
 			t.Errorf("%v: exit %d\n%s", args, code, out)
 		}
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/pkg/synapse"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -8,8 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/synapse"
 )
 
 // healWorkspace creates two member dirs, isolates HOME/DENDRITE_HOME and creates synapse "web-api".

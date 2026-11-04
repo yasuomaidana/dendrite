@@ -1,6 +1,9 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/agentjobs"
+	"Dendrite/pkg/projectid"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,9 +12,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"Dendrite/pkg/agentjobs"
-	"Dendrite/pkg/projectid"
 )
 
 func setupCrossProjectEnv(t *testing.T) (home, otherProjDir string, otherLedger *agentjobs.Ledger) {
@@ -121,8 +121,8 @@ func TestBoutonJobsWait_UnknownTicketExitsNonZero(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error waiting for unknown ticket, got nil")
 	}
-	if exitCodeFor(err) == 0 {
-		t.Errorf("expected non-zero exit code, got %d", exitCodeFor(err))
+	if cli.ExitCodeFor(err) == 0 {
+		t.Errorf("expected non-zero exit code, got %d", cli.ExitCodeFor(err))
 	}
 }
 
@@ -135,8 +135,8 @@ func TestBoutonJobsWait_KnownProjectNoJobsExitsNonZero(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error waiting for ticket without jobs, got nil")
 	}
-	if exitCodeFor(err) == 0 {
-		t.Errorf("expected non-zero exit code, got %d", exitCodeFor(err))
+	if cli.ExitCodeFor(err) == 0 {
+		t.Errorf("expected non-zero exit code, got %d", cli.ExitCodeFor(err))
 	}
 }
 
@@ -221,8 +221,8 @@ func TestBoutonJobsShow_LatestJobOfTicket(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for show with unknown ticket, got nil")
 	}
-	if exitCodeFor(err) == 0 {
-		t.Errorf("expected non-zero exit code for unknown ticket, got %d", exitCodeFor(err))
+	if cli.ExitCodeFor(err) == 0 {
+		t.Errorf("expected non-zero exit code for unknown ticket, got %d", cli.ExitCodeFor(err))
 	}
 
 	// Mutually exclusive: <job-id> and --ticket
@@ -231,7 +231,7 @@ func TestBoutonJobsShow_LatestJobOfTicket(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for both <job-id> and --ticket, got nil")
 	}
-	if !isUsageError(err) {
+	if !cli.IsUsageError(err) {
 		t.Errorf("expected usage error, got %v", err)
 	}
 
@@ -241,7 +241,7 @@ func TestBoutonJobsShow_LatestJobOfTicket(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when neither <job-id> nor --ticket is provided, got nil")
 	}
-	if !isUsageError(err) {
+	if !cli.IsUsageError(err) {
 		t.Errorf("expected usage error, got %v", err)
 	}
 }
@@ -320,7 +320,7 @@ func TestBoutonJobsList_CrossProject(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for list with unknown ticket, got nil")
 	}
-	if exitCodeFor(err) == 0 {
-		t.Errorf("expected non-zero exit code, got %d", exitCodeFor(err))
+	if cli.ExitCodeFor(err) == 0 {
+		t.Errorf("expected non-zero exit code, got %d", cli.ExitCodeFor(err))
 	}
 }

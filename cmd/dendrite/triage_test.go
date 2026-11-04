@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,10 +14,10 @@ func TestTriage(t *testing.T) {
 	if err := os.WriteFile(file, []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, code := cliOutput(t, "triage", "rename", "the", "main", "function", "--file", file, "--tier", "cloud"); code != ExitOK || !strings.Contains(out, "Assigned Tier:      CLOUD") {
+	if out, code := cliOutput(t, "triage", "rename", "the", "main", "function", "--file", file, "--tier", "cloud"); code != cli.ExitOK || !strings.Contains(out, "Assigned Tier:      CLOUD") {
 		t.Fatalf("triage --tier cloud: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "inhibitory-triage", "summarize", "--engine", "hf", "--json"); code != ExitOK || !strings.Contains(out, "{") {
+	if out, code := cliOutput(t, "inhibitory-triage", "summarize", "--engine", "hf", "--json"); code != cli.ExitOK || !strings.Contains(out, "{") {
 		t.Fatalf("triage --json: exit %d\n%s", code, out)
 	}
 	for _, args := range [][]string{
@@ -24,11 +25,11 @@ func TestTriage(t *testing.T) {
 		{"triage", "x", "--tier", "orbital"},
 		{"triage", "x", "--engine", "abacus"},
 	} {
-		if _, code := cliOutput(t, args...); code != ExitUsage {
-			t.Errorf("%v: exit %d, want %d", args, code, ExitUsage)
+		if _, code := cliOutput(t, args...); code != cli.ExitUsage {
+			t.Errorf("%v: exit %d, want %d", args, code, cli.ExitUsage)
 		}
 	}
-	if _, code := cliOutput(t, "triage", "x", "--file", filepath.Join(t.TempDir(), "missing.go")); code != ExitError {
+	if _, code := cliOutput(t, "triage", "x", "--file", filepath.Join(t.TempDir(), "missing.go")); code != cli.ExitError {
 		t.Errorf("missing --file: exit %d", code)
 	}
 }

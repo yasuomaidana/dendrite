@@ -1,15 +1,15 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"io"
-
+	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/directive"
 	"Dendrite/pkg/quality"
 	"Dendrite/pkg/quality/coverage"
 	"Dendrite/pkg/textutil"
 	"Dendrite/pkg/tracker/hitl"
+	"context"
+	"fmt"
+	"io"
 
 	"github.com/spf13/cobra"
 )
@@ -19,7 +19,7 @@ var runCoverage = coverage.Run
 
 // newAllostasisCmd builds `dendrite allostasis` (alias quality): the zero-mock scan and the coverage ratchet.
 func newAllostasisCmd() *cobra.Command {
-	cmd := newGroupCmd("allostasis", "Anti-mock scan, 100% coverage profiler, and HITL verification poller", "glia",
+	cmd := cli.NewGroupCmd("allostasis", "Anti-mock scan, 100% coverage profiler, and HITL verification poller", "glia",
 		"quality", "homeostatic-audit", "allostasis-audit", "qlty")
 	cmd.Example = "dendrite allostasis gate\n" +
 		"dendrite allostasis coverage --ratchet\n" +
@@ -29,7 +29,7 @@ func newAllostasisCmd() *cobra.Command {
 		&cobra.Command{
 			Use:   "audit [package]",
 			Short: "Scan a package for mocks and stubs and report statement coverage (default pkg/vcs)",
-			Args:  maxArgs(1),
+			Args:  cli.MaxArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				pkg := "pkg/vcs"
 				if len(args) == 1 {

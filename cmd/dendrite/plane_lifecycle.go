@@ -1,6 +1,11 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/directive"
+	"Dendrite/pkg/planesvc"
+	"Dendrite/pkg/ticketlock"
+	"Dendrite/pkg/tracker/plane"
 	"context"
 	"fmt"
 	"io"
@@ -9,11 +14,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-
-	"Dendrite/pkg/directive"
-	"Dendrite/pkg/planesvc"
-	"Dendrite/pkg/ticketlock"
-	"Dendrite/pkg/tracker/plane"
 )
 
 // lifecycleIn builds the ticket lifecycle for the working copy in worktree ("" is the current directory).
@@ -56,7 +56,7 @@ func newChronosClaimCmd() *cobra.Command {
 			"It moves the ticket to In Progress, assigns it to the API key's user, labels it agent:<name> and tier:<tier>,\n" +
 			"posts a claim comment and records the claim that `dendrite hook pre-edit` checks. The ticket's plan, if any, is shown.",
 		Example: "dendrite chronos claim DEN-377\ndendrite chronos claim DEN-377 --worktree ../dendrite-work/Dendrite-DEN-377 --agent claude --tier 8",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeRun(func(c *plane.Client) error {
 				return runChronosClaim(cmd.Context(), lifecycleIn(c, worktree), args[0], o, cmd.OutOrStdout())
@@ -76,8 +76,8 @@ func runChronosClaim(ctx context.Context, l *ticketlock.Lifecycle, ticket string
 	if err != nil {
 		return err
 	}
-	if globals.JSON {
-		return writeJSON(out, res)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, res)
 	}
 	fmt.Fprintf(out, "[✓] Claimed %s: %s on branch %s (session %s)\n", res.Ticket, res.State, res.Branch, res.SessionID)
 	if res.Plan != nil {
@@ -99,7 +99,7 @@ func newChronosCommentCmd() *cobra.Command {
 		Use:     "comment <ticket>",
 		Short:   "Post a structured progress, milestone, note or handoff comment on a ticket",
 		Example: "dendrite chronos comment DEN-377 --kind milestone --body \"lock done, 100% coverage\"",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			text, err := readTextArg(body, bodyFile, cmd.InOrStdin())
 			if err != nil {
@@ -123,16 +123,16 @@ func newChronosCommentCmd() *cobra.Command {
 }
 
 func newChronosPlanCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "plan", Short: "Store and read the plan of a ticket (kept in Plane and in the local plan store)", Args: noArgs}
+	cmd := &cobra.Command{Use: "plan", Short: "Store and read the plan of a ticket (kept in Plane and in the local plan store)", Args: cli.NoArgs}
 	var file, worktree string
 	push := &cobra.Command{
 		Use:     "push <ticket>",
 		Short:   "Store the plan of a ticket: markdown with `- [ ]` / `- [x]` steps (--file, - for standard input)",
 		Example: "dendrite chronos plan push DEN-377 --file ~/.claude/plans/my-plan.md",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if file == "" {
-				return usageErrorf("--file is required")
+				return cli.UsageErrorf("--file is required")
 			}
 			md, err := readTextArg("", file, cmd.InOrStdin())
 			if err != nil {
@@ -143,8 +143,8 @@ func newChronosPlanCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if globals.JSON {
-					return writeJSON(cmd.OutOrStdout(), p)
+				if cli.Globals.JSON {
+					return cli.WriteJSON(cmd.OutOrStdout(), p)
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "[✓] Stored plan v%d of %s: %d step(s) left, next: %s\n", p.Version, args[0], p.PendingSteps, firstOr(p.NextStep, "(none)"))
 				return nil
@@ -157,15 +157,15 @@ func newChronosPlanCmd() *cobra.Command {
 	get := &cobra.Command{
 		Use:   "get <ticket>",
 		Short: "Print the plan of a ticket, from Plane or the local plan store",
-		Args:  exactArgs(1),
+		Args:  cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeRun(func(c *plane.Client) error {
 				p, err := lifecycleIn(c, "").GetPlan(cmd.Context(), args[0])
 				if err != nil {
 					return err
 				}
-				if globals.JSON {
-					return writeJSON(cmd.OutOrStdout(), p)
+				if cli.Globals.JSON {
+					return cli.WriteJSON(cmd.OutOrStdout(), p)
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "%s\n\n[i] v%d from %s, %d step(s) left, next: %s\n", strings.TrimRight(p.Markdown, "\n"), p.Version, p.Source, p.PendingSteps, firstOr(p.NextStep, "(none)"))
 				return nil
@@ -185,15 +185,15 @@ func newChronosHandoffCmd() *cobra.Command {
 		Long: "Posts the handoff as a comment and moves the ticket to Blocked. All three sections are required: a ticket that\n" +
 			"stops without saying where it stopped cannot be resumed. The claim and the plan are kept.",
 		Example: "dendrite chronos handoff DEN-377 --completed \"lock + tools\" --challenges \"Plane drops HTML comments\" --missing \"AC-3: round trip\"",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeRun(func(c *plane.Client) error {
 				res, err := lifecycleIn(c, worktree).Transition(cmd.Context(), args[0], "blocked", h)
 				if err != nil {
 					return err
 				}
-				if globals.JSON {
-					return writeJSON(cmd.OutOrStdout(), res)
+				if cli.Globals.JSON {
+					return cli.WriteJSON(cmd.OutOrStdout(), res)
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "[✓] %s is now %s, with its handoff\n", res.Ticket, res.State)
 				return nil
@@ -212,7 +212,7 @@ func newChronosContextCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "context <ticket>",
 		Short: "Everything needed to start on a ticket: description, acceptance criteria, plan and the files it names",
-		Args:  exactArgs(1),
+		Args:  cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeRun(func(c *plane.Client) error {
 				got, err := lifecycleIn(c, "").QueryContext(cmd.Context(), args[0])
@@ -220,8 +220,8 @@ func newChronosContextCmd() *cobra.Command {
 					return err
 				}
 				out := cmd.OutOrStdout()
-				if globals.JSON {
-					return writeJSON(out, got)
+				if cli.Globals.JSON {
+					return cli.WriteJSON(out, got)
 				}
 				fmt.Fprintf(out, "%s [%s]\n\n%s\n", got.Name, got.State, got.Description)
 				for _, ac := range got.AcceptanceCriteria {
@@ -250,7 +250,7 @@ func newChronosFinishCmd() *cobra.Command {
 			"and the ticket has no " + ticketlock.HumanReviewLabel + " label; otherwise, or when the review could not run,\n" +
 			"it sets To Verify with the report as a comment. Exits non-zero when the ticket ended Blocked.",
 		Example: "dendrite chronos finish DEN-379",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeRun(func(c *plane.Client) error {
 				l := lifecycleIn(c, worktree)
@@ -267,8 +267,8 @@ func runChronosFinish(ctx context.Context, l *ticketlock.Lifecycle, ticket strin
 	if err != nil {
 		return err
 	}
-	if globals.JSON {
-		if err := writeJSON(out, res); err != nil {
+	if cli.Globals.JSON {
+		if err := cli.WriteJSON(out, res); err != nil {
 			return err
 		}
 	} else {
@@ -278,7 +278,7 @@ func runChronosFinish(ctx context.Context, l *ticketlock.Lifecycle, ticket strin
 		}
 	}
 	if res.State == "Blocked" {
-		return usageErrorf("%s was blocked: the handoff on the ticket says what failed", res.Ticket)
+		return cli.UsageErrorf("%s was blocked: the handoff on the ticket says what failed", res.Ticket)
 	}
 	return nil
 }
@@ -294,7 +294,7 @@ func newChronosDecisionCmd() *cobra.Command {
 			"Claude Code's AskUserQuestion is recorded automatically by `dendrite hook decision`; use this for every\n" +
 			"other agent, and for a question asked in plain chat.",
 		Example: "dendrite chronos decision DEN-377 --question \"Done rights?\" --answer \"Agents may set Done\" --option \"Human sign-off\" --option \"Agents may set Done\"",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			d.Options = options
 			return planeRun(func(c *plane.Client) error {
@@ -324,7 +324,7 @@ func newChronosCommentsCmd() *cobra.Command {
 		Use:     "comments <ticket>",
 		Short:   "Read the comments of a ticket: claims, progress, decisions, handoffs and plans",
 		Example: "dendrite chronos comments DEN-396 --kind handoff --last 1",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeRun(func(c *plane.Client) error {
 				rows, err := lifecycleIn(c, worktree).Comments(cmd.Context(), args[0], kind, last)
@@ -343,8 +343,8 @@ func newChronosCommentsCmd() *cobra.Command {
 }
 
 func printComments(out io.Writer, rows []ticketlock.CommentView) error {
-	if globals.JSON {
-		return writeJSON(out, rows)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, rows)
 	}
 	for _, r := range rows {
 		fmt.Fprintf(out, "--- %s %s\n%s\n", firstOr(r.Created, "-"), firstOr(r.Kind, "comment"), r.Text)

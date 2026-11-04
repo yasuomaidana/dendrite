@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,11 +35,11 @@ func TestQuantal(t *testing.T) {
 	}
 
 	out, code := cliOutput(t, "quantal", "--ticket", "DEN-1", "--no-smart", "--no-local", "-m", "feat: add b", "--all", "--no-push", "--dry-run")
-	if code != ExitOK || !strings.Contains(out, "Dry run commit preview generated") {
+	if code != cli.ExitOK || !strings.Contains(out, "Dry run commit preview generated") {
 		t.Fatalf("dry run: exit %d\n%s", code, out)
 	}
 	out, code = cliOutput(t, "commit", "-t", "DEN-1", "--no-smart", "--no-local", "-m", "feat: add b", "--files", "b.txt", "--no-push")
-	if code != ExitOK || !strings.Contains(out, "Commit applied successfully") {
+	if code != cli.ExitOK || !strings.Contains(out, "Commit applied successfully") {
 		t.Fatalf("commit: exit %d\n%s", code, out)
 	}
 	if log := runGitT(t, repo, "log", "-1", "--format=%s"); !strings.Contains(log, "feat: add b") {
@@ -50,12 +51,12 @@ func TestQuantal(t *testing.T) {
 		{"quantal", "--files", "a", "--all"},
 		{"quantal", "extra"},
 	} {
-		if _, code := cliOutput(t, args...); code != ExitUsage {
-			t.Errorf("%v: exit %d, want %d", args, code, ExitUsage)
+		if _, code := cliOutput(t, args...); code != cli.ExitUsage {
+			t.Errorf("%v: exit %d, want %d", args, code, cli.ExitUsage)
 		}
 	}
 	t.Setenv("DENDRITE_COMMIT_PUSH", "false")
-	if out, code := cliOutput(t, "quantal", "--no-smart", "--no-local", "-m", "nothing", "--no-push"); code != ExitError {
+	if out, code := cliOutput(t, "quantal", "--no-smart", "--no-local", "-m", "nothing", "--no-push"); code != cli.ExitError {
 		t.Errorf("committing a clean tree should fail: exit %d\n%s", code, out)
 	}
 }

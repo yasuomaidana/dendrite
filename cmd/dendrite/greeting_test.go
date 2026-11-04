@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"strings"
 	"testing"
 )
@@ -16,11 +17,11 @@ func TestGreeting(t *testing.T) {
 	}
 	for _, s := range steps {
 		out, code := cliOutput(t, s.args...)
-		if code != ExitOK || !strings.Contains(strings.ToLower(out), strings.ToLower(s.want)) {
+		if code != cli.ExitOK || !strings.Contains(strings.ToLower(out), strings.ToLower(s.want)) {
 			t.Errorf("%v: exit %d\n%s", s.args, code, out)
 		}
 	}
-	if _, code := cliOutput(t, "greeting", "extra"); code != ExitUsage {
+	if _, code := cliOutput(t, "greeting", "extra"); code != cli.ExitUsage {
 		t.Errorf("positional argument: exit %d", code)
 	}
 }

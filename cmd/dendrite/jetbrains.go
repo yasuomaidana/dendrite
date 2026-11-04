@@ -1,15 +1,15 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
-	"github.com/yasuomaidana/dendrite-mcp-hub/pkg/jetbrains"
-
 	"github.com/spf13/cobra"
+	"github.com/yasuomaidana/dendrite-mcp-hub/pkg/jetbrains"
 )
 
 // jetbrainsMCPURL is the IDE's built-in MCP endpoint; tests point it at a local server.
@@ -40,7 +40,7 @@ func withIDE(ctx context.Context, fn func(*jetbrains.Client, *jetbrains.Bridge) 
 
 // newBridgeCmd builds `dendrite bridge` (alias jetbrains): the JetBrains IDE MCP integration.
 func newBridgeCmd() *cobra.Command {
-	cmd := newGroupCmd("bridge", "JetBrains IDE MCP protocol integration and PSI symbol indexer", "cleft",
+	cmd := cli.NewGroupCmd("bridge", "JetBrains IDE MCP protocol integration and PSI symbol indexer", "cleft",
 		"jetbrains", "neuromuscular-bridge", "jb")
 	cmd.Example = "dendrite bridge setup\n" +
 		"dendrite bridge probe\n" +
@@ -50,7 +50,7 @@ func newBridgeCmd() *cobra.Command {
 	probe := &cobra.Command{
 		Use:   "probe",
 		Short: "Connect to the IDE and list its MCP tools",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withIDE(cmd.Context(), func(c *jetbrains.Client, _ *jetbrains.Bridge) error {
 				return runBridgeProbe(cmd.Context(), c, cmd.OutOrStdout())
@@ -62,10 +62,10 @@ func newBridgeCmd() *cobra.Command {
 	open := &cobra.Command{
 		Use:   "open <file>",
 		Short: "Open a file in the IDE editor",
-		Args:  exactArgs(1),
+		Args:  cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if line < 1 {
-				return usageErrorf("--line must be 1 or more")
+				return cli.UsageErrorf("--line must be 1 or more")
 			}
 			return withIDE(cmd.Context(), func(_ *jetbrains.Client, b *jetbrains.Bridge) error {
 				if err := b.OpenFile(cmd.Context(), args[0], line, 1); err != nil {
@@ -81,7 +81,7 @@ func newBridgeCmd() *cobra.Command {
 	problems := &cobra.Command{
 		Use:   "problems <file>",
 		Short: "Show the IDE's inspection results for a file",
-		Args:  exactArgs(1),
+		Args:  cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withIDE(cmd.Context(), func(_ *jetbrains.Client, b *jetbrains.Bridge) error {
 				probs, err := b.GetFileProblems(cmd.Context(), args[0])
@@ -89,8 +89,8 @@ func newBridgeCmd() *cobra.Command {
 					return fmt.Errorf("get problems: %w", err)
 				}
 				out := cmd.OutOrStdout()
-				if globals.JSON {
-					return writeJSON(out, probs)
+				if cli.Globals.JSON {
+					return cli.WriteJSON(out, probs)
 				}
 				fmt.Fprintf(out, "[+] JetBrains Diagnostics for %s (%d found):\n", args[0], len(probs))
 				for _, p := range probs {
@@ -104,7 +104,7 @@ func newBridgeCmd() *cobra.Command {
 	symbols := &cobra.Command{
 		Use:   "symbols [query]",
 		Short: "Search the IDE's symbol index",
-		Args:  maxArgs(1),
+		Args:  cli.MaxArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := ""
 			if len(args) == 1 {
@@ -116,8 +116,8 @@ func newBridgeCmd() *cobra.Command {
 					return fmt.Errorf("symbol search: %w", err)
 				}
 				out := cmd.OutOrStdout()
-				if globals.JSON {
-					return writeJSON(out, syms)
+				if cli.Globals.JSON {
+					return cli.WriteJSON(out, syms)
 				}
 				fmt.Fprintf(out, "[+] Matching Symbols (%d):\n", len(syms))
 				for _, s := range syms {
@@ -131,7 +131,7 @@ func newBridgeCmd() *cobra.Command {
 	build := &cobra.Command{
 		Use:   "build",
 		Short: "Build the project in the IDE",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withIDE(cmd.Context(), func(_ *jetbrains.Client, b *jetbrains.Bridge) error {
 				out := cmd.OutOrStdout()
@@ -152,7 +152,7 @@ func newBridgeCmd() *cobra.Command {
 	run := &cobra.Command{
 		Use:   "run <configuration>",
 		Short: "Run an IDE run configuration",
-		Args:  exactArgs(1),
+		Args:  cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withIDE(cmd.Context(), func(_ *jetbrains.Client, b *jetbrains.Bridge) error {
 				fmt.Fprintf(cmd.OutOrStdout(), "[+] Running IDE configuration '%s'...\n", args[0])
@@ -192,7 +192,7 @@ func newBridgeSetupCmd() *cobra.Command {
 		Use:     "setup",
 		Aliases: []string{"setup-mcp", "configure"},
 		Short:   "Write the IDE's MCP config, run configurations and external tools (no running IDE needed)",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := jetbrains.SetupOptions{
 				ConfigureProjectMCP:    !globalOnly,

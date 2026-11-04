@@ -1,12 +1,12 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/tracker/plane"
 	"context"
 	"fmt"
 	"io"
 	"strings"
-
-	"Dendrite/pkg/tracker/plane"
 
 	"github.com/spf13/cobra"
 )
@@ -20,13 +20,13 @@ type chronosStatesOptions struct {
 
 // newChronosStatesCmd builds `chronos states`: converge workflow states onto plane.CanonicalStates.
 func newChronosStatesCmd() *cobra.Command {
-	cmd := newGroupCmd("states", "Manage the project's workflow states", "")
+	cmd := cli.NewGroupCmd("states", "Manage the project's workflow states", "")
 	var o chronosStatesOptions
 	reconcile := &cobra.Command{
 		Use:     "reconcile",
 		Aliases: []string{"ensure"},
 		Short:   "Converge workflow states (names, colors, order) onto the canonical set",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite chronos states reconcile\ndendrite chronos states reconcile --project DGIT --dry-run\ndendrite chronos states reconcile --all",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return planeRun(func(c *plane.Client) error {
@@ -34,7 +34,7 @@ func newChronosStatesCmd() *cobra.Command {
 			})
 		},
 	}
-	addProjectFlag(reconcile, &o.Project, "", "Plane project UUID or identifier (default: the configured project)")
+	cli.AddProjectFlag(reconcile, &o.Project, "", "Plane project UUID or identifier (default: the configured project)")
 	reconcile.Flags().BoolVar(&o.All, "all", false, "Reconcile every project in the workspace")
 	reconcile.Flags().BoolVar(&o.DryRun, "dry-run", false, "Show the changes without applying them")
 	cmd.AddCommand(reconcile)

@@ -1,15 +1,16 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"strings"
 	"testing"
 )
 
 func TestTranslocate(t *testing.T) {
-	if out, code := cliOutput(t, "translocate", "plan", "--ram", "8GB", "--disk", "2TB"); code != ExitOK || !strings.Contains(out, "SERVICE CAPACITY EVALUATION") {
+	if out, code := cliOutput(t, "translocate", "plan", "--ram", "8GB", "--disk", "2TB"); code != cli.ExitOK || !strings.Contains(out, "SERVICE CAPACITY EVALUATION") {
 		t.Fatalf("plan: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "move", "plan", "--json"); code != ExitOK || !strings.Contains(out, "{") {
+	if out, code := cliOutput(t, "move", "plan", "--json"); code != cli.ExitOK || !strings.Contains(out, "{") {
 		t.Fatalf("plan --json: exit %d\n%s", code, out)
 	}
 	for _, args := range [][]string{
@@ -21,11 +22,11 @@ func TestTranslocate(t *testing.T) {
 		{"translocate", "run", "plane", "--ssh", "host", "--timeout", "120"},
 		{"translocate", "plane"},
 	} {
-		if _, code := cliOutput(t, args...); code != ExitUsage {
-			t.Errorf("%v: exit %d, want %d", args, code, ExitUsage)
+		if _, code := cliOutput(t, args...); code != cli.ExitUsage {
+			t.Errorf("%v: exit %d, want %d", args, code, cli.ExitUsage)
 		}
 	}
-	if out, code := cliOutput(t, "translocate", "run", "plane,litellm", "--ssh", "nobody@127.0.0.1", "--port", "1", "--dry-run", "--timeout", "1s"); code == ExitUsage || !strings.Contains(out, "Services:      plane, litellm") {
+	if out, code := cliOutput(t, "translocate", "run", "plane,litellm", "--ssh", "nobody@127.0.0.1", "--port", "1", "--dry-run", "--timeout", "1s"); code == cli.ExitUsage || !strings.Contains(out, "Services:      plane, litellm") {
 		t.Fatalf("run --dry-run: exit %d\n%s", code, out)
 	}
 }

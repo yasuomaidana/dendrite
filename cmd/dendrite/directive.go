@@ -1,6 +1,9 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/directive"
+	"Dendrite/pkg/llmchat"
 	"bufio"
 	"context"
 	"fmt"
@@ -9,9 +12,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-
-	"Dendrite/pkg/directive"
-	"Dendrite/pkg/llmchat"
 )
 
 // directiveChat is the model that reads rules the parser does not know; a seam for tests.
@@ -44,7 +44,7 @@ func newDirectiveCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&path, "path", ".", "Project directory")
 	cmd.AddCommand(
 		&cobra.Command{
-			Use: "list", Short: "Show the directives in force", Args: noArgs,
+			Use: "list", Short: "Show the directives in force", Args: cli.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error { return runDirectiveList(path, cmd.OutOrStdout()) },
 		},
 		&cobra.Command{
@@ -55,7 +55,7 @@ func newDirectiveCmd() *cobra.Command {
 			},
 		},
 		&cobra.Command{
-			Use: "apply", Short: "Regenerate the files derived from the directives", Args: noArgs,
+			Use: "apply", Short: "Regenerate the files derived from the directives", Args: cli.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error { return runDirectiveApply(path, cmd.OutOrStdout()) },
 		},
 	)
@@ -79,11 +79,11 @@ func runDirectiveSet(dir string, pairs []string, in io.Reader, out io.Writer) er
 	for _, pair := range pairs {
 		key, text, ok := strings.Cut(pair, "=")
 		if !ok {
-			return usageErrorf("%q is not key=value", pair)
+			return cli.UsageErrorf("%q is not key=value", pair)
 		}
 		value, err := directive.ParseValue(strings.TrimSpace(key), text)
 		if err != nil {
-			return usageErrorf("%v", err)
+			return cli.UsageErrorf("%v", err)
 		}
 		changes = append(changes, directive.Change{Key: strings.TrimSpace(key), Value: value})
 	}
@@ -112,9 +112,9 @@ func changeDirectives(dir string, changes []directive.Change, in io.Reader, out 
 		fmt.Fprintf(out, "[i] %s does not exist yet; it will be created.\n", directive.Path)
 	}
 	fmt.Fprint(out, indentText(diff, "    "))
-	if !globals.Yes {
-		if !isTerminal(in) {
-			return usageErrorf("this changes %s: run it in a terminal to confirm, or pass -y", directive.Path)
+	if !cli.Globals.Yes {
+		if !cli.IsTerminal(in) {
+			return cli.UsageErrorf("this changes %s: run it in a terminal to confirm, or pass -y", directive.Path)
 		}
 		fmt.Fprint(out, "[?] Apply? [y/N] ")
 		answer, _ := bufio.NewReader(in).ReadString('\n')

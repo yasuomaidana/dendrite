@@ -1,7 +1,9 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/rag"
 	"Dendrite/pkg/synapse"
 	"Dendrite/pkg/synapsesearch"
 	"Dendrite/pkg/ticketindex"
@@ -11,14 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"Dendrite/pkg/rag"
-
 	"github.com/spf13/cobra"
 )
 
 // newRagCmd builds `dendrite rag`: direct orchestration of the dendrite-rag retrieval sidecar.
 func newRagCmd() *cobra.Command {
-	cmd := newGroupCmd("rag", "Code & documentation retrieval sidecar orchestration (dendrite-rag)", "cortex",
+	cmd := cli.NewGroupCmd("rag", "Code & documentation retrieval sidecar orchestration (dendrite-rag)", "cortex",
 		"retrieval", "retriever")
 	cmd.AddCommand(
 		newRagIndexCmd(),
@@ -48,7 +48,7 @@ func newRagIndexCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "index",
 		Short: "Index project incrementally or from scratch with --full",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rep, err := rag.NewRetriever().Index(cmd.Context(), project, rag.IndexOptions{
 				Full:              full,
@@ -60,8 +60,8 @@ func newRagIndexCmd() *cobra.Command {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, rep)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, rep)
 			}
 			fmt.Fprintf(out, "[✓] Indexed %s in %d ms (walk: %d ms, embed: %d ms)\n", project, rep.DurationMS, rep.WalkMS, rep.EmbedMS)
 			fmt.Fprintf(out, "    Files: %d scanned, %d changed, %d removed\n", rep.FilesScanned, rep.FilesChanged, rep.FilesRemoved)
@@ -75,7 +75,7 @@ func newRagIndexCmd() *cobra.Command {
 			return nil
 		},
 	}
-	addProjectFlag(cmd, &project, ".", "Project directory to index")
+	cli.AddProjectFlag(cmd, &project, ".", "Project directory to index")
 	cmd.Flags().BoolVar(&full, "full", false, "Force full re-indexing")
 	cmd.Flags().Int64Var(&embedBudgetMS, "embed-budget-ms", 0, "Stop embedding after this many milliseconds")
 	cmd.Flags().IntVar(&embedBudgetTokens, "embed-budget-tokens", 0, "Stop embedding after this many tokens")
@@ -90,7 +90,7 @@ func newRagSearchCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "search <query...>",
 		Short: "Hybrid search over the project index (or, with --scope synapse, every project of a synapse)",
-		Args:  minArgs(1),
+		Args:  cli.MinArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := strings.Join(args, " ")
 			switch strings.ToLower(scope) {
@@ -98,7 +98,7 @@ func newRagSearchCmd() *cobra.Command {
 			case "synapse":
 				return runSynapseSearch(cmd.Context(), cmd.OutOrStdout(), project, synapseID, query, topK, corpus)
 			default:
-				return usageErrorf("invalid --scope %q: use project or synapse", scope)
+				return cli.UsageErrorf("invalid --scope %q: use project or synapse", scope)
 			}
 			searchProject, searchCorpus, err := ticketindex.Resolve(cmd.Context(), project, corpus)
 			if err != nil {
@@ -113,8 +113,8 @@ func newRagSearchCmd() *cobra.Command {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, res)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, res)
 			}
 			fmt.Fprintf(out, "[✓] Hits for %q (%d chunks, %s):\n", query, len(res.Chunks), res.IndexStatus)
 			for i, c := range res.Chunks {
@@ -127,7 +127,7 @@ func newRagSearchCmd() *cobra.Command {
 			return nil
 		},
 	}
-	addProjectFlag(cmd, &project, ".", "Project directory to search")
+	cli.AddProjectFlag(cmd, &project, ".", "Project directory to search")
 	cmd.Flags().IntVarP(&topK, "top-k", "k", 10, "Maximum number of hits")
 	cmd.Flags().StringVar(&corpus, "corpus", "all", "Corpus filter: all, code, docs, or tickets (the rendered Plane tickets)")
 	cmd.Flags().Float64Var(&minScore, "min-score", 0, "Minimum relevance score filter")
@@ -143,7 +143,7 @@ func newRagContextCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "context <query...>",
 		Short: "Generate a token-budgeted prompt context pack",
-		Args:  minArgs(1),
+		Args:  cli.MinArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := strings.Join(args, " ")
 			var dsPtr *float64
@@ -163,8 +163,8 @@ func newRagContextCmd() *cobra.Command {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, res)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, res)
 			}
 			if res.Abstained {
 				fmt.Fprintln(out, "[!] Abstained: no project context met the reranker relevance threshold.")
@@ -181,7 +181,7 @@ func newRagContextCmd() *cobra.Command {
 			return nil
 		},
 	}
-	addProjectFlag(cmd, &project, ".", "Project directory")
+	cli.AddProjectFlag(cmd, &project, ".", "Project directory")
 	cmd.Flags().IntVar(&budget, "budget", 2500, "Estimated token budget")
 	cmd.Flags().StringVar(&corpus, "corpus", "all", "Corpus: all, code, docs, or tickets (the rendered Plane tickets)")
 	cmd.Flags().StringVar(&detail, "detail", "auto", "Detail level: auto, full, or map")
@@ -194,15 +194,15 @@ func newRagShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show <chunk_id...>",
 		Short: "Display the full content of chunk IDs",
-		Args:  minArgs(1),
+		Args:  cli.MinArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			chunks, err := rag.NewRetriever().Show(cmd.Context(), project, args)
 			if err != nil {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, chunks)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, chunks)
 			}
 			for _, c := range chunks {
 				fmt.Fprintf(out, "=== %s (%s:%d-%d) ===\n%s\n", c.ID, c.FilePath, c.LineStart, c.LineEnd, c.Content)
@@ -210,7 +210,7 @@ func newRagShowCmd() *cobra.Command {
 			return nil
 		},
 	}
-	addProjectFlag(cmd, &project, ".", "Project directory")
+	cli.AddProjectFlag(cmd, &project, ".", "Project directory")
 	return cmd
 }
 
@@ -219,15 +219,15 @@ func newRagStatusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Display RAG index metrics, coverage, and warnings",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			st, err := rag.NewRetriever().Status(cmd.Context(), project)
 			if err != nil {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, st)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, st)
 			}
 			cov := 100.0
 			if st.EmbedCoverage != nil {
@@ -247,7 +247,7 @@ func newRagStatusCmd() *cobra.Command {
 			return nil
 		},
 	}
-	addProjectFlag(cmd, &project, ".", "Project directory")
+	cli.AddProjectFlag(cmd, &project, ".", "Project directory")
 	return cmd
 }
 
@@ -256,17 +256,17 @@ func newRagSettingsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "settings",
 		Short: "Inspect the resolved .dendrite/rag.toml settings and env overrides",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := rag.NewRetriever().Settings(cmd.Context(), project)
 			if err != nil {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			return writeJSON(out, s)
+			return cli.WriteJSON(out, s)
 		},
 	}
-	addProjectFlag(cmd, &project, ".", "Project directory")
+	cli.AddProjectFlag(cmd, &project, ".", "Project directory")
 	return cmd
 }
 
@@ -274,15 +274,15 @@ func newRagEmbeddersCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "embedders",
 		Short: "List compiled and available embedding backends in dendrite-rag",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			backends, err := rag.NewRetriever().Embedders(cmd.Context())
 			if err != nil {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, backends)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, backends)
 			}
 			fmt.Fprintf(out, "%-10s %-13s %-34s %s\n", "BACKEND", "STATUS", "DEFAULT MODEL", "DESCRIPTION")
 			for _, b := range backends {
@@ -307,7 +307,7 @@ func newRagPurgeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "purge",
 		Short: "Delete local RAG index for project",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := rag.NewRetriever().Purge(cmd.Context(), project); err != nil {
 				return err
@@ -316,7 +316,7 @@ func newRagPurgeCmd() *cobra.Command {
 			return nil
 		},
 	}
-	addProjectFlag(cmd, &project, ".", "Project directory")
+	cli.AddProjectFlag(cmd, &project, ".", "Project directory")
 	return cmd
 }
 
@@ -333,8 +333,8 @@ func runSynapseSearch(ctx context.Context, out io.Writer, project, synapseID, qu
 	if err != nil {
 		return err
 	}
-	if globals.JSON {
-		return writeJSON(out, map[string]any{"synapse": syn.ID, "hits": hits, "skipped_members": notes})
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, map[string]any{"synapse": syn.ID, "hits": hits, "skipped_members": notes})
 	}
 	fmt.Fprintf(out, "[✓] Hits for %q across synapse %s (%d members, %d hits):\n", query, syn.ID, len(syn.Members), len(hits))
 	for i, h := range hits {
@@ -361,7 +361,7 @@ func pickSynapse(project, id string) (*synapse.Synapse, error) {
 	}
 	pid, err := projectid.Read(project)
 	if err != nil {
-		return nil, usageErrorf("%s has no project id, so its synapse is unknown: pass --synapse <id> (see `dendrite synapse list`)", project)
+		return nil, cli.UsageErrorf("%s has no project id, so its synapse is unknown: pass --synapse <id> (see `dendrite synapse list`)", project)
 	}
 	syns, err := st.ReferencingProject(pid)
 	if err != nil {
@@ -369,7 +369,7 @@ func pickSynapse(project, id string) (*synapse.Synapse, error) {
 	}
 	switch len(syns) {
 	case 0:
-		return nil, usageErrorf("this project is in no synapse: pass --synapse <id> (see `dendrite synapse list`)")
+		return nil, cli.UsageErrorf("this project is in no synapse: pass --synapse <id> (see `dendrite synapse list`)")
 	case 1:
 		return syns[0], nil
 	}
@@ -377,5 +377,5 @@ func pickSynapse(project, id string) (*synapse.Synapse, error) {
 	for _, s := range syns {
 		ids = append(ids, s.ID)
 	}
-	return nil, usageErrorf("this project is in several synapses (%s): pass --synapse <id>", strings.Join(ids, ", "))
+	return nil, cli.UsageErrorf("this project is in several synapses (%s): pass --synapse <id>", strings.Join(ids, ", "))
 }

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/server"
+	"Dendrite/pkg/ui/penpot"
 	"context"
 	"fmt"
 	"io"
@@ -10,9 +13,6 @@ import (
 	"syscall"
 	"time"
 
-	"Dendrite/pkg/server"
-	"Dendrite/pkg/ui/penpot"
-
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +20,7 @@ const defaultPenpotEndpoint = "http://localhost:9000"
 
 // newCortexCmd builds `dendrite cortex` (alias ui): the web cockpit, Penpot sync and the creative canvas.
 func newCortexCmd() *cobra.Command {
-	cmd := newGroupCmd("cortex", "Embedded Web Control Cockpit and telemetry server", "cortex",
+	cmd := cli.NewGroupCmd("cortex", "Embedded Web Control Cockpit and telemetry server", "cortex",
 		"ui", "cortex-cockpit")
 	cmd.Example = "dendrite cortex serve --port 3456\n" +
 		"dendrite cortex sync --file web/src/Button.svelte --ticket DEN-810\n" +
@@ -35,7 +35,7 @@ func newCortexServeCmd() *cobra.Command {
 		Use:     "serve",
 		Aliases: []string{"start"},
 		Short:   "Run the web cockpit and telemetry server in the foreground (Ctrl+C stops it)",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -69,16 +69,16 @@ func newCortexSyncCmd() *cobra.Command {
 		Use:     "sync",
 		Aliases: []string{"penpot"},
 		Short:   "Extract a UI component's tokens and props and sync them to Penpot and the Plane ticket",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCortexSync(cmd.Context(), opts, cmd.OutOrStdout())
 		},
 	}
-	addFileFlag(cmd, &opts.FilePath, "", "UI component file")
-	addTicketFlag(cmd, &opts.TicketID, opts.TicketID)
+	cli.AddFileFlag(cmd, &opts.FilePath, "", "UI component file")
+	cli.AddTicketFlag(cmd, &opts.TicketID, opts.TicketID)
 	cmd.Flags().StringVarP(&opts.PenpotEndpoint, "endpoint", "e", opts.PenpotEndpoint, "Penpot URL")
-	addDryRunFlag(cmd, &opts.DryRun)
-	requireFlags(cmd, "file")
+	cli.AddDryRunFlag(cmd, &opts.DryRun)
+	cli.RequireFlags(cmd, "file")
 	return cmd
 }
 
@@ -87,8 +87,8 @@ func runCortexSync(ctx context.Context, opts penpot.SyncOptions, out io.Writer) 
 	if err != nil {
 		return fmt.Errorf("UI synchronization: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, res)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, res)
 	}
 	fmt.Fprintf(out, "[✓] Successfully synchronized UI component '%s' (%s) with Penpot & Plane\n", res.Component.Name, res.Component.Framework)
 	fmt.Fprintf(out, "    * Design Tokens:   %d tokens extracted\n", len(res.Component.Tokens))

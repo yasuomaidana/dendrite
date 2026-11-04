@@ -1,14 +1,14 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/rag"
+	"Dendrite/pkg/rag/ragtest"
+	"Dendrite/pkg/sidecar"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/rag"
-	"Dendrite/pkg/rag/ragtest"
-	"Dendrite/pkg/sidecar"
 )
 
 func TestAsk_UsageErrors(t *testing.T) {
@@ -26,7 +26,7 @@ func TestAsk_UsageErrors(t *testing.T) {
 
 func TestAsk_CentralServerUnreachable(t *testing.T) {
 	out, code := cliOutput(t, "ask", "--server", "http://127.0.0.1:1", "--project", t.TempDir(), "--tier", "hybrid", "where", "is", "telemetry?")
-	if code != ExitError || !strings.Contains(out, `Forwarding query to Central RAG Service at http://127.0.0.1:1 for: "where is telemetry?"`) {
+	if code != cli.ExitError || !strings.Contains(out, `Forwarding query to Central RAG Service at http://127.0.0.1:1 for: "where is telemetry?"`) {
 		t.Fatalf("unreachable server: exit %d\n%s", code, out)
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/node/migrate"
 	"context"
 	"errors"
@@ -25,27 +26,27 @@ func useCompose(t *testing.T, err error) *[]string {
 
 func TestMotor(t *testing.T) {
 	calls := useCompose(t, nil)
-	if out, code := cliOutput(t, "motor", "list"); code != ExitOK || !strings.Contains(out, "Registered Service Catalog") {
+	if out, code := cliOutput(t, "motor", "list"); code != cli.ExitOK || !strings.Contains(out, "Registered Service Catalog") {
 		t.Fatalf("list: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "service", "ls", "--json"); code != ExitOK || !strings.Contains(out, "{") {
+	if out, code := cliOutput(t, "service", "ls", "--json"); code != cli.ExitOK || !strings.Contains(out, "{") {
 		t.Fatalf("list --json: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "motor", "health", "litellm", "--deep"); code != ExitOK || !strings.Contains(out, "Inspecting Health for Service 'litellm'") {
+	if out, code := cliOutput(t, "motor", "health", "litellm", "--deep"); code != cli.ExitOK || !strings.Contains(out, "Inspecting Health for Service 'litellm'") {
 		t.Fatalf("health: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "motor", "health", "plane", "--json"); code != ExitOK || !strings.Contains(out, `"healthy"`) {
+	if out, code := cliOutput(t, "motor", "health", "plane", "--json"); code != cli.ExitOK || !strings.Contains(out, `"healthy"`) {
 		t.Fatalf("health --json: exit %d\n%s", code, out)
 	}
-	if _, code := cliOutput(t, "motor", "stop", "plane"); code != ExitOK || len(*calls) != 1 || !strings.HasSuffix((*calls)[0], " down") {
+	if _, code := cliOutput(t, "motor", "stop", "plane"); code != cli.ExitOK || len(*calls) != 1 || !strings.HasSuffix((*calls)[0], " down") {
 		t.Fatalf("stop: exit %d, calls %v", code, *calls)
 	}
-	if _, code := cliOutput(t, "motor", "restart", "plane"); code != ExitOK {
+	if _, code := cliOutput(t, "motor", "restart", "plane"); code != cli.ExitOK {
 		t.Fatalf("restart: exit %d", code)
 	}
 	for _, args := range [][]string{{"motor", "start", "nope"}, {"motor", "health", "a", "b"}, {"motor", "ui-sync"}} {
-		if _, code := cliOutput(t, args...); code != ExitUsage {
-			t.Errorf("%v: exit %d, want %d", args, code, ExitUsage)
+		if _, code := cliOutput(t, args...); code != cli.ExitUsage {
+			t.Errorf("%v: exit %d, want %d", args, code, cli.ExitUsage)
 		}
 	}
 }
@@ -53,7 +54,7 @@ func TestMotor(t *testing.T) {
 func TestMotor_StartAndComposeFailures(t *testing.T) {
 	calls := useCompose(t, nil)
 	t.Chdir(t.TempDir())
-	if out, code := cliOutput(t, "motor", "start", "plane", "--target", "local"); code != ExitOK || !strings.Contains(out, "not found; skipping container spinup") {
+	if out, code := cliOutput(t, "motor", "start", "plane", "--target", "local"); code != cli.ExitOK || !strings.Contains(out, "not found; skipping container spinup") {
 		t.Fatalf("start without a compose file: exit %d\n%s", code, out)
 	}
 
@@ -67,14 +68,14 @@ func TestMotor_StartAndComposeFailures(t *testing.T) {
 	if err := os.WriteFile(file, []byte("services: {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, code := cliOutput(t, "motor", "start", "plane", "--verify-mcp"); code != ExitOK || len(*calls) == 0 {
+	if _, code := cliOutput(t, "motor", "start", "plane", "--verify-mcp"); code != cli.ExitOK || len(*calls) == 0 {
 		t.Fatalf("start with a compose file: exit %d, calls %v", code, *calls)
 	}
 	useCompose(t, errors.New("docker not running"))
-	if out, code := cliOutput(t, "motor", "start", "plane"); code != ExitError || !strings.Contains(out, "docker not running") {
+	if out, code := cliOutput(t, "motor", "start", "plane"); code != cli.ExitError || !strings.Contains(out, "docker not running") {
 		t.Fatalf("compose failure: exit %d\n%s", code, out)
 	}
-	if _, code := cliOutput(t, "motor", "stop", "plane"); code != ExitError {
+	if _, code := cliOutput(t, "motor", "stop", "plane"); code != cli.ExitError {
 		t.Fatalf("stop failure: exit %d", code)
 	}
 }

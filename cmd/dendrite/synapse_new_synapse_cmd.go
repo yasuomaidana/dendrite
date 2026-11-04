@@ -1,6 +1,9 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/projectid"
+	"Dendrite/pkg/synapse"
 	"context"
 	"fmt"
 	"io"
@@ -9,21 +12,18 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-
-	"Dendrite/pkg/projectid"
-	"Dendrite/pkg/synapse"
 )
 
 // newSynapseCmd builds `dendrite synapse`: typed cross-project links.
 func newSynapseCmd() *cobra.Command {
-	cmd := newGroupCmd("synapse", "Typed cross-project links with scoped MCP servers and self-healing paths", "cleft", "syn", "synapses")
+	cmd := cli.NewGroupCmd("synapse", "Typed cross-project links with scoped MCP servers and self-healing paths", "cleft", "syn", "synapses")
 	cmd.Example = "dendrite synapse create billing --members ../api=api:producer,../web=web:consumer\ndendrite synapse list --json\ndendrite synapse heal --auto"
 
 	var create synapseCreateOptions
 	createCmd := &cobra.Command{
 		Use:     "create <id>",
 		Short:   "Create a synapse manifest linking member projects",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		Example: "dendrite synapse create billing --members ../api=api:producer,../web=web:consumer --contract openapi:api:spec.yaml>web:client.ts",
 		RunE: func(c *cobra.Command, args []string) error {
 			return runSynapseCreate(c.Context(), args[0], create, c.OutOrStdout())
@@ -35,26 +35,26 @@ func newSynapseCmd() *cobra.Command {
 	cf.StringArrayVar(&create.Contracts, "contract", nil, "Contract kind:producer:path[>consumer:path...] (repeatable)")
 	cf.StringVar(&create.Sync, "sync", "", "Sync strategy")
 	cf.StringArrayVar(&create.Parity, "parity", nil, "Parity command alias=cmd (repeatable)")
-	requireFlags(createCmd, "members")
+	cli.RequireFlags(createCmd, "members")
 
 	var addMembers string
 	addCmd := &cobra.Command{
 		Use:     "add <id>",
 		Short:   "Add member projects to a synapse",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		Example: "dendrite synapse add billing --members ../analytics=analytics:consumer\ndendrite synapse add billing --members ../web=web:consumer@PLANE",
 		RunE: func(c *cobra.Command, args []string) error {
 			return runSynapseAdd(c.Context(), args[0], addMembers, c.OutOrStdout())
 		},
 	}
 	addCmd.Flags().StringVar(&addMembers, "members", "", "Members as <dir>[=alias][:role][@PLANE],...")
-	requireFlags(addCmd, "members")
+	cli.RequireFlags(addCmd, "members")
 
 	removeMemberCmd := &cobra.Command{
 		Use:     "remove-member <id> <alias|project-id>",
 		Aliases: []string{"rm-member"},
 		Short:   "Remove a member project from a synapse",
-		Args:    exactArgs(2),
+		Args:    cli.ExactArgs(2),
 		Example: "dendrite synapse remove-member billing web\ndendrite synapse remove-member billing proj_abc123",
 		RunE: func(c *cobra.Command, args []string) error {
 			return runSynapseRemoveMember(c.Context(), args[0], args[1], c.OutOrStdout())
@@ -65,7 +65,7 @@ func newSynapseCmd() *cobra.Command {
 		Use:     "delete <id>",
 		Aliases: []string{"rm"},
 		Short:   "Delete a synapse manifest",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		Example: "dendrite synapse delete billing --yes\ndendrite synapse delete billing",
 		RunE: func(c *cobra.Command, args []string) error {
 			return runSynapseDelete(c.Context(), args[0], c.InOrStdin(), c.OutOrStdout())
@@ -76,18 +76,18 @@ func newSynapseCmd() *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List synapses and their health",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(c *cobra.Command, args []string) error {
-			return runSynapseList(c.Context(), globals.JSON, c.OutOrStdout())
+			return runSynapseList(c.Context(), cli.Globals.JSON, c.OutOrStdout())
 		},
 	}
 
 	inspectCmd := &cobra.Command{
 		Use:   "inspect <id>",
 		Short: "Show members, contracts and parity commands of a synapse",
-		Args:  exactArgs(1),
+		Args:  cli.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			return runSynapseInspect(c.Context(), args[0], globals.JSON, c.OutOrStdout())
+			return runSynapseInspect(c.Context(), args[0], cli.Globals.JSON, c.OutOrStdout())
 		},
 	}
 
@@ -95,10 +95,10 @@ func newSynapseCmd() *cobra.Command {
 	healCmd := &cobra.Command{
 		Use:     "heal",
 		Short:   "Find moved member projects and repair their paths",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		Example: "dendrite synapse heal --roots ~/code,~/work --depth 3 --auto",
 		RunE: func(c *cobra.Command, args []string) error {
-			return runSynapseHeal(c.Context(), heal, globals.JSON, c.OutOrStdout())
+			return runSynapseHeal(c.Context(), heal, cli.Globals.JSON, c.OutOrStdout())
 		},
 	}
 	healCmd.Flags().BoolVar(&heal.Auto, "auto", false, "Apply the repairs instead of only reporting them")
@@ -108,9 +108,9 @@ func newSynapseCmd() *cobra.Command {
 	locateCmd := &cobra.Command{
 		Use:   "locate <alias|project-id> [hint-dir...]",
 		Short: "Locate a member project on disk",
-		Args:  minArgs(1),
+		Args:  cli.MinArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
-			return runSynapseLocate(c.Context(), args[0], args[1:], globals.JSON, c.OutOrStdout())
+			return runSynapseLocate(c.Context(), args[0], args[1:], cli.Globals.JSON, c.OutOrStdout())
 		},
 	}
 
@@ -118,9 +118,9 @@ func newSynapseCmd() *cobra.Command {
 		Use:     "move <alias|project-id> <new-path>",
 		Aliases: []string{"mv"},
 		Short:   "Move a member project and update every manifest atomically",
-		Args:    exactArgs(2),
+		Args:    cli.ExactArgs(2),
 		RunE: func(c *cobra.Command, args []string) error {
-			return runSynapseMove(c.Context(), args[0], args[1], globals.JSON, c.OutOrStdout())
+			return runSynapseMove(c.Context(), args[0], args[1], cli.Globals.JSON, c.OutOrStdout())
 		},
 	}
 
@@ -128,7 +128,7 @@ func newSynapseCmd() *cobra.Command {
 	ideSyncCmd := &cobra.Command{
 		Use:   "ide-sync <id>",
 		Short: "Write IDE MCP configuration for a synapse's members",
-		Args:  exactArgs(1),
+		Args:  cli.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			return runSynapseIDESync(c.Context(), args[0], binary, c.OutOrStdout())
 		},
@@ -138,7 +138,7 @@ func newSynapseCmd() *cobra.Command {
 	setPlaneCmd := &cobra.Command{
 		Use:     "set-plane <id> <alias> <PLANE-IDENT|->",
 		Short:   "Bind a member to its Plane project identifier (- clears it)",
-		Args:    exactArgs(3),
+		Args:    cli.ExactArgs(3),
 		Example: "dendrite synapse set-plane dendrite-ecosystem git-rs DGIT",
 		RunE: func(c *cobra.Command, args []string) error {
 			return runSynapseSetPlane(c.Context(), args[0], args[1], args[2], c.OutOrStdout())
@@ -151,7 +151,7 @@ func newSynapseCmd() *cobra.Command {
 		Short: "Consume a member from its local checkout or its remote, optionally tracking another ref",
 		Long: "Switches a member between its local checkout and its remote for develop mode. --ref sets the\n" +
 			"branch, tag or commit the member tracks instead of the synapse channel's branch (--ref= clears it).",
-		Args:    exactArgs(3),
+		Args:    cli.ExactArgs(3),
 		Example: "dendrite synapse set-source dendrite-ecosystem rag-rs local --ref feat/ann\ndendrite synapse set-source dendrite-ecosystem mcp-hub remote --ref develop",
 		RunE: func(c *cobra.Command, args []string) error {
 			pick := func(name string, v *string) *string {
@@ -171,7 +171,7 @@ func newSynapseCmd() *cobra.Command {
 	channelCmd := &cobra.Command{
 		Use:     "channel <id> [stable|dev]",
 		Short:   "Show or set the branch members track by default (stable: main, dev: develop)",
-		Args:    rangeArgs(1, 2),
+		Args:    cli.RangeArgs(1, 2),
 		Example: "dendrite synapse channel dendrite-ecosystem\ndendrite synapse channel dendrite-ecosystem dev",
 		RunE: func(c *cobra.Command, args []string) error {
 			return runSynapseChannel(c.Context(), args, c.OutOrStdout())

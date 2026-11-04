@@ -1,6 +1,10 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/directive"
+	"Dendrite/pkg/quality/gate"
+	"Dendrite/pkg/rag"
 	"context"
 	"errors"
 	"fmt"
@@ -8,10 +12,6 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-
-	"Dendrite/pkg/directive"
-	"Dendrite/pkg/quality/gate"
-	"Dendrite/pkg/rag"
 )
 
 // gateSidecar is the sidecar the gate runs its quality methods on; a seam for tests.
@@ -33,9 +33,9 @@ func newAllostasisGateCmd() *cobra.Command {
 			"change touched: files it changed, repeated blocks that include lines it added, and, for coverage, the ratchet of\n" +
 			"the packages it changed when the project keeps a baseline (the floor otherwise).",
 		Example: "dendrite allostasis gate\ndendrite allostasis gate --since origin/develop --format markdown\ndendrite allostasis gate --only loc,clones",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if globals.JSON {
+			if cli.Globals.JSON {
 				o.Format = "json"
 			}
 			return runGate(cmd.Context(), o, cmd.OutOrStdout())
@@ -54,10 +54,10 @@ func newAllostasisGateCmd() *cobra.Command {
 
 func runGate(ctx context.Context, o gateOptions, out io.Writer) error {
 	if err := gate.Validate(append(append([]string{}, o.Only...), o.Skip...)); err != nil {
-		return usageErrorf("%v", err)
+		return cli.UsageErrorf("%v", err)
 	}
 	if o.Format != "text" && o.Format != "json" && o.Format != "markdown" {
-		return usageErrorf("--format must be text, json or markdown, not %q", o.Format)
+		return cli.UsageErrorf("--format must be text, json or markdown, not %q", o.Format)
 	}
 	dir, err := filepath.Abs(o.Path)
 	if err != nil {

@@ -1,6 +1,10 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/env"
+	"Dendrite/pkg/node/migrate"
+	"Dendrite/pkg/ui/penpot"
 	"context"
 	"fmt"
 	"io"
@@ -12,10 +16,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
-	"Dendrite/pkg/env"
-	"Dendrite/pkg/node/migrate"
-	"Dendrite/pkg/ui/penpot"
 
 	"github.com/spf13/cobra"
 )
@@ -29,7 +29,7 @@ var runCompose = func(ctx context.Context, out io.Writer, file string, args ...s
 
 // newMotorCmd builds `dendrite motor` (alias service): start, stop and check the local service stacks.
 func newMotorCmd() *cobra.Command {
-	cmd := newGroupCmd("motor", "Manage microservices (Plane, Penpot, Ollama, LiteLLM)", "effectors",
+	cmd := cli.NewGroupCmd("motor", "Manage microservices (Plane, Penpot, Ollama, LiteLLM)", "effectors",
 		"service", "motor-unit", "effector-service", "svc")
 	cmd.Example = "dendrite motor list\n" +
 		"dendrite motor start plane\n" +
@@ -45,7 +45,7 @@ func newMotorCmd() *cobra.Command {
 		}
 		p, ok := catalog[name]
 		if !ok {
-			return p, usageErrorf("unknown service %q: use %s", name, strings.Join(names, ", "))
+			return p, cli.UsageErrorf("unknown service %q: use %s", name, strings.Join(names, ", "))
 		}
 		return p, nil
 	}
@@ -53,7 +53,7 @@ func newMotorCmd() *cobra.Command {
 		return &cobra.Command{
 			Use:       use + " [service]",
 			Short:     short + " (default penpot)",
-			Args:      maxArgs(1),
+			Args:      cli.MaxArgs(1),
 			ValidArgs: names,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				p, err := profileArg(args)
@@ -98,11 +98,11 @@ func newMotorCmd() *cobra.Command {
 			Use:     "list",
 			Aliases: []string{"ls"},
 			Short:   "List the service catalog",
-			Args:    noArgs,
+			Args:    cli.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				out := cmd.OutOrStdout()
-				if globals.JSON {
-					return writeJSON(out, catalog)
+				if cli.Globals.JSON {
+					return cli.WriteJSON(out, catalog)
 				}
 				fmt.Fprintf(out, "[+] Registered Service Catalog (%d services):\n", len(catalog))
 				for _, name := range names {
@@ -157,8 +157,8 @@ func runMotorStart(ctx context.Context, p migrate.ServiceProfile, target string,
 
 func runMotorHealth(ctx context.Context, p migrate.ServiceProfile, deep bool, out io.Writer) error {
 	healthy := checkServiceHealth(ctx, p)
-	if globals.JSON {
-		return writeJSON(out, map[string]any{"service": p.Name, "port": p.Port, "healthy": healthy})
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, map[string]any{"service": p.Name, "port": p.Port, "healthy": healthy})
 	}
 	fmt.Fprintf(out, "[+] Inspecting Health for Service '%s' (Deep: %v):\n", p.Name, deep)
 	if healthy {

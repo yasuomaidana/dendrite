@@ -1,15 +1,15 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/store"
+	"Dendrite/pkg/story/fork"
 	"context"
 	"fmt"
 	"io"
 	"maps"
 	"slices"
 	"strings"
-
-	"Dendrite/pkg/store"
-	"Dendrite/pkg/story/fork"
 
 	"github.com/spf13/cobra"
 	"github.com/yasuomaidana/dendrite-mcp-hub/pkg/polyglot/contract"
@@ -47,7 +47,7 @@ func addContractFlags(cmd *cobra.Command) func() ([]string, map[contract.TargetL
 
 // newSagaCmd builds `dendrite saga` (alias story): speculative story forks and cross-language contract checks.
 func newSagaCmd() *cobra.Command {
-	cmd := newGroupCmd("saga", "Autonomous multi-turn story execution and DAG branching", "effectors",
+	cmd := cli.NewGroupCmd("saga", "Autonomous multi-turn story execution and DAG branching", "effectors",
 		"story", "stories", "synaptic-saga", "sty")
 	cmd.Example = "dendrite saga fork cache --variants lru,arc\n" +
 		"dendrite saga benchmark cache --iterations 200\n" +
@@ -62,7 +62,7 @@ func newSagaCmd() *cobra.Command {
 		&cobra.Command{
 			Use:   "abort <story>",
 			Short: "Delete a story's variant worktrees and branches without merging",
-			Args:  exactArgs(1),
+			Args:  cli.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(cmd.OutOrStdout(), "[+] Aborting story '%s' and cleaning up speculative worktrees...\n", args[0])
 				if err := newForkController().Abort(cmd.Context(), args[0]); err != nil {
@@ -75,7 +75,7 @@ func newSagaCmd() *cobra.Command {
 		&cobra.Command{
 			Use:   "status <story>",
 			Short: "Show a story's state and variant worktrees",
-			Args:  exactArgs(1),
+			Args:  cli.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return runSagaStatus(newForkController(), args[0], cmd.OutOrStdout())
 			},
@@ -89,7 +89,7 @@ func newSagaStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "start <story>",
 		Short: "Start a story, optionally checking cross-language contracts",
-		Args:  exactArgs(1),
+		Args:  cli.ExactArgs(1),
 	}
 	dirs := addContractFlags(cmd)
 	cmd.Flags().BoolVar(&syncContracts, "sync-contracts", false, "Check contract drift and mark violations in the IDE")
@@ -128,7 +128,7 @@ func newSagaCheckContractsCmd() *cobra.Command {
 		Use:     "check-contracts",
 		Aliases: []string{"sync-contracts"},
 		Short:   "Report schema drift across Protobuf, OpenAPI, Go, Rust, TypeScript and Python (exit 1 on errors)",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 	}
 	dirs := addContractFlags(cmd)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -137,8 +137,8 @@ func newSagaCheckContractsCmd() *cobra.Command {
 		if err != nil {
 			return fmt.Errorf("check contracts: %w", err)
 		}
-		if globals.JSON {
-			if err := writeJSON(cmd.OutOrStdout(), report); err != nil {
+		if cli.Globals.JSON {
+			if err := cli.WriteJSON(cmd.OutOrStdout(), report); err != nil {
 				return err
 			}
 		} else {
@@ -158,10 +158,10 @@ func newSagaForkCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "fork <story>",
 		Short: "Fork a story into one git worktree per variant",
-		Args:  exactArgs(1),
+		Args:  cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(variants) < 2 {
-				return usageErrorf("--variants needs at least two names, e.g. --variants v1,v2")
+				return cli.UsageErrorf("--variants needs at least two names, e.g. --variants v1,v2")
 			}
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "[+] Forking story '%s' into %d speculative variants (%s)...\n", args[0], len(variants), strings.Join(variants, ", "))
@@ -182,7 +182,7 @@ func newSagaForkCmd() *cobra.Command {
 	}
 	cmd.Flags().StringSliceVar(&variants, "variants", nil, "Variant names (comma-separated, at least two)")
 	cmd.Flags().StringVar(&base, "base", "", "Commit to fork from (default HEAD)")
-	requireFlags(cmd, "variants")
+	cli.RequireFlags(cmd, "variants")
 	return cmd
 }
 
@@ -192,10 +192,10 @@ func newSagaBenchmarkCmd() *cobra.Command {
 		Use:     "benchmark <story>",
 		Aliases: []string{"bench"},
 		Short:   "Benchmark every variant worktree and recommend a winner",
-		Args:    exactArgs(1),
+		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.Iterations <= 0 || opts.VirtualUsers <= 0 {
-				return usageErrorf("--iterations and --vus must be positive")
+				return cli.UsageErrorf("--iterations and --vus must be positive")
 			}
 			return runSagaBenchmark(cmd.Context(), newForkController(), args[0], opts, cmd.OutOrStdout())
 		},
@@ -206,15 +206,15 @@ func newSagaBenchmarkCmd() *cobra.Command {
 }
 
 func runSagaBenchmark(ctx context.Context, c *fork.ForkController, story string, opts fork.BenchmarkOptions, out io.Writer) error {
-	if !globals.JSON {
+	if !cli.Globals.JSON {
 		fmt.Fprintf(out, "[+] Executing differential benchmark across worktrees for story '%s' (%d iterations)...\n", story, opts.Iterations)
 	}
 	scorecard, err := c.Benchmark(ctx, story, opts)
 	if err != nil {
 		return fmt.Errorf("benchmark: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, scorecard)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, scorecard)
 	}
 	fmt.Fprintf(out, "\n=== Differential Architecture Benchmark Scorecard (%s) ===\n", story)
 	fmt.Fprintf(out, "Base Commit: %s | Evaluated At: %s\n\n", scorecard.BaseCommit, scorecard.Timestamp.Format("2006-01-02 15:04:05 UTC"))
@@ -245,7 +245,7 @@ func newSagaResolveCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "resolve <story>",
 		Short: "Merge the winning variant, store its benchmark, and delete the others",
-		Args:  exactArgs(1),
+		Args:  cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "[+] Resolving story '%s' to winning variant '%s'...\n", args[0], winner)
@@ -262,7 +262,7 @@ func newSagaResolveCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&winner, "winner", "", "Winning variant")
-	requireFlags(cmd, "winner")
+	cli.RequireFlags(cmd, "winner")
 	return cmd
 }
 
@@ -271,8 +271,8 @@ func runSagaStatus(c *fork.ForkController, story string, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("story '%s' has no active fork: %w", story, err)
 	}
-	if globals.JSON {
-		return writeJSON(out, manifest)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, manifest)
 	}
 	fmt.Fprintf(out, "=== Speculative Story Status: %s ===\n", story)
 	fmt.Fprintf(out, "Status:      %s\n", manifest.Status)

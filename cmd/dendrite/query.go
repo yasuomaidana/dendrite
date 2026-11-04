@@ -1,12 +1,7 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"io"
-	"slices"
-	"strings"
-
+	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/query/fuse"
 	"Dendrite/pkg/query/reuse"
 	"Dendrite/pkg/query/slice"
@@ -14,6 +9,11 @@ import (
 	"Dendrite/pkg/query/transpile"
 	"Dendrite/pkg/statedir"
 	"Dendrite/pkg/ui/modal"
+	"context"
+	"fmt"
+	"io"
+	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -25,7 +25,7 @@ func newReuseAuditor() *reuse.Auditor {
 
 // newArborCmd builds `dendrite arbor` (alias query): intent slicing, subsystem swaps, transpile, fuse and reuse audits.
 func newArborCmd() *cobra.Command {
-	cmd := newGroupCmd("arbor", "Intent-driven CFG/AST reachability slicing, debloater, transpile & fuse", "arbor",
+	cmd := cli.NewGroupCmd("arbor", "Intent-driven CFG/AST reachability slicing, debloater, transpile & fuse", "arbor",
 		"query", "dendritic-arbor", "dend")
 	cmd.Example = "dendrite arbor slice --entrypoint ParseConfig \"keep only YAML parsing\"\n" +
 		"dendrite arbor swap --sources ./engine --from opengl --to wgpu\n" +
@@ -59,7 +59,7 @@ func newArborSliceCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			d := slice.SliceDirection(direction)
 			if !slices.Contains([]slice.SliceDirection{slice.DirectionForward, slice.DirectionBackward, slice.DirectionBidirectional}, d) {
-				return usageErrorf("invalid --direction %q: use forward, backward or bidirectional", direction)
+				return cli.UsageErrorf("invalid --direction %q: use forward, backward or bidirectional", direction)
 			}
 			req.Direction = d
 			req.Intent = strings.Join(args, " ")
@@ -71,7 +71,7 @@ func newArborSliceCmd() *cobra.Command {
 	cmd.Flags().StringVar(&direction, "direction", string(slice.DirectionForward), "Reachability direction: forward, backward or bidirectional")
 	addOutputDirFlag(cmd, &req.OutputDir)
 	cmd.Flags().BoolVar(&auditReuse, "audit-library-reuse", false, "Also run the 3-tier library reuse audit on the result")
-	requireFlags(cmd, "entrypoint")
+	cli.RequireFlags(cmd, "entrypoint")
 	return cmd
 }
 
@@ -80,8 +80,8 @@ func runArborSlice(ctx context.Context, req slice.SliceRequest, auditReuse bool,
 	if err != nil {
 		return fmt.Errorf("query slice: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, res)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, res)
 	}
 	fmt.Fprintln(out, "[+] Universal Intent Reachability Slicing:")
 	fmt.Fprintf(out, "    Entrypoint:        %s\n", res.EntryPoint)
@@ -113,7 +113,7 @@ func newArborSwapCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "swap",
 		Short: "Swap a graphics subsystem behind a generated trait boundary",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			req.FromSubsystem, req.ToSubsystem = swap.SubsystemType(from), swap.SubsystemType(to)
 			res, err := swap.NewSubsystemSwapper().Swap(cmd.Context(), req)
@@ -121,8 +121,8 @@ func newArborSwapCmd() *cobra.Command {
 				return fmt.Errorf("subsystem swap: %w", err)
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, res)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, res)
 			}
 			fmt.Fprintln(out, "[+] Subsystem Trait Boundary Adapter & Engine Swap:")
 			fmt.Fprintf(out, "    Transition:       %s -> %s\n", res.FromSubsystem, res.ToSubsystem)
@@ -157,8 +157,8 @@ func newArborTranspileCmd() *cobra.Command {
 				return fmt.Errorf("transpilation: %w", err)
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, res)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, res)
 			}
 			fmt.Fprintln(out, "[+] Safe Idiomatic Rust Transpilation:")
 			fmt.Fprintf(out, "    Synthesized Crate:  %s\n", res.CrateName)
@@ -185,10 +185,10 @@ func newArborFuseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "fuse",
 		Short: "Fuse several artifacts into one pool member with shared libraries deduplicated",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(req.Sources) < 2 {
-				return usageErrorf("--sources needs at least two artifacts")
+				return cli.UsageErrorf("--sources needs at least two artifacts")
 			}
 			req.RegisterInPool = !noRegister
 			in, out := cmd.InOrStdin(), cmd.OutOrStdout()
@@ -197,8 +197,8 @@ func newArborFuseCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("architecture fusion: %w", err)
 			}
-			if globals.JSON {
-				return writeJSON(out, res)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, res)
 			}
 			fmt.Fprintln(out, "[+] Multi-Artifact Architecture Fusion:")
 			fmt.Fprintf(out, "    Unified Member:      %s\n", res.FusedMemberName)
@@ -217,7 +217,7 @@ func newArborFuseCmd() *cobra.Command {
 	addLangFlag(cmd, &req.TargetLanguage, req.TargetLanguage)
 	cmd.Flags().StringVar(&req.TargetDirectory, "target-dir", "", "Destination directory (prompted when empty)")
 	cmd.Flags().BoolVar(&noRegister, "no-register-pool", false, "Do not add the fused member to the pool")
-	requireFlags(cmd, "sources", "name")
+	cli.RequireFlags(cmd, "sources", "name")
 	return cmd
 }
 
@@ -226,16 +226,16 @@ func newArborReuseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "reuse",
 		Short: "Pick a library for a capability with the 3-tier reuse audit (owned, reference, ecosystem)",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runArborReuse(cmd.Context(), req, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&req.Capability, "capability", "", "Capability to find a library for")
 	addLangFlag(cmd, &req.Language, req.Language)
-	addTicketFlag(cmd, &req.TicketID, req.TicketID)
+	cli.AddTicketFlag(cmd, &req.TicketID, req.TicketID)
 	cmd.Flags().StringVar(&req.Intent, "intent", "", "What the capability is used for")
-	requireFlags(cmd, "capability")
+	cli.RequireFlags(cmd, "capability")
 	return cmd
 }
 
@@ -244,8 +244,8 @@ func runArborReuse(ctx context.Context, req reuse.AuditRequest, out io.Writer) e
 	if err != nil {
 		return fmt.Errorf("library reuse audit: %w", err)
 	}
-	if globals.JSON {
-		return writeJSON(out, res)
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, res)
 	}
 	fmt.Fprintln(out, "[+] 3-Tier Library Reuse Evaluation:")
 	fmt.Fprintf(out, "    Capability:        %s\n", req.Capability)

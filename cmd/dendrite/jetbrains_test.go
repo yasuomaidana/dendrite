@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -82,18 +83,18 @@ func TestBridge_WithIDE(t *testing.T) {
 	}
 	for _, s := range steps {
 		out, code := cliOutput(t, s.args...)
-		if code != ExitOK || !strings.Contains(out, s.want) {
+		if code != cli.ExitOK || !strings.Contains(out, s.want) {
 			t.Errorf("%v: exit %d\n%s", s.args, code, out)
 		}
 	}
-	if _, code := cliOutput(t, "bridge", "open", "x.go", "--line", "0"); code != ExitUsage {
+	if _, code := cliOutput(t, "bridge", "open", "x.go", "--line", "0"); code != cli.ExitUsage {
 		t.Errorf("--line 0: exit %d", code)
 	}
 }
 
 func TestBridge_BuildFailureExits1(t *testing.T) {
 	serveIDE(t, false)
-	if out, code := cliOutput(t, "bridge", "build"); code != ExitError || !strings.Contains(out, "Build failed with 2 errors") {
+	if out, code := cliOutput(t, "bridge", "build"); code != cli.ExitError || !strings.Contains(out, "Build failed with 2 errors") {
 		t.Fatalf("failed build: exit %d\n%s", code, out)
 	}
 }
@@ -103,13 +104,13 @@ func TestBridge_NoIDE(t *testing.T) {
 	jetbrainsMCPURL = "http://127.0.0.1:1/api/mcp"
 	t.Cleanup(func() { jetbrainsMCPURL = prev })
 	for _, args := range [][]string{{"bridge", "probe"}, {"bridge", "open", "a.go"}, {"bridge", "problems", "a.go"}, {"bridge", "symbols"}, {"bridge", "build"}, {"bridge", "run", "x"}} {
-		if out, code := cliOutput(t, args...); code != ExitError || !strings.Contains(out, "is the IDE running?") {
+		if out, code := cliOutput(t, args...); code != cli.ExitError || !strings.Contains(out, "is the IDE running?") {
 			t.Errorf("%v: exit %d\n%s", args, code, out)
 		}
 	}
 	for _, args := range [][]string{{"bridge", "open"}, {"bridge", "run"}, {"bridge", "setup", "--project-only", "--global-only"}} {
-		if _, code := cliOutput(t, args...); code != ExitUsage {
-			t.Errorf("%v: exit %d, want %d", args, code, ExitUsage)
+		if _, code := cliOutput(t, args...); code != cli.ExitUsage {
+			t.Errorf("%v: exit %d, want %d", args, code, cli.ExitUsage)
 		}
 	}
 }
@@ -124,7 +125,7 @@ func TestBridge_SetupNeedsNoIDE(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(dir)
-	if out, code := cliOutput(t, "bridge", "setup", "--project-only"); code != ExitOK || !strings.Contains(out, "configured successfully") {
+	if out, code := cliOutput(t, "bridge", "setup", "--project-only"); code != cli.ExitOK || !strings.Contains(out, "configured successfully") {
 		t.Fatalf("setup: exit %d\n%s", code, out)
 	}
 }

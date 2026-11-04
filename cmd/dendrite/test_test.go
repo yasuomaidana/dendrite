@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,14 +14,14 @@ func TestReflex(t *testing.T) {
 		{"reflex", "auto", "a.go", "--file", "b.go"},
 		{"test", "ui", "extra"},
 	} {
-		if _, code := cliOutput(t, args...); code != ExitUsage {
-			t.Errorf("%v: exit %d, want %d", args, code, ExitUsage)
+		if _, code := cliOutput(t, args...); code != cli.ExitUsage {
+			t.Errorf("%v: exit %d, want %d", args, code, cli.ExitUsage)
 		}
 	}
-	if _, code := cliOutput(t, "reflex", "auto", filepath.Join(t.TempDir(), "missing.go")); code != ExitError {
+	if _, code := cliOutput(t, "reflex", "auto", filepath.Join(t.TempDir(), "missing.go")); code != cli.ExitError {
 		t.Errorf("missing source file: exit %d", code)
 	}
-	if out, code := cliOutput(t, "reflex", "ui", "--base-url", "http://127.0.0.1:1"); code == ExitUsage || !strings.Contains(out, "Executing Web UI Test Harness") {
+	if out, code := cliOutput(t, "reflex", "ui", "--base-url", "http://127.0.0.1:1"); code == cli.ExitUsage || !strings.Contains(out, "Executing Web UI Test Harness") {
 		t.Errorf("ui against a closed port: exit %d\n%s", code, out)
 	}
 }
@@ -35,7 +36,7 @@ func TestReflex_AutoSynthesizes(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, code := cliOutput(t, "reflex", "auto", "--file", src, "--json")
-	if code == ExitUsage {
+	if code == cli.ExitUsage {
 		t.Fatalf("auto: usage error\n%s", out)
 	}
 	if !strings.Contains(out, "Launching AST Test Synthesizer on: "+src) {

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/oxilease"
 	"context"
 	"fmt"
 	"io"
@@ -11,8 +13,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"Dendrite/pkg/oxilease"
 
 	"github.com/spf13/cobra"
 )
@@ -26,7 +26,7 @@ func newSpikeSuperviseCmd() *cobra.Command {
 		Use:    "supervise",
 		Short:  "Run the OxiLLaMa server and stop it when no session needs it (started by Dendrite, not by hand)",
 		Hidden: true,
-		Args:   noArgs,
+		Args:   cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
@@ -97,15 +97,15 @@ func newSpikeStatusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show whether the OxiLLaMa server runs, who started it and which sessions hold it",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			st, err := oxilease.NewManager(port, "").Status()
 			if err != nil {
 				return err
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, st)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, st)
 			}
 			switch {
 			case !st.Running:
@@ -136,7 +136,7 @@ func newSpikeHoldCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "hold",
 		Short: "Start OxiLLaMa if needed and keep it alive while this command runs (--for, or until Ctrl+C)",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/agentjobs"
 	"strings"
 	"testing"
@@ -13,18 +14,18 @@ func TestBouton_SearchRouteSessions(t *testing.T) {
 		code int
 		want string
 	}{
-		{[]string{"bouton", "search", "refactor", "AST", "parser", "--local", "--pkg", "pkg/ast", "--max-cost", "1"}, ExitOK, "Agent Search Results"},
-		{[]string{"agent", "search", "refactor", "--json"}, ExitOK, "["},
-		{[]string{"bouton", "route", "add", "a", "flag", "--pkg", "cmd/dendrite"}, ExitOK, "Optimal Agent Routing Decision"},
-		{[]string{"bouton", "route", "--task", "add a flag", "--json"}, ExitOK, "{"},
-		{[]string{"bouton", "sessions"}, ExitOK, "Agent Sessions Ledger (0 recorded sessions)"},
-		{[]string{"bouton", "session", "--ticket", "DEN-1", "--json"}, ExitOK, "["},
-		{[]string{"bouton", "search"}, ExitUsage, ""},
-		{[]string{"bouton", "route"}, ExitUsage, ""},
-		{[]string{"bouton", "route", "x", "--task", "y"}, ExitUsage, ""},
-		{[]string{"bouton", "run"}, ExitUsage, ""},
-		{[]string{"bouton", "run", "clippy"}, ExitUsage, ""},
-		{[]string{"bouton", "site"}, ExitUsage, ""},
+		{[]string{"bouton", "search", "refactor", "AST", "parser", "--local", "--pkg", "pkg/ast", "--max-cost", "1"}, cli.ExitOK, "Agent Search Results"},
+		{[]string{"agent", "search", "refactor", "--json"}, cli.ExitOK, "["},
+		{[]string{"bouton", "route", "add", "a", "flag", "--pkg", "cmd/dendrite"}, cli.ExitOK, "Optimal Agent Routing Decision"},
+		{[]string{"bouton", "route", "--task", "add a flag", "--json"}, cli.ExitOK, "{"},
+		{[]string{"bouton", "sessions"}, cli.ExitOK, "Agent Sessions Ledger (0 recorded sessions)"},
+		{[]string{"bouton", "session", "--ticket", "DEN-1", "--json"}, cli.ExitOK, "["},
+		{[]string{"bouton", "search"}, cli.ExitUsage, ""},
+		{[]string{"bouton", "route"}, cli.ExitUsage, ""},
+		{[]string{"bouton", "route", "x", "--task", "y"}, cli.ExitUsage, ""},
+		{[]string{"bouton", "run"}, cli.ExitUsage, ""},
+		{[]string{"bouton", "run", "clippy"}, cli.ExitUsage, ""},
+		{[]string{"bouton", "site"}, cli.ExitUsage, ""},
 	}
 	for _, s := range steps {
 		out, code := cliOutput(t, s.args...)

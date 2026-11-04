@@ -1,6 +1,12 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/agent"
+	"Dendrite/pkg/agentjobs"
+	"Dendrite/pkg/agentsearch"
+	"Dendrite/pkg/gateway"
+	"Dendrite/pkg/statedir"
 	"context"
 	"fmt"
 	"io"
@@ -9,18 +15,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"Dendrite/pkg/agent"
-	"Dendrite/pkg/agentjobs"
-	"Dendrite/pkg/agentsearch"
-	"Dendrite/pkg/gateway"
-	"Dendrite/pkg/statedir"
-
 	"github.com/spf13/cobra"
 )
 
 // newBoutonCmd builds `dendrite bouton` (alias agent): the coding agent harness and the agent job dispatcher.
 func newBoutonCmd() *cobra.Command {
-	cmd := newGroupCmd("bouton", "Autonomous coding agent harness and job dispatcher (Aider, OpenHands, OpenCode, AGY, Copilot)", "effectors",
+	cmd := cli.NewGroupCmd("bouton", "Autonomous coding agent harness and job dispatcher (Aider, OpenHands, OpenCode, AGY, Copilot)", "effectors",
 		"agent", "effector-dispatch", "bouton-dispatch", "dispatch", "agt")
 	cmd.Example = "dendrite bouton run aider --ticket DEN-030 --task \"fix the parser\"\n" +
 		"dendrite bouton search \"refactor AST parser\" --local\n" +
@@ -68,19 +68,19 @@ func newBoutonRunCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:       "run <agent>",
 		Short:     "Launch a coding agent (aider, openhands, opencode, agy, copilot) through the gateway",
-		Args:      exactArgs(1),
+		Args:      cli.ExactArgs(1),
 		ValidArgs: []string{"aider", "openhands", "opencode", "agy", "copilot"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			t := agent.AgentType(strings.ToLower(args[0]))
 			if !t.IsValid() {
-				return usageErrorf("invalid agent %q: use aider, openhands, opencode, agy or copilot", args[0])
+				return cli.UsageErrorf("invalid agent %q: use aider, openhands, opencode, agy or copilot", args[0])
 			}
-			o.AllowInstall = o.AllowInstall || globals.Yes
+			o.AllowInstall = o.AllowInstall || cli.Globals.Yes
 			return runBoutonAgent(cmd.Context(), t, o, cmd.OutOrStdout())
 		},
 	}
-	addTicketFlag(cmd, &o.Ticket, "")
-	addModelFlag(cmd, &o.Model, "")
+	cli.AddTicketFlag(cmd, &o.Ticket, "")
+	cli.AddModelFlag(cmd, &o.Model, "")
 	cmd.Flags().StringVar(&o.Task, "task", "", "Task description for the agent")
 	cmd.Flags().BoolVar(&o.Sandbox, "sandbox", false, "Run in an ephemeral cap-dropped container")
 	cmd.Flags().BoolVar(&o.AllowInstall, "allow-install", false, "Install the agent CLI when missing (also --yes)")
@@ -91,7 +91,7 @@ func runBoutonAgent(ctx context.Context, t agent.AgentType, o boutonRunOptions, 
 	cwd, _ := os.Getwd()
 	cfg := agent.AgentConfig{
 		Type:            t,
-		LiteLLMBaseURL:  gatewayV1URL(),
+		LiteLLMBaseURL:  cli.GatewayV1URL(),
 		VirtualAPIKey:   "sk-dendrite-virtual-key",
 		Model:           defaultAgentModel(t),
 		WorkspaceDir:    cwd,
@@ -173,7 +173,7 @@ func newBoutonSearchCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "search <query...>",
 		Short: "Rank agents for a query through the dendrite-rag sidecar (BM25, embeddings, RRF)",
-		Args:  minArgs(1),
+		Args:  cli.MinArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			q := agentsearch.NewQueryBuilder().
 				WithText(strings.Join(args, " ")).
@@ -186,8 +186,8 @@ func newBoutonSearchCmd() *cobra.Command {
 				return fmt.Errorf("agent search: %w", err)
 			}
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, results)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, results)
 			}
 			fmt.Fprintf(out, "[+] Agent Search Results (%d matching candidates):\n\n", len(results))
 			for i, res := range results {
@@ -224,12 +224,12 @@ func newBoutonRouteCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
 				if o.Task != "" {
-					return usageErrorf("give the task either as arguments or with --task, not both")
+					return cli.UsageErrorf("give the task either as arguments or with --task, not both")
 				}
 				o.Task = strings.Join(args, " ")
 			}
 			if strings.TrimSpace(o.Task) == "" {
-				return usageErrorf("give a task description")
+				return cli.UsageErrorf("give a task description")
 			}
 			return runBoutonRoute(cmd.Context(), o, cmd.OutOrStdout())
 		},
@@ -251,8 +251,8 @@ func runBoutonRoute(ctx context.Context, o boutonRouteOptions, out io.Writer) er
 	if err != nil {
 		return fmt.Errorf("routing: %w", err)
 	}
-	if globals.JSON && !o.Execute {
-		return writeJSON(out, decision)
+	if cli.Globals.JSON && !o.Execute {
+		return cli.WriteJSON(out, decision)
 	}
 	fmt.Fprintln(out, "[+] Optimal Agent Routing Decision:")
 	fmt.Fprintf(out, "    - Selected Agent:   %s (%s)\n", decision.SelectedAgent.ID, decision.SelectedAgent.Name)
@@ -271,7 +271,7 @@ func runBoutonRoute(ctx context.Context, o boutonRouteOptions, out io.Writer) er
 	cwd, _ := os.Getwd()
 	cfg := agent.AgentConfig{
 		Type:            decision.SelectedAgent.Type,
-		LiteLLMBaseURL:  gatewayV1URL(),
+		LiteLLMBaseURL:  cli.GatewayV1URL(),
 		VirtualAPIKey:   decision.VirtualKeyAlias,
 		Model:           decision.Model,
 		WorkspaceDir:    cwd,
@@ -295,12 +295,12 @@ func newBoutonSessionsCmd() *cobra.Command {
 		Use:     "sessions",
 		Aliases: []string{"session"},
 		Short:   "List recorded agent sessions (duration, cost, status)",
-		Args:    noArgs,
+		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			sessions := loadSessionLedger().ListSessionsByTicket(ticket)
 			out := cmd.OutOrStdout()
-			if globals.JSON {
-				return writeJSON(out, sessions)
+			if cli.Globals.JSON {
+				return cli.WriteJSON(out, sessions)
 			}
 			fmt.Fprintf(out, "[+] Agent Sessions Ledger (%d recorded sessions):\n", len(sessions))
 			if len(sessions) == 0 {
@@ -313,6 +313,6 @@ func newBoutonSessionsCmd() *cobra.Command {
 			return nil
 		},
 	}
-	addTicketFlag(cmd, &ticket, "")
+	cli.AddTicketFlag(cmd, &ticket, "")
 	return cmd
 }

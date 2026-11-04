@@ -1,6 +1,7 @@
 package main
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"bytes"
 	"context"
 	"strings"
@@ -16,21 +17,21 @@ func TestBuildSynapseMCPServerUnknown(t *testing.T) {
 
 func TestInter_Commands(t *testing.T) {
 	t.Setenv("DENDRITE_HOME", t.TempDir())
-	if out, code := cliOutput(t, "inter", "tools"); code != ExitOK || !strings.Contains(out, "Registered Dendrite MCP Tools") {
+	if out, code := cliOutput(t, "inter", "tools"); code != cli.ExitOK || !strings.Contains(out, "Registered Dendrite MCP Tools") {
 		t.Fatalf("tools: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "mcp", "list", "--json"); code != ExitOK || !strings.HasPrefix(strings.TrimSpace(out), "[") {
+	if out, code := cliOutput(t, "mcp", "list", "--json"); code != cli.ExitOK || !strings.HasPrefix(strings.TrimSpace(out), "[") {
 		t.Fatalf("tools --json: exit %d\n%s", code, out)
 	}
 	cases := []struct {
 		args []string
 		code int
 	}{
-		{[]string{"inter", "call", "no_such_tool"}, ExitError},
-		{[]string{"inter", "call", "x", "{not json"}, ExitUsage},
-		{[]string{"inter", "call"}, ExitUsage},
-		{[]string{"inter", "tools", "--synapse", "missing"}, ExitError},
-		{[]string{"inter", "serve", "--synapse=missing"}, ExitError},
+		{[]string{"inter", "call", "no_such_tool"}, cli.ExitError},
+		{[]string{"inter", "call", "x", "{not json"}, cli.ExitUsage},
+		{[]string{"inter", "call"}, cli.ExitUsage},
+		{[]string{"inter", "tools", "--synapse", "missing"}, cli.ExitError},
+		{[]string{"inter", "serve", "--synapse=missing"}, cli.ExitError},
 	}
 	for _, c := range cases {
 		if out, code := cliOutput(t, c.args...); code != c.code {

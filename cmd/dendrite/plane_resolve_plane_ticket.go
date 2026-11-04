@@ -1,12 +1,11 @@
 package main
 
 import (
+	"Dendrite/pkg/tracker/plane"
 	"context"
 	"fmt"
 	"regexp"
 	"strings"
-
-	"Dendrite/pkg/tracker/plane"
 )
 
 func resolvePlaneTicketUUID(ctx context.Context, client *plane.Client, raw string) (string, error) {
