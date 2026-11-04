@@ -20,18 +20,37 @@ import (
 
 const immuneHead = "---\nname: fixture\ndescription: fixture skill\n---\n"
 
-func TestImmuneScanExitCodes(t *testing.T) {
-	if _, err := immune.Locate(); err != nil {
-		t.Setenv(immune.BinaryEnv, "")
-		t.Setenv("PATH", t.TempDir())
-		t.Setenv("HOME", t.TempDir())
-		var buf bytes.Buffer
-		err := runCmd(context.Background(), &buf, "immune", "scan", t.TempDir())
-		if !errors.Is(err, immune.ErrScannerMissing) || cli.ExitCodeFor(err) != cli.ExitError {
-			t.Fatalf("without a scanner: err = %v, exit %d", err, cli.ExitCodeFor(err))
-		}
-		return
+// immuneStandIn is a SkillSpector stand-in whose score follows the skill's content, so the verdicts are the same
+// on every machine whether or not the real scanner is installed.
+func immuneStandIn(t *testing.T) string {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "skillspector")
+	script := `#!/bin/sh
+if [ "$1" = "--version" ]; then echo "skillspector-test 9.9"; exit 0; fi
+score=0
+if grep -q curl "$2/SKILL.md"; then score=30; fi
+if [ -f "$2/run.py" ]; then score=80; fi
+issues=""
+if [ "$score" -gt 0 ]; then issues="{\"id\":\"R1\",\"pattern\":\"pipe-to-shell\",\"severity\":\"HIGH\",\"location\":{\"file\":\"SKILL.md\",\"start_line\":5}}"; fi
+echo "{\"skill\":{\"name\":\"s\"},\"risk_assessment\":{\"score\":$score,\"severity\":\"LOW\"},\"issues\":[$issues]}" > "$6"
+`
+	testkit.WriteFile(t, bin, script, 0o755)
+	return bin
+}
+
+func TestImmuneScanWithoutScanner(t *testing.T) {
+	t.Setenv(immune.BinaryEnv, "")
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	var buf bytes.Buffer
+	err := runCmd(context.Background(), &buf, "immune", "scan", t.TempDir())
+	if !errors.Is(err, immune.ErrScannerMissing) || cli.ExitCodeFor(err) != cli.ExitError {
+		t.Fatalf("without a scanner: err = %v, exit %d", err, cli.ExitCodeFor(err))
 	}
+}
+
+func TestImmuneScanExitCodes(t *testing.T) {
+	t.Setenv(immune.BinaryEnv, immuneStandIn(t))
 	for name, tc := range map[string]struct {
 		files map[string]string
 		args  []string
@@ -117,9 +136,7 @@ func TestImmuneScanRefusesBrokenDirectives(t *testing.T) {
 }
 
 func TestImmuneScanJSON(t *testing.T) {
-	if _, err := immune.Locate(); err != nil {
-		return // TestImmuneScanExitCodes asserts the missing-scanner error
-	}
+	t.Setenv(immune.BinaryEnv, immuneStandIn(t))
 	dir := t.TempDir()
 	testkit.WriteFile(t, filepath.Join(dir, "SKILL.md"), immuneHead+"Format the date.\n", 0o644)
 	var buf bytes.Buffer
@@ -146,9 +163,7 @@ type failingWriter struct{}
 func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
 
 func TestImmuneScanReportsAFailureToWriteTheReport(t *testing.T) {
-	if _, err := immune.Locate(); err != nil {
-		return // TestImmuneScanExitCodes asserts the missing-scanner error
-	}
+	t.Setenv(immune.BinaryEnv, immuneStandIn(t))
 	dir := t.TempDir()
 	testkit.WriteFile(t, filepath.Join(dir, "SKILL.md"), immuneHead+"Format the date.\n", 0o644)
 	err := runCmd(context.Background(), failingWriter{}, "--json", "immune", "scan", dir)
