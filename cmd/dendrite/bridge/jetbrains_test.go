@@ -104,11 +104,7 @@ func TestBridge_NoIDE(t *testing.T) {
 	prev := jetbrainsMCPURL
 	jetbrainsMCPURL = "http://127.0.0.1:1/api/mcp"
 	t.Cleanup(func() { jetbrainsMCPURL = prev })
-	for _, args := range [][]string{{"bridge", "probe"}, {"bridge", "open", "a.go"}, {"bridge", "problems", "a.go"}, {"bridge", "symbols"}, {"bridge", "build"}, {"bridge", "run", "x"}} {
-		if out, code := cliOutput(t, args...); code != cli.ExitError || !strings.Contains(out, "is the IDE running?") {
-			t.Errorf("%v: exit %d\n%s", args, code, out)
-		}
-	}
+	clitest.ExpectError(t, cliOutput, [][]string{{"bridge", "probe"}, {"bridge", "open", "a.go"}, {"bridge", "problems", "a.go"}, {"bridge", "symbols"}, {"bridge", "build"}, {"bridge", "run", "x"}}, "is the IDE running?")
 	for _, args := range [][]string{{"bridge", "open"}, {"bridge", "run"}, {"bridge", "setup", "--project-only", "--global-only"}} {
 		if _, code := cliOutput(t, args...); code != cli.ExitUsage {
 			t.Errorf("%v: exit %d, want %d", args, code, cli.ExitUsage)

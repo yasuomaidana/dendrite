@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -58,6 +59,16 @@ func UsageErrors(output func(t *testing.T, args ...string) (string, int)) func(t
 			if _, code := output(t, args...); code != cli.ExitUsage {
 				t.Errorf("%v: exit %d, want %d", args, code, cli.ExitUsage)
 			}
+		}
+	}
+}
+
+// ExpectError requires each command line of cases to fail with the runtime-error exit code and to print want.
+func ExpectError(t *testing.T, output func(t *testing.T, args ...string) (string, int), cases [][]string, want string) {
+	t.Helper()
+	for _, args := range cases {
+		if out, code := output(t, args...); code != cli.ExitError || !strings.Contains(out, want) {
+			t.Errorf("%v: exit %d\n%s", args, code, out)
 		}
 	}
 }

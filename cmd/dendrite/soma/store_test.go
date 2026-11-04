@@ -59,11 +59,7 @@ func TestEngram_StoreUnavailable(t *testing.T) {
 		return segmented.NewSegmentedStore(filepath.Join(blocker, "store"))
 	}
 	t.Cleanup(func() { cli.OpenSegmentedStore = prev })
-	for _, args := range [][]string{{"engram", "status"}, {"cognition", "status"}} {
-		if out, code := cliOutput(t, args...); code != cli.ExitError || !strings.Contains(out, "open segmented store") {
-			t.Errorf("%v: exit %d\n%s", args, code, out)
-		}
-	}
+	clitest.ExpectError(t, cliOutput, [][]string{{"engram", "status"}, {"cognition", "status"}}, "open segmented store")
 }
 
 func TestShortHash(t *testing.T) {
