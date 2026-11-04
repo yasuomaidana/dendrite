@@ -47,31 +47,46 @@ jobs:
           fetch-depth: 0
 `
 
-func TestCiStepsReadsJobsStepsDirectoriesAndEnv(t *testing.T) {
+// peerSteps are the steps of peerWorkflow as ciSteps reads them.
+func peerSteps(t *testing.T) []ciStep {
+	t.Helper()
 	dir := t.TempDir()
 	write(t, dir, ".github/workflows/ci.yml", peerWorkflow)
 	steps, err := ciSteps(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(steps) != 7 {
-		t.Fatalf("%d steps: %+v", len(steps), steps)
-	}
-	if steps[0].Job != "go" || steps[1].Job != "rust" {
-		t.Errorf("jobs are read in name order: %s then %s", steps[0].Job, steps[1].Job)
-	}
-	var format, lint ciStep
+	return steps
+}
+
+// stepNamed is the step of steps with the name.
+func stepNamed(t *testing.T, steps []ciStep, name string) ciStep {
+	t.Helper()
 	for _, s := range steps {
-		switch s.Name {
-		case "Format":
-			format = s
-		case "Lint":
-			lint = s
+		if s.Name == name {
+			return s
 		}
 	}
+	t.Fatalf("no step named %q", name)
+	return ciStep{}
+}
+
+func TestCiStepsReadsJobsInNameOrder(t *testing.T) {
+	steps := peerSteps(t)
+	if len(steps) != 7 || steps[0].Job != "go" || steps[1].Job != "rust" {
+		t.Fatalf("%d steps, first jobs %s then %s", len(steps), steps[0].Job, steps[1].Job)
+	}
+}
+
+func TestCiStepsTakesTheJobsDirectoryAndEnv(t *testing.T) {
+	format := stepNamed(t, peerSteps(t), "Format")
 	if format.Dir != "crates" || format.File != ".github/workflows/ci.yml" || format.Env["CARGO_TERM_COLOR"] != "always" {
 		t.Errorf("format = %+v", format)
 	}
+}
+
+func TestCiStepsJoinsAStepsEnvToItsJobs(t *testing.T) {
+	lint := stepNamed(t, peerSteps(t), "Lint")
 	if lint.Env["RUSTFLAGS"] != "-D warnings" || lint.Env["CARGO_TERM_COLOR"] != "always" {
 		t.Errorf("a step's env joins its job's: %+v", lint.Env)
 	}
