@@ -63,29 +63,49 @@ func executable(path string) error {
 
 // Scan scans one skill directory (or a SKILL.md file) and returns the gate's report.
 func (s Scanner) Scan(ctx context.Context, path string) (Report, error) {
-	abs, err := filepath.Abs(path)
+	abs, t, bin, err := s.prepare(path)
 	if err != nil {
 		return Report{}, err
 	}
-	if _, err := os.Stat(abs); err != nil {
-		return Report{}, fmt.Errorf("scan target: %w", err)
+	data, err := s.run(ctx, bin, abs)
+	if err != nil {
+		return Report{}, err
 	}
-	t := s.Thresholds
-	if t == (Thresholds{}) {
+	r, err := ParseReport(data, t)
+	if err != nil {
+		return Report{}, err
+	}
+	r.Path = abs
+	r.ScannerVersion = s.version(ctx, bin)
+	return r, nil
+}
+
+// prepare checks everything that can be wrong before the scanner starts: the target, the bands and the binary.
+func (s Scanner) prepare(path string) (abs string, t Thresholds, bin string, err error) {
+	if _, err = os.Stat(path); err != nil {
+		return "", t, "", fmt.Errorf("scan target: %w", err)
+	}
+	if t = s.Thresholds; t == (Thresholds{}) {
 		t = DefaultThresholds
 	}
-	if err := t.Validate(); err != nil {
-		return Report{}, err
+	if err = t.Validate(); err != nil {
+		return "", t, "", err
 	}
-	bin := s.Bin
-	if bin == "" {
+	if bin = s.Bin; bin == "" {
 		if bin, err = Locate(); err != nil {
-			return Report{}, err
+			return "", t, "", err
 		}
 	}
+	abs, err = filepath.Abs(path)
+	return abs, t, bin, err
+}
+
+// run starts the scanner on abs and returns the report it wrote. SkillSpector exits 1 when it finds risk and
+// still writes the report, so the report decides; the exit status only explains a missing one.
+func (s Scanner) run(ctx context.Context, bin, abs string) ([]byte, error) {
 	out, err := os.MkdirTemp("", "immune-")
 	if err != nil {
-		return Report{}, err
+		return nil, err
 	}
 	defer os.RemoveAll(out)
 	reportPath := filepath.Join(out, "report.json")
@@ -97,19 +117,11 @@ func (s Scanner) Scan(ctx context.Context, path string) (Report, error) {
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Stderr = &stderr
 	runErr := cmd.Run()
-	// SkillSpector exits 1 when it finds risk and still writes the report, so the report decides; the exit
-	// status only explains a missing one.
 	data, err := os.ReadFile(reportPath)
 	if err != nil {
-		return Report{}, fmt.Errorf("skillspector wrote no report (%v): %s", runErr, strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf("skillspector wrote no report (%v): %s", runErr, strings.TrimSpace(stderr.String()))
 	}
-	r, err := ParseReport(data, t)
-	if err != nil {
-		return Report{}, err
-	}
-	r.Path = abs
-	r.ScannerVersion = s.version(ctx, bin)
-	return r, nil
+	return data, nil
 }
 
 // version asks the scanner for its version; an unanswered question yields "unknown", not a failure.
