@@ -77,12 +77,12 @@ func ProbeTools(ctx context.Context, srv *Server, specs []ProbeSpec) []ProbeResu
 		if timeout <= 0 {
 			timeout = DefaultProbeTimeout
 		}
-		results = append(results, probeOne(ctx, spec, h, timeout))
+		results = append(results, ProbeOne(ctx, spec, h, timeout))
 	}
 	return results
 }
 
-func probeOne(ctx context.Context, spec ProbeSpec, h ToolHandler, timeout time.Duration) ProbeResult {
+func ProbeOne(ctx context.Context, spec ProbeSpec, h ToolHandler, timeout time.Duration) ProbeResult {
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	args := spec.Args
@@ -114,7 +114,7 @@ func probeOne(ctx context.Context, spec ProbeSpec, h ToolHandler, timeout time.D
 		case o.res == nil:
 			pr.Detail = "nil result"
 		case o.res.IsError:
-			pr.Detail = textutil.FirstLine(contentText(o.res), 160)
+			pr.Detail = textutil.FirstLine(ContentText(o.res), 160)
 		default:
 			pr.OK = true
 		}
@@ -125,7 +125,7 @@ func probeOne(ctx context.Context, spec ProbeSpec, h ToolHandler, timeout time.D
 	return pr
 }
 
-func contentText(r *CallToolResult) string {
+func ContentText(r *CallToolResult) string {
 	var sb strings.Builder
 	for _, c := range r.Content {
 		sb.WriteString(c.Text)

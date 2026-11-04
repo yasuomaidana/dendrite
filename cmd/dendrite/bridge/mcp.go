@@ -3,6 +3,7 @@ package bridge
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/mcpserver"
+	"Dendrite/pkg/mcpserver/catalog"
 	"Dendrite/pkg/ollama"
 	"Dendrite/pkg/synapse"
 	"context"
@@ -20,7 +21,7 @@ func BuildMCPServer(profile mcpserver.Profile) *mcpserver.Server {
 		Name:    "Dendrite Control Plane MCP Server",
 		Version: cli.Version,
 	})
-	mcpserver.RegisterDefaultTools(srv, mcpserver.Dependencies{
+	catalog.RegisterDefaultTools(srv, mcpserver.Dependencies{
 		DevStatus: "DEV_STATUS.md",
 		OllamaURL: ollama.DefaultBaseURL,
 	})

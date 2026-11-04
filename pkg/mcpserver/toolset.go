@@ -32,12 +32,12 @@ const ProfileEnv = "DENDRITE_MCP_PROFILE"
 // probed; they are covered by their own tests. Everything outside core is still available with
 // the full profile.
 //
-// coreToolPrefixes and coreToolNames are the control-plane tools in the core profile.
+// CoreToolPrefixes and CoreToolNames are the control-plane tools in the core profile.
 // Synapse tools are served by the scoped synapse server (NewSynapseServer), which is always
 // confined to the relationship and is not filtered.
 var (
-	coreToolPrefixes = []string{"dendrite_rag_", "dendrite_graph_", "dendrite_plane_", "dendrite_ticket_"}
-	coreToolNames    = map[string]bool{"dendrite_query_context": true, "dendrite_synapse_peers": true}
+	CoreToolPrefixes = []string{"dendrite_rag_", "dendrite_graph_", "dendrite_plane_", "dendrite_ticket_"}
+	CoreToolNames    = map[string]bool{"dendrite_query_context": true, "dendrite_synapse_peers": true}
 )
 
 // ParseProfile validates a profile name; an empty name means defaultProfile.
@@ -62,10 +62,10 @@ func (p Profile) InProfile(tool string) bool {
 	if p != ProfileCore {
 		return true
 	}
-	if coreToolNames[tool] {
+	if CoreToolNames[tool] {
 		return true
 	}
-	for _, prefix := range coreToolPrefixes {
+	for _, prefix := range CoreToolPrefixes {
 		if strings.HasPrefix(tool, prefix) {
 			return true
 		}
