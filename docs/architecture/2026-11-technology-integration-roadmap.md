@@ -1,6 +1,6 @@
 # Dendrite Technology Integration Roadmap (2026-11)
 
-> Epic DEN-422; session tickets DEN-423..436. Source of truth for status is Plane.
+> Epic DEN-422; session tickets DEN-423..436 plus the 2026-11-03 MAPI re-sequence tickets DEN-832..837. Source of truth for status is Plane. Execution order: see **Re-sequence for the MAPI MVP** below (it supersedes the stage numbering for ordering; session content is unchanged).
 
 
 ## Context
@@ -13,6 +13,9 @@ Three Gemini deep-research documents (`research_Architectural_Role_Classificatio
 1. **Hermes**: support Hermes Agent as a fourth executor (daemon/cron/gateways disabled, sandboxed, Dendrite orchestrates) — not just pattern-mining.
 2. **Memory**: adopt Engram (`Gentleman-Programming/engram`) alongside rag-rs. Engram = agent-memory source of truth; rag-rs = code/docs RAG.
 3. **Specs**: committed specs in `docs/specs/<domain>/` (speq-skill layout); per-ticket micro-plans on Plane via `chronos plan push`; `.dendrite/` stays untracked (only derived runtime copies).
+4. **MAPI is a use case, not a design target** (2026-11-03): Dendrite derives feature requirements from `~/WebstormProjects/mapi`; mapi-internal work (the package split, the e-shop and DTF-studio apps) belongs to its own Plane project **MAPIFE**, never to DEN tickets.
+5. **Bun workspaces, not pnpm** (2026-11-03): the mapi frontend is Bun end-to-end (bun.lock, bunfig preloads, 53 `bun:test` files); Dendrite's pool/meiosis workspace support targets Bun workspaces first.
+6. **Kakebo stays paused** in `dendrite store` and the vesicle scheduler while the MAPI MVP runs.
 
 ## Adopt-vs-build filter (the heart of this plan)
 
@@ -29,6 +32,7 @@ Three Gemini deep-research documents (`research_Architectural_Role_Classificatio
 | **MCP over HTTP + .well-known lazy schemas** | **ADOPT** official MCP go-sdk / spec | The Mar-2026 MCP roadmap standardized `.well-known` lazy loading — adopt the official transport in mcp-hub instead of hand-rolling (session decision point) |
 | **ACP/A2A blackboard + leases** | **BUILD** (justified) | Core control-plane vision; design + tickets already exist (DEN-1009..1016, `docs/architecture/synapse-and-agent-mesh.md`). Adopt the A2A `agent-card.json` schema rather than inventing one |
 | **saga fork parallel / resolve composer** | **BUILD** (justified) | `saga` is an existing core Dendrite command; Go-interim composer; git-rs semantic compose deferred |
+| **Graphify** (`graphifyy` CLI, tree-sitter → knowledge graph) | **Provisional REJECT**; benchmark **DEN-837** decides ADOPT/ADAPT/REJECT | rag-rs claims the same ground natively (`dendrite_graph_*`, FEAT-045) **with** embeddings/BM25 on top, but that is asserted, not measured → head-to-head benchmark (structural accuracy, context efficiency, build cost, edge quality on Go/Rust/TS repos). Regardless of outcome, `graphify install` is never run: its PreToolUse hook fights the dendrite-first hook, its CLAUDE.md rule contradicts the workflow, `graphify-out/` pollutes the RAG index, its git hooks duplicate sidecar re-indexing. If Graphify wins a dimension → **ADAPT**: port the technique into rag-rs (Rust-first). Residual use: manual one-off graphs of non-code media outside indexed repos |
 | **Aider** | **EXCLUDE** (installed but banned: repo-map/auto-commit collide with leases) · **OpenCode**: DEFER to a later stage · **OpenClaw**: DEFER (optional notification relay only) · **gemini-4-carbon**: doesn't exist publicly — research tier = gemini-4-argon-high · **gbrain/Hindsight sidecar**: DEFER benchmark |
 
 **Verified corrections kept from the audit**: SkillSpector thresholds 0–20/21–50/51+; prefixes are DEN/DCORE/DRAG/DGIT/DMCP/DPLANE/EMBEDAG (never DN-CT-XXX); core-rs and git-rs are empty stubs — nothing on the critical path depends on them (leases key on rag-rs symbol hashes); `pkg/oxilease` already handles lifecycle (2-min grace) — no new lifecycle manager; known defect `pkg/inference/oxillama_server.go:274` `synthesizeResponse` returns canned text (zero-mock violation, must die early). agy exposes argon/3.8-flash/opus-5.5/sonnet-5.5/gpt-oss-120b. Live: Ollama :11434, LiteLLM :4000, Plane :8090, Penpot :9000; cortex dashboard owns :3456.
@@ -42,6 +46,46 @@ Three Gemini deep-research documents (`research_Architectural_Role_Classificatio
 - **Execution conventions (user directive 2026-11-01)**: run in auto mode; prefer local models and agy for delegation per the routing tags (`dendrite ask`/`rag` before any raw search, `bouton jobs submit --isolate` for offload); **every ticket's Plane status is kept current at every step** (claim → In Progress → finish/handoff, decisions recorded via `chronos decision`, progress via `chronos comment`).
 
 ---
+
+## Re-sequence for the MAPI MVP (2026-11-03, DEN-832)
+
+The MAPI MVP (e-shop + DTF printing studio built on `~/WebstormProjects/mapi`, Plane project **MAPIFE**) is the urgent production driver. MAPI is a **use case**: it tells us which Dendrite features to pull forward, and nothing more. What Dendrite must supply, in order of need: workspace lockstep linking (split the app into Bun workspace packages), polyglot Rust-crate linking (the print-layout nesting module), early HTTP MCP + Penpot design context, and symbol leases so several agents can work the packages concurrently.
+
+Ground truth that shaped the order: mapi is a single Svelte 5 + Vite + Bun app in `frontend/` (no monorepo, no e-shop/DTF app yet, no Rust); Penpot runs healthy on :9000/:9001 but has no access tokens, no exporter and no MCP server (mcp-hub is stdio-only; Penpot upstream = DMCP-2, backlog); `dendrite pool` already exists as an alias of `plexus` (`cmd/dendrite/pool.go`), so the pull-forward extends it; `meiosis` does not exist (DEN-387 backlog).
+
+### Execution order (supersedes stage numbering for ordering; content unchanged)
+
+| # | Ticket | Content | blocked_by | MAPI unlock after it |
+|---|--------|---------|------------|----------------------|
+| ✅ | DEN-423 (S0) | board reconciliation | — | — |
+| ✅ | DEN-424 (S1) | EGM/speq/superpowers, pre-scan | DEN-423 | — |
+| 1 | DEN-425 (S2) | `dendrite immune` SkillSpector gate | DEN-424 | agents may safely gain skills for UI work |
+| 2 | DEN-426 (S3) | real OxiLLaMa, kill spike mock | DEN-425 | 0-token local checks for high-churn loops |
+| 3 | DEN-427 (S4) | Engram + frozen snapshot | DEN-426 | soak clock starts; MAPI co-dev traces count |
+| 4 | **DEN-833** | meiosis v1 + pool lockstep linking (Bun workspaces; split out of S13) | DEN-427 | MAPIFE can split `frontend/` into workspace packages |
+| 5 | **DEN-834** | pool polyglot: Rust crate ↔ TS packages + `--audit-library-reuse` | DEN-833 | print-layout Rust module scaffold (WASM/NAPI under Bun) |
+| 6 | DEN-429 (S6) | tools.toml + Level-2 rules | DEN-834 | governed harness for MAPIFE agents |
+| 7 | DEN-430 (S7) | EGM pipeline wiring | DEN-429 | spec'd + drift-gated UI feature work |
+| 8 | DEN-431 (S8) | routing, tier tags, vesicle ledger | DEN-430 | cheap-model routing for UI churn |
+| 9 | DEN-433 (S10) | MCP over HTTP (go-sdk) + lazy manifest | DEN-431 | HTTP MCP for IDE/agents on mapi |
+| 10 | DEN-434 (S11) | ACP blackboard + leases on rag-rs symbol hashes | DEN-433 | concurrent agents on mapi packages without clobbering |
+| 11 | **DEN-836** | Penpot context enrichment + 3-way triad glue (with DMCP-2) | DEN-434 (+DEN-835 done) | design-token-enriched prompts for the UI library |
+| 12 | DEN-428 (S5) | consolidation + HRR gap decision | DEN-836 | — (soak satisfied by MAPI co-dev) |
+| 13 | DEN-432 (S9) | Hermes fourth executor + bench | DEN-428 | optional extra executor |
+| 14 | DEN-435 (S12) | saga fork parallel + composer | DEN-432 | parallel probes on mapi features |
+| 15 | DEN-436 (S13) | closeout minus meiosis: cadence scheduler + retro | DEN-435 | retro decides deferred items |
+
+Unchained fillers, any slot: DEN-440 (agy telemetry) · DEN-441 (secrets-rotation UX + `cleft update` reconcile of the stale `master_key` in `~/.dendrite/stacks/litellm_config.yaml`) · DEN-443 (S1 leftovers) · **DEN-835** (Penpot service readiness: `enable-access-tokens`, exporter service, PENPOT_ACCESS_TOKEN in secrets — do early, DEN-836 needs it) · **DEN-837** (Graphify benchmark — do early so the verdict is evidence-based).
+
+Rationale: meiosis/pool sits right after S4 (not before) because meiosis scaffolds an immune baseline (needs S2) and co-dev traces only count once Engram exists (S4); governance S6–S8 runs during the soak; S10/S11 advance ahead of Hermes (S9) and parallel saga (S12); S5 closes once ~2 weeks of MAPI-fed traces exist.
+
+### Penpot triad
+
+Readiness audit and the three-edge specification (Penpot → Code via the DMCP-2 upstream over the DEN-433 transport; Code → Penpot via rag-rs symbol hashes; Penpot ↔ Plane frame links next to `[AC-n]` with drift comments) live in [`2026-11-penpot-triad.md`](2026-11-penpot-triad.md); implementation is DEN-835 + DEN-836 (+DMCP-2).
+
+### Graphify
+
+Verdict in the adopt-vs-build table above: provisional REJECT, environment no-install rule unconditional, final ADOPT/ADAPT/REJECT decided by the **DEN-837** benchmark (report: `docs/reports/graphify-benchmark.md` once run).
 
 ## Session 0 — Tickets-RAG health + Plane board reconciliation (FIRST PRIORITY, before everything)
 
@@ -150,10 +194,10 @@ AC for Session 0: tickets RAG answers reflect the reconciled board; no open tick
 - `DEN-new saga-resolve-composer` [standard-dev] — deterministic Go interim: whole-branch winner by gate score + `git merge-file` for *disjoint-file* loser improvements only (overlapping symbols reported, never auto-merged). Semantic hunk compose deferred to git-rs (`DGIT-new` backlog linked to DEN-934, not duplicated). AC: identical inputs ⇒ identical composition.
 - **Dogfood hook**: Session 13 runs ≥1 governance ticket through saga-parallel end-to-end.
 
-### Session 13 — Governance closeout, meiosis, cadence, retro
-- **DEN-387 (reuse)** meiosis — spawned projects get projectid, immune baseline, harness template, spec scaffolds.
+### Session 13 — Governance closeout, cadence, retro (meiosis moved to DEN-833, 2026-11-03)
+- ~~meiosis~~ → **pulled forward to DEN-833** (with pool lockstep linking) to unblock the MAPI workspace split; see the re-sequence section.
 - `DEN-new cadence-scheduler` [fast-impl] — nightly `cognition dream`, weekly `egm-drift-report` across `docs/specs/`, 30d skill-staleness report; all on the cortex timeline.
-- `DEN-new backlog-reconciliation-retro` [chore-local + expert review] — close superseded tickets; DEV_STATUS refresh; retro from vesicle data (tokens/tier, escalation rates, hermes bench, probe win-rates) → **decides the deferred items**: k=2 loop, HRR port, OpenCode onboarding, gbrain/Hindsight benchmark, OpenClaw relay, git-rs/core-rs successors.
+- `DEN-new backlog-reconciliation-retro` [chore-local + expert review] — close superseded tickets; DEV_STATUS refresh; retro from vesicle data (tokens/tier, escalation rates, hermes bench, probe win-rates, **pool/meiosis usage from the MAPI use case**) → **decides the deferred items**: k=2 loop, HRR port, OpenCode onboarding, gbrain/Hindsight benchmark, OpenClaw relay, git-rs/core-rs successors.
 
 ---
 
