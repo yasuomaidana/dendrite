@@ -199,9 +199,16 @@ func checkCoverage(ctx context.Context, o Options) Check {
 	if err != nil {
 		return failed("coverage", err)
 	}
+	findings := coverageFindings(res, opts.Ratchet)
+	sort.Strings(findings)
+	return verdict("coverage", fmt.Sprintf("%d packages measured against a %s", res.TotalPackages, mode), findings)
+}
+
+// coverageFindings describes each package that fell short, or says the tests failed when none did.
+func coverageFindings(res *coverage.Result, ratchet bool) []string {
 	var findings []string
 	for _, off := range res.Offenders {
-		if opts.Ratchet {
+		if ratchet {
 			findings = append(findings, fmt.Sprintf("%s: %.1f%%, it was %.1f%%", off.Package, off.CurrentPct, off.BaselinePct))
 		} else {
 			findings = append(findings, fmt.Sprintf("%s: %.1f%%", off.Package, off.CurrentPct))
@@ -210,8 +217,7 @@ func checkCoverage(ctx context.Context, o Options) Check {
 	if len(findings) == 0 && !res.Passed {
 		findings = []string{"the tests did not pass"}
 	}
-	sort.Strings(findings)
-	return verdict("coverage", fmt.Sprintf("%d packages measured against a %s", res.TotalPackages, mode), findings)
+	return findings
 }
 
 // coveragePackages are the `go test` arguments to measure: the whole module, or the packages a change touched
