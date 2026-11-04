@@ -89,4 +89,35 @@ func TestMCP_GreetingTools(t *testing.T) {
 			t.Errorf("expected G-02 to be suppressed, got %s", gen.StyleID)
 		}
 	})
+
+	t.Run("all styles suppressed returns tool error", func(t *testing.T) {
+		reqJSON := `{{
+			"jsonrpc": "2.0",
+			"id": 103,
+			"method": "tools/call",
+			"params": {{
+				"name": "dendrite_pcontext_greeting_generate",
+				"arguments": {{
+					"topic": "Distributed Mesh",
+					"recent_styles": ["G-01", "G-02", "G-03", "G-04", "G-05", "G-06", "G-07", "G-08", "G-09", "G-10"]
+				}}
+			}}
+		}}`
+
+		resp := srv.HandleRequest(ctx, []byte(reqJSON))
+		if resp.Error != nil {
+			t.Fatalf("HandleRequest failed: %v", resp.Error)
+		}
+
+		res, ok := resp.Result.(*CallToolResult)
+		if !ok {
+			t.Fatalf("expected *CallToolResult, got %T", resp.Result)
+		}
+		if !res.IsError {
+			t.Fatalf("expected tool result to be an error when all styles are suppressed")
+		}
+		if !strings.Contains(res.Content[0].Text, "no matching greeting style found") {
+			t.Fatalf("expected no matching style message, got %q", res.Content[0].Text)
+		}
+	})
 }
