@@ -1,10 +1,12 @@
 package pipeline
 
 import (
+	"Dendrite/pkg/branchpolicy"
 	"bytes"
 	"io"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -136,11 +138,32 @@ func writeComponentJob(b *strings.Builder, c Component, o Options, ext Extension
 	}
 }
 
-// Render writes the workflow for the components, the directives and the project's extension.
-func Render(comps []Component, set directive.Set, ext Extension) []byte {
+// Branches are the branches CI runs for: the project's integration branch, main, and its feature branches.
+type Branches struct{ Integration, FeaturePrefix string }
+
+// BranchesOf reads the branches of the project at root (see pkg/branchpolicy).
+func BranchesOf(root string) Branches {
+	t := branchpolicy.For(root)
+	return Branches{Integration: t.Integration, FeaturePrefix: t.FeaturePrefix}
+}
+
+// triggers is the flow list of branches a push or pull request runs CI for, without repeats.
+func (b Branches) triggers() string {
+	list := []string{b.Integration}
+	if b.Integration != "main" {
+		list = append(list, "main")
+	}
+	if b.FeaturePrefix != "" {
+		list = append(list, strconv.Quote(b.FeaturePrefix+"**"))
+	}
+	return "[ " + strings.Join(list, ", ") + " ]"
+}
+
+// Render writes the workflow for the components, the directives, the project's extension and its branches.
+func Render(comps []Component, set directive.Set, ext Extension, br Branches) []byte {
 	o := Options{Set: set, SkipCoverageFloor: ext.SkipCoverageFloor}
 	var b strings.Builder
-	b.WriteString(ManagedHeader + "\nname: Dendrite CI/CD\n\non:\n  push:\n    branches: [ develop, main ]\n  pull_request:\n    branches: [ develop, main ]\n\n")
+	b.WriteString(ManagedHeader + "\nname: Dendrite CI/CD\n\non:\n  push:\n    branches: " + br.triggers() + "\n  pull_request:\n    branches: " + br.triggers() + "\n\n")
 	if len(ext.Env) > 0 {
 		b.WriteString("env:\n" + indent(marshal(ext.Env), 2) + "\n")
 	}

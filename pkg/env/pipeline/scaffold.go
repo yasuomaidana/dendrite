@@ -37,7 +37,7 @@ func Scaffold(root string, set directive.Set, adopt, dryRun bool) (Result, error
 	}
 	comps, notes := Detect(root)
 	res := Result{Notes: notes}
-	want := Render(comps, set, ext)
+	want := Render(comps, set, ext, BranchesOf(root))
 	path := filepath.Join(root, filepath.FromSlash(WorkflowPath))
 	existing, found, err := fsutil.ReadIfPresent(path)
 	if err != nil {

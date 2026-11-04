@@ -443,7 +443,7 @@ func seedDefaultSkills(root string, dryRun bool) (created []string, err error) {
 }
 
 func syncWorkflowSkill(root string, dryRun bool) (created, updated []string, err error) {
-	workflowSkill := renderDendriteWorkflowSkill()
+	workflowSkill := renderDendriteWorkflowSkill(root)
 	for _, dir := range skillDirs {
 		target := filepath.Join(root, filepath.FromSlash(dir), DendriteWorkflowSkill, "SKILL.md")
 		c, u, err := writeOrUpdateFile(target, workflowSkill, dryRun)
