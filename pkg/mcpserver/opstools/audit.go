@@ -14,7 +14,7 @@ import (
 
 func registerAuditTools(s *Server, deps Dependencies) {
 	// dendrite_audit_changes
-	AddTool(s, "dendrite_audit_changes", "Topological vendor audit and rebase engine for local/* stacked branches. Validates diffs, runs test suites, non-fast-forward merges into develop, and rebases downstream branches.", PropsSchema(map[string]interface{}{
+	AddTool(s, "dendrite_audit_changes", "Topological vendor audit and rebase engine for local/* stacked branches. Validates diffs, runs test suites, non-fast-forward merges into the integration branch, and rebases downstream branches.", PropsSchema(map[string]interface{}{
 		"branch":     TypedProp("string", "Optional target branch (e.g. 'local/vcs'). If omitted, audits all pending branches topologically."),
 		"dry_run":    TypedProp("boolean", "Preview audit validation and rebase sequence without mutating branches."),
 		"max_tokens": TypedProp("integer", "Max token context ceiling for audit payload."),
@@ -33,7 +33,7 @@ func registerAuditTools(s *Server, deps Dependencies) {
 	}), githubSyncHandler(deps))
 
 	// dendrite_vcs_guard
-	AddTool(s, "dendrite_vcs_guard", "Check or enforce Git branch guardrails (prohibits direct work on main/master, guarantees develop default).", PropsSchema(map[string]interface{}{
+	AddTool(s, "dendrite_vcs_guard", "Check or enforce Git branch guardrails (prohibits direct work on main/master, guarantees the integration branch as default).", PropsSchema(map[string]interface{}{
 		"mode": TypedProp("string", "Execution mode: 'STANDARD', 'DEGRADED_BUDGET', or 'AUDIT_CHANGES' (default: STANDARD)"),
 	}), vcsGuardHandler())
 
@@ -154,7 +154,7 @@ func vcsGuardHandler() ToolHandler {
 		res := map[string]interface{}{
 			"status":         status,
 			"active_branch":  branch,
-			"policy":         "forbidden on main/master; defaults to develop",
+			"policy":         "forbidden on main/master; defaults to the integration branch",
 			"error":          errMsg,
 			"execution_mode": string(mode),
 		}
