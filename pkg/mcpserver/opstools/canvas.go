@@ -23,30 +23,12 @@ func RegisterCanvasTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"action": map[string]interface{}{
-					"type":        "string",
-					"description": "Canvas Action ID (e.g. WRITE_EMAIL, WRITE_PLAN, WRITE_REPORT, DESIGN_UI_COMPONENT, SYNC_PENPOT_FRAME, RELATE_TICKET_FEATURE, UPDATE_PROJECT_STATE)",
-				},
-				"mode": map[string]interface{}{
-					"type":        "string",
-					"description": "Writing mode: DRAFT, REFINE, EXPAND, CONDENSE, CHANGE_TONE, CRITIQUE, FORMAT (default: DRAFT)",
-				},
-				"title": map[string]interface{}{
-					"type":        "string",
-					"description": "Title or subject of the creative artifact",
-				},
-				"prompt": map[string]interface{}{
-					"type":        "string",
-					"description": "Directive, prompt, or acceptance criteria guiding content generation",
-				},
-				"current_content": map[string]interface{}{
-					"type":        "string",
-					"description": "Existing text or code for refinement, expansion, or diff critique",
-				},
-				"parameters": map[string]interface{}{
-					"type":        "object",
-					"description": "Optional parameters (framework, component_name, tone, ticket_id, file_path, target_state, dry_run)",
-				},
+				"action":          TypedProp("string", "Canvas Action ID (e.g. WRITE_EMAIL, WRITE_PLAN, WRITE_REPORT, DESIGN_UI_COMPONENT, SYNC_PENPOT_FRAME, RELATE_TICKET_FEATURE, UPDATE_PROJECT_STATE)"),
+				"mode":            TypedProp("string", "Writing mode: DRAFT, REFINE, EXPAND, CONDENSE, CHANGE_TONE, CRITIQUE, FORMAT (default: DRAFT)"),
+				"title":           TypedProp("string", "Title or subject of the creative artifact"),
+				"prompt":          TypedProp("string", "Directive, prompt, or acceptance criteria guiding content generation"),
+				"current_content": TypedProp("string", "Existing text or code for refinement, expansion, or diff critique"),
+				"parameters":      TypedProp("object", "Optional parameters (framework, component_name, tone, ticket_id, file_path, target_state, dry_run)"),
 			},
 			"required": []interface{}{"action", "prompt"},
 		},
@@ -59,42 +41,15 @@ func RegisterCanvasTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"subaction": map[string]interface{}{
-					"type":        "string",
-					"description": "Operation to perform: 'relate', 'sync', 'update_state', or 'list'",
-				},
-				"ticket_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Target Plane ticket ID (e.g. 'DEN-807')",
-				},
-				"feature_name": map[string]interface{}{
-					"type":        "string",
-					"description": "Project feature or functionality name (e.g. 'Canvas Workspace UI')",
-				},
-				"file_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Path to UI component file (e.g. 'web/src/Canvas.svelte')",
-				},
-				"target_state": map[string]interface{}{
-					"type":        "string",
-					"description": "Target project state for transition (e.g. 'In Progress', 'To Verify', 'Done')",
-				},
-				"penpot_frame_url": map[string]interface{}{
-					"type":        "string",
-					"description": "Custom Penpot frame URL or deep-link",
-				},
-				"comment": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional comment or note to attach to Plane issue",
-				},
-				"push_to_plane": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, synchronizes state mutation directly to Plane v2 (default: true)",
-				},
-				"dry_run": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, simulates synchronization without modifying remote services",
-				},
+				"subaction":        TypedProp("string", "Operation to perform: 'relate', 'sync', 'update_state', or 'list'"),
+				"ticket_id":        TypedProp("string", "Target Plane ticket ID (e.g. 'DEN-807')"),
+				"feature_name":     TypedProp("string", "Project feature or functionality name (e.g. 'Canvas Workspace UI')"),
+				"file_path":        TypedProp("string", "Path to UI component file (e.g. 'web/src/Canvas.svelte')"),
+				"target_state":     TypedProp("string", "Target project state for transition (e.g. 'In Progress', 'To Verify', 'Done')"),
+				"penpot_frame_url": TypedProp("string", "Custom Penpot frame URL or deep-link"),
+				"comment":          TypedProp("string", "Optional comment or note to attach to Plane issue"),
+				"push_to_plane":    TypedProp("boolean", "If true, synchronizes state mutation directly to Plane v2 (default: true)"),
+				"dry_run":          TypedProp("boolean", "If true, simulates synchronization without modifying remote services"),
 			},
 			"required": []interface{}{"subaction"},
 		},
@@ -235,26 +190,11 @@ func registerPenpotTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"file": map[string]interface{}{
-					"type":        "string",
-					"description": "Path to UI component file (e.g. 'web/src/components/Button.svelte')",
-				},
-				"ticket_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Target Plane ticket ID (e.g. 'DEN-810')",
-				},
-				"penpot_endpoint": map[string]interface{}{
-					"type":        "string",
-					"description": "Penpot service endpoint (default: 'http://localhost:9000')",
-				},
-				"comment_plane": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, posts deep-link comment to Plane issue (default: true)",
-				},
-				"dry_run": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, simulates synchronization without modifying Plane or Penpot",
-				},
+				"file":            TypedProp("string", "Path to UI component file (e.g. 'web/src/components/Button.svelte')"),
+				"ticket_id":       TypedProp("string", "Target Plane ticket ID (e.g. 'DEN-810')"),
+				"penpot_endpoint": TypedProp("string", "Penpot service endpoint (default: 'http://localhost:9000')"),
+				"comment_plane":   TypedProp("boolean", "If true, posts deep-link comment to Plane issue (default: true)"),
+				"dry_run":         TypedProp("boolean", "If true, simulates synchronization without modifying Plane or Penpot"),
 			},
 			"required": []interface{}{"file"},
 		},

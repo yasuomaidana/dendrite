@@ -21,35 +21,17 @@ func registerAgentSearchTools(s *Server, deps Dependencies) {
 			"type":     "object",
 			"required": []string{"query"},
 			"properties": map[string]interface{}{
-				"query": map[string]interface{}{
-					"type":        "string",
-					"description": "Task description or capability search query",
-				},
-				"target_package": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional target Go/Rust package (e.g. 'pkg/ast', 'pkg/gateway')",
-				},
+				"query":          TypedProp("string", "Task description or capability search query"),
+				"target_package": TypedProp("string", "Optional target Go/Rust package (e.g. 'pkg/ast', 'pkg/gateway')"),
 				"target_symbols": map[string]interface{}{
 					"type":        "array",
 					"items":       map[string]interface{}{"type": "string"},
 					"description": "Optional list of target AST symbols",
 				},
-				"require_local": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Constrain selection to zero-cost local inference engines (Ollama Metal, OxiLLaMa)",
-				},
-				"max_cost": map[string]interface{}{
-					"type":        "number",
-					"description": "Optional maximum cost ceiling in USD",
-				},
-				"max_results": map[string]interface{}{
-					"type":        "integer",
-					"description": "Maximum number of candidate agents to return (default: 5)",
-				},
-				"route": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, auto-selects top agent and returns execution routing decision",
-				},
+				"require_local": TypedProp("boolean", "Constrain selection to zero-cost local inference engines (Ollama Metal, OxiLLaMa)"),
+				"max_cost":      TypedProp("number", "Optional maximum cost ceiling in USD"),
+				"max_results":   TypedProp("integer", "Maximum number of candidate agents to return (default: 5)"),
+				"route":         TypedProp("boolean", "If true, auto-selects top agent and returns execution routing decision"),
 			},
 		},
 	}, agentSearchHandler())
@@ -102,18 +84,9 @@ func registerTestGenTools(s *Server, deps Dependencies) {
 			"type":     "object",
 			"required": []string{"file"},
 			"properties": map[string]interface{}{
-				"file": map[string]interface{}{
-					"type":        "string",
-					"description": "Path to target source file (e.g. 'pkg/gateway/limiter.go')",
-				},
-				"with_testcontainers": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Force Testcontainers scaffolding generation even if no persistent dependencies detected",
-				},
-				"max_iterations": map[string]interface{}{
-					"type":        "integer",
-					"description": "Maximum self-healing convergence iterations (default: 3)",
-				},
+				"file":                TypedProp("string", "Path to target source file (e.g. 'pkg/gateway/limiter.go')"),
+				"with_testcontainers": TypedProp("boolean", "Force Testcontainers scaffolding generation even if no persistent dependencies detected"),
+				"max_iterations":      TypedProp("integer", "Maximum self-healing convergence iterations (default: 3)"),
 			},
 		},
 	}, func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
@@ -158,9 +131,9 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"priority": map[string]interface{}{"type": "integer", "description": "Filter by priority level (1 = own repo, 2 = curated OSS, 3 = registry)"},
-				"language": map[string]interface{}{"type": "string", "description": "Filter by language (e.g. rust, go, typescript)"},
-				"query":    map[string]interface{}{"type": "string", "description": "Capability or library name query (e.g. wgpu, cte, turso, pixels)"},
+				"priority": TypedProp("integer", "Filter by priority level (1 = own repo, 2 = curated OSS, 3 = registry)"),
+				"language": TypedProp("string", "Filter by language (e.g. rust, go, typescript)"),
+				"query":    TypedProp("string", "Capability or library name query (e.g. wgpu, cte, turso, pixels)"),
 			},
 		},
 	}, distSourcesHandler())
@@ -173,9 +146,9 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 			"type":     "object",
 			"required": []string{"project_name"},
 			"properties": map[string]interface{}{
-				"project_name":          map[string]interface{}{"type": "string", "description": "Name of the project to decompose"},
-				"target_binary_or_spec": map[string]interface{}{"type": "string", "description": "Target binary path or specification file"},
-				"language":              map[string]interface{}{"type": "string", "description": "Target language (default: rust)"},
+				"project_name":          TypedProp("string", "Name of the project to decompose"),
+				"target_binary_or_spec": TypedProp("string", "Target binary path or specification file"),
+				"language":              TypedProp("string", "Target language (default: rust)"),
 				"modules":               map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Custom module names if overriding default modular split"},
 				"user_custom_overrides": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Modules where user explicitly forces in-house custom development"},
 			},
@@ -191,11 +164,11 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 			"required": []string{"action"},
 			"properties": map[string]interface{}{
 				"action":             map[string]interface{}{"type": "string", "enum": []string{"coordinate", "complete", "reconcile", "list"}, "description": "Interop coordination action"},
-				"coordination_id":    map[string]interface{}{"type": "string", "description": "Coordination record ID (for complete/reconcile)"},
-				"requester_project":  map[string]interface{}{"type": "string", "description": "Project requesting capability (e.g. Docula)"},
-				"dependency_project": map[string]interface{}{"type": "string", "description": "Project supplying capability (e.g. Oxipix)"},
-				"feature_requested":  map[string]interface{}{"type": "string", "description": "Feature name or signature to add"},
-				"allow_fallback":     map[string]interface{}{"type": "boolean", "description": "Whether to unblock requester immediately with interim fallback and TODO"},
+				"coordination_id":    TypedProp("string", "Coordination record ID (for complete/reconcile)"),
+				"requester_project":  TypedProp("string", "Project requesting capability (e.g. Docula)"),
+				"dependency_project": TypedProp("string", "Project supplying capability (e.g. Oxipix)"),
+				"feature_requested":  TypedProp("string", "Feature name or signature to add"),
+				"allow_fallback":     TypedProp("boolean", "Whether to unblock requester immediately with interim fallback and TODO"),
 			},
 		},
 	}, distInteropHandler())
@@ -208,14 +181,14 @@ func registerDistCodebaseTools(s *Server, deps Dependencies) {
 			"type":     "object",
 			"required": []string{"project_name"},
 			"properties": map[string]interface{}{
-				"project_name":         map[string]interface{}{"type": "string", "description": "Name of the sub-project or satellite project"},
-				"identifier":           map[string]interface{}{"type": "string", "description": "Short code identifier (e.g. CSEN)"},
-				"target_dir":           map[string]interface{}{"type": "string", "description": "Target filesystem directory path"},
-				"language":             map[string]interface{}{"type": "string", "description": "Project language (rust, go, typescript, python)"},
-				"is_satellite":         map[string]interface{}{"type": "boolean", "description": "True if spawned as a side-project (e.g. Carla Rust rewrite)"},
-				"create_plane_project": map[string]interface{}{"type": "boolean", "description": "Whether to create a dedicated project in Plane v2"},
-				"init_git":             map[string]interface{}{"type": "boolean", "description": "Whether to run git init (default: true)"},
-				"description":          map[string]interface{}{"type": "string", "description": "Description of the sub-project"},
+				"project_name":         TypedProp("string", "Name of the sub-project or satellite project"),
+				"identifier":           TypedProp("string", "Short code identifier (e.g. CSEN)"),
+				"target_dir":           TypedProp("string", "Target filesystem directory path"),
+				"language":             TypedProp("string", "Project language (rust, go, typescript, python)"),
+				"is_satellite":         TypedProp("boolean", "True if spawned as a side-project (e.g. Carla Rust rewrite)"),
+				"create_plane_project": TypedProp("boolean", "Whether to create a dedicated project in Plane v2"),
+				"init_git":             TypedProp("boolean", "Whether to run git init (default: true)"),
+				"description":          TypedProp("string", "Description of the sub-project"),
 			},
 		},
 	}, distSpawnHandler(deps))

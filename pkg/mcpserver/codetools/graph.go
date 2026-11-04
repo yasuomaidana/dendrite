@@ -17,18 +17,9 @@ func registerGraphTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"project_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Target project directory to index and analyze (default: '.')",
-				},
-				"limit": map[string]interface{}{
-					"type":        "integer",
-					"description": "Maximum number of communities to return (default: 50)",
-				},
-				"min_size": map[string]interface{}{
-					"type":        "integer",
-					"description": "Smallest community listed, in files (default: 2)",
-				},
+				"project_path": TypedProp("string", "Target project directory to index and analyze (default: '.')"),
+				"limit":        TypedProp("integer", "Maximum number of communities to return (default: 50)"),
+				"min_size":     TypedProp("integer", "Smallest community listed, in files (default: 2)"),
 			},
 		},
 	}, graphCommunitiesHandler())
@@ -40,18 +31,9 @@ func registerGraphTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"project_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Target project directory to index and analyze (default: '.')",
-				},
-				"min_in_degree": map[string]interface{}{
-					"type":        "integer",
-					"description": "Minimum in-degree threshold (default: 21 for FEAT-045 god nodes)",
-				},
-				"limit": map[string]interface{}{
-					"type":        "integer",
-					"description": "Maximum number of god nodes to return (default: 50)",
-				},
+				"project_path":  TypedProp("string", "Target project directory to index and analyze (default: '.')"),
+				"min_in_degree": TypedProp("integer", "Minimum in-degree threshold (default: 21 for FEAT-045 god nodes)"),
+				"limit":         TypedProp("integer", "Maximum number of god nodes to return (default: 50)"),
 			},
 		},
 	}, graphGodNodesHandler())
@@ -63,27 +45,15 @@ func registerGraphTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"project_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Target project directory to index and analyze (default: '.')",
-				},
-				"from": map[string]interface{}{
-					"type":        "string",
-					"description": "Starting symbol name or project-relative file path",
-				},
-				"to": map[string]interface{}{
-					"type":        "string",
-					"description": "Destination symbol name or project-relative file path",
-				},
+				"project_path": TypedProp("string", "Target project directory to index and analyze (default: '.')"),
+				"from":         TypedProp("string", "Starting symbol name or project-relative file path"),
+				"to":           TypedProp("string", "Destination symbol name or project-relative file path"),
 				"kinds": map[string]interface{}{
 					"type":        "array",
 					"items":       map[string]interface{}{"type": "string"},
 					"description": "Edge kinds to follow (call, import, type; default: all)",
 				},
-				"max_hops": map[string]interface{}{
-					"type":        "integer",
-					"description": "Maximum number of hops (default: 6)",
-				},
+				"max_hops": TypedProp("integer", "Maximum number of hops (default: 6)"),
 			},
 			"required": []interface{}{"from", "to"},
 		},
@@ -96,14 +66,8 @@ func registerGraphTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"project_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Target project directory to index and analyze (default: '.')",
-				},
-				"target": map[string]interface{}{
-					"type":        "string",
-					"description": "Symbol name or project-relative file path to explain",
-				},
+				"project_path": TypedProp("string", "Target project directory to index and analyze (default: '.')"),
+				"target":       TypedProp("string", "Symbol name or project-relative file path to explain"),
 			},
 			"required": []interface{}{"target"},
 		},

@@ -441,15 +441,11 @@ func testSchedulerTools_RegistrationAndExecutionStep5(t *testing.T, ctx context.
 // testSchedulerTools_RegistrationAndExecutionStep6: 3. Test dendrite_analyze_status
 func testSchedulerTools_RegistrationAndExecutionStep6(t *testing.T, srv *Server, ctx context.Context, err error) {
 	statusHandler, _ := srv.Handler("dendrite_analyze_status")
-	resStatus, err := statusHandler(ctx, map[string]interface{}{
-		"remaining_quota": 0.85,
-	})
-	if err != nil {
-		t.Fatalf("statusHandler failed: %v", err)
-	}
-	if len(resStatus.Content) == 0 || !strings.Contains(resStatus.Content[0].Text, "active_tier") {
-		t.Errorf("expected active_tier in status response: %+v", resStatus.Content)
-	}
+	mcptest.ExpectContent(t, "statusHandler failed", func() (*CallToolResult, error) {
+		return statusHandler(ctx, map[string]interface{}{
+			"remaining_quota": 0.85,
+		})
+	}, "active_tier")
 }
 
 // testSchedulerTools_RegistrationAndExecutionStep7: 4. Test dendrite_analyze_trigger
@@ -827,48 +823,36 @@ func testDocusaurusTools_RegistrationAndExecutionStep5(t *testing.T, tempSrc str
 // testDocusaurusTools_RegistrationAndExecutionStep6: 1. Test dendrite_docusaurus_generate
 func testDocusaurusTools_RegistrationAndExecutionStep6(t *testing.T, srv *Server, ctx context.Context, tempSrc string, err error, tempDest string) {
 	genHandler, _ := srv.Handler("dendrite_docusaurus_generate")
-	resGen, err := genHandler(ctx, map[string]interface{}{
-		"docs_dir":     tempSrc,
-		"target_dir":   tempDest,
-		"title":        "Test Docs Portal",
-		"port":         3050,
-		"sharing_tier": "federated",
-	})
-	if err != nil {
-		t.Fatalf("dendrite_docusaurus_generate failed: %v", err)
-	}
-	if len(resGen.Content) == 0 || !strings.Contains(resGen.Content[0].Text, "site_directory") {
-		t.Errorf("unexpected generation result: %v", resGen.Content)
-	}
+	mcptest.ExpectContent(t, "dendrite_docusaurus_generate failed", func() (*CallToolResult, error) {
+		return genHandler(ctx, map[string]interface{}{
+			"docs_dir":     tempSrc,
+			"target_dir":   tempDest,
+			"title":        "Test Docs Portal",
+			"port":         3050,
+			"sharing_tier": "federated",
+		})
+	}, "site_directory")
 }
 
 // testDocusaurusTools_RegistrationAndExecutionStep7: 2. Test dendrite_docusaurus_share
 func testDocusaurusTools_RegistrationAndExecutionStep7(t *testing.T, srv *Server, ctx context.Context, err error, tempDest string) {
 	shareHandler, _ := srv.Handler("dendrite_docusaurus_share")
-	resShare, err := shareHandler(ctx, map[string]interface{}{
-		"site_dir": tempDest,
-	})
-	if err != nil {
-		t.Fatalf("dendrite_docusaurus_share failed: %v", err)
-	}
-	if len(resShare.Content) == 0 || !strings.Contains(resShare.Content[0].Text, "manifest_version") {
-		t.Errorf("unexpected share result: %v", resShare.Content)
-	}
+	mcptest.ExpectContent(t, "dendrite_docusaurus_share failed", func() (*CallToolResult, error) {
+		return shareHandler(ctx, map[string]interface{}{
+			"site_dir": tempDest,
+		})
+	}, "manifest_version")
 }
 
 // testDocusaurusTools_RegistrationAndExecutionStep8: 3. Test dendrite_docusaurus_audit
 func testDocusaurusTools_RegistrationAndExecutionStep8(t *testing.T, srv *Server, ctx context.Context, tempSrc string, err error) {
 	auditHandler, _ := srv.Handler("dendrite_docusaurus_audit")
-	resAudit, err := auditHandler(ctx, map[string]interface{}{
-		"project_root": tempSrc,
-		"docs_dir":     tempSrc,
-	})
-	if err != nil {
-		t.Fatalf("dendrite_docusaurus_audit failed: %v", err)
-	}
-	if len(resAudit.Content) == 0 || !strings.Contains(resAudit.Content[0].Text, "total_features") {
-		t.Errorf("unexpected audit result: %v", resAudit.Content)
-	}
+	mcptest.ExpectContent(t, "dendrite_docusaurus_audit failed", func() (*CallToolResult, error) {
+		return auditHandler(ctx, map[string]interface{}{
+			"project_root": tempSrc,
+			"docs_dir":     tempSrc,
+		})
+	}, "total_features")
 }
 
 func TestWorkingTreeToolsReportANonRepository(t *testing.T) {

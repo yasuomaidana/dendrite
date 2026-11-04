@@ -275,49 +275,50 @@ func TestMCP_PlaneDAGTools(t *testing.T) {
 	testMCP_PlaneDAGToolsStep9(t, callTool)
 }
 
-// testMCP_PlaneDAGToolsStep1: Setup mock Plane HTTP server
+// planeRoute is one answer of the scripted Plane: the first route whose method and path test match serves the request.
+type planeRoute struct {
+	method string
+	match  func(path string) bool
+	status int
+	body   string
+}
+
+func suffix(s string) func(string) bool {
+	return func(p string) bool { return strings.HasSuffix(p, s) }
+}
+func contains(s string) func(string) bool {
+	return func(p string) bool { return strings.Contains(p, s) }
+}
+
+// dagRoutes are the answers of the Plane the DAG tools talk to.
+var dagRoutes = []planeRoute{
+	{http.MethodGet, suffix("/issues/"), http.StatusOK, `{"results": [
+				{"id": "iss-1", "name": "[DEN-010] Foundation Core", "sequence_id": 10, "state": "st-todo", "priority": "low"},
+				{"id": "iss-2", "name": "[DEN-011] Urgent Feature", "sequence_id": 11, "state": "st-todo", "priority": "urgent"}
+			]}`},
+	{http.MethodGet, suffix("/states/"), http.StatusOK, `{"results": [
+				{"id": "st-done", "name": "Done", "group": "completed"},
+				{"id": "st-todo", "name": "To Do", "group": "unstarted"}
+			]}`},
+	{http.MethodGet, contains("/issues/iss-2/issue-relation/"), http.StatusOK, `{"blocking": [], "blocked_by": [{"id": "iss-1", "name": "[DEN-010] Foundation Core"}], "duplicate": [], "relates_to": []}`},
+	{http.MethodGet, contains("/issue-relation/"), http.StatusOK, `{"blocking": [], "blocked_by": [], "duplicate": [], "relates_to": []}`},
+	{http.MethodPost, contains("/issue-relation/"), http.StatusCreated, `[{"id": "rel-1", "relation_type": "blocked_by"}]`},
+	{http.MethodPost, suffix("/issues/"), http.StatusCreated, `{"id": "iss-new", "name": "[DEN-100] New Feature", "sequence_id": 100, "priority": "high"}`},
+	{http.MethodGet, suffix("/modules/"), http.StatusOK, `{"results": [{"id": "mod-1", "name": "Milestone 1"}]}`},
+}
+
 func testMCP_PlaneDAGToolsStep1(t *testing.T) *httptest.Server {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/issues/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": [
-				{"id": "iss-1", "name": "[DEN-010] Foundation Core", "sequence_id": 10, "state": "st-todo", "priority": "low"},
-				{"id": "iss-2", "name": "[DEN-011] Urgent Feature", "sequence_id": 11, "state": "st-todo", "priority": "urgent"}
-			]}`))
-
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/states/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": [
-				{"id": "st-done", "name": "Done", "group": "completed"},
-				{"id": "st-todo", "name": "To Do", "group": "unstarted"}
-			]}`))
-
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/issues/iss-2/issue-relation/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"blocking": [], "blocked_by": [{"id": "iss-1", "name": "[DEN-010] Foundation Core"}], "duplicate": [], "relates_to": []}`))
-
-		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/issue-relation/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"blocking": [], "blocked_by": [], "duplicate": [], "relates_to": []}`))
-
-		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/issue-relation/"):
-			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`[{"id": "rel-1", "relation_type": "blocked_by"}]`))
-
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/issues/"):
-			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"id": "iss-new", "name": "[DEN-100] New Feature", "sequence_id": 100, "priority": "high"}`))
-
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/modules/"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"results": [{"id": "mod-1", "name": "Milestone 1"}]}`))
-
-		default:
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{}`))
+		for _, route := range dagRoutes {
+			if r.Method == route.method && route.match(r.URL.Path) {
+				w.WriteHeader(route.status)
+				_, _ = w.Write([]byte(route.body))
+				return
+			}
 		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
 	}))
 	t.Cleanup(func() { server.Close() })
 	return server

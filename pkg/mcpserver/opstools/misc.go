@@ -23,30 +23,12 @@ func registerGreetingTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"topic": map[string]interface{}{
-					"type":        "string",
-					"description": "User's current topic or project",
-				},
-				"decision": map[string]interface{}{
-					"type":        "string",
-					"description": "Decision point user is considering",
-				},
-				"milestone": map[string]interface{}{
-					"type":        "string",
-					"description": "Milestone title achieved or in-flight",
-				},
-				"milestone_achieved": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Whether the milestone was recently completed",
-				},
-				"event": map[string]interface{}{
-					"type":        "string",
-					"description": "Upcoming event or deadline",
-				},
-				"days_until_event": map[string]interface{}{
-					"type":        "integer",
-					"description": "Days remaining until event",
-				},
+				"topic":              TypedProp("string", "User's current topic or project"),
+				"decision":           TypedProp("string", "Decision point user is considering"),
+				"milestone":          TypedProp("string", "Milestone title achieved or in-flight"),
+				"milestone_achieved": TypedProp("boolean", "Whether the milestone was recently completed"),
+				"event":              TypedProp("string", "Upcoming event or deadline"),
+				"days_until_event":   TypedProp("integer", "Days remaining until event"),
 				"options": map[string]interface{}{
 					"type": "array",
 					"items": map[string]interface{}{
@@ -54,34 +36,13 @@ func registerGreetingTools(s *Server, deps Dependencies) {
 					},
 					"description": "Option alternatives user is weighing (e.g. Option A vs B)",
 				},
-				"unfinished_step": map[string]interface{}{
-					"type":        "string",
-					"description": "Pending task left from prior turn",
-				},
-				"specific_challenge": map[string]interface{}{
-					"type":        "string",
-					"description": "Complex or stressful blocker",
-				},
-				"curiosity_angle": map[string]interface{}{
-					"type":        "string",
-					"description": "Novel or unexplored angle for topic",
-				},
-				"days_since_last_active": map[string]interface{}{
-					"type":        "integer",
-					"description": "Days since the user last interacted",
-				},
-				"turn_count": map[string]interface{}{
-					"type":        "integer",
-					"description": "Number of turns in current conversation",
-				},
-				"high_stress": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Whether user context indicates high stress",
-				},
-				"low_pressure_hobby": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Whether topic is a low-stakes creative hobby",
-				},
+				"unfinished_step":        TypedProp("string", "Pending task left from prior turn"),
+				"specific_challenge":     TypedProp("string", "Complex or stressful blocker"),
+				"curiosity_angle":        TypedProp("string", "Novel or unexplored angle for topic"),
+				"days_since_last_active": TypedProp("integer", "Days since the user last interacted"),
+				"turn_count":             TypedProp("integer", "Number of turns in current conversation"),
+				"high_stress":            TypedProp("boolean", "Whether user context indicates high stress"),
+				"low_pressure_hobby":     TypedProp("boolean", "Whether topic is a low-stakes creative hobby"),
 				"recent_styles": map[string]interface{}{
 					"type": "array",
 					"items": map[string]interface{}{
@@ -158,30 +119,12 @@ func registerTriageTools(s *Server, deps Dependencies) {
 			"type":     "object",
 			"required": []string{"prompt"},
 			"properties": map[string]interface{}{
-				"prompt": map[string]interface{}{
-					"type":        "string",
-					"description": "Developer prompt or chat message",
-				},
-				"active_file": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional active file path in the IDE editor",
-				},
-				"file_content": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional source code content of active file",
-				},
-				"force_tier": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional tier override: 'local', 'hybrid', 'cloud'",
-				},
-				"target_engine": map[string]interface{}{
-					"type":        "string",
-					"description": "Target inference backend: 'ollama', 'ollama-validated', 'huggingface', 'candle', 'oxillama'",
-				},
-				"execute_local": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Execute chore tasks locally if local inference is available",
-				},
+				"prompt":        TypedProp("string", "Developer prompt or chat message"),
+				"active_file":   TypedProp("string", "Optional active file path in the IDE editor"),
+				"file_content":  TypedProp("string", "Optional source code content of active file"),
+				"force_tier":    TypedProp("string", "Optional tier override: 'local', 'hybrid', 'cloud'"),
+				"target_engine": TypedProp("string", "Target inference backend: 'ollama', 'ollama-validated', 'huggingface', 'candle', 'oxillama'"),
+				"execute_local": TypedProp("boolean", "Execute chore tasks locally if local inference is available"),
 			},
 		},
 	}, localAgentTriageHandler(deps))
@@ -246,26 +189,11 @@ func registerInferenceTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"model": map[string]interface{}{
-					"type":        "string",
-					"description": "Model identifier to migrate (e.g. 'qwen3.5:9b', 'qwen3.8:27b')",
-				},
-				"source_engine": map[string]interface{}{
-					"type":        "string",
-					"description": "Source engine identifier (default: 'ollama')",
-				},
-				"target_engine": map[string]interface{}{
-					"type":        "string",
-					"description": "Target engine identifier (default: 'oxillama')",
-				},
-				"delete_source": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, evicts model from source engine upon successful verification (default: false; OxiLLaMa runs prompts on the CPU, so keep the Ollama copy for GPU inference)",
-				},
-				"dry_run": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, simulates migration without modifying disk (default: false)",
-				},
+				"model":         TypedProp("string", "Model identifier to migrate (e.g. 'qwen3.5:9b', 'qwen3.8:27b')"),
+				"source_engine": TypedProp("string", "Source engine identifier (default: 'ollama')"),
+				"target_engine": TypedProp("string", "Target engine identifier (default: 'oxillama')"),
+				"delete_source": TypedProp("boolean", "If true, evicts model from source engine upon successful verification (default: false; OxiLLaMa runs prompts on the CPU, so keep the Ollama copy for GPU inference)"),
+				"dry_run":       TypedProp("boolean", "If true, simulates migration without modifying disk (default: false)"),
 			},
 			"required": []interface{}{"model"},
 		},
@@ -312,22 +240,10 @@ func registerEnvPrepareTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"project_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Target workspace project root directory (default: current directory)",
-				},
-				"default_tool": map[string]interface{}{
-					"type":        "string",
-					"description": "Default CI/CD assistant tool (default: 'copilot')",
-				},
-				"enforce_cicd": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Enforce CI/CD practices and GitHub Copilot configuration (default: true)",
-				},
-				"dry_run": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, simulates preparation without writing files",
-				},
+				"project_path": TypedProp("string", "Target workspace project root directory (default: current directory)"),
+				"default_tool": TypedProp("string", "Default CI/CD assistant tool (default: 'copilot')"),
+				"enforce_cicd": TypedProp("boolean", "Enforce CI/CD practices and GitHub Copilot configuration (default: true)"),
+				"dry_run":      TypedProp("boolean", "If true, simulates preparation without writing files"),
 			},
 		},
 	}, envPrepareHandler())
@@ -378,14 +294,8 @@ func registerREATools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"target": map[string]interface{}{
-					"type":        "string",
-					"description": "Showcase target: 'all', 'aegis', 'dxball', 'ctf', 'th04', 'mattermost' (default: 'all')",
-				},
-				"format": map[string]interface{}{
-					"type":        "string",
-					"description": "Output representation: 'json', 'markdown', or 'summary' (default: 'summary')",
-				},
+				"target": TypedProp("string", "Showcase target: 'all', 'aegis', 'dxball', 'ctf', 'th04', 'mattermost' (default: 'all')"),
+				"format": TypedProp("string", "Output representation: 'json', 'markdown', or 'summary' (default: 'summary')"),
 			},
 		},
 	}, reaShowcaseHandler())
@@ -441,10 +351,7 @@ func registerContractTools(s *Server, deps Dependencies) {
 					},
 					"description": "List of directories containing .proto, openapi.yaml, or .json schema definitions",
 				},
-				"code_dirs": map[string]interface{}{
-					"type":        "object",
-					"description": "Map of target languages ('go', 'rust', 'typescript', 'python') to repository source directories",
-				},
+				"code_dirs": TypedProp("object", "Map of target languages ('go', 'rust', 'typescript', 'python') to repository source directories"),
 			},
 			"required": []interface{}{"schema_dirs"},
 		},

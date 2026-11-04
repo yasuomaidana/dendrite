@@ -105,6 +105,29 @@ func testGraphProject(t *testing.T) string {
 	return dir
 }
 
+// coreAllows reports whether the core profile may expose the tool.
+func coreAllows(name string) bool {
+	if CoreToolNames[name] {
+		return true
+	}
+	for _, p := range CoreToolPrefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkSeen reports each name whose presence among seen differs from wantSeen.
+func checkSeen(t *testing.T, seen map[string]bool, names []string, wantSeen bool) {
+	t.Helper()
+	for _, n := range names {
+		if seen[n] != wantSeen {
+			t.Errorf("core exposure of %s = %v, want %v", n, seen[n], wantSeen)
+		}
+	}
+}
+
 func TestCoreProfileExposesOnlyRAGGraphPlane(t *testing.T) {
 	src := mcptest.NewDefaultServerForProfileTest()
 	core := ApplyProfile(src, ProfileCore)
@@ -115,27 +138,15 @@ func TestCoreProfileExposesOnlyRAGGraphPlane(t *testing.T) {
 	seen := map[string]bool{}
 	for _, tool := range tools {
 		seen[tool.Name] = true
-		ok := CoreToolNames[tool.Name]
-		for _, p := range CoreToolPrefixes {
-			ok = ok || strings.HasPrefix(tool.Name, p)
-		}
-		if !ok {
+		if !coreAllows(tool.Name) {
 			t.Errorf("core exposes %s", tool.Name)
 		}
 		if _, has := core.Handler(tool.Name); !has {
 			t.Errorf("core tool %s lost its handler", tool.Name)
 		}
 	}
-	for _, want := range []string{"dendrite_rag_retrieve", "dendrite_rag_show", "dendrite_rag_ask", "dendrite_plane_issues", "dendrite_graph_explain", "dendrite_ticket_smart_select"} {
-		if !seen[want] {
-			t.Errorf("core is missing %s", want)
-		}
-	}
-	for _, banned := range []string{"dendrite_store_rm", "dendrite_service_move", "dendrite_dist_spawn"} {
-		if seen[banned] {
-			t.Errorf("core exposes %s", banned)
-		}
-	}
+	checkSeen(t, seen, []string{"dendrite_rag_retrieve", "dendrite_rag_show", "dendrite_rag_ask", "dendrite_plane_issues", "dendrite_graph_explain", "dendrite_ticket_smart_select"}, true)
+	checkSeen(t, seen, []string{"dendrite_store_rm", "dendrite_service_move", "dendrite_dist_spawn"}, false)
 }
 
 func TestAgentSearchFailsWithoutTheSidecar(t *testing.T) {

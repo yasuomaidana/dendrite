@@ -26,7 +26,7 @@ func registerStoreTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"project": map[string]interface{}{"type": "string", "description": "Optional project identifier filter"},
+				"project": TypedProp("string", "Optional project identifier filter"),
 			},
 		},
 	}, storeStatusHandler())
@@ -38,12 +38,12 @@ func registerStoreTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"project":    map[string]interface{}{"type": "string", "description": "Project name or ID"},
-				"chunk_id":   map[string]interface{}{"type": "string", "description": "Unique chunk identifier"},
-				"identifier": map[string]interface{}{"type": "string", "description": "Symbol, function, or file identifier"},
-				"data":       map[string]interface{}{"type": "string", "description": "Raw text/code payload for the segment"},
+				"project":    TypedProp("string", "Project name or ID"),
+				"chunk_id":   TypedProp("string", "Unique chunk identifier"),
+				"identifier": TypedProp("string", "Symbol, function, or file identifier"),
+				"data":       TypedProp("string", "Raw text/code payload for the segment"),
 				"type":       map[string]interface{}{"type": "string", "enum": []string{"file", "function", "cfg_block", "ast_graph"}, "description": "Segment type"},
-				"is_final":   map[string]interface{}{"type": "boolean", "description": "Set true if this is the final completed chunk (StateStored)"},
+				"is_final":   TypedProp("boolean", "Set true if this is the final completed chunk (StateStored)"),
 			},
 			"required": []interface{}{"project", "chunk_id", "identifier", "data"},
 		},
@@ -56,7 +56,7 @@ func registerStoreTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"project": map[string]interface{}{"type": "string", "description": "Project identifier"},
+				"project": TypedProp("string", "Project identifier"),
 			},
 			"required": []interface{}{"project"},
 		},
@@ -68,7 +68,7 @@ func registerStoreTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"store_id": map[string]interface{}{"type": "string", "description": "Project / Store identifier"},
+				"store_id": TypedProp("string", "Project / Store identifier"),
 			},
 			"required": []interface{}{"store_id"},
 		},
@@ -81,8 +81,8 @@ func registerStoreTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"store_id": map[string]interface{}{"type": "string", "description": "Project / Store identifier to delete"},
-				"force":    map[string]interface{}{"type": "boolean", "description": "Mandatory confirmation gate to perform permanent deletion"},
+				"store_id": TypedProp("string", "Project / Store identifier to delete"),
+				"force":    TypedProp("boolean", "Mandatory confirmation gate to perform permanent deletion"),
 			},
 			"required": []interface{}{"store_id"},
 		},

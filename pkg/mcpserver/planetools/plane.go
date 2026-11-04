@@ -23,8 +23,8 @@ func registerPlaneSyncAndIDETools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"file":    map[string]interface{}{"type": "string", "description": "Target markdown file path (default: DEV_STATUS.md)"},
-				"dry_run": map[string]interface{}{"type": "boolean", "description": "If true, simulates replication without modifying disk"},
+				"file":    TypedProp("string", "Target markdown file path (default: DEV_STATUS.md)"),
+				"dry_run": TypedProp("boolean", "If true, simulates replication without modifying disk"),
 			},
 		},
 	}, planeReplicateHandler(deps))
@@ -36,7 +36,7 @@ func registerPlaneSyncAndIDETools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"file": map[string]interface{}{"type": "string", "description": "Source markdown file path (default: DEV_STATUS.md)"},
+				"file": TypedProp("string", "Source markdown file path (default: DEV_STATUS.md)"),
 			},
 		},
 	}, planePushStatusHandler(deps))
@@ -48,8 +48,8 @@ func registerPlaneSyncAndIDETools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"direction": map[string]interface{}{"type": "string", "description": "Sync direction: 'to-plane', 'from-plane', or 'bidirectional' (default: bidirectional)"},
-				"dir":       map[string]interface{}{"type": "string", "description": "Documentation directory path (default: docs)"},
+				"direction": TypedProp("string", "Sync direction: 'to-plane', 'from-plane', or 'bidirectional' (default: bidirectional)"),
+				"dir":       TypedProp("string", "Documentation directory path (default: docs)"),
 			},
 		},
 	}, planeDocSyncHandler(deps))
@@ -61,9 +61,9 @@ func registerPlaneSyncAndIDETools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"project_dir":  map[string]interface{}{"type": "string", "description": "Project root directory (default: current working directory)"},
-				"project_only": map[string]interface{}{"type": "boolean", "description": "Configure only project-level files (.ai/mcp/mcp.json and .idea)"},
-				"global_only":  map[string]interface{}{"type": "boolean", "description": "Configure only user-level global files (~/.ai/mcp/mcp.json)"},
+				"project_dir":  TypedProp("string", "Project root directory (default: current working directory)"),
+				"project_only": TypedProp("boolean", "Configure only project-level files (.ai/mcp/mcp.json and .idea)"),
+				"global_only":  TypedProp("boolean", "Configure only user-level global files (~/.ai/mcp/mcp.json)"),
 			},
 		},
 	}, jetbrainsSetupHandler())
@@ -78,14 +78,8 @@ func registerCommitTool(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"ticket_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Target ticket ID (e.g. DEN-098)",
-				},
-				"message": map[string]interface{}{
-					"type":        "string",
-					"description": "Explicit commit message. If omitted, synthesized via local model",
-				},
+				"ticket_id": TypedProp("string", "Target ticket ID (e.g. DEN-098)"),
+				"message":   TypedProp("string", "Explicit commit message. If omitted, synthesized via local model"),
 				"files": map[string]interface{}{
 					"type": "array",
 					"items": map[string]interface{}{
@@ -93,22 +87,10 @@ func registerCommitTool(s *Server, deps Dependencies) {
 					},
 					"description": "Specific file paths to stage (default: stage all)",
 				},
-				"stage_all": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Stage all modified and untracked files (default: true)",
-				},
-				"use_local_model": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Delegate commit message synthesis to local model (default: true)",
-				},
-				"model": map[string]interface{}{
-					"type":        "string",
-					"description": "Local model name (default: qwen3.8:27b)",
-				},
-				"dry_run": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Simulate staging and message synthesis without modifying git history",
-				},
+				"stage_all":       TypedProp("boolean", "Stage all modified and untracked files (default: true)"),
+				"use_local_model": TypedProp("boolean", "Delegate commit message synthesis to local model (default: true)"),
+				"model":           TypedProp("string", "Local model name (default: qwen3.8:27b)"),
+				"dry_run":         TypedProp("boolean", "Simulate staging and message synthesis without modifying git history"),
 			},
 		},
 	}, commitHandler())
@@ -272,8 +254,8 @@ func RegisterPlaneTicketSetTool(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"ticket": map[string]interface{}{"type": "string", "description": "Ticket reference: DEN-324, its Plane number (324) or the issue UUID"},
-				"status": map[string]interface{}{"type": "string", "description": "backlog, todo, in progress, to verify or done"},
+				"ticket": TypedProp("string", "Ticket reference: DEN-324, its Plane number (324) or the issue UUID"),
+				"status": TypedProp("string", "backlog, todo, in progress, to verify or done"),
 			},
 			"required": []string{"ticket", "status"},
 		},

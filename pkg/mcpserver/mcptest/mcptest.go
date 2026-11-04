@@ -164,6 +164,25 @@ func ExpectToolError(t *testing.T, srv *Server, req, msg string) *JSONRPCRespons
 	return resp
 }
 
+// ExpectContent runs a tool call and fails the test, naming what, unless it returns without an error and its first
+// text holds every wanted fragment (any text at all when none is given).
+func ExpectContent(t *testing.T, what string, run func() (*CallToolResult, error), wants ...string) {
+	t.Helper()
+	res, err := run()
+	if err != nil {
+		t.Fatalf("%s: %v", what, err)
+	}
+	if len(res.Content) == 0 || (len(wants) == 0 && res.Content[0].Text == "") {
+		t.Errorf("%s: empty result", what)
+		return
+	}
+	for _, w := range wants {
+		if !strings.Contains(res.Content[0].Text, w) {
+			t.Errorf("%s: result lacks %q: %v", what, w, res.Content)
+		}
+	}
+}
+
 // Main runs a package's tests with retrieval served from the dendrite-rag stand-in, never from a sidecar that
 // happens to be installed on the machine, and Plane from the real dendrite-plane build.
 func Main(m *testing.M) {

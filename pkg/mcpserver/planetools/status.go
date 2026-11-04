@@ -35,10 +35,7 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"file": map[string]interface{}{
-					"type":        "string",
-					"description": "Path to DEV_STATUS.md (default: DEV_STATUS.md)",
-				},
+				"file": TypedProp("string", "Path to DEV_STATUS.md (default: DEV_STATUS.md)"),
 			},
 		},
 	}, ticketListHandler(deps))
@@ -51,18 +48,9 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 			"type":     "object",
 			"required": []string{"ticket_id", "status"},
 			"properties": map[string]interface{}{
-				"ticket_id": map[string]interface{}{
-					"type":        "string",
-					"description": "The ticket identifier, e.g. DEN-034",
-				},
-				"status": map[string]interface{}{
-					"type":        "string",
-					"description": "New status, e.g. DONE, IN_PROGRESS, TODO",
-				},
-				"file": map[string]interface{}{
-					"type":        "string",
-					"description": "Path to DEV_STATUS.md (default: DEV_STATUS.md)",
-				},
+				"ticket_id": TypedProp("string", "The ticket identifier, e.g. DEN-034"),
+				"status":    TypedProp("string", "New status, e.g. DONE, IN_PROGRESS, TODO"),
+				"file":      TypedProp("string", "Path to DEV_STATUS.md (default: DEV_STATUS.md)"),
 			},
 		},
 	}, ticketUpdateHandler(deps))
@@ -74,8 +62,8 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"workspace": map[string]interface{}{"type": "string", "description": "Workspace slug (default: dendrite-ws)"},
-				"project":   map[string]interface{}{"type": "string", "description": "Project ID or Identifier (default: DEN)"},
+				"workspace": TypedProp("string", "Workspace slug (default: dendrite-ws)"),
+				"project":   TypedProp("string", "Project ID or Identifier (default: DEN)"),
 			},
 		},
 	}, planeIssuesHandler(deps))
@@ -90,7 +78,7 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"url": map[string]interface{}{"type": "string", "description": "Ollama base URL (default: http://127.0.0.1:11434)"},
+				"url": TypedProp("string", "Ollama base URL (default: http://127.0.0.1:11434)"),
 			},
 		},
 	}, ollamaProbeHandler(deps))
@@ -102,10 +90,7 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"nodes": map[string]interface{}{
-					"type":        "string",
-					"description": "Comma-separated node definitions (e.g. 'local=localhost,worker=100.84.12.25')",
-				},
+				"nodes": TypedProp("string", "Comma-separated node definitions (e.g. 'local=localhost,worker=100.84.12.25')"),
 			},
 		},
 	}, topologyAdvisorHandler())
@@ -117,10 +102,7 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"scenario": map[string]interface{}{
-					"type":        "string",
-					"description": "Topology scenario: 'local-hybrid', 'cloud-burst', 'full-local'",
-				},
+				"scenario": TypedProp("string", "Topology scenario: 'local-hybrid', 'cloud-burst', 'full-local'"),
 			},
 		},
 	}, gatewayRenderHandler())
@@ -132,18 +114,9 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"file": map[string]interface{}{
-					"type":        "string",
-					"description": "Target litellm_config.yaml path (default: ~/.dendrite/stacks/litellm_config.yaml)",
-				},
-				"dry_run": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Simulate update without modifying disk (default: false)",
-				},
-				"use_container_host": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Use host.docker.internal for container networking (default: true for the stacks directory)",
-				},
+				"file":               TypedProp("string", "Target litellm_config.yaml path (default: ~/.dendrite/stacks/litellm_config.yaml)"),
+				"dry_run":            TypedProp("boolean", "Simulate update without modifying disk (default: false)"),
+				"use_container_host": TypedProp("boolean", "Use host.docker.internal for container networking (default: true for the stacks directory)"),
 			},
 		},
 	}, gatewayUpdateHandler())
@@ -353,4 +326,15 @@ func gatewayUpdateHandler() ToolHandler {
 		data := IndentJSON(rep)
 		return TextResult(string(data)), nil
 	}
+}
+
+// Register registers the Plane board, ticket and lifecycle tools on s.
+func Register(s *Server, deps Dependencies) {
+	registerStatusAndTicketTools(s, deps)
+	registerOllamaAndGatewayTools(s, deps)
+	registerPlaneSyncAndIDETools(s, deps)
+	registerPlaneDAGTools(s, deps)
+	RegisterPlaneTicketSetTool(s, deps)
+	RegisterTicketLifecycleTools(s, deps)
+	registerCommitTool(s, deps)
 }

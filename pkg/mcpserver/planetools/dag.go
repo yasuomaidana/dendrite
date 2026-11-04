@@ -28,18 +28,9 @@ func registerPlaneDAGTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"ticket_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional specific ticket ID requested by user (e.g. 'DEN-036')",
-				},
-				"milestone": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional milestone name or filter",
-				},
-				"file": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional fallback source markdown file (default: DEV_STATUS.md)",
-				},
+				"ticket_id": TypedProp("string", "Optional specific ticket ID requested by user (e.g. 'DEN-036')"),
+				"milestone": TypedProp("string", "Optional milestone name or filter"),
+				"file":      TypedProp("string", "Optional fallback source markdown file (default: DEV_STATUS.md)"),
 			},
 		},
 	}, handleSmartSelect)
@@ -51,14 +42,8 @@ func registerPlaneDAGTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"ticket_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional specific ticket ID requested by user (e.g. 'DEN-036')",
-				},
-				"milestone": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional milestone filter",
-				},
+				"ticket_id": TypedProp("string", "Optional specific ticket ID requested by user (e.g. 'DEN-036')"),
+				"milestone": TypedProp("string", "Optional milestone filter"),
 			},
 		},
 	}, handleSmartSelect)
@@ -70,18 +55,9 @@ func registerPlaneDAGTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"issue_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Source ticket ID or UUID (e.g. 'DEN-036' or issue UUID)",
-				},
-				"relation_type": map[string]interface{}{
-					"type":        "string",
-					"description": "Relation type: 'blocking', 'blocked_by', 'relates_to', or 'duplicate'",
-				},
-				"target_issue_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Target ticket ID or UUID that is related/blocked",
-				},
+				"issue_id":        TypedProp("string", "Source ticket ID or UUID (e.g. 'DEN-036' or issue UUID)"),
+				"relation_type":   TypedProp("string", "Relation type: 'blocking', 'blocked_by', 'relates_to', or 'duplicate'"),
+				"target_issue_id": TypedProp("string", "Target ticket ID or UUID that is related/blocked"),
 			},
 			"required": []interface{}{"issue_id", "relation_type", "target_issue_id"},
 		},
@@ -94,38 +70,14 @@ func registerPlaneDAGTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"name": map[string]interface{}{
-					"type":        "string",
-					"description": "Ticket title / name (e.g. '[DEN-101] Feature Name')",
-				},
-				"description": map[string]interface{}{
-					"type":        "string",
-					"description": "Mandatory ticket description (HTML or markdown detailing goals, acceptance criteria, and DoD)",
-				},
-				"context": map[string]interface{}{
-					"type":        "string",
-					"description": "Alias for description",
-				},
-				"milestone": map[string]interface{}{
-					"type":        "string",
-					"description": "Milestone / Module name or UUID to assign this ticket to",
-				},
-				"priority": map[string]interface{}{
-					"type":        "string",
-					"description": "Priority: 'urgent', 'high', 'medium', 'low', or 'none' (default: 'medium')",
-				},
-				"estimate": map[string]interface{}{
-					"type":        "integer",
-					"description": "Story points estimate (e.g. 3, 5, 8, 13)",
-				},
-				"start_date": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional start date in YYYY-MM-DD format (auto-calculated if omitted)",
-				},
-				"target_date": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional target date in YYYY-MM-DD format (auto-calculated if omitted)",
-				},
+				"name":        TypedProp("string", "Ticket title / name (e.g. '[DEN-101] Feature Name')"),
+				"description": TypedProp("string", "Mandatory ticket description (HTML or markdown detailing goals, acceptance criteria, and DoD)"),
+				"context":     TypedProp("string", "Alias for description"),
+				"milestone":   TypedProp("string", "Milestone / Module name or UUID to assign this ticket to"),
+				"priority":    TypedProp("string", "Priority: 'urgent', 'high', 'medium', 'low', or 'none' (default: 'medium')"),
+				"estimate":    TypedProp("integer", "Story points estimate (e.g. 3, 5, 8, 13)"),
+				"start_date":  TypedProp("string", "Optional start date in YYYY-MM-DD format (auto-calculated if omitted)"),
+				"target_date": TypedProp("string", "Optional target date in YYYY-MM-DD format (auto-calculated if omitted)"),
 				"blocked_by": map[string]interface{}{
 					"type": "array",
 					"items": map[string]interface{}{
@@ -416,19 +368,24 @@ func addPlaneNodes(graph *dag.Graph, snap *planesvc.Snapshot) map[string]string 
 	return uuidToID
 }
 
+// blockerTicketID is the ticket id of a blocking issue: the one the board maps its UUID to, else the one in its title.
+func blockerTicketID(uuid, name string, uuidToID map[string]string) string {
+	if id := uuidToID[uuid]; id != "" {
+		return id
+	}
+	if m := ticketNumRegex.FindStringSubmatch(name); len(m) > 1 {
+		return m[1]
+	}
+	return ""
+}
+
 // addPlaneEdges adds an edge from each blocker to the issue it blocks.
 func addPlaneEdges(graph *dag.Graph, snap *planesvc.Snapshot, uuidToID map[string]string) {
 	for _, iss := range snap.Issues {
 		currID := uuidToID[iss.ID]
 		for _, blocked := range snap.Relations[iss.ID].BlockedBy {
-			blockerID := uuidToID[blocked.ID]
-			if blockerID == "" {
-				if m := ticketNumRegex.FindStringSubmatch(blocked.Name); len(m) > 1 {
-					blockerID = m[1]
-				}
-			}
-			if blockerID != "" && blockerID != currID {
-				_ = graph.AddEdge(blockerID, currID)
+			if id := blockerTicketID(blocked.ID, blocked.Name, uuidToID); id != "" && id != currID {
+				_ = graph.AddEdge(id, currID)
 			}
 		}
 	}

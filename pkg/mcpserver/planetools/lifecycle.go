@@ -45,8 +45,8 @@ func requireArgs(args map[string]interface{}, keys ...string) error {
 }
 
 var (
-	ticketProp   = map[string]interface{}{"type": "string", "description": "Ticket reference: DEN-377, its Plane number or the issue UUID"}
-	worktreeProp = map[string]interface{}{"type": "string", "description": "Working copy the claim unlocks (default: the server's current directory)"}
+	ticketProp   = TypedProp("string", "Ticket reference: DEN-377, its Plane number or the issue UUID")
+	worktreeProp = TypedProp("string", "Working copy the claim unlocks (default: the server's current directory)")
 )
 
 // RegisterTicketLifecycleTools registers the tools of the ticket lifecycle: claim, comment, plan, transition
@@ -73,9 +73,9 @@ func RegisterTicketLifecycleTools(s *Server, deps Dependencies) {
 		"Claim a ticket for this session before changing any file: moves it to In Progress, assigns it, labels it agent:/tier:, records the claim that unlocks edits in this working copy and returns the ticket's plan, if any. Refused when the ticket is finished or held by another live session.",
 		ObjectSchema([]string{"ticket"}, map[string]interface{}{
 			"ticket": ticketProp, "worktree": worktreeProp,
-			"agent":      map[string]interface{}{"type": "string", "description": "claude, agy, copilot, ... (default: detected)"},
-			"model_tier": map[string]interface{}{"type": "string", "description": "Model tier of this session (default: DENDRITE_MODEL_TIER)"},
-			"steal":      map[string]interface{}{"type": "boolean", "description": "Take the ticket over from another live session"},
+			"agent":      TypedProp("string", "claude, agy, copilot, ... (default: detected)"),
+			"model_tier": TypedProp("string", "Model tier of this session (default: DENDRITE_MODEL_TIER)"),
+			"steal":      TypedProp("boolean", "Take the ticket over from another live session"),
 		}),
 		ticketClaimRun)
 
@@ -84,7 +84,7 @@ func RegisterTicketLifecycleTools(s *Server, deps Dependencies) {
 		ObjectSchema([]string{"ticket", "kind", "body"}, map[string]interface{}{
 			"ticket": ticketProp, "worktree": worktreeProp,
 			"kind": map[string]interface{}{"type": "string", "description": strings.Join(ticketlock.CommentKinds, ", ")},
-			"body": map[string]interface{}{"type": "string", "description": "The comment text"},
+			"body": TypedProp("string", "The comment text"),
 		}),
 		ticketCommentRun)
 
@@ -92,10 +92,10 @@ func RegisterTicketLifecycleTools(s *Server, deps Dependencies) {
 		"Record a question you asked the user and the answer you got, or a decision you took, on a ticket. Do it for every decision that shapes the work; Claude Code's AskUserQuestion is recorded by a hook, other agents call this.",
 		ObjectSchema([]string{"ticket", "question", "answer"}, map[string]interface{}{
 			"ticket": ticketProp, "worktree": worktreeProp,
-			"question": map[string]interface{}{"type": "string", "description": "The question that was asked"},
-			"answer":   map[string]interface{}{"type": "string", "description": "The answer or decision"},
+			"question": TypedProp("string", "The question that was asked"),
+			"answer":   TypedProp("string", "The answer or decision"),
 			"options":  map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}, "description": "Options that were on the table"},
-			"note":     map[string]interface{}{"type": "string", "description": "Why, or what follows from it"},
+			"note":     TypedProp("string", "Why, or what follows from it"),
 		}),
 		ticketDecisionRun)
 
@@ -103,8 +103,8 @@ func RegisterTicketLifecycleTools(s *Server, deps Dependencies) {
 		"Read the comments of a ticket: claims, progress, decisions, handoffs and plans. Filter by kind, or take only the last N. Use it to read a handoff or the decisions already taken before you start.",
 		ObjectSchema([]string{"ticket"}, map[string]interface{}{
 			"ticket": ticketProp, "worktree": worktreeProp,
-			"kind": map[string]interface{}{"type": "string", "description": "claim, progress, milestone, note, handoff, decision or plan"},
-			"last": map[string]interface{}{"type": "number", "description": "Only the last N comments"},
+			"kind": TypedProp("string", "claim, progress, milestone, note, handoff, decision or plan"),
+			"last": TypedProp("number", "Only the last N comments"),
 		}),
 		ticketCommentsRun)
 
@@ -112,7 +112,7 @@ func RegisterTicketLifecycleTools(s *Server, deps Dependencies) {
 		"Store the plan of a ticket (markdown with `- [ ]` / `- [x]` steps) in Plane, as one comment edited in place, and in the local plan store. Call it when the plan changes so a resumed session continues from the next unchecked step.",
 		ObjectSchema([]string{"ticket", "markdown"}, map[string]interface{}{
 			"ticket": ticketProp, "worktree": worktreeProp,
-			"markdown": map[string]interface{}{"type": "string", "description": "The plan, with `- [ ]` and `- [x]` steps"},
+			"markdown": TypedProp("string", "The plan, with `- [ ]` and `- [x]` steps"),
 		}),
 		ticketUploadPlanRun)
 

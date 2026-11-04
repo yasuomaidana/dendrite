@@ -30,38 +30,14 @@ func registerMigrateTools(s *Server, deps Dependencies) {
 					"items":       map[string]interface{}{"type": "string"},
 					"description": "List of services to migrate (e.g. ['plane'], ['plane', 'litellm', 'database'], or ['debian'])",
 				},
-				"target_host": map[string]interface{}{
-					"type":        "string",
-					"description": "Target remote SSH host (e.g. 'user@debian-server' or '192.168.1.50')",
-				},
-				"ssh_port": map[string]interface{}{
-					"type":        "integer",
-					"description": "SSH port on target host (default: 22)",
-				},
-				"ssh_user": map[string]interface{}{
-					"type":        "string",
-					"description": "SSH username (default: derived from target_host or deployer)",
-				},
-				"target_ram_mb": map[string]interface{}{
-					"type":        "integer",
-					"description": "Target server RAM in MB (default: 4096 for 4 GB)",
-				},
-				"target_disk_gb": map[string]interface{}{
-					"type":        "integer",
-					"description": "Target server Disk in GB (default: 1000 for 1 TB)",
-				},
-				"dry_run": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, simulates validation without transferring data or modifying containers",
-				},
-				"prune_local": map[string]interface{}{
-					"type":        "boolean",
-					"description": "If true, safely prunes local containers after successful remote health check (default: true)",
-				},
-				"timeout_seconds": map[string]interface{}{
-					"type":        "integer",
-					"description": "Remote health check timeout in seconds (default: 120)",
-				},
+				"target_host":     TypedProp("string", "Target remote SSH host (e.g. 'user@debian-server' or '192.168.1.50')"),
+				"ssh_port":        TypedProp("integer", "SSH port on target host (default: 22)"),
+				"ssh_user":        TypedProp("string", "SSH username (default: derived from target_host or deployer)"),
+				"target_ram_mb":   TypedProp("integer", "Target server RAM in MB (default: 4096 for 4 GB)"),
+				"target_disk_gb":  TypedProp("integer", "Target server Disk in GB (default: 1000 for 1 TB)"),
+				"dry_run":         TypedProp("boolean", "If true, simulates validation without transferring data or modifying containers"),
+				"prune_local":     TypedProp("boolean", "If true, safely prunes local containers after successful remote health check (default: true)"),
+				"timeout_seconds": TypedProp("integer", "Remote health check timeout in seconds (default: 120)"),
 			},
 		},
 	}, serviceMoveHandler())
@@ -73,14 +49,8 @@ func registerMigrateTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"ram_mb": map[string]interface{}{
-					"type":        "integer",
-					"description": "Server RAM in MB (default: 4096)",
-				},
-				"disk_gb": map[string]interface{}{
-					"type":        "integer",
-					"description": "Server Disk in GB (default: 1000)",
-				},
+				"ram_mb":  TypedProp("integer", "Server RAM in MB (default: 4096)"),
+				"disk_gb": TypedProp("integer", "Server Disk in GB (default: 1000)"),
 			},
 		},
 	}, servicePlanHandler())
@@ -146,38 +116,14 @@ func registerPerfTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"mode": map[string]interface{}{
-					"type":        "string",
-					"description": "Benchmark mode: 'inference', 'gateway', 'stress', 'matrix' (default: 'inference')",
-				},
-				"engine_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Inference engine identifier (e.g. 'oxillama', 'ollama-metal', 'vllm-cluster')",
-				},
-				"model": map[string]interface{}{
-					"type":        "string",
-					"description": "Model identifier (default: 'qwen2.5-coder-7b')",
-				},
-				"endpoint": map[string]interface{}{
-					"type":        "string",
-					"description": "Target endpoint URL (default: auto-resolved from registered engine)",
-				},
-				"failover_endpoint": map[string]interface{}{
-					"type":        "string",
-					"description": "Secondary endpoint URL for failover testing",
-				},
-				"virtual_users": map[string]interface{}{
-					"type":        "integer",
-					"description": "Number of concurrent virtual users (default: 5)",
-				},
-				"duration_seconds": map[string]interface{}{
-					"type":        "integer",
-					"description": "Benchmark duration in seconds (default: 10)",
-				},
-				"fault_injection": map[string]interface{}{
-					"type":        "string",
-					"description": "Simulated fault injection: 'none', 'rate-limit-429', 'node-glitch-503'",
-				},
+				"mode":              TypedProp("string", "Benchmark mode: 'inference', 'gateway', 'stress', 'matrix' (default: 'inference')"),
+				"engine_id":         TypedProp("string", "Inference engine identifier (e.g. 'oxillama', 'ollama-metal', 'vllm-cluster')"),
+				"model":             TypedProp("string", "Model identifier (default: 'qwen2.5-coder-7b')"),
+				"endpoint":          TypedProp("string", "Target endpoint URL (default: auto-resolved from registered engine)"),
+				"failover_endpoint": TypedProp("string", "Secondary endpoint URL for failover testing"),
+				"virtual_users":     TypedProp("integer", "Number of concurrent virtual users (default: 5)"),
+				"duration_seconds":  TypedProp("integer", "Benchmark duration in seconds (default: 10)"),
+				"fault_injection":   TypedProp("string", "Simulated fault injection: 'none', 'rate-limit-429', 'node-glitch-503'"),
 			},
 		},
 	}, benchRunHandler())
@@ -265,11 +211,11 @@ func registerDocusaurusTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"docs_dir":     map[string]interface{}{"type": "string", "description": "Source markdown documentation directory (default: docs)"},
-				"target_dir":   map[string]interface{}{"type": "string", "description": "Target Docusaurus site directory (default: website)"},
-				"title":        map[string]interface{}{"type": "string", "description": "Site title (default: Dendrite Documentation)"},
-				"port":         map[string]interface{}{"type": "integer", "description": "Local preview port (default: 3000)"},
-				"sharing_tier": map[string]interface{}{"type": "string", "description": "Distribution visibility tier: 'public', 'internal', 'federated' (default: federated)"},
+				"docs_dir":     TypedProp("string", "Source markdown documentation directory (default: docs)"),
+				"target_dir":   TypedProp("string", "Target Docusaurus site directory (default: website)"),
+				"title":        TypedProp("string", "Site title (default: Dendrite Documentation)"),
+				"port":         TypedProp("integer", "Local preview port (default: 3000)"),
+				"sharing_tier": TypedProp("string", "Distribution visibility tier: 'public', 'internal', 'federated' (default: federated)"),
 			},
 		},
 	}, docusaurusGenerateHandler(svc))
@@ -281,8 +227,8 @@ func registerDocusaurusTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"site_dir":    map[string]interface{}{"type": "string", "description": "Generated Docusaurus site directory (default: website)"},
-				"bundle_path": map[string]interface{}{"type": "string", "description": "Destination archive path (default: <site_dir>/dendrite-docs.tar.gz)"},
+				"site_dir":    TypedProp("string", "Generated Docusaurus site directory (default: website)"),
+				"bundle_path": TypedProp("string", "Destination archive path (default: <site_dir>/dendrite-docs.tar.gz)"),
 			},
 		},
 	}, docusaurusShareHandler(svc))
@@ -294,8 +240,8 @@ func registerDocusaurusTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"project_root": map[string]interface{}{"type": "string", "description": "Project root directory (default: .)"},
-				"docs_dir":     map[string]interface{}{"type": "string", "description": "Documentation source directory (default: docs)"},
+				"project_root": TypedProp("string", "Project root directory (default: .)"),
+				"docs_dir":     TypedProp("string", "Documentation source directory (default: docs)"),
 			},
 		},
 	}, docusaurusAuditHandler(svc))

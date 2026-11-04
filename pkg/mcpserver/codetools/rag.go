@@ -18,30 +18,12 @@ func registerRAGTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"question": map[string]interface{}{
-					"type":        "string",
-					"description": "Question to ask about the project",
-				},
-				"project_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Target project directory to index and search (default: '.')",
-				},
-				"auto_approve_paid": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Automatically escalate to paid cloud model if local LLM fails without prompt",
-				},
-				"paid_model": map[string]interface{}{
-					"type":        "string",
-					"description": "Paid cloud model fallback (default: 'gemini-2.5-pro')",
-				},
-				"local_model": map[string]interface{}{
-					"type":        "string",
-					"description": "Preferred local model",
-				},
-				"top_k": map[string]interface{}{
-					"type":        "integer",
-					"description": "Number of best chunks to answer from (default: 4); 0 answers from a token-budgeted context pack instead",
-				},
+				"question":          TypedProp("string", "Question to ask about the project"),
+				"project_path":      TypedProp("string", "Target project directory to index and search (default: '.')"),
+				"auto_approve_paid": TypedProp("boolean", "Automatically escalate to paid cloud model if local LLM fails without prompt"),
+				"paid_model":        TypedProp("string", "Paid cloud model fallback (default: 'gemini-2.5-pro')"),
+				"local_model":       TypedProp("string", "Preferred local model"),
+				"top_k":             TypedProp("integer", "Number of best chunks to answer from (default: 4); 0 answers from a token-budgeted context pack instead"),
 				"corpus": map[string]interface{}{
 					"type":        "string",
 					"enum":        []interface{}{"all", "code", "docs", "tickets"},
@@ -65,22 +47,10 @@ func registerRAGTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"query": map[string]interface{}{
-					"type":        "string",
-					"description": "Concept, symbol, or question to search within project RAG index",
-				},
-				"project_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Target project directory to index and search (default: '.')",
-				},
-				"top_k": map[string]interface{}{
-					"type":        "integer",
-					"description": "Number of context chunks to retrieve (default: 4)",
-				},
-				"min_score": map[string]interface{}{
-					"type":        "number",
-					"description": "Minimum fused relevance score (default: none)",
-				},
+				"query":        TypedProp("string", "Concept, symbol, or question to search within project RAG index"),
+				"project_path": TypedProp("string", "Target project directory to index and search (default: '.')"),
+				"top_k":        TypedProp("integer", "Number of context chunks to retrieve (default: 4)"),
+				"min_score":    TypedProp("number", "Minimum fused relevance score (default: none)"),
 				"corpus": map[string]interface{}{
 					"type":        "string",
 					"enum":        []interface{}{"all", "code", "docs", "tickets"},
@@ -91,10 +61,7 @@ func registerRAGTools(s *Server, deps Dependencies) {
 					"enum":        []interface{}{"auto", "full", "map"},
 					"description": "Return a context pack instead of top hits: auto (text of the best spans, outlines of their graph neighbours), full, or map (outlines only)",
 				},
-				"token_budget": map[string]interface{}{
-					"type":        "integer",
-					"description": "Token budget of the context pack when detail is set (default: 2500)",
-				},
+				"token_budget": TypedProp("integer", "Token budget of the context pack when detail is set (default: 2500)"),
 				"docs_share": map[string]interface{}{
 					"type":        "number",
 					"minimum":     0,
@@ -118,10 +85,7 @@ func registerRAGTools(s *Server, deps Dependencies) {
 					"items":       map[string]interface{}{"type": "string"},
 					"description": "Chunk ids from dendrite_rag_retrieve",
 				},
-				"project_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Target project directory (default: '.')",
-				},
+				"project_path": TypedProp("string", "Target project directory (default: '.')"),
 			},
 			"required": []interface{}{"ids"},
 		},
@@ -263,4 +227,15 @@ func ragShowHandler() ToolHandler {
 		data := IndentJSON(chunks)
 		return TextResult(string(data)), nil
 	}
+}
+
+// Register registers the retrieval, code graph, query and distributed-codebase tools on s.
+func Register(s *Server, deps Dependencies) {
+	registerDistCodebaseTools(s, deps)
+	registerAgentSearchTools(s, deps)
+	registerTestGenTools(s, deps)
+	registerPoolTools(s, deps)
+	registerQueryTools(s, deps)
+	registerRAGTools(s, deps)
+	registerGraphTools(s, deps)
 }

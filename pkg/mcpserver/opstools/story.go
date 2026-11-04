@@ -25,10 +25,7 @@ func registerStoryForkTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"story_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Identifier or slug of the story (e.g. 'DEN-064' or 'astar-search')",
-				},
+				"story_id": TypedProp("string", "Identifier or slug of the story (e.g. 'DEN-064' or 'astar-search')"),
 				"variants": map[string]interface{}{
 					"type": "array",
 					"items": map[string]interface{}{
@@ -36,10 +33,7 @@ func registerStoryForkTools(s *Server, deps Dependencies) {
 					},
 					"description": "List of variant names to fork (at least 2 required, e.g. ['v1', 'v2'])",
 				},
-				"base_commit": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional base commit or branch to branch off (default: current HEAD)",
-				},
+				"base_commit": TypedProp("string", "Optional base commit or branch to branch off (default: current HEAD)"),
 			},
 			"required": []interface{}{"story_id", "variants"},
 		},
@@ -52,18 +46,9 @@ func registerStoryForkTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"story_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Target story identifier",
-				},
-				"iterations": map[string]interface{}{
-					"type":        "integer",
-					"description": "Number of benchmark iterations per variant (default: 100)",
-				},
-				"virtual_users": map[string]interface{}{
-					"type":        "integer",
-					"description": "Number of simulated concurrent users (default: 1)",
-				},
+				"story_id":      TypedProp("string", "Target story identifier"),
+				"iterations":    TypedProp("integer", "Number of benchmark iterations per variant (default: 100)"),
+				"virtual_users": TypedProp("integer", "Number of simulated concurrent users (default: 1)"),
 			},
 			"required": []interface{}{"story_id"},
 		},
@@ -76,14 +61,8 @@ func registerStoryForkTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"story_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Target story identifier",
-				},
-				"winner": map[string]interface{}{
-					"type":        "string",
-					"description": "Name of the winning variant to merge (e.g. 'v2' or 'astar-bitvec')",
-				},
+				"story_id": TypedProp("string", "Target story identifier"),
+				"winner":   TypedProp("string", "Name of the winning variant to merge (e.g. 'v2' or 'astar-bitvec')"),
 			},
 			"required": []interface{}{"story_id", "winner"},
 		},
@@ -96,10 +75,7 @@ func registerStoryForkTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"story_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Target story identifier to clean up",
-				},
+				"story_id": TypedProp("string", "Target story identifier to clean up"),
 			},
 			"required": []interface{}{"story_id"},
 		},

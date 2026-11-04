@@ -20,22 +20,10 @@ func registerAuditTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"branch": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional target branch (e.g. 'local/vcs'). If omitted, audits all pending branches topologically.",
-				},
-				"dry_run": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Preview audit validation and rebase sequence without mutating branches.",
-				},
-				"max_tokens": map[string]interface{}{
-					"type":        "integer",
-					"description": "Max token context ceiling for audit payload.",
-				},
-				"model": map[string]interface{}{
-					"type":        "string",
-					"description": "Inference model for audit review (default: qwen3.8:27b).",
-				},
+				"branch":     TypedProp("string", "Optional target branch (e.g. 'local/vcs'). If omitted, audits all pending branches topologically."),
+				"dry_run":    TypedProp("boolean", "Preview audit validation and rebase sequence without mutating branches."),
+				"max_tokens": TypedProp("integer", "Max token context ceiling for audit payload."),
+				"model":      TypedProp("string", "Inference model for audit review (default: qwen3.8:27b)."),
 			},
 		},
 	}, auditChangesHandler())
@@ -47,14 +35,8 @@ func registerAuditTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"repo": map[string]interface{}{
-					"type":        "string",
-					"description": "Target GitHub repository in owner/repo format (default: the origin remote of the working directory)",
-				},
-				"dry_run": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Plan the GitHub changes without applying them",
-				},
+				"repo":    TypedProp("string", "Target GitHub repository in owner/repo format (default: the origin remote of the working directory)"),
+				"dry_run": TypedProp("boolean", "Plan the GitHub changes without applying them"),
 				"tickets": map[string]interface{}{
 					"type":        "array",
 					"items":       map[string]interface{}{"type": "string"},
@@ -71,10 +53,7 @@ func registerAuditTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"mode": map[string]interface{}{
-					"type":        "string",
-					"description": "Execution mode: 'STANDARD', 'DEGRADED_BUDGET', or 'AUDIT_CHANGES' (default: STANDARD)",
-				},
+				"mode": TypedProp("string", "Execution mode: 'STANDARD', 'DEGRADED_BUDGET', or 'AUDIT_CHANGES' (default: STANDARD)"),
 			},
 		},
 	}, vcsGuardHandler())
@@ -86,10 +65,7 @@ func registerAuditTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"branch": map[string]interface{}{
-					"type":        "string",
-					"description": "Branch to sync (default: active branch)",
-				},
+				"branch": TypedProp("string", "Branch to sync (default: active branch)"),
 			},
 		},
 	}, remoteSyncHandler())
@@ -101,10 +77,7 @@ func registerAuditTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"pkg": map[string]interface{}{
-					"type":        "string",
-					"description": "Package path to audit (e.g. pkg/vcs)",
-				},
+				"pkg": TypedProp("string", "Package path to audit (e.g. pkg/vcs)"),
 			},
 			"required": []interface{}{"pkg"},
 		},
@@ -117,14 +90,8 @@ func registerAuditTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"repo": map[string]interface{}{
-					"type":        "string",
-					"description": "Target GitHub repository in owner/repo format (default: the origin remote of the working directory)",
-				},
-				"dry_run": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Report approvals without moving tickets to Done",
-				},
+				"repo":    TypedProp("string", "Target GitHub repository in owner/repo format (default: the origin remote of the working directory)"),
+				"dry_run": TypedProp("boolean", "Report approvals without moving tickets to Done"),
 			},
 		},
 	}, hitlSyncHandler(deps))

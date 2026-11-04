@@ -27,30 +27,12 @@ func registerAgentRunTool(s *Server, deps Dependencies) {
 			"type":     "object",
 			"required": []string{"agent_type", "task"},
 			"properties": map[string]interface{}{
-				"agent_type": map[string]interface{}{
-					"type":        "string",
-					"description": "Agent tool: 'aider', 'openhands', 'opencode', 'agy', 'copilot'",
-				},
-				"task": map[string]interface{}{
-					"type":        "string",
-					"description": "Task description or user prompt for the agent",
-				},
-				"ticket_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Associated ticket ID (e.g. DEN-034)",
-				},
-				"model": map[string]interface{}{
-					"type":        "string",
-					"description": "Target LLM model (default: picked from Gemini 3.8 / Argon by load for agy, the DENDRITE_COPILOT_MODEL default for copilot)",
-				},
-				"spend_limit": map[string]interface{}{
-					"type":        "number",
-					"description": "Maximum USD spend allowed for this session",
-				},
-				"sandbox": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Execute inside ephemeral container sandbox",
-				},
+				"agent_type":  TypedProp("string", "Agent tool: 'aider', 'openhands', 'opencode', 'agy', 'copilot'"),
+				"task":        TypedProp("string", "Task description or user prompt for the agent"),
+				"ticket_id":   TypedProp("string", "Associated ticket ID (e.g. DEN-034)"),
+				"model":       TypedProp("string", "Target LLM model (default: picked from Gemini 3.8 / Argon by load for agy, the DENDRITE_COPILOT_MODEL default for copilot)"),
+				"spend_limit": TypedProp("number", "Maximum USD spend allowed for this session"),
+				"sandbox":     TypedProp("boolean", "Execute inside ephemeral container sandbox"),
 			},
 		},
 	}, agentRunHandler())
@@ -95,10 +77,7 @@ func registerTelemetryAndInferenceTools(s *Server, deps Dependencies) {
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"engine_id": map[string]interface{}{
-					"type":        "string",
-					"description": "Optional engine ID to probe (e.g. 'ollama-metal', 'oxillama-rust'). If omitted, probes all engines.",
-				},
+				"engine_id": TypedProp("string", "Optional engine ID to probe (e.g. 'ollama-metal', 'oxillama-rust'). If omitted, probes all engines."),
 			},
 		},
 	}, inferenceProbeHandler())
@@ -260,4 +239,25 @@ func inferenceProbeHandler() ToolHandler {
 		data := IndentJSON(results)
 		return TextResult(string(data)), nil
 	}
+}
+
+// Register registers the operations tools: audit, agents, canvas, scheduling, stores, story forks, migration, benchmarks and the smaller services on s.
+func Register(s *Server, deps Dependencies) {
+	registerAgentRunTool(s, deps)
+	registerTelemetryAndInferenceTools(s, deps)
+	registerPerfTools(s, deps)
+	registerREATools(s, deps)
+	registerDocusaurusTools(s, deps)
+	registerTriageTools(s, deps)
+	registerStoreTools(s, deps)
+	registerSchedulerTools(s, deps)
+	registerContractTools(s, deps)
+	registerStoryForkTools(s, deps)
+	registerAuditTools(s, deps)
+	registerInferenceTools(s, deps)
+	registerPenpotTools(s, deps)
+	registerMigrateTools(s, deps)
+	registerGreetingTools(s, deps)
+	registerEnvPrepareTools(s, deps)
+	RegisterCanvasTools(s, deps)
 }
