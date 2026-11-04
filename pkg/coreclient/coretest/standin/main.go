@@ -20,188 +20,221 @@ type request struct {
 	Params json.RawMessage `json:"params"`
 }
 
+// options are the environment the stand-in was started with.
+type options struct{ protocol, mode string }
+
+// handler answers one method: a result, or the JSON-RPC error that replaces it.
+type handler func(params json.RawMessage, o options) (result any, failure map[string]interface{})
+
+var handlers = map[string]handler{
+	"health":                 health,
+	"ast.complexity":         astComplexity,
+	"ast.complexity_batch":   astComplexityBatch,
+	"ast.fold_signatures":    astFold,
+	"ast.last_complete_node": astLastNode,
+	"ast.changed_symbols":    astChanged,
+	"tokens.count":           tokensCount,
+	"hash.chunk_id":          hashChunkID,
+}
+
 func main() {
-	protocol := os.Getenv("TESTSIDECAR_PROTOCOL")
-	if protocol == "" {
-		protocol = "1.0.0"
+	o := options{protocol: os.Getenv("TESTSIDECAR_PROTOCOL"), mode: os.Getenv("TESTSIDECAR_MODE")}
+	if o.protocol == "" {
+		o.protocol = "1.0.0"
 	}
-	mode := os.Getenv("TESTSIDECAR_MODE")
 	in := bufio.NewScanner(os.Stdin)
 	// A batch carries many files on one line, far past the scanner's 64 KB default.
 	in.Buffer(make([]byte, 0, 1<<20), 256<<20)
 	out := json.NewEncoder(os.Stdout)
 	for in.Scan() {
 		var req request
-		if err := json.Unmarshal(in.Bytes(), &req); err != nil {
+		if err := json.Unmarshal(in.Bytes(), &req); err != nil || o.misbehaves(req.Method) {
 			continue
 		}
-		if req.Method != "health" {
-			switch mode {
-			case "badjson":
-				fmt.Println("{not json")
-				continue
-			case "hang":
-				time.Sleep(time.Hour)
-			case "exit":
-				os.Exit(3)
-			}
-		}
-		resp := map[string]interface{}{"jsonrpc": "2.0", "id": req.ID}
-		switch req.Method {
-		case "health":
-			resp["result"] = map[string]string{"name": "dendrite-core", "version": "0.1.0", "protocol": protocol}
-		case "ast.complexity":
-			var p struct {
-				Lang   string `json:"lang"`
-				Source string `json:"source"`
-			}
-			_ = json.Unmarshal(req.Params, &p)
-			if functions, failed := complexityOf(p.Source); failed {
-				resp["error"] = map[string]interface{}{"code": -32602, "message": "syntax error in source"}
-			} else {
-				resp["result"] = functions
-			}
-		case "ast.complexity_batch":
-			var p struct {
-				Files []struct {
-					Lang   string `json:"lang"`
-					Source string `json:"source"`
-				} `json:"files"`
-			}
-			_ = json.Unmarshal(req.Params, &p)
-			if mode == "nobatch" {
-				resp["error"] = map[string]interface{}{"code": -32601, "message": "method not found: " + req.Method}
-				break
-			}
-			results := make([]map[string]interface{}, 0, len(p.Files))
-			for _, f := range p.Files {
-				if functions, failed := complexityOf(f.Source); failed {
-					results = append(results, map[string]interface{}{"error": "syntax error in source"})
-				} else {
-					results = append(results, map[string]interface{}{"functions": functions})
-				}
-			}
-			if mode == "shortbatch" && len(results) > 0 {
-				results = results[1:]
-			}
-			resp["result"] = map[string]interface{}{"results": results}
-		case "ast.fold_signatures":
-			var p struct {
-				Lang        string   `json:"lang"`
-				Source      string   `json:"source"`
-				KeepSymbols []string `json:"keep_symbols"`
-			}
-			_ = json.Unmarshal(req.Params, &p)
-			if p.Source == "FAIL" || strings.Contains(p.Source, "FORCE_FOLD_ERROR") {
-				resp["error"] = map[string]interface{}{"code": -32600, "message": "fold failed"}
-				break
-			}
-			foldedSource := p.Source
-			var foldedSymbols []string
-			if strings.Contains(p.Source, "CallAPI") && contains(p.KeepSymbols, "NewClient") {
-				foldedSource = strings.ReplaceAll(foldedSource, "println(\"heavy logic\")\n\tfor i := 0; i < 3; i++ {\n\t\tprintln(\"retrying request against\", c.Endpoint, \"attempt\", i)\n\t\tif c.Endpoint == \"\" {\n\t\t\treturn nil\n\t\t}\n\t}\n\tprintln(\"request completed successfully after retries\")\n\treturn nil", "/* pruned */")
-				foldedSymbols = append(foldedSymbols, "CallAPI")
-			} else if strings.Contains(p.Source, "StandaloneHelper") && contains(p.KeepSymbols, "KeptHelper") {
-				foldedSource = strings.ReplaceAll(foldedSource, "y := x * 2\n\treturn y", "/* pruned */")
-				foldedSymbols = append(foldedSymbols, "StandaloneHelper")
-			} else if strings.Contains(p.Source, "Step") && len(p.KeepSymbols) == 0 {
-				foldedSource = strings.ReplaceAll(foldedSource, "println(\"stepping\")", "/* pruned */")
-				foldedSymbols = append(foldedSymbols, "Step")
-			} else if strings.Contains(p.Source, "Pruned") {
-				foldedSource = strings.ReplaceAll(foldedSource, "println(\"prune me\")", "/* pruned */")
-				foldedSymbols = append(foldedSymbols, "Pruned")
-			}
-			tb := (len(p.Source)*115 + 399) / 400
-			ta := (len(foldedSource)*115 + 399) / 400
-			resp["result"] = map[string]interface{}{
-				"source":        foldedSource,
-				"folded":        foldedSymbols,
-				"tokens_before": tb,
-				"tokens_after":  ta,
-			}
-		case "ast.last_complete_node":
-			var p struct {
-				Lang   string `json:"lang"`
-				Buffer string `json:"buffer"`
-			}
-			_ = json.Unmarshal(req.Params, &p)
-			if p.Buffer == "incomplete" || strings.Contains(p.Buffer, "NO_COMPLETE_NODE") {
-				resp["error"] = map[string]interface{}{
-					"code":    -32000,
-					"message": "the buffer holds no complete node",
-					"data":    map[string]string{"kind": "no_complete_node"},
-				}
-			} else if p.Buffer == "FAIL" {
-				resp["error"] = map[string]interface{}{"code": -32600, "message": "operation failed"}
-			} else {
-				resp["result"] = map[string]interface{}{"offset": 42}
-			}
-		case "ast.changed_symbols":
-			var p struct {
-				Lang   string `json:"lang"`
-				Source string `json:"source"`
-				Hunks  []struct {
-					StartLine int `json:"start_line"`
-					EndLine   int `json:"end_line"`
-				} `json:"hunks"`
-			}
-			_ = json.Unmarshal(req.Params, &p)
-			if p.Source == "FAIL" {
-				resp["error"] = map[string]interface{}{"code": -32600, "message": "changed symbols failed"}
-				break
-			}
-			var results []map[string]interface{}
-			for i, h := range p.Hunks {
-				results = append(results, map[string]interface{}{
-					"hunk":       i,
-					"symbol":     "TargetFunc",
-					"kind":       "func",
-					"start_line": h.StartLine,
-					"end_line":   h.EndLine,
-				})
-			}
-			if len(results) == 0 {
-				results = append(results, map[string]interface{}{
-					"hunk":       0,
-					"symbol":     "TargetFunc",
-					"kind":       "func",
-					"start_line": 1,
-					"end_line":   5,
-				})
-			}
-			resp["result"] = results
-		case "tokens.count":
-			var p struct {
-				Model string `json:"model"`
-				Text  string `json:"text"`
-			}
-			_ = json.Unmarshal(req.Params, &p)
-			if p.Text == "FAIL" {
-				resp["error"] = map[string]interface{}{"code": -32600, "message": "token count failed"}
-				break
-			}
-			resp["result"] = map[string]interface{}{
-				"count": (len(p.Text)*115 + 399) / 400,
-				"exact": false,
-			}
-		case "hash.chunk_id":
-			var p struct {
-				Path    string `json:"path"`
-				Symbol  string `json:"symbol"`
-				Content string `json:"content"`
-			}
-			_ = json.Unmarshal(req.Params, &p)
-			if p.Content == "FAIL" {
-				resp["error"] = map[string]interface{}{"code": -32600, "message": "chunk id failed"}
-				break
-			}
-			sum := sha256.Sum256([]byte(p.Path + "\x00" + p.Symbol + "\x00" + p.Content))
-			resp["result"] = map[string]interface{}{"hex": hex.EncodeToString(sum[:])}
-		default:
-			resp["error"] = map[string]interface{}{"code": -32601, "message": "method not found: " + req.Method}
-		}
-		_ = out.Encode(resp)
+		_ = out.Encode(reply(req, o))
 	}
+}
+
+// misbehaves plays the failure the mode asks for on every method but health; true means no answer is sent.
+func (o options) misbehaves(method string) bool {
+	if method == "health" {
+		return false
+	}
+	switch o.mode {
+	case "badjson":
+		fmt.Println("{not json")
+		return true
+	case "hang":
+		time.Sleep(time.Hour)
+	case "exit":
+		os.Exit(3)
+	}
+	return false
+}
+
+func reply(req request, o options) map[string]interface{} {
+	resp := map[string]interface{}{"jsonrpc": "2.0", "id": req.ID}
+	h, ok := handlers[req.Method]
+	if !ok {
+		resp["error"] = rpcError(-32601, "method not found: "+req.Method)
+		return resp
+	}
+	if result, failure := h(req.Params, o); failure != nil {
+		resp["error"] = failure
+	} else {
+		resp["result"] = result
+	}
+	return resp
+}
+
+func rpcError(code int, message string) map[string]interface{} {
+	return map[string]interface{}{"code": code, "message": message}
+}
+
+func health(_ json.RawMessage, o options) (any, map[string]interface{}) {
+	return map[string]string{"name": "dendrite-core", "version": "0.1.0", "protocol": o.protocol}, nil
+}
+
+func astComplexity(params json.RawMessage, _ options) (any, map[string]interface{}) {
+	var p struct {
+		Lang   string `json:"lang"`
+		Source string `json:"source"`
+	}
+	_ = json.Unmarshal(params, &p)
+	functions, failed := complexityOf(p.Source)
+	if failed {
+		return nil, rpcError(-32602, "syntax error in source")
+	}
+	return functions, nil
+}
+
+func astComplexityBatch(params json.RawMessage, o options) (any, map[string]interface{}) {
+	if o.mode == "nobatch" {
+		return nil, rpcError(-32601, "method not found: ast.complexity_batch")
+	}
+	var p struct {
+		Files []struct {
+			Lang   string `json:"lang"`
+			Source string `json:"source"`
+		} `json:"files"`
+	}
+	_ = json.Unmarshal(params, &p)
+	results := make([]map[string]interface{}, 0, len(p.Files))
+	for _, f := range p.Files {
+		if functions, failed := complexityOf(f.Source); failed {
+			results = append(results, map[string]interface{}{"error": "syntax error in source"})
+		} else {
+			results = append(results, map[string]interface{}{"functions": functions})
+		}
+	}
+	if o.mode == "shortbatch" && len(results) > 0 {
+		results = results[1:]
+	}
+	return map[string]interface{}{"results": results}, nil
+}
+
+func astFold(params json.RawMessage, _ options) (any, map[string]interface{}) {
+	var p struct {
+		Lang        string   `json:"lang"`
+		Source      string   `json:"source"`
+		KeepSymbols []string `json:"keep_symbols"`
+	}
+	_ = json.Unmarshal(params, &p)
+	if p.Source == "FAIL" || strings.Contains(p.Source, "FORCE_FOLD_ERROR") {
+		return nil, rpcError(-32600, "fold failed")
+	}
+	foldedSource := p.Source
+	var foldedSymbols []string
+	if strings.Contains(p.Source, "CallAPI") && contains(p.KeepSymbols, "NewClient") {
+		foldedSource = strings.ReplaceAll(foldedSource, "println(\"heavy logic\")\n\tfor i := 0; i < 3; i++ {\n\t\tprintln(\"retrying request against\", c.Endpoint, \"attempt\", i)\n\t\tif c.Endpoint == \"\" {\n\t\t\treturn nil\n\t\t}\n\t}\n\tprintln(\"request completed successfully after retries\")\n\treturn nil", "/* pruned */")
+		foldedSymbols = append(foldedSymbols, "CallAPI")
+	} else if strings.Contains(p.Source, "StandaloneHelper") && contains(p.KeepSymbols, "KeptHelper") {
+		foldedSource = strings.ReplaceAll(foldedSource, "y := x * 2\n\treturn y", "/* pruned */")
+		foldedSymbols = append(foldedSymbols, "StandaloneHelper")
+	} else if strings.Contains(p.Source, "Step") && len(p.KeepSymbols) == 0 {
+		foldedSource = strings.ReplaceAll(foldedSource, "println(\"stepping\")", "/* pruned */")
+		foldedSymbols = append(foldedSymbols, "Step")
+	} else if strings.Contains(p.Source, "Pruned") {
+		foldedSource = strings.ReplaceAll(foldedSource, "println(\"prune me\")", "/* pruned */")
+		foldedSymbols = append(foldedSymbols, "Pruned")
+	}
+	tb := (len(p.Source)*115 + 399) / 400
+	ta := (len(foldedSource)*115 + 399) / 400
+	return map[string]interface{}{
+		"source":        foldedSource,
+		"folded":        foldedSymbols,
+		"tokens_before": tb,
+		"tokens_after":  ta,
+	}, nil
+}
+
+func astLastNode(params json.RawMessage, _ options) (any, map[string]interface{}) {
+	var p struct {
+		Lang   string `json:"lang"`
+		Buffer string `json:"buffer"`
+	}
+	_ = json.Unmarshal(params, &p)
+	switch {
+	case p.Buffer == "incomplete" || strings.Contains(p.Buffer, "NO_COMPLETE_NODE"):
+		failure := rpcError(-32000, "the buffer holds no complete node")
+		failure["data"] = map[string]string{"kind": "no_complete_node"}
+		return nil, failure
+	case p.Buffer == "FAIL":
+		return nil, rpcError(-32600, "operation failed")
+	}
+	return map[string]interface{}{"offset": 42}, nil
+}
+
+func astChanged(params json.RawMessage, _ options) (any, map[string]interface{}) {
+	var p struct {
+		Lang   string `json:"lang"`
+		Source string `json:"source"`
+		Hunks  []struct {
+			StartLine int `json:"start_line"`
+			EndLine   int `json:"end_line"`
+		} `json:"hunks"`
+	}
+	_ = json.Unmarshal(params, &p)
+	if p.Source == "FAIL" {
+		return nil, rpcError(-32600, "changed symbols failed")
+	}
+	target := func(hunk, start, end int) map[string]interface{} {
+		return map[string]interface{}{"hunk": hunk, "symbol": "TargetFunc", "kind": "func", "start_line": start, "end_line": end}
+	}
+	var results []map[string]interface{}
+	for i, h := range p.Hunks {
+		results = append(results, target(i, h.StartLine, h.EndLine))
+	}
+	if len(results) == 0 {
+		results = append(results, target(0, 1, 5))
+	}
+	return results, nil
+}
+
+func tokensCount(params json.RawMessage, _ options) (any, map[string]interface{}) {
+	var p struct {
+		Model string `json:"model"`
+		Text  string `json:"text"`
+	}
+	_ = json.Unmarshal(params, &p)
+	if p.Text == "FAIL" {
+		return nil, rpcError(-32600, "token count failed")
+	}
+	return map[string]interface{}{"count": (len(p.Text)*115 + 399) / 400, "exact": false}, nil
+}
+
+func hashChunkID(params json.RawMessage, _ options) (any, map[string]interface{}) {
+	var p struct {
+		Path    string `json:"path"`
+		Symbol  string `json:"symbol"`
+		Content string `json:"content"`
+	}
+	_ = json.Unmarshal(params, &p)
+	if p.Content == "FAIL" {
+		return nil, rpcError(-32600, "chunk id failed")
+	}
+	sum := sha256.Sum256([]byte(p.Path + "\x00" + p.Symbol + "\x00" + p.Content))
+	return map[string]interface{}{"hex": hex.EncodeToString(sum[:])}, nil
 }
 
 func contains(slice []string, val string) bool {
