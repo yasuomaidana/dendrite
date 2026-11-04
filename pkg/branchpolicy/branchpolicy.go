@@ -28,13 +28,22 @@ const DefaultFeaturePrefix = "feature/"
 // ValidBranch reports whether name is acceptable as a git branch name: non-empty, no spaces, control
 // characters or any of ~^:?*[\@{, no "..", "//", leading "-" or "/", and no trailing "/", "." or ".lock".
 func ValidBranch(name string) bool {
-	if name == "" || strings.HasPrefix(name, "/") || strings.HasSuffix(name, "/") || strings.HasPrefix(name, "-") ||
-		strings.Contains(name, "..") || strings.Contains(name, "//") || strings.HasSuffix(name, ".lock") || strings.HasSuffix(name, ".") {
+	if name == "" || hasAny(name, strings.HasPrefix, "/", "-") || hasAny(name, strings.HasSuffix, "/", ".lock", ".") || hasAny(name, strings.Contains, "..", "//") {
 		return false
 	}
 	return !strings.ContainsFunc(name, func(r rune) bool {
 		return r <= ' ' || r == 0x7f || strings.ContainsRune("~^:?*[\\@{", r)
 	})
+}
+
+// hasAny reports whether match(s, p) holds for any of the patterns.
+func hasAny(s string, match func(s, p string) bool, patterns ...string) bool {
+	for _, p := range patterns {
+		if match(s, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // gitDirective is the [git] table of the directives file.
@@ -137,10 +146,10 @@ func (t Target) MergeTargets() []string {
 // Resolve decides the Target of the project at dir. A malformed or invalid directive does not stop it:
 // detection takes over, because a branch must always be nameable.
 func Resolve(dir string, ov Override) Target {
-	push := firstNonEmpty(ov.PushRemote, DefaultRemote)
+	push := orElse(ov.PushRemote, DefaultRemote)
 	t := Target{
 		PushRemote:    push,
-		Remote:        firstNonEmpty(ov.TargetRemote, push),
+		Remote:        orElse(ov.TargetRemote, push),
 		FeaturePrefix: DefaultFeaturePrefix,
 	}
 	d := readDirective(dir)
@@ -173,13 +182,11 @@ func chooseBranch(dir, remote string, ov Override, d gitDirective) (string, Sour
 	return "develop", SourceDefault
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
+func orElse(v, fallback string) string {
+	if v != "" {
+		return v
 	}
-	return ""
+	return fallback
 }
 
 func git(dir string, args ...string) (string, bool) {

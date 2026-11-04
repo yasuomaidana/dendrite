@@ -38,3 +38,9 @@ func fixture() *synapse.Synapse {
 		},
 	}
 }
+
+func TestBranchOverrideIsEmptyWhenTheStoreCannotBeRead(t *testing.T) {
+	file := t.TempDir() + "/not-a-dir"
+	testkit.WriteFile(t, file, "x", 0o644)
+	testkit.Equal(t, "override", BranchOverride(synapse.NewStore(file), "dpid_x"), branchpolicy.Override{})
+}
