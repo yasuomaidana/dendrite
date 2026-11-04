@@ -1,6 +1,7 @@
-package main
+package soma
 
 import (
+	"Dendrite/cmd/dendrite/internal/planecli"
 	"context"
 	"fmt"
 	"io"
@@ -37,7 +38,7 @@ func prepareWorkTarget(ctx context.Context, ticket, base, target string, lookup 
 	if !lookup {
 		return wt, nil
 	}
-	client, err := newPlaneClient()
+	client, err := planecli.NewPlaneClient()
 	if err != nil {
 		fmt.Fprintf(out, "[!] feature branch not looked up: Plane is not configured (%s)\n", firstLine(err.Error()))
 		return wt, nil

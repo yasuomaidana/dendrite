@@ -1,6 +1,7 @@
-package main
+package soma
 
 import (
+	"Dendrite/cmd/dendrite/internal/clitest"
 	"bytes"
 	"context"
 	"strings"
@@ -11,7 +12,7 @@ import (
 
 func runBranch(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	cmd := newBranchCmd()
+	cmd := NewBranchCmd()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -46,7 +47,7 @@ func TestBranchShowForATicketNamesItsFeatureBranch(t *testing.T) {
 
 func TestBranchShowAsJSON(t *testing.T) {
 	newTargetRig(t)
-	jsonOutput(t, true)
+	clitest.JsonOutput(t, true)
 	out, err := runBranch(t, "show", "--ticket", "DEN-841")
 	testkit.Check(t, err)
 	testkit.Contains(t, out, `"target"`, `"plan"`, `"Target": "feature/DEN-840-work"`)

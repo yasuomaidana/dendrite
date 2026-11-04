@@ -1,6 +1,8 @@
-package main
+package soma
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/cmd/dendrite/internal/planecli"
 	"context"
 	"fmt"
 	"io"
@@ -15,20 +17,21 @@ import (
 	"Dendrite/pkg/tracker/plane"
 )
 
-func newBranchCmd() *cobra.Command {
-	cmd := newGroupCmd("branch", "Where finished work merges: the integration branch, a parent ticket's feature branch, a fork", "soma")
+// NewBranchCmd builds `dendrite branch`.
+func NewBranchCmd() *cobra.Command {
+	cmd := cli.NewGroupCmd("branch", "Where finished work merges: the integration branch, a parent ticket's feature branch, a fork", "soma")
 	var ticket string
 	show := &cobra.Command{
 		Use:   "show",
 		Short: "Explain the branch work merges into, and where that came from",
-		Args:  noArgs,
+		Args:  cli.NoArgs,
 		Example: "dendrite branch show\n" +
 			"dendrite branch show --ticket DEN-843",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if ticket == "" {
 				return writeBranchTarget(cmd.OutOrStdout(), branchpolicy.For("."), featurebranch.Plan{})
 			}
-			return planeRun(func(c *plane.Client) error {
+			return planecli.PlaneRun(func(c *plane.Client) error {
 				plan, err := featurebranch.Resolve(cmd.Context(), ".", ticket, ticketlock.Board{Svc: planesvc.Default(), Client: c})
 				if err != nil {
 					return err
@@ -43,10 +46,10 @@ func newBranchCmd() *cobra.Command {
 	parent := &cobra.Command{
 		Use:     "parent <ticket> <parent>",
 		Short:   "Make <parent> the parent of <ticket> in Plane, so their work shares the parent's feature branch",
-		Args:    exactArgs(2),
+		Args:    cli.ExactArgs(2),
 		Example: "dendrite branch parent DEN-841 DEN-840",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return planeRun(func(c *plane.Client) error {
+			return planecli.PlaneRun(func(c *plane.Client) error {
 				return runBranchParent(cmd.Context(), c, args[0], args[1], cmd.OutOrStdout())
 			})
 		},
@@ -56,8 +59,8 @@ func newBranchCmd() *cobra.Command {
 }
 
 func writeBranchTarget(out io.Writer, t branchpolicy.Target, plan featurebranch.Plan) error {
-	if globals.JSON {
-		return writeJSON(out, map[string]any{"target": t, "plan": plan})
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, map[string]any{"target": t, "plan": plan})
 	}
 	fmt.Fprintf(out, "Merges into:        %s  (%s)\n", t.Branch, t.Source)
 	fmt.Fprintf(out, "Integration branch: %s\n", t.Integration)
@@ -74,7 +77,7 @@ func writeBranchTarget(out io.Writer, t branchpolicy.Target, plan featurebranch.
 func runBranchParent(ctx context.Context, client *plane.Client, child, parent string, out io.Writer) error {
 	child, parent = strings.ToUpper(strings.TrimSpace(child)), strings.ToUpper(strings.TrimSpace(parent))
 	if child == parent {
-		return usageErrorf("a ticket cannot be its own parent")
+		return cli.UsageErrorf("a ticket cannot be its own parent")
 	}
 	board := ticketlock.Board{Svc: planesvc.Default(), Client: client}
 	for at, depth := parent, 0; depth < 8; depth++ {
@@ -83,7 +86,7 @@ func runBranchParent(ctx context.Context, client *plane.Client, child, parent st
 			break
 		}
 		if up.ID == child {
-			return usageErrorf("%s is below %s already; making it the parent would make a loop", parent, child)
+			return cli.UsageErrorf("%s is below %s already; making it the parent would make a loop", parent, child)
 		}
 		at = up.ID
 	}

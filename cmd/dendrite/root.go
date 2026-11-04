@@ -35,7 +35,7 @@ func newRootCmd() *cobra.Command {
 		// Synaptic Cleft & Gating
 		mesh.NewCleftCmd(), inference.NewSpikeCmd(), bridge.NewInterCmd(), bridge.NewBridgeCmd(), synapse.NewSynapseCmd(), session.NewSessionCmd(), cortex.NewGreetingCmd(),
 		// Axon & Myelin Sheath
-		mesh.NewAxonCmd(), commit.NewMyelinCmd(), mesh.NewVelocityCmd(), mesh.NewMeshCmd(), mesh.NewTranslocateCmd(),
+		mesh.NewAxonCmd(), soma.NewBranchCmd(), commit.NewMyelinCmd(), mesh.NewVelocityCmd(), mesh.NewMeshCmd(), mesh.NewTranslocateCmd(),
 		// Dendritic Arbor
 		knowledge.NewArborCmd(), knowledge.NewAfferentCmd(), bridge.NewRetroCmd(),
 		// Glial Regulation & Pruning

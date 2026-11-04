@@ -1,6 +1,8 @@
-package main
+package soma
 
 import (
+	"Dendrite/cmd/dendrite/internal/clitest"
+	"Dendrite/cmd/dendrite/internal/planecli"
 	"bytes"
 	"context"
 	"errors"
@@ -24,7 +26,7 @@ type targetRig struct {
 
 func newTargetRig(t *testing.T) *targetRig {
 	t.Helper()
-	jsonOutput(t, false)
+	clitest.JsonOutput(t, false)
 	t.Setenv("DENDRITE_HOME", t.TempDir())
 	t.Setenv("DENDRITE_STATE_DIR", t.TempDir())
 	t.Setenv("DENDRITE_WORK_DIR", t.TempDir())
@@ -36,9 +38,9 @@ func newTargetRig(t *testing.T) *targetRig {
 	t.Setenv("PLANE_PROJECT_ID", planetest.BoardProject)
 	client, err := plane.NewClient(plane.Config{BaseURL: board.URL, WorkspaceSlug: planetest.BoardWorkspace, ProjectID: planetest.BoardProject, DirectToken: "k"}, board.Client())
 	testkit.Check(t, err)
-	prev := newPlaneClient
-	newPlaneClient = func() (*plane.Client, error) { return client, nil }
-	t.Cleanup(func() { newPlaneClient = prev })
+	prev := planecli.NewPlaneClient
+	planecli.NewPlaneClient = func() (*plane.Client, error) { return client, nil }
+	t.Cleanup(func() { planecli.NewPlaneClient = prev })
 
 	origin := t.TempDir()
 	testkit.Git(t, origin, "init", "-q", "--bare", "-b", "develop")
@@ -98,16 +100,16 @@ func TestNoPlaneLookupWhenTheGuardIsOff(t *testing.T) {
 
 func TestAnUnreachablePlaneOnlyCostsTheFeatureBranch(t *testing.T) {
 	r := newTargetRig(t)
-	prev := newPlaneClient
-	t.Cleanup(func() { newPlaneClient = prev })
-	newPlaneClient = func() (*plane.Client, error) { return nil, errors.New("PLANE_API_KEY is not set\nsecond line") }
+	prev := planecli.NewPlaneClient
+	t.Cleanup(func() { planecli.NewPlaneClient = prev })
+	planecli.NewPlaneClient = func() (*plane.Client, error) { return nil, errors.New("PLANE_API_KEY is not set\nsecond line") }
 	wt, err := prepareWorkTarget(context.Background(), "DEN-841", "", "", true, &r.out)
 	testkit.Check(t, err)
 	testkit.Equal(t, "default", wt.Branch, "")
 	testkit.Contains(t, r.out.String(), "Plane is not configured (PLANE_API_KEY is not set)")
 	testkit.NotContains(t, r.out.String(), "second line")
 
-	newPlaneClient = prev
+	planecli.NewPlaneClient = prev
 	r.board.Close()
 	r.out.Reset()
 	wt, err = prepareWorkTarget(context.Background(), "DEN-841", "", "", true, &r.out)
