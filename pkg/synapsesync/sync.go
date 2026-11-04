@@ -4,6 +4,7 @@
 package synapsesync
 
 import (
+	"Dendrite/pkg/branchpolicy"
 	"Dendrite/pkg/rag"
 	"context"
 	"crypto/sha256"
@@ -80,10 +81,13 @@ type MemberReport struct {
 	PlaneProject string               `json:"plane_project,omitempty"`
 	Status       synapse.MemberStatus `json:"status"`
 	Repo         *devtool.RepoState   `json:"repo,omitempty"`
-	Push         *devtool.PushOutcome `json:"push,omitempty"`
-	Plane        *PlaneResult         `json:"plane,omitempty"`
-	RAG          *RAGResult           `json:"rag,omitempty"`
-	Errors       []string             `json:"errors,omitempty"`
+	// Target is the integration branch the member merges into; OffTarget is set when its checkout is on another branch.
+	Target    string               `json:"target,omitempty"`
+	OffTarget bool                 `json:"off_target,omitempty"`
+	Push      *devtool.PushOutcome `json:"push,omitempty"`
+	Plane     *PlaneResult         `json:"plane,omitempty"`
+	RAG       *RAGResult           `json:"rag,omitempty"`
+	Errors    []string             `json:"errors,omitempty"`
 }
 
 // SynapseReport records a synapse's lifecycle state before and after the pass.
@@ -349,6 +353,8 @@ func syncGit(ctx context.Context, opts Options, mr *MemberReport) {
 		return
 	}
 	mr.Repo = repo
+	mr.Target = branchpolicy.For(mr.Dir).Integration
+	mr.OffTarget = repo.Branch != mr.Target
 	if repo.Ahead == 0 {
 		return
 	}

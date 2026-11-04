@@ -530,3 +530,18 @@ func TestChannel_CodecRoundTripAndValidate(t *testing.T) {
 		t.Fatal("expected a duplicate channel key error")
 	}
 }
+
+func TestTrackedRefPrefersRefThenTheMembersBranchThenTheChannel(t *testing.T) {
+	for name, tc := range map[string]struct {
+		m    Member
+		want string
+	}{
+		"ref wins":          {Member{Ref: "v1.2", Branch: "release"}, "v1.2"},
+		"branch next":       {Member{Branch: "release"}, "release"},
+		"channel otherwise": {Member{}, "develop"},
+	} {
+		if got := tc.m.TrackedRef(ChannelDev); got != tc.want {
+			t.Errorf("%s: %q, want %q", name, got, tc.want)
+		}
+	}
+}

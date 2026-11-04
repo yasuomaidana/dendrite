@@ -12,6 +12,7 @@ type Peer struct {
 	Role         Role         `json:"role"`
 	ProjectID    string       `json:"project_id"`
 	PlaneProject string       `json:"plane_project,omitempty"` // Plane identifier, "" when unknown
+	Branch       string       `json:"branch,omitempty"`        // the integration branch the member declares, "" for the default
 	Path         string       `json:"path,omitempty"`          // where the checkout resolves now ("" when it does not)
 	Status       MemberStatus `json:"status"`
 }
@@ -22,6 +23,26 @@ type PeerGroup struct {
 	Name    string `json:"name"`
 	Self    string `json:"self"` // the project's own alias in this synapse
 	Peers   []Peer `json:"peers"`
+}
+
+// peerOf is member m as a peer: where its checkout is, and its Plane project from the manifest, else the global
+// index (ix may be nil), else the checkout's own link.
+func peerOf(m Member, ix *projectid.Index) Peer {
+	p := Peer{Alias: m.Alias, Role: m.Role, ProjectID: m.ProjectID, PlaneProject: m.PlaneProject, Branch: m.Branch, Status: StatusOf(m)}
+	if dir, err := Resolve(m); err == nil {
+		p.Path = dir
+	}
+	if p.PlaneProject == "" && ix != nil {
+		if e, ok := ix.Lookup(m.ProjectID); ok && e.Plane != nil {
+			p.PlaneProject = e.Plane.Identifier
+		}
+	}
+	if p.PlaneProject == "" && p.Path != "" { // the checkout knows its own Plane project
+		if b := readPlaneLink(p.Path); b != nil {
+			p.PlaneProject = b.Identifier
+		}
+	}
+	return p
 }
 
 // PeersOf lists, per synapse that contains projectID, the other members. Archived synapses are
@@ -44,21 +65,7 @@ func PeersOf(st *Store, ix *projectid.Index, projectID string) ([]PeerGroup, err
 				g.Self = m.Alias
 				continue
 			}
-			p := Peer{Alias: m.Alias, Role: m.Role, ProjectID: m.ProjectID, PlaneProject: m.PlaneProject, Status: StatusOf(m)}
-			if dir, err := Resolve(m); err == nil {
-				p.Path = dir
-			}
-			if p.PlaneProject == "" && ix != nil {
-				if e, ok := ix.Lookup(m.ProjectID); ok && e.Plane != nil {
-					p.PlaneProject = e.Plane.Identifier
-				}
-			}
-			if p.PlaneProject == "" && p.Path != "" { // the checkout knows its own Plane project
-				if b := readPlaneLink(p.Path); b != nil {
-					p.PlaneProject = b.Identifier
-				}
-			}
-			g.Peers = append(g.Peers, p)
+			g.Peers = append(g.Peers, peerOf(m, ix))
 		}
 		sort.Slice(g.Peers, func(i, j int) bool { return g.Peers[i].Alias < g.Peers[j].Alias })
 		groups = append(groups, g)
