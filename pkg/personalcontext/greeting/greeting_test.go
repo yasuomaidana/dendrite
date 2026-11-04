@@ -2,6 +2,7 @@ package greeting
 
 import (
 	"context"
+	"errors"
 	"math/rand"
 	"strings"
 	"testing"
@@ -176,11 +177,10 @@ func TestEngine_All10StylesGeneration(t *testing.T) {
 	}
 }
 
-
 func TestEngine_NoMatchingStyle(t *testing.T) {
 	eng := &Engine{styles: map[StyleID]StyleDefinition{}, orderedIDs: nil, rng: rand.New(rand.NewSource(1))}
 
-	if _, err := eng.Generate(context.Background(), UserJourneyContext{}, nil); err == nil || err != ErrNoMatchingStyle {
+	if _, err := eng.Generate(context.Background(), UserJourneyContext{}, nil); !errors.Is(err, ErrNoMatchingStyle) {
 		t.Fatalf("expected ErrNoMatchingStyle, got %v", err)
 	}
 }

@@ -90,19 +90,19 @@ func TestMCP_GreetingTools(t *testing.T) {
 		}
 	})
 
-	t.Run("all styles suppressed returns tool error", func(t *testing.T) {
-		reqJSON := `{{
+	t.Run("all styles suppressed relaxes suppression instead of failing", func(t *testing.T) {
+		reqJSON := `{
 			"jsonrpc": "2.0",
 			"id": 103,
 			"method": "tools/call",
-			"params": {{
+			"params": {
 				"name": "dendrite_pcontext_greeting_generate",
-				"arguments": {{
+				"arguments": {
 					"topic": "Distributed Mesh",
 					"recent_styles": ["G-01", "G-02", "G-03", "G-04", "G-05", "G-06", "G-07", "G-08", "G-09", "G-10"]
-				}}
-			}}
-		}}`
+				}
+			}
+		}`
 
 		resp := srv.HandleRequest(ctx, []byte(reqJSON))
 		if resp.Error != nil {
@@ -113,11 +113,8 @@ func TestMCP_GreetingTools(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected *CallToolResult, got %T", resp.Result)
 		}
-		if !res.IsError {
-			t.Fatalf("expected tool result to be an error when all styles are suppressed")
-		}
-		if !strings.Contains(res.Content[0].Text, "no matching greeting style found") {
-			t.Fatalf("expected no matching style message, got %q", res.Content[0].Text)
+		if res.IsError {
+			t.Fatalf("expected a fallback greeting when every style is recent, got error %q", res.Content[0].Text)
 		}
 	})
 }
