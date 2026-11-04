@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -329,4 +330,28 @@ func TestBoutonJobsList_CrossProject(t *testing.T) {
 // handleAgentJobsCommand runs `dendrite bouton jobs args...`, discarding output.
 func handleAgentJobsCommand(ctx context.Context, args []string) error {
 	return runCmd(ctx, io.Discard, append([]string{"bouton", "jobs"}, args...)...)
+}
+
+func TestBoutonJobsWaitRefusesNonPositiveDurations(t *testing.T) {
+	for name, args := range map[string][]string{
+		"timeout":  {"bouton", "jobs", "wait", "--timeout", "0s"},
+		"interval": {"bouton", "jobs", "wait", "--interval", "0s"},
+	} {
+		if err := runCmd(context.Background(), &bytes.Buffer{}, args...); cli.ExitCodeFor(err) != cli.ExitUsage {
+			t.Errorf("%s: want a usage error, got %v", name, err)
+		}
+	}
+}
+
+func TestBoutonJobsWaitStopsWhenCancelled(t *testing.T) {
+	_, _, otherLedger := setupCrossProjectEnv(t)
+	if _, err := otherLedger.Create(&agentjobs.Job{Ticket: "DRAG-31", Agent: "agy", Status: agentjobs.StatusRunning}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := runCmd(ctx, &bytes.Buffer{}, "bouton", "jobs", "wait", "--ticket", "DRAG-31", "--interval", "10ms", "--timeout", "5s")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("a cancelled wait must stop with the cancellation, got %v", err)
+	}
 }

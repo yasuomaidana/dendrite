@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/cmd/dendrite/internal/clitest"
 	"Dendrite/cmd/dendrite/session"
 	"Dendrite/pkg/agentjobs"
@@ -293,4 +294,14 @@ func writeRegular(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func TestBoutonJobsDaemonFlagsAreChecked(t *testing.T) {
+	t.Setenv("DENDRITE_HOME", t.TempDir())
+	if err := runCmd(context.Background(), &bytes.Buffer{}, "bouton", "jobs", "daemon", "--interval", "0s"); cli.ExitCodeFor(err) != cli.ExitUsage {
+		t.Errorf("a non-positive --interval must be a usage error, got %v", err)
+	}
+	if err := runCmd(context.Background(), &bytes.Buffer{}, "bouton", "jobs", "daemon", "--once", "--install"); err == nil {
+		t.Error("--once and --install exclude each other")
+	}
 }
