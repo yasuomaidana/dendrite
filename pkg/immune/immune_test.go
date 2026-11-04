@@ -181,3 +181,34 @@ func TestLocateOrder(t *testing.T) {
 		testkit.Equal(t, "path", got, filepath.Join(home, ".local", "bin", immune.BinaryName))
 	})
 }
+
+// scannerScript writes an executable that stands in for SkillSpector's command line and returns its path.
+func scannerScript(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "skillspector")
+	testkit.WriteFile(t, path, "#!/bin/sh\n"+body+"\n", 0o755)
+	return path
+}
+
+func TestScanScannerWritesAnUnusableReport(t *testing.T) {
+	bin := scannerScript(t, `echo '{"skill":{}}' > "$6"`)
+	if _, err := (immune.Scanner{Bin: bin}).Scan(context.Background(), t.TempDir()); err == nil {
+		t.Fatal("a report without a score must fail the scan")
+	}
+}
+
+func TestScanVersionUnknownWhenTheScannerWillNotSayIt(t *testing.T) {
+	bin := scannerScript(t, `[ "$1" = "--version" ] && exit 1
+echo '{"skill":{"name":"s"},"risk_assessment":{"score":0,"severity":"LOW"}}' > "$6"`)
+	r, err := immune.Scanner{Bin: bin}.Scan(context.Background(), t.TempDir())
+	testkit.Check(t, err)
+	testkit.Equal(t, "version", r.ScannerVersion, "unknown")
+	testkit.Equal(t, "verdict", r.Verdict, immune.Approve)
+}
+
+func TestScanNeedsATempDirectoryForTheReport(t *testing.T) {
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "absent"))
+	if _, err := (immune.Scanner{Bin: "unused"}).Scan(context.Background(), t.TempDir()); err == nil {
+		t.Fatal("a scan without a place for the report must fail")
+	}
+}
