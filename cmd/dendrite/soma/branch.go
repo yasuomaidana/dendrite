@@ -38,6 +38,9 @@ func NewBranchCmd() *cobra.Command {
 				}
 				t := branchpolicy.For(".")
 				t.Branch = plan.Target
+				if plan.Feature {
+					t.Source = branchpolicy.SourceTicket
+				}
 				return writeBranchTarget(cmd.OutOrStdout(), t, plan)
 			})
 		},
