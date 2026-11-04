@@ -422,20 +422,16 @@ func testSchedulerTools_RegistrationAndExecutionStep4(t *testing.T, srv *Server,
 
 // testSchedulerTools_RegistrationAndExecutionStep5: 2. Test dendrite_analyze_policy update
 func testSchedulerTools_RegistrationAndExecutionStep5(t *testing.T, ctx context.Context, policyHandler ToolHandler, err error) {
-	resUpdate, err := policyHandler(ctx, map[string]interface{}{
-		"night_window":        "22:00-05:00",
-		"weekly_reset":        "MON 00:00",
-		"sprint_before_reset": "24h",
-		"reserve_floor":       0.15,
-		"allow_zero":          true,
-		"mode":                "auto",
-	})
-	if err != nil {
-		t.Fatalf("policyHandler update failed: %v", err)
-	}
-	if !strings.Contains(resUpdate.Content[0].Text, `"updated": true`) {
-		t.Errorf("expected updated: true in response: %s", resUpdate.Content[0].Text)
-	}
+	mcptest.ExpectContent(t, "policyHandler update failed", func() (*CallToolResult, error) {
+		return policyHandler(ctx, map[string]interface{}{
+			"night_window":        "22:00-05:00",
+			"weekly_reset":        "MON 00:00",
+			"sprint_before_reset": "24h",
+			"reserve_floor":       0.15,
+			"allow_zero":          true,
+			"mode":                "auto",
+		})
+	}, `"updated": true`)
 }
 
 // testSchedulerTools_RegistrationAndExecutionStep6: 3. Test dendrite_analyze_status
@@ -465,45 +461,33 @@ func testSchedulerTools_RegistrationAndExecutionStep7(t *testing.T, srv *Server,
 
 // testSchedulerTools_RegistrationAndExecutionStep8: 5. Test dendrite_analyze_trigger with simulated sprint
 func testSchedulerTools_RegistrationAndExecutionStep8(t *testing.T, ctx context.Context, err error, triggerHandler ToolHandler) {
-	resSprint, err := triggerHandler(ctx, map[string]interface{}{
-		"chunk_id":        "pkg/ast/parser.go",
-		"simulate_sprint": true,
-	})
-	if err != nil {
-		t.Fatalf("triggerHandler sprint failed: %v", err)
-	}
-	if !strings.Contains(resSprint.Content[0].Text, "CLOUD_SPRINT") {
-		t.Errorf("expected CLOUD_SPRINT in simulated sprint trigger response: %s", resSprint.Content[0].Text)
-	}
+	mcptest.ExpectContent(t, "triggerHandler sprint failed", func() (*CallToolResult, error) {
+		return triggerHandler(ctx, map[string]interface{}{
+			"chunk_id":        "pkg/ast/parser.go",
+			"simulate_sprint": true,
+		})
+	}, "CLOUD_SPRINT")
 }
 
 // testSchedulerTools_RegistrationAndExecutionStep9: 6. Test dendrite_analyze_trigger with simulated night
 func testSchedulerTools_RegistrationAndExecutionStep9(t *testing.T, ctx context.Context, err error, triggerHandler ToolHandler) {
-	resNight, err := triggerHandler(ctx, map[string]interface{}{
-		"chunk_id":       "pkg/ast/parser.go",
-		"simulate_night": true,
-	})
-	if err != nil {
-		t.Fatalf("triggerHandler night failed: %v", err)
-	}
-	if !strings.Contains(resNight.Content[0].Text, "NIGHT_LOCAL") {
-		t.Errorf("expected NIGHT_LOCAL in simulated night trigger response: %s", resNight.Content[0].Text)
-	}
+	mcptest.ExpectContent(t, "triggerHandler night failed", func() (*CallToolResult, error) {
+		return triggerHandler(ctx, map[string]interface{}{
+			"chunk_id":       "pkg/ast/parser.go",
+			"simulate_night": true,
+		})
+	}, "NIGHT_LOCAL")
 }
 
 // testSchedulerTools_RegistrationAndExecutionStep10: 7. Test dendrite_analyze_switch
 func testSchedulerTools_RegistrationAndExecutionStep10(t *testing.T, srv *Server, ctx context.Context, err error) {
 	switchHandler, _ := srv.Handler("dendrite_analyze_switch")
-	resSwitch, err := switchHandler(ctx, map[string]interface{}{
-		"allow_zero": true,
-		"mode":       "always",
-	})
-	if err != nil {
-		t.Fatalf("switchHandler failed: %v", err)
-	}
-	if !strings.Contains(resSwitch.Content[0].Text, `"allow_zero_drain": true`) {
-		t.Errorf("expected allow_zero_drain in switch response: %s", resSwitch.Content[0].Text)
-	}
+	mcptest.ExpectContent(t, "switchHandler failed", func() (*CallToolResult, error) {
+		return switchHandler(ctx, map[string]interface{}{
+			"allow_zero": true,
+			"mode":       "always",
+		})
+	}, `"allow_zero_drain": true`)
 }
 
 // testSchedulerTools_RegistrationAndExecutionStep11: 8. Test dendrite_tokens_status

@@ -231,11 +231,7 @@ func ragShowHandler() ToolHandler {
 
 // Register registers the retrieval, code graph, query and distributed-codebase tools on s.
 func Register(s *Server, deps Dependencies) {
-	registerDistCodebaseTools(s, deps)
-	registerAgentSearchTools(s, deps)
-	registerTestGenTools(s, deps)
-	registerPoolTools(s, deps)
-	registerQueryTools(s, deps)
-	registerRAGTools(s, deps)
-	registerGraphTools(s, deps)
+	for _, register := range []func(*Server, Dependencies){registerDistCodebaseTools, registerAgentSearchTools, registerTestGenTools, registerPoolTools, registerQueryTools, registerRAGTools, registerGraphTools} {
+		register(s, deps)
+	}
 }

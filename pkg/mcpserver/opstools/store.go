@@ -20,16 +20,9 @@ func registerStoreTools(s *Server, deps Dependencies) {
 	}
 
 	// 38. dendrite_store_status
-	s.RegisterTool(Tool{
-		Name:        "dendrite_store_status",
-		Description: "Query real-time storage status, segments count, and checkpoint states of the persistent segmented analysis store",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"project": TypedProp("string", "Optional project identifier filter"),
-			},
-		},
-	}, storeStatusHandler())
+	AddTool(s, "dendrite_store_status", "Query real-time storage status, segments count, and checkpoint states of the persistent segmented analysis store", PropsSchema(map[string]interface{}{
+		"project": TypedProp("string", "Optional project identifier filter"),
+	}), storeStatusHandler())
 
 	// 39. dendrite_store_commit_chunk
 	s.RegisterTool(Tool{

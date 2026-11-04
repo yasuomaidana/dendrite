@@ -125,18 +125,11 @@ var globalInteropCoordinator = distcodebase.NewInteropCoordinator(globalDistRegi
 
 func registerDistCodebaseTools(s *Server, deps Dependencies) {
 	// 16. dendrite_dist_sources
-	s.RegisterTool(Tool{
-		Name:        "dendrite_dist_sources",
-		Description: "List or filter registered codebase sources (own-repo, curated-oss, registry) and libraries with priority order",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"priority": TypedProp("integer", "Filter by priority level (1 = own repo, 2 = curated OSS, 3 = registry)"),
-				"language": TypedProp("string", "Filter by language (e.g. rust, go, typescript)"),
-				"query":    TypedProp("string", "Capability or library name query (e.g. wgpu, cte, turso, pixels)"),
-			},
-		},
-	}, distSourcesHandler())
+	AddTool(s, "dendrite_dist_sources", "List or filter registered codebase sources (own-repo, curated-oss, registry) and libraries with priority order", PropsSchema(map[string]interface{}{
+		"priority": TypedProp("integer", "Filter by priority level (1 = own repo, 2 = curated OSS, 3 = registry)"),
+		"language": TypedProp("string", "Filter by language (e.g. rust, go, typescript)"),
+		"query":    TypedProp("string", "Capability or library name query (e.g. wgpu, cte, turso, pixels)"),
+	}), distSourcesHandler())
 
 	// 17. dendrite_dist_decompose
 	s.RegisterTool(Tool{

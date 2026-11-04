@@ -11,32 +11,18 @@ import (
 
 func registerGraphTools(s *Server, deps Dependencies) {
 	// dendrite_graph_communities
-	s.RegisterTool(Tool{
-		Name:        "dendrite_graph_communities",
-		Description: "List Leiden communities of the project file graph, largest first, with top symbols and summary",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"project_path": TypedProp("string", "Target project directory to index and analyze (default: '.')"),
-				"limit":        TypedProp("integer", "Maximum number of communities to return (default: 50)"),
-				"min_size":     TypedProp("integer", "Smallest community listed, in files (default: 2)"),
-			},
-		},
-	}, graphCommunitiesHandler())
+	AddTool(s, "dendrite_graph_communities", "List Leiden communities of the project file graph, largest first, with top symbols and summary", PropsSchema(map[string]interface{}{
+		"project_path": TypedProp("string", "Target project directory to index and analyze (default: '.')"),
+		"limit":        TypedProp("integer", "Maximum number of communities to return (default: 50)"),
+		"min_size":     TypedProp("integer", "Smallest community listed, in files (default: 2)"),
+	}), graphCommunitiesHandler())
 
 	// dendrite_graph_god_nodes
-	s.RegisterTool(Tool{
-		Name:        "dendrite_graph_god_nodes",
-		Description: "List god nodes (symbols with the most callers and type users) in the project code graph",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"project_path":  TypedProp("string", "Target project directory to index and analyze (default: '.')"),
-				"min_in_degree": TypedProp("integer", "Minimum in-degree threshold (default: 21 for FEAT-045 god nodes)"),
-				"limit":         TypedProp("integer", "Maximum number of god nodes to return (default: 50)"),
-			},
-		},
-	}, graphGodNodesHandler())
+	AddTool(s, "dendrite_graph_god_nodes", "List god nodes (symbols with the most callers and type users) in the project code graph", PropsSchema(map[string]interface{}{
+		"project_path":  TypedProp("string", "Target project directory to index and analyze (default: '.')"),
+		"min_in_degree": TypedProp("integer", "Minimum in-degree threshold (default: 21 for FEAT-045 god nodes)"),
+		"limit":         TypedProp("integer", "Maximum number of god nodes to return (default: 50)"),
+	}), graphGodNodesHandler())
 
 	// dendrite_graph_path
 	s.RegisterTool(Tool{

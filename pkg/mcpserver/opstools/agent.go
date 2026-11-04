@@ -41,46 +41,18 @@ func registerAgentRunTool(s *Server, deps Dependencies) {
 // registerTelemetryAndInferenceTools registers dendrite_telemetry, dendrite_inference_list and dendrite_inference_probe.
 func registerTelemetryAndInferenceTools(s *Server, deps Dependencies) {
 	// 9. dendrite_telemetry
-	s.RegisterTool(Tool{
-		Name:        "dendrite_telemetry",
-		Description: "Sample real-time SoC thermal metrics and 24h/7d token spend totals",
-		InputSchema: map[string]interface{}{
-			"type":       "object",
-			"properties": map[string]interface{}{},
-		},
-	}, telemetryHandler())
+	AddTool(s, "dendrite_telemetry", "Sample real-time SoC thermal metrics and 24h/7d token spend totals", PropsSchema(map[string]interface{}{}), telemetryHandler())
 
 	// 10. dendrite_inference_list
-	s.RegisterTool(Tool{
-		Name:        "dendrite_inference_list",
-		Description: "List registered multi-provider inference engines (Ollama, OxiLLaMa, vLLM, TGI, TEI, llama.cpp), endpoints, and failover cascade order",
-		InputSchema: map[string]interface{}{
-			"type":       "object",
-			"properties": map[string]interface{}{},
-		},
-	}, inferenceListHandler())
+	AddTool(s, "dendrite_inference_list", "List registered multi-provider inference engines (Ollama, OxiLLaMa, vLLM, TGI, TEI, llama.cpp), endpoints, and failover cascade order", PropsSchema(map[string]interface{}{}), inferenceListHandler())
 
 	// dendrite_inference_models
-	s.RegisterTool(Tool{
-		Name:        "dendrite_inference_models",
-		Description: "List the local models installed on Ollama and OxiLLaMa with size, loaded state and whether each fits this machine's memory budget (models marked too large get no gateway route and are refused at call time)",
-		InputSchema: map[string]interface{}{
-			"type":       "object",
-			"properties": map[string]interface{}{},
-		},
-	}, inferenceModelsHandler())
+	AddTool(s, "dendrite_inference_models", "List the local models installed on Ollama and OxiLLaMa with size, loaded state and whether each fits this machine's memory budget (models marked too large get no gateway route and are refused at call time)", PropsSchema(map[string]interface{}{}), inferenceModelsHandler())
 
 	// 11. dendrite_inference_probe
-	s.RegisterTool(Tool{
-		Name:        "dendrite_inference_probe",
-		Description: "Probe multi-provider inference engines (< 2s) for health, reachability, latency, and loaded models",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"engine_id": TypedProp("string", "Optional engine ID to probe (e.g. 'ollama-metal', 'oxillama-rust'). If omitted, probes all engines."),
-			},
-		},
-	}, inferenceProbeHandler())
+	AddTool(s, "dendrite_inference_probe", "Probe multi-provider inference engines (< 2s) for health, reachability, latency, and loaded models", PropsSchema(map[string]interface{}{
+		"engine_id": TypedProp("string", "Optional engine ID to probe (e.g. 'ollama-metal', 'oxillama-rust'). If omitted, probes all engines."),
+	}), inferenceProbeHandler())
 }
 
 // AgentRunReport is what dendrite_agent_run answers with after a session.

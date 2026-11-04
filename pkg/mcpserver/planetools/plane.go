@@ -17,83 +17,48 @@ import (
 // registerPlaneSyncAndIDETools registers dendrite_plane_replicate, dendrite_plane_push_status, dendrite_plane_doc_sync and dendrite_jetbrains_setup.
 func registerPlaneSyncAndIDETools(s *Server, deps Dependencies) {
 	// 12. dendrite_plane_replicate
-	s.RegisterTool(Tool{
-		Name:        "dendrite_plane_replicate",
-		Description: "Replicate DEV_STATUS.md directly from Plane service state (Plane owns status)",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"file":    TypedProp("string", "Target markdown file path (default: DEV_STATUS.md)"),
-				"dry_run": TypedProp("boolean", "If true, simulates replication without modifying disk"),
-			},
-		},
-	}, planeReplicateHandler(deps))
+	AddTool(s, "dendrite_plane_replicate", "Replicate DEV_STATUS.md directly from Plane service state (Plane owns status)", PropsSchema(map[string]interface{}{
+		"file":    TypedProp("string", "Target markdown file path (default: DEV_STATUS.md)"),
+		"dry_run": TypedProp("boolean", "If true, simulates replication without modifying disk"),
+	}), planeReplicateHandler(deps))
 
 	// 13. dendrite_plane_push_status
-	s.RegisterTool(Tool{
-		Name:        "dendrite_plane_push_status",
-		Description: "Move local DEV_STATUS.md content (tickets, milestones, descriptions) to Plane service",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"file": TypedProp("string", "Source markdown file path (default: DEV_STATUS.md)"),
-			},
-		},
-	}, planePushStatusHandler(deps))
+	AddTool(s, "dendrite_plane_push_status", "Move local DEV_STATUS.md content (tickets, milestones, descriptions) to Plane service", PropsSchema(map[string]interface{}{
+		"file": TypedProp("string", "Source markdown file path (default: DEV_STATUS.md)"),
+	}), planePushStatusHandler(deps))
 
 	// 14. dendrite_plane_doc_sync
-	s.RegisterTool(Tool{
-		Name:        "dendrite_plane_doc_sync",
-		Description: "Synchronize documentation between Plane pages and local repository (direction: to-plane, from-plane, bidirectional)",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"direction": TypedProp("string", "Sync direction: 'to-plane', 'from-plane', or 'bidirectional' (default: bidirectional)"),
-				"dir":       TypedProp("string", "Documentation directory path (default: docs)"),
-			},
-		},
-	}, planeDocSyncHandler(deps))
+	AddTool(s, "dendrite_plane_doc_sync", "Synchronize documentation between Plane pages and local repository (direction: to-plane, from-plane, bidirectional)", PropsSchema(map[string]interface{}{
+		"direction": TypedProp("string", "Sync direction: 'to-plane', 'from-plane', or 'bidirectional' (default: bidirectional)"),
+		"dir":       TypedProp("string", "Documentation directory path (default: docs)"),
+	}), planeDocSyncHandler(deps))
 
 	// 15. dendrite_jetbrains_setup
-	s.RegisterTool(Tool{
-		Name:        "dendrite_jetbrains_setup",
-		Description: "Configure JetBrains IDE toolset with Dendrite MCP servers (.ai/mcp/mcp.json), agent run configurations, and external tools",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"project_dir":  TypedProp("string", "Project root directory (default: current working directory)"),
-				"project_only": TypedProp("boolean", "Configure only project-level files (.ai/mcp/mcp.json and .idea)"),
-				"global_only":  TypedProp("boolean", "Configure only user-level global files (~/.ai/mcp/mcp.json)"),
-			},
-		},
-	}, jetbrainsSetupHandler())
+	AddTool(s, "dendrite_jetbrains_setup", "Configure JetBrains IDE toolset with Dendrite MCP servers (.ai/mcp/mcp.json), agent run configurations, and external tools", PropsSchema(map[string]interface{}{
+		"project_dir":  TypedProp("string", "Project root directory (default: current working directory)"),
+		"project_only": TypedProp("boolean", "Configure only project-level files (.ai/mcp/mcp.json and .idea)"),
+		"global_only":  TypedProp("boolean", "Configure only user-level global files (~/.ai/mcp/mcp.json)"),
+	}), jetbrainsSetupHandler())
 }
 
 // registerCommitTool registers dendrite_commit.
 func registerCommitTool(s *Server, deps Dependencies) {
 	// 46. dendrite_commit
-	s.RegisterTool(Tool{
-		Name:        "dendrite_commit",
-		Description: "Autonomous Git commit engine with automatic local model delegation for conventional commit message synthesis and ticket provenance",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"ticket_id": TypedProp("string", "Target ticket ID (e.g. DEN-098)"),
-				"message":   TypedProp("string", "Explicit commit message. If omitted, synthesized via local model"),
-				"files": map[string]interface{}{
-					"type": "array",
-					"items": map[string]interface{}{
-						"type": "string",
-					},
-					"description": "Specific file paths to stage (default: stage all)",
-				},
-				"stage_all":       TypedProp("boolean", "Stage all modified and untracked files (default: true)"),
-				"use_local_model": TypedProp("boolean", "Delegate commit message synthesis to local model (default: true)"),
-				"model":           TypedProp("string", "Local model name (default: qwen3.8:27b)"),
-				"dry_run":         TypedProp("boolean", "Simulate staging and message synthesis without modifying git history"),
+	AddTool(s, "dendrite_commit", "Autonomous Git commit engine with automatic local model delegation for conventional commit message synthesis and ticket provenance", PropsSchema(map[string]interface{}{
+		"ticket_id": TypedProp("string", "Target ticket ID (e.g. DEN-098)"),
+		"message":   TypedProp("string", "Explicit commit message. If omitted, synthesized via local model"),
+		"files": map[string]interface{}{
+			"type": "array",
+			"items": map[string]interface{}{
+				"type": "string",
 			},
+			"description": "Specific file paths to stage (default: stage all)",
 		},
-	}, commitHandler())
+		"stage_all":       TypedProp("boolean", "Stage all modified and untracked files (default: true)"),
+		"use_local_model": TypedProp("boolean", "Delegate commit message synthesis to local model (default: true)"),
+		"model":           TypedProp("string", "Local model name (default: qwen3.8:27b)"),
+		"dry_run":         TypedProp("boolean", "Simulate staging and message synthesis without modifying git history"),
+	}), commitHandler())
 }
 
 // planeReplicateHandler handles the dendrite_plane_replicate tool.

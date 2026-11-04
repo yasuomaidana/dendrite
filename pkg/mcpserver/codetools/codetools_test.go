@@ -1177,33 +1177,25 @@ func testDistCodebaseMCPToolsStep3(t *testing.T, callTool func(name string, args
 
 // testDistCodebaseMCPToolsStep4: Test query resolution: "cte" -> diesel-cte-ext
 func testDistCodebaseMCPToolsStep4(t *testing.T, callTool func(name string, args map[string]interface{}) (*CallToolResult, error), err error) {
-	resQuery, err := callTool("dendrite_dist_sources", map[string]interface{}{
-		"query": "cte",
-	})
-	if err != nil {
-		t.Fatalf("failed to resolve query in dendrite_dist_sources: %v", err)
-	}
-	if !strings.Contains(resQuery.Content[0].Text, "diesel-cte-ext") {
-		t.Errorf("expected diesel-cte-ext in query resolution, got: %s", resQuery.Content[0].Text)
-	}
+	mcptest.ExpectContent(t, "failed to resolve query in dendrite_dist_sources", func() (*CallToolResult, error) {
+		return callTool("dendrite_dist_sources", map[string]interface{}{
+			"query": "cte",
+		})
+	}, "diesel-cte-ext")
 }
 
 // testDistCodebaseMCPToolsStep5: 2. Test dendrite_dist_decompose
 func testDistCodebaseMCPToolsStep5(t *testing.T, callTool func(name string, args map[string]interface{}) (*CallToolResult, error), err error) {
-	resDecomp, err := callTool("dendrite_dist_decompose", map[string]interface{}{
-		"project_name": "CarlaEngine",
-		"language":     "rust",
-		"modules": []interface{}{
-			"render-pipeline",
-			"storage-engine",
-		},
-	})
-	if err != nil {
-		t.Fatalf("failed to call dendrite_dist_decompose: %v", err)
-	}
-	if !strings.Contains(resDecomp.Content[0].Text, "wgpu") {
-		t.Errorf("expected wgpu in render-pipeline decomposition, got: %s", resDecomp.Content[0].Text)
-	}
+	mcptest.ExpectContent(t, "failed to call dendrite_dist_decompose", func() (*CallToolResult, error) {
+		return callTool("dendrite_dist_decompose", map[string]interface{}{
+			"project_name": "CarlaEngine",
+			"language":     "rust",
+			"modules": []interface{}{
+				"render-pipeline",
+				"storage-engine",
+			},
+		})
+	}, "wgpu")
 }
 
 // testDistCodebaseMCPToolsStep6: 3. Test dendrite_dist_interop
@@ -1230,30 +1222,22 @@ func testDistCodebaseMCPToolsStep6(t *testing.T, callTool func(name string, args
 
 // testDistCodebaseMCPToolsStep7: Complete dependency feature
 func testDistCodebaseMCPToolsStep7(t *testing.T, callTool func(name string, args map[string]interface{}) (*CallToolResult, error), err error, coordID string) {
-	resComplete, err := callTool("dendrite_dist_interop", map[string]interface{}{
-		"action":          "complete",
-		"coordination_id": coordID,
-	})
-	if err != nil {
-		t.Fatalf("failed to complete interop: %v", err)
-	}
-	if !strings.Contains(resComplete.Content[0].Text, "dependency_completed") {
-		t.Errorf("expected dependency_completed, got: %s", resComplete.Content[0].Text)
-	}
+	mcptest.ExpectContent(t, "failed to complete interop", func() (*CallToolResult, error) {
+		return callTool("dendrite_dist_interop", map[string]interface{}{
+			"action":          "complete",
+			"coordination_id": coordID,
+		})
+	}, "dependency_completed")
 }
 
 // testDistCodebaseMCPToolsStep8: Reconcile
 func testDistCodebaseMCPToolsStep8(t *testing.T, callTool func(name string, args map[string]interface{}) (*CallToolResult, error), err error, coordID string) {
-	resRec, err := callTool("dendrite_dist_interop", map[string]interface{}{
-		"action":          "reconcile",
-		"coordination_id": coordID,
-	})
-	if err != nil {
-		t.Fatalf("failed to reconcile interop: %v", err)
-	}
-	if !strings.Contains(resRec.Content[0].Text, "successfully_reconciled") {
-		t.Errorf("expected successfully_reconciled, got: %s", resRec.Content[0].Text)
-	}
+	mcptest.ExpectContent(t, "failed to reconcile interop", func() (*CallToolResult, error) {
+		return callTool("dendrite_dist_interop", map[string]interface{}{
+			"action":          "reconcile",
+			"coordination_id": coordID,
+		})
+	}, "successfully_reconciled")
 }
 
 // testDistCodebaseMCPToolsStep9: List

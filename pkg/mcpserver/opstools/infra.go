@@ -43,17 +43,10 @@ func registerMigrateTools(s *Server, deps Dependencies) {
 	}, serviceMoveHandler())
 
 	// dendrite_service_plan
-	s.RegisterTool(Tool{
-		Name:        "dendrite_service_plan",
-		Description: "Evaluates hardware capacity (RAM and Disk) and returns which services can live on a Debian server (e.g. 4 GB RAM with 1 TB Disk)",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"ram_mb":  TypedProp("integer", "Server RAM in MB (default: 4096)"),
-				"disk_gb": TypedProp("integer", "Server Disk in GB (default: 1000)"),
-			},
-		},
-	}, servicePlanHandler())
+	AddTool(s, "dendrite_service_plan", "Evaluates hardware capacity (RAM and Disk) and returns which services can live on a Debian server (e.g. 4 GB RAM with 1 TB Disk)", PropsSchema(map[string]interface{}{
+		"ram_mb":  TypedProp("integer", "Server RAM in MB (default: 4096)"),
+		"disk_gb": TypedProp("integer", "Server Disk in GB (default: 1000)"),
+	}), servicePlanHandler())
 }
 
 // serviceMoveHandler handles the dendrite_service_move tool.
@@ -110,23 +103,16 @@ func servicePlanHandler() ToolHandler {
 
 func registerPerfTools(s *Server, deps Dependencies) {
 	// 20. dendrite_bench_run
-	s.RegisterTool(Tool{
-		Name:        "dendrite_bench_run",
-		Description: "Execute an automated k6 or synthetic performance benchmark measuring TTFT, TPS, gateway cascade failover latency, or sliding window budget concurrency",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"mode":              TypedProp("string", "Benchmark mode: 'inference', 'gateway', 'stress', 'matrix' (default: 'inference')"),
-				"engine_id":         TypedProp("string", "Inference engine identifier (e.g. 'oxillama', 'ollama-metal', 'vllm-cluster')"),
-				"model":             TypedProp("string", "Model identifier (default: 'qwen2.5-coder-7b')"),
-				"endpoint":          TypedProp("string", "Target endpoint URL (default: auto-resolved from registered engine)"),
-				"failover_endpoint": TypedProp("string", "Secondary endpoint URL for failover testing"),
-				"virtual_users":     TypedProp("integer", "Number of concurrent virtual users (default: 5)"),
-				"duration_seconds":  TypedProp("integer", "Benchmark duration in seconds (default: 10)"),
-				"fault_injection":   TypedProp("string", "Simulated fault injection: 'none', 'rate-limit-429', 'node-glitch-503'"),
-			},
-		},
-	}, benchRunHandler())
+	AddTool(s, "dendrite_bench_run", "Execute an automated k6 or synthetic performance benchmark measuring TTFT, TPS, gateway cascade failover latency, or sliding window budget concurrency", PropsSchema(map[string]interface{}{
+		"mode":              TypedProp("string", "Benchmark mode: 'inference', 'gateway', 'stress', 'matrix' (default: 'inference')"),
+		"engine_id":         TypedProp("string", "Inference engine identifier (e.g. 'oxillama', 'ollama-metal', 'vllm-cluster')"),
+		"model":             TypedProp("string", "Model identifier (default: 'qwen2.5-coder-7b')"),
+		"endpoint":          TypedProp("string", "Target endpoint URL (default: auto-resolved from registered engine)"),
+		"failover_endpoint": TypedProp("string", "Secondary endpoint URL for failover testing"),
+		"virtual_users":     TypedProp("integer", "Number of concurrent virtual users (default: 5)"),
+		"duration_seconds":  TypedProp("integer", "Benchmark duration in seconds (default: 10)"),
+		"fault_injection":   TypedProp("string", "Simulated fault injection: 'none', 'rate-limit-429', 'node-glitch-503'"),
+	}), benchRunHandler())
 }
 
 // benchTargetURL is the endpoint a benchmark hits: the one given, else the engine's own, else a local default.
@@ -205,46 +191,25 @@ func registerDocusaurusTools(s *Server, deps Dependencies) {
 	svc := docusaurus.NewService()
 
 	// dendrite_docusaurus_generate
-	s.RegisterTool(Tool{
-		Name:        "dendrite_docusaurus_generate",
-		Description: "Generate complete Docusaurus v3 Docs-as-Code website, sidebar taxonomy, project sharing hub, and portable manifest from markdown specifications",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"docs_dir":     TypedProp("string", "Source markdown documentation directory (default: docs)"),
-				"target_dir":   TypedProp("string", "Target Docusaurus site directory (default: website)"),
-				"title":        TypedProp("string", "Site title (default: Dendrite Documentation)"),
-				"port":         TypedProp("integer", "Local preview port (default: 3000)"),
-				"sharing_tier": TypedProp("string", "Distribution visibility tier: 'public', 'internal', 'federated' (default: federated)"),
-			},
-		},
-	}, docusaurusGenerateHandler(svc))
+	AddTool(s, "dendrite_docusaurus_generate", "Generate complete Docusaurus v3 Docs-as-Code website, sidebar taxonomy, project sharing hub, and portable manifest from markdown specifications", PropsSchema(map[string]interface{}{
+		"docs_dir":     TypedProp("string", "Source markdown documentation directory (default: docs)"),
+		"target_dir":   TypedProp("string", "Target Docusaurus site directory (default: website)"),
+		"title":        TypedProp("string", "Site title (default: Dendrite Documentation)"),
+		"port":         TypedProp("integer", "Local preview port (default: 3000)"),
+		"sharing_tier": TypedProp("string", "Distribution visibility tier: 'public', 'internal', 'federated' (default: federated)"),
+	}), docusaurusGenerateHandler(svc))
 
 	// dendrite_docusaurus_share
-	s.RegisterTool(Tool{
-		Name:        "dendrite_docusaurus_share",
-		Description: "Package Docusaurus documentation into a portable distribution bundle (.tar.gz) with cryptographic SHA-256 sharing-manifest.json",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"site_dir":    TypedProp("string", "Generated Docusaurus site directory (default: website)"),
-				"bundle_path": TypedProp("string", "Destination archive path (default: <site_dir>/dendrite-docs.tar.gz)"),
-			},
-		},
-	}, docusaurusShareHandler(svc))
+	AddTool(s, "dendrite_docusaurus_share", "Package Docusaurus documentation into a portable distribution bundle (.tar.gz) with cryptographic SHA-256 sharing-manifest.json", PropsSchema(map[string]interface{}{
+		"site_dir":    TypedProp("string", "Generated Docusaurus site directory (default: website)"),
+		"bundle_path": TypedProp("string", "Destination archive path (default: <site_dir>/dendrite-docs.tar.gz)"),
+	}), docusaurusShareHandler(svc))
 
 	// dendrite_docusaurus_audit
-	s.RegisterTool(Tool{
-		Name:        "dendrite_docusaurus_audit",
-		Description: "Audit documentation completeness, frontmatter compliance, and feature traceability against codebase packages and Plane tickets",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"project_root": TypedProp("string", "Project root directory (default: .)"),
-				"docs_dir":     TypedProp("string", "Documentation source directory (default: docs)"),
-			},
-		},
-	}, docusaurusAuditHandler(svc))
+	AddTool(s, "dendrite_docusaurus_audit", "Audit documentation completeness, frontmatter compliance, and feature traceability against codebase packages and Plane tickets", PropsSchema(map[string]interface{}{
+		"project_root": TypedProp("string", "Project root directory (default: .)"),
+		"docs_dir":     TypedProp("string", "Documentation source directory (default: docs)"),
+	}), docusaurusAuditHandler(svc))
 }
 
 // docusaurusGenerateHandler handles the dendrite_docusaurus_generate tool.

@@ -111,14 +111,7 @@ func registerQueryTools(s *Server, deps Dependencies) {
 	}, queryReuseAuditHandler())
 
 	// 36. dendrite_ref_list
-	s.RegisterTool(Tool{
-		Name:        "dendrite_ref_list",
-		Description: "Lists registered Tier 1 source references for library reuse",
-		InputSchema: map[string]interface{}{
-			"type":       "object",
-			"properties": map[string]interface{}{},
-		},
-	}, refListHandler())
+	AddTool(s, "dendrite_ref_list", "Lists registered Tier 1 source references for library reuse", PropsSchema(map[string]interface{}{}), refListHandler())
 
 	// 37. dendrite_ref_add
 	s.RegisterTool(Tool{

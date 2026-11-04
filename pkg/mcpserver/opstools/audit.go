@@ -14,61 +14,33 @@ import (
 
 func registerAuditTools(s *Server, deps Dependencies) {
 	// dendrite_audit_changes
-	s.RegisterTool(Tool{
-		Name:        "dendrite_audit_changes",
-		Description: "Topological vendor audit and rebase engine for local/* stacked branches. Validates diffs, runs test suites, non-fast-forward merges into develop, and rebases downstream branches.",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"branch":     TypedProp("string", "Optional target branch (e.g. 'local/vcs'). If omitted, audits all pending branches topologically."),
-				"dry_run":    TypedProp("boolean", "Preview audit validation and rebase sequence without mutating branches."),
-				"max_tokens": TypedProp("integer", "Max token context ceiling for audit payload."),
-				"model":      TypedProp("string", "Inference model for audit review (default: qwen3.8:27b)."),
-			},
-		},
-	}, auditChangesHandler())
+	AddTool(s, "dendrite_audit_changes", "Topological vendor audit and rebase engine for local/* stacked branches. Validates diffs, runs test suites, non-fast-forward merges into develop, and rebases downstream branches.", PropsSchema(map[string]interface{}{
+		"branch":     TypedProp("string", "Optional target branch (e.g. 'local/vcs'). If omitted, audits all pending branches topologically."),
+		"dry_run":    TypedProp("boolean", "Preview audit validation and rebase sequence without mutating branches."),
+		"max_tokens": TypedProp("integer", "Max token context ceiling for audit payload."),
+		"model":      TypedProp("string", "Inference model for audit review (default: qwen3.8:27b)."),
+	}), auditChangesHandler())
 
 	// dendrite_github_sync
-	s.RegisterTool(Tool{
-		Name:        "dendrite_github_sync",
-		Description: "Mirror Plane verification state onto GitHub issues: open a HITL verification issue for every To Verify ticket, add missing labels, and close issues of tickets Done in Plane. Tickets come from Plane and the repository from the git origin remote.",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"repo":    TypedProp("string", "Target GitHub repository in owner/repo format (default: the origin remote of the working directory)"),
-				"dry_run": TypedProp("boolean", "Plan the GitHub changes without applying them"),
-				"tickets": map[string]interface{}{
-					"type":        "array",
-					"items":       map[string]interface{}{"type": "string"},
-					"description": "Limit the sync to these ticket IDs (default: every ticket)",
-				},
-			},
+	AddTool(s, "dendrite_github_sync", "Mirror Plane verification state onto GitHub issues: open a HITL verification issue for every To Verify ticket, add missing labels, and close issues of tickets Done in Plane. Tickets come from Plane and the repository from the git origin remote.", PropsSchema(map[string]interface{}{
+		"repo":    TypedProp("string", "Target GitHub repository in owner/repo format (default: the origin remote of the working directory)"),
+		"dry_run": TypedProp("boolean", "Plan the GitHub changes without applying them"),
+		"tickets": map[string]interface{}{
+			"type":        "array",
+			"items":       map[string]interface{}{"type": "string"},
+			"description": "Limit the sync to these ticket IDs (default: every ticket)",
 		},
-	}, githubSyncHandler(deps))
+	}), githubSyncHandler(deps))
 
 	// dendrite_vcs_guard
-	s.RegisterTool(Tool{
-		Name:        "dendrite_vcs_guard",
-		Description: "Check or enforce Git branch guardrails (prohibits direct work on main/master, guarantees develop default).",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"mode": TypedProp("string", "Execution mode: 'STANDARD', 'DEGRADED_BUDGET', or 'AUDIT_CHANGES' (default: STANDARD)"),
-			},
-		},
-	}, vcsGuardHandler())
+	AddTool(s, "dendrite_vcs_guard", "Check or enforce Git branch guardrails (prohibits direct work on main/master, guarantees develop default).", PropsSchema(map[string]interface{}{
+		"mode": TypedProp("string", "Execution mode: 'STANDARD', 'DEGRADED_BUDGET', or 'AUDIT_CHANGES' (default: STANDARD)"),
+	}), vcsGuardHandler())
 
 	// dendrite_remote_sync
-	s.RegisterTool(Tool{
-		Name:        "dendrite_remote_sync",
-		Description: "Fetch and detect remote commits/hotfixes, pull with rebase, and reconcile tickets.",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"branch": TypedProp("string", "Branch to sync (default: active branch)"),
-			},
-		},
-	}, remoteSyncHandler())
+	AddTool(s, "dendrite_remote_sync", "Fetch and detect remote commits/hotfixes, pull with rebase, and reconcile tickets.", PropsSchema(map[string]interface{}{
+		"branch": TypedProp("string", "Branch to sync (default: active branch)"),
+	}), remoteSyncHandler())
 
 	// dendrite_quality_audit
 	s.RegisterTool(Tool{
@@ -84,17 +56,10 @@ func registerAuditTools(s *Server, deps Dependencies) {
 	}, qualityAuditHandler())
 
 	// dendrite_hitl_sync
-	s.RegisterTool(Tool{
-		Name:        "dendrite_hitl_sync",
-		Description: "Poll the GitHub verification issue of every Plane To Verify ticket: issues closed as completed move the ticket to Done, reviewer comments are reported as feedback.",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"repo":    TypedProp("string", "Target GitHub repository in owner/repo format (default: the origin remote of the working directory)"),
-				"dry_run": TypedProp("boolean", "Report approvals without moving tickets to Done"),
-			},
-		},
-	}, hitlSyncHandler(deps))
+	AddTool(s, "dendrite_hitl_sync", "Poll the GitHub verification issue of every Plane To Verify ticket: issues closed as completed move the ticket to Done, reviewer comments are reported as feedback.", PropsSchema(map[string]interface{}{
+		"repo":    TypedProp("string", "Target GitHub repository in owner/repo format (default: the origin remote of the working directory)"),
+		"dry_run": TypedProp("boolean", "Report approvals without moving tickets to Done"),
+	}), hitlSyncHandler(deps))
 }
 
 // NewHITLSyncer builds the Plane/GitHub verification syncer, reusing the server's

@@ -19,26 +19,12 @@ import (
 // registerStatusAndTicketTools registers dendrite_env_status, dendrite_ticket_list, dendrite_ticket_update and dendrite_plane_issues.
 func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 	// 1. dendrite_env_status
-	s.RegisterTool(Tool{
-		Name:        "dendrite_env_status",
-		Description: "Query real-time health and status of replicated environment components (Docker, Plane, LiteLLM, Ollama)",
-		InputSchema: map[string]interface{}{
-			"type":       "object",
-			"properties": map[string]interface{}{},
-		},
-	}, envStatusHandler())
+	AddTool(s, "dendrite_env_status", "Query real-time health and status of replicated environment components (Docker, Plane, LiteLLM, Ollama)", PropsSchema(map[string]interface{}{}), envStatusHandler())
 
 	// 2. dendrite_ticket_list
-	s.RegisterTool(Tool{
-		Name:        "dendrite_ticket_list",
-		Description: "List all project tickets, their statuses, complexity scores, and milestones from DEV_STATUS.md",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"file": TypedProp("string", "Path to DEV_STATUS.md (default: DEV_STATUS.md)"),
-			},
-		},
-	}, ticketListHandler(deps))
+	AddTool(s, "dendrite_ticket_list", "List all project tickets, their statuses, complexity scores, and milestones from DEV_STATUS.md", PropsSchema(map[string]interface{}{
+		"file": TypedProp("string", "Path to DEV_STATUS.md (default: DEV_STATUS.md)"),
+	}), ticketListHandler(deps))
 
 	// 3. dendrite_ticket_update
 	s.RegisterTool(Tool{
@@ -56,70 +42,35 @@ func registerStatusAndTicketTools(s *Server, deps Dependencies) {
 	}, ticketUpdateHandler(deps))
 
 	// 4. dendrite_plane_issues
-	s.RegisterTool(Tool{
-		Name:        "dendrite_plane_issues",
-		Description: "Query issues from self-hosted Plane v2 project management container",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"workspace": TypedProp("string", "Workspace slug (default: dendrite-ws)"),
-				"project":   TypedProp("string", "Project ID or Identifier (default: DEN)"),
-			},
-		},
-	}, planeIssuesHandler(deps))
+	AddTool(s, "dendrite_plane_issues", "Query issues from self-hosted Plane v2 project management container", PropsSchema(map[string]interface{}{
+		"workspace": TypedProp("string", "Workspace slug (default: dendrite-ws)"),
+		"project":   TypedProp("string", "Project ID or Identifier (default: DEN)"),
+	}), planeIssuesHandler(deps))
 }
 
 // registerOllamaAndGatewayTools registers dendrite_ollama_probe, dendrite_topology_advisor, dendrite_gateway_render and dendrite_gateway_update.
 func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 	// 5. dendrite_ollama_probe
-	s.RegisterTool(Tool{
-		Name:        "dendrite_ollama_probe",
-		Description: "Probe local Ollama inference engine for latency and available local models (qwen2.5-coder, llama3.2, hermes3)",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"url": TypedProp("string", "Ollama base URL (default: http://127.0.0.1:11434)"),
-			},
-		},
-	}, ollamaProbeHandler(deps))
+	AddTool(s, "dendrite_ollama_probe", "Probe local Ollama inference engine for latency and available local models (qwen2.5-coder, llama3.2, hermes3)", PropsSchema(map[string]interface{}{
+		"url": TypedProp("string", "Ollama base URL (default: http://127.0.0.1:11434)"),
+	}), ollamaProbeHandler(deps))
 
 	// 6. dendrite_topology_advisor
-	s.RegisterTool(Tool{
-		Name:        "dendrite_topology_advisor",
-		Description: "Evaluate hardware capabilities of compute nodes and calculate optimal placement of Dendrite microservices",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"nodes": TypedProp("string", "Comma-separated node definitions (e.g. 'local=localhost,worker=100.84.12.25')"),
-			},
-		},
-	}, topologyAdvisorHandler())
+	AddTool(s, "dendrite_topology_advisor", "Evaluate hardware capabilities of compute nodes and calculate optimal placement of Dendrite microservices", PropsSchema(map[string]interface{}{
+		"nodes": TypedProp("string", "Comma-separated node definitions (e.g. 'local=localhost,worker=100.84.12.25')"),
+	}), topologyAdvisorHandler())
 
 	// 7. dendrite_gateway_render
-	s.RegisterTool(Tool{
-		Name:        "dendrite_gateway_render",
-		Description: "Render dynamic LiteLLM YAML routing configuration for a given topology scenario",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"scenario": TypedProp("string", "Topology scenario: 'local-hybrid', 'cloud-burst', 'full-local'"),
-			},
-		},
-	}, gatewayRenderHandler())
+	AddTool(s, "dendrite_gateway_render", "Render dynamic LiteLLM YAML routing configuration for a given topology scenario", PropsSchema(map[string]interface{}{
+		"scenario": TypedProp("string", "Topology scenario: 'local-hybrid', 'cloud-burst', 'full-local'"),
+	}), gatewayRenderHandler())
 
 	// dendrite_gateway_update
-	s.RegisterTool(Tool{
-		Name:        "dendrite_gateway_update",
-		Description: "Dynamically discover live inference engines (Ollama, OxiLLaMa, etc.), score loaded models by intelligence, and update LiteLLM routing table (default: ~/.dendrite/stacks/litellm_config.yaml)",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"file":               TypedProp("string", "Target litellm_config.yaml path (default: ~/.dendrite/stacks/litellm_config.yaml)"),
-				"dry_run":            TypedProp("boolean", "Simulate update without modifying disk (default: false)"),
-				"use_container_host": TypedProp("boolean", "Use host.docker.internal for container networking (default: true for the stacks directory)"),
-			},
-		},
-	}, gatewayUpdateHandler())
+	AddTool(s, "dendrite_gateway_update", "Dynamically discover live inference engines (Ollama, OxiLLaMa, etc.), score loaded models by intelligence, and update LiteLLM routing table (default: ~/.dendrite/stacks/litellm_config.yaml)", PropsSchema(map[string]interface{}{
+		"file":               TypedProp("string", "Target litellm_config.yaml path (default: ~/.dendrite/stacks/litellm_config.yaml)"),
+		"dry_run":            TypedProp("boolean", "Simulate update without modifying disk (default: false)"),
+		"use_container_host": TypedProp("boolean", "Use host.docker.internal for container networking (default: true for the stacks directory)"),
+	}), gatewayUpdateHandler())
 }
 
 // envStatusHandler handles the dendrite_env_status tool.

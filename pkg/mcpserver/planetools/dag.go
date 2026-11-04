@@ -22,31 +22,17 @@ func registerPlaneDAGTools(s *Server, deps Dependencies) {
 	handleSmartSelect := planeSmartSelectHandler(deps)
 
 	// 1. dendrite_ticket_smart_select
-	s.RegisterTool(Tool{
-		Name:        "dendrite_ticket_smart_select",
-		Description: "Smart selects the optimal unblocked ticket to be done based on priority (Urgent > High > Medium > Low), dependency relationships (DAG unblocked check), and downstream unblock impact (critical path weight). If ticket_id is specified by user, evaluates its blockers and selects it.",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"ticket_id": TypedProp("string", "Optional specific ticket ID requested by user (e.g. 'DEN-036')"),
-				"milestone": TypedProp("string", "Optional milestone name or filter"),
-				"file":      TypedProp("string", "Optional fallback source markdown file (default: DEV_STATUS.md)"),
-			},
-		},
-	}, handleSmartSelect)
+	AddTool(s, "dendrite_ticket_smart_select", "Smart selects the optimal unblocked ticket to be done based on priority (Urgent > High > Medium > Low), dependency relationships (DAG unblocked check), and downstream unblock impact (critical path weight). If ticket_id is specified by user, evaluates its blockers and selects it.", PropsSchema(map[string]interface{}{
+		"ticket_id": TypedProp("string", "Optional specific ticket ID requested by user (e.g. 'DEN-036')"),
+		"milestone": TypedProp("string", "Optional milestone name or filter"),
+		"file":      TypedProp("string", "Optional fallback source markdown file (default: DEV_STATUS.md)"),
+	}), handleSmartSelect)
 
 	// 2. dendrite_plane_ticket_smart_select (alias)
-	s.RegisterTool(Tool{
-		Name:        "dendrite_plane_ticket_smart_select",
-		Description: "Smart selects the optimal unblocked ticket from Plane v2 project management container respecting priority and blocker relationships.",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"ticket_id": TypedProp("string", "Optional specific ticket ID requested by user (e.g. 'DEN-036')"),
-				"milestone": TypedProp("string", "Optional milestone filter"),
-			},
-		},
-	}, handleSmartSelect)
+	AddTool(s, "dendrite_plane_ticket_smart_select", "Smart selects the optimal unblocked ticket from Plane v2 project management container respecting priority and blocker relationships.", PropsSchema(map[string]interface{}{
+		"ticket_id": TypedProp("string", "Optional specific ticket ID requested by user (e.g. 'DEN-036')"),
+		"milestone": TypedProp("string", "Optional milestone filter"),
+	}), handleSmartSelect)
 
 	// 3. dendrite_plane_relation_link
 	s.RegisterTool(Tool{
