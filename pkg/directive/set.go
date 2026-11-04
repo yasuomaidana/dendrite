@@ -26,6 +26,7 @@ type Set struct {
 	Duplication Duplication `toml:"duplication"`
 	Complexity  Complexity  `toml:"complexity"`
 	Structure   Structure   `toml:"structure"`
+	Immune      Immune      `toml:"immune"`
 	Lint        Lint        `toml:"lint"`
 	Security    Security    `toml:"security"`
 	Done        Done        `toml:"done"`
@@ -95,6 +96,13 @@ type Structure struct {
 	Exclude               []string `toml:"exclude"`
 }
 
+// Immune are the score bands `dendrite immune scan` maps to a verdict: a skill scoring up to ApproveMax is
+// approved, up to HoldMax needs a recorded human decision, above that it is quarantined.
+type Immune struct {
+	ApproveMax int `toml:"approve_max"`
+	HoldMax    int `toml:"hold_max"`
+}
+
 // Lint picks how strict the generated lint configurations are.
 type Lint struct {
 	Strictness string `toml:"strictness"`
@@ -126,6 +134,7 @@ func Defaults() Set {
 		Duplication: Duplication{MaxPercent: 0, MinTokens: 50, MinLines: 5, IncludeTests: true, Strategies: []string{"helper_function", "macro", "rstest"}},
 		Complexity:  Complexity{MaxCyclomatic: 10, MaxCognitive: 15, Exclude: []string{}},
 		Structure:   Structure{MaxFilesPerDir: 12, MaxDirProductionLines: 3000, MaxPrefixGroup: 4, RequireDocs: true, DocsFiles: []string{"README.md", "CHANGELOG.md"}, Exclude: []string{}},
+		Immune:      Immune{ApproveMax: 20, HoldMax: 50},
 		Lint:        Lint{Strictness: "strict"},
 		Security:    Security{FailOn: "high", Secrets: true},
 		Done:        Done{AutoDone: true, HumanReviewLabels: []string{"needs-human-review"}},
@@ -160,6 +169,7 @@ func (s Set) Validate() error {
 		check(s.Structure.MaxDirProductionLines > 0, "structure.max_dir_production_lines must be at least 1"),
 		check(s.Structure.MaxPrefixGroup >= 2, "structure.max_prefix_group must be at least 2"),
 		check(!s.Structure.RequireDocs || len(s.Structure.DocsFiles) > 0, "structure.docs_files needs at least one file name when structure.require_docs is on"),
+		check(s.Immune.ApproveMax >= 0 && s.Immune.ApproveMax < s.Immune.HoldMax && s.Immune.HoldMax < 100, "immune.approve_max (%d) must be below immune.hold_max (%d), which must be below 100", s.Immune.ApproveMax, s.Immune.HoldMax),
 		check(oneOf(s.Lint.Strictness, "relaxed", "standard", "strict"), "lint.strictness must be relaxed, standard or strict"),
 		check(oneOf(s.Security.FailOn, "low", "medium", "high", "critical"), "security.fail_on must be low, medium, high or critical"),
 		check(len(s.Languages.Preference) > 0, "languages.preference needs at least one language"),

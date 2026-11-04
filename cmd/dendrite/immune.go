@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"Dendrite/pkg/directive"
 	"Dendrite/pkg/immune"
 )
 
@@ -19,9 +20,27 @@ func newImmuneCmd() *cobra.Command {
 	return cmd
 }
 
+// immuneScanOptions are the flags of `immune scan`; a band flag counts only when it was given.
 type immuneScanOptions struct {
 	immune.Thresholds
 	LLM bool
+}
+
+// immuneThresholds are the bands to judge by: the project's directives (immune.approve_max and
+// immune.hold_max), then any band a flag sets.
+func immuneThresholds(cmd *cobra.Command, o immuneScanOptions) (immune.Thresholds, error) {
+	set, err := directive.Load(".")
+	if err != nil {
+		return immune.Thresholds{}, err
+	}
+	t := immune.Thresholds{ApproveMax: set.Immune.ApproveMax, HoldMax: set.Immune.HoldMax}
+	if cmd.Flags().Changed("approve-max") {
+		t.ApproveMax = o.ApproveMax
+	}
+	if cmd.Flags().Changed("hold-max") {
+		t.HoldMax = o.HoldMax
+	}
+	return t, nil
 }
 
 func newImmuneScanCmd() *cobra.Command {
@@ -29,16 +48,22 @@ func newImmuneScanCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "scan <skill-path>",
 		Short: "Scan a skill and print approve / hold / quarantine",
-		Long: "Runs SkillSpector over a skill directory and maps its risk score to a verdict: 0-20 approve (exit 0),\n" +
-			"21-50 hold (exit 3, a human decision is needed), 51+ quarantine (exit 4). The scanner is static by\n" +
+		Long: "Runs SkillSpector over a skill directory and maps its risk score to a verdict: up to immune.approve_max\n" +
+			"(20) approve (exit 0), up to immune.hold_max (50) hold (exit 3, a human decision is needed), above that\n" +
+			"quarantine (exit 4). The bands come from .github/dendrite/directives.toml; a flag overrides one. The scanner is static by\n" +
 			"default; --llm adds its model pass, which needs a provider in the environment (SKILLSPECTOR_PROVIDER).",
 		Args: asUsage(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			t, err := immuneThresholds(cmd, o)
+			if err != nil {
+				return err
+			}
+			o.Thresholds = t
 			return runImmuneScan(cmd.Context(), cmd.OutOrStdout(), args[0], o)
 		},
 	}
-	cmd.Flags().IntVar(&o.ApproveMax, "approve-max", o.ApproveMax, "highest score that is approved")
-	cmd.Flags().IntVar(&o.HoldMax, "hold-max", o.HoldMax, "highest score that is held; above it is quarantined")
+	cmd.Flags().IntVar(&o.ApproveMax, "approve-max", o.ApproveMax, "highest score that is approved (default: immune.approve_max of the directives)")
+	cmd.Flags().IntVar(&o.HoldMax, "hold-max", o.HoldMax, "highest score that is held; above it is quarantined (default: immune.hold_max of the directives)")
 	cmd.Flags().BoolVar(&o.LLM, "llm", false, "also run the scanner's model pass")
 	return cmd
 }
