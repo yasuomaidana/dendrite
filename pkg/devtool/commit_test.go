@@ -1712,3 +1712,23 @@ func TestExtractTicketIDAndTitleAnyProjectIdentifier(t *testing.T) {
 		"No ticket in this title":      {"", "No ticket in this title"},
 	}, func(in string) [2]string { id, title := extractTicketIDAndTitle(in); return [2]string{id, title} })
 }
+
+func TestResolveSmartTicket_SkipsTheProjectsProtectedBranches(t *testing.T) {
+	isolateEnvironment(t)
+	dir := t.TempDir()
+	for _, args := range [][]string{{"init", "-b", "DEN-77-line", dir}, {"-C", dir, "config", "user.name", "T"}, {"-C", dir, "config", "user.email", "t@t.ai"}, {"-C", dir, "commit", "--allow-empty", "-m", "init"}} {
+		_ = exec.Command("git", args...).Run()
+	}
+	path := filepath.Join(dir, ".github", "dendrite", "directives.toml")
+	_ = os.MkdirAll(filepath.Dir(path), 0o755)
+	_ = os.WriteFile(path, []byte("schema = 1\n[git]\nintegration_branch = \"DEN-77-line\"\n"), 0o644)
+
+	if info, _ := ResolveSmartTicket(context.Background(), dir, nil); info != nil && strings.HasPrefix(info.Source, "Git Branch") {
+		t.Errorf("the integration branch is protected, its name names no ticket: %+v", info)
+	}
+	_ = exec.Command("git", "-C", dir, "checkout", "-q", "-b", "agent/DEN-77").Run()
+	info, err := ResolveSmartTicket(context.Background(), dir, nil)
+	if err != nil || info.ID != "DEN-77" || !strings.HasPrefix(info.Source, "Git Branch") {
+		t.Errorf("a work branch names its ticket: %+v, %v", info, err)
+	}
+}

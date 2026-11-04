@@ -480,13 +480,3 @@ func TestGitGuardKeepsDevelopForADetectedTrunk(t *testing.T) {
 		t.Fatalf("IntegrationBranch = %q, want develop", got)
 	}
 }
-
-func TestGitGuardKeepsTheOldEvacuateName(t *testing.T) {
-	dir := directiveRepo(t, "release")
-	if err := NewGitGuard(dir, ModeStandard).EnsureAndCheckoutDevelop(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if cur, _ := NewGitGuard(dir, ModeStandard).CurrentBranch(context.Background()); cur != "release" {
-		t.Fatalf("checked out %q, want release", cur)
-	}
-}

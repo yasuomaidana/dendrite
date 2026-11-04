@@ -115,13 +115,6 @@ func (g *GitGuard) target() branchpolicy.Target {
 	return t
 }
 
-// EnsureAndCheckoutDevelop is EnsureAndCheckoutIntegration under the name `dendrite vcs evacuate` still calls.
-//
-// Deprecated: use EnsureAndCheckoutIntegration; this alias goes when that command moves to its own package.
-func (g *GitGuard) EnsureAndCheckoutDevelop(ctx context.Context) error {
-	return g.EnsureAndCheckoutIntegration(ctx)
-}
-
 // IntegrationBranch is the branch this repository's work merges into.
 func (g *GitGuard) IntegrationBranch() string { return g.target().Branch }
 
