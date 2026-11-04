@@ -26,7 +26,7 @@ First release from `develop` to `main` since 2026-10-19 (180 commits). Which com
 
 ### Changed
 
-- **The Go complexity, folding and token analyzers in `pkg/ast` and `pkg/ai/tokenopt` are deleted (DEN-813).** A one-off comparison on 489 files and 2,955 functions found identical cyclomatic values (`docs/quality/core-parity.md`). The sidecar is about 4 times slower than the in-process analyzer on that corpus (0.40 s against 0.10 s); the fix is tracked as DCORE-13. `pkg/ast` keeps the symbol graph until it moves (DRAG-79).
+- **The Go complexity, folding and token analyzers in `pkg/ast` and `pkg/ai/tokenopt` are deleted (DEN-813).** A one-off comparison on 489 files and 2,955 functions found identical cyclomatic values (`docs/quality/core-parity.md`). Re-measured after DCORE-13 (which replaced tree-sitter for Go with a lexer scan), the sidecar takes about 19 ms against about 99 ms for the removed analyzer on that corpus, about 5 times faster, so the 3x target is met; the first measurement, 0.40 s against 0.10 s, is kept in the page. `pkg/ast` keeps the symbol graph until it moves (DRAG-79).
 - API keys and vendor settings are configured once in `$DENDRITE_HOME/.env`; a project `.env` no longer overrides them (DEN-1057, DEN-343).
 - Plane, Jira and Linear clients, topology, the HTTP server and the inference engines share transport and stream helpers instead of repeating blocks (DEN-419, DEN-444).
 - Go files over 500 production lines were split by responsibility (DEN-412, DEN-1053).
