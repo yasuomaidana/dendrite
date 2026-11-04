@@ -1,6 +1,9 @@
 package ticketlock
 
 import (
+	"Dendrite/pkg/branchpolicy"
+	"Dendrite/pkg/tracker"
+	"Dendrite/pkg/tracker/plane"
 	"context"
 	"errors"
 	"fmt"
@@ -9,9 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"Dendrite/pkg/tracker"
-	"Dendrite/pkg/tracker/plane"
 )
 
 const (
@@ -105,6 +105,15 @@ func isMainCheckout(top string) bool {
 	return err == nil && st.IsDir()
 }
 
+// refuseProtectedMainCheckout locks writes while a protected branch (the integration branch, main, master) is
+// checked out in the main checkout, where only work copies may edit.
+func refuseProtectedMainCheckout(top, branch string) error {
+	if isMainCheckout(top) && branchpolicy.For(top).IsProtected(branch) {
+		return locked("%s is checked out in the main checkout; work in a dendrite-work/ copy", branch)
+	}
+	return nil
+}
+
 // Require is the single write guard. It returns nil when a write to target (an absolute path) is
 // allowed and an *ErrLocked when it is not. It fails closed: a missing token or claim, a ticket that
 // is not In Progress, and an unreadable claim all refuse. Repositories that are not Plane projects,
@@ -122,28 +131,35 @@ func Require(ctx context.Context, d Deps, target string) error {
 	}
 
 	branch := d.Branch(top)
-	switch branch {
-	case "develop", "main", "master":
-		if isMainCheckout(top) {
-			return locked("%s is checked out in the main checkout; work in a dendrite-work/ copy", branch)
-		}
+	if err := refuseProtectedMainCheckout(top, branch); err != nil {
+		return err
 	}
 
 	now := d.Now()
+	claim, err := claimOf(d, branch, now)
+	if err != nil {
+		return err
+	}
+	return checkState(ctx, d, top, claim, now)
+}
+
+// claimOf is the claim that lets the branch be written to: it needs a live session token, a readable claim and a
+// claim for the ticket the branch is named after.
+func claimOf(d Deps, branch string, now time.Time) (Claim, error) {
 	if _, ok := d.Store.LatestToken(now); !ok {
-		return locked("no Dendrite session/ticket claim")
+		return Claim{}, locked("no Dendrite session/ticket claim")
 	}
 	claim, err := d.Store.ClaimFor(branch)
 	if errors.Is(err, ErrNoClaim) {
-		return locked("no Dendrite session/ticket claim")
+		return Claim{}, locked("no Dendrite session/ticket claim")
 	}
 	if err != nil {
-		return locked("the claim of %s is unreadable (%v)", branch, err)
+		return Claim{}, locked("the claim of %s is unreadable (%v)", branch, err)
 	}
 	if want, ok := TicketOfBranch(branch); ok && !strings.EqualFold(want, claim.Ticket) {
-		return locked("branch %s belongs to %s but the claim is for %s", branch, want, claim.Ticket)
+		return Claim{}, locked("branch %s belongs to %s but the claim is for %s", branch, want, claim.Ticket)
 	}
-	return checkState(ctx, d, top, claim, now)
+	return claim, nil
 }
 
 // checkState confirms the claimed ticket is In Progress, from the claim's cache when it is fresh and
@@ -167,4 +183,35 @@ func checkState(ctx context.Context, d Deps, top string, c Claim, now time.Time)
 		return locked("%s is %s, not In Progress", c.Ticket, tracker.StatusDisplayName(st))
 	}
 	return nil
+}
+
+// Mode says what the lifecycle check protects.
+type Mode int
+
+const (
+	// ModeCommit protects a commit: the ticket must be In Progress. A ticket in To Do or Backlog is
+	// started on the spot; Blocked, To Verify, Done and Cancelled tickets are refused.
+	ModeCommit Mode = iota
+	// ModeStart protects the start of work: like ModeCommit, and a Blocked ticket is resumed.
+	ModeStart
+)
+
+// Allowed applies the lifecycle table to a ticket in state st. move is true when the work may go ahead
+// after moving the ticket to In Progress; a non-empty hint means the state refuses the work.
+func Allowed(st tracker.Status, mode Mode, ticket string) (move bool, hint string) {
+	switch st {
+	case tracker.StatusInProgress:
+		return false, ""
+	case tracker.StatusTodo, tracker.StatusBacklog:
+		return true, ""
+	case tracker.StatusBlocked:
+		if mode == ModeCommit {
+			return false, fmt.Sprintf("resume it first with `dendrite chronos ticket set %s \"in progress\"`", ticket)
+		}
+		return true, ""
+	case tracker.StatusInReview:
+		return false, fmt.Sprintf("it is awaiting verification; reopen it with `dendrite chronos ticket set %s \"in progress\"` for review fixes, or create a follow-up ticket", ticket)
+	default: // Done, Cancelled
+		return false, "it is finished; create a follow-up ticket with `dendrite chronos create`, or reopen it deliberately with `dendrite chronos ticket set`"
+	}
 }

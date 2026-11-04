@@ -25,7 +25,7 @@ func ciContent(dir string, s directive.Set) []byte {
 		return nil
 	}
 	comps, _ := Detect(dir)
-	return Render(comps, s, ext)
+	return Render(comps, s, ext, BranchesOf(dir))
 }
 
 func present(dir string, k Kind) bool {

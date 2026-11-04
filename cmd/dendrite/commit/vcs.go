@@ -24,7 +24,7 @@ func NewMyelinCmd() *cobra.Command {
 		&cobra.Command{
 			Use:     "check",
 			Aliases: []string{"guard", "status"},
-			Short:   "Check the branch policy; on main/master, move to develop and exit 1",
+			Short:   "Check the branch policy; on main/master, move to the integration branch and exit 1",
 			Args:    cli.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return runMyelinCheck(cmd.Context(), guard(), cmd.OutOrStdout())
@@ -41,13 +41,14 @@ func NewMyelinCmd() *cobra.Command {
 		},
 		&cobra.Command{
 			Use:   "evacuate",
-			Short: "Check out develop, creating it when missing",
+			Short: "Check out the integration branch, creating it when missing",
 			Args:  cli.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
-				if err := guard().EnsureAndCheckoutDevelop(cmd.Context()); err != nil {
-					return fmt.Errorf("checkout develop: %w", err)
+				g := guard()
+				if err := g.EnsureAndCheckoutIntegration(cmd.Context()); err != nil {
+					return fmt.Errorf("checkout %s: %w", g.IntegrationBranch(), err)
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), "[✓] Successfully evacuated to develop branch.")
+				fmt.Fprintf(cmd.OutOrStdout(), "[✓] Successfully evacuated to %s branch.\n", g.IntegrationBranch())
 				return nil
 			},
 		},
@@ -65,7 +66,7 @@ func runMyelinCheck(ctx context.Context, g *vcs.GitGuard, out io.Writer) error {
 	}
 	fmt.Fprintln(out, "[✓] VCS Guard Active:")
 	fmt.Fprintf(out, "    - Active Branch:  %s\n", branch)
-	fmt.Fprintln(out, "    - Policy:         Forbidden on main/master; defaults to develop")
+	fmt.Fprintf(out, "    - Policy:         Forbidden on main/master; defaults to %s\n", g.IntegrationBranch())
 	return nil
 }
 

@@ -44,6 +44,8 @@ The sidecar's analysis is 7 times faster than the Go analyzer on one thread and 
 
 `assert.CheckPackageComplexity` sends a package's files as one `ast.complexity_batch` request (`coreclient.ComplexityBatch`). An older `dendrite-core` without the method makes the call fail with `coreclient.ErrBatchUnsupported`, which says to run `dendrite update --dev`.
 
+A second run at dendrite-core-rs `f315402` (20 runs after a warm-up, 489 requests on stdin, one process including its start) agrees: 87 ms best for the Go analyzer against 18 ms for the sidecar, about 5 times faster, for 2,955 functions found by both. The two runs are not identical work: the sidecar also computes cognitive complexity and parses JSON, the Go program only walked the AST but read the files from disk. For a changed file or a few functions the difference is milliseconds.
+
 ## Consequences
 
 - `dendrite-core` is required. `dendrite install --dev` and `dendrite update --dev` build it with the other members, and `dendrite doctor` reports whether it was found. Without it, callers get `coreclient.ErrBinaryMissing`, which says how to install it. There is no Go fallback.

@@ -173,8 +173,8 @@ func TestGitGuard_WithRunner_And_DetachedHead(t *testing.T) {
 		t.Fatalf("expected develop, got %s", branch)
 	}
 
-	// Test EnsureAndCheckoutDevelop when already on develop
-	if err := guard.EnsureAndCheckoutDevelop(ctx); err != nil {
+	// Test EnsureAndCheckoutIntegration when already on develop
+	if err := guard.EnsureAndCheckoutIntegration(ctx); err != nil {
 		t.Fatalf("ensure develop failed: %v", err)
 	}
 }
@@ -202,7 +202,7 @@ func TestGitGuard_CurrentBranch_Errors(t *testing.T) {
 	}
 }
 
-func TestGitGuard_EnsureAndCheckoutDevelop_CheckoutFail(t *testing.T) {
+func TestGitGuard_EnsureAndCheckoutIntegration_CheckoutFail(t *testing.T) {
 	repoDir, _ := setupRealRepo(t)
 	runner := &interceptorRunner{
 		base: &DefaultGitRunner{},
@@ -211,13 +211,13 @@ func TestGitGuard_EnsureAndCheckoutDevelop_CheckoutFail(t *testing.T) {
 		},
 	}
 	guard := NewGitGuard(repoDir, ModeStandard).WithRunner(runner)
-	err := guard.EnsureAndCheckoutDevelop(context.Background())
+	err := guard.EnsureAndCheckoutIntegration(context.Background())
 	if err == nil {
 		t.Fatalf("expected checkout develop error, got nil")
 	}
 }
 
-func TestGitGuard_EnsureAndCheckoutDevelop_RemoteDevelop(t *testing.T) {
+func TestGitGuard_EnsureAndCheckoutIntegration_RemoteDevelop(t *testing.T) {
 	repoDir, _ := setupRealRepo(t)
 	ctx := context.Background()
 
@@ -226,13 +226,13 @@ func TestGitGuard_EnsureAndCheckoutDevelop_RemoteDevelop(t *testing.T) {
 	runGitCmd(t, repoDir, "branch", "-D", "develop")
 
 	guard := NewGitGuard(repoDir, ModeStandard)
-	err := guard.EnsureAndCheckoutDevelop(ctx)
+	err := guard.EnsureAndCheckoutIntegration(ctx)
 	if err != nil {
 		t.Fatalf("expected checkout from remote develop to succeed: %v", err)
 	}
 }
 
-func TestGitGuard_EnsureAndCheckoutDevelop_NeitherExists(t *testing.T) {
+func TestGitGuard_EnsureAndCheckoutIntegration_NeitherExists(t *testing.T) {
 	tmp := t.TempDir()
 	repoDir := filepath.Join(tmp, "bare_repo")
 	_ = os.MkdirAll(repoDir, 0755)
@@ -245,7 +245,7 @@ func TestGitGuard_EnsureAndCheckoutDevelop_NeitherExists(t *testing.T) {
 	runGitCmd(t, repoDir, "commit", "-m", "init")
 
 	guard := NewGitGuard(repoDir, ModeStandard)
-	err := guard.EnsureAndCheckoutDevelop(context.Background())
+	err := guard.EnsureAndCheckoutIntegration(context.Background())
 	if err != nil {
 		t.Fatalf("expected create develop branch: %v", err)
 	}
@@ -396,7 +396,7 @@ func TestGitGuard_CurrentBranch_DetachedHead_Success(t *testing.T) {
 	}
 }
 
-func TestGitGuard_EnsureAndCheckoutDevelop_TrackingFail_And_CreateFail(t *testing.T) {
+func TestGitGuard_EnsureAndCheckoutIntegration_TrackingFail_And_CreateFail(t *testing.T) {
 	repoDir, _ := setupRealRepo(t)
 	ctx := context.Background()
 
@@ -410,7 +410,7 @@ func TestGitGuard_EnsureAndCheckoutDevelop_TrackingFail_And_CreateFail(t *testin
 		},
 	}
 	guard1 := NewGitGuard(repoDir, ModeStandard).WithRunner(runner1)
-	err := guard1.EnsureAndCheckoutDevelop(ctx)
+	err := guard1.EnsureAndCheckoutIntegration(ctx)
 	if err == nil || !strings.Contains(err.Error(), "failed to track remote origin/develop") {
 		t.Fatalf("expected failed to track error, got: %v", err)
 	}
@@ -427,8 +427,56 @@ func TestGitGuard_EnsureAndCheckoutDevelop_TrackingFail_And_CreateFail(t *testin
 	runGitCmd(t, r2, "commit", "-m", "init")
 
 	guard2 := NewGitGuard(r2, ModeStandard).WithRunner(runner1)
-	err = guard2.EnsureAndCheckoutDevelop(ctx)
+	err = guard2.EnsureAndCheckoutIntegration(ctx)
 	if err == nil || !strings.Contains(err.Error(), "failed to create develop branch") {
 		t.Fatalf("expected failed to create develop error, got: %v", err)
+	}
+}
+
+// directiveRepo is a repository with one commit on main whose directives choose integration as the branch.
+func directiveRepo(t *testing.T, integration string) string {
+	t.Helper()
+	dir := t.TempDir()
+	runGitCmd(t, dir, "init", "-b", "main")
+	runGitCmd(t, dir, "config", "user.name", "Agent")
+	runGitCmd(t, dir, "config", "user.email", "agent@dendrite.ai")
+	_ = os.WriteFile(filepath.Join(dir, "f"), []byte("data"), 0o644)
+	runGitCmd(t, dir, "add", "f")
+	runGitCmd(t, dir, "commit", "-m", "init")
+	path := filepath.Join(dir, ".github", "dendrite", "directives.toml")
+	_ = os.MkdirAll(filepath.Dir(path), 0o755)
+	_ = os.WriteFile(path, []byte("schema = 1\n[git]\nintegration_branch = \""+integration+"\"\n"), 0o644)
+	return dir
+}
+
+func TestGitGuardMovesToTheConfiguredIntegrationBranch(t *testing.T) {
+	dir := directiveRepo(t, "release")
+	g := NewGitGuard(dir, ModeStandard)
+	if g.IntegrationBranch() != "release" || g.PushRemote() != "origin" {
+		t.Fatalf("integration %q remote %q", g.IntegrationBranch(), g.PushRemote())
+	}
+	branch, err := g.PreFlightBranchCheck(context.Background())
+	if !errors.Is(err, ErrForbiddenBranchMain) || branch != "release" {
+		t.Fatalf("PreFlightBranchCheck = %q, %v; want release, ErrForbiddenBranchMain", branch, err)
+	}
+	if cur, _ := g.CurrentBranch(context.Background()); cur != "release" {
+		t.Fatalf("checked out %q, want release", cur)
+	}
+}
+
+func TestGitGuardAllowsMainWhenTheDirectivesChooseIt(t *testing.T) {
+	dir := directiveRepo(t, "main")
+	g := NewGitGuard(dir, ModeStandard)
+	branch, err := g.PreFlightBranchCheck(context.Background())
+	if err != nil || branch != "main" {
+		t.Fatalf("PreFlightBranchCheck = %q, %v; want main, nil", branch, err)
+	}
+}
+
+func TestGitGuardKeepsDevelopForADetectedTrunk(t *testing.T) {
+	dir := t.TempDir()
+	runGitCmd(t, dir, "init", "-b", "main")
+	if got := NewGitGuard(dir, ModeStandard).IntegrationBranch(); got != "develop" {
+		t.Fatalf("IntegrationBranch = %q, want develop", got)
 	}
 }

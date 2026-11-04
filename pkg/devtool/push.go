@@ -1,11 +1,13 @@
 package devtool
 
 import (
+	"Dendrite/pkg/branchpolicy"
 	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -55,41 +57,72 @@ func PushCurrentBranch(ctx context.Context, repoDir string) PushOutcome {
 	if strings.EqualFold(os.Getenv("DENDRITE_COMMIT_PUSH"), "false") {
 		return PushOutcome{Skipped: true, Reason: "DENDRITE_COMMIT_PUSH=false"}
 	}
-	return pushBranch(newGitRunner(ctx, repoDir))
+	return pushBranch(newGitRunner(ctx, repoDir), pushRemoteFor(repoDir))
 }
 
-func pushBranch(runGit func(args ...string) (string, error)) PushOutcome {
-	remotesOut, err := runGit("remote")
+// pushRemoteFor is the remote the project's synapse member says branches go to (a fork); "" means the default
+// choice, origin.
+func pushRemoteFor(repoDir string) string {
+	if repoDir == "" {
+		repoDir = "."
+	}
+	if r := branchpolicy.For(repoDir).PushRemote; r != branchpolicy.DefaultRemote {
+		return r
+	}
+	return ""
+}
+
+// remoteNames lists the repository's remotes; none when git cannot say.
+func remoteNames(runGit func(args ...string) (string, error)) []string {
+	out, err := runGit("remote")
 	if err != nil {
-		return PushOutcome{Skipped: true, Reason: "no remote configured"}
+		return nil
 	}
 	var remotes []string
-	for _, r := range strings.Split(remotesOut, "\n") {
+	for _, r := range strings.Split(out, "\n") {
 		if r = strings.TrimSpace(r); r != "" {
 			remotes = append(remotes, r)
 		}
 	}
+	return remotes
+}
+
+// branchRefusal is the outcome that stops a push of branch (detached HEAD, main, master), or nil.
+func branchRefusal(branch string) *PushOutcome {
+	switch branch {
+	case "HEAD", "":
+		return &PushOutcome{Skipped: true, Reason: "detached HEAD; nothing to push"}
+	case "main", "master":
+		refuseErr := fmt.Errorf("pushing %s directly is refused (branch guard)", branch)
+		return &PushOutcome{Skipped: true, Reason: refuseErr.Error(), Branch: branch, Err: refuseErr}
+	}
+	return nil
+}
+
+// firstPresent is the first wanted remote that exists, or the first remote there is.
+func firstPresent(remotes []string, wanted ...string) string {
+	for _, w := range wanted {
+		if w != "" && slices.Contains(remotes, w) {
+			return w
+		}
+	}
+	return remotes[0]
+}
+
+// pushBranch pushes the current branch. prefer names the remote to use when the repository has it; otherwise
+// origin is preferred over the other remotes.
+func pushBranch(runGit func(args ...string) (string, error), prefer string) PushOutcome {
+	remotes := remoteNames(runGit)
 	if len(remotes) == 0 {
 		return PushOutcome{Skipped: true, Reason: "no remote configured"}
 	}
-
 	branch, _ := runGit("rev-parse", "--abbrev-ref", "HEAD")
 	branch = strings.TrimSpace(branch)
-	if branch == "HEAD" || branch == "" {
-		return PushOutcome{Skipped: true, Reason: "detached HEAD; nothing to push"}
-	}
-	if branch == "main" || branch == "master" {
-		refuseErr := fmt.Errorf("pushing %s directly is refused (branch guard)", branch)
-		return PushOutcome{Skipped: true, Reason: refuseErr.Error(), Branch: branch, Err: refuseErr}
+	if refused := branchRefusal(branch); refused != nil {
+		return *refused
 	}
 
-	targetRemote := remotes[0]
-	for _, r := range remotes {
-		if r == "origin" {
-			targetRemote = "origin"
-			break
-		}
-	}
+	targetRemote := firstPresent(remotes, prefer, "origin")
 
 	out := PushOutcome{Branch: branch, Remote: targetRemote}
 	var pushErr error

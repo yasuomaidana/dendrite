@@ -3,6 +3,8 @@ package commit
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/cmd/dendrite/internal/clitest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -50,5 +52,23 @@ func TestPrune(t *testing.T) {
 	}
 	if _, code := cliOutput(t, "prune", "--max-tokens", "0"); code != cli.ExitUsage {
 		t.Fatalf("--max-tokens 0: exit %d", code)
+	}
+}
+
+func TestMyelinEvacuateGoesToTheConfiguredIntegrationBranch(t *testing.T) {
+	repo := clitest.SetupCommitRepo(t)
+	path := filepath.Join(repo, ".github", "dendrite", "directives.toml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("schema = 1\n[git]\nintegration_branch = \"release\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	clitest.RunGitT(t, repo, "checkout", "-q", "-b", "main")
+	if out, code := cliOutput(t, "myelin", "evacuate"); code != cli.ExitOK || !strings.Contains(out, "evacuated to release branch") {
+		t.Fatalf("evacuate: exit %d\n%s", code, out)
+	}
+	if out, code := cliOutput(t, "myelin", "check"); code != cli.ExitOK || !strings.Contains(out, "defaults to release") {
+		t.Fatalf("check names the configured branch: exit %d\n%s", code, out)
 	}
 }

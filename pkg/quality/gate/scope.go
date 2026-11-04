@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"Dendrite/pkg/branchpolicy"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -92,11 +93,11 @@ func ChangesSince(dir, ref string) *Scope {
 	return s
 }
 
-// ChangesOfTicket is the work done for a ticket: what its branch changed against develop and what is uncommitted,
+// ChangesOfTicket is the work done for a ticket: what its branch changed against the integration branch and what is uncommitted,
 // and, once the branch is merged, the commits whose subject starts with [TICKET].
 func ChangesOfTicket(dir, ticket string) *Scope {
 	var s *Scope
-	for _, base := range []string{"origin/develop", "develop"} {
+	for _, base := range branchpolicy.For(dir).Bases() {
 		if s = ChangesSince(dir, base); len(s.lines) > 0 {
 			break
 		}

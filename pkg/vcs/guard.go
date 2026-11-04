@@ -1,6 +1,7 @@
 package vcs
 
 import (
+	"Dendrite/pkg/branchpolicy"
 	"bytes"
 	"context"
 	"errors"
@@ -12,9 +13,9 @@ import (
 
 var (
 	// ErrForbiddenBranchMain is returned when an operation attempts to mutate or commit to 'main' or 'master'.
-	ErrForbiddenBranchMain = errors.New("vcs: direct work on 'main' is strictly prohibited; switched to 'develop'")
-	// ErrMergeLockedInDegradedMode is returned when merging to 'develop' is attempted during DegradedBudgetMode.
-	ErrMergeLockedInDegradedMode = errors.New("vcs: merging into 'develop' is forbidden in DegradedBudgetMode")
+	ErrForbiddenBranchMain = errors.New("vcs: direct work on 'main' is strictly prohibited; switched to the integration branch")
+	// ErrMergeLockedInDegradedMode is returned when merging to the integration branch is attempted during DegradedBudgetMode.
+	ErrMergeLockedInDegradedMode = errors.New("vcs: merging into the integration branch is forbidden in DegradedBudgetMode")
 	// ErrDivergenceMaxRetries is returned when push retries after rebase are exhausted.
 	ErrDivergenceMaxRetries = errors.New("vcs: remote divergence could not be resolved after rebase retries")
 )
@@ -23,11 +24,11 @@ var (
 type ExecutionMode string
 
 const (
-	// ModeStandard represents normal operation: works on 'develop', commits and pushes immediately.
+	// ModeStandard represents normal operation: works on the integration branch, commits and pushes immediately.
 	ModeStandard ExecutionMode = "STANDARD"
-	// ModeDegradedBudget represents low-token operation: works on 'local/<module>', pushes branch, never merges to 'develop'.
+	// ModeDegradedBudget represents low-token operation: works on 'local/<module>', pushes branch, never merges to the integration branch.
 	ModeDegradedBudget ExecutionMode = "DEGRADED_BUDGET"
-	// ModeAuditChanges represents vendor rebase/audit operation: reviews 'local/<module>', fixes, and merges to 'develop'.
+	// ModeAuditChanges represents vendor rebase/audit operation: reviews 'local/<module>', fixes, and merges to the integration branch.
 	ModeAuditChanges ExecutionMode = "AUDIT_CHANGES"
 )
 
@@ -102,39 +103,55 @@ func (g *GitGuard) CurrentBranch(ctx context.Context) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
-// EnsureAndCheckoutDevelop guarantees the 'develop' branch exists locally and is checked out.
-func (g *GitGuard) EnsureAndCheckoutDevelop(ctx context.Context) error {
-	// Check if develop branch exists locally
-	_, err := g.runGit(ctx, "show-ref", "--verify", "--quiet", "refs/heads/develop")
-	if err == nil {
-		// develop exists locally
-		if _, chkErr := g.runGit(ctx, "checkout", "develop"); chkErr != nil {
-			return fmt.Errorf("failed to checkout existing develop branch: %w", chkErr)
+// target is where this repository's work integrates (see pkg/branchpolicy). A trunk (main or master) that was
+// only detected, not chosen, is never an integration branch here: the guard keeps its rule that agents do not
+// work on main and moves to (creating when missing) develop. Choosing main in the directives lifts that rule.
+func (g *GitGuard) target() branchpolicy.Target {
+	t := branchpolicy.For(g.RepoDir)
+	t.Branch = t.Integration // the guard keeps agents on the integration branch, not on a ticket's feature branch
+	if !t.Explicit() && (t.Branch == "main" || t.Branch == "master") {
+		t.Branch = "develop"
+	}
+	return t
+}
+
+// IntegrationBranch is the branch this repository's work merges into.
+func (g *GitGuard) IntegrationBranch() string { return g.target().Branch }
+
+// PushRemote is the remote work is pushed to.
+func (g *GitGuard) PushRemote() string { return g.target().PushRemote }
+
+// forbidden reports whether branch is a trunk (main or master) that is not the repository's integration branch.
+func forbidden(t branchpolicy.Target, branch string) bool {
+	return (branch == "main" || branch == "master") && branch != t.Branch
+}
+
+// EnsureAndCheckoutIntegration guarantees the integration branch exists locally and is checked out.
+func (g *GitGuard) EnsureAndCheckoutIntegration(ctx context.Context) error {
+	t := g.target()
+	b, remote := t.Branch, t.PushRemote
+	if _, err := g.runGit(ctx, "show-ref", "--verify", "--quiet", "refs/heads/"+b); err == nil {
+		if _, chkErr := g.runGit(ctx, "checkout", b); chkErr != nil {
+			return fmt.Errorf("failed to checkout existing %s branch: %w", b, chkErr)
 		}
-		// Pull --ff-only if remote origin/develop exists
-		_, _ = g.runGit(ctx, "pull", "--ff-only", "origin", "develop")
+		_, _ = g.runGit(ctx, "pull", "--ff-only", remote, b)
 		return nil
 	}
-
-	// Check if remote origin/develop exists
-	_, rErr := g.runGit(ctx, "show-ref", "--verify", "--quiet", "refs/remotes/origin/develop")
-	if rErr == nil {
-		if _, chkErr := g.runGit(ctx, "checkout", "-b", "develop", "--track", "origin/develop"); chkErr != nil {
-			return fmt.Errorf("failed to track remote origin/develop: %w", chkErr)
+	if _, err := g.runGit(ctx, "show-ref", "--verify", "--quiet", "refs/remotes/"+remote+"/"+b); err == nil {
+		if _, chkErr := g.runGit(ctx, "checkout", "-b", b, "--track", remote+"/"+b); chkErr != nil {
+			return fmt.Errorf("failed to track remote %s/%s: %w", remote, b, chkErr)
 		}
 		return nil
 	}
-
-	// Create new develop branch from current HEAD and push upstream
-	if _, chkErr := g.runGit(ctx, "checkout", "-b", "develop"); chkErr != nil {
-		return fmt.Errorf("failed to create develop branch: %w", chkErr)
+	if _, chkErr := g.runGit(ctx, "checkout", "-b", b); chkErr != nil {
+		return fmt.Errorf("failed to create %s branch: %w", b, chkErr)
 	}
-	_, _ = g.runGit(ctx, "push", "-u", "origin", "develop")
+	_, _ = g.runGit(ctx, "push", "-u", remote, b)
 	return nil
 }
 
 // PreFlightBranchCheck validates the current branch before any mutation or commit.
-// If the active branch is 'main' or 'master', it evacuates to 'develop' and returns ErrForbiddenBranchMain.
+// If the active branch is 'main' or 'master', it evacuates to the integration branch and returns ErrForbiddenBranchMain.
 func (g *GitGuard) PreFlightBranchCheck(ctx context.Context) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -144,29 +161,30 @@ func (g *GitGuard) PreFlightBranchCheck(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	if branch == "main" || branch == "master" {
-		if devErr := g.EnsureAndCheckoutDevelop(ctx); devErr != nil {
-			return "", fmt.Errorf("failed to evacuate %s to develop: %w", branch, devErr)
+	t := g.target()
+	if forbidden(t, branch) {
+		if devErr := g.EnsureAndCheckoutIntegration(ctx); devErr != nil {
+			return "", fmt.Errorf("failed to evacuate %s to %s: %w", branch, t.Branch, devErr)
 		}
-		return "develop", ErrForbiddenBranchMain
+		return t.Branch, ErrForbiddenBranchMain
 	}
 
-	if g.Mode == ModeStandard && branch != "develop" && !strings.HasPrefix(branch, "local/") {
-		if devErr := g.EnsureAndCheckoutDevelop(ctx); devErr != nil {
+	if g.Mode == ModeStandard && branch != t.Branch && !strings.HasPrefix(branch, "local/") {
+		if devErr := g.EnsureAndCheckoutIntegration(ctx); devErr != nil {
 			return "", devErr
 		}
-		return "develop", nil
+		return t.Branch, nil
 	}
 
 	return branch, nil
 }
 
-// EnforceBranchPolicy ensures the agent never operates on 'main' and switches to 'develop'.
+// EnforceBranchPolicy ensures the agent never operates on 'main' and switches to the integration branch.
 func (g *GitGuard) EnforceBranchPolicy(ctx context.Context) (string, error) {
 	branch, err := g.PreFlightBranchCheck(ctx)
 	if errors.Is(err, ErrForbiddenBranchMain) {
-		// Evacuated successfully; return active develop branch without blocking if called as policy
-		return "develop", nil
+		// Evacuated successfully; return the active integration branch without blocking if called as policy
+		return g.target().Branch, nil
 	}
 	return branch, err
 }
@@ -180,12 +198,13 @@ func (g *GitGuard) CommitAndPush(ctx context.Context, message string) error {
 	}
 
 	// Guard against commits on main
-	if branch == "main" || branch == "master" {
+	t := g.target()
+	if forbidden(t, branch) {
 		return ErrForbiddenBranchMain
 	}
 
-	// DegradedBudgetMode cannot commit directly to develop
-	if g.Mode == ModeDegradedBudget && branch == "develop" {
+	// DegradedBudgetMode cannot commit directly to the integration branch
+	if g.Mode == ModeDegradedBudget && branch == t.Branch {
 		return ErrMergeLockedInDegradedMode
 	}
 

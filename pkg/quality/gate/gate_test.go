@@ -50,7 +50,9 @@ func byName(r Report, name string) Check {
 	return Check{}
 }
 
-func TestRunReportsEveryCheckOfARepository(t *testing.T) {
+// reportOfARepository is the report of a repository that breaks the loc, clones and rstest rules.
+func reportOfARepository(t *testing.T) Report {
+	t.Helper()
 	ragtest.UseStandin(t, "1.12.0")
 	dir := t.TempDir()
 	write(t, dir, "a.go", lines(12))
@@ -61,18 +63,30 @@ func TestRunReportsEveryCheckOfARepository(t *testing.T) {
 	if rep.Passed || rep.Scope != "repository" || len(rep.Checks) != 6 {
 		t.Fatalf("%+v", rep)
 	}
-	loc := byName(rep, "loc")
+	return rep
+}
+
+func TestRunReportsTheLocOfARepository(t *testing.T) {
+	loc := byName(reportOfARepository(t), "loc")
 	if loc.Status != Fail || len(loc.Findings) != 2 || !strings.HasPrefix(loc.Findings[0], "a.go: 12 production lines, the limit is 10") {
 		t.Errorf("loc = %+v", loc)
 	}
-	if c := byName(rep, "clones"); c.Status != Fail || len(c.Findings) != 1 || !strings.Contains(c.Findings[0], "a.go:1-12, b.go:1-12") ||
+}
+
+func TestRunReportsTheClonesOfARepository(t *testing.T) {
+	c := byName(reportOfARepository(t), "clones")
+	if c.Status != Fail || len(c.Findings) != 1 || !strings.Contains(c.Findings[0], "a.go:1-12, b.go:1-12") ||
 		!strings.Contains(c.Advice, "helper function") || !strings.Contains(c.Advice, "macro") {
 		t.Errorf("clones = %+v", c)
 	}
+}
+
+func TestRunReportsTheRstestAndCoverageOfARepository(t *testing.T) {
+	rep := reportOfARepository(t)
 	if c := byName(rep, "rstest"); c.Status != Fail || !strings.Contains(c.Findings[0], "r.rs:1 [repeated_test]") {
 		t.Errorf("rstest = %+v", c)
 	}
-	if c := byName(rep, "coverage"); c.Status != Skipped || !strings.Contains(c.Summary, "not a Go module") {
+	if c := byName(rep, "coverage"); c.Status != Skipped || !strings.Contains(c.Summary, "no Go module") {
 		t.Errorf("coverage = %+v", c)
 	}
 }

@@ -427,7 +427,7 @@ func pushAfterCommit(ctx context.Context, opts CommitOptions, res *CommitResult,
 		return nil
 	}
 
-	out := pushBranch(runGit)
+	out := pushBranch(runGit, pushRemoteFor(opts.RepoDir))
 	res.Pushed = out.Pushed
 	res.PushSkipped = out.Skipped
 	res.PushReason = out.Reason

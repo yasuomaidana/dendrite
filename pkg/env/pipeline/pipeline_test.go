@@ -11,6 +11,7 @@ import (
 
 	"Dendrite/pkg/directive"
 	"Dendrite/pkg/fsutil/fsutiltest"
+	"Dendrite/pkg/testkit"
 )
 
 func ids(comps []Component) []string {
@@ -80,7 +81,7 @@ type workflow struct {
 func render(t *testing.T, root string, set directive.Set, ext Extension) (string, workflow) {
 	t.Helper()
 	comps, _ := Detect(root)
-	text := string(Render(comps, set, ext))
+	text := string(Render(comps, set, ext, BranchesOf(root)))
 	var wf workflow
 	if err := yaml.Unmarshal([]byte(text), &wf); err != nil {
 		t.Fatalf("the generated workflow is not YAML: %v\n%s", err, text)
@@ -421,5 +422,32 @@ func TestAProjectWithItsOwnCoverageRatchetKeepsPlainTestRuns(t *testing.T) {
 	text, _ := render(t, root, directive.Defaults(), Extension{SkipCoverageFloor: true})
 	if !strings.Contains(text, "uv run pytest\n") || strings.Contains(text, "cov-fail-under") {
 		t.Errorf("%s", text)
+	}
+}
+
+func TestTheWorkflowRunsForTheIntegrationMainAndFeatureBranches(t *testing.T) {
+	for name, tc := range map[string]struct {
+		br   Branches
+		want string
+	}{
+		"default":        {Branches{Integration: "develop", FeaturePrefix: "feature/"}, `[ develop, main, "feature/**" ]`},
+		"custom":         {Branches{Integration: "trunk", FeaturePrefix: "feat/"}, `[ trunk, main, "feat/**" ]`},
+		"main is shared": {Branches{Integration: "main", FeaturePrefix: "feature/"}, `[ main, "feature/**" ]`},
+		"no features":    {Branches{Integration: "develop"}, `[ develop, main ]`},
+	} {
+		if got := tc.br.triggers(); got != tc.want {
+			t.Errorf("%s: triggers %q, want %q", name, got, tc.want)
+		}
+	}
+
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testkit.GitInit(t, root, "develop")
+	testkit.Git(t, root, "commit", "-q", "--allow-empty", "-m", "init")
+	text, _ := render(t, root, directive.Defaults(), Extension{})
+	if strings.Count(text, `branches: [ develop, main, "feature/**" ]`) != 2 {
+		t.Errorf("push and pull_request both run for the branches:\n%s", text)
 	}
 }

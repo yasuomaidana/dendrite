@@ -61,81 +61,98 @@ func Marshal(s *Synapse) ([]byte, error) {
 	}
 
 	var buf bytes.Buffer
-
-	// Root properties
-	fmt.Fprintf(&buf, "id = %s\n", quoteString(s.ID))
-	fmt.Fprintf(&buf, "name = %s\n", quoteString(s.Name))
-	fmt.Fprintf(&buf, "state = %s\n", quoteString(string(s.State)))
-	if !s.CreatedAt.IsZero() {
-		fmt.Fprintf(&buf, "created_at = %s\n", quoteString(s.CreatedAt.UTC().Format(time.RFC3339)))
-	}
-	if !s.UpdatedAt.IsZero() {
-		fmt.Fprintf(&buf, "updated_at = %s\n", quoteString(s.UpdatedAt.UTC().Format(time.RFC3339)))
-	}
-	if s.Channel != "" {
-		fmt.Fprintf(&buf, "channel = %s\n", quoteString(string(s.Channel)))
-	}
-
-	// [sync]
-	if s.Sync.Strategy != "" {
-		buf.WriteString("\n[sync]\n")
-		fmt.Fprintf(&buf, "strategy = %s\n", quoteString(s.Sync.Strategy))
-	}
-
-	// [parity.commands]
-	if len(s.Parity.Commands) > 0 {
-		buf.WriteString("\n[parity.commands]\n")
-		keys := make([]string, 0, len(s.Parity.Commands))
-		for k := range s.Parity.Commands {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			fmt.Fprintf(&buf, "%s = %s\n", formatKey(k), quoteString(s.Parity.Commands[k]))
-		}
-	}
-
-	// [[members]]
+	writeRoot(&buf, s)
+	writeParity(&buf, s.Parity)
 	for _, m := range s.Members {
-		buf.WriteString("\n[[members]]\n")
-		fmt.Fprintf(&buf, "project_id = %s\n", quoteString(m.ProjectID))
-		fmt.Fprintf(&buf, "alias = %s\n", quoteString(m.Alias))
-		fmt.Fprintf(&buf, "role = %s\n", quoteString(string(m.Role)))
-		fmt.Fprintf(&buf, "path_hint = %s\n", quoteString(m.PathHint))
-		for _, kv := range [][2]string{
-			{"source", string(m.Source)},
-			{"remote", m.Remote},
-			{"ref", m.Ref},
-			{"module", m.Module},
-			{"locked_sha", m.LockedSHA},
-		} {
-			if kv[1] != "" {
-				fmt.Fprintf(&buf, "%s = %s\n", kv[0], quoteString(kv[1]))
-			}
-		}
-		if !m.LockedAt.IsZero() {
-			fmt.Fprintf(&buf, "locked_at = %s\n", quoteString(m.LockedAt.UTC().Format(time.RFC3339)))
-		}
-		if m.PlaneProject != "" {
-			fmt.Fprintf(&buf, "plane_project = %s\n", quoteString(m.PlaneProject))
-		}
+		writeMember(&buf, m)
 	}
-
-	// [[contracts]] and [[contracts.consumers]]
 	for _, c := range s.Contracts {
-		buf.WriteString("\n[[contracts]]\n")
-		fmt.Fprintf(&buf, "kind = %s\n", quoteString(c.Kind))
-		fmt.Fprintf(&buf, "producer = %s\n", quoteString(c.Producer))
-		fmt.Fprintf(&buf, "path = %s\n", quoteString(c.Path))
-
-		for _, cons := range c.Consumers {
-			buf.WriteString("\n[[contracts.consumers]]\n")
-			fmt.Fprintf(&buf, "alias = %s\n", quoteString(cons.Alias))
-			fmt.Fprintf(&buf, "path = %s\n", quoteString(cons.Path))
-		}
+		writeContract(&buf, c)
 	}
 
 	return buf.Bytes(), nil
+}
+
+// writeRoot emits the root keys and the [sync] table, leaving out what is empty.
+func writeRoot(buf *bytes.Buffer, s *Synapse) {
+	fmt.Fprintf(buf, "id = %s\n", quoteString(s.ID))
+	fmt.Fprintf(buf, "name = %s\n", quoteString(s.Name))
+	fmt.Fprintf(buf, "state = %s\n", quoteString(string(s.State)))
+	stamps := [][2]string{{"created_at", ""}, {"updated_at", ""}}
+	if !s.CreatedAt.IsZero() {
+		stamps[0][1] = s.CreatedAt.UTC().Format(time.RFC3339)
+	}
+	if !s.UpdatedAt.IsZero() {
+		stamps[1][1] = s.UpdatedAt.UTC().Format(time.RFC3339)
+	}
+	optional := append(stamps, [2]string{"channel", string(s.Channel)})
+	for _, kv := range optional {
+		if kv[1] != "" {
+			fmt.Fprintf(buf, "%s = %s\n", kv[0], quoteString(kv[1]))
+		}
+	}
+	if s.Sync.Strategy != "" {
+		buf.WriteString("\n[sync]\n")
+		fmt.Fprintf(buf, "strategy = %s\n", quoteString(s.Sync.Strategy))
+	}
+}
+
+// writeParity emits the [parity.commands] table with its keys sorted.
+func writeParity(buf *bytes.Buffer, p Parity) {
+	if len(p.Commands) == 0 {
+		return
+	}
+	buf.WriteString("\n[parity.commands]\n")
+	keys := make([]string, 0, len(p.Commands))
+	for k := range p.Commands {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Fprintf(buf, "%s = %s\n", formatKey(k), quoteString(p.Commands[k]))
+	}
+}
+
+// writeMember emits one [[members]] table, leaving out the optional keys that are empty.
+func writeMember(buf *bytes.Buffer, m Member) {
+	buf.WriteString("\n[[members]]\n")
+	fmt.Fprintf(buf, "project_id = %s\n", quoteString(m.ProjectID))
+	fmt.Fprintf(buf, "alias = %s\n", quoteString(m.Alias))
+	fmt.Fprintf(buf, "role = %s\n", quoteString(string(m.Role)))
+	fmt.Fprintf(buf, "path_hint = %s\n", quoteString(m.PathHint))
+	locked := ""
+	if !m.LockedAt.IsZero() {
+		locked = m.LockedAt.UTC().Format(time.RFC3339)
+	}
+	for _, kv := range [][2]string{
+		{"source", string(m.Source)},
+		{"remote", m.Remote},
+		{"ref", m.Ref},
+		{"module", m.Module},
+		{"locked_sha", m.LockedSHA},
+		{"branch", m.Branch},
+		{"push_remote", m.PushRemote},
+		{"target_remote", m.TargetRemote},
+		{"locked_at", locked},
+		{"plane_project", m.PlaneProject},
+	} {
+		if kv[1] != "" {
+			fmt.Fprintf(buf, "%s = %s\n", kv[0], quoteString(kv[1]))
+		}
+	}
+}
+
+// writeContract emits one [[contracts]] table and its [[contracts.consumers]].
+func writeContract(buf *bytes.Buffer, c Contract) {
+	buf.WriteString("\n[[contracts]]\n")
+	fmt.Fprintf(buf, "kind = %s\n", quoteString(c.Kind))
+	fmt.Fprintf(buf, "producer = %s\n", quoteString(c.Producer))
+	fmt.Fprintf(buf, "path = %s\n", quoteString(c.Path))
+	for _, cons := range c.Consumers {
+		buf.WriteString("\n[[contracts.consumers]]\n")
+		fmt.Fprintf(buf, "alias = %s\n", quoteString(cons.Alias))
+		fmt.Fprintf(buf, "path = %s\n", quoteString(cons.Path))
+	}
 }
 
 type tableContext int

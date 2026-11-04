@@ -63,15 +63,22 @@ func newManager(repo string) *Manager {
 	return m
 }
 
-func reportFor(t *testing.T, reports []Report, path string) Report {
+// byPath is the item of items whose path (as pathOf reads it) is the canonical form of path.
+func byPath[T any](t *testing.T, items []T, path string, pathOf func(T) string) T {
 	t.Helper()
-	for _, r := range reports {
-		if r.Path == Canon(path) {
-			return r
+	for _, it := range items {
+		if pathOf(it) == Canon(path) {
+			return it
 		}
 	}
-	t.Fatalf("no report for %s in %+v", path, reports)
-	return Report{}
+	t.Fatalf("nothing at %s in %+v", path, items)
+	var zero T
+	return zero
+}
+
+func reportFor(t *testing.T, reports []Report, path string) Report {
+	t.Helper()
+	return byPath(t, reports, path, func(r Report) string { return r.Path })
 }
 
 func TestRootDefaultsToSiblingDir(t *testing.T) {
@@ -340,4 +347,48 @@ func TestSanitizeName(t *testing.T) {
 			t.Errorf("SanitizeName(%q) = %q, want %q", in, got, want)
 		}
 	}
+}
+
+func TestGCCountsAMergeIntoTheRecordedTargetAndOnlyThat(t *testing.T) {
+	repo, _ := newRepo(t)
+	ctx := context.Background()
+	m := newManager(repo)
+	git(t, repo, "branch", "feature/DEN-1-x")
+
+	child, _ := m.Create(ctx, "child", "", "feature/DEN-1-x")
+	git(t, repo, "config", "branch.agent/child.dendrite-target", "feature/DEN-1-x")
+	commitIn(t, child, "child.txt")
+	other, _ := m.Create(ctx, "other", "", "")
+	commitIn(t, other, "other.txt")
+
+	// Merged into main only: for the child that is not where its work goes (main holds nothing of it), and for
+	// the unrecorded copy it is.
+	git(t, repo, "merge", "-q", "--no-edit", "agent/other")
+	cs, err := m.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := copyFor(t, cs, other); c.MergedInto != "main" {
+		t.Errorf("an unrecorded copy merged into main: %+v", c)
+	}
+	if c := copyFor(t, cs, child); c.MergedInto != "" {
+		t.Errorf("the child is not merged anywhere yet: %+v", c)
+	}
+
+	// Merging the child into its feature branch, not into main, is what finishes it.
+	git(t, repo, "checkout", "-q", "feature/DEN-1-x")
+	git(t, repo, "merge", "-q", "--no-edit", "agent/child")
+	git(t, repo, "checkout", "-q", "main")
+	cs, err = m.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := copyFor(t, cs, child); c.MergedInto != "feature/DEN-1-x" {
+		t.Errorf("merged into the recorded feature branch: %+v", c)
+	}
+}
+
+func copyFor(t *testing.T, cs []Copy, path string) Copy {
+	t.Helper()
+	return byPath(t, cs, path, func(c Copy) string { return c.Path })
 }

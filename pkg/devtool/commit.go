@@ -1,6 +1,7 @@
 package devtool
 
 import (
+	"Dendrite/pkg/branchpolicy"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -88,156 +88,26 @@ func FormatTicketCommit(ticketID, message string) string {
 	return fmt.Sprintf("%s %s", prefix, msg)
 }
 
+var (
+	branchTicketRe    = regexp.MustCompile(`\b(DEN-\d+|DEND-\d+)\b`)
+	devStatusTicketRe = regexp.MustCompile(`\*\*(DEN-\d+|DEND-\d+)\*\*:\s*([^\n\r]+)`)
+)
+
 // ResolveSmartTicket automatically detects active ticket provenance using:
 // 1. Current Git branch name
 // 2. Authoritative Plane v2 live issues (In Progress, file correlation with staged changes, or recent transitions)
 // 3. Repository documentation / DEV_STATUS.md file correlation fallback
 func ResolveSmartTicket(ctx context.Context, repoDir string, stagedFiles []string) (*SmartTicketInfo, error) {
-	// 1. Try Git Branch
-	gitBranchCmd := exec.CommandContext(ctx, "git", "rev-parse", "--abbrev-ref", "HEAD")
-	if repoDir != "" {
-		gitBranchCmd.Dir = repoDir
+	if info := ticketFromBranch(ctx, repoDir, stagedFiles); info != nil {
+		return info, nil
 	}
-	if out, err := gitBranchCmd.Output(); err == nil {
-		branch := strings.TrimSpace(string(out))
-		if branch != "main" && branch != "master" && branch != "develop" {
-			re := regexp.MustCompile(`\b(DEN-\d+|DEND-\d+)\b`)
-			if m := re.FindString(branch); m != "" {
-				return &SmartTicketInfo{
-					ID:     m,
-					Title:  fmt.Sprintf("Work from branch %s", branch),
-					Scope:  inferScopeFromFiles(stagedFiles),
-					Type:   "feat",
-					Source: fmt.Sprintf("Git Branch (%s)", branch),
-				}, nil
-			}
-		}
+	if info := ticketFromPlane(ctx, stagedFiles); info != nil {
+		return info, nil
 	}
-
-	// 2. Query Plane v2 live API if available
-	if pClient, err := plane.NewClientFromEnv(); err == nil {
-		planeIssues, pErr := fetchPlaneIssues(ctx, pClient)
-		if pErr == nil && len(planeIssues) > 0 {
-			stateOf := planeStateResolver(ctx, pClient)
-			// 2a. Look for an In Progress ticket
-			for _, iss := range planeIssues {
-				// State group or slug check for in-progress
-				if stateOf(iss) == tracker.StatusInProgress {
-					tid, title := extractTicketIDAndTitle(iss.Name)
-					if tid != "" {
-						return &SmartTicketInfo{
-							ID:          tid,
-							Title:       title,
-							Scope:       inferScopeFromFiles(stagedFiles),
-							Type:        inferTypeFromTitle(title),
-							Source:      "Plane v2 (In Progress)",
-							Description: iss.DescriptionHTML,
-						}, nil
-					}
-				}
-			}
-
-			// 2b. Match staged files against Plane issues
-			type scoredTicket struct {
-				info  SmartTicketInfo
-				score int
-			}
-			var scored []scoredTicket
-
-			for _, iss := range planeIssues {
-				tid, title := extractTicketIDAndTitle(iss.Name)
-				if tid == "" {
-					continue
-				}
-				searchCorpus := strings.ToLower(iss.Name + " " + iss.DescriptionHTML)
-				score := 0
-				for _, f := range stagedFiles {
-					fLower := strings.ToLower(f)
-					baseLower := strings.ToLower(filepath.Base(f))
-					dirLower := strings.ToLower(filepath.Dir(f))
-					if strings.Contains(searchCorpus, fLower) {
-						score += 15
-					} else if strings.Contains(searchCorpus, baseLower) && len(baseLower) > 4 {
-						score += 8
-					} else if dirLower != "." && strings.Contains(searchCorpus, dirLower) {
-						score += 5
-					}
-				}
-
-				// Bonus if recently updated
-				if stateOf(iss) == tracker.StatusInReview {
-					score += 10
-				}
-
-				if score > 0 {
-					scored = append(scored, scoredTicket{
-						info: SmartTicketInfo{
-							ID:          tid,
-							Title:       title,
-							Scope:       inferScopeFromFiles(stagedFiles),
-							Type:        inferTypeFromTitle(title),
-							Source:      fmt.Sprintf("Plane v2 (Diff Correlation Score %d)", score),
-							Description: iss.DescriptionHTML,
-						},
-						score: score,
-					})
-				}
-			}
-
-			if len(scored) > 0 {
-				sort.Slice(scored, func(i, j int) bool {
-					return scored[i].score > scored[j].score
-				})
-				best := scored[0].info
-				return &best, nil
-			}
-
-			// 2c. Most recent ticket transitioned to "To Verify"
-			for _, iss := range planeIssues {
-				if stateOf(iss) == tracker.StatusInReview {
-					tid, title := extractTicketIDAndTitle(iss.Name)
-					if tid != "" {
-						return &SmartTicketInfo{
-							ID:          tid,
-							Title:       title,
-							Scope:       inferScopeFromFiles(stagedFiles),
-							Type:        inferTypeFromTitle(title),
-							Source:      "Plane v2 (Recent To Verify)",
-							Description: iss.DescriptionHTML,
-						}, nil
-					}
-				}
-			}
-		}
+	if info := ticketFromDevStatus(repoDir, stagedFiles); info != nil {
+		return info, nil
 	}
-
-	// 3. Fallback: Parse DEV_STATUS.md
-	devStatusPath := filepath.Join(repoDir, "DEV_STATUS.md")
-	if data, err := os.ReadFile(devStatusPath); err == nil {
-		content := string(data)
-		reTicket := regexp.MustCompile(`\*\*(DEN-\d+|DEND-\d+)\*\*:\s*([^\n\r]+)`)
-		matches := reTicket.FindAllStringSubmatch(content, -1)
-		for _, m := range matches {
-			tid := m[1]
-			title := strings.TrimSpace(m[2])
-			for _, f := range stagedFiles {
-				base := filepath.Base(f)
-				dir := filepath.Dir(f)
-				if strings.Contains(strings.ToLower(title), strings.ToLower(base)) ||
-					(dir != "." && strings.Contains(strings.ToLower(title), strings.ToLower(dir))) {
-					return &SmartTicketInfo{
-						ID:     tid,
-						Title:  title,
-						Scope:  inferScopeFromFiles(stagedFiles),
-						Type:   inferTypeFromTitle(title),
-						Source: "DEV_STATUS.md (File Correlation)",
-					}, nil
-				}
-			}
-		}
-	}
-
-	// 4. Fallback: Default smart correlation from changed files
+	// Default smart correlation from changed files.
 	scope := inferScopeFromFiles(stagedFiles)
 	return &SmartTicketInfo{
 		ID:     "",
@@ -246,6 +116,147 @@ func ResolveSmartTicket(ctx context.Context, repoDir string, stagedFiles []strin
 		Type:   "feat",
 		Source: "Heuristic Staged File Inference",
 	}, nil
+}
+
+// ticketFromBranch reads the ticket out of the checked-out branch's name. The project's protected branches (its
+// integration branch, main, master) name no ticket.
+func ticketFromBranch(ctx context.Context, repoDir string, stagedFiles []string) *SmartTicketInfo {
+	gitBranchCmd := exec.CommandContext(ctx, "git", "rev-parse", "--abbrev-ref", "HEAD")
+	if repoDir != "" {
+		gitBranchCmd.Dir = repoDir
+	}
+	out, err := gitBranchCmd.Output()
+	if err != nil {
+		return nil
+	}
+	branch := strings.TrimSpace(string(out))
+	if branchpolicy.For(repoDir).IsProtected(branch) {
+		return nil
+	}
+	m := branchTicketRe.FindString(branch)
+	if m == "" {
+		return nil
+	}
+	return &SmartTicketInfo{
+		ID:     m,
+		Title:  fmt.Sprintf("Work from branch %s", branch),
+		Scope:  inferScopeFromFiles(stagedFiles),
+		Type:   "feat",
+		Source: fmt.Sprintf("Git Branch (%s)", branch),
+	}
+}
+
+// planeTicket is the ticket an issue stands for, found by source.
+func planeTicket(iss planeIssueLite, tid, title string, stagedFiles []string, source string) *SmartTicketInfo {
+	return &SmartTicketInfo{
+		ID:          tid,
+		Title:       title,
+		Scope:       inferScopeFromFiles(stagedFiles),
+		Type:        inferTypeFromTitle(title),
+		Source:      source,
+		Description: iss.DescriptionHTML,
+	}
+}
+
+// ticketFromPlane asks the live Plane board: the ticket In Progress, else the one whose text best matches the
+// staged files, else a ticket recently moved to To Verify.
+func ticketFromPlane(ctx context.Context, stagedFiles []string) *SmartTicketInfo {
+	pClient, err := plane.NewClientFromEnv()
+	if err != nil {
+		return nil
+	}
+	issues, pErr := fetchPlaneIssues(ctx, pClient)
+	if pErr != nil || len(issues) == 0 {
+		return nil
+	}
+	stateOf := planeStateResolver(ctx, pClient)
+	if info := firstInState(issues, stateOf, tracker.StatusInProgress, "Plane v2 (In Progress)", stagedFiles); info != nil {
+		return info
+	}
+	if info := bestCorrelated(issues, stateOf, stagedFiles); info != nil {
+		return info
+	}
+	return firstInState(issues, stateOf, tracker.StatusInReview, "Plane v2 (Recent To Verify)", stagedFiles)
+}
+
+// firstInState is the first issue in the state that carries a ticket id.
+func firstInState(issues []planeIssueLite, stateOf func(planeIssueLite) tracker.Status, want tracker.Status, source string, stagedFiles []string) *SmartTicketInfo {
+	for _, iss := range issues {
+		if stateOf(iss) != want {
+			continue
+		}
+		if tid, title := extractTicketIDAndTitle(iss.Name); tid != "" {
+			return planeTicket(iss, tid, title, stagedFiles, source)
+		}
+	}
+	return nil
+}
+
+// correlationScore rates how much of an issue's text mentions the staged files: a full path counts most, then
+// the file name, then its directory; a ticket in To Verify gets a bonus.
+func correlationScore(corpus string, status tracker.Status, stagedFiles []string) int {
+	score := 0
+	for _, f := range stagedFiles {
+		fLower := strings.ToLower(f)
+		baseLower := strings.ToLower(filepath.Base(f))
+		dirLower := strings.ToLower(filepath.Dir(f))
+		switch {
+		case strings.Contains(corpus, fLower):
+			score += 15
+		case strings.Contains(corpus, baseLower) && len(baseLower) > 4:
+			score += 8
+		case dirLower != "." && strings.Contains(corpus, dirLower):
+			score += 5
+		}
+	}
+	if status == tracker.StatusInReview {
+		score += 10
+	}
+	return score
+}
+
+// bestCorrelated is the issue whose text matches the staged files best, or nil when none matches.
+func bestCorrelated(issues []planeIssueLite, stateOf func(planeIssueLite) tracker.Status, stagedFiles []string) *SmartTicketInfo {
+	var best *SmartTicketInfo
+	bestScore := 0
+	for _, iss := range issues {
+		tid, title := extractTicketIDAndTitle(iss.Name)
+		if tid == "" {
+			continue
+		}
+		score := correlationScore(strings.ToLower(iss.Name+" "+iss.DescriptionHTML), stateOf(iss), stagedFiles)
+		if score > bestScore {
+			bestScore = score
+			best = planeTicket(iss, tid, title, stagedFiles, fmt.Sprintf("Plane v2 (Diff Correlation Score %d)", score))
+		}
+	}
+	return best
+}
+
+// ticketFromDevStatus matches the staged files against the tickets listed in DEV_STATUS.md.
+func ticketFromDevStatus(repoDir string, stagedFiles []string) *SmartTicketInfo {
+	data, err := os.ReadFile(filepath.Join(repoDir, "DEV_STATUS.md"))
+	if err != nil {
+		return nil
+	}
+	for _, m := range devStatusTicketRe.FindAllStringSubmatch(string(data), -1) {
+		title := strings.TrimSpace(m[2])
+		if mentionsStagedFile(strings.ToLower(title), stagedFiles) {
+			return &SmartTicketInfo{ID: m[1], Title: title, Scope: inferScopeFromFiles(stagedFiles), Type: inferTypeFromTitle(title), Source: "DEV_STATUS.md (File Correlation)"}
+		}
+	}
+	return nil
+}
+
+// mentionsStagedFile reports whether the lower-cased text names a staged file or its directory.
+func mentionsStagedFile(text string, stagedFiles []string) bool {
+	for _, f := range stagedFiles {
+		dir := filepath.Dir(f)
+		if strings.Contains(text, strings.ToLower(filepath.Base(f))) || (dir != "." && strings.Contains(text, strings.ToLower(dir))) {
+			return true
+		}
+	}
+	return false
 }
 
 // planeStateResolver maps an issue to its tracker status through the project's own workflow

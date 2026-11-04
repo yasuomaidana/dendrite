@@ -139,5 +139,9 @@ func Encode(s Set) []byte {
 	line("")
 	line("[languages]")
 	line("preference = %s", quoted(s.Languages.Preference))
+	line("")
+	line("[git]")
+	line("integration_branch = %s", strconv.Quote(s.Git.IntegrationBranch))
+	line("feature_prefix = %s", strconv.Quote(s.Git.FeaturePrefix))
 	return []byte(b.String())
 }

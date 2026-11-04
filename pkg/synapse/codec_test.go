@@ -1,6 +1,9 @@
 package synapse
 
 import (
+	"Dendrite/pkg/testkit"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -439,5 +442,332 @@ updated_at = 2026-10-18T08:30:00Z
 	}
 	if !s.UpdatedAt.Equal(expectedUpdated) {
 		t.Fatalf("updated_at mismatch: expected %v, got %v", expectedUpdated, s.UpdatedAt)
+	}
+}
+
+// fullSynapse is a synapse that sets every optional field a member and the manifest can carry.
+func fullSynapse(lockedTime time.Time) *Synapse {
+	return &Synapse{
+		ID:        "full-synapse",
+		Name:      "Full Synapse with Control \x05 Char",
+		State:     StateActive,
+		CreatedAt: time.Date(2026, 10, 20, 10, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 10, 20, 11, 0, 0, 0, time.UTC),
+		Channel:   ChannelDev,
+		Members: []Member{
+			{
+				ProjectID:    "dpid_0123456789abcdef0123456789abcdef",
+				Alias:        "remote-producer",
+				Role:         RoleProducer,
+				PathHint:     "/path/remote",
+				Source:       SourceRemote,
+				Remote:       "https://github.com/org/repo.git",
+				Ref:          "develop",
+				Module:       "github.com/org/repo",
+				LockedSHA:    "abc123def456",
+				LockedAt:     lockedTime,
+				PlaneProject: "DPROD",
+			},
+			{
+				ProjectID: "dpid_fedcba9876543210fedcba9876543210",
+				Alias:     "local-consumer",
+				Role:      RoleConsumer,
+				PathHint:  "/path/local",
+			},
+		},
+		Sync: Sync{
+			Strategy: "cargo-patch",
+		},
+	}
+}
+
+func TestCodecMemberOptionalFieldsAndChannel(t *testing.T) {
+	lockedTime := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	s := fullSynapse(lockedTime)
+	marshaled, err := Marshal(s)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	testkit.Contains(t, string(marshaled),
+		`channel = "dev"`, `source = "remote"`, `remote = "https://github.com/org/repo.git"`, `ref = "develop"`,
+		`module = "github.com/org/repo"`, `locked_sha = "abc123def456"`, `locked_at = "2026-10-20T12:00:00Z"`,
+		`plane_project = "DPROD"`, `\u0005`) // the last is the control char escape from quoteString
+
+	unmarshaled, err := Unmarshal(marshaled)
+	if err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	testkit.Equal(t, "channel", unmarshaled.Channel, ChannelDev)
+	m0 := unmarshaled.Members[0]
+	if !m0.LockedAt.Equal(lockedTime) {
+		t.Errorf("locked_at = %v, want %v", m0.LockedAt, lockedTime)
+	}
+	m0.LockedAt = s.Members[0].LockedAt
+	testkit.Equal(t, "member", m0, s.Members[0])
+}
+
+func TestUnmarshalInvalidLockedAt(t *testing.T) {
+	input := `id = "invalid-locked-at"
+name = "Invalid Locked At"
+state = "draft"
+
+[[members]]
+project_id = "dpid_11111111111111111111111111111111"
+alias = "producer"
+role = "producer"
+path_hint = "/p"
+locked_at = "not-a-valid-timestamp"
+`
+	_, err := Unmarshal([]byte(input))
+	if err == nil {
+		t.Fatal("expected error on invalid locked_at timestamp, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid locked_at timestamp") {
+		t.Fatalf("expected 'invalid locked_at timestamp' in error, got: %v", err)
+	}
+}
+
+func TestStoreReferencingProjectError(t *testing.T) {
+	dir := t.TempDir()
+	st := NewStore(dir)
+
+	// Add corrupted file so List fails
+	if err := os.WriteFile(filepath.Join(dir, "bad.toml"), []byte("corrupt = ="), 0644); err != nil {
+		t.Fatalf("failed to write bad.toml: %v", err)
+	}
+
+	_, err := st.ReferencingProject("dpid_00000000000000000000000000000000")
+	if err == nil {
+		t.Fatal("expected error when store.List fails in ReferencingProject, got nil")
+	}
+}
+
+func TestMemberSourceFieldsRoundTrip(t *testing.T) {
+	locked := time.Date(2026, 10, 18, 9, 30, 0, 0, time.UTC)
+	in := &Synapse{
+		ID: "stack", Name: "stack", State: StateActive,
+		Members: []Member{
+			{ProjectID: "dpid_a", Alias: "control", Role: RoleConsumer, PathHint: "/w/control"},
+			{
+				ProjectID: "dpid_b", Alias: "mcphub", Role: RoleProducer, PathHint: "/w/hub",
+				Source: SourceRemote, Remote: "https://github.com/o/hub.git", Ref: "develop",
+				Module: "dendrite.dev/mcphub", LockedSHA: "abc123", LockedAt: locked,
+			},
+		},
+	}
+	data, err := Marshal(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(data), "source = ") != 1 {
+		t.Fatalf("empty optional member keys must be omitted:\n%s", data)
+	}
+	out, err := Unmarshal(data)
+	if err != nil {
+		t.Fatalf("Unmarshal: %v\n%s", err, data)
+	}
+	if !reflect.DeepEqual(in.Members, out.Members) {
+		t.Fatalf("members round trip:\n got %+v\nwant %+v", out.Members, in.Members)
+	}
+	if !out.Members[1].IsRemote() || out.Members[0].IsRemote() {
+		t.Fatal("IsRemote mismatch")
+	}
+
+	bad := strings.Replace(string(data), `locked_at = "2026-10-18T09:30:00Z"`, `locked_at = "yesterday"`, 1)
+	if _, err := Unmarshal([]byte(bad)); err == nil || !strings.Contains(err.Error(), "locked_at") {
+		t.Fatalf("expected locked_at parse error, got %v", err)
+	}
+	bare := strings.Replace(string(data), `locked_at = "2026-10-18T09:30:00Z"`, `locked_at = 2026-10-18T09:30:00Z`, 1)
+	if _, err := Unmarshal([]byte(bare)); err != nil {
+		t.Fatalf("bare RFC3339 locked_at must parse: %v", err)
+	}
+}
+
+func TestValidateMemberSource(t *testing.T) {
+	base := func(m Member) *Synapse {
+		return &Synapse{ID: "s", Members: []Member{
+			{ProjectID: "dpid_a", Alias: "a", Role: RolePeer},
+			m,
+		}}
+	}
+	cases := []struct {
+		m       Member
+		wantErr string
+	}{
+		{Member{ProjectID: "dpid_b", Alias: "b", Role: RolePeer, Source: SourceLocal}, ""},
+		{Member{ProjectID: "dpid_b", Alias: "b", Role: RolePeer, Source: SourceRemote, Remote: "u"}, ""},
+		{Member{ProjectID: "dpid_b", Alias: "b", Role: RolePeer, Source: SourceRemote}, "requires a remote URL"},
+		{Member{ProjectID: "dpid_b", Alias: "b", Role: RolePeer, Source: "vendored"}, "invalid source"},
+	}
+	for _, c := range cases {
+		err := base(c.m).Validate()
+		if c.wantErr == "" && err != nil {
+			t.Errorf("%+v: unexpected %v", c.m, err)
+		}
+		if c.wantErr != "" && (err == nil || !strings.Contains(err.Error(), c.wantErr)) {
+			t.Errorf("%+v: err = %v, want %q", c.m, err, c.wantErr)
+		}
+	}
+}
+
+func TestMemberBranchFieldsSurviveTheCodec(t *testing.T) {
+	s := validSynapseFixture()
+	s.Members[0].Branch, s.Members[0].PushRemote, s.Members[0].TargetRemote = "dev", "fork", "upstream"
+	data, err := Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := Unmarshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Members[0] != s.Members[0] {
+		t.Fatalf("member = %+v, want %+v", back.Members[0], s.Members[0])
+	}
+}
+
+func TestCodec_PlaneProjectRoundTrip(t *testing.T) {
+	in := &Synapse{
+		ID: "mesh", Name: "mesh", State: StateActive,
+		Members: []Member{
+			{ProjectID: "dpid_a", Alias: "den", Role: RolePeer, PathHint: "/a", PlaneProject: "DEN"},
+			{ProjectID: "dpid_b", Alias: "git", Role: RolePeer, PathHint: "/b"},
+		},
+	}
+	data, err := Marshal(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(data), "plane_project") != 1 {
+		t.Fatalf("plane_project must be emitted only when set:\n%s", data)
+	}
+	out, err := Unmarshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Members[0].PlaneProject != "DEN" || out.Members[1].PlaneProject != "" {
+		t.Errorf("round trip lost plane_project: %+v", out.Members)
+	}
+}
+
+func TestQuoteStringControlCharacters(t *testing.T) {
+	s := fixture3Members2Contracts()
+	s.Name = "bell\x07tab\tcr\r"
+	data, err := Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `\u0007`) {
+		t.Fatalf("control char not escaped as \\u0007:\n%s", data)
+	}
+	got, err := Unmarshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != s.Name {
+		t.Fatalf("round-trip name = %q, want %q", got.Name, s.Name)
+	}
+}
+
+func TestParseQuotedStringEdgeCases(t *testing.T) {
+	cases := map[string]string{
+		"not quoted":      `abc`,
+		"dangling escape": `"abc\`,
+		"unclosed":        `"abc`,
+	}
+	for name, in := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := parseQuotedString(in); err == nil {
+				t.Fatalf("parseQuotedString(%q) succeeded, want error", in)
+			}
+		})
+	}
+}
+
+func TestUnmarshalRejectsMalformedLines(t *testing.T) {
+	cases := map[string]string{
+		"bad quoted key":      "\"id",
+		"quoted key no equal": "\"id\" \"x\"",
+		"empty value":         "id =",
+		"dup sync key":        "[sync]\nstrategy = \"none\"\nstrategy = \"none\"",
+		"dup parity key":      "[parity.commands]\na = \"x\"\na = \"y\"",
+		"dup member key":      "[[members]]\nalias = \"a\"\nalias = \"b\"",
+		"dup contract key":    "[[contracts]]\nkind = \"go\"\nkind = \"go\"",
+		"dup consumer key":    "[[contracts]]\nkind = \"go\"\n[[contracts.consumers]]\nalias = \"a\"\nalias = \"b\"",
+	}
+	for name, in := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := Unmarshal([]byte(in))
+			if err == nil {
+				t.Fatalf("Unmarshal(%q) succeeded, want error", in)
+			}
+			if !strings.Contains(err.Error(), "line ") {
+				t.Fatalf("error %q lacks a line number", err)
+			}
+		})
+	}
+}
+
+func TestDefaultStoreFailsWithoutAHome(t *testing.T) {
+	t.Setenv("DENDRITE_HOME", "")
+	t.Setenv("HOME", "")
+	if _, err := DefaultStore(); err == nil {
+		t.Fatal("expected DefaultStore to fail without a home directory")
+	}
+}
+
+func TestDefaultStoreHonoursDendriteHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("DENDRITE_HOME", home)
+	t.Setenv("HOME", "")
+	st, err := DefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	testkit.Equal(t, "Dir()", st.Dir(), filepath.Join(home, DirName))
+}
+
+func TestStoreFilesystemErrorsStoreDirIsAFile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "synapses")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := NewStore(file)
+	if _, err := st.List(); err == nil {
+		t.Fatal("List on a file should fail")
+	}
+	if _, err := st.ReferencingProject("dpid_x"); err == nil {
+		t.Fatal("ReferencingProject should propagate List errors")
+	}
+}
+
+func TestStoreFilesystemErrorsManifestPathIsADirectory(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "web-api.toml", "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	st := NewStore(dir)
+	if _, err := st.Load("web-api"); err == nil || err == ErrNotFound {
+		t.Fatalf("Load on a directory: got %v, want read error", err)
+	}
+	if err := st.Delete("web-api"); err == nil || err == ErrNotFound {
+		t.Fatalf("Delete of non-empty directory: got %v, want remove error", err)
+	}
+}
+
+func TestStoreFilesystemErrorsUnreadableManifest(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "x.toml")
+	if err := os.WriteFile(f, []byte("id = \"x\"\n"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewStore(dir).List(); err == nil || !strings.Contains(err.Error(), "x.toml") {
+		t.Fatalf("List with unreadable file: got %v, want error naming x.toml", err)
+	}
+}
+
+func TestParseKeyAndValueUnclosedQuotedKey(t *testing.T) {
+	if _, _, err := parseKeyAndValue(`"unclosed`); err == nil {
+		t.Fatal("expected error for a quoted key that never closes")
 	}
 }

@@ -73,7 +73,7 @@ func renderAgentRules(fp ProjectFingerprint, set directive.Set) string {
 	sb.WriteString("- Anti-mock policy: genuine structs and Testcontainers only.\n\n")
 
 	sb.WriteString("## Dendrite-First Workflow (every model and session)\n")
-	writeNumberedRules(&sb)
+	writeNumberedRules(&sb, fp.RootPath)
 
 	return sb.String()
 }
@@ -98,7 +98,7 @@ func renderAgentsOverview(fp ProjectFingerprint) string {
 	sb.WriteString("```\n\n")
 
 	sb.WriteString("## Dendrite-First Workflow (all models: Claude, Antigravity/AGY, Gemini, Copilot, humans)\n")
-	writeNumberedRules(&sb)
+	writeNumberedRules(&sb, fp.RootPath)
 	sb.WriteString(fmt.Sprintf("\nSee the `%s` skill for commands and cleanup rules.\n\n", DendriteWorkflowSkill))
 
 	sb.WriteString("## Commit & VCS Guidance\n")

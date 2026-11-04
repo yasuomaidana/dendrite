@@ -33,11 +33,11 @@ func TestWorkNewRefusesATicketThatIsNotStartable(t *testing.T) {
 	planeBoard(t)
 	t.Chdir(t.TempDir()) // not a git repository: creating a copy would fail, so a refusal must come first
 	var out bytes.Buffer
-	err := runWorkNew(context.Background(), "DEN-5", "", "", false, &out)
+	err := runWorkNew(context.Background(), "DEN-5", "", "", "", false, &out)
 	if err == nil || !strings.Contains(err.Error(), "awaiting verification") {
 		t.Fatalf("err = %v, want a refusal explaining the To Verify state", err)
 	}
-	err = runWorkNew(context.Background(), "DEN-77", "", "", false, &out)
+	err = runWorkNew(context.Background(), "DEN-77", "", "", "", false, &out)
 	if err == nil || !strings.Contains(err.Error(), "does not exist in Plane") {
 		t.Fatalf("unknown ticket err = %v", err)
 	}
@@ -48,15 +48,15 @@ func TestWorkNewSkipsTheGuardForOtherNamesAndWhenTurnedOff(t *testing.T) {
 	t.Chdir(t.TempDir())
 	var out bytes.Buffer
 	// Not ticket-shaped: no Plane check, so the failure is the missing git repository, not the guard.
-	if err := runWorkNew(context.Background(), "scratch-idea", "", "", false, &out); err == nil || strings.Contains(err.Error(), "Plane") {
+	if err := runWorkNew(context.Background(), "scratch-idea", "", "", "", false, &out); err == nil || strings.Contains(err.Error(), "Plane") {
 		t.Errorf("err = %v, want a git error", err)
 	}
 	// Ticket-shaped but bypassed: same.
-	if err := runWorkNew(context.Background(), "DEN-5", "", "", true, &out); err == nil || strings.Contains(err.Error(), "awaiting verification") {
+	if err := runWorkNew(context.Background(), "DEN-5", "", "", "", true, &out); err == nil || strings.Contains(err.Error(), "awaiting verification") {
 		t.Errorf("--no-ticket-guard still checked the ticket: %v", err)
 	}
 	t.Setenv("DENDRITE_TICKET_GUARD", "off")
-	if err := runWorkNew(context.Background(), "DEN-5", "", "", false, &out); err == nil || strings.Contains(err.Error(), "awaiting verification") {
+	if err := runWorkNew(context.Background(), "DEN-5", "", "", "", false, &out); err == nil || strings.Contains(err.Error(), "awaiting verification") {
 		t.Errorf("DENDRITE_TICKET_GUARD=off still checked the ticket: %v", err)
 	}
 }
