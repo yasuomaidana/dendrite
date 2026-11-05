@@ -168,7 +168,7 @@ func GeneratePlaneCompose(cfg PlaneConfig) string {
       - plane-api
       - plane-ui
     ports:
-      - "${PLANE_UI_PORT:-%d}:80"
+      - "${DENDRITE_BIND_HOST:-127.0.0.1}:${PLANE_UI_PORT:-%d}:80"
     volumes:
       - ./plane_proxy.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
@@ -202,7 +202,7 @@ services:
       POSTGRES_USER: ${PLANE_DB_USER:-plane_user}
       POSTGRES_PASSWORD: ${PLANE_DB_PASSWORD:-plane_password}
     ports:
-      - "${PLANE_DB_PORT:-%d}:5432"
+      - "${DENDRITE_BIND_HOST:-127.0.0.1}:${PLANE_DB_PORT:-%d}:5432"
     volumes:
       - plane-postgres-data:/var/lib/postgresql/data
     networks:
@@ -218,7 +218,7 @@ services:
     container_name: dendrite-plane-redis
     restart: unless-stopped
     ports:
-      - "${PLANE_REDIS_PORT:-%d}:6379"
+      - "${DENDRITE_BIND_HOST:-127.0.0.1}:${PLANE_REDIS_PORT:-%d}:6379"
     volumes:
       - plane-redis-data:/data
     networks:

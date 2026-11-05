@@ -19,7 +19,7 @@ services:
       POSTGRES_USER: ${PENPOT_DB_USER:-penpot_user}
       POSTGRES_PASSWORD: ${PENPOT_DB_PASSWORD:-penpot_password}
     ports:
-      - "${PENPOT_DB_PORT:-5435}:5432"
+      - "${DENDRITE_BIND_HOST:-127.0.0.1}:${PENPOT_DB_PORT:-5435}:5432"
     volumes:
       - penpot-postgres-data:/var/lib/postgresql/data
     networks:
@@ -35,7 +35,7 @@ services:
     container_name: dendrite-penpot-redis
     restart: unless-stopped
     ports:
-      - "${PENPOT_REDIS_PORT:-6381}:6379"
+      - "${DENDRITE_BIND_HOST:-127.0.0.1}:${PENPOT_REDIS_PORT:-6381}:6379"
     volumes:
       - penpot-redis-data:/data
     networks:
@@ -64,7 +64,7 @@ services:
       PENPOT_SECRET_KEY: "${PENPOT_SECRET_KEY:-dendrite_penpot_secret_key_mock_local}"
       PENPOT_PUBLIC_URI: "http://localhost:${PENPOT_FRONTEND_PORT:-9000}"
     ports:
-      - "${PENPOT_BACKEND_PORT:-9001}:6060"
+      - "${DENDRITE_BIND_HOST:-127.0.0.1}:${PENPOT_BACKEND_PORT:-9001}:6060"
     volumes:
       - penpot-assets:/opt/data/assets
     networks:
@@ -82,7 +82,7 @@ services:
       PENPOT_BACKEND_URI: "http://penpot-backend:6060"
       PENPOT_EXPORTER_URI: "http://penpot-backend:6060"
     ports:
-      - "${PENPOT_FRONTEND_PORT:-9000}:8080"
+      - "${DENDRITE_BIND_HOST:-127.0.0.1}:${PENPOT_FRONTEND_PORT:-9000}:8080"
     networks:
       - dendrite-mesh
     healthcheck:

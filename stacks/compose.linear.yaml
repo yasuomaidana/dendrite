@@ -17,7 +17,7 @@ services:
       POSTGRES_USER: ${LINEAR_DB_USER:-linear_user}
       POSTGRES_PASSWORD: ${LINEAR_DB_PASSWORD:-linear_password}
     ports:
-      - "${LINEAR_DB_PORT:-5433}:5432"
+      - "${DENDRITE_BIND_HOST:-127.0.0.1}:${LINEAR_DB_PORT:-5433}:5432"
     volumes:
       - linear-postgres-data:/var/lib/postgresql/data
     networks:

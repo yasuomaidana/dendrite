@@ -36,6 +36,7 @@ func readTemplate(dir string) ([]string, error) {
 // published in TemplatePath on purpose: they are local-development values.
 var ManagedSecrets = []string{
 	"POSTGRES_PASSWORD",
+	"REDIS_PASSWORD",
 	"LITELLM_MASTER_KEY",
 	"LITELLM_SALT_KEY",
 	"PLANE_DB_PASSWORD",
