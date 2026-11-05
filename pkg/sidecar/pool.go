@@ -72,7 +72,9 @@ type job struct {
 	ctx    context.Context
 	method string
 	params interface{}
-	done   chan jobResult
+	// idempotent requests may be sent again on a fresh process when the first one died after it was sent.
+	idempotent bool
+	done       chan jobResult
 }
 
 type jobResult struct {
@@ -116,8 +118,18 @@ func (p *Pool) Stats() PoolStats {
 
 // Call queues one request and decodes its result into result (which may be nil). It returns
 // ErrQueueFull at once when the queue is at capacity and ErrUnavailable when no sidecar can run.
+//
+// A request whose process died after it was sent is not sent again: it may already have taken effect.
+// Use CallIdempotent for requests that are safe to repeat.
 func (p *Pool) Call(ctx context.Context, method string, params, result interface{}) error {
-	raw, err := p.submit(ctx, method, params)
+	raw, err := p.submit(ctx, method, params, false)
+	return decodeResult(raw, err, result)
+}
+
+// CallIdempotent is Call for requests that are safe to repeat (queries, pure computations, writes that set a
+// value): if the process dies while serving one, it is sent once more to a fresh process.
+func (p *Pool) CallIdempotent(ctx context.Context, method string, params, result interface{}) error {
+	raw, err := p.submit(ctx, method, params, true)
 	return decodeResult(raw, err, result)
 }
 
@@ -149,18 +161,22 @@ func (p *Pool) CallShared(ctx context.Context, method string, params, result int
 	p.flights[key] = f
 	p.mu.Unlock()
 
-	// The leader's cancellation must not fail the followers that joined its flight.
-	raw, err := p.submit(context.WithoutCancel(ctx), method, params)
-	p.mu.Lock()
-	delete(p.flights, key)
-	p.mu.Unlock()
-	f.raw, f.err = raw, err
-	close(f.done)
-
-	if ctx.Err() != nil {
+	// The shared execution runs on its own context: the leader's cancellation must not fail the followers that
+	// joined its flight. The leader itself still returns as soon as its own context ends.
+	go func() {
+		raw, err := p.submit(context.WithoutCancel(ctx), method, params, true)
+		p.mu.Lock()
+		delete(p.flights, key)
+		p.mu.Unlock()
+		f.raw, f.err = raw, err
+		close(f.done)
+	}()
+	select {
+	case <-f.done:
+		return decodeResult(f.raw, f.err, result)
+	case <-ctx.Done():
 		return ctx.Err()
 	}
-	return decodeResult(raw, err, result)
 }
 
 func decodeResult(raw json.RawMessage, err error, result interface{}) error {
@@ -173,17 +189,20 @@ func decodeResult(raw json.RawMessage, err error, result interface{}) error {
 	return json.Unmarshal(raw, result)
 }
 
-func (p *Pool) submit(ctx context.Context, method string, params interface{}) (json.RawMessage, error) {
+func (p *Pool) submit(ctx context.Context, method string, params interface{}, idempotent bool) (json.RawMessage, error) {
+	j := &job{ctx: ctx, method: method, params: params, idempotent: idempotent, done: make(chan jobResult, 1)}
+	// The closed check and the enqueue happen under one lock, and Close sets closed under the same lock before the
+	// worker drains: a job is either refused here or sits in the queue when the drain runs, never in between.
 	p.mu.Lock()
-	closed := p.closed
-	p.mu.Unlock()
-	if closed {
+	if p.closed {
+		p.mu.Unlock()
 		return nil, ErrPoolClosed
 	}
-	j := &job{ctx: ctx, method: method, params: params, done: make(chan jobResult, 1)}
 	select {
 	case p.jobs <- j:
+		p.mu.Unlock()
 	default:
+		p.mu.Unlock()
 		p.rejected.Add(1)
 		return nil, ErrQueueFull
 	}
@@ -259,8 +278,8 @@ func (p *Pool) execute(j *job) {
 		j.done <- jobResult{err: err}
 		return
 	}
-	// A transport failure (the process died) is retried once on a fresh process; a sidecar
-	// answer, even an error, is final.
+	// A transport failure (the process died) is retried once on a fresh process, but only when repeating the
+	// request is safe: it is idempotent, or it never reached the sidecar. A sidecar answer, even an error, is final.
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		c, err := p.ensure(j.ctx)
@@ -288,6 +307,9 @@ func (p *Pool) execute(j *job) {
 		// A timeout or cancellation is the caller's budget running out: retrying would only
 		// double the wait. Only a process that died gets a second chance.
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			break
+		}
+		if !j.idempotent && !errors.Is(err, errNotSent) {
 			break
 		}
 	}

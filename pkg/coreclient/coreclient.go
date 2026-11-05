@@ -125,7 +125,7 @@ func (c *Client) call(ctx context.Context, method string, params, result interfa
 	if c == nil || c.pool == nil {
 		return ErrBinaryMissing
 	}
-	err := c.pool.Call(ctx, method, params, result)
+	err := c.pool.CallIdempotent(ctx, method, params, result)
 	if err == nil {
 		return nil
 	}

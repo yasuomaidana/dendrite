@@ -26,7 +26,7 @@ type conn struct {
 
 func (c *conn) Call(ctx context.Context, method string, params, result interface{}) error {
 	return retryWhileLocked(ctx, lockWait, func() error {
-		return c.pool.Call(ctx, method, params, result)
+		return c.pool.CallIdempotent(ctx, method, params, result)
 	})
 }
 
@@ -130,7 +130,7 @@ func (r *Retriever) connect(ctx context.Context, bin string) (*conn, error) {
 
 	if e.health.Protocol == "" {
 		var h sidecar.Health
-		if err := e.pool.Call(ctx, "health", nil, &h); err != nil {
+		if err := e.pool.CallIdempotent(ctx, "health", nil, &h); err != nil {
 			return nil, fmt.Errorf("health: %w", err)
 		}
 		poolsMu.Lock()
