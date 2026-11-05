@@ -150,7 +150,7 @@ func TestChronosFinishReportsTheOutcome(t *testing.T) {
 	if err := chronos.RunChronosFinish(ctx, planecli.LifecycleIn(mustClient(t), r.repo), "DEN-377", finishChecks(true), &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "[✓] DEN-377 is now Done") || !strings.Contains(out.String(), "no [AC-n] criteria") {
+	if !strings.Contains(out.String(), "[✓] DEN-377 is now To Verify") || !strings.Contains(out.String(), "no [AC-n] criteria") {
 		t.Errorf("output = %q", out.String())
 	}
 
@@ -158,7 +158,7 @@ func TestChronosFinishReportsTheOutcome(t *testing.T) {
 	r2.claim()
 	clitest.JsonOutput(t, true)
 	out.Reset()
-	if err := chronos.RunChronosFinish(ctx, planecli.LifecycleIn(mustClient(t), r2.repo), "DEN-377", finishChecks(true), &out); err != nil || !strings.Contains(out.String(), `"state": "Done"`) {
+	if err := chronos.RunChronosFinish(ctx, planecli.LifecycleIn(mustClient(t), r2.repo), "DEN-377", finishChecks(true), &out); err != nil || !strings.Contains(out.String(), `"state": "To Verify"`) {
 		t.Errorf("json output = %q, %v", out.String(), err)
 	}
 	clitest.JsonOutput(t, false)
