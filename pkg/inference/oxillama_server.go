@@ -440,15 +440,9 @@ func (s *OxiLLaMaServer) listStoredModels() []string {
 	var models []string
 	for _, entry := range entries {
 		if entry.IsDir() {
-			mfPath := filepath.Join(s.cfg.ModelsDir, entry.Name(), "oxillama-manifest.json")
-			if data, err := os.ReadFile(mfPath); err == nil {
-				var mf struct {
-					Name string `json:"name"`
-				}
-				if json.Unmarshal(data, &mf) == nil && mf.Name != "" {
-					models = append(models, mf.Name)
-					continue
-				}
+			if name := readManifestModelName(filepath.Join(s.cfg.ModelsDir, entry.Name())); name != "" {
+				models = append(models, name)
+				continue
 			}
 			name := strings.ReplaceAll(entry.Name(), "_", ":")
 			models = append(models, name)

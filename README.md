@@ -255,7 +255,7 @@ flowchart TB
 
 ### Installation
 
-Dendrite and its sub-projects (`dendrite-mcp-hub`, `dendrite-core-rs`, `dendrite-git-rs`, `dendrite-rag-rs`, `embedag`) are installed from git. Every repository is cloned next to the others and kept on one branch: `main` for a normal install, `develop` for a dev install.
+Dendrite and its sub-projects (`dendrite-mcp-hub`, `dendrite-core-rs`, `dendrite-git-rs`, `dendrite-rag-rs`, `dendrite-plane-rs`, `embedag`) are installed from git. Every repository is cloned next to the others and kept on one branch: `main` for a normal install, `develop` for a dev install.
 
 ```bash
 # Stable: every repository on main, under ~/dendrite (override with --root)
@@ -349,7 +349,7 @@ dendrite bouton sessions
 
 Dendrite features an automated Docs-as-Code reflection and audit engine that guarantees committed documentation never drifts from code:
 
-- **[CLI Command Reference](docs/cli/) (`docs/cli/`)**: One page per top-level command, generated from the live command tree (e.g. [`soma.md`](docs/cli/soma.md), [`chronos.md`](docs/cli/chronos.md), [`bouton.md`](docs/cli/bouton.md), [`codex.md`](docs/cli/codex.md)), with aliases, every subcommand's flags, and examples. [`dendrite.md`](docs/cli/dendrite.md) lists the groups and the global flags.
+- **[CLI Command Reference](docs/cli/) (`docs/cli/`)**: One page per top-level command, generated from the live command tree (e.g. [`soma.md`](docs/cli/soma.md), [`chronos.md`](docs/cli/chronos.md), [`bouton.md`](docs/cli/bouton.md), [`codex.md`](docs/cli/codex.md)), with aliases, every subcommand's flags, and examples. [`dendrite.md`](docs/cli/dendrite.md) lists the groups and the global flags. [`availability.md`](docs/cli/availability.md) shows which commands are on `main` and which are on `develop` only.
 - **[MCP Tool Reference](docs/mcp/) (`docs/mcp/`)**: Individual reference pages for all registered Model Context Protocol tools (e.g. [`dendrite_env_status.md`](docs/mcp/dendrite_env_status.md), [`dendrite_ticket_list.md`](docs/mcp/dendrite_ticket_list.md), [`dendrite_commit.md`](docs/mcp/dendrite_commit.md)), documenting descriptions, JSON schemas, and example JSON-RPC/CLI calls.
 - **[CLI Command Tree Conventions](docs/architecture/cli-cobra.md)**: How commands, flags, errors and tests are written.
 - **[System Topology & Decoupled Compute Tiers](docs/architecture/01-system-topology.md)**: Network mesh routing and node placement models.

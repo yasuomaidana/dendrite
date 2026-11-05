@@ -5,6 +5,7 @@
 // TESTSIDECAR_MODE alters behaviour after the handshake: "badjson" answers with
 // invalid JSON, "wrongid" answers with a mismatched id, "hang" never answers,
 // "exit" exits without answering, "linger" keeps running after stdin closes.
+// Methods: health, echo, noresult, pid, sleep {"ms"}, die.
 package main
 
 import (
@@ -27,6 +28,7 @@ func main() {
 		protocol = "1.0.0"
 	}
 	mode := os.Getenv("TESTSIDECAR_MODE")
+	calls := 0
 	in := bufio.NewScanner(os.Stdin)
 	out := json.NewEncoder(os.Stdout)
 	for in.Scan() {
@@ -53,6 +55,19 @@ func main() {
 			resp["result"] = map[string]string{"name": "testsidecar", "version": "0.1.0", "protocol": protocol}
 		case "echo":
 			resp["result"] = req.Params
+		case "pid":
+			resp["result"] = map[string]int{"pid": os.Getpid()}
+		case "sleep":
+			// {"ms": N}: answers after N milliseconds with the process id and a per-process call counter.
+			var p struct {
+				MS int `json:"ms"`
+			}
+			_ = json.Unmarshal(req.Params, &p)
+			time.Sleep(time.Duration(p.MS) * time.Millisecond)
+			calls++
+			resp["result"] = map[string]int{"pid": os.Getpid(), "calls": calls, "ms": p.MS}
+		case "die":
+			os.Exit(4)
 		case "noresult":
 		default:
 			resp["error"] = map[string]interface{}{"code": -32601, "message": "method not found: " + req.Method}

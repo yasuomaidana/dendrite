@@ -1,5 +1,10 @@
 package ast
 
+// TODO(move:dendrite-rag-rs,DRAG-79): SymbolGraph and the blast-radius report are a code-knowledge graph; dendrite-rag-rs already serves graph.* (explain, path, god nodes).
+//   When: graph.* covers blast radius (DRAG-79); then callers use the sidecar and this file is deleted.
+//   Stays in Go: nothing: the types go with it.
+//   Until then: fix bugs here, but do not add features; add them in the Rust repository.
+
 import (
 	"sync"
 )

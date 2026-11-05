@@ -14,7 +14,7 @@ Migrate models from Ollama to OxiLLaMa pure-Rust inference engine and evict sour
 {
   "properties": {
     "delete_source": {
-      "description": "If true, evicts model from source engine upon successful verification (default: true)",
+      "description": "If true, evicts model from source engine upon successful verification (default: false; OxiLLaMa runs prompts on the CPU, so keep the Ollama copy for GPU inference)",
       "type": "boolean"
     },
     "dry_run": {

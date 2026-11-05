@@ -2,6 +2,7 @@ package exporter
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,37 +12,43 @@ import (
 	"Dendrite/pkg/telemetry"
 )
 
-type mockSensor struct {
+type stubSensor struct {
 	temp float64
 	err  error
 }
 
-func (m *mockSensor) GetSoCTemperature(ctx context.Context) (float64, error) {
-	return m.temp, m.err
+func (s *stubSensor) GetSoCTemperature(ctx context.Context) (float64, error) {
+	return s.temp, s.err
 }
 
-type mockSpend struct {
+type stubSpend struct {
 	spend24h float64
 	spend7d  float64
 	budget   float64
 }
 
-func (m *mockSpend) GetTokenSpend(ctx context.Context) (float64, float64, float64, error) {
-	return m.spend24h, m.spend7d, m.budget, nil
+func (s *stubSpend) GetTokenSpend(ctx context.Context) (float64, float64, float64, error) {
+	return s.spend24h, s.spend7d, s.budget, nil
 }
 
-type mockPinger struct {
+type stubPinger struct {
 	nodes map[string]string
 }
 
-func (m *mockPinger) PingNodes(ctx context.Context) map[string]string {
-	return m.nodes
+func (s *stubPinger) PingNodes(ctx context.Context) map[string]string {
+	return s.nodes
+}
+
+type errorWriter struct{}
+
+func (errorWriter) Write(p []byte) (n int, err error) {
+	return 0, errors.New("write failed")
 }
 
 func TestPrometheusExporter_FormatAndServe(t *testing.T) {
-	sensor := &mockSensor{temp: 82.5}
-	spend := &mockSpend{spend24h: 12.45, spend7d: 68.20, budget: 50.0}
-	pinger := &mockPinger{nodes: map[string]string{
+	sensor := &stubSensor{temp: 82.5}
+	spend := &stubSpend{spend24h: 12.45, spend7d: 68.20, budget: 50.0}
+	pinger := &stubPinger{nodes: map[string]string{
 		"macbook-m3": "online",
 		"cloud-node": "offline",
 	}}
@@ -108,6 +115,50 @@ func TestPrometheusExporter_FormatAndServe(t *testing.T) {
 	}
 }
 
+func TestPrometheusExporter_ThermalCriticalAndReachableNodes(t *testing.T) {
+	sensor := &stubSensor{temp: 89.5} // > CriticalTempC (85.0)
+	spend := &stubSpend{spend24h: 1.0, spend7d: 2.0, budget: 10.0}
+	pinger := &stubPinger{nodes: map[string]string{
+		"node-a": "reachable",
+		"node-b": "healthy",
+		"node-c": "online",
+		"node-d": "degraded",
+	}}
+
+	daemonCfg := telemetry.DaemonConfig{
+		Interval:      100 * time.Millisecond,
+		WarningTempC:  80.0,
+		CriticalTempC: 85.0,
+	}
+	daemon := telemetry.NewDaemon(daemonCfg, sensor, spend, pinger, nil)
+
+	exp := NewPrometheusExporter(daemon)
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rr := httptest.NewRecorder()
+
+	exp.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", rr.Code)
+	}
+
+	body := rr.Body.String()
+	expectedSnippets := []string{
+		"dendrite_thermal_alert_status 1",
+		"dendrite_thermal_critical_status 1",
+		`dendrite_node_reachable{node="node-a",status="reachable"} 1`,
+		`dendrite_node_reachable{node="node-b",status="healthy"} 1`,
+		`dendrite_node_reachable{node="node-c",status="online"} 1`,
+		`dendrite_node_reachable{node="node-d",status="degraded"} 0`,
+	}
+
+	for _, snip := range expectedSnippets {
+		if !strings.Contains(body, snip) {
+			t.Errorf("expected snippet %q not found in body:\n%s", snip, body)
+		}
+	}
+}
+
 func TestPrometheusExporter_NilDaemonDefaults(t *testing.T) {
 	exp := NewPrometheusExporter(nil)
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
@@ -125,5 +176,19 @@ func TestPrometheusExporter_NilDaemonDefaults(t *testing.T) {
 	}
 	if !strings.Contains(body, `dendrite_node_reachable{node="localhost",status="healthy"} 1`) {
 		t.Errorf("expected default localhost node status, got:\n%s", body)
+	}
+	if !strings.Contains(body, `dendrite_gateway_requests_total{engine="default",status="200"} 0`) {
+		t.Errorf("expected default gateway request counter, got:\n%s", body)
+	}
+	if !strings.Contains(body, `dendrite_gateway_fallback_events_total{from="none",to="none"} 0`) {
+		t.Errorf("expected default fallback event counter, got:\n%s", body)
+	}
+}
+
+func TestPrometheusExporter_WriteMetrics_Error(t *testing.T) {
+	exp := NewPrometheusExporter(nil)
+	err := exp.WriteMetrics(context.Background(), errorWriter{})
+	if err == nil {
+		t.Fatal("expected error from WriteMetrics with errorWriter, got nil")
 	}
 }

@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"Dendrite/pkg/stacks"
 	"fmt"
 	"sort"
 
@@ -10,10 +11,10 @@ import (
 // DefaultProfileComposeFileMap maps compose profiles to their canonical file locations.
 func DefaultProfileComposeFileMap() map[string]string {
 	return map[string]string{
-		"control-plane": "stacks/compose.control.yaml",
-		"rea-worker":    "stacks/compose.rea-linux.yaml",
-		"repo-intel":    "stacks/compose.sandbox.yaml",
-		"inference":     "stacks/compose.inference.yaml",
+		"control-plane": stacks.Path("compose.control.yaml"),
+		"rea-worker":    stacks.Path("compose.rea-linux.yaml"),
+		"repo-intel":    stacks.Path("compose.sandbox.yaml"),
+		"inference":     stacks.Path("compose.inference.yaml"),
 	}
 }
 

@@ -165,7 +165,20 @@ func hasRustBinary(dir string) bool {
 		return true
 	}
 	data, _ := os.ReadFile(filepath.Join(dir, "Cargo.toml"))
-	return strings.Contains(string(data), "[[bin]]")
+	if strings.Contains(string(data), "[[bin]]") {
+		return true
+	}
+	if strings.Contains(string(data), "[workspace]") {
+		cratesDir := filepath.Join(dir, "crates")
+		if entries, err := os.ReadDir(cratesDir); err == nil {
+			for _, e := range entries {
+				if e.IsDir() && hasRustBinary(filepath.Join(cratesDir, e.Name())) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // isGoMain reports whether dir holds a non-test Go file declaring package main.
@@ -202,7 +215,8 @@ func isGoMain(dir string) bool {
 
 // BuildMember builds dir's binaries: Go main packages into binDir (named after the
 // package directory, the module directory for "."), Rust binaries with
-// `cargo build --release` (left in target/release, where the sidecar locator looks).
+// `cargo build --release` (left in target/release, where the sidecar locator looks,
+// and copied into binDir when non-empty).
 // It returns what was built; libraries and unknown layouts build nothing.
 func BuildMember(ctx context.Context, dir, binDir string) (Artifact, []string, error) {
 	art := Detect(dir)
@@ -222,12 +236,86 @@ func BuildMember(ctx context.Context, dir, binDir string) (Artifact, []string, e
 		}
 		return art, built, nil
 	case KindRustBinary:
-		if err := Run(ctx, dir, "cargo", "build", "--release"); err != nil {
-			return art, nil, err
+		args := []string{"build", "--release"}
+		if hasDendriteRagCrate(dir) {
+			feat := "sqlite,postgres,hnsw,model2vec"
+			if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
+				feat += ",candle-metal"
+			} else if runtime.GOOS == "linux" {
+				feat += ",candle"
+			}
+			args = append(args, "--features", feat)
 		}
-		return art, []string{filepath.Join(dir, "target", "release")}, nil
+		if err := Run(ctx, dir, "cargo", args...); err != nil {
+			if len(args) > 2 {
+				if err2 := Run(ctx, dir, "cargo", "build", "--release"); err2 != nil {
+					return art, nil, err2
+				}
+			} else {
+				return art, nil, err
+			}
+		}
+		targetRelease := filepath.Join(dir, "target", "release")
+		var built []string
+		if binDir != "" {
+			_ = os.MkdirAll(binDir, 0o755)
+		}
+		if entries, err := os.ReadDir(targetRelease); err == nil {
+			for _, e := range entries {
+				if e.IsDir() {
+					continue
+				}
+				name := e.Name()
+				if !strings.HasPrefix(name, "dendrite-") || strings.Contains(name, ".") {
+					continue
+				}
+				src := filepath.Join(targetRelease, name)
+				info, err := e.Info()
+				if err != nil || info.Mode().Perm()&0o111 == 0 {
+					continue
+				}
+				if binDir != "" {
+					dst := filepath.Join(binDir, name)
+					if err := copyExecutable(src, dst); err == nil {
+						built = append(built, dst)
+						continue
+					}
+				}
+				built = append(built, src)
+			}
+		}
+		if len(built) == 0 {
+			built = append(built, targetRelease)
+		}
+		return art, built, nil
 	}
 	return art, nil, nil
+}
+
+func copyExecutable(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	_ = os.Remove(dst)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Chmod(0o755)
+}
+
+func hasDendriteRagCrate(dir string) bool {
+	if _, err := os.Stat(filepath.Join(dir, "crates", "dendrite-rag")); err == nil {
+		return true
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "Cargo.toml"))
+	return strings.Contains(string(data), "dendrite-rag")
 }
 
 // Release describes a published release and the asset for this platform.

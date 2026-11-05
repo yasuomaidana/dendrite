@@ -12,13 +12,24 @@ import (
 	"time"
 )
 
+// PlaneBinding is the Plane project that tracks a repository. The global index keeps it
+// so the binding survives a fresh clone, because .dendrite/ is never committed.
+type PlaneBinding struct {
+	Identifier string `json:"identifier"`
+	ProjectID  string `json:"project_id"`
+	Name       string `json:"name,omitempty"`
+	Workspace  string `json:"workspace,omitempty"`
+}
+
 // Entry represents one project recorded in the global index.
 type Entry struct {
-	ID       string    `json:"id"`
-	Path     string    `json:"path"`
-	Remote   string    `json:"remote,omitempty"` // normalized
-	Name     string    `json:"name,omitempty"`
-	LastSeen time.Time `json:"last_seen"`
+	ID         string        `json:"id"`
+	Path       string        `json:"path"`
+	Remote     string        `json:"remote,omitempty"` // normalized
+	Name       string        `json:"name,omitempty"`
+	RootCommit string        `json:"root_commit,omitempty"` // first commit of the repository: identity across clones
+	Plane      *PlaneBinding `json:"plane,omitempty"`
+	LastSeen   time.Time     `json:"last_seen"`
 }
 
 // Index tracks known Dendrite projects across the local machine.
@@ -187,19 +198,75 @@ func (ix *Index) List() []Entry {
 	return list
 }
 
+// LookupByRootCommit finds the entry of a repository by its first commit. When the repository
+// has a remote, the entry's remote must match (a fork has its own identity). The match must be
+// unique; an ambiguous one returns false rather than guessing.
+func (ix *Index) LookupByRootCommit(root, remote string) (Entry, bool) {
+	remote = NormalizeRemote(remote)
+	if root == "" {
+		return Entry{}, false
+	}
+
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+
+	var found []Entry
+	for _, e := range ix.Projects {
+		if e.RootCommit == root && (remote == "" || e.Remote == remote) {
+			found = append(found, e)
+		}
+	}
+	if len(found) != 1 {
+		return Entry{}, false
+	}
+	return found[0], true
+}
+
+// SetPlane records (or with nil clears) the Plane binding of an indexed project.
+// It returns false when the project is not in the index.
+func (ix *Index) SetPlane(id string, b *PlaneBinding) bool {
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+
+	e, ok := ix.Projects[id]
+	if !ok {
+		return false
+	}
+	e.Plane = b
+	ix.Projects[id] = e
+	return true
+}
+
 // Register ensures a project ID exists for dir, then records it in the index.
-// Register = Ensure(dir) + Upsert{ID, abs Path, NormalizeRemote(GitRemote(dir)), Name: filepath.Base(dir)}.
-// It returns the newly registered or updated entry.
+// A linked worktree registers its main checkout. A checkout without .dendrite/project.id
+// (a fresh clone, as .dendrite/ is not committed) takes the ID of the indexed project with the
+// same root commit and remote before a new ID is minted. The Plane binding already in the index
+// is kept. It returns the newly registered or updated entry.
 func (ix *Index) Register(dir string) (Entry, error) {
-	id, err := Ensure(dir)
-	if err != nil {
+	dir = StateRoot(dir)
+	root := GitRootCommit(dir)
+	remote := NormalizeRemote(GitRemote(dir))
+
+	id, err := Read(dir)
+	switch {
+	case err == nil:
+	case errors.Is(err, ErrNoProjectID):
+		if known, ok := ix.LookupByRootCommit(root, remote); ok {
+			id = known.ID
+			if err := fsutil.WriteFileAtomic(Path(dir), []byte(id+"\n")); err != nil {
+				return Entry{}, fmt.Errorf("projectid: write %s: %w", Path(dir), err)
+			}
+		} else if id, err = Ensure(dir); err != nil {
+			return Entry{}, err
+		}
+	default:
 		return Entry{}, err
 	}
 
-	absPath, _ := filepath.Abs(dir) // Ensure already succeeded, so the directory exists.
+	absPath, _ := filepath.Abs(dir) // the directory exists, as its ID was just read or written.
 
-	remote := NormalizeRemote(GitRemote(dir))
-	ix.Upsert(Entry{ID: id, Path: absPath, Remote: remote, Name: filepath.Base(absPath)})
+	prev, _ := ix.Lookup(id)
+	ix.Upsert(Entry{ID: id, Path: absPath, Remote: remote, Name: filepath.Base(absPath), RootCommit: root, Plane: prev.Plane})
 
 	stored, _ := ix.Lookup(id)
 	return stored, nil

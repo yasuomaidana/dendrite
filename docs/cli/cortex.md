@@ -154,6 +154,7 @@ Aliases: `start`
 
 | Flag | Description |
 | :--- | :--- |
+| `--no-auth` | Serve without an access token (any local process can then call the API) |
 | `--port` | Listen port (default: 3456) |
 
 ### `dendrite cortex sync`

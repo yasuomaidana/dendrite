@@ -189,12 +189,7 @@ func parseCoverage(output string) map[string]string {
 	return coverage
 }
 
-func findChangedInScopeGoFiles(ctx context.Context, runner CommandRunner, worktree string, scope []string) ([]string, error) {
-	stdout, stderr, code, err := runner.Run(ctx, worktree, "git", "status", "--porcelain", "--untracked-files=all")
-	if code != 0 || err != nil {
-		return nil, fmt.Errorf("git status error (%s): %w", string(stderr), err)
-	}
-
+func cleanScopeList(scope []string) []string {
 	cleanScopes := make([]string, 0, len(scope))
 	for _, s := range scope {
 		s = strings.TrimSpace(s)
@@ -202,6 +197,25 @@ func findChangedInScopeGoFiles(ctx context.Context, runner CommandRunner, worktr
 			cleanScopes = append(cleanScopes, filepath.Clean(s))
 		}
 	}
+	return cleanScopes
+}
+
+func fileMatchesScope(path string, cleanScopes []string) bool {
+	for _, s := range cleanScopes {
+		if s == "." || path == s || strings.HasPrefix(path, s+string(filepath.Separator)) || strings.HasPrefix(path, s+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func findChangedInScopeGoFiles(ctx context.Context, runner CommandRunner, worktree string, scope []string) ([]string, error) {
+	stdout, stderr, code, err := runner.Run(ctx, worktree, "git", "status", "--porcelain", "--untracked-files=all")
+	if code != 0 || err != nil {
+		return nil, fmt.Errorf("git status error (%s): %w", string(stderr), err)
+	}
+
+	cleanScopes := cleanScopeList(scope)
 
 	var goFiles []string
 	lines := strings.Split(string(stdout), "\n")
@@ -225,13 +239,7 @@ func findChangedInScopeGoFiles(ctx context.Context, runner CommandRunner, worktr
 			continue
 		}
 
-		inScope := len(cleanScopes) == 0
-		for _, s := range cleanScopes {
-			if s == "." || cleanFile == s || strings.HasPrefix(cleanFile, s+string(filepath.Separator)) || strings.HasPrefix(cleanFile, s+"/") {
-				inScope = true
-				break
-			}
-		}
+		inScope := len(cleanScopes) == 0 || fileMatchesScope(cleanFile, cleanScopes)
 		if inScope {
 			// verify file exists (e.g. wasn't deleted)
 			fullPath := filepath.Join(worktree, cleanFile)

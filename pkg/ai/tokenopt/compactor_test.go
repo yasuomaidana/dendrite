@@ -1,20 +1,19 @@
 package tokenopt
 
 import (
+	"Dendrite/pkg/coreclient/coretest"
 	"strings"
 	"testing"
+
+	"Dendrite/pkg/testkit"
 )
 
+func TestMain(m *testing.M) { coretest.Main(m) }
+
 func TestEstimateTokens(t *testing.T) {
-	if got := EstimateTokens(""); got != 0 {
-		t.Fatalf("expected 0 tokens for empty string, got %d", got)
-	}
-	if got := EstimateTokens("a"); got != 1 {
-		t.Fatalf("expected 1 token for single char, got %d", got)
-	}
-	if got := EstimateTokens("12345678"); got != 2 {
-		t.Fatalf("expected 2 tokens for 8 chars, got %d", got)
-	}
+	testkit.Equal(t, "empty", EstimateTokens(""), 0)
+	testkit.Equal(t, "single char", EstimateTokens("a"), 1)
+	testkit.Equal(t, "8 chars", EstimateTokens("12345678"), 2)
 }
 
 func TestCompactGoSource_Empty(t *testing.T) {
@@ -50,13 +49,9 @@ func (c *Client) CallAPI() error {
 }
 `
 	ctx, err := CompactGoSource(source, []string{"NewClient"})
-	if err != nil {
-		t.Fatalf("unexpected CompactGoSource error: %v", err)
-	}
+	testkit.Check(t, err)
 
-	if ctx.OriginalChars != len(source) {
-		t.Errorf("expected OriginalChars %d, got %d", len(source), ctx.OriginalChars)
-	}
+	testkit.Equal(t, "OriginalChars", ctx.OriginalChars, len(source))
 	if ctx.CompactedChars >= ctx.OriginalChars {
 		t.Errorf("expected CompactedChars < OriginalChars, got %d >= %d", ctx.CompactedChars, ctx.OriginalChars)
 	}
@@ -75,7 +70,6 @@ func (c *Client) CallAPI() error {
 }
 
 func TestCompactGoSource_SnippetFallback(t *testing.T) {
-	// A snippet without a package clause triggers the line-based fallback
 	snippet := `func StandaloneHelper(x int) int {
 	y := x * 2
 	return y
@@ -86,9 +80,7 @@ func KeptHelper() string {
 }
 `
 	ctx, err := CompactGoSource(snippet, []string{"KeptHelper"})
-	if err != nil {
-		t.Fatalf("unexpected CompactGoSource error on snippet: %v", err)
-	}
+	testkit.Check(t, err)
 
 	if !strings.Contains(ctx.CompactedContent, "return \"kept\"") {
 		t.Errorf("expected KeptHelper body to be preserved")
@@ -104,10 +96,16 @@ func TestCompactGoSource_MethodReceiverSnippet(t *testing.T) {
 }
 `
 	ctx, err := CompactGoSource(snippet, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	testkit.Check(t, err)
+
 	if strings.Contains(ctx.CompactedContent, "stepping") {
 		t.Errorf("expected Step body to be pruned")
+	}
+}
+
+func TestCompactGoSource_FoldError(t *testing.T) {
+	_, err := CompactGoSource("FAIL", nil)
+	if err == nil {
+		t.Fatal("expected error on fold failure")
 	}
 }

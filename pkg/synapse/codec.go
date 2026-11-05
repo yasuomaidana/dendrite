@@ -61,81 +61,98 @@ func Marshal(s *Synapse) ([]byte, error) {
 	}
 
 	var buf bytes.Buffer
-
-	// Root properties
-	fmt.Fprintf(&buf, "id = %s\n", quoteString(s.ID))
-	fmt.Fprintf(&buf, "name = %s\n", quoteString(s.Name))
-	fmt.Fprintf(&buf, "state = %s\n", quoteString(string(s.State)))
-	if !s.CreatedAt.IsZero() {
-		fmt.Fprintf(&buf, "created_at = %s\n", quoteString(s.CreatedAt.UTC().Format(time.RFC3339)))
-	}
-	if !s.UpdatedAt.IsZero() {
-		fmt.Fprintf(&buf, "updated_at = %s\n", quoteString(s.UpdatedAt.UTC().Format(time.RFC3339)))
-	}
-	if s.Channel != "" {
-		fmt.Fprintf(&buf, "channel = %s\n", quoteString(string(s.Channel)))
-	}
-
-	// [sync]
-	if s.Sync.Strategy != "" {
-		buf.WriteString("\n[sync]\n")
-		fmt.Fprintf(&buf, "strategy = %s\n", quoteString(s.Sync.Strategy))
-	}
-
-	// [parity.commands]
-	if len(s.Parity.Commands) > 0 {
-		buf.WriteString("\n[parity.commands]\n")
-		keys := make([]string, 0, len(s.Parity.Commands))
-		for k := range s.Parity.Commands {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			fmt.Fprintf(&buf, "%s = %s\n", formatKey(k), quoteString(s.Parity.Commands[k]))
-		}
-	}
-
-	// [[members]]
+	writeRoot(&buf, s)
+	writeParity(&buf, s.Parity)
 	for _, m := range s.Members {
-		buf.WriteString("\n[[members]]\n")
-		fmt.Fprintf(&buf, "project_id = %s\n", quoteString(m.ProjectID))
-		fmt.Fprintf(&buf, "alias = %s\n", quoteString(m.Alias))
-		fmt.Fprintf(&buf, "role = %s\n", quoteString(string(m.Role)))
-		fmt.Fprintf(&buf, "path_hint = %s\n", quoteString(m.PathHint))
-		for _, kv := range [][2]string{
-			{"source", string(m.Source)},
-			{"remote", m.Remote},
-			{"ref", m.Ref},
-			{"module", m.Module},
-			{"locked_sha", m.LockedSHA},
-		} {
-			if kv[1] != "" {
-				fmt.Fprintf(&buf, "%s = %s\n", kv[0], quoteString(kv[1]))
-			}
-		}
-		if !m.LockedAt.IsZero() {
-			fmt.Fprintf(&buf, "locked_at = %s\n", quoteString(m.LockedAt.UTC().Format(time.RFC3339)))
-		}
-		if m.PlaneProject != "" {
-			fmt.Fprintf(&buf, "plane_project = %s\n", quoteString(m.PlaneProject))
-		}
+		writeMember(&buf, m)
 	}
-
-	// [[contracts]] and [[contracts.consumers]]
 	for _, c := range s.Contracts {
-		buf.WriteString("\n[[contracts]]\n")
-		fmt.Fprintf(&buf, "kind = %s\n", quoteString(c.Kind))
-		fmt.Fprintf(&buf, "producer = %s\n", quoteString(c.Producer))
-		fmt.Fprintf(&buf, "path = %s\n", quoteString(c.Path))
-
-		for _, cons := range c.Consumers {
-			buf.WriteString("\n[[contracts.consumers]]\n")
-			fmt.Fprintf(&buf, "alias = %s\n", quoteString(cons.Alias))
-			fmt.Fprintf(&buf, "path = %s\n", quoteString(cons.Path))
-		}
+		writeContract(&buf, c)
 	}
 
 	return buf.Bytes(), nil
+}
+
+// writeRoot emits the root keys and the [sync] table, leaving out what is empty.
+func writeRoot(buf *bytes.Buffer, s *Synapse) {
+	fmt.Fprintf(buf, "id = %s\n", quoteString(s.ID))
+	fmt.Fprintf(buf, "name = %s\n", quoteString(s.Name))
+	fmt.Fprintf(buf, "state = %s\n", quoteString(string(s.State)))
+	stamps := [][2]string{{"created_at", ""}, {"updated_at", ""}}
+	if !s.CreatedAt.IsZero() {
+		stamps[0][1] = s.CreatedAt.UTC().Format(time.RFC3339)
+	}
+	if !s.UpdatedAt.IsZero() {
+		stamps[1][1] = s.UpdatedAt.UTC().Format(time.RFC3339)
+	}
+	optional := append(stamps, [2]string{"channel", string(s.Channel)})
+	for _, kv := range optional {
+		if kv[1] != "" {
+			fmt.Fprintf(buf, "%s = %s\n", kv[0], quoteString(kv[1]))
+		}
+	}
+	if s.Sync.Strategy != "" {
+		buf.WriteString("\n[sync]\n")
+		fmt.Fprintf(buf, "strategy = %s\n", quoteString(s.Sync.Strategy))
+	}
+}
+
+// writeParity emits the [parity.commands] table with its keys sorted.
+func writeParity(buf *bytes.Buffer, p Parity) {
+	if len(p.Commands) == 0 {
+		return
+	}
+	buf.WriteString("\n[parity.commands]\n")
+	keys := make([]string, 0, len(p.Commands))
+	for k := range p.Commands {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Fprintf(buf, "%s = %s\n", formatKey(k), quoteString(p.Commands[k]))
+	}
+}
+
+// writeMember emits one [[members]] table, leaving out the optional keys that are empty.
+func writeMember(buf *bytes.Buffer, m Member) {
+	buf.WriteString("\n[[members]]\n")
+	fmt.Fprintf(buf, "project_id = %s\n", quoteString(m.ProjectID))
+	fmt.Fprintf(buf, "alias = %s\n", quoteString(m.Alias))
+	fmt.Fprintf(buf, "role = %s\n", quoteString(string(m.Role)))
+	fmt.Fprintf(buf, "path_hint = %s\n", quoteString(m.PathHint))
+	locked := ""
+	if !m.LockedAt.IsZero() {
+		locked = m.LockedAt.UTC().Format(time.RFC3339)
+	}
+	for _, kv := range [][2]string{
+		{"source", string(m.Source)},
+		{"remote", m.Remote},
+		{"ref", m.Ref},
+		{"module", m.Module},
+		{"locked_sha", m.LockedSHA},
+		{"branch", m.Branch},
+		{"push_remote", m.PushRemote},
+		{"target_remote", m.TargetRemote},
+		{"locked_at", locked},
+		{"plane_project", m.PlaneProject},
+	} {
+		if kv[1] != "" {
+			fmt.Fprintf(buf, "%s = %s\n", kv[0], quoteString(kv[1]))
+		}
+	}
+}
+
+// writeContract emits one [[contracts]] table and its [[contracts.consumers]].
+func writeContract(buf *bytes.Buffer, c Contract) {
+	buf.WriteString("\n[[contracts]]\n")
+	fmt.Fprintf(buf, "kind = %s\n", quoteString(c.Kind))
+	fmt.Fprintf(buf, "producer = %s\n", quoteString(c.Producer))
+	fmt.Fprintf(buf, "path = %s\n", quoteString(c.Path))
+	for _, cons := range c.Consumers {
+		buf.WriteString("\n[[contracts.consumers]]\n")
+		fmt.Fprintf(buf, "alias = %s\n", quoteString(cons.Alias))
+		fmt.Fprintf(buf, "path = %s\n", quoteString(cons.Path))
+	}
 }
 
 type tableContext int
@@ -205,28 +222,21 @@ func parseQuotedString(s string) (str string, rest string, err error) {
 				b.WriteRune('\t')
 			case 'r':
 				b.WriteRune('\r')
-			case 'u':
-				if i+4 >= len(runes) {
-					return "", "", errors.New("short \\u escape sequence")
+			case 'u', 'U':
+				width := 4
+				if runes[i] == 'U' {
+					width = 8
 				}
-				hexStr := string(runes[i+1 : i+5])
+				if i+width >= len(runes) {
+					return "", "", fmt.Errorf("short \\%c escape sequence", runes[i])
+				}
+				hexStr := string(runes[i+1 : i+1+width])
 				val, err := strconv.ParseUint(hexStr, 16, 32)
 				if err != nil {
-					return "", "", fmt.Errorf("invalid \\u escape: %s", hexStr)
+					return "", "", fmt.Errorf("invalid \\%c escape: %s", runes[i], hexStr)
 				}
 				b.WriteRune(rune(val))
-				i += 4
-			case 'U':
-				if i+8 >= len(runes) {
-					return "", "", errors.New("short \\U escape sequence")
-				}
-				hexStr := string(runes[i+1 : i+9])
-				val, err := strconv.ParseUint(hexStr, 16, 32)
-				if err != nil {
-					return "", "", fmt.Errorf("invalid \\U escape: %s", hexStr)
-				}
-				b.WriteRune(rune(val))
-				i += 8
+				i += width
 			default:
 				return "", "", fmt.Errorf("unknown escape sequence \\%c", runes[i])
 			}
@@ -285,232 +295,4 @@ func parseValue(rawVal string, key string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("expected double-quoted string value, got %s", rawVal)
-}
-
-// Unmarshal parses a Synapse manifest from its on-disk TOML representation.
-// It supports:
-//   - '#' comments outside strings
-//   - Blank lines and leading/trailing whitespace
-//   - Double-quoted strings with \" \\ \n \t \r \uXXXX \UXXXXXXXX escapes
-//   - Tables [sync] and [parity.commands]
-//   - Array of tables [[members]], [[contracts]], and [[contracts.consumers]] (attaching to the latest contract)
-//
-// Any unknown keys, unknown tables, or malformed syntax produce an error containing the 1-based line number.
-func Unmarshal(data []byte) (*Synapse, error) {
-	s := &Synapse{}
-	lines := strings.Split(string(data), "\n")
-
-	ctx := contextRoot
-	seenRootKeys := make(map[string]bool)
-	seenSyncKeys := make(map[string]bool)
-	seenParityKeys := make(map[string]bool)
-	seenMemberKeys := make(map[string]bool)
-	seenContractKeys := make(map[string]bool)
-	seenConsumerKeys := make(map[string]bool)
-	seenSingleTables := make(map[string]bool)
-
-	for idx, rawLine := range lines {
-		lineNum := idx + 1
-		line := strings.TrimRight(rawLine, "\r")
-
-		stripped, err := stripComment(line)
-		if err != nil {
-			return nil, fmt.Errorf("line %d: %w", lineNum, err)
-		}
-		trimmed := strings.TrimSpace(stripped)
-		if trimmed == "" {
-			continue
-		}
-
-		// Array of tables [[...]]
-		if strings.HasPrefix(trimmed, "[[") {
-			if !strings.HasSuffix(trimmed, "]]") {
-				return nil, fmt.Errorf("line %d: malformed array of tables header: %s", lineNum, trimmed)
-			}
-			tableName := strings.TrimSpace(trimmed[2 : len(trimmed)-2])
-			switch tableName {
-			case "members":
-				ctx = contextMembers
-				s.Members = append(s.Members, Member{})
-				seenMemberKeys = make(map[string]bool)
-			case "contracts":
-				ctx = contextContracts
-				s.Contracts = append(s.Contracts, Contract{})
-				seenContractKeys = make(map[string]bool)
-			case "contracts.consumers":
-				if len(s.Contracts) == 0 {
-					return nil, fmt.Errorf("line %d: [[contracts.consumers]] declared before any [[contracts]]", lineNum)
-				}
-				ctx = contextContractsConsumers
-				latestContract := &s.Contracts[len(s.Contracts)-1]
-				latestContract.Consumers = append(latestContract.Consumers, Consumer{})
-				seenConsumerKeys = make(map[string]bool)
-			default:
-				return nil, fmt.Errorf("line %d: unknown array of tables %q", lineNum, tableName)
-			}
-			continue
-		}
-
-		// Single table [...]
-		if strings.HasPrefix(trimmed, "[") {
-			if !strings.HasSuffix(trimmed, "]") {
-				return nil, fmt.Errorf("line %d: malformed table header: %s", lineNum, trimmed)
-			}
-			tableName := strings.TrimSpace(trimmed[1 : len(trimmed)-1])
-			if seenSingleTables[tableName] {
-				return nil, fmt.Errorf("line %d: duplicate table %q", lineNum, tableName)
-			}
-			seenSingleTables[tableName] = true
-
-			switch tableName {
-			case "sync":
-				ctx = contextSync
-				seenSyncKeys = make(map[string]bool)
-			case "parity.commands":
-				ctx = contextParityCommands
-				if s.Parity.Commands == nil {
-					s.Parity.Commands = make(map[string]string)
-				}
-				seenParityKeys = make(map[string]bool)
-			default:
-				return nil, fmt.Errorf("line %d: unknown table %q", lineNum, tableName)
-			}
-			continue
-		}
-
-		// Key-value assignment
-		key, rawVal, err := parseKeyAndValue(trimmed)
-		if err != nil {
-			return nil, fmt.Errorf("line %d: %w", lineNum, err)
-		}
-		val, err := parseValue(rawVal, key)
-		if err != nil {
-			return nil, fmt.Errorf("line %d: %w", lineNum, err)
-		}
-
-		switch ctx {
-		case contextRoot:
-			if seenRootKeys[key] {
-				return nil, fmt.Errorf("line %d: duplicate key %q in root table", lineNum, key)
-			}
-			seenRootKeys[key] = true
-
-			switch key {
-			case "id":
-				s.ID = val
-			case "name":
-				s.Name = val
-			case "state":
-				s.State = State(val)
-			case "created_at":
-				t, err := time.Parse(time.RFC3339, val)
-				if err != nil {
-					return nil, fmt.Errorf("line %d: invalid created_at timestamp %q: %w", lineNum, val, err)
-				}
-				s.CreatedAt = t
-			case "updated_at":
-				t, err := time.Parse(time.RFC3339, val)
-				if err != nil {
-					return nil, fmt.Errorf("line %d: invalid updated_at timestamp %q: %w", lineNum, val, err)
-				}
-				s.UpdatedAt = t
-			case "channel":
-				s.Channel = Channel(val)
-			default:
-				return nil, fmt.Errorf("line %d: unknown key %q in root table", lineNum, key)
-			}
-
-		case contextSync:
-			if seenSyncKeys[key] {
-				return nil, fmt.Errorf("line %d: duplicate key %q in [sync]", lineNum, key)
-			}
-			seenSyncKeys[key] = true
-
-			switch key {
-			case "strategy":
-				s.Sync.Strategy = val
-			default:
-				return nil, fmt.Errorf("line %d: unknown key %q in [sync]", lineNum, key)
-			}
-
-		case contextParityCommands:
-			if seenParityKeys[key] {
-				return nil, fmt.Errorf("line %d: duplicate key %q in [parity.commands]", lineNum, key)
-			}
-			seenParityKeys[key] = true
-			s.Parity.Commands[key] = val
-
-		case contextMembers:
-			if seenMemberKeys[key] {
-				return nil, fmt.Errorf("line %d: duplicate key %q in [[members]]", lineNum, key)
-			}
-			seenMemberKeys[key] = true
-			m := &s.Members[len(s.Members)-1]
-			switch key {
-			case "project_id":
-				m.ProjectID = val
-			case "alias":
-				m.Alias = val
-			case "role":
-				m.Role = Role(val)
-			case "path_hint":
-				m.PathHint = val
-			case "source":
-				m.Source = Source(val)
-			case "remote":
-				m.Remote = val
-			case "ref":
-				m.Ref = val
-			case "module":
-				m.Module = val
-			case "locked_sha":
-				m.LockedSHA = val
-			case "locked_at":
-				t, err := time.Parse(time.RFC3339, val)
-				if err != nil {
-					return nil, fmt.Errorf("line %d: invalid locked_at timestamp %q: %w", lineNum, val, err)
-				}
-				m.LockedAt = t
-			case "plane_project":
-				m.PlaneProject = val
-			default:
-				return nil, fmt.Errorf("line %d: unknown key %q in [[members]]", lineNum, key)
-			}
-
-		case contextContracts:
-			if seenContractKeys[key] {
-				return nil, fmt.Errorf("line %d: duplicate key %q in [[contracts]]", lineNum, key)
-			}
-			seenContractKeys[key] = true
-			c := &s.Contracts[len(s.Contracts)-1]
-			switch key {
-			case "kind":
-				c.Kind = val
-			case "producer":
-				c.Producer = val
-			case "path":
-				c.Path = val
-			default:
-				return nil, fmt.Errorf("line %d: unknown key %q in [[contracts]]", lineNum, key)
-			}
-
-		case contextContractsConsumers:
-			if seenConsumerKeys[key] {
-				return nil, fmt.Errorf("line %d: duplicate key %q in [[contracts.consumers]]", lineNum, key)
-			}
-			seenConsumerKeys[key] = true
-			latestContract := &s.Contracts[len(s.Contracts)-1]
-			latestConsumer := &latestContract.Consumers[len(latestContract.Consumers)-1]
-			switch key {
-			case "alias":
-				latestConsumer.Alias = val
-			case "path":
-				latestConsumer.Path = val
-			default:
-				return nil, fmt.Errorf("line %d: unknown key %q in [[contracts.consumers]]", lineNum, key)
-			}
-		}
-	}
-
-	return s, nil
 }

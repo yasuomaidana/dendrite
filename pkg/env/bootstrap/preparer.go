@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"Dendrite/pkg/directive"
+	"Dendrite/pkg/env/pipeline"
 )
 
 // DefaultToolName specifies the default CI/CD and developer tool.
@@ -71,7 +74,7 @@ func (p *Preparer) ProbeToolchains() []ToolchainInfo {
 		testCmd    string
 		buildCmd   string
 	}{
-		{"go", "go", "curl -fsSL https://go.dev/dl/ || brew install go", "go test -v -race -cover ./pkg/...", "go build -v -o bin/dendrite ./cmd/dendrite"},
+		{"go", "go", "curl -fsSL https://go.dev/dl/ || brew install go", "go test -v -race -cover ./pkg/...", "go build -v ./..."},
 		{"cargo", "cargo", "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh", "cargo test --verbose", "cargo build --release"},
 		{"bun", "bun", "curl -fsSL https://bun.sh/install | bash", "bun test", "bun run build"},
 		{"uv", "uv", "curl -LsSf https://astral.sh/uv/install.sh | sh", "uv run pytest", "uv build"},
@@ -101,17 +104,16 @@ func (p *Preparer) ProbeToolchains() []ToolchainInfo {
 // Prepare runs the complete environment preparation, agent synchronization, and CI/CD enforcement pipeline.
 func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareReport, error) {
 	start := time.Now()
-
-	if opts.ProjectPath == "" {
-		opts.ProjectPath = "."
-	}
-	if opts.DefaultTool == "" {
-		opts.DefaultTool = DefaultToolName
-	}
+	opts = normalizePrepareOptions(opts)
 
 	fp, err := p.DetectStack(opts.ProjectPath)
 	if err != nil {
 		return nil, fmt.Errorf("stack detection failed: %w", err)
+	}
+
+	set, err := directiveSet(opts.ProjectPath)
+	if err != nil {
+		return nil, err
 	}
 
 	report := &PrepareReport{
@@ -125,45 +127,109 @@ func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareRe
 
 	// 1. CI/CD & Toolchain Enforcement
 	if opts.EnforceCICD {
-		installed, bin, installCmd := p.ProbeGitHubCopilot()
-		toolchains := p.ProbeToolchains()
-
-		cicd := CICDStatus{
-			DefaultTool:         opts.DefaultTool,
-			ToolInstalled:       installed,
-			ToolBinary:          bin,
-			ToolInstallCommand:  installCmd,
-			CoverageThreshold:   85.0,
-			CopilotInstructions: filepath.Join(".github", "copilot-instructions.md"),
-			CIWorkflowPath:      filepath.Join(".github", "workflows", "ci.yml"),
-			Toolchains:          toolchains,
-			Enforced:            true,
+		if err := p.stepCICD(opts, fp, set, report); err != nil {
+			return nil, err
 		}
-
-		created, updated, err := p.scaffoldCICD(opts.ProjectPath, fp, opts.DryRun)
-		if err != nil {
-			return nil, fmt.Errorf("CI/CD scaffolding failed: %w", err)
+		if err := stepDirectives(opts, report); err != nil {
+			return nil, err
 		}
-		cicd.FilesCreated = created
-		cicd.FilesUpdated = updated
-		report.CICD = cicd
-		report.FilesCreated = append(report.FilesCreated, created...)
-		report.FilesUpdated = append(report.FilesUpdated, updated...)
+		stepRstest(opts, report)
 	}
 
 	// 2. Agent Rules & Skills Synchronization
 	if opts.SyncSkills {
-		created, updated, skills, err := p.syncAgentRulesAndSkills(opts.ProjectPath, fp, opts.DryRun)
-		if err != nil {
-			return nil, fmt.Errorf("agent skills sync failed: %w", err)
+		if err := p.stepSyncSkills(opts, fp, set, report); err != nil {
+			return nil, err
 		}
-		report.FilesCreated = append(report.FilesCreated, created...)
-		report.FilesUpdated = append(report.FilesUpdated, updated...)
-		report.SkillsSynced = skills
+	}
+
+	// 3. The dendrite-rag shared tier: DENDRITE_RAG_PG_URL in $DENDRITE_HOME/rag.env.
+	if err := stepRagEnv(opts, report); err != nil {
+		return nil, err
 	}
 
 	report.Duration = time.Since(start)
 	return report, nil
+}
+
+func normalizePrepareOptions(opts PrepareOptions) PrepareOptions {
+	if opts.ProjectPath == "" {
+		opts.ProjectPath = "."
+	}
+	if opts.DefaultTool == "" {
+		opts.DefaultTool = DefaultToolName
+	}
+	return opts
+}
+
+func (p *Preparer) stepCICD(opts PrepareOptions, fp ProjectFingerprint, set directive.Set, report *PrepareReport) error {
+	installed, bin, installCmd := p.ProbeGitHubCopilot()
+	toolchains := p.ProbeToolchains()
+
+	cicd := CICDStatus{
+		DefaultTool:         opts.DefaultTool,
+		ToolInstalled:       installed,
+		ToolBinary:          bin,
+		ToolInstallCommand:  installCmd,
+		CoverageThreshold:   set.Coverage.MinPercent,
+		CopilotInstructions: filepath.Join(".github", "copilot-instructions.md"),
+		CIWorkflowPath:      filepath.Join(".github", "workflows", "ci.yml"),
+		Toolchains:          toolchains,
+		Enforced:            true,
+	}
+
+	created, updated, notes, err := p.scaffoldCICD(opts.ProjectPath, fp, set, opts)
+	if err != nil {
+		return fmt.Errorf("CI/CD scaffolding failed: %w", err)
+	}
+	cicd.FilesCreated = created
+	cicd.FilesUpdated = updated
+	report.CICD = cicd
+	report.FilesCreated = append(report.FilesCreated, created...)
+	report.FilesUpdated = append(report.FilesUpdated, updated...)
+	report.Notes = append(report.Notes, notes...)
+	return nil
+}
+
+func stepDirectives(opts PrepareOptions, report *PrepareReport) error {
+	dirCreated, dirUpdated, dirNotes, err := ensureDirectives(opts.ProjectPath, opts.DryRun)
+	if err != nil {
+		return fmt.Errorf("quality directives failed: %w", err)
+	}
+	report.FilesCreated = append(report.FilesCreated, dirCreated...)
+	report.FilesUpdated = append(report.FilesUpdated, dirUpdated...)
+	report.Notes = append(report.Notes, dirNotes...)
+	return nil
+}
+
+func stepRstest(opts PrepareOptions, report *PrepareReport) {
+	rstestChanged, rstestNotes := ensureRstest(opts.ProjectPath, opts.DryRun)
+	report.FilesUpdated = append(report.FilesUpdated, rstestChanged...)
+	report.Notes = append(report.Notes, rstestNotes...)
+}
+
+func (p *Preparer) stepSyncSkills(opts PrepareOptions, fp ProjectFingerprint, set directive.Set, report *PrepareReport) error {
+	created, updated, skills, err := p.syncAgentRulesAndSkills(opts.ProjectPath, fp, set, opts.DryRun)
+	if err != nil {
+		return fmt.Errorf("agent skills sync failed: %w", err)
+	}
+	report.FilesCreated = append(report.FilesCreated, created...)
+	report.FilesUpdated = append(report.FilesUpdated, updated...)
+	report.SkillsSynced = skills
+	return nil
+}
+
+func stepRagEnv(opts PrepareOptions, report *PrepareReport) error {
+	envCreated, envUpdated, err := ensureRagEnv(opts.ProjectPath, opts.DryRun)
+	if err != nil {
+		return fmt.Errorf("writing %s: %w", RagEnvFile, err)
+	}
+	if envCreated {
+		report.FilesCreated = append(report.FilesCreated, "$DENDRITE_HOME/"+RagEnvFile)
+	} else if envUpdated {
+		report.FilesUpdated = append(report.FilesUpdated, "$DENDRITE_HOME/"+RagEnvFile)
+	}
+	return nil
 }
 
 // Sync is an alias for Prepare ensuring idempotent alignment of the workspace, skills, and CI/CD tools.
@@ -176,25 +242,23 @@ func (p *Preparer) Update(ctx context.Context, opts PrepareOptions) (*PrepareRep
 	return p.Prepare(ctx, opts)
 }
 
-func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool) ([]string, []string, error) {
-	var created []string
-	var updated []string
-
+func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, set directive.Set, opts PrepareOptions) (created, updated, notes []string, err error) {
+	dryRun := opts.DryRun
 	githubDir := filepath.Join(root, ".github")
 	workflowsDir := filepath.Join(githubDir, "workflows")
 
 	if !dryRun {
 		if err := os.MkdirAll(workflowsDir, 0755); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
 	// 1. .github/copilot-instructions.md
 	copilotPath := filepath.Join(githubDir, "copilot-instructions.md")
-	copilotContent := renderCopilotInstructions(fp)
+	copilotContent := renderCopilotInstructions(fp, set)
 	c, u, err := writeOrUpdateFile(copilotPath, copilotContent, dryRun)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if c {
 		created = append(created, filepath.Join(".github", "copilot-instructions.md"))
@@ -202,18 +266,14 @@ func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool)
 		updated = append(updated, filepath.Join(".github", "copilot-instructions.md"))
 	}
 
-	// 2. .github/workflows/ci.yml
-	workflowPath := filepath.Join(workflowsDir, "ci.yml")
-	workflowContent := renderCIWorkflow(fp)
-	c, u, err = writeOrUpdateFile(workflowPath, workflowContent, dryRun)
+	// 2. .github/workflows/ci.yml, from the project's components, directives and extension
+	wf, err := pipeline.Scaffold(root, set, opts.AdoptCI, dryRun)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	if c {
-		created = append(created, filepath.Join(".github", "workflows", "ci.yml"))
-	} else if u {
-		updated = append(updated, filepath.Join(".github", "workflows", "ci.yml"))
-	}
+	created = append(created, wf.Created...)
+	updated = append(updated, wf.Updated...)
+	notes = append(notes, wf.Notes...)
 
 	// 3. Ensure .gitignore excludes coverage, build artifacts, lockfiles
 	giCreated, giUpdated := ensureGitignoreEntries(root, dryRun)
@@ -223,14 +283,10 @@ func (p *Preparer) scaffoldCICD(root string, fp ProjectFingerprint, dryRun bool)
 		updated = append(updated, ".gitignore")
 	}
 
-	return created, updated, nil
+	return created, updated, notes, nil
 }
 
-func (p *Preparer) syncAgentRulesAndSkills(root string, fp ProjectFingerprint, dryRun bool) ([]string, []string, []string, error) {
-	var created []string
-	var updated []string
-	var skills []string
-
+func (p *Preparer) syncAgentRulesAndSkills(root string, fp ProjectFingerprint, set directive.Set, dryRun bool) ([]string, []string, []string, error) {
 	agentsDir := filepath.Join(root, ".agents")
 	if !dryRun {
 		if err := os.MkdirAll(agentsDir, 0755); err != nil {
@@ -238,52 +294,134 @@ func (p *Preparer) syncAgentRulesAndSkills(root string, fp ProjectFingerprint, d
 		}
 	}
 
-	// 1. .agents/rules.md
-	rulesPath := filepath.Join(agentsDir, "rules.md")
-	rulesContent := renderAgentRules(fp)
-	c, u, err := writeOrUpdateFile(rulesPath, rulesContent, dryRun)
+	created, updated, err := syncAgentRulesStep(root, fp, set, dryRun)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if c {
-		created = append(created, filepath.Join(".agents", "rules.md"))
-	} else if u {
-		updated = append(updated, filepath.Join(".agents", "rules.md"))
-	}
 
-	// 2. AGENTS.md in project root
+	sc, su, skills, err := syncSkillsStep(root, dryRun)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	created = append(created, sc...)
+	updated = append(updated, su...)
+
+	return created, updated, skills, nil
+}
+
+func syncAgentRulesStep(root string, fp ProjectFingerprint, set directive.Set, dryRun bool) (created, updated []string, err error) {
+	c, u, err := syncAgentRulesFiles(root, fp, set, dryRun)
+	if err != nil {
+		return nil, nil, err
+	}
+	created, updated = append(created, c...), append(updated, u...)
+
+	pc, err := syncAgentPointerFiles(root, dryRun)
+	if err != nil {
+		return nil, nil, err
+	}
+	created = append(created, pc...)
+
+	cc, cu, err := syncClaudeHooks(root, dryRun)
+	if err != nil {
+		return nil, nil, err
+	}
+	created, updated = append(created, cc...), append(updated, cu...)
+
+	gc, gu := syncGitAndMCP(root, dryRun)
+	created, updated = append(created, gc...), append(updated, gu...)
+	return created, updated, nil
+}
+
+func syncAgentRulesFiles(root string, fp ProjectFingerprint, set directive.Set, dryRun bool) (created, updated []string, err error) {
+	rulesPath := filepath.Join(root, ".agents", "rules.md")
+	c, u, err := writeOrUpdateFile(rulesPath, renderAgentRules(fp, set), dryRun)
+	if err != nil {
+		return nil, nil, err
+	}
+	appendFileChange(&created, &updated, filepath.Join(".agents", "rules.md"), c, u)
+
 	agentsMDPath := filepath.Join(root, "AGENTS.md")
-	agentsMDContent := renderAgentsOverview(fp)
-	c, u, err = writeOrUpdateFile(agentsMDPath, agentsMDContent, dryRun)
+	agentsContent := renderAgentsOverview(fp) + renderSynapsesSection(root)
+	c, u, err = writeOrUpdateFile(agentsMDPath, agentsContent, dryRun)
+	if err != nil {
+		return nil, nil, err
+	}
+	appendFileChange(&created, &updated, "AGENTS.md", c, u)
+	return created, updated, nil
+}
+
+func syncAgentPointerFiles(root string, dryRun bool) (created []string, err error) {
+	for _, name := range pointerFiles {
+		target := filepath.Join(root, name)
+		if fileExists(target) {
+			continue
+		}
+		if c, _, err := writeOrUpdateFile(target, pointerFileContent, dryRun); err != nil {
+			return nil, err
+		} else if c {
+			created = append(created, name)
+		}
+	}
+	return created, nil
+}
+
+func syncClaudeHooks(root string, dryRun bool) (created, updated []string, err error) {
+	settingsPath := filepath.Join(root, filepath.FromSlash(claudeSettingsPath))
+	existing, _ := os.ReadFile(settingsPath)
+	merged, changed, err := mergeClaudeHooks(existing)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[!] %v\n", err)
+		return nil, nil, nil
+	}
+	if !changed {
+		return nil, nil, nil
+	}
+	c, u, err := writeOrUpdateFile(settingsPath, string(merged), dryRun)
+	if err != nil {
+		return nil, nil, err
+	}
+	appendFileChange(&created, &updated, claudeSettingsPath, c, u)
+	return created, updated, nil
+}
+
+func syncGitAndMCP(root string, dryRun bool) (created, updated []string) {
+	gitCreated, gitUpdated, gitNote, gitErr := installGitHook(root, dryRun)
+	created, updated = append(created, gitCreated...), append(updated, gitUpdated...)
+	if gitErr != nil {
+		fmt.Fprintf(os.Stderr, "[!] git pre-commit hook: %v\n", gitErr)
+	}
+	if gitNote != "" {
+		fmt.Fprintf(os.Stderr, "[!] %s\n", gitNote)
+	}
+
+	mcpCreated, mcpUpdated, mcpErr := writeMCPConfigs(root, dryRun)
+	created, updated = append(created, mcpCreated...), append(updated, mcpUpdated...)
+	if mcpErr != nil {
+		fmt.Fprintf(os.Stderr, "[!] MCP config left alone: %v\n", mcpErr)
+	}
+	return created, updated
+}
+
+func syncSkillsStep(root string, dryRun bool) (created, updated, skills []string, err error) {
+	c, err := seedDefaultSkills(root, dryRun)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if c {
-		created = append(created, "AGENTS.md")
-	} else if u {
-		updated = append(updated, "AGENTS.md")
+	created = append(created, c...)
+
+	wc, wu, err := syncWorkflowSkill(root, dryRun)
+	if err != nil {
+		return nil, nil, nil, err
 	}
+	created, updated = append(created, wc...), append(updated, wu...)
+	return created, updated, discoverSkills(root), nil
+}
 
-	// 3. Seed standard skills if missing
+func seedDefaultSkills(root string, dryRun bool) (created []string, err error) {
 	defaultSkills := map[string]string{
-		"copilot": `---
-name: copilot
-description: GitHub Copilot Custom Instructions & CI/CD Tool Template
----
-
-# GitHub Copilot Custom Instructions Template
-
-This template defines the custom rules and system instructions placed in .github/copilot-instructions.md.
-`,
-		"compliance": `---
-name: compliance
-description: Enterprise Architecture And Compliance Reference Framework
----
-
-# Enterprise Architecture And Compliance Reference Framework
-
-Reference criteria for domain isolation, SOLID principles, zero placeholders, and token economy.
-`,
+		"copilot":    "---\nname: copilot\ndescription: GitHub Copilot Custom Instructions & CI/CD Tool Template\n---\n\n# GitHub Copilot Custom Instructions Template\n\nThis template defines the custom rules and system instructions placed in .github/copilot-instructions.md.\n",
+		"compliance": "---\nname: compliance\ndescription: Enterprise Architecture And Compliance Reference Framework\n---\n\n# Enterprise Architecture And Compliance Reference Framework\n\nReference criteria for domain isolation, SOLID principles, zero placeholders, and token economy.\n",
 	}
 
 	for _, baseDir := range []string{filepath.Join(root, ".gemini", "skills"), filepath.Join(root, ".agents", "skills")} {
@@ -301,55 +439,51 @@ Reference criteria for domain isolation, SOLID principles, zero placeholders, an
 			}
 		}
 	}
+	return created, nil
+}
 
-	// 4. Managed dendrite-workflow skill: identical in every agent family's skill dir.
-	workflowSkill := renderDendriteWorkflowSkill()
+func syncWorkflowSkill(root string, dryRun bool) (created, updated []string, err error) {
+	workflowSkill := renderDendriteWorkflowSkill(root)
 	for _, dir := range skillDirs {
 		target := filepath.Join(root, filepath.FromSlash(dir), DendriteWorkflowSkill, "SKILL.md")
 		c, u, err := writeOrUpdateFile(target, workflowSkill, dryRun)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 		rel, _ := filepath.Rel(root, target)
-		if c {
-			created = append(created, rel)
-		} else if u {
-			updated = append(updated, rel)
-		}
+		appendFileChange(&created, &updated, rel, c, u)
 	}
+	return created, updated, nil
+}
 
-	// 5. Per-agent entry files importing AGENTS.md, only when missing.
-	for _, name := range pointerFiles {
-		target := filepath.Join(root, name)
-		if fileExists(target) {
-			continue
-		}
-		if c, _, err := writeOrUpdateFile(target, pointerFileContent, dryRun); err != nil {
-			return nil, nil, nil, err
-		} else if c {
-			created = append(created, name)
-		}
-	}
-
-	// Discover existing skills in every agent family's skill dir
+func discoverSkills(root string) []string {
+	var skills []string
 	skillSet := make(map[string]bool)
 	for _, dir := range skillDirs {
 		dir = filepath.Join(root, filepath.FromSlash(dir))
 		entries, err := os.ReadDir(dir)
-		if err == nil {
-			for _, e := range entries {
-				if e.IsDir() {
-					skillPath := filepath.Join(dir, e.Name(), "SKILL.md")
-					if fileExists(skillPath) && !skillSet[e.Name()] {
-						skillSet[e.Name()] = true
-						skills = append(skills, e.Name())
-					}
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				skillPath := filepath.Join(dir, e.Name(), "SKILL.md")
+				if fileExists(skillPath) && !skillSet[e.Name()] {
+					skillSet[e.Name()] = true
+					skills = append(skills, e.Name())
 				}
 			}
 		}
 	}
+	return skills
+}
 
-	return created, updated, skills, nil
+func appendFileChange(created, updated *[]string, rel string, isCreated, isUpdated bool) {
+	if isCreated {
+		*created = append(*created, rel)
+	} else if isUpdated {
+		*updated = append(*updated, rel)
+	}
 }
 
 func ensureGitignoreEntries(root string, dryRun bool) (bool, bool) {
@@ -365,11 +499,17 @@ func ensureGitignoreEntries(root string, dryRun bool) (bool, bool) {
 		"bin/",
 		".venv/",
 		"node_modules/",
+		// .dendrite/ is local tool state (project identity, Plane link, caches): never committed.
+		".dendrite/",
 	}
 
+	lines := map[string]bool{}
+	for _, l := range strings.Split(existing, "\n") {
+		lines[strings.TrimSpace(l)] = true
+	}
 	var toAppend []string
 	for _, n := range needed {
-		if !strings.Contains(existing, n) {
+		if !lines[n] && !(n == ".dendrite/" && lines[".dendrite"]) {
 			toAppend = append(toAppend, n)
 		}
 	}
@@ -401,197 +541,30 @@ func ensureGitignoreEntries(root string, dryRun bool) (bool, bool) {
 	return false, true
 }
 
-func renderCopilotInstructions(fp ProjectFingerprint) string {
-	var sb strings.Builder
-	sb.WriteString("# GitHub Copilot Custom Instructions\n\n")
-	sb.WriteString("> Authoritative developer guidelines and architectural constraints for AI code generation.\n\n")
-	sb.WriteString("## 1. Zero Code Without Plane Ticket Mandate\n")
-	sb.WriteString("- No agent, AI assistant, or engineer is permitted to author code or modify tests without an active, authoritative ticket in Plane v2 (`http://localhost:8090`).\n")
-	sb.WriteString("- Every commit must reference an active Plane ticket (e.g., `[DEN-XXX]`).\n\n")
-
-	sb.WriteString("## 2. Test-Driven Development (TDD) & Anti-Mock Mandate\n")
-	sb.WriteString("- Author tests before or alongside code implementation.\n")
-	sb.WriteString("- **Zero Mock Policy**: Do NOT use mocking frameworks, fake stubs, or synthetic dummies for persistence or protocols.\n")
-	sb.WriteString("- All persistent database layers (Postgres, Redis, MinIO) must use **Testcontainers** for real integration tests.\n")
-	sb.WriteString("- Maintain minimum statement coverage: **>= 85.0%** across all new packages.\n\n")
-
-	sb.WriteString("## 3. Approved & Enforced Toolchains (Go, Cargo, Bun, uv)\n")
-	sb.WriteString("All tooling and dependency operations must use project-approved toolchains:\n")
-	sb.WriteString("- **Go**: `go` (`go test -v -race -cover ./pkg/...`, `golangci-lint`)\n")
-	sb.WriteString("- **Rust**: `cargo` (`cargo test --verbose`, `cargo build --release`, `cargo clippy`)\n")
-	sb.WriteString("- **JavaScript / TypeScript**: `bun` (`bun test`, `bun run build`, `bun install --frozen-lockfile`) - legacy `npm` and `yarn` are strictly banned\n")
-	sb.WriteString("- **Python**: `uv` (`uv run pytest`, `uv pip list`, `uv venv`) - legacy `pip install` is strictly banned\n\n")
-
-	sb.WriteString("## 4. Technology Stack & Coding Standards\n")
-	sb.WriteString(fmt.Sprintf("- **Primary Stack**: %s\n", strings.ToUpper(string(fp.PrimaryStack))))
-	if fp.GoVersion != "" {
-		sb.WriteString(fmt.Sprintf("- **Go Toolchain**: %s\n", fp.GoVersion))
+// EnsureGitignoreLine appends line to root/.gitignore unless a line equal to it is already
+// there. It reports whether the file changed, or would change when dryRun is set.
+func EnsureGitignoreLine(root, line string, dryRun bool) (bool, error) {
+	path := filepath.Join(root, ".gitignore")
+	var existing string
+	if data, err := os.ReadFile(path); err == nil {
+		existing = string(data)
 	}
-	if len(fp.Toolchains) > 0 {
-		sb.WriteString(fmt.Sprintf("- **Active Toolchains**: %s\n", strings.Join(fp.Toolchains, ", ")))
-	}
-	if len(fp.Linters) > 0 {
-		sb.WriteString(fmt.Sprintf("- **Enforced Linters**: %s\n", strings.Join(fp.Linters, ", ")))
-	}
-	sb.WriteString("- **Complexity Limits**: Cyclomatic Complexity <= 15 per function, Cognitive Complexity <= 20, max function length <= 80 lines.\n\n")
-
-	sb.WriteString("## 5. Model Precedence & Zero-Cost Delegation\n")
-	sb.WriteString("- Commit messages and repetitive test digestions must be delegated to local zero-cost models (`qwen3.8:27b` / Ollama Metal) to conserve API tokens.\n")
-	sb.WriteString("- Cloud models (Gemini Pro, Copilot Sonnet) are reserved for macro architecture, complex decomposition, and review gates.\n")
-
-	return sb.String()
-}
-
-func renderCIWorkflow(fp ProjectFingerprint) string {
-	var sb strings.Builder
-	sb.WriteString("name: Dendrite CI/CD\n\n")
-	sb.WriteString("on:\n")
-	sb.WriteString("  push:\n")
-	sb.WriteString("    branches: [ develop, main ]\n")
-	sb.WriteString("  pull_request:\n")
-	sb.WriteString("    branches: [ develop, main ]\n\n")
-	sb.WriteString("jobs:\n")
-	sb.WriteString("  verify:\n")
-	sb.WriteString("    name: Test & Coverage Gate (>= 85%)\n")
-	sb.WriteString("    runs-on: ubuntu-latest\n")
-	sb.WriteString("    steps:\n")
-	sb.WriteString("      - name: Checkout Code\n")
-	sb.WriteString("        uses: actions/checkout@v4\n\n")
-
-	// 1. Go toolchain (if Go is detected or is primary)
-	if fp.HasGoMod || fp.PrimaryStack == StackGo {
-		goVer := fp.GoVersion
-		if goVer == "" {
-			goVer = "1.25"
+	for _, l := range strings.Split(existing, "\n") {
+		if strings.TrimSpace(l) == line {
+			return false, nil
 		}
-		sb.WriteString("      - name: Set up Go\n")
-		sb.WriteString("        uses: actions/setup-go@v5\n")
-		sb.WriteString(fmt.Sprintf("        with:\n          go-version: '%s'\n          cache: true\n\n", goVer))
-		sb.WriteString("      - name: Run Tests with Coverage\n")
-		sb.WriteString("        run: |\n          go test -v -race -coverprofile=coverage.out -covermode=atomic ./pkg/...\n")
-		sb.WriteString("      - name: Verify Coverage Threshold (>= 85%)\n")
-		sb.WriteString("        run: |\n          total=$(go tool cover -func=coverage.out | grep 'total:' | awk '{print $3}' | sed 's/%//')\n          echo \"Total Statement Coverage: ${total}%\"\n          awk -v cov=\"$total\" 'BEGIN { if (cov < 85.0) { print \"[-] Statement coverage \" cov \"% is below required 85.0%\"; exit 1 } else { print \"[\u2713] Coverage gate passed: \" cov \"%\"; exit 0 } }'\n\n")
 	}
-
-	// 2. Rust & Cargo toolchain
-	if fp.HasCargoToml || fp.HasCargo || fp.PrimaryStack == StackRust {
-		sb.WriteString("      - name: Set up Rust (cargo)\n")
-		sb.WriteString("        uses: dtolnay/rust-toolchain@stable\n\n")
-		sb.WriteString("      - name: Run Cargo Tests\n")
-		sb.WriteString("        run: cargo test --verbose\n\n")
+	if dryRun {
+		return true, nil
 	}
-
-	// 3. JS/TS & Bun toolchain
-	if fp.HasPackageJSON || fp.HasBun || fp.PrimaryStack == StackJavaScript || fp.PrimaryStack == StackTypeScript {
-		sb.WriteString("      - name: Set up Bun\n")
-		sb.WriteString("        uses: oven-sh/setup-bun@v2\n")
-		sb.WriteString("        with:\n          bun-version: latest\n\n")
-		sb.WriteString("      - name: Run Bun Tests & Build\n")
-		sb.WriteString("        run: |\n          if [ -d \"website\" ]; then\n            cd website && bun install --frozen-lockfile && bun run build\n          else\n            bun test\n          fi\n\n")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return false, err
 	}
-
-	// 4. Python & uv toolchain
-	if fp.HasPyProject || fp.HasUV || fp.PrimaryStack == StackPython {
-		sb.WriteString("      - name: Set up uv (Python)\n")
-		sb.WriteString("        uses: astral-sh/setup-uv@v5\n")
-		sb.WriteString("        with:\n          enable-cache: true\n\n")
-		sb.WriteString("      - name: Verify Python Environment with uv\n")
-		sb.WriteString("        run: |\n          uv --version\n          if [ -f \"scripts/pyproject.toml\" ]; then\n            cd scripts && uv pip list || true\n          fi\n")
+	defer f.Close()
+	if existing != "" && !strings.HasSuffix(existing, "\n") {
+		line = "\n" + line
 	}
-
-	return sb.String()
-}
-
-func renderAgentRules(fp ProjectFingerprint) string {
-	var sb strings.Builder
-	sb.WriteString("# Autonomous Agent Operating Rules\n\n")
-	sb.WriteString("## Authoritative Project Management & Plane Ownership\n")
-	sb.WriteString("- Plane v2 (`http://localhost:8090`) is the authoritative owner of ticket state.\n")
-	sb.WriteString("- NEVER use `DEV_STATUS.md` to decide what to work on; query Plane via `./bin/dendrite chronos next` or `dendrite_ticket_smart_select`.\n")
-	sb.WriteString("- Completed features must transition to `To Verify` (intermediate verification state) for human sign-off, never directly to `Done`.\n\n")
-
-	sb.WriteString("## Architecture & CI/CD Tooling Defaults\n")
-	sb.WriteString("- Default CI/CD & Assistant Tool: **GitHub Copilot** (`.github/copilot-instructions.md`).\n")
-	sb.WriteString(fmt.Sprintf("- Primary Stack: `%s`\n", fp.PrimaryStack))
-	sb.WriteString("- Standardized Toolsets:\n")
-	sb.WriteString("  - **Go**: `go test -v -race`, `golangci-lint`\n")
-	sb.WriteString("  - **Rust**: `cargo test`, `cargo build`, `cargo clippy`\n")
-	sb.WriteString("  - **JavaScript / TypeScript**: `bun test`, `bun run build` (zero npm)\n")
-	sb.WriteString("  - **Python**: `uv run`, `uv pip` (zero legacy pip)\n")
-	sb.WriteString("- Statement coverage threshold: **>= 85.0%**.\n")
-	sb.WriteString("- Anti-mock policy: genuine structs and Testcontainers only.\n\n")
-
-	sb.WriteString("## Dendrite-First Workflow (every model and session)\n")
-	writeNumberedRules(&sb)
-
-	return sb.String()
-}
-
-func renderAgentsOverview(fp ProjectFingerprint) string {
-	var sb strings.Builder
-	sb.WriteString("# Project Agents & Environment Orchestration\n\n")
-	sb.WriteString("This repository is orchestrated with autonomous multi-agent loops and governed by Dendrite.\n\n")
-	sb.WriteString("## Standard Tooling\n")
-	sb.WriteString("- **Default CI/CD Assistant**: GitHub Copilot (`.github/copilot-instructions.md`)\n")
-	sb.WriteString(fmt.Sprintf("- **Runtime Stack**: %s\n", strings.ToUpper(string(fp.PrimaryStack))))
-	sb.WriteString("- **Enforced Toolchains**: Go (`go`), Rust (`cargo`), Bun (`bun`), uv (`uv`)\n")
-	sb.WriteString("- **Authoritative Issue Tracker**: Plane v2 (`http://localhost:8090`)\n")
-	sb.WriteString("- **Token Governor**: LiteLLM Gateway (`http://localhost:4000`)\n\n")
-	sb.WriteString("## Preparation & Sync\n")
-	sb.WriteString("To synchronize agent rules, skills, and enforce CI/CD tooling defaults, execute:\n")
-	sb.WriteString("```bash\n")
-	sb.WriteString("dendrite soma prepare   # alias: dendrite env prepare\n")
-	sb.WriteString("```\n\n")
-
-	sb.WriteString("## Dendrite-First Workflow (all models: Claude, Antigravity/AGY, Gemini, Copilot, humans)\n")
-	writeNumberedRules(&sb)
-	sb.WriteString(fmt.Sprintf("\nSee the `%s` skill for commands and cleanup rules.\n\n", DendriteWorkflowSkill))
-
-	sb.WriteString("## Commit & VCS Guidance\n")
-	sb.WriteString("- `dendrite quantal` (alias `commit`) pushes the new commit to the configured remote (origin preferred) after every successful commit; use `--no-push` or `DENDRITE_COMMIT_PUSH=false` to opt out; it never force-pushes and refuses to push main/master.\n")
-	sb.WriteString("- `dendrite quantal --synapse[=<id>]` commits the current project, then walks its synapse peers: dirty peers are committed through the same AI-assisted engine after confirmation (`--yes` skips the prompt), and clean peers ahead of their upstream are pushed.\n")
-	sb.WriteString("- `dendrite sync` pushes unpushed commits and refreshes the Plane board (canonical states + DEV_STATUS when it changed) for the current project and every synapse peer, then records synapse health (`active`/`broken`). `dendrite sync --all --watch` keeps every synapse current (`DENDRITE_SYNC_INTERVAL`, default 10m).\n")
-	sb.WriteString("- Plane workflow states are canonical across projects (`plane.CanonicalStates`); fix drift with `dendrite chronos states reconcile --all`.\n\n")
-
-	sb.WriteString("## Session Start & Handoff\n")
-	sb.WriteString("Every new session (Claude, AGY, or human) starts with:\n")
-	sb.WriteString("```bash\n")
-	sb.WriteString("dendrite session resume\n")
-	sb.WriteString("```\n")
-	sb.WriteString("Orchestrators run `dendrite session checkpoint` after each finished ticket and before long waits:\n")
-	sb.WriteString("```bash\n")
-	sb.WriteString("dendrite session checkpoint [--worktree dir] [--decision \"...\"]... [--next \"DEN-XXX\"]... [--note \"...\"]\n")
-	sb.WriteString("```\n")
-
-	return sb.String()
-}
-
-func writeOrUpdateFile(path, content string, dryRun bool) (bool, bool, error) {
-	existing, err := os.ReadFile(path)
-	if err == nil {
-		if string(existing) == content {
-			return false, false, nil // No change
-		}
-		if !dryRun {
-			if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-				return false, false, err
-			}
-		}
-		return false, true, nil // Updated
-	}
-
-	if os.IsNotExist(err) {
-		if !dryRun {
-			dir := filepath.Dir(path)
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				return false, false, err
-			}
-			if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-				return false, false, err
-			}
-		}
-		return true, false, nil // Created
-	}
-
-	return false, false, err
+	_, err = f.WriteString(line + "\n")
+	return err == nil, err
 }

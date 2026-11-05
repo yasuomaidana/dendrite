@@ -50,27 +50,63 @@ var (
 	npmFileRegex   = regexp.MustCompile(`"(?:file|link):([^"]+)"`)
 )
 
-// Discover returns the git repositories that are direct children of the given roots.
+// Discover returns the git repositories that are children of the given roots, or grandchildren
+// when a child is a plain folder that groups repositories (e.g. Projects/classes/<repo>).
 // Linked worktrees (where .git is a file, e.g. dendrite-work/ copies) are working copies of
 // another repository, not projects of their own, and are skipped.
 func Discover(roots []string) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, root := range roots {
-		entries, err := os.ReadDir(root)
+	var visit func(dir string, depth int)
+	visit = func(dir string, depth int) {
+		entries, err := os.ReadDir(dir)
 		if err != nil {
-			continue
+			return
 		}
 		for _, e := range entries {
-			dir := filepath.Join(root, e.Name())
-			if info, err := os.Stat(filepath.Join(dir, ".git")); err == nil && info.IsDir() && !seen[dir] {
-				seen[dir] = true
-				out = append(out, dir)
+			if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || skipDirs[e.Name()] {
+				continue
+			}
+			child := filepath.Join(dir, e.Name())
+			info, err := os.Stat(filepath.Join(child, ".git"))
+			switch {
+			case err == nil && info.IsDir():
+				if !seen[child] {
+					seen[child] = true
+					out = append(out, child)
+				}
+			case err != nil && depth < 2:
+				visit(child, depth+1)
 			}
 		}
 	}
+	for _, root := range roots {
+		visit(root, 1)
+	}
 	sort.Strings(out)
 	return out
+}
+
+// GitHubOwners returns the accounts whose repositories the current GitHub user can modify:
+// the user's login and every organization they belong to. run executes `gh` with the given
+// arguments; an unavailable or unauthenticated gh yields nil.
+func GitHubOwners(run func(args ...string) ([]byte, error)) []string {
+	var owners []string
+	for _, args := range [][]string{
+		{"api", "user", "--jq", ".login"},
+		{"api", "user/orgs", "--jq", ".[].login"},
+	} {
+		out, err := run(args...)
+		if err != nil {
+			return owners
+		}
+		for _, line := range strings.Split(string(out), "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				owners = append(owners, line)
+			}
+		}
+	}
+	return owners
 }
 
 // OwnerOf returns the account part of a normalized remote ("github.com/acme/x" -> "acme").

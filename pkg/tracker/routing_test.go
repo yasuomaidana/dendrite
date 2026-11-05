@@ -41,6 +41,13 @@ func TestEnrichTicketClassification(t *testing.T) {
 	if t4.LocalFeasible {
 		t.Fatalf("expected t4 to not be local feasible")
 	}
+
+	// L3 leaves LocalFeasible as-is
+	t3 := &RoutingTicket{Difficulty: TierL3Medium, LocalFeasible: true, AuditState: AuditPendingVendor}
+	EnrichTicketClassification(t3)
+	if !t3.LocalFeasible || t3.AuditState != AuditPendingVendor {
+		t.Fatalf("expected t3 to preserve LocalFeasible and existing AuditState")
+	}
 }
 
 func TestSelectInferenceEngine(t *testing.T) {

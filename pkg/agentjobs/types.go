@@ -66,19 +66,23 @@ type Job struct {
 
 type jobJSON Job
 
+type jobWithoutResumeAfter struct {
+	jobJSON
+	ResumeAfter *time.Time `json:"resume_after,omitempty"`
+}
+
+func marshalOmittingZeroResumeAfter(full any, resumeAfter time.Time, withoutResumeAfter any) ([]byte, error) {
+	if resumeAfter.IsZero() {
+		return json.Marshal(withoutResumeAfter)
+	}
+	return json.Marshal(full)
+}
+
 // MarshalJSON customizes JSON serialization to omit zero-valued ResumeAfter.
 func (j Job) MarshalJSON() ([]byte, error) {
-	if j.ResumeAfter.IsZero() {
-		type jobWithoutResumeAfter struct {
-			jobJSON
-			ResumeAfter *time.Time `json:"resume_after,omitempty"`
-		}
-		return json.Marshal(jobWithoutResumeAfter{
-			jobJSON:     jobJSON(j),
-			ResumeAfter: nil,
-		})
-	}
-	return json.Marshal(jobJSON(j))
+	return marshalOmittingZeroResumeAfter(jobJSON(j), j.ResumeAfter, jobWithoutResumeAfter{
+		jobJSON: jobJSON(j),
+	})
 }
 
 // Event represents an entry in the job's write-ahead log (events.jsonl).

@@ -1,6 +1,7 @@
 package selfupdate
 
 import (
+	"Dendrite/pkg/testkit"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -26,15 +27,7 @@ func writeExec(t *testing.T, path, script string) string {
 	return path
 }
 
-func writeFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
+func writeFile(t *testing.T, path, content string) { testkit.WriteFile(t, path, content, 0o644) }
 
 func TestInstallSwapsAndKeepsBackup(t *testing.T) {
 	dir := t.TempDir()
@@ -146,14 +139,15 @@ func TestDetect(t *testing.T) {
 		files map[string]string
 		want  Artifact
 	}{
-		"gomain":   {map[string]string{"go.mod": "module m\n", "main.go": "// c\npackage main\n", "x_test.go": "package main\n"}, Artifact{Kind: KindGoBinary, Packages: []string{"."}}},
-		"gocmd":    {map[string]string{"go.mod": "module m\n", "lib.go": "package lib\n", "cmd/tool/main.go": "package main\n", "cmd/notmain/x.go": "package x\n", "cmd/file.go": "package main\n"}, Artifact{Kind: KindGoBinary, Packages: []string{"./cmd/tool"}}},
-		"golib":    {map[string]string{"go.mod": "module m\n", "lib.go": "package lib\n"}, Artifact{Kind: KindLibrary}},
-		"rsmain":   {map[string]string{"Cargo.toml": "[package]\n", "src/main.rs": ""}, Artifact{Kind: KindRustBinary}},
-		"rsbindir": {map[string]string{"Cargo.toml": "[package]\n", "src/bin/x.rs": ""}, Artifact{Kind: KindRustBinary}},
-		"rsbin":    {map[string]string{"Cargo.toml": "[package]\n[[bin]]\nname = \"x\"\n"}, Artifact{Kind: KindRustBinary}},
-		"rslib":    {map[string]string{"Cargo.toml": "[package]\n", "src/lib.rs": ""}, Artifact{Kind: KindLibrary}},
-		"empty":    {nil, Artifact{Kind: KindUnknown}},
+		"gomain":      {map[string]string{"go.mod": "module m\n", "main.go": "// c\npackage main\n", "x_test.go": "package main\n"}, Artifact{Kind: KindGoBinary, Packages: []string{"."}}},
+		"gocmd":       {map[string]string{"go.mod": "module m\n", "lib.go": "package lib\n", "cmd/tool/main.go": "package main\n", "cmd/notmain/x.go": "package x\n", "cmd/file.go": "package main\n"}, Artifact{Kind: KindGoBinary, Packages: []string{"./cmd/tool"}}},
+		"golib":       {map[string]string{"go.mod": "module m\n", "lib.go": "package lib\n"}, Artifact{Kind: KindLibrary}},
+		"rsmain":      {map[string]string{"Cargo.toml": "[package]\n", "src/main.rs": ""}, Artifact{Kind: KindRustBinary}},
+		"rsbindir":    {map[string]string{"Cargo.toml": "[package]\n", "src/bin/x.rs": ""}, Artifact{Kind: KindRustBinary}},
+		"rsbin":       {map[string]string{"Cargo.toml": "[package]\n[[bin]]\nname = \"x\"\n"}, Artifact{Kind: KindRustBinary}},
+		"rsworkspace": {map[string]string{"Cargo.toml": "[workspace]\nmembers = [\"crates/a\"]\n", "crates/a/Cargo.toml": "[package]\n[[bin]]\nname = \"x\"\n"}, Artifact{Kind: KindRustBinary}},
+		"rslib":       {map[string]string{"Cargo.toml": "[package]\n", "src/lib.rs": ""}, Artifact{Kind: KindLibrary}},
+		"empty":       {nil, Artifact{Kind: KindUnknown}},
 	}
 	for name, c := range cases {
 		dir := filepath.Join(root, name)

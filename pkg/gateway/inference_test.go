@@ -79,10 +79,11 @@ func TestIsZeroCostSelfHostedModel(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := IsZeroCostSelfHostedModel(tt.model)
-		if got != tt.zeroCost {
-			t.Errorf("IsZeroCostSelfHostedModel(%q) = %v, expected %v", tt.model, got, tt.zeroCost)
-		}
+		t.Run(tt.model, func(t *testing.T) {
+			if got := IsZeroCostSelfHostedModel(tt.model); got != tt.zeroCost {
+				t.Errorf("IsZeroCostSelfHostedModel(%q) = %v, expected %v", tt.model, got, tt.zeroCost)
+			}
+		})
 	}
 }
 

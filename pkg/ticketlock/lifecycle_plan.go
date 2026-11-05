@@ -1,0 +1,427 @@
+package ticketlock
+
+import (
+	"Dendrite/pkg/fsutil"
+	"Dendrite/pkg/store/segmented"
+	"Dendrite/pkg/tracker"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"html"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+)
+
+var identN = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*-\d+$`)
+
+// keyOf is the IDENT-N a ticket's plan is stored under. A reference that already has that shape is used as
+// is, so a plan can be read while Plane is down; anything else (a Plane number, a UUID) is looked up.
+func (l *Lifecycle) keyOf(ctx context.Context, ref string) string {
+	if identN.MatchString(strings.TrimSpace(ref)) {
+		return strings.ToUpper(strings.TrimSpace(ref))
+	}
+	if _, issue, err := l.Board.Status(ctx, ref); err == nil {
+		return canonical(issue, ref)
+	}
+	return strings.ToUpper(strings.TrimSpace(ref))
+}
+
+// planComment finds the plan comment of a ticket: the comment with the highest plan version.
+func (l *Lifecycle) planComment(ctx context.Context, key string) (id string, p Plan, found bool, err error) {
+	comments, err := l.Board.Svc.Comments(ctx, l.Board.Client, key)
+	if err != nil {
+		return "", Plan{}, false, err
+	}
+	for _, c := range comments {
+		if cand, ok := parsePlanHTML(c.CommentHTML); ok && (!found || cand.Version >= p.Version) {
+			id, p, found = c.ID, cand, true
+		}
+	}
+	return id, p, found, nil
+}
+
+// UploadPlan stores the plan of a ticket. The newest version is always kept on disk first, before Plane is
+// read or written, so it survives Plane being down; in Plane one comment holds the plan and is edited in place,
+// its version going up. With Plane unreadable the version follows the local copy.
+func (l *Lifecycle) UploadPlan(ctx context.Context, ref, markdown string) (Plan, error) {
+	if strings.TrimSpace(markdown) == "" {
+		return Plan{}, errors.New("a plan needs text")
+	}
+	key := l.keyOf(ctx, ref)
+	id, prev, found, readErr := l.planComment(ctx, key)
+	version := 1
+	switch local, err := l.Plans.Load(key); {
+	case found:
+		version = prev.Version + 1
+	case readErr != nil && err == nil:
+		version = local.Version + 1
+	}
+	p := newPlan(markdown, version)
+	if err := l.Plans.Save(key, p); err != nil {
+		return Plan{}, err
+	}
+	p.Source = "engram"
+	if readErr != nil {
+		return p, fmt.Errorf("the plan is saved locally but Plane could not be read: %w", readErr)
+	}
+	var err error
+	if found {
+		err = l.Board.Svc.UpdateComment(ctx, l.Board.Client, key, id, planHTML(p))
+	} else {
+		// The sidecar wraps a new comment in a paragraph, so the first one is opened for it.
+		err = l.Board.Svc.Comment(ctx, l.Board.Client, key, strings.TrimPrefix(planHTML(p), "<p>")+"<p>")
+	}
+	if err != nil {
+		return Plan{}, fmt.Errorf("the plan is saved locally but not in Plane: %w", err)
+	}
+	p.Source = "plane"
+	return p, nil
+}
+
+// GetPlan returns the plan of a ticket, preferring Plane and falling back to the local store when Plane is
+// down or holds no plan. ErrNoPlan when neither has one.
+func (l *Lifecycle) GetPlan(ctx context.Context, ref string) (Plan, error) {
+	key := l.keyOf(ctx, ref)
+	if _, p, found, err := l.planComment(ctx, key); err == nil && found {
+		p.Source = "plane"
+		return p, nil
+	}
+	return l.Plans.Load(key)
+}
+
+// Handoff is the account a stopped ticket leaves for whoever picks it up.
+type Handoff struct {
+	Completed  string `json:"completed"`
+	Challenges string `json:"challenges"`
+	Missing    string `json:"missing"`
+}
+
+// ErrHandoffIncomplete is returned when a ticket is blocked without all three handoff sections.
+var ErrHandoffIncomplete = errors.New("a blocked ticket needs a handoff")
+
+// ErrUseFinish is returned for the outcome done, which only `chronos finish` may set.
+var ErrUseFinish = errors.New("done is set by `dendrite chronos finish`, which runs the quality gate and the acceptance review first")
+
+// TransitionResult is the state a ticket was moved to.
+type TransitionResult struct {
+	Ticket string `json:"ticket"`
+	State  string `json:"state"`
+}
+
+// Outcomes are the transitions `Transition` accepts.
+var Outcomes = []string{"verify", "blocked", "cancelled", "backlog"}
+
+// Transition ends or pauses the session's work on a ticket. blocked needs the three handoff sections (what
+// is done, what got in the way, what is missing against the acceptance criteria) and keeps the claim and the
+// plan for whoever resumes; verify, cancelled and backlog release the claim.
+func (l *Lifecycle) Transition(ctx context.Context, ref, outcome string, h Handoff) (TransitionResult, error) {
+	var to tracker.Status
+	switch outcome {
+	case "done":
+		return TransitionResult{}, ErrUseFinish
+	case "verify":
+		to = tracker.StatusInReview
+	case "blocked":
+		to = tracker.StatusBlocked
+		if missing := h.missing(); len(missing) > 0 {
+			return TransitionResult{}, fmt.Errorf("%w: write %s", ErrHandoffIncomplete, strings.Join(missing, ", "))
+		}
+	case "cancelled":
+		to = tracker.StatusCancelled
+	case "backlog":
+		to = tracker.StatusBacklog
+	default:
+		return TransitionResult{}, fmt.Errorf("unknown outcome %q (use %s)", outcome, strings.Join(Outcomes, ", "))
+	}
+	_, issue, err := l.Board.Status(ctx, ref)
+	if err != nil {
+		return TransitionResult{}, err
+	}
+	ticket := canonical(issue, ref)
+	branch := l.Branch(l.Dir)
+	claim, _ := l.Store.ClaimFor(branch)
+	if outcome == "blocked" {
+		if err := l.post(ctx, ticket, "handoff", h.text(), claim); err != nil {
+			return TransitionResult{}, err
+		}
+	}
+	if err := l.Board.set(ctx, ticket, to); err != nil {
+		return TransitionResult{}, fmt.Errorf("set %s to %s: %w", ticket, tracker.StatusDisplayName(to), err)
+	}
+	if outcome != "blocked" && strings.EqualFold(claim.Ticket, ticket) {
+		if err := l.Store.ReleaseClaim(branch); err != nil {
+			return TransitionResult{}, err
+		}
+	}
+	return TransitionResult{Ticket: ticket, State: tracker.StatusDisplayName(to)}, nil
+}
+
+func (h Handoff) missing() []string {
+	var out []string
+	for _, s := range []struct{ name, text string }{{"completed", h.Completed}, {"challenges", h.Challenges}, {"missing", h.Missing}} {
+		if strings.TrimSpace(s.text) == "" {
+			out = append(out, s.name)
+		}
+	}
+	return out
+}
+
+func (h Handoff) text() string {
+	return "Completed:\n" + strings.TrimSpace(h.Completed) + "\n\nChallenges:\n" + strings.TrimSpace(h.Challenges) + "\n\nMissing:\n" + strings.TrimSpace(h.Missing)
+}
+
+// Context is everything an agent needs to start on a ticket.
+type Context struct {
+	Ticket             string   `json:"ticket"`
+	Name               string   `json:"name"`
+	State              string   `json:"state"`
+	Description        string   `json:"description"`
+	AcceptanceCriteria []string `json:"acceptance_criteria"`
+	Plan               *Plan    `json:"plan,omitempty"`
+	// Files are the paths the description and the plan mention, to search the code index for.
+	Files []string `json:"files"`
+}
+
+var (
+	listItem = regexp.MustCompile(`(?s)<li[^>]*>(.*?)</li>`)
+	htmlTags = regexp.MustCompile(`<[^>]*>`)
+	acItem   = regexp.MustCompile(`^\[AC-\d+\]`)
+	pathLike = regexp.MustCompile("(?:[\\w.-]+/)+[\\w.-]+\\.\\w+|\\b[\\w-]+\\.(?:go|rs|md|toml|json|ts|py)\\b")
+)
+
+// acMarker finds an [AC-n] id anywhere in text, where acItem only anchors one at the start of a list item.
+var acMarker = regexp.MustCompile(`\[AC-\d+\]`)
+
+// blockEnd marks where running text breaks: a closing block tag or a line break ends an inline criterion.
+var blockEnd = regexp.MustCompile(`(?i)</(?:p|li|ul|ol|div|h[1-6])>|<br\s*/?>`)
+
+// inlineText strips a fragment's tags the way list items are cleaned: unescape first, then drop tags.
+func inlineText(s string) string {
+	return strings.TrimSpace(htmlTags.ReplaceAllString(html.UnescapeString(s), ""))
+}
+
+// acceptanceCriteria extracts every [AC-n] criterion from a description's HTML. A list item anchored by a
+// marker is taken whole, as before. Markers inline in running text each start a criterion that ends at the
+// next marker or at its block's end (paragraph, list item, line break). The first occurrence of an id wins,
+// so a later mention of an already-defined criterion is not a duplicate.
+func acceptanceCriteria(descHTML string) []string {
+	out, seen := []string{}, map[string]bool{}
+	add := func(item string) {
+		id := acID(acMarker.FindString(item))
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		out = append(out, strings.TrimSpace(item))
+	}
+	rest := listItem.ReplaceAllStringFunc(descHTML, func(li string) string {
+		item := inlineText(listItem.FindStringSubmatch(li)[1])
+		if acItem.MatchString(item) {
+			add(item)
+			return "\n"
+		}
+		return "\n" + item + "\n"
+	})
+	for _, line := range strings.Split(inlineText(blockEnd.ReplaceAllString(rest, "\n")), "\n") {
+		locs := acMarker.FindAllStringIndex(line, -1)
+		for i, loc := range locs {
+			end := len(line)
+			if i+1 < len(locs) {
+				end = locs[i+1][0]
+			}
+			add(line[loc[0]:end])
+		}
+	}
+	return out
+}
+
+// QueryContext gathers a ticket's description, acceptance criteria, plan and the files it names.
+func (l *Lifecycle) QueryContext(ctx context.Context, ref string) (Context, error) {
+	st, issue, err := l.Board.Status(ctx, ref)
+	if err != nil {
+		return Context{}, err
+	}
+	ticket := canonical(issue, ref)
+	out := Context{Ticket: ticket, Name: issue.Name, State: tracker.StatusDisplayName(st),
+		Description: issue.DescriptionStripped, AcceptanceCriteria: acceptanceCriteria(issue.DescriptionHTML), Files: []string{}}
+	text := issue.DescriptionStripped
+	if p, err := l.GetPlan(ctx, ticket); err == nil {
+		out.Plan = &p
+		text += "\n" + p.Markdown
+	}
+	seen := map[string]bool{}
+	for _, f := range pathLike.FindAllString(text, -1) {
+		if !seen[f] {
+			seen[f] = true
+			out.Files = append(out.Files, f)
+		}
+	}
+	sort.Strings(out.Files)
+	if len(out.Files) > 30 {
+		out.Files = out.Files[:30]
+	}
+	return out, nil
+}
+
+// ErrNoPlan is returned when a ticket has no plan, in Plane or in the local store.
+var ErrNoPlan = errors.New("no plan stored for this ticket")
+
+// Plan is the markdown plan of a ticket, with `- [ ]` / `- [x]` steps.
+type Plan struct {
+	Markdown string `json:"markdown"`
+	Version  int    `json:"version"`
+	// PendingSteps counts the unchecked steps; NextStep is the first of them.
+	PendingSteps int    `json:"pending_steps"`
+	NextStep     string `json:"next_step,omitempty"`
+	// Source says where the plan was read from: "plane" or "engram".
+	Source string `json:"source,omitempty"`
+}
+
+var (
+	planMarker = regexp.MustCompile(`\[dendrite:plan v=(\d+)\]`)
+	planBody   = regexp.MustCompile(`(?s)<pre>(.*?)</pre>`)
+	openStep   = regexp.MustCompile(`^\s*[-*]\s+\[ \]\s+(.*\S)\s*$`)
+)
+
+// newPlan summarises markdown as version v.
+func newPlan(markdown string, v int) Plan {
+	p := Plan{Markdown: markdown, Version: v}
+	for _, line := range strings.Split(markdown, "\n") {
+		if m := openStep.FindStringSubmatch(line); m != nil {
+			p.PendingSteps++
+			if p.NextStep == "" {
+				p.NextStep = m[1]
+			}
+		}
+	}
+	return p
+}
+
+// planHTML is the stored form of a plan comment: a visible marker (Plane's editor may drop HTML comments)
+// and the markdown, escaped, in a <pre> block.
+func planHTML(p Plan) string {
+	return fmt.Sprintf("<p>[dendrite:plan v=%d]</p><pre>%s</pre>", p.Version, html.EscapeString(p.Markdown))
+}
+
+// parsePlanHTML reads a plan back from the HTML of a comment; ok is false for any other comment.
+func parsePlanHTML(commentHTML string) (Plan, bool) {
+	head := planMarker.FindStringSubmatch(commentHTML)
+	body := planBody.FindStringSubmatch(commentHTML)
+	if head == nil || body == nil {
+		return Plan{}, false
+	}
+	v, _ := strconv.Atoi(head[1])
+	return newPlan(html.UnescapeString(body[1]), v), true
+}
+
+// PlanStore keeps the newest plan of every ticket on disk, so a plan survives Plane being down. Plans are
+// content-addressed blobs (segmented.BlobStore); one small index file per ticket names the current one.
+type PlanStore struct {
+	Dir string
+}
+
+type planIndex struct {
+	Version int    `json:"version"`
+	Hash    string `json:"hash"`
+}
+
+func (s PlanStore) indexPath(ticket string) string {
+	return filepath.Join(s.Dir, "index", slug(strings.ToUpper(ticket))+".json")
+}
+
+// Save stores p as the plan of ticket.
+func (s PlanStore) Save(ticket string, p Plan) error {
+	blobs := segmented.NewBlobStore(filepath.Join(s.Dir, "blobs"))
+	hash := blobs.ComputeHash([]byte(p.Markdown))
+	if _, _, err := blobs.WriteBlob(hash, []byte(p.Markdown)); err != nil {
+		return fmt.Errorf("store plan: %w", err)
+	}
+	data, _ := json.Marshal(planIndex{Version: p.Version, Hash: hash})
+	if err := fsutil.WriteFileAtomic(s.indexPath(ticket), data); err != nil {
+		return fmt.Errorf("index plan: %w", err)
+	}
+	return nil
+}
+
+// Load reads the stored plan of ticket; ErrNoPlan when there is none.
+func (s PlanStore) Load(ticket string) (Plan, error) {
+	return s.loadIndex(s.indexPath(ticket))
+}
+
+// loadIndex reads the plan an index file points at.
+func (s PlanStore) loadIndex(path string) (Plan, error) {
+	idx, err := readJSON[planIndex](path)
+	if errors.Is(err, os.ErrNotExist) {
+		return Plan{}, ErrNoPlan
+	}
+	if err != nil {
+		return Plan{}, err
+	}
+	data, err := segmented.NewBlobStore(filepath.Join(s.Dir, "blobs")).ReadBlob(idx.Hash)
+	if err != nil {
+		return Plan{}, fmt.Errorf("read plan: %w", err)
+	}
+	p := newPlan(string(data), idx.Version)
+	p.Source = "engram"
+	return p, nil
+}
+
+// TakeUnclaimed removes and returns the newest readable plan of the repository scope that was kept under
+// unclaimed/<scope>/<session> and saved after since. ok is false when there is none. A plan is taken by renaming its
+// index file, which only one of several concurrent callers can do, so no plan goes to two tickets.
+func (s PlanStore) TakeUnclaimed(scope string, since time.Time) (best Plan, ok bool) {
+	entries, _ := os.ReadDir(filepath.Join(s.Dir, "index"))
+	prefix := slug(unclaimedKey(scope, ""))
+	type candidate struct {
+		path string
+		at   time.Time
+	}
+	var found []candidate
+	for _, e := range entries {
+		if info, _ := e.Info(); info != nil && strings.HasPrefix(e.Name(), prefix) && info.ModTime().After(since) {
+			found = append(found, candidate{filepath.Join(s.Dir, "index", e.Name()), info.ModTime()})
+		}
+	}
+	sort.Slice(found, func(i, j int) bool { return found[i].at.After(found[j].at) })
+	for _, c := range found {
+		p, err := s.loadIndex(c.path)
+		if err != nil {
+			continue
+		}
+		taken := filepath.Join(filepath.Dir(c.path), "taken-"+strconv.FormatInt(time.Now().UnixNano(), 36)+"-"+filepath.Base(c.path))
+		if renameIndex(c.path, taken) != nil {
+			continue // another claim took it first
+		}
+		_ = os.Remove(taken)
+		return p, true
+	}
+	return Plan{}, false
+}
+
+// renameIndex moves an index file to claim it; tests replace it to make another claim win the race.
+var renameIndex = os.Rename
+
+// unclaimedKey names the plans a session of the repository with the given scope made before any ticket was claimed.
+func unclaimedKey(scope, session string) string {
+	return "unclaimed/" + scope + "/" + session
+}
+
+// repoScope identifies the repository at dir, the same for the repository and each of its worktrees, so a plan
+// made in one repository is never adopted by a ticket of another. Outside a repository it is the directory.
+func repoScope(dir string) string {
+	common, err := gitBytes(dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	id := strings.TrimSpace(string(common))
+	if err != nil || id == "" {
+		id, _ = filepath.Abs(dir)
+	}
+	sum := sha256.Sum256([]byte(filepath.Clean(id)))
+	return hex.EncodeToString(sum[:6])
+}

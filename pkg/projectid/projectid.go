@@ -28,9 +28,10 @@ var ErrNoProjectID = errors.New("projectid: no .dendrite/project.id")
 
 var idRegex = regexp.MustCompile(`^dpid_[0-9a-f]{32}$`)
 
-// Path returns the canonical path to <dir>/.dendrite/project.id.
+// Path returns the canonical path to <dir>/.dendrite/project.id; a linked worktree
+// resolves to its main checkout's file (see StateRoot).
 func Path(dir string) string {
-	return filepath.Join(dir, ".dendrite", FileName)
+	return filepath.Join(StateRoot(dir), ".dendrite", FileName)
 }
 
 // Valid reports whether s matches the ID format ^dpid_[0-9a-f]{32}$.

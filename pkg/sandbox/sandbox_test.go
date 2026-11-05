@@ -1,52 +1,16 @@
 package sandbox_test
 
 import (
+	"Dendrite/pkg/sandbox/sandboxtest"
 	"context"
 	"errors"
+	"os/exec"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"Dendrite/pkg/sandbox"
 )
-
-type mockRunner struct {
-	mu      sync.Mutex
-	calls   [][]string
-	output  []byte
-	err     error
-	blockCh chan struct{}
-}
-
-func (m *mockRunner) Run(ctx context.Context, command string, args ...string) ([]byte, error) {
-	m.mu.Lock()
-	call := append([]string{command}, args...)
-	m.calls = append(m.calls, call)
-	m.mu.Unlock()
-
-	// Only block if this is the "run" command and blockCh is set
-	if len(args) > 0 && args[0] == "run" && m.blockCh != nil {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-m.blockCh:
-		}
-	}
-
-	return m.output, m.err
-}
-
-func (m *mockRunner) HasCall(predicate func(args []string) bool) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, call := range m.calls {
-		if predicate(call) {
-			return true
-		}
-	}
-	return false
-}
 
 func TestGenerateContainerName(t *testing.T) {
 	name1 := sandbox.GenerateContainerName()
@@ -108,7 +72,7 @@ func TestSandboxConfig_BuildDockerRunArgs(t *testing.T) {
 }
 
 func TestSandboxSession_RAIIDropCleanup(t *testing.T) {
-	runner := &mockRunner{output: []byte("success"), err: nil}
+	runner := &sandboxtest.RecordingRunner{Output: []byte("success"), Err: nil}
 	cfg := sandbox.NewDefaultSandboxConfig("golang:1.24", []string{"go", "version"})
 
 	session := sandbox.NewSession(cfg, runner)
@@ -143,7 +107,7 @@ func TestSandboxSession_RAIIDropCleanup(t *testing.T) {
 
 func TestSandboxSession_ContextCancellationCleanup(t *testing.T) {
 	blockCh := make(chan struct{})
-	runner := &mockRunner{blockCh: blockCh}
+	runner := &sandboxtest.RecordingRunner{BlockCh: blockCh}
 	cfg := sandbox.NewDefaultSandboxConfig("alpine:latest", []string{"sleep", "60"})
 
 	session := sandbox.NewSession(cfg, runner)
@@ -185,13 +149,13 @@ func TestSandboxSession_ExtraCoverage(t *testing.T) {
 		t.Fatal("expected default OSCommandRunner")
 	}
 
-	sessionEmptyName := sandbox.NewSession(&sandbox.SandboxConfig{ContainerName: ""}, &mockRunner{})
+	sessionEmptyName := sandbox.NewSession(&sandbox.SandboxConfig{ContainerName: ""}, &sandboxtest.RecordingRunner{})
 	if err := sessionEmptyName.Close(); err != nil {
 		t.Fatalf("unexpected error on Close: %v", err)
 	}
 
 	cfgErr := &sandbox.SandboxConfig{Image: "", Command: []string{"echo"}}
-	sessionErr := sandbox.NewSession(cfgErr, &mockRunner{})
+	sessionErr := sandbox.NewSession(cfgErr, &sandboxtest.RecordingRunner{})
 	_, err := sessionErr.Execute(context.Background())
 	if err == nil {
 		t.Fatal("expected error on invalid config in Execute")
@@ -230,5 +194,73 @@ func TestSandboxConfig_MinimalArgs(t *testing.T) {
 	}
 	if strings.Contains(argStr, "--read-only") {
 		t.Errorf("did not expect read-only")
+	}
+}
+
+func TestSandboxSession_ExitErrorAndGenericError(t *testing.T) {
+	// Obtain a genuine *exec.ExitError using real local subprocess
+	cmd := exec.Command("sh", "-c", "exit 42")
+	realExitErr := cmd.Run()
+	if realExitErr == nil {
+		t.Fatal("expected exit 42 to return error")
+	}
+
+	runnerExitErr := &sandboxtest.RecordingRunner{Err: realExitErr}
+	cfg := sandbox.NewDefaultSandboxConfig("alpine:latest", []string{"false"})
+	session := sandbox.NewSession(cfg, runnerExitErr)
+
+	res, err := session.Execute(context.Background())
+	if err == nil {
+		t.Fatal("expected error from Execute")
+	}
+	if res.ExitCode != 42 {
+		t.Errorf("expected ExitCode 42, got %d", res.ExitCode)
+	}
+
+	// Generic error (not *exec.ExitError, ctx not cancelled)
+	genericErr := errors.New("daemon failure")
+	runnerGeneric := &sandboxtest.RecordingRunner{Err: genericErr}
+	sessionGen := sandbox.NewSession(cfg, runnerGeneric)
+
+	resGen, errGen := sessionGen.Execute(context.Background())
+	if !errors.Is(errGen, genericErr) {
+		t.Errorf("expected genericErr, got %v", errGen)
+	}
+	if resGen.ExitCode != 1 {
+		t.Errorf("expected ExitCode 1, got %d", resGen.ExitCode)
+	}
+}
+
+func TestSandboxSession_CloseRunnerError(t *testing.T) {
+	closeErr := errors.New("docker rm failed")
+	runner := &sandboxtest.RecordingRunner{Err: closeErr}
+	cfg := &sandbox.SandboxConfig{ContainerName: "test-container"}
+	session := sandbox.NewSession(cfg, runner)
+
+	if err := session.Close(); !errors.Is(err, closeErr) {
+		t.Errorf("expected close error %v, got %v", closeErr, err)
+	}
+}
+
+func TestSandboxConfig_CustomNetworkAndTmpfs(t *testing.T) {
+	cfg := sandbox.NewDefaultSandboxConfig("alpine:latest", []string{"echo"})
+	cfg.NetworkMode = "bridge"
+	cfg.TmpfsSize = "512M"
+
+	args, err := cfg.BuildDockerRunArgs()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	argStr := strings.Join(args, " ")
+	if !strings.Contains(argStr, "--network bridge") {
+		t.Errorf("expected --network bridge, got: %s", argStr)
+	}
+	if !strings.Contains(argStr, "size=512M") {
+		t.Errorf("expected size=512M, got: %s", argStr)
+	}
+
+	// Verify standard error types are initialized
+	if sandbox.ErrSessionClosed == nil {
+		t.Error("expected ErrSessionClosed to be non-nil")
 	}
 }

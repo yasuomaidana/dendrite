@@ -8,15 +8,30 @@ tags: [rag, qa, query, ask, local-llm, hybrid, central-rag, ollama, oxillama, li
 
 # Tutorial: Asking Project Questions with Local RAG & Paid LLM Escalation
 
+> **Implementation spec:** the engine behind this feature is implemented in **dendrite-rag-rs**. Its data model, algorithms and protocol are specified in [dendrite-rag-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-rag-rs/blob/develop/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour and commands. Dendrite coordinates; all retrieval runs in the `dendrite-rag` sidecar.
+
 This tutorial demonstrates how to use the `dendrite ask` command to ask questions about your codebase, documentation, and infrastructure.
 
 Dendrite implements a **Local-First, Zero-Cost RAG (Retrieval-Augmented Generation)** architecture:
-1. It incrementally indexes your project files (Markdown guides, specs, source code) into an in-memory Okapi BM25 semantic index with persistent disk caching (`.dendrite/rag_cache.json`).
-2. It first attempts to synthesize answers using your **zero-cost local LLM** (e.g. Ollama or OxiLLaMa).
+1. The `dendrite-rag` sidecar incrementally indexes your project (source code, Markdown, configuration) into `<project>/.dendrite/rag/`. It returns a context pack that combines code-aware BM25, dense vectors from the embedding model your project chose, and symbol names, plus the call-graph neighbours of the best matches.
+   The context comes from your **code**; add **`-d` / `--docs`** for how-to, setup and usage questions, which the documentation answers. On Dendrite's evaluation, code-only answers code questions best and cannot answer documentation questions at all, while code and documentation together answer both, a little less precisely (`dendrite-rag-rs` `eval/RESULTS.md`).
+2. It first attempts to synthesize answers using your **zero-cost local LLM** through the LiteLLM gateway. Unless `--local-model` or `[ask] local_model` in `.dendrite/rag.toml` names one, Dendrite picks the gateway's zero-cost chat model on the most preferred reachable GPU engine (candle, TGI, then Ollama, vLLM, llama.cpp; never OxiLLaMa, whose runtime prefills on the CPU) and prints it as `[i] Local model: local-coder (ollama, GPU)`.
 3. If the local LLM is offline or fails, it **prompts the human** interactively before spending any cloud budget.
 4. You can pass the **`-y` / `--yes`** flag to instruct Dendrite to automatically call the paid cloud model directly upon local failure.
 5. You can use **Hybrid Mode (`--hybrid`)** for local-first drafting with paid cloud refinement and verification.
 6. In team and multi-project environments, queries can be delegated to a **Central RAG Service (`--server`)**.
+
+### Where the time goes
+
+Every local answer ends with a timing line:
+
+```text
+[i] Timing: sidecar start 12 ms, index 80 ms (embedding 1 ms), retrieval 242 ms, local model 30775 ms, paid model 0 ms
+```
+
+Retrieval takes milliseconds; the local model takes most of the time. Two things make an answer slower than it needs to be:
+- **An embedding backlog.** Until every chunk has a vector, each question spends up to 3 s embedding more of them, and Dendrite prints `[!] Dense retrieval covers N% of the project`. Finish once with `dendrite-rag index <project>` (about 7 minutes for Dendrite on Ollama).
+- **Asking again.** The same question about unchanged code is answered from a cache in a fraction of a second (`cached answer` in the header); `--update-index` asks the model again.
 
 ---
 
@@ -31,14 +46,10 @@ flowchart TD
     ModeCheck -->|--server URL| RemoteCentral[Query Central RAG Service\nDaemon :3456 on Shared Host]
     RemoteCentral --> Output([Display Answer])
     
-    ModeCheck -->|Local Indexer| CacheCheck{Local Index Cache\n.dendrite/rag_cache.json}
-    CacheCheck -->|Unchanged| FastLoad[Load Cached Chunks <10ms]
-    CacheCheck -->|Files Changed| IncrScan[Incremental Walk & AST Chunking]
-    IncrScan --> UpdateCache[Save Updated Cache]
-    FastLoad --> RetrieveBM25[BM25 Retrieval Top-K]
-    UpdateCache --> RetrieveBM25
+    ModeCheck -->|Local| Sidecar[dendrite-rag sidecar\nindex: Merkle diff, cAST chunks\n.dendrite/rag/]
+    Sidecar --> Pack[Context pack\nBM25 + vectors + symbols, RRF\ncall-graph neighbours]
     
-    RetrieveBM25 --> RouteCheck{Execution Mode}
+    Pack --> RouteCheck{Execution Mode}
     
     RouteCheck -->|--paid Direct| CloudDirect[Paid Cloud LLM\nGemini 2.5 Pro / Claude 3.5]
     
@@ -72,8 +83,8 @@ dendrite ask "I want to know how to check available LLMs"
 ```
 
 #### What Happens Under the Hood:
-1. **Indexing**: Dendrite checks `.dendrite/rag_cache.json`. If unchanged, it loads the index in $< 10\text{ms}$. If new or modified files exist, it parses them incrementally.
-2. **Context Retrieval**: Okapi BM25 extracts top relevant chunks from `cmd/dendrite/inference.go`, `docs/features/FEAT-020-pluggable-inference-engines.md`, and related guides.
+1. **Indexing**: the sidecar compares the project's Merkle tree with the last run and re-chunks only new or changed files (about 40 ms when nothing changed).
+2. **Context Retrieval**: hybrid search and the symbol graph build a context pack of about 2,500 tokens from `cmd/dendrite/inference.go`, `docs/features/FEAT-020-pluggable-inference-engines.md`, and related guides. `--top-k N` returns the N best chunks instead.
 3. **Local Synthesis**: Dendrite calls your local model (`hermes3:8b`, `qwen2.5-coder:14b`, or `llama3.2`).
 4. **Result Output**:
 
@@ -248,7 +259,7 @@ The **Central RAG Service** lives inside Dendrite's persistent control plane dae
 - **Single Source of Truth**: The central service indexes all projects registered in Dendrite's workspace registry (`pkg/workspace.Registry`).
 - **REST Endpoints Exposed**:
   - `POST /api/v1/rag/ask`: Accepts `AskRequest` and executes RAG inference centrally.
-  - `POST /api/v1/rag/retrieve`: Returns raw ranked BM25 chunks for IDE extensions and tooling.
+  - `POST /api/v1/rag/retrieve`: Returns ranked hybrid-search chunks for IDE extensions and tooling.
 
 ### Multi-Project Workspaces
 
@@ -273,18 +284,49 @@ Because codebases, design documents, and project contexts continuously evolve, D
 
 ### How Incremental Indexing Works
 
-1. **Persistent Cache File**: Stored at `<project-root>/.dendrite/rag_cache.json`.
-2. **Metadata Tracking**: Dendrite tracks the exact nanosecond modification time (`ModTime`) and file size for every indexed document and source file.
-3. **Delta Detection**:
-   - **Unchanged Files**: Chunks are retained directly from cache (`Index: cached`).
-   - **Modified Files**: Old chunks are excised from BM25 frequency tables, and new chunks are indexed (`Index: incremental`).
-   - **Deleted Files**: Removed files are automatically pruned from the index.
-4. **Forced Invalidation**: To force a clean re-indexing pass across the entire tree, pass the `--update-index` flag:
+1. **Index location**: `<project-root>/.dendrite/rag/`, git-ignored (a redb ledger, a Tantivy index and `vectors.bin`).
+2. **Change detection**: a BLAKE3 Merkle tree over the project's files. Only new or changed files are chunked again; deleted files are pruned (`Index: incremental`, or `cached` when nothing changed).
+3. **Embedding cache**: vectors are cached by `(model, content hash)`, so unchanged code is never embedded twice. Each interactive call spends at most 3 s embedding new chunks; keyword and symbol search are always complete. `dendrite ask` reports chunks still waiting, and `dendrite-rag index <project>` embeds them all at once.
+4. **Forced rebuild**: `--update-index` rebuilds the index from scratch (cached embeddings are reused):
    ```bash
    dendrite ask --update-index "I want to know how to check available LLMs"
    ```
 
----
+### Retrieval engine: the `dendrite-rag` sidecar
+
+`dendrite ask`, agent triage, the `dendrite_rag_retrieve` MCP tool and `POST /api/v1/rag/retrieve` all retrieve through `rag.Retriever` (`pkg/rag/retriever.go`), which only coordinates the sidecar:
+
+1. Dendrite locates the `dendrite-rag` binary built by dendrite-rag-rs: `DENDRITE_DENDRITE_RAG_BIN`, the `target/release` of local synapse members, `$DENDRITE_HOME/bin`, `PATH`, then `~/.cargo/bin`.
+2. It calls `index` (incremental, with the 3 s embedding budget), then `context` for `dendrite ask` or `search` for the tools.
+3. There is no fallback. If the binary is missing, the command fails and says how to install it:
+   ```bash
+   cargo install --locked --git https://github.com/yasuomaidana/dendrite-rag-rs --features candle-metal
+   # NVIDIA: --features candle-cuda; CPU only: --features candle (or none, to use Ollama)
+   ```
+   With the default `backend = "auto"`, the sidecar embeds with candle on the GPU, else a TEI server (`HF_TEI_ENDPOINT`), else Ollama, else candle on the CPU. OxiLLaMa is never chosen automatically: it runs embeddings on the CPU.
+4. A `--project` that names a single file searches only that file.
+
+### Choosing the embedding model
+
+The project chooses its embedding backend and model; Dendrite passes the choice through unchanged. Commit `<project>/.dendrite/rag.toml`:
+
+```toml
+[embed]
+backend = "ollama"            # auto (default) | openai (LiteLLM gateway) | ollama | hf | candle | oxillama | model2vec | none
+model = "nomic-embed-text"
+```
+
+`DENDRITE_RAG_EMBED_BACKEND`, `DENDRITE_RAG_EMBED_MODEL` and the other `DENDRITE_RAG_*` variables override the file for one machine. `dendrite-rag embedders` lists the backends of your build, and `dendrite-rag settings <project>` shows the settings in effect. Every key is described in [dendrite-rag-rs `docs/specs/embedders.md`](https://github.com/yasuomaidana/dendrite-rag-rs/blob/develop/docs/specs/embedders.md).
+
+### Measured retrieval quality
+
+30 golden questions about this repository; a question counts as answered when an expected file is among the results:
+
+| Engine | hit@1 | hit@10 | MRR@10 |
+|---|---|---|---|
+| Former Go BM25 indexer (removed) | 0.27 | 0.47 | 0.335 |
+| dendrite-rag, lexical only | 0.57 | 0.83 | 0.660 |
+| dendrite-rag, hybrid (nomic-embed-text via Ollama) | 0.67 | 0.97 | 0.770 |
 
 ## 8. CLI Command Reference & Options
 
@@ -296,14 +338,15 @@ dendrite ask [flags] "<question>"
 | :--- | :--- | :--- | :--- |
 | `--hybrid` | | Local draft first, paid cloud refinement and verification | `false` |
 | `--server <url>` | `--central` | Delegate RAG query to a remote central Dendrite daemon | `$DENDRITE_RAG_SERVER` |
-| `--update-index` | `--refresh` | Invalidate cache and incrementally re-index all files | `false` |
+| `--server-token <token>` | | Access token of the central daemon, sent as a Bearer header | `$DENDRITE_RAG_TOKEN` |
+| `--update-index` | `--refresh` | Rebuild the project index from scratch | `false` |
 | `--paid` | `--force-paid` | Bypass local LLM and directly query the paid cloud model | `false` |
 | `--tier <tier>` | | Explicitly set execution tier (`local`, `hybrid`, `paid`) | `local` |
 | `--yes` | `-y` | Automatically escalate to paid model if local fails | `false` |
 | `--project <dir>`| `-p` | Target project directory to index and search | `.` (current directory) |
 | `--paid-model <m>`| `--cloud-model` | Paid cloud model name | `gemini-2.5-pro` |
 | `--local-model <m>`| | Preferred local model name | Auto-detected |
-| `--top-k <num>` | `-k` | Number of context chunks retrieved | `4` |
+| `--top-k <num>` | `-k` | Retrieve the N best chunks instead of a token-budgeted context pack | context pack |
 | `--json` | | Emit structured JSON output with chunk metadata | `false` |
 
 ### Subcommand Alias
@@ -336,13 +379,13 @@ Output format:
   "index_status": "cached",
   "retrieved_chunks": [
     {
-      "id": "cmd/dendrite/inference.go#chunk-1",
+      "id": "cmd/dendrite/inference.go#12",
       "file_path": "cmd/dendrite/inference.go",
-      "heading": "handleInferenceCommand",
+      "heading": "func handleInferenceCommand",
       "content": "...",
       "line_start": 14,
       "line_end": 45,
-      "score": 4.82
+      "score": 0.048
     }
   ],
   "prompt_tokens": 420,

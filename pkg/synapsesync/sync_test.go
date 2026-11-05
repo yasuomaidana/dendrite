@@ -346,3 +346,25 @@ func TestRun_StandaloneUsesRepoPlaneLink(t *testing.T) {
 		t.Errorf("standalone repo must fall back to .dendrite/plane.json: %+v %+v", m, m.Plane)
 	}
 }
+
+func TestRun_ReportsTheTargetAndWhetherTheCheckoutIsOffIt(t *testing.T) {
+	t.Setenv("DENDRITE_HOME", t.TempDir())
+	solo, _ := newRepo(t, "target") // on branch feature, with no develop
+	rep, err := Run(context.Background(), Options{StartDir: solo, GitOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := rep.Members[0]
+	if m.Target != "develop" || !m.OffTarget {
+		t.Errorf("a checkout on feature with no develop is off the default target: target %q off %v", m.Target, m.OffTarget)
+	}
+
+	git(t, solo, "branch", "-m", "develop")
+	rep, err = Run(context.Background(), Options{StartDir: solo, GitOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := rep.Members[0]; m.Target != "develop" || m.OffTarget {
+		t.Errorf("a checkout on the integration branch is on target: target %q off %v", m.Target, m.OffTarget)
+	}
+}

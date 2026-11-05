@@ -55,9 +55,9 @@ dendrite vesicle status [flags]
 | :--- | :--- |
 | `--day-tokens` | Day window capacity in tokens (default: 1000000) |
 | `--model` | LLM model name (default: gemini-3.8-flash-high) |
-| `--policy-file` | Scheduler policy file (default: /Users/yasuomaidana/GoLandProjects/Dendrite/.dendrite/scheduler_policy.json) |
+| `--policy-file` | Scheduler policy file (default: .dendrite/scheduler_policy.json) |
 | `--probe` | Send a probe request to confirm AGY access |
-| `--spend-file` | Spend ledger file (default: /Users/yasuomaidana/GoLandProjects/Dendrite/.dendrite/spend.json) |
+| `--spend-file` | Spend ledger file (default: .dendrite/spend.json) |
 | `--week-tokens` | Week window capacity in tokens (default: 7000000) |
 
 ## Examples

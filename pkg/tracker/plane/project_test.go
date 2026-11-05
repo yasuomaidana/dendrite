@@ -164,16 +164,16 @@ func TestClient_EnsureLifecycleStates(t *testing.T) {
 
 	ctx := context.Background()
 
-	// 1. First call: "To Verify" and "Cancelled" missing -> creates them, renames "Todo"
+	// 1. First call: "To Verify", "Blocked" and "Cancelled" missing -> creates them, renames "Todo"
 	created, err := client.EnsureLifecycleStates(ctx, "proj-123")
 	if err != nil {
 		t.Fatalf("expected EnsureLifecycleStates to succeed, got %v", err)
 	}
-	if len(created) != 2 || created[0] != "To Verify" || created[1] != "Cancelled" {
-		t.Fatalf("expected ['To Verify' 'Cancelled'], got %v", created)
+	if len(created) != 3 || created[0] != "To Verify" || created[1] != "Blocked" || created[2] != "Cancelled" {
+		t.Fatalf("expected ['To Verify' 'Blocked' 'Cancelled'], got %v", created)
 	}
-	if len(createdStates) != 2 {
-		t.Fatalf("expected 2 POSTs to create states, got %d", len(createdStates))
+	if len(createdStates) != 3 {
+		t.Fatalf("expected 3 POSTs to create states, got %d", len(createdStates))
 	}
 	if createdStates[0]["name"] != "To Verify" || createdStates[0]["group"] != "started" || createdStates[0]["color"] != "#FCB900" {
 		t.Errorf("unexpected state payload: %+v", createdStates[0])
@@ -190,8 +190,8 @@ func TestClient_EnsureLifecycleStates(t *testing.T) {
 	if len(createdSecond) != 0 {
 		t.Fatalf("expected 0 created on second call, got %v", createdSecond)
 	}
-	if len(createdStates) != 2 {
-		t.Fatalf("expected still 2 POSTs, got %d", len(createdStates))
+	if len(createdStates) != 3 {
+		t.Fatalf("expected still 3 POSTs, got %d", len(createdStates))
 	}
 
 	// 3. Omitting projectID defaults to c.projectID
@@ -217,6 +217,7 @@ func TestClient_EnsureLifecycleStates_BareListAndErrors(t *testing.T) {
 			{"id": "st-t", "name": "To Do", "group": "unstarted", "color": "#3A3A3A", "sequence": 25000},
 			{"id": "st-p", "name": "In Progress", "group": "started", "color": "#F59E0B", "sequence": 35000},
 			{"id": "st-v", "name": "to verify", "group": "started", "color": "#fcb900", "sequence": 40000},
+			{"id": "st-k", "name": "Blocked", "group": "started", "color": "#DC2626", "sequence": 42000},
 			{"id": "st-d", "name": "Done", "group": "completed", "color": "#16A34A", "sequence": 45000},
 			{"id": "st-c", "name": "Cancelled", "group": "cancelled", "color": "#EF4444", "sequence": 55000}
 		]`))

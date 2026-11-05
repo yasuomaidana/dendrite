@@ -1,6 +1,7 @@
 package projectaudit
 
 import (
+	"Dendrite/pkg/testkit"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,15 +30,7 @@ func gitRepo(t *testing.T, parent, name, remote string) string {
 	return dir
 }
 
-func write(t *testing.T, path, body string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
+func write(t *testing.T, path, body string) { testkit.WriteFile(t, path, body, 0o644) }
 
 func TestAudit_RuleViolationsAndRelationships(t *testing.T) {
 	base := t.TempDir()
@@ -141,5 +134,37 @@ func TestDependencies_ReplacesDuplicatesDepthAndUnreadableDirs(t *testing.T) {
 	edges := Dependencies(app, []string{lib, app})
 	if len(edges) != 1 || edges[0].To != lib || edges[0].Via != "go.mod" {
 		t.Errorf("edges = %+v; want one app->lib edge found first through go.mod", edges)
+	}
+}
+
+func TestDiscover_GroupFoldersOneLevelDeep(t *testing.T) {
+	base := t.TempDir()
+	top := gitRepo(t, base, "top", "")
+	nested := gitRepo(t, filepath.Join(base, "classes"), "course", "")
+	gitRepo(t, filepath.Join(base, "a", "b"), "too-deep", "")
+	gitRepo(t, filepath.Join(top), "inner", "") // repositories inside a repository are not separate roots
+	write(t, filepath.Join(base, "classes", "notes.pdf"), "x")
+	gitRepo(t, filepath.Join(base, "node_modules"), "dep", "")
+
+	got := Discover([]string{base})
+	if len(got) != 2 || got[0] != nested || got[1] != top {
+		t.Errorf("Discover = %v; want [%s %s]", got, nested, top)
+	}
+}
+
+func TestGitHubOwners(t *testing.T) {
+	calls := 0
+	owners := GitHubOwners(func(args ...string) ([]byte, error) {
+		calls++
+		if args[1] == "user" {
+			return []byte("me\n"), nil
+		}
+		return []byte("acme\n\nlabs\n"), nil
+	})
+	if len(owners) != 3 || owners[0] != "me" || owners[2] != "labs" || calls != 2 {
+		t.Errorf("owners = %v (calls %d)", owners, calls)
+	}
+	if got := GitHubOwners(func(...string) ([]byte, error) { return nil, os.ErrNotExist }); got != nil {
+		t.Errorf("gh unavailable must yield nil, got %v", got)
 	}
 }

@@ -1,5 +1,10 @@
 package vcs
 
+// TODO(move:dendrite-git-rs,DGIT-3): splitting a working tree into commits (hunks, clustering, plan validation, applying) is the dendrite-git commit planner.
+//   When: git.hunk_graph, git.cluster_hunks, git.validate_plan and git.apply_plan are implemented (DGIT-1, DGIT-4, DGIT-3); then the commit flow calls them and the Go hunk handling is deleted.
+//   Stays in Go: the branch guard (never main or master), ticket references and the LLM message synthesis, which stay in Dendrite.
+//   Until then: fix bugs here, but do not add features; add them in the Rust repository.
+
 import (
 	"context"
 	"encoding/json"
@@ -110,7 +115,15 @@ func (o *StackedBranchOrchestrator) SaveManifest(items []*AuditQueueItem) error 
 	return os.Rename(tmpFile, o.ManifestPath)
 }
 
-// StartModuleBranch creates or checks out a stacked branch 'local/<module>' branched from 'develop' or parent branch.
+// baseOf is the branch a module branch starts from: its parent module's branch, or the integration branch.
+func (o *StackedBranchOrchestrator) baseOf(parentModule string) string {
+	if parentModule == "" {
+		return o.Guard.IntegrationBranch()
+	}
+	return "local/" + strings.TrimPrefix(parentModule, "local/")
+}
+
+// StartModuleBranch creates or checks out a stacked branch 'local/<module>' branched from the integration branch or parent branch.
 func (o *StackedBranchOrchestrator) StartModuleBranch(ctx context.Context, module string, parentModule string) (string, error) {
 	if strings.TrimSpace(module) == "" {
 		return "", errors.New("module name cannot be empty")
@@ -118,11 +131,7 @@ func (o *StackedBranchOrchestrator) StartModuleBranch(ctx context.Context, modul
 
 	targetBranch := "local/" + strings.TrimPrefix(module, "local/")
 
-	// Ensure base branch is set up
-	baseBranch := "develop"
-	if parentModule != "" {
-		baseBranch = "local/" + strings.TrimPrefix(parentModule, "local/")
-	}
+	baseBranch := o.baseOf(parentModule)
 
 	// Verify base exists or checkout
 	_, _ = o.Guard.runGit(ctx, "checkout", baseBranch)
@@ -260,7 +269,7 @@ func (o *StackedBranchOrchestrator) FinalizeModuleForAudit(ctx context.Context, 
 	now := time.Now()
 	items = append(items, &AuditQueueItem{
 		Branch:     branch,
-		BaseBranch: "develop",
+		BaseBranch: o.Guard.IntegrationBranch(),
 		Module:     module,
 		Status:     StatusAwaitingAudit,
 		HeadSHA:    headSHA,

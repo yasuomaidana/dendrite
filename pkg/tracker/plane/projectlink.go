@@ -11,9 +11,10 @@ import (
 	"strings"
 
 	"Dendrite/pkg/fsutil"
+	"Dendrite/pkg/projectid"
 )
 
-// LinkFileName is the committed file, under a repository's .dendrite/ directory,
+// LinkFileName is the local file, under a repository's .dendrite/ directory (never committed),
 // that names the Plane project tracking that repository's work.
 const LinkFileName = "plane.json"
 
@@ -30,15 +31,19 @@ type ProjectLink struct {
 
 var identifierCleanRegex = regexp.MustCompile(`[^A-Z0-9]`)
 
-// LinkPath returns the link file location for a repository root.
+// LinkPath returns the link file location for a repository root; a linked worktree
+// resolves to its main checkout's file.
 func LinkPath(root string) string {
-	return filepath.Join(root, ".dendrite", LinkFileName)
+	return filepath.Join(projectid.StateRoot(root), ".dendrite", LinkFileName)
 }
+
+// absPath is filepath.Abs; tests replace it to reach the case where the working directory is gone.
+var absPath = filepath.Abs
 
 // FindRepoRoot walks up from dir to the nearest directory holding .git
 // (a directory for normal checkouts, a file for worktrees).
 func FindRepoRoot(dir string) (string, error) {
-	abs, err := filepath.Abs(dir)
+	abs, err := absPath(dir)
 	if err != nil {
 		return "", err
 	}
@@ -72,11 +77,31 @@ func ReadLink(root string) (*ProjectLink, error) {
 
 // WriteLink stores the link file in a repository root.
 func WriteLink(root string, l ProjectLink) error {
-	data, err := json.MarshalIndent(l, "", "  ")
-	if err != nil {
-		return err
-	}
+	data, _ := json.MarshalIndent(l, "", "  ") // a struct of strings always marshals
 	return fsutil.WriteFileAtomic(LinkPath(root), append(data, '\n'))
+}
+
+// indexedLink returns the Plane binding the global index keeps for the repository at root.
+// A fresh clone has no .dendrite/plane.json (it is not committed) but is recognised by its
+// project ID once `dendrite chronos project refresh` or `ensure` has run in it.
+func indexedLink(root string) *ProjectLink {
+	id, err := projectid.Read(root)
+	if err != nil {
+		return nil
+	}
+	path, err := projectid.DefaultIndexPath()
+	if err != nil {
+		return nil
+	}
+	ix, err := projectid.LoadIndex(path)
+	if err != nil {
+		return nil
+	}
+	e, ok := ix.Lookup(id)
+	if !ok || e.Plane == nil || strings.TrimSpace(e.Plane.ProjectID) == "" {
+		return nil
+	}
+	return &ProjectLink{Identifier: e.Plane.Identifier, ProjectID: e.Plane.ProjectID, Name: e.Plane.Name, Workspace: e.Plane.Workspace}
 }
 
 // LinkForDir returns the link of the repository containing dir.
@@ -87,6 +112,9 @@ func LinkForDir(dir string) (*ProjectLink, string, error) {
 	}
 	l, err := ReadLink(root)
 	if err != nil {
+		if fallback := indexedLink(root); fallback != nil {
+			return fallback, root, nil
+		}
 		return nil, root, err
 	}
 	return l, root, nil

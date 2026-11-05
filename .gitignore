@@ -4,12 +4,18 @@
 website/docs/
 bin/
 .aider*
-.env
+# Only the root .env (published defaults) is tracked; a .env anywhere else is a local artifact.
+**/.env
+!/.env
+.env.local
+**/.env.local
 coverage.out
 *.tmp
 .venv/
 node_modules/
-.dendrite/rag_cache.json
+# .dendrite/ is local tool state (identity, Plane link, caches, job ledgers, sessions): never committed.
+# Files that were already tracked stay tracked until they are removed with `git rm --cached`.
+.dendrite/
 # Runtime state must live in the repo-root .dendrite/ only (DEN-901)
 pkg/**/.dendrite/
 cmd/**/.dendrite/
@@ -20,7 +26,4 @@ cmd/**/.ai/
 go.work
 go.work.sum
 __pycache__/
-# Per-machine runtime state: agent job ledgers, pool switcher state, session handoffs
-.dendrite/jobs/
-.dendrite/pool.json
-.dendrite/session/
+tests/e2e/.state/

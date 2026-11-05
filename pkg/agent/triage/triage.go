@@ -19,7 +19,7 @@ type Engine struct {
 	OllamaEndpoint       string
 	OxiLLaMaEngine       inference.InferenceEngine
 	OxiLLaMaEndpoint     string
-	RAGIndexer           *rag.Indexer
+	RAGRetriever         *rag.Retriever
 	SkillMatchers        []SkillMatcher
 	LocalModelName       string
 	HybridModelName      string
@@ -42,7 +42,7 @@ func NewEngine(ollamaClient *ollama.Client) *Engine {
 		OllamaClient:      ollamaClient,
 		OllamaEndpoint:    ollamaEndpoint,
 		OxiLLaMaEndpoint:  os.Getenv("DENDRITE_OXILLAMA_ENDPOINT"),
-		RAGIndexer:        rag.NewIndexer(),
+		RAGRetriever:      rag.NewRetriever(),
 		SkillMatchers:     DefaultSkillMatchers(),
 		LocalModelName:    "local-qwen-coder",
 		HybridModelName:   "copilot-sonnet",
@@ -137,19 +137,21 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 		}
 	}
 
-	// Smart Local Model Precedence: if auto-routing, check whether OxiLLaMa has a smarter model than Ollama
+	// Auto-routing prefers Ollama (GPU). OxiLLaMa prefills on the CPU, so it is chosen only
+	// when it is explicitly targeted or Ollama has no model.
+	oxillamaLive := oxErr == nil && len(oxModels) > 0
 	if req.TargetEngine == "" {
-		if maxOxillamaScore > maxOllamaScore {
-			assignedEngine = EngineOxiLLaMa
-			localEngineName = fmt.Sprintf("OxiLLaMa Pure-Rust Sovereign Engine (%s)", bestOxillamaModel)
-			localAvailable = true
-			if tier == TierLocal {
-				reason = fmt.Sprintf("%s Smarter local model on OxiLLaMa (Score %d) takes precedence over smaller Ollama models (Max Score %d).", reason, maxOxillamaScore, maxOllamaScore)
-			}
-		} else if maxOllamaScore > 0 {
+		if maxOllamaScore > 0 {
 			assignedEngine = EngineOllama
 			localEngineName = fmt.Sprintf("Ollama Metal GPU (%s)", bestOllamaModel)
 			localAvailable = true
+		} else if oxillamaLive {
+			assignedEngine = EngineOxiLLaMa
+			localEngineName = fmt.Sprintf("OxiLLaMa Pure-Rust Engine, CPU (%s)", bestOxillamaModel)
+			localAvailable = true
+			if tier == TierLocal {
+				reason = fmt.Sprintf("%s Ollama has no model; using OxiLLaMa (Score %d), which runs prompts on the CPU.", reason, maxOxillamaScore)
+			}
 		}
 	}
 
@@ -247,20 +249,14 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 		if workspaceRoot == "" {
 			workspaceRoot = "."
 		}
-		if e.RAGIndexer != nil {
-			if e.RAGIndexer.ChunksCount() == 0 {
-				_ = e.RAGIndexer.IndexProject(ctx, workspaceRoot)
+		if e.RAGRetriever != nil {
+			retrieval, err := e.RAGRetriever.Retrieve(ctx, workspaceRoot, req.Prompt, rag.SearchOptions{TopK: topK}, false)
+			if err != nil {
+				return nil, fmt.Errorf("retrieving workspace context: %w", err)
 			}
-			chunks, err := e.RAGIndexer.Retrieve(ctx, req.Prompt, rag.SearchOptions{
-				TopK:      topK,
-				MinScore:  0.01,
-				MaxTokens: 1500,
-			})
-			if err == nil && len(chunks) > 0 {
-				retrievedChunks = chunks
-				for _, c := range chunks {
-					ragTokens += tokenopt.EstimateTokens(c.Content + " " + c.Heading)
-				}
+			retrievedChunks = retrieval.Chunks
+			for _, c := range retrievedChunks {
+				ragTokens += tokenopt.EstimateTokens(c.Content + " " + c.Heading)
 			}
 		}
 	}
@@ -449,73 +445,4 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 		RetrievedRAGChunks:         retrievedChunks,
 		RAGTokens:                  ragTokens,
 	}, nil
-}
-
-// SynthesizeDeclarativePlan generates a concise set of declarative instructions as a cloud orchestrator would,
-// grounded by retrieved RAG architecture chunks and AST constraints.
-func (e *Engine) SynthesizeDeclarativePlan(prompt, activeFile string, skills []string, ragChunks []rag.Chunk) *DeclarativePlan {
-	var targetFiles []string
-	if activeFile != "" {
-		targetFiles = append(targetFiles, activeFile)
-	}
-
-	for _, c := range ragChunks {
-		if c.FilePath != "" && c.FilePath != activeFile {
-			found := false
-			for _, tf := range targetFiles {
-				if tf == c.FilePath {
-					found = true
-					break
-				}
-			}
-			if !found && len(targetFiles) < 4 {
-				targetFiles = append(targetFiles, c.FilePath)
-			}
-		}
-	}
-
-	instructions := []string{
-		fmt.Sprintf("1. Decompose requirement into atomic functions matching: %s", prompt),
-	}
-	if len(ragChunks) > 0 && ragChunks[0].FilePath != "" {
-		instructions = append(instructions, fmt.Sprintf("2. Respect existing architectural patterns and types from %s", ragChunks[0].FilePath))
-		instructions = append(instructions, "3. Implement core interfaces, structs, and boundary error handling.")
-		instructions = append(instructions, "4. Author comprehensive unit test suite covering happy paths and edge cases.")
-		instructions = append(instructions, "5. Verify zero compiler warnings and run static analysis.")
-	} else {
-		instructions = append(instructions, "2. Implement core interfaces, structs, and boundary error handling.")
-		instructions = append(instructions, "3. Author comprehensive unit test suite covering happy paths and edge cases.")
-		instructions = append(instructions, "4. Verify zero compiler warnings and run static analysis.")
-	}
-
-	constraints := []string{
-		"Cyclomatic complexity <= 15 per function",
-		"Zero external dependencies outside allowed stdlib and packages",
-	}
-
-	for _, s := range skills {
-		switch s {
-		case "ticket-lifecycle-developer":
-			constraints = append(constraints, "Enforce Plane ticket traceability and statement test coverage >= 85%")
-		case "pattern-complexity-auditor":
-			constraints = append(constraints, "Enforce cognitive complexity <= 20 and idiomatic interface composition")
-		case "crate-compatibility":
-			constraints = append(constraints, "Validate lockfile compatibility and semantic version constraints")
-		}
-	}
-
-	// Calculate token footprint
-	estOrchTokens := 110 + len(targetFiles)*10
-	estDirectTokens := 1600
-	savingsPct := (1.0 - float64(estOrchTokens)/float64(estDirectTokens)) * 100.0
-
-	return &DeclarativePlan{
-		Goal:                        prompt,
-		TargetFiles:                 targetFiles,
-		Instructions:                instructions,
-		Constraints:                 constraints,
-		EstimatedOrchestratorTokens: estOrchTokens,
-		EstimatedDirectOutputTokens: estDirectTokens,
-		OutputTokenSavingsPct:       savingsPct,
-	}
 }

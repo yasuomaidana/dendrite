@@ -110,7 +110,7 @@ JetBrains IDEs automatically detect MCP configuration files matching standard MC
 - **Project Scope**: `<project-root>/.ai/mcp/mcp.json`
 - **Global Scope**: `~/.ai/mcp/mcp.json`
 
-Add the following configuration:
+Add the following configuration (`PLANE_API_KEY` is read from `$DENDRITE_HOME/.env`):
 
 ```json
 {
@@ -124,8 +124,8 @@ Add the following configuration:
       "env": {
         "DENDRITE_WORKSPACE": "/Users/yasuomaidana/GoLandProjects/Dendrite",
         "DENDRITE_ENV": "development",
-        "PLANE_API_KEY": "plane_sec_dendrite_token_12345",
-        "PLANE_URL": "http://localhost:8090"
+        "PLANE_API_KEY": "<your-plane-api-token>",
+        "PLANE_BASE_URL": "http://localhost:8090"
       }
     }
   }
@@ -148,8 +148,8 @@ Once saved, JetBrains's `McpProjectServerConfigurationService` reloads the file 
    - **Environment Variables**:
      - `DENDRITE_WORKSPACE`: `/Users/yasuomaidana/GoLandProjects/Dendrite`
      - `DENDRITE_ENV`: `development`
-     - `PLANE_API_KEY`: `plane_sec_dendrite_token_12345`
-     - `PLANE_URL`: `http://localhost:8090`
+     - `PLANE_API_KEY`: `<your-plane-api-token>` (read from `$DENDRITE_HOME/.env`)
+     - `PLANE_BASE_URL`: `http://localhost:8090`
 5. Click **Apply** and **OK**.
 6. The IDE status bar MCP widget will display `dendrite (25+ tools connected)`.
 

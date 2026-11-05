@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/mcpserver"
+	"Dendrite/pkg/mcpserver/catalog"
 	"Dendrite/pkg/rea"
 	"Dendrite/pkg/rea/showcase"
 )
@@ -159,7 +160,7 @@ func TestShowcase_CLIIntegration(t *testing.T) {
 
 func TestShowcase_MCPServerProtocol(t *testing.T) {
 	srv := mcpserver.NewServer(mcpserver.ServerConfig{})
-	mcpserver.RegisterDefaultTools(srv, mcpserver.Dependencies{DevStatus: "../../DEV_STATUS.md"})
+	catalog.RegisterDefaultTools(srv, mcpserver.Dependencies{DevStatus: "../../DEV_STATUS.md"})
 
 	ctx := context.Background()
 

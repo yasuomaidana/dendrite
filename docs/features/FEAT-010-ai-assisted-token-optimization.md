@@ -10,6 +10,8 @@ tags: [ai-development, token-optimization, prompt-caching, code-import, ast]
 
 # FEAT-010: AI-Assisted Token Optimization & Cross-Repository Capability Import
 
+> **Implementation spec:** the engine behind this feature is implemented in **dendrite-core-rs**. Its data model, algorithms and protocol are specified in [dendrite-core-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-core-rs/blob/develop/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
+
 ## 1. User Story & Business Objective
 As a software engineer and AI practitioner, I need Dendrite to actively optimize token expenditure across my projects through automated prompt compaction and context caching, as well as analyze and cleanly import specific functionalities, algorithms, and modules from external repositories into my active codebase, so that development velocity increases while token expenditure and technical debt are minimized.
 

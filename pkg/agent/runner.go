@@ -318,4 +318,3 @@ func (h *HostRunner) Execute(ctx context.Context, cfg AgentConfig) (*SessionSumm
 
 	return summary, runErr
 }
-

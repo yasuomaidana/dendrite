@@ -2,9 +2,7 @@ package plane
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 )
@@ -17,26 +15,8 @@ func (c *Client) CreateProject(ctx context.Context, name, identifier, descriptio
 		"identifier":  strings.ToUpper(strings.TrimSpace(identifier)),
 		"description": description,
 	}
-	req, err := c.newRequest(ctx, http.MethodPost, endpoint, body)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to create plane project: status %d", resp.StatusCode)
-	}
-
 	var created PlaneProject
-	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+	if err := c.call(ctx, http.MethodPost, endpoint, body, &created, callSpec{failure: "failed to create plane project"}); err != nil {
 		return nil, err
 	}
 	return &created, nil
@@ -45,42 +25,7 @@ func (c *Client) CreateProject(ctx context.Context, name, identifier, descriptio
 // ListProjects queries all projects in the workspace.
 func (c *Client) ListProjects(ctx context.Context) ([]PlaneProject, error) {
 	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/", c.workspaceSlug)
-	req, err := c.newRequest(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, ErrUnauthorized
-	}
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("failed to list plane projects: status %d", resp.StatusCode)
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var paginated struct {
-		Results []PlaneProject `json:"results"`
-	}
-	if err := json.Unmarshal(bodyBytes, &paginated); err == nil && len(paginated.Results) > 0 {
-		return paginated.Results, nil
-	}
-
-	var directList []PlaneProject
-	if err := json.Unmarshal(bodyBytes, &directList); err == nil {
-		return directList, nil
-	}
-
-	return paginated.Results, nil
+	return fetchResourceList[PlaneProject](ctx, c, endpoint, "failed to list plane projects")
 }
 
 // EnsureLifecycleStates converges a project's workflow states onto CanonicalStates

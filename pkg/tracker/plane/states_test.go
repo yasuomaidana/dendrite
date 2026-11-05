@@ -132,8 +132,8 @@ func TestReconcileStates_ConvergesSubProjectBoard(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertCanonical(t, board.states)
-	if len(rep.Created()) != 0 {
-		t.Errorf("expected no creates, got %v", rep.Created())
+	if got := rep.Created(); len(got) != 1 || got[0] != "Blocked" {
+		t.Errorf("expected Blocked created, got %v", got)
 	}
 	var renamed bool
 	for _, ch := range rep.Changes {
@@ -172,8 +172,8 @@ func TestReconcileStates_DENBoardKeepsUnmanagedAndFillsBlankColors(t *testing.T)
 		t.Fatal(err)
 	}
 	assertCanonical(t, board.states)
-	if got := rep.Created(); len(got) != 1 || got[0] != "Cancelled" {
-		t.Errorf("expected Cancelled created, got %v", got)
+	if got := rep.Created(); len(got) != 2 || got[0] != "Blocked" || got[1] != "Cancelled" {
+		t.Errorf("expected Blocked and Cancelled created, got %v", got)
 	}
 	if len(rep.Unmanaged) != 1 || rep.Unmanaged[0] != "Relocated" {
 		t.Errorf("expected Relocated reported unmanaged, got %v", rep.Unmanaged)

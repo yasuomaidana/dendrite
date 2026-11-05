@@ -22,11 +22,16 @@ Synaptic Cleft & Gating
 
 | Subcommand | Description |
 | :--- | :--- |
+| `bench` | Benchmark local chat models on this machine (speed, first word, memory pressure, answer quality) |
+| `hold` | Start OxiLLaMa if needed and keep it alive while this command runs (--for, or until Ctrl+C) |
 | `list` | List registered engines, their models and the failover cascade |
-| `migrate` | Copy a model's blobs between engines (default Ollama to OxiLLaMa), optionally evicting the source |
+| `migrate` | Copy a model's blobs between engines (default Ollama to OxiLLaMa, which runs prompts on the CPU), optionally evicting the source |
+| `models` | List the local models installed on Ollama and OxiLLaMa and whether each fits this machine's memory |
 | `probe` | Check engine reachability, latency and models (all engines, one engine, or a raw Ollama endpoint) |
+| `prune` | List the installed Ollama models nothing uses and remove them to reclaim disk |
 | `render` | Render the registered engines' model routes as LiteLLM config |
 | `serve` | Run the OxiLLaMa OpenAI-compatible server in the foreground (Ctrl+C stops it) |
+| `status` | Show whether the OxiLLaMa server runs, who started it and which sessions hold it |
 | `stop` | Stop a running OxiLLaMa server and free its port |
 | `switch` | Move an engine to the front of the failover cascade |
 | `zero-cost` | Manage the zero-cost (self-hosted) model and prefix rules |
@@ -42,6 +47,44 @@ None
 
 ## Subcommand Reference
 
+### `dendrite spike bench`
+
+Benchmark local chat models on this machine (speed, first word, memory pressure, answer quality)
+
+```bash
+dendrite spike bench [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--budget` | Longest acceptable median answer time (default: 1m0s) |
+| `--judge` | Gateway model that scores each answer 1-5 (e.g. gemini-3.8-flash-medium); omit to skip quality |
+| `--max-swap-growth` | Most swap (MB) a run may add before the model is judged to swap (default: 200) |
+| `--models` | Comma-separated Ollama models (default: every installed chat model) |
+| `--num-ctx` | Context window (default: 8192) |
+| `--num-predict` | Answer cap in tokens (what dendrite ask uses) (default: 600) |
+| `--ollama` | Ollama base URL (default: http://localhost:11434) |
+| `--out` | Where to write the raw runs as JSON (default: $DENDRITE_HOME/bench/) |
+| `--project` | Project whose code supplies the context packs (default: .) |
+| `--runs` | Runs per prompt and model (default: 2) |
+
+```bash
+dendrite spike bench --models hermes3:8b,gpt-oss:20b --judge gemini-3.8-flash-medium --budget 60s
+```
+
+### `dendrite spike hold`
+
+Start OxiLLaMa if needed and keep it alive while this command runs (--for, or until Ctrl+C)
+
+```bash
+dendrite spike hold [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--for` | hold for this long (default: until interrupted) |
+| `--port` | OxiLLaMa server port (default: 8080) |
+
 ### `dendrite spike list`
 
 List registered engines, their models and the failover cascade
@@ -54,7 +97,7 @@ Aliases: `ls`
 
 ### `dendrite spike migrate`
 
-Copy a model's blobs between engines (default Ollama to OxiLLaMa), optionally evicting the source
+Copy a model's blobs between engines (default Ollama to OxiLLaMa, which runs prompts on the CPU), optionally evicting the source
 
 ```bash
 dendrite spike migrate <model> [flags]
@@ -69,6 +112,24 @@ Aliases: `move`
 | `--from` | Source engine (default: ollama) |
 | `--to` | Target engine (default: oxillama) |
 
+### `dendrite spike models`
+
+List the local models installed on Ollama and OxiLLaMa and whether each fits this machine's memory
+
+```bash
+dendrite spike models [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--ollama` | Ollama endpoint (default http://127.0.0.1:11434) |
+| `--oxillama` | OxiLLaMa endpoint (default http://127.0.0.1:8080) |
+
+```bash
+dendrite spike models
+dendrite spike models --json
+```
+
 ### `dendrite spike probe`
 
 Check engine reachability, latency and models (all engines, one engine, or a raw Ollama endpoint)
@@ -81,6 +142,24 @@ dendrite spike probe [engine-id] [flags]
 | :--- | :--- |
 | `--endpoint` | Probe an Ollama-compatible endpoint URL instead of a registered engine |
 
+### `dendrite spike prune`
+
+List the installed Ollama models nothing uses and remove them to reclaim disk
+
+```bash
+dendrite spike prune [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--keep` | Models to keep besides the ones in use (comma-separated) |
+| `--ollama` | Ollama base URL (default: http://localhost:11434) |
+
+```bash
+dendrite spike prune
+dendrite spike prune --keep gpt-oss:20b -y
+```
+
 ### `dendrite spike serve`
 
 Run the OxiLLaMa OpenAI-compatible server in the foreground (Ctrl+C stops it)
@@ -90,6 +169,18 @@ dendrite spike serve [flags]
 ```
 
 Aliases: `start`
+
+| Flag | Description |
+| :--- | :--- |
+| `--port` | OxiLLaMa server port (default: 8080) |
+
+### `dendrite spike status`
+
+Show whether the OxiLLaMa server runs, who started it and which sessions hold it
+
+```bash
+dendrite spike status [flags]
+```
 
 | Flag | Description |
 | :--- | :--- |
@@ -176,6 +267,7 @@ Aliases: `check`
 
 ```bash
 dendrite spike list
+dendrite spike models
 dendrite spike probe ollama-metal
 dendrite spike probe --endpoint http://10.0.0.5:11434
 dendrite spike migrate qwen2.5-coder:7b --to oxillama --delete-source

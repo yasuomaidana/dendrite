@@ -30,13 +30,13 @@ type StoreItemSummary struct {
 
 // StoreStatusReport aggregates the full status of all stored analysis entities.
 type StoreStatusReport struct {
-	TotalStores     int                `json:"total_stores"`
-	TotalSegments   int                `json:"total_segments"`
-	TotalRawBytes   int64              `json:"total_raw_bytes"`
-	TotalCompBytes  int64              `json:"total_comp_bytes"`
-	StoredStores    int                `json:"stored_stores"`
-	PartialStores   int                `json:"partial_stores"`
-	Stores          []StoreItemSummary `json:"stores"`
+	TotalStores    int                `json:"total_stores"`
+	TotalSegments  int                `json:"total_segments"`
+	TotalRawBytes  int64              `json:"total_raw_bytes"`
+	TotalCompBytes int64              `json:"total_comp_bytes"`
+	StoredStores   int                `json:"stored_stores"`
+	PartialStores  int                `json:"partial_stores"`
+	Stores         []StoreItemSummary `json:"stores"`
 }
 
 // StoreDetailReport contains granular chunk-by-chunk and segment breakdown.
@@ -48,9 +48,9 @@ type StoreDetailReport struct {
 
 // RemovalResult confirms unlinked records and blob files.
 type RemovalResult struct {
-	StoreID       string `json:"store_id"`
+	StoreID        string `json:"store_id"`
 	SegmentsPurged int    `json:"segments_purged"`
-	BlobsUnlinked int    `json:"blobs_unlinked"`
-	BytesFreed    int64  `json:"bytes_freed"`
-	Success       bool   `json:"success"`
+	BlobsUnlinked  int    `json:"blobs_unlinked"`
+	BytesFreed     int64  `json:"bytes_freed"`
+	Success        bool   `json:"success"`
 }

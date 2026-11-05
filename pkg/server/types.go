@@ -17,6 +17,8 @@ type ServerConfig struct {
 	Port        int           `yaml:"port" json:"port"`
 	AuthToken   string        `yaml:"auth_token,omitempty" json:"auth_token,omitempty"`
 	ReadTimeout time.Duration `yaml:"read_timeout" json:"read_timeout"`
+	// Version is the build version /api/v1/health reports; "dev" when the caller sets none.
+	Version string `yaml:"-" json:"-"`
 }
 
 // TelemetryFrame represents a real-time system and AI operational metrics snapshot.
@@ -30,4 +32,9 @@ type TelemetryFrame struct {
 	TokenSpend7d    float64           `json:"token_spend_7d_usd"`
 	DailyBudgetUSD  float64           `json:"daily_budget_usd"`
 	NodeHealth      map[string]string `json:"node_health"`
+	// Stale is true when the frame is older than the hub's freshness window: its values are the last
+	// ones measured, not current readings. Timestamp says when they were taken.
+	Stale bool `json:"stale,omitempty"`
+	// Unavailable names the fields this snapshot could not measure; their values are zero, not readings.
+	Unavailable []string `json:"unavailable,omitempty"`
 }

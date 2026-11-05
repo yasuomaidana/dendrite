@@ -60,10 +60,7 @@ func (e *HuggingFaceTGIEngine) Generate(ctx context.Context, req CompletionReque
 		payload["parameters"].(map[string]interface{})["max_new_tokens"] = 1024
 	}
 
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
+	data, _ := json.Marshal(payload) // a map of strings and numbers always marshals
 
 	start := time.Now()
 	url := fmt.Sprintf("%s/generate", strings.TrimRight(e.cfg.Endpoint, "/"))
@@ -119,126 +116,39 @@ func (e *HuggingFaceTGIEngine) Generate(ctx context.Context, req CompletionReque
 	}, nil
 }
 
+// tgiChunk is one data line of a TGI stream.
+type tgiChunk struct {
+	Token struct {
+		Text string `json:"text"`
+	} `json:"token"`
+	GeneratedText *string `json:"generated_text"`
+}
+
+var tgiStream = streamSpec[tgiChunk]{
+	path: "/generate_stream",
+	payload: func(req CompletionRequest) map[string]interface{} {
+		return map[string]interface{}{"inputs": req.Prompt, "parameters": map[string]interface{}{"max_new_tokens": 512}}
+	},
+	decode: func(c tgiChunk) (StreamChunk, bool) {
+		done := c.GeneratedText != nil
+		return StreamChunk{Text: c.Token.Text, Done: done}, done
+	},
+}
+
 func (e *HuggingFaceTGIEngine) Stream(ctx context.Context, req CompletionRequest) (<-chan StreamChunk, error) {
-	if strings.TrimSpace(req.Prompt) == "" {
-		return nil, ErrEmptyPrompt
-	}
-
-	payload := map[string]interface{}{
-		"inputs": req.Prompt,
-		"parameters": map[string]interface{}{
-			"max_new_tokens": 512,
-		},
-	}
-	data, _ := json.Marshal(payload)
-
-	url := fmt.Sprintf("%s/generate_stream", strings.TrimRight(e.cfg.Endpoint, "/"))
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := e.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-
-	ch := make(chan StreamChunk)
-	go func() {
-		defer close(ch)
-		defer resp.Body.Close()
-
-		buf := make([]byte, 4096)
-		for {
-			n, err := resp.Body.Read(buf)
-			if n > 0 {
-				lines := strings.Split(string(buf[:n]), "\n")
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if strings.HasPrefix(line, "data:") {
-						dataPayload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-						var chunkRes struct {
-							Token struct {
-								Text string `json:"text"`
-							} `json:"token"`
-							GeneratedText *string `json:"generated_text"`
-						}
-						if err := json.Unmarshal([]byte(dataPayload), &chunkRes); err == nil {
-							done := chunkRes.GeneratedText != nil
-							ch <- StreamChunk{Text: chunkRes.Token.Text, Done: done}
-							if done {
-								return
-							}
-						}
-					}
-				}
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-
-	return ch, nil
+	return tgiStream.run(ctx, e.httpClient, e.cfg.Endpoint, req)
 }
 
 func (e *HuggingFaceTGIEngine) Health(ctx context.Context) EngineHealth {
-	start := time.Now()
-	h := EngineHealth{
+	return checkHTTPHealth(ctx, e.httpClient, EngineHealth{
 		EngineID:   e.cfg.ID,
 		Type:       EngineHuggingFaceTGI,
 		Endpoint:   e.cfg.Endpoint,
 		SelfHosted: e.cfg.SelfHosted,
 		ZeroCost:   e.cfg.SelfHosted,
-		LastCheck:  time.Now(),
-	}
-
-	url := fmt.Sprintf("%s/info", strings.TrimRight(e.cfg.Endpoint, "/"))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		h.Error = err.Error()
-		return h
-	}
-
-	resp, err := e.httpClient.Do(req)
-	h.Latency = time.Since(start)
-	if err != nil {
-		h.Error = err.Error()
-		return h
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK {
-		h.Reachable = true
-		models, _ := e.SupportedModels(ctx)
-		h.Models = models
-	} else {
-		h.Error = fmt.Sprintf("HTTP status %d", resp.StatusCode)
-	}
-
-	return h
+	}, "/info", e.SupportedModels)
 }
 
 func (e *HuggingFaceTGIEngine) SupportedModels(ctx context.Context) ([]string, error) {
-	url := fmt.Sprintf("%s/info", strings.TrimRight(e.cfg.Endpoint, "/"))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return e.cfg.Models, nil
-	}
-
-	resp, err := e.httpClient.Do(req)
-	if err != nil {
-		return e.cfg.Models, nil
-	}
-	defer resp.Body.Close()
-
-	var res struct {
-		ModelID string `json:"model_id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err == nil && res.ModelID != "" {
-		return []string{res.ModelID}, nil
-	}
-
-	return e.cfg.Models, nil
+	return fetchHFInfoModelID(ctx, e.httpClient, e.cfg.Endpoint, e.cfg.Models)
 }

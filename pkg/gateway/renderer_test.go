@@ -25,13 +25,13 @@ func TestDefaultLiteLLMConfig(t *testing.T) {
 		modelsFound[m.ModelName] = m
 	}
 
-	// 1. Verify gemini-2.5-pro
-	pro, ok := modelsFound["gemini-2.5-pro"]
+	// 1. Verify gemini-4-argon-medium
+	pro, ok := modelsFound["gemini-4-argon-medium"]
 	if !ok {
-		t.Fatalf("missing gemini-2.5-pro")
+		t.Fatalf("missing gemini-4-argon-medium")
 	}
 	if pro.ModelInfo.MaxInputTokens != 1048576 {
-		t.Errorf("expected 1M input tokens for pro, got %d", pro.ModelInfo.MaxInputTokens)
+		t.Errorf("expected 1M input tokens for argon, got %d", pro.ModelInfo.MaxInputTokens)
 	}
 
 	// 2. Verify copilot-sonnet
@@ -92,7 +92,7 @@ func TestValidationErrors(t *testing.T) {
 			{
 				ModelName: "",
 				LitellmParams: gateway.ModelParams{
-					Model: "gemini/gemini-2.5-pro",
+					Model: "gemini/gemini-4-argon-medium",
 				},
 			},
 		},
@@ -125,8 +125,8 @@ func TestRenderYAML(t *testing.T) {
 	}
 
 	yamlStr := string(data)
-	if !strings.Contains(yamlStr, "gemini-2.5-pro") {
-		t.Errorf("expected YAML to contain gemini-2.5-pro")
+	if !strings.Contains(yamlStr, "gemini-4-argon-medium") {
+		t.Errorf("expected YAML to contain gemini-4-argon-medium")
 	}
 	if !strings.Contains(yamlStr, "local-qwen-coder") {
 		t.Errorf("expected YAML to contain local-qwen-coder")

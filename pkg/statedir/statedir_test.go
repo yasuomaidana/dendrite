@@ -2,6 +2,7 @@ package statedir
 
 import (
 	"errors"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -95,5 +96,80 @@ func TestResolve_RepositoryAndCWDFallbacks(t *testing.T) {
 	gitTopLevel = func() ([]byte, error) { return nil, errors.New("not a git repository") }
 	if got := Resolve(".dendrite/a.json"); got != ".dendrite/a.json" {
 		t.Errorf("outside a repository: Resolve = %q; want the CWD-relative path unchanged", got)
+	}
+}
+
+func TestMainCheckout_LinkedWorktreeResolvesToTheMainCheckout(t *testing.T) {
+	run := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	main := t.TempDir()
+	run(main, "init", "-q")
+	run(main, "commit", "-q", "--allow-empty", "-m", "root")
+	wt := filepath.Join(t.TempDir(), "wt")
+	run(main, "worktree", "add", "-q", "-b", "agent/x", wt)
+
+	t.Chdir(wt)
+	out, err := mainCheckout()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := filepath.EvalSymlinks(strings.TrimSpace(string(out)))
+	want, _ := filepath.EvalSymlinks(main)
+	if got != want {
+		t.Errorf("mainCheckout() from a worktree = %q; want the main checkout %q", got, want)
+	}
+}
+
+func TestMainCheckout_Fallback(t *testing.T) {
+	// Running in a non-git directory causes --git-common-dir to fail, exercising line 34 fallback.
+	dir := t.TempDir()
+	t.Chdir(dir)
+	_, _ = mainCheckout()
+}
+
+func TestResolve_EnvVarSet_ExactDendrite(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DENDRITE_STATE_DIR", dir)
+
+	if got := Resolve(".dendrite"); got != dir {
+		t.Errorf("Resolve(\".dendrite\") = %q; want %q", got, dir)
+	}
+}
+
+func TestResolve_RepoFallback_ExactDendrite(t *testing.T) {
+	t.Setenv("DENDRITE_STATE_DIR", "")
+	origTest, origGit := isTestBinary, gitTopLevel
+	t.Cleanup(func() {
+		isTestBinary, gitTopLevel = origTest, origGit
+		gitOnce, gitRoot = sync.Once{}, ""
+	})
+	isTestBinary = func() bool { return false }
+
+	repo := t.TempDir()
+	gitOnce, gitRoot = sync.Once{}, ""
+	gitTopLevel = func() ([]byte, error) { return []byte(repo + "\n"), nil }
+	if got, want := Resolve(".dendrite"), filepath.Join(repo, ".dendrite"); got != want {
+		t.Errorf("inside repository: Resolve(\".dendrite\") = %q; want %q", got, want)
+	}
+}
+
+func TestResolve_GitStateDir_EmptyTopLevel(t *testing.T) {
+	t.Setenv("DENDRITE_STATE_DIR", "")
+	origTest, origGit := isTestBinary, gitTopLevel
+	t.Cleanup(func() {
+		isTestBinary, gitTopLevel = origTest, origGit
+		gitOnce, gitRoot = sync.Once{}, ""
+	})
+	isTestBinary = func() bool { return false }
+
+	gitOnce, gitRoot = sync.Once{}, ""
+	gitTopLevel = func() ([]byte, error) { return []byte("   \n"), nil }
+	if got := Resolve(".dendrite/x.json"); got != ".dendrite/x.json" {
+		t.Errorf("empty top level: Resolve = %q; want unchanged", got)
 	}
 }

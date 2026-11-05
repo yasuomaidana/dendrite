@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 )
 
 const wsMagicKey = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -29,6 +30,16 @@ func NewTelemetryHub() *TelemetryHub {
 	}
 }
 
+// Latest returns the last frame broadcast, if any.
+func (h *TelemetryHub) Latest() (TelemetryFrame, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.lastFrame == nil {
+		return TelemetryFrame{}, false
+	}
+	return *h.lastFrame, true
+}
+
 // Subscribe returns a channel of telemetry frames and an unsubscription callback.
 func (h *TelemetryHub) Subscribe() (<-chan TelemetryFrame, func()) {
 	h.mu.Lock()
@@ -38,10 +49,7 @@ func (h *TelemetryHub) Subscribe() (<-chan TelemetryFrame, func()) {
 	h.subscribers[ch] = struct{}{}
 
 	if h.lastFrame != nil {
-		select {
-		case ch <- *h.lastFrame:
-		default:
-		}
+		ch <- *h.lastFrame // the channel was just made with room for it
 	}
 
 	unsubscribe := func() {
@@ -61,6 +69,9 @@ func (h *TelemetryHub) Broadcast(frame TelemetryFrame) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	if frame.Timestamp.IsZero() {
+		frame.Timestamp = time.Now().UTC()
+	}
 	h.lastFrame = &frame
 
 	// Broadcast to channel subscribers

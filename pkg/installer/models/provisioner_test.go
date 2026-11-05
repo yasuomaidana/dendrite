@@ -238,65 +238,82 @@ func TestProvisioner_ProbeOxiLLaMa(t *testing.T) {
 func TestProvisioner_ValidateLiteLLMRouting(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("healthy gateway with zero cost models", func(t *testing.T) {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/v1/models" {
+	cases := []struct {
+		name      string
+		targetURL string
+		handler   http.HandlerFunc
+		assert    func(t *testing.T, rep *GatewayRoutingReport, err error)
+	}{
+		{
+			name: "healthy gateway with zero cost models",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/models" {
+					w.WriteHeader(http.StatusOK)
+					_, _ = w.Write([]byte(`{"data":[{"id":"llama3.2:latest"},{"id":"claude-3-opus"}]}`))
+					return
+				}
+				http.NotFound(w, r)
+			},
+			assert: func(t *testing.T, rep *GatewayRoutingReport, err error) {
+				if err != nil {
+					t.Fatalf("unexpected routing error: %v", err)
+				}
+				if !rep.Healthy || !rep.HasZeroCost {
+					t.Errorf("expected healthy with zero-cost, got %+v", rep)
+				}
+				if len(rep.RoutedModels) != 2 {
+					t.Errorf("expected 2 routed models, got %d", len(rep.RoutedModels))
+				}
+			},
+		},
+		{
+			name:      "offline gateway",
+			targetURL: "http://127.0.0.1:59997",
+			assert: func(t *testing.T, rep *GatewayRoutingReport, err error) {
+				if !errors.Is(err, ErrGatewayOffline) {
+					t.Errorf("expected ErrGatewayOffline, got %v", err)
+				}
+				if rep.Healthy {
+					t.Errorf("expected Healthy = false")
+				}
+			},
+		},
+		{
+			name: "gateway non-200",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "bad gateway", http.StatusBadGateway)
+			},
+			assert: func(t *testing.T, rep *GatewayRoutingReport, err error) {
+				if !errors.Is(err, ErrGatewayOffline) {
+					t.Errorf("expected ErrGatewayOffline on 502, got %v", err)
+				}
+			},
+		},
+		{
+			name: "gateway malformed json",
+			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{"data":[{"id":"llama3.2:latest"},{"id":"claude-3-opus"}]}`))
-				return
+				_, _ = w.Write([]byte(`invalid json`))
+			},
+			assert: func(t *testing.T, rep *GatewayRoutingReport, err error) {
+				if !errors.Is(err, ErrInvalidResponse) {
+					t.Errorf("expected ErrInvalidResponse on bad json, got %v", err)
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			url := tc.targetURL
+			if tc.handler != nil {
+				ts := httptest.NewServer(tc.handler)
+				defer ts.Close()
+				url = ts.URL
 			}
-			http.NotFound(w, r)
-		}))
-		defer ts.Close()
-
-		p := NewProvisioner("", "", ts.URL)
-		rep, err := p.ValidateLiteLLMRouting(ctx)
-		if err != nil {
-			t.Fatalf("unexpected routing error: %v", err)
-		}
-		if !rep.Healthy || !rep.HasZeroCost {
-			t.Errorf("expected healthy with zero-cost, got %+v", rep)
-		}
-		if len(rep.RoutedModels) != 2 {
-			t.Errorf("expected 2 routed models, got %d", len(rep.RoutedModels))
-		}
-	})
-
-	t.Run("offline gateway", func(t *testing.T) {
-		p := NewProvisioner("", "", "http://127.0.0.1:59997")
-		rep, err := p.ValidateLiteLLMRouting(ctx)
-		if !errors.Is(err, ErrGatewayOffline) {
-			t.Errorf("expected ErrGatewayOffline, got %v", err)
-		}
-		if rep.Healthy {
-			t.Errorf("expected Healthy = false")
-		}
-	})
-
-	t.Run("gateway non-200", func(t *testing.T) {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "bad gateway", http.StatusBadGateway)
-		}))
-		defer ts.Close()
-
-		p := NewProvisioner("", "", ts.URL)
-		_, err := p.ValidateLiteLLMRouting(ctx)
-		if !errors.Is(err, ErrGatewayOffline) {
-			t.Errorf("expected ErrGatewayOffline on 502, got %v", err)
-		}
-	})
-
-	t.Run("gateway malformed json", func(t *testing.T) {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`invalid json`))
-		}))
-		defer ts.Close()
-
-		p := NewProvisioner("", "", ts.URL)
-		_, err := p.ValidateLiteLLMRouting(ctx)
-		if !errors.Is(err, ErrInvalidResponse) {
-			t.Errorf("expected ErrInvalidResponse on bad json, got %v", err)
-		}
-	})
+			p := NewProvisioner("", "", url)
+			rep, err := p.ValidateLiteLLMRouting(ctx)
+			tc.assert(t, rep, err)
+		})
+	}
 }

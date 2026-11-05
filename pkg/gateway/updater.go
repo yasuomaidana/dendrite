@@ -13,11 +13,12 @@ import (
 	"time"
 
 	"Dendrite/pkg/inference"
+	"Dendrite/pkg/memfit"
+	"Dendrite/pkg/stacks"
 )
 
-// Default paths and intervals for LiteLLM routing table updater.
+// Default interval for the LiteLLM routing table updater.
 const (
-	DefaultConfigPath     = "stacks/litellm_config.yaml"
 	DefaultUpdateInterval = 24 * time.Hour
 )
 
@@ -29,28 +30,38 @@ type DiscoveredModel struct {
 	IntelligenceScore int    `json:"intelligence_score"`
 	Endpoint          string `json:"endpoint"`
 	ZeroCost          bool   `json:"zero_cost"`
+	SizeBytes         int64  `json:"size_bytes,omitempty"`
+	// Fits is false when the model would not run inside this machine's memory budget; such models
+	// never get a role alias or a place in the fallback cascade.
+	Fits      bool   `json:"fits"`
+	FitReason string `json:"fit_reason,omitempty"`
+	// Embed marks embedding models, which serve the local-embed role and never a chat role.
+	Embed bool `json:"embed,omitempty"`
 }
 
 // UpdaterOptions configures the LiteLLM routing table updater.
 type UpdaterOptions struct {
-	ConfigPath        string             // Target YAML path (default: stacks/litellm_config.yaml)
+	ConfigPath        string             // Target YAML path (default: <stacks dir>/litellm_config.yaml, i.e. ~/.dendrite/stacks)
 	Interval          time.Duration      // Scheduled update interval (default: 24h)
 	UseContainerHost  bool               // Rewrite localhost/127.0.0.1 to host.docker.internal
 	DryRun            bool               // Return generated config without writing to disk
 	Manager           *inference.Manager // Source inference manager
 	OllamaEndpoint    string             // Custom Ollama endpoint override
 	OxillamaEndpoint  string             // Custom OxiLLaMa endpoint override
-	PrimaryCloudModel string             // Primary commercial model (default: gemini-2.5-pro)
+	PrimaryCloudModel string             // Primary commercial model (default: gemini-4-argon-medium)
 	BackupCloudModel  string             // Secondary commercial model (default: copilot-sonnet)
-	FastCloudModel    string             // Fast commercial model (default: gemini-2.5-flash)
+	FastCloudModel    string             // Fast commercial model (default: gemini-3.8-flash-medium)
 	Logger            func(format string, args ...interface{})
 }
+
+// DefaultConfigPath is the LiteLLM routing table in the stacks directory, next to the compose file that mounts it.
+func DefaultConfigPath() string { return stacks.Path("litellm_config.yaml") }
 
 // DefaultUpdaterOptions initializes options from environment variables with sensible defaults.
 func DefaultUpdaterOptions() UpdaterOptions {
 	cfgPath := os.Getenv("DENDRITE_LITELLM_CONFIG_PATH")
 	if strings.TrimSpace(cfgPath) == "" {
-		cfgPath = DefaultConfigPath
+		cfgPath = DefaultConfigPath()
 	}
 
 	interval := DefaultUpdateInterval
@@ -65,7 +76,7 @@ func DefaultUpdaterOptions() UpdaterOptions {
 		if b, err := strconv.ParseBool(rawHost); err == nil {
 			useContainerHost = b
 		}
-	} else if strings.Contains(cfgPath, "stacks/") {
+	} else if strings.Contains(cfgPath, "stacks/") || filepath.Dir(cfgPath) == stacks.Dir() {
 		// By default, if writing to stacks/litellm_config.yaml, it targets docker-compose
 		useContainerHost = true
 	}
@@ -87,9 +98,9 @@ func DefaultUpdaterOptions() UpdaterOptions {
 		DryRun:            false,
 		OllamaEndpoint:    ollamaEP,
 		OxillamaEndpoint:  oxillamaEP,
-		PrimaryCloudModel: "gemini-2.5-pro",
+		PrimaryCloudModel: "gemini-4-argon-medium",
 		BackupCloudModel:  "copilot-sonnet",
-		FastCloudModel:    "gemini-2.5-flash",
+		FastCloudModel:    "gemini-3.8-flash-medium",
 	}
 }
 
@@ -104,6 +115,8 @@ type UpdateReport struct {
 	ActiveLocalPrimary       string            `json:"active_local_primary"`
 	ActiveLocalPrimaryScore  int               `json:"active_local_primary_score"`
 	ActiveLocalPrimaryEngine string            `json:"active_local_primary_engine"`
+	TooLargeModels           []string          `json:"too_large_models,omitempty"`
+	MemoryBudgetBytes        uint64            `json:"memory_budget_bytes"`
 	TotalModelsConfigured    int               `json:"total_models_configured"`
 	BytesWritten             int               `json:"bytes_written"`
 	DryRun                   bool              `json:"dry_run"`
@@ -120,6 +133,7 @@ type RoutingTableUpdater struct {
 	mgr     *inference.Manager
 	client  *http.Client
 	stopCh  chan struct{}
+	stopFn  func() // stops the current daemon run; nil before the first start
 	running bool
 }
 
@@ -237,6 +251,18 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 	wg.Wait()
 	close(resCh)
 
+	var ollamaEP, oxiEP string
+	for _, e := range engines {
+		switch e.Type() {
+		case inference.EngineOllama:
+			ollamaEP = e.Config().Endpoint
+		case inference.EngineOxiLLaMa:
+			oxiEP = e.Config().Endpoint
+		}
+	}
+	fit := memfit.Assess(ctx, ollamaEP, oxiEP)
+	report.MemoryBudgetBytes = fit.BudgetBytes
+
 	for r := range resCh {
 		if r.reachable {
 			report.OnlineEngines = append(report.OnlineEngines, r.id)
@@ -246,14 +272,23 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 					continue
 				}
 				score := inference.ModelIntelligenceScore(cleanModel)
-				report.DiscoveredModels = append(report.DiscoveredModels, DiscoveredModel{
+				dm := DiscoveredModel{
 					ModelName:         cleanModel,
 					EngineID:          r.id,
 					EngineType:        string(r.engType),
 					IntelligenceScore: score,
 					Endpoint:          r.endpoint,
 					ZeroCost:          true,
-				})
+					Fits:              true,
+					Embed:             strings.Contains(strings.ToLower(cleanModel), "embed"),
+				}
+				if m, ok := fit.Find(string(r.engType), cleanModel); ok {
+					dm.SizeBytes, dm.Fits, dm.FitReason = m.SizeBytes, m.Fits, m.Reason
+				}
+				if !dm.Fits {
+					report.TooLargeModels = append(report.TooLargeModels, cleanModel)
+				}
+				report.DiscoveredModels = append(report.DiscoveredModels, dm)
 			}
 		} else {
 			report.OfflineEngines = append(report.OfflineEngines, r.id)
@@ -264,19 +299,32 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 	sort.Strings(report.OnlineEngines)
 	sort.Strings(report.OfflineEngines)
 
-	// Sort discovered models descending by intelligence score: smartest first!
+	// Smartest first: slower is acceptable, starving the machine is not (models that do not fit are
+	// already excluded above). A GPU engine wins a tie, since it answers faster.
 	sort.SliceStable(report.DiscoveredModels, func(i, j int) bool {
-		if report.DiscoveredModels[i].IntelligenceScore != report.DiscoveredModels[j].IntelligenceScore {
-			return report.DiscoveredModels[i].IntelligenceScore > report.DiscoveredModels[j].IntelligenceScore
+		a, b := report.DiscoveredModels[i], report.DiscoveredModels[j]
+		if a.Fits != b.Fits { // models that fit come first
+			return a.Fits
 		}
-		return report.DiscoveredModels[i].ModelName < report.DiscoveredModels[j].ModelName
+		if a.Embed != b.Embed { // chat models before embedders
+			return !a.Embed
+		}
+		if a.IntelligenceScore != b.IntelligenceScore {
+			return a.IntelligenceScore > b.IntelligenceScore
+		}
+		ga, gb := inference.GPUAccelerated(inference.EngineType(a.EngineType)), inference.GPUAccelerated(inference.EngineType(b.EngineType))
+		if ga != gb {
+			return ga
+		}
+		return a.ModelName < b.ModelName
 	})
 
-	if len(report.DiscoveredModels) > 0 {
+	if len(report.DiscoveredModels) > 0 && report.DiscoveredModels[0].Fits && !report.DiscoveredModels[0].Embed {
 		report.ActiveLocalPrimary = report.DiscoveredModels[0].ModelName
 		report.ActiveLocalPrimaryScore = report.DiscoveredModels[0].IntelligenceScore
 		report.ActiveLocalPrimaryEngine = report.DiscoveredModels[0].EngineID
 	}
+	sort.Strings(report.TooLargeModels)
 
 	// 2. Synthesize dynamic LiteLLM configuration honoring discovered intelligence
 	cfg := u.buildDynamicConfig(opts, engines, report.DiscoveredModels)
@@ -302,18 +350,11 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 			}
 		}
 
-		tmpFile := opts.ConfigPath + ".tmp"
-		if wErr := os.WriteFile(tmpFile, yamlBytes, 0644); wErr != nil {
+		// Write directly to preserve the file inode for Docker container bind mounts on macOS/Linux
+		if wErr := os.WriteFile(opts.ConfigPath, yamlBytes, 0644); wErr != nil {
 			report.Error = wErr.Error()
 			report.Duration = time.Since(start)
-			return report, fmt.Errorf("failed to write temporary config %s: %w", tmpFile, wErr)
-		}
-
-		if renErr := os.Rename(tmpFile, opts.ConfigPath); renErr != nil {
-			_ = os.Remove(tmpFile)
-			report.Error = renErr.Error()
-			report.Duration = time.Since(start)
-			return report, fmt.Errorf("failed to replace config %s: %w", opts.ConfigPath, renErr)
+			return report, fmt.Errorf("failed to write config %s: %w", opts.ConfigPath, wErr)
 		}
 
 		report.BytesWritten = len(yamlBytes)
@@ -321,330 +362,4 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 
 	report.Duration = time.Since(start)
 	return report, nil
-}
-
-// buildDynamicConfig generates a complete LiteLLMConfig reflecting live model precedence.
-func (u *RoutingTableUpdater) buildDynamicConfig(
-	opts UpdaterOptions,
-	engines []inference.InferenceEngine,
-	discovered []DiscoveredModel,
-) *LiteLLMConfig {
-	// Base commercial models
-	modelList := []ModelListEntry{
-		{
-			ModelName: opts.PrimaryCloudModel,
-			LitellmParams: ModelParams{
-				Model:     "gemini/" + opts.PrimaryCloudModel,
-				APIKey:    "os.environ/GEMINI_API_KEY",
-				MaxTokens: 8192,
-			},
-			ModelInfo: &ModelInfo{
-				ID:                 opts.PrimaryCloudModel,
-				Mode:               "chat",
-				InputCostPerToken:  0.00000125,
-				OutputCostPerToken: 0.000005,
-				MaxInputTokens:     1048576,
-				MaxOutputTokens:    8192,
-				BaseModel:          "gemini/" + opts.PrimaryCloudModel,
-			},
-		},
-		{
-			ModelName: opts.BackupCloudModel,
-			LitellmParams: ModelParams{
-				Model:      "github_copilot/" + CopilotModel(),
-				APIKey:     "os.environ/COPILOT_API_KEY",
-				DropParams: true,
-				ExtraHeaders: map[string]string{
-					"Copilot-Integration-Id": "vscode-chat",
-					"Editor-Version":         "vscode/1.95.0",
-				},
-				MaxTokens: 8192,
-			},
-			ModelInfo: &ModelInfo{
-				ID:                 opts.BackupCloudModel,
-				Mode:               "chat",
-				InputCostPerToken:  0.000003,
-				OutputCostPerToken: 0.000015,
-				MaxInputTokens:     200000,
-				MaxOutputTokens:    8192,
-				BaseModel:          CopilotModel(),
-			},
-		},
-		{
-			ModelName: opts.FastCloudModel,
-			LitellmParams: ModelParams{
-				Model:     "gemini/" + opts.FastCloudModel,
-				APIKey:    "os.environ/GEMINI_API_KEY",
-				MaxTokens: 8192,
-			},
-			ModelInfo: &ModelInfo{
-				ID:                 opts.FastCloudModel,
-				Mode:               "chat",
-				InputCostPerToken:  0.000000075,
-				OutputCostPerToken: 0.0000003,
-				MaxInputTokens:     1048576,
-				MaxOutputTokens:    8192,
-				BaseModel:          "gemini/" + opts.FastCloudModel,
-			},
-		},
-	}
-
-	normalizeEndpoint := func(ep string) string {
-		ep = strings.TrimRight(ep, "/")
-		if opts.UseContainerHost {
-			ep = strings.ReplaceAll(ep, "127.0.0.1", "host.docker.internal")
-			ep = strings.ReplaceAll(ep, "localhost", "host.docker.internal")
-		}
-		return ep
-	}
-
-	var fallbackModelNames []string
-	registeredAliases := make(map[string]bool)
-
-	// Helper to add a local model entry
-	addLocalEntry := func(aliasName string, modelID string, engType string, endpoint string, tokens int) {
-		if registeredAliases[aliasName] {
-			return
-		}
-		registeredAliases[aliasName] = true
-
-		normEP := normalizeEndpoint(endpoint)
-		var upstreamModel, apiBase, apiKey, provider string
-
-		switch engType {
-		case string(inference.EngineOxiLLaMa):
-			upstreamModel = "openai/" + modelID
-			apiBase = normEP + "/v1"
-			apiKey = "EMPTY"
-			provider = "openai"
-
-		case string(inference.EngineOllama):
-			upstreamModel = "ollama/" + modelID
-			apiBase = normEP
-			provider = "ollama"
-
-		case string(inference.EngineVLLM):
-			upstreamModel = "openai/" + modelID
-			apiBase = normEP + "/v1"
-			apiKey = "EMPTY"
-			provider = "openai"
-
-		case string(inference.EngineLlamaCpp):
-			upstreamModel = "openai/" + modelID
-			apiBase = normEP + "/v1"
-			apiKey = "EMPTY"
-			provider = "openai"
-
-		default:
-			upstreamModel = "openai/" + modelID
-			apiBase = normEP + "/v1"
-			apiKey = "EMPTY"
-		}
-
-		if tokens <= 0 {
-			tokens = 4096
-		}
-
-		entry := ModelListEntry{
-			ModelName: aliasName,
-			LitellmParams: ModelParams{
-				Model:             upstreamModel,
-				APIBase:           apiBase,
-				APIKey:            apiKey,
-				CustomLLMProvider: provider,
-				MaxTokens:         tokens,
-			},
-			ModelInfo: &ModelInfo{
-				ID:                 aliasName,
-				Mode:               "chat",
-				InputCostPerToken:  0.0,
-				OutputCostPerToken: 0.0,
-				MaxInputTokens:     32768,
-				MaxOutputTokens:    tokens,
-				BaseModel:          modelID,
-				SkipBudgetChecks:   true,
-			},
-		}
-
-		modelList = append(modelList, entry)
-		fallbackModelNames = append(fallbackModelNames, aliasName)
-	}
-
-	// 1. Process discovered models in intelligence order
-	var assigned27b, assigned9b, assignedCoder bool
-	for _, dm := range discovered {
-		clean := strings.ToLower(dm.ModelName)
-
-		// Map standard dynamic aliases to the best available models
-		if !assigned27b && (strings.Contains(clean, "27b") || strings.Contains(clean, "32b") || dm.IntelligenceScore >= 85) {
-			addLocalEntry("local-qwen3-27b", dm.ModelName, dm.EngineType, dm.Endpoint, 8192)
-			assigned27b = true
-		} else if !assigned9b && (strings.Contains(clean, "9b") || strings.Contains(clean, "8b") || (dm.IntelligenceScore >= 65 && dm.IntelligenceScore < 85)) {
-			addLocalEntry("local-qwen3-9b", dm.ModelName, dm.EngineType, dm.Endpoint, 4096)
-			assigned9b = true
-		}
-
-		if !assignedCoder && (strings.Contains(clean, "coder") || strings.Contains(clean, "instruct")) {
-			addLocalEntry("local-qwen-coder", dm.ModelName, dm.EngineType, dm.Endpoint, 8192)
-			assignedCoder = true
-		}
-
-		// Also register explicit model name
-		explicitAlias := fmt.Sprintf("local-%s", strings.ReplaceAll(strings.ReplaceAll(clean, ":", "-"), "/", "-"))
-		addLocalEntry(explicitAlias, dm.ModelName, dm.EngineType, dm.Endpoint, 4096)
-	}
-
-	// 2. Ensure standard fallback aliases exist even if engines are currently offline
-	defaultOllamaEP := "http://127.0.0.1:11434"
-	if opts.OllamaEndpoint != "" {
-		defaultOllamaEP = opts.OllamaEndpoint
-	}
-	defaultOxillamaEP := "http://127.0.0.1:8080"
-	if opts.OxillamaEndpoint != "" {
-		defaultOxillamaEP = opts.OxillamaEndpoint
-	}
-
-	if !registeredAliases["local-qwen3-27b"] {
-		addLocalEntry("local-qwen3-27b", "qwen3.8:27b", string(inference.EngineOxiLLaMa), defaultOxillamaEP, 8192)
-	}
-	if !registeredAliases["local-qwen3-9b"] {
-		addLocalEntry("local-qwen3-9b", "qwen3.5:9b", string(inference.EngineOxiLLaMa), defaultOxillamaEP, 4096)
-	}
-	if !registeredAliases["local-qwen-coder"] {
-		addLocalEntry("local-qwen-coder", "qwen2.5-coder-7b", string(inference.EngineOxiLLaMa), defaultOxillamaEP, 4096)
-	}
-
-	// Also register backward-compatible engine aliases
-	addLocalEntry("oxillama-rust", "qwen3.8:27b", string(inference.EngineOxiLLaMa), defaultOxillamaEP, 8192)
-	addLocalEntry("local-coder", "hermes3:8b", string(inference.EngineOllama), defaultOllamaEP, 4096)
-	addLocalEntry("llamacpp-local", "mistral-7b-instruct-q4", string(inference.EngineLlamaCpp), "http://localhost:8081", 4096)
-	addLocalEntry("vllm-cluster", "Qwen/Qwen2.5-Coder-32B-Instruct", string(inference.EngineVLLM), "http://vllm-node:8000", 4096)
-	addLocalEntry("hf-deepseek", "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct", string(inference.EngineHuggingFaceTGI), "http://tgi-node:8080", 4096)
-
-	// Dynamic cascade fallbacks
-	// Reorder fallbackModelNames by ModelIntelligenceScore
-	sort.SliceStable(fallbackModelNames, func(i, j int) bool {
-		return inference.ModelIntelligenceScore(fallbackModelNames[i]) > inference.ModelIntelligenceScore(fallbackModelNames[j])
-	})
-
-	proFallbacks := append([]string{opts.BackupCloudModel, opts.FastCloudModel}, fallbackModelNames...)
-	sonnetFallbacks := append([]string{opts.FastCloudModel}, fallbackModelNames...)
-	flashFallbacks := append([]string(nil), fallbackModelNames...)
-
-	routerSettings := &RouterSettings{
-		RoutingStrategy:     "usage-based-routing",
-		Timeout:             120,
-		EnablePreCallChecks: true,
-		// LiteLLM requires one model per fallback entry.
-		Fallbacks: []map[string][]string{
-			{opts.PrimaryCloudModel: proFallbacks},
-			{opts.BackupCloudModel: sonnetFallbacks},
-			{opts.FastCloudModel: flashFallbacks},
-		},
-		ContextWindowFallbacks: []map[string]string{
-			{"local-qwen-coder": opts.PrimaryCloudModel},
-			{"local-qwen3-27b": opts.PrimaryCloudModel},
-			{"local-qwen3-9b": opts.PrimaryCloudModel},
-			{opts.FastCloudModel: opts.PrimaryCloudModel},
-		},
-	}
-
-	addContextWindowFallbacks(routerSettings, fallbackModelNames, opts.PrimaryCloudModel)
-
-	generalSettings := &GeneralSettings{
-		MasterKey:   "os.environ/LITELLM_MASTER_KEY",
-		DatabaseURL: "os.environ/DATABASE_URL",
-		RedisURL:    "os.environ/REDIS_URL",
-	}
-
-	litellmSettings := &LitellmSettings{
-		DropParams:     true,
-		BudgetDuration: "7d",
-	}
-
-	return &LiteLLMConfig{
-		ModelList:       modelList,
-		RouterSettings:  routerSettings,
-		GeneralSettings: generalSettings,
-		LitellmSettings: litellmSettings,
-	}
-}
-
-// StartDailyDaemon starts a background ticker executing routing table updates
-// at the specified interval (default: 24h). It returns a channel emitting update
-// reports and a cancel function.
-func (u *RoutingTableUpdater) StartDailyDaemon(ctx context.Context) (<-chan *UpdateReport, func()) {
-	u.mu.Lock()
-	if u.running {
-		u.mu.Unlock()
-		ch := make(chan *UpdateReport)
-		close(ch)
-		return ch, func() {}
-	}
-	u.running = true
-	u.stopCh = make(chan struct{})
-	interval := u.opts.Interval
-	if interval <= 0 {
-		interval = DefaultUpdateInterval
-	}
-	u.mu.Unlock()
-
-	outCh := make(chan *UpdateReport, 10)
-	stopOnce := sync.Once{}
-
-	stopFunc := func() {
-		stopOnce.Do(func() {
-			u.mu.Lock()
-			if u.running {
-				close(u.stopCh)
-				u.running = false
-			}
-			u.mu.Unlock()
-		})
-	}
-
-	go func() {
-		defer close(outCh)
-		defer stopFunc()
-
-		// Run immediate first update on start
-		if rep, err := u.UpdateNow(ctx); err == nil {
-			select {
-			case outCh <- rep:
-			default:
-			}
-		}
-
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-u.stopCh:
-				return
-			case <-ticker.C:
-				rep, _ := u.UpdateNow(ctx)
-				if rep != nil {
-					select {
-					case outCh <- rep:
-					default:
-					}
-				}
-			}
-		}
-	}()
-
-	return outCh, stopFunc
-}
-
-// Stop terminates a running background daemon.
-func (u *RoutingTableUpdater) Stop() {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	if u.running {
-		close(u.stopCh)
-		u.running = false
-	}
 }

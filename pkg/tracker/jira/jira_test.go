@@ -405,9 +405,10 @@ func TestMapJiraStatus(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		out := mapJiraStatus(c.in)
-		if out != c.exp {
-			t.Errorf("mapJiraStatus(%q) = %v; want %v", c.in, out, c.exp)
-		}
+		t.Run(c.in, func(t *testing.T) {
+			if out := mapJiraStatus(c.in); out != c.exp {
+				t.Errorf("mapJiraStatus(%q) = %v; want %v", c.in, out, c.exp)
+			}
+		})
 	}
 }

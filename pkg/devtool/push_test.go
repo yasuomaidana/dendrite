@@ -1,6 +1,7 @@
 package devtool
 
 import (
+	"Dendrite/pkg/projectid"
 	"context"
 	"os"
 	"os/exec"
@@ -89,44 +90,203 @@ func TestPushCurrentBranch_AndInspectRepo(t *testing.T) {
 func TestPushCurrentBranch_Guards(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("env disabled", func(t *testing.T) {
-		t.Setenv("DENDRITE_COMMIT_PUSH", "false")
-		if out := PushCurrentBranch(ctx, t.TempDir()); !out.Skipped || out.Reason != "DENDRITE_COMMIT_PUSH=false" {
-			t.Fatalf("%+v", out)
-		}
-	})
+	tests := []struct {
+		name     string
+		setup    func(t *testing.T) string
+		validate func(t *testing.T, out PushOutcome)
+	}{
+		{
+			name: "env disabled",
+			setup: func(t *testing.T) string {
+				t.Setenv("DENDRITE_COMMIT_PUSH", "false")
+				return t.TempDir()
+			},
+			validate: func(t *testing.T, out PushOutcome) {
+				if !out.Skipped || out.Reason != "DENDRITE_COMMIT_PUSH=false" {
+					t.Fatalf("%+v", out)
+				}
+			},
+		},
+		{
+			name: "no remote",
+			setup: func(t *testing.T) string {
+				t.Setenv("DENDRITE_COMMIT_PUSH", "")
+				dir := t.TempDir()
+				gitIn(t, dir, "init", "-q", "-b", "feature")
+				return dir
+			},
+			validate: func(t *testing.T, out PushOutcome) {
+				if !out.Skipped || out.Reason != "no remote configured" {
+					t.Fatalf("%+v", out)
+				}
+			},
+		},
+		{
+			name: "main refused",
+			setup: func(t *testing.T) string {
+				t.Setenv("DENDRITE_COMMIT_PUSH", "")
+				repo, _ := setupCommitRepoWithRemote(t, "main")
+				commitFile(t, repo, "a.txt")
+				return repo
+			},
+			validate: func(t *testing.T, out PushOutcome) {
+				if out.Pushed || out.Err == nil {
+					t.Fatalf("%+v", out)
+				}
+			},
+		},
+		{
+			name: "detached HEAD skipped",
+			setup: func(t *testing.T) string {
+				t.Setenv("DENDRITE_COMMIT_PUSH", "")
+				repo, _ := setupCommitRepoWithRemote(t, "feature")
+				commitFile(t, repo, "a.txt")
+				commitFile(t, repo, "b.txt")
+				gitIn(t, repo, "checkout", "-q", "--detach", "HEAD~1")
+				return repo
+			},
+			validate: func(t *testing.T, out PushOutcome) {
+				if out.Pushed || !out.Skipped || out.Err != nil {
+					t.Fatalf("%+v", out)
+				}
+			},
+		},
+	}
 
-	t.Setenv("DENDRITE_COMMIT_PUSH", "")
-
-	t.Run("no remote", func(t *testing.T) {
-		dir := t.TempDir()
-		gitIn(t, dir, "init", "-q", "-b", "feature")
-		if out := PushCurrentBranch(ctx, dir); !out.Skipped || out.Reason != "no remote configured" {
-			t.Fatalf("%+v", out)
-		}
-	})
-
-	t.Run("main refused", func(t *testing.T) {
-		repo, _ := setupCommitRepoWithRemote(t, "main")
-		commitFile(t, repo, "a.txt")
-		if out := PushCurrentBranch(ctx, repo); out.Pushed || out.Err == nil {
-			t.Fatalf("%+v", out)
-		}
-	})
-
-	t.Run("detached HEAD skipped", func(t *testing.T) {
-		repo, _ := setupCommitRepoWithRemote(t, "feature")
-		commitFile(t, repo, "a.txt")
-		commitFile(t, repo, "b.txt")
-		gitIn(t, repo, "checkout", "-q", "--detach", "HEAD~1")
-		if out := PushCurrentBranch(ctx, repo); out.Pushed || !out.Skipped || out.Err != nil {
-			t.Fatalf("%+v", out)
-		}
-	})
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := tc.setup(t)
+			out := PushCurrentBranch(ctx, dir)
+			tc.validate(t, out)
+		})
+	}
 
 	t.Run("inspect non-repo", func(t *testing.T) {
 		if _, err := InspectRepo(ctx, t.TempDir(), false); err == nil {
 			t.Fatal("expected error outside a git repo")
 		}
 	})
+}
+
+// withFork gives repo a second remote named fork.
+func withFork(t *testing.T, repo string) {
+	t.Helper()
+	fork := t.TempDir()
+	gitIn(t, fork, "init", "-q", "--bare")
+	gitIn(t, repo, "remote", "add", "fork", fork)
+}
+
+// pushPreferring pushes a fresh commit of a repository with origin and fork remotes, preferring the given remote.
+func pushPreferring(t *testing.T, prefer string) PushOutcome {
+	t.Helper()
+	t.Setenv("DENDRITE_COMMIT_PUSH", "")
+	repo, _ := setupCommitRepoWithRemote(t, "feature")
+	withFork(t, repo)
+	commitFile(t, repo, "a.txt")
+	return pushBranch(newGitRunner(context.Background(), repo), prefer)
+}
+
+func TestPushGoesToThePreferredRemoteOrFallsBackToOrigin(t *testing.T) {
+	for prefer, want := range map[string]string{"fork": "fork", "nowhere": "origin", "": "origin"} {
+		if out := pushPreferring(t, prefer); !out.Pushed || out.Remote != want {
+			t.Errorf("prefer %q: %+v, want a push to %s", prefer, out, want)
+		}
+	}
+}
+
+func TestPushRemoteForReadsTheSynapseMember(t *testing.T) {
+	t.Setenv("DENDRITE_HOME", t.TempDir())
+	repo, _ := setupCommitRepoWithRemote(t, "feature")
+	if got := pushRemoteFor(repo); got != "" {
+		t.Fatalf("no synapse means the default choice, got %q", got)
+	}
+	id, err := projectid.Ensure(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := "id = \"s\"\nstate = \"active\"\n\n[[members]]\nproject_id = \"" + id + "\"\nalias = \"a\"\npush_remote = \"fork\"\n"
+	dir := filepath.Join(os.Getenv("DENDRITE_HOME"), "synapses")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "s.toml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := pushRemoteFor(repo); got != "fork" {
+		t.Fatalf("pushRemoteFor = %q, want fork", got)
+	}
+	t.Chdir(repo)
+	if got := pushRemoteFor(""); got != "fork" {
+		t.Fatalf("an empty dir means the working directory: %q", got)
+	}
+}
+
+// A branch that tracks origin/main must publish to its own name, not to main, whatever
+// push.default says.
+func TestPushNeverFollowsAnUpstreamOntoMain(t *testing.T) {
+	t.Setenv("DENDRITE_COMMIT_PUSH", "")
+	for _, pushDefault := range []string{"upstream", "simple", "current"} {
+		t.Run(pushDefault, func(t *testing.T) {
+			repo, bare := setupCommitRepoWithRemote(t, "main")
+			commitFile(t, repo, "base.txt")
+			gitIn(t, repo, "push", "-q", "origin", "main")
+			gitIn(t, repo, "switch", "-q", "-c", "agent/den-1", "--track", "origin/main")
+			gitIn(t, repo, "config", "push.default", pushDefault)
+			commitFile(t, repo, "work.txt")
+
+			out := PushCurrentBranch(context.Background(), repo)
+			if !out.Pushed || out.Err != nil {
+				t.Fatalf("%+v", out)
+			}
+			refs := func(ref string) string {
+				cmd := exec.Command("git", "rev-parse", "--verify", "-q", ref)
+				cmd.Dir = bare
+				b, _ := cmd.Output()
+				return string(b)
+			}
+			head := exec.Command("git", "rev-parse", "HEAD")
+			head.Dir = repo
+			sha, _ := head.Output()
+			if refs("refs/heads/main") == string(sha) {
+				t.Fatal("main on the remote moved: the guard was bypassed")
+			}
+			if refs("refs/heads/agent/den-1") != string(sha) {
+				t.Fatal("the branch was not published under its own name")
+			}
+		})
+	}
+}
+
+// The remote is chosen by explicit prefer, then branch.<name>.pushRemote, remote.pushDefault, the
+// tracked remote and origin; the destination stays the branch's own name.
+func TestPushRemoteOrder(t *testing.T) {
+	t.Setenv("DENDRITE_COMMIT_PUSH", "")
+	cases := []struct {
+		name, prefer, want string
+		config             [][]string
+	}{
+		{"prefer beats the tracked remote", "fork", "fork", nil},
+		{"pushRemote beats the tracked remote", "", "fork", [][]string{{"branch.feature.pushRemote", "fork"}}},
+		{"pushDefault beats the tracked remote", "", "fork", [][]string{{"remote.pushDefault", "fork"}}},
+		{"pushRemote beats pushDefault", "", "origin", [][]string{{"branch.feature.pushRemote", "origin"}, {"remote.pushDefault", "fork"}}},
+		{"prefer beats pushRemote", "origin", "origin", [][]string{{"branch.feature.pushRemote", "fork"}}},
+		{"an unknown pushRemote falls through", "", "origin", [][]string{{"branch.feature.pushRemote", "gone"}}},
+		{"the tracked remote is the default", "", "origin", nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			repo, _ := setupCommitRepoWithRemote(t, "feature")
+			withFork(t, repo)
+			commitFile(t, repo, "a.txt")
+			gitIn(t, repo, "push", "-q", "-u", "origin", "feature")
+			for _, kv := range c.config {
+				gitIn(t, repo, "config", kv[0], kv[1])
+			}
+			commitFile(t, repo, "b.txt")
+			out := pushBranch(newGitRunner(context.Background(), repo), c.prefer)
+			if !out.Pushed || out.Remote != c.want || out.Branch != "feature" {
+				t.Fatalf("%+v, want a push of feature to %s", out, c.want)
+			}
+		})
+	}
 }

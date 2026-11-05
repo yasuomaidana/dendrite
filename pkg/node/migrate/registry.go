@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"Dendrite/pkg/stacks"
 	"fmt"
 	"strings"
 )
@@ -12,7 +13,7 @@ func DefaultServiceCatalog() map[string]ServiceProfile {
 			Name:           "plane",
 			DisplayName:    "Plane v2 Self-Hosted Project Management Stack",
 			Description:    "Authoritative project tracking, issues, milestones, and pages (PostgreSQL 5434, Redis 6380, API 8090, UI 8091)",
-			ComposeFile:    "stacks/compose.plane.yaml",
+			ComposeFile:    stacks.Path("compose.plane.yaml"),
 			Port:           8090,
 			HealthEndpoint: "/api/health/",
 			MinRAMMB:       1536,
@@ -32,7 +33,7 @@ func DefaultServiceCatalog() map[string]ServiceProfile {
 			Name:           "litellm",
 			DisplayName:    "LiteLLM Token Governance Gateway",
 			Description:    "Unified LLM proxy with master key, spend limits, virtual keys, and fallback cascades (:4000)",
-			ComposeFile:    "stacks/compose.control.yaml",
+			ComposeFile:    stacks.Path("compose.control.yaml"),
 			Port:           4000,
 			HealthEndpoint: "/health/liveliness",
 			MinRAMMB:       512,
@@ -48,7 +49,7 @@ func DefaultServiceCatalog() map[string]ServiceProfile {
 			Name:           "database",
 			DisplayName:    "PostgreSQL 16 & Redis 7 Control Plane Storage",
 			Description:    "Core persistence layer for token ledgers, agent telemetry, and session state (:5432, :6379)",
-			ComposeFile:    "stacks/compose.control.yaml",
+			ComposeFile:    stacks.Path("compose.control.yaml"),
 			Port:           5432,
 			HealthEndpoint: "",
 			MinRAMMB:       1024,
@@ -65,7 +66,7 @@ func DefaultServiceCatalog() map[string]ServiceProfile {
 			Name:           "control",
 			DisplayName:    "Combined Control Plane (LiteLLM + Postgres + Redis)",
 			Description:    "Full Dendrite control plane stack (LiteLLM :4000, Postgres :5432, Redis :6379)",
-			ComposeFile:    "stacks/compose.control.yaml",
+			ComposeFile:    stacks.Path("compose.control.yaml"),
 			Port:           4000,
 			HealthEndpoint: "/health/liveliness",
 			MinRAMMB:       1536,
@@ -83,7 +84,7 @@ func DefaultServiceCatalog() map[string]ServiceProfile {
 			Name:           "penpot",
 			DisplayName:    "Penpot Open-Source Design Stack",
 			Description:    "Design and prototyping frontend, backend, database and redis (:9000, :9001)",
-			ComposeFile:    "stacks/compose.penpot.yaml",
+			ComposeFile:    stacks.Path("compose.penpot.yaml"),
 			Port:           9001,
 			HealthEndpoint: "/api/health",
 			MinRAMMB:       1536,
@@ -102,7 +103,7 @@ func DefaultServiceCatalog() map[string]ServiceProfile {
 			Name:           "grafana",
 			DisplayName:    "Prometheus 2.50 & Grafana 10.3 Observability",
 			Description:    "Real-time SoC thermals, token spend metrics, and system dashboards (:3000, :9090)",
-			ComposeFile:    "stacks/compose.grafana.yaml",
+			ComposeFile:    stacks.Path("compose.grafana.yaml"),
 			Port:           3000,
 			HealthEndpoint: "/api/health",
 			MinRAMMB:       512,
@@ -133,7 +134,7 @@ func DefaultServiceCatalog() map[string]ServiceProfile {
 			Name:           "ghidra",
 			DisplayName:    "Headless Ghidra & Rizin Linux RE Worker",
 			Description:    "Cleanroom binary reverse engineering analysis worker",
-			ComposeFile:    "stacks/compose.dev.yaml",
+			ComposeFile:    stacks.Path("compose.dev.yaml"),
 			Port:           8082,
 			HealthEndpoint: "",
 			MinRAMMB:       4096,

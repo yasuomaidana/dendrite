@@ -11,9 +11,12 @@ var (
 	ErrUnreachableNode      = errors.New("node is unreachable")
 	ErrCommandExecution     = errors.New("command execution failed")
 	ErrInsufficientCapacity = errors.New("no node meets minimum resource criteria")
-	ErrEmptyNodeList        = errors.New("no nodes provided for evaluation")
-	ErrEmptyServiceList     = errors.New("no services provided for placement")
-	ErrInvalidTarget        = errors.New("invalid node target specification")
+)
+
+var (
+	ErrEmptyNodeList    = errors.New("no nodes provided for evaluation")
+	ErrEmptyServiceList = errors.New("no services provided for placement")
+	ErrInvalidTarget    = errors.New("invalid node target specification")
 )
 
 // GPUType classifies supported GPU acceleration engines.

@@ -46,16 +46,20 @@ func (p *TailscaleProvider) BootstrapCommands(hostname string) []string {
 	return cmds
 }
 
-func (p *TailscaleProvider) ResolveEndpoint(serviceName string, defaultPort int) string {
-	if p.Routes != nil {
-		if target, ok := p.Routes[serviceName]; ok {
+func resolveHostEndpoint(routes map[string]string, defaultHost string, serviceName string, defaultPort int) string {
+	if routes != nil {
+		if target, ok := routes[serviceName]; ok {
 			return target
 		}
 	}
-	if p.ControlPlaneIP != "" {
-		return fmt.Sprintf("%s:%d", p.ControlPlaneIP, defaultPort)
+	if defaultHost != "" {
+		return fmt.Sprintf("%s:%d", defaultHost, defaultPort)
 	}
 	return fmt.Sprintf("127.0.0.1:%d", defaultPort)
+}
+
+func (p *TailscaleProvider) ResolveEndpoint(serviceName string, defaultPort int) string {
+	return resolveHostEndpoint(p.Routes, p.ControlPlaneIP, serviceName, defaultPort)
 }
 
 // CloudflareIngressRule defines hostname to local port routing for cloudflared.
@@ -331,15 +335,7 @@ func (p *DirectLANProvider) BootstrapCommands(hostname string) []string {
 }
 
 func (p *DirectLANProvider) ResolveEndpoint(serviceName string, defaultPort int) string {
-	if p.Routes != nil {
-		if target, ok := p.Routes[serviceName]; ok {
-			return target
-		}
-	}
-	if p.StaticIP != "" {
-		return fmt.Sprintf("%s:%d", p.StaticIP, defaultPort)
-	}
-	return fmt.Sprintf("127.0.0.1:%d", defaultPort)
+	return resolveHostEndpoint(p.Routes, p.StaticIP, serviceName, defaultPort)
 }
 
 // Manager orchestrates registered NetworkProviders and tracks the active mesh mode.

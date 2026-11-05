@@ -10,6 +10,8 @@ tags: [polyglot-contract, speculative-branching, git-worktree, upstream-drift, c
 
 # FEAT-032: Advanced Polyglot Contract Sync, Speculative Story Branching & Upstream Drift
 
+> **Implementation spec:** the engine behind this feature is implemented in **dendrite-git-rs**. Its data model, algorithms and protocol are specified in [dendrite-git-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-git-rs/blob/develop/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
+
 ## 1. Executive Summary & Problem Statement
 
 ### The Problem

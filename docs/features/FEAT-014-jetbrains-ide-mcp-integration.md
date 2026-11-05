@@ -10,6 +10,8 @@ tags: [jetbrains, mcp, model-context-protocol, ide-integration, goland, json-rpc
 
 # FEAT-014: JetBrains IDE MCP Integration & Communication Bridge
 
+> **Implementation spec:** the engine behind this feature is implemented in **dendrite-mcp-hub**. Its data model, algorithms and protocol are specified in [dendrite-mcp-hub `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-mcp-hub/blob/develop/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
+
 ## 1. User Story & Business Objective
 
 As a software engineer and AI orchestrator using Dendrite, I need Dendrite to natively communicate with JetBrains IDEs (GoLand, IntelliJ IDEA, PyCharm, RustRover, WebStorm, CLion) through the **Model Context Protocol (MCP)** and IDE automation endpoints. This enables Dendrite autonomous agents to discover IDE capabilities, trigger background compilations and run configurations, query file diagnostics and lint problems, resolve code symbols with IDE PSI precision, and open/navigate active editor tabs directly from the CLI or autonomous agent harnesses.

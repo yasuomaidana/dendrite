@@ -1,6 +1,7 @@
 package inference
 
 import (
+	"Dendrite/pkg/memfit"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -19,14 +20,7 @@ type OllamaEngine struct {
 
 // NewOllamaEngine creates an Ollama inference engine adapter.
 func NewOllamaEngine(cfg EngineConfig, client *http.Client) *OllamaEngine {
-	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
-	}
-	if cfg.Endpoint == "" {
-		cfg.Endpoint = "http://127.0.0.1:11434"
-	}
-	cfg.Type = EngineOllama
-	cfg.SelfHosted = true
+	cfg, client = initSelfHostedEngine(cfg, client, EngineOllama, "http://127.0.0.1:11434")
 	return &OllamaEngine{
 		cfg:        cfg,
 		httpClient: client,
@@ -50,6 +44,12 @@ func (e *OllamaEngine) Generate(ctx context.Context, req CompletionRequest) (*Co
 	if model == "" {
 		model = "qwen3.8:27b"
 	}
+	if req.Model == "" { // a default, not the caller's choice: swap in a model that fits
+		model = memfit.ResolveOllama(ctx, e.cfg.Endpoint, model)
+	}
+	if err := memfit.GuardOllama(ctx, e.cfg.Endpoint, model); err != nil {
+		return nil, err
+	}
 
 	payload := map[string]interface{}{
 		"model":  model,
@@ -65,10 +65,7 @@ func (e *OllamaEngine) Generate(ctx context.Context, req CompletionRequest) (*Co
 		payload["options"].(map[string]interface{})["num_predict"] = req.MaxTokens
 	}
 
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("marshal error: %w", err)
-	}
+	data, _ := json.Marshal(payload) // a map of strings and numbers always marshals
 
 	start := time.Now()
 	url := fmt.Sprintf("%s/api/generate", strings.TrimRight(e.cfg.Endpoint, "/"))
@@ -131,10 +128,7 @@ func (e *OllamaEngine) Stream(ctx context.Context, req CompletionRequest) (<-cha
 		"stream": true,
 	}
 
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
+	data, _ := json.Marshal(payload) // a map of strings and booleans always marshals
 
 	url := fmt.Sprintf("%s/api/generate", strings.TrimRight(e.cfg.Endpoint, "/"))
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
@@ -179,40 +173,13 @@ func (e *OllamaEngine) Stream(ctx context.Context, req CompletionRequest) (<-cha
 }
 
 func (e *OllamaEngine) Health(ctx context.Context) EngineHealth {
-	start := time.Now()
-	h := EngineHealth{
+	return checkHTTPHealth(ctx, e.httpClient, EngineHealth{
 		EngineID:   e.cfg.ID,
 		Type:       EngineOllama,
 		Endpoint:   e.cfg.Endpoint,
 		SelfHosted: true,
 		ZeroCost:   true,
-		LastCheck:  time.Now(),
-	}
-
-	url := fmt.Sprintf("%s/api/version", strings.TrimRight(e.cfg.Endpoint, "/"))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		h.Error = err.Error()
-		return h
-	}
-
-	resp, err := e.httpClient.Do(req)
-	h.Latency = time.Since(start)
-	if err != nil {
-		h.Error = err.Error()
-		return h
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK {
-		h.Reachable = true
-		models, _ := e.SupportedModels(ctx)
-		h.Models = models
-	} else {
-		h.Error = fmt.Sprintf("HTTP status %d", resp.StatusCode)
-	}
-
-	return h
+	}, "/api/version", e.SupportedModels)
 }
 
 func (e *OllamaEngine) SupportedModels(ctx context.Context) ([]string, error) {
