@@ -81,21 +81,70 @@ func TestGuard_RejectsCrossOriginRebindingAndBadContentType(t *testing.T) {
 	}
 }
 
-func TestGuard_DashboardTokenBecomesSessionCookie(t *testing.T) {
-	base := "http://" + startGuarded(t)
-	status, hdr := guardedStatus(t, http.MethodGet, base+"/?token="+guardToken, "", nil)
+func sessionOf(t *testing.T, hdr http.Header) (name, id string) {
+	t.Helper()
 	cookie := hdr.Get("Set-Cookie")
-	for _, want := range []string{sessionCookie + "=" + guardToken, "HttpOnly", "SameSite=Strict"} {
+	for _, want := range []string{sessionCookie + "_", "HttpOnly", "SameSite=Strict", "Max-Age="} {
 		if !strings.Contains(cookie, want) {
 			t.Fatalf("cookie %q lacks %q", cookie, want)
 		}
 	}
+	kv := strings.SplitN(strings.SplitN(cookie, ";", 2)[0], "=", 2)
+	return kv[0], kv[1]
+}
+
+func TestGuard_DashboardTokenBecomesRandomSession(t *testing.T) {
+	base := "http://" + startGuarded(t)
+	status, hdr := guardedStatus(t, http.MethodGet, base+"/?token="+guardToken, "", nil)
 	if status != http.StatusOK {
 		t.Fatalf("dashboard status %d", status)
 	}
-	status, _ = guardedStatus(t, http.MethodGet, base+"/api/v1/health", "", map[string]string{"Cookie": sessionCookie + "=" + guardToken})
-	if status != http.StatusOK {
-		t.Fatalf("cookie must authorise, got %d", status)
+	name, id := sessionOf(t, hdr)
+	if strings.Contains(hdr.Get("Set-Cookie"), guardToken) || id == guardToken || len(id) != 64 {
+		t.Fatalf("the cookie must hold a random id, not the token: %q", hdr.Get("Set-Cookie"))
+	}
+	if !strings.HasSuffix(name, strings.TrimPrefix(base[strings.LastIndex(base, ":"):], ":")) {
+		t.Fatalf("cookie name %q must carry the server's port (%s)", name, base)
+	}
+	if status, _ = guardedStatus(t, http.MethodGet, base+"/api/v1/health", "", map[string]string{"Cookie": name + "=" + id}); status != http.StatusOK {
+		t.Fatalf("the session must authorise, got %d", status)
+	}
+	_, hdr2 := guardedStatus(t, http.MethodGet, base+"/?token="+guardToken, "", nil)
+	if _, id2 := sessionOf(t, hdr2); id2 == id {
+		t.Fatal("each visit must get its own session id")
+	}
+}
+
+func TestGuard_RawTokenAndUnknownIDAsCookieAreRejected(t *testing.T) {
+	base := "http://" + startGuarded(t)
+	_, hdr := guardedStatus(t, http.MethodGet, base+"/?token="+guardToken, "", nil)
+	name, _ := sessionOf(t, hdr)
+	for _, v := range []string{guardToken, "0123456789abcdef", ""} {
+		if status, _ := guardedStatus(t, http.MethodGet, base+"/api/v1/health", "", map[string]string{"Cookie": name + "=" + v}); status != http.StatusUnauthorized {
+			t.Fatalf("cookie value %q must not authorise, got %d", v, status)
+		}
+	}
+}
+
+func TestSessionStore_ExpiresAndBounds(t *testing.T) {
+	st := newSessionStore()
+	now := time.Now()
+	st.now = func() time.Time { return now }
+	id, err := st.create()
+	if err != nil || !st.valid(id) {
+		t.Fatalf("new session invalid: %v", err)
+	}
+	now = now.Add(sessionTTL + time.Second)
+	if st.valid(id) {
+		t.Fatal("an expired session must be rejected")
+	}
+	for i := 0; i < maxSessions+10; i++ {
+		if _, err := st.create(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(st.ids) > maxSessions {
+		t.Fatalf("store grew to %d, cap %d", len(st.ids), maxSessions)
 	}
 }
 

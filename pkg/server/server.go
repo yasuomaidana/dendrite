@@ -28,6 +28,7 @@ type Server struct {
 	listener  net.Listener
 	activeTop *topology.TopologyConfig
 	startTime time.Time
+	sessions  *sessionStore
 	mu        sync.RWMutex
 }
 
@@ -61,6 +62,7 @@ func NewServer(cfg ServerConfig, reg *workspace.Registry, hub *TelemetryHub) *Se
 		exporter:  exporter.NewPrometheusExporter(nil),
 		activeTop: defaultTop,
 		startTime: time.Now(),
+		sessions:  newSessionStore(),
 	}
 
 	mux := http.NewServeMux()

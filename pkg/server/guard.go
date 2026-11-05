@@ -11,7 +11,8 @@ import (
 	"strings"
 )
 
-// sessionCookie carries the token to the dashboard after the first authorised visit.
+// sessionCookie is the prefix of the dashboard's session cookie, which carries a random session
+// id (never the access token) after the first authorised visit.
 const sessionCookie = "dendrite_session"
 
 // GenerateToken returns a random 256-bit token for the control server.
@@ -73,7 +74,7 @@ func (s *Server) authorised(r *http.Request) (ok bool, viaQuery bool) {
 	if tokenEqual(r.URL.Query().Get("token"), want) {
 		return true, true
 	}
-	if c, err := r.Cookie(sessionCookie); err == nil && tokenEqual(c.Value, want) {
+	if c, err := r.Cookie(s.cookieName()); err == nil && s.sessions.valid(c.Value) {
 		return true, false
 	}
 	return false, false
@@ -121,7 +122,12 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	if viaQuery && r.URL.Path == "/" {
-		http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: s.cfg.AuthToken, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
+		id, err := s.sessions.create()
+		if err != nil {
+			http.Error(w, "cannot start a session", http.StatusInternalServerError)
+			return false
+		}
+		http.SetCookie(w, &http.Cookie{Name: s.cookieName(), Value: id, Path: "/", MaxAge: int(sessionTTL.Seconds()), HttpOnly: true, SameSite: http.SameSiteStrictMode})
 	}
 	return true
 }
