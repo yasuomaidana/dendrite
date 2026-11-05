@@ -109,6 +109,26 @@ func firstPresent(remotes []string, wanted ...string) string {
 	return remotes[0]
 }
 
+// configuredRemote is the remote git config names under key, when the repository has it.
+func configuredRemote(runGit func(args ...string) (string, error), remotes []string, key string) string {
+	if v, err := runGit("config", "--get", key); err == nil && slices.Contains(remotes, strings.TrimSpace(v)) {
+		return strings.TrimSpace(v)
+	}
+	return ""
+}
+
+// pickRemote chooses where branch is published, first match wins: the caller's explicit prefer (a
+// synapse member's push_remote), the branch's own pushRemote, remote.pushDefault, the remote the
+// branch tracks, origin, then the first remote there is.
+func pickRemote(runGit func(args ...string) (string, error), remotes []string, branch, prefer string) string {
+	for _, key := range []string{"branch." + branch + ".pushRemote", "remote.pushDefault", "branch." + branch + ".remote"} {
+		if r := configuredRemote(runGit, remotes, key); r != "" {
+			return firstPresent(remotes, prefer, r)
+		}
+	}
+	return firstPresent(remotes, prefer, "origin")
+}
+
 // pushBranch pushes the current branch. prefer names the remote to use when the repository has it; otherwise
 // origin is preferred over the other remotes.
 func pushBranch(runGit func(args ...string) (string, error), prefer string) PushOutcome {
@@ -122,7 +142,7 @@ func pushBranch(runGit func(args ...string) (string, error), prefer string) Push
 		return *refused
 	}
 
-	targetRemote := firstPresent(remotes, prefer, "origin")
+	targetRemote := pickRemote(runGit, remotes, branch, prefer)
 
 	out := PushOutcome{Branch: branch, Remote: targetRemote}
 	var pushErr error
@@ -130,9 +150,6 @@ func pushBranch(runGit func(args ...string) (string, error), prefer string) Push
 	// push.default, so a branch tracking origin/main would land on main past the guard above.
 	refspec := "HEAD:refs/heads/" + branch
 	if _, uErr := runGit("rev-parse", "--abbrev-ref", "@{u}"); uErr == nil {
-		if tracked, cErr := runGit("config", "--get", "branch."+branch+".remote"); cErr == nil && slices.Contains(remotes, tracked) {
-			targetRemote, out.Remote = tracked, tracked
-		}
 		_, pushErr = runGit("push", targetRemote, refspec)
 	} else {
 		_, pushErr = runGit("push", "-u", targetRemote, refspec)

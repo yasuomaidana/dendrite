@@ -256,3 +256,37 @@ func TestPushNeverFollowsAnUpstreamOntoMain(t *testing.T) {
 		})
 	}
 }
+
+// The remote is chosen by explicit prefer, then branch.<name>.pushRemote, remote.pushDefault, the
+// tracked remote and origin; the destination stays the branch's own name.
+func TestPushRemoteOrder(t *testing.T) {
+	t.Setenv("DENDRITE_COMMIT_PUSH", "")
+	cases := []struct {
+		name, prefer, want string
+		config             [][]string
+	}{
+		{"prefer beats the tracked remote", "fork", "fork", nil},
+		{"pushRemote beats the tracked remote", "", "fork", [][]string{{"branch.feature.pushRemote", "fork"}}},
+		{"pushDefault beats the tracked remote", "", "fork", [][]string{{"remote.pushDefault", "fork"}}},
+		{"pushRemote beats pushDefault", "", "origin", [][]string{{"branch.feature.pushRemote", "origin"}, {"remote.pushDefault", "fork"}}},
+		{"prefer beats pushRemote", "origin", "origin", [][]string{{"branch.feature.pushRemote", "fork"}}},
+		{"an unknown pushRemote falls through", "", "origin", [][]string{{"branch.feature.pushRemote", "gone"}}},
+		{"the tracked remote is the default", "", "origin", nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			repo, _ := setupCommitRepoWithRemote(t, "feature")
+			withFork(t, repo)
+			commitFile(t, repo, "a.txt")
+			gitIn(t, repo, "push", "-q", "-u", "origin", "feature")
+			for _, kv := range c.config {
+				gitIn(t, repo, "config", kv[0], kv[1])
+			}
+			commitFile(t, repo, "b.txt")
+			out := pushBranch(newGitRunner(context.Background(), repo), c.prefer)
+			if !out.Pushed || out.Remote != c.want || out.Branch != "feature" {
+				t.Fatalf("%+v, want a push of feature to %s", out, c.want)
+			}
+		})
+	}
+}
