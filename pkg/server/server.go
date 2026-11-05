@@ -12,6 +12,7 @@ import (
 
 	"Dendrite/pkg/inference"
 	"Dendrite/pkg/statedir"
+	"Dendrite/pkg/telemetry"
 	"Dendrite/pkg/telemetry/exporter"
 	"Dendrite/pkg/topology"
 	"Dendrite/pkg/workspace"
@@ -37,6 +38,9 @@ func NewServer(cfg ServerConfig, reg *workspace.Registry, hub *TelemetryHub) *Se
 	}
 	if cfg.Host == "" {
 		cfg.Host = "127.0.0.1"
+	}
+	if cfg.Version == "" {
+		cfg.Version = "dev"
 	}
 	if cfg.ReadTimeout == 0 {
 		cfg.ReadTimeout = 15 * time.Second
@@ -153,7 +157,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	resp := map[string]interface{}{
 		"status":    "healthy",
-		"version":   "0.1.0-alpha",
+		"version":   s.cfg.Version,
 		"uptime_s":  time.Since(s.startTime).Seconds(),
 		"timestamp": time.Now().UTC(),
 	}
@@ -285,24 +289,30 @@ func (s *Server) handleTelemetrySnapshot(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	frame := TelemetryFrame{
-		Timestamp:       time.Now().UTC(),
-		ActiveScenario:  topName,
-		ActiveWorkspace: activeWs,
-		SoCTemperatureC: 48.5,
-		ThermalAlert:    false,
-		TokenSpend24h:   12.45,
-		TokenSpend7d:    54.20,
-		DailyBudgetUSD:  50.00,
-		NodeHealth: map[string]string{
-			"Debian":  "healthy",
-			"MacBook": "healthy",
-			"Azure":   "idle",
-			"AWS":     "standby",
-		},
-	}
+	frame := s.measuredFrame(r)
+	frame.Timestamp = time.Now().UTC()
+	frame.ActiveScenario = topName
+	frame.ActiveWorkspace = activeWs
 
 	_ = json.NewEncoder(w).Encode(frame)
+}
+
+// measuredFrame is the last frame broadcast on the hub. With none yet, only the temperature can be read
+// on demand; spend, budget and node health have no source here, so they are reported as unavailable
+// instead of invented.
+func (s *Server) measuredFrame(r *http.Request) TelemetryFrame {
+	if frame, ok := s.hub.Latest(); ok {
+		return frame
+	}
+	frame := TelemetryFrame{Unavailable: []string{"token_spend_24h_usd", "token_spend_7d_usd", "daily_budget_usd", "node_health"}}
+	temp, err := telemetry.NewHostThermalSensor().GetSoCTemperature(r.Context())
+	if err != nil {
+		frame.Unavailable = append(frame.Unavailable, "soc_temperature_c")
+		return frame
+	}
+	frame.SoCTemperatureC = temp
+	frame.ThermalAlert = temp > 80.0
+	return frame
 }
 
 // zeroCostRequest is the body of a zero-cost registry change.

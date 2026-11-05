@@ -66,17 +66,26 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
   <div class="grid">
     <div class="card">
       <h2>SoC Die Temperature</h2>
-      <div id="soc-temp" class="gauge">48.5°C</div>
+      <div id="soc-temp" class="gauge">n/a</div>
     </div>
     <div class="card">
       <h2>24h Token Spend</h2>
-      <div id="token-spend" class="gauge">$12.45</div>
+      <div id="token-spend" class="gauge">n/a</div>
     </div>
     <div class="card">
       <h2>Active Scenario</h2>
-      <div id="active-scenario" class="gauge" style="font-size: 1.5rem;">local-hybrid</div>
+      <div id="active-scenario" class="gauge" style="font-size: 1.5rem;">n/a</div>
     </div>
   </div>
+  <script>
+    fetch('/api/v1/telemetry/snapshot').then(function (r) { return r.json(); }).then(function (f) {
+      var gone = f.unavailable || [];
+      var show = function (id, key, text) { document.getElementById(id).textContent = gone.indexOf(key) >= 0 ? 'n/a' : text; };
+      show('soc-temp', 'soc_temperature_c', f.soc_temperature_c + '\u00b0C');
+      show('token-spend', 'token_spend_24h_usd', '$' + f.token_spend_24h_usd.toFixed(2));
+      document.getElementById('active-scenario').textContent = f.active_scenario || 'n/a';
+    });
+  </script>
 </body>
 </html>`
 	_, _ = w.Write([]byte(html))

@@ -50,7 +50,7 @@ func newCortexServeCmd() *cobra.Command {
 
 func runCortexServe(ctx context.Context, port int, noAuth bool, out io.Writer) error {
 	reg, _ := cli.NewProjectRegistry()
-	cfg := server.ServerConfig{Host: "127.0.0.1", Port: port}
+	cfg := server.ServerConfig{Host: "127.0.0.1", Port: port, Version: cli.Version}
 	if !noAuth {
 		token, err := server.GenerateToken()
 		if err != nil {

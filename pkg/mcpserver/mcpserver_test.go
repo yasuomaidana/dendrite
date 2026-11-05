@@ -240,7 +240,7 @@ func TestServer_ConfigDefaults(t *testing.T) {
 	if srv.Info().Name != "Dendrite Control Plane MCP Server" {
 		t.Errorf("expected default name, got %q", srv.Info().Name)
 	}
-	if srv.Info().Version != "0.1.0-alpha" {
+	if srv.Info().Version != "0.1.0" {
 		t.Errorf("expected default version, got %q", srv.Info().Version)
 	}
 

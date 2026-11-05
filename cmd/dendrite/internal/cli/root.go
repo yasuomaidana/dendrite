@@ -74,4 +74,4 @@ func RunGroup(cmd *cobra.Command, args []string) error {
 	return UsageErrorf(msg+"\nRun '%s --help' for usage.", args[0], cmd.CommandPath(), cmd.CommandPath())
 }
 
-const Version = "0.1.0-alpha"
+const Version = "0.1.0"

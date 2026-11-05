@@ -29,6 +29,16 @@ func NewTelemetryHub() *TelemetryHub {
 	}
 }
 
+// Latest returns the last frame broadcast, if any.
+func (h *TelemetryHub) Latest() (TelemetryFrame, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.lastFrame == nil {
+		return TelemetryFrame{}, false
+	}
+	return *h.lastFrame, true
+}
+
 // Subscribe returns a channel of telemetry frames and an unsubscription callback.
 func (h *TelemetryHub) Subscribe() (<-chan TelemetryFrame, func()) {
 	h.mu.Lock()
