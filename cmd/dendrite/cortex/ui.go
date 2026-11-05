@@ -31,6 +31,7 @@ func NewCortexCmd() *cobra.Command {
 
 func newCortexServeCmd() *cobra.Command {
 	var port int
+	var noAuth bool
 	cmd := &cobra.Command{
 		Use:     "serve",
 		Aliases: []string{"start"},
@@ -39,22 +40,40 @@ func newCortexServeCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			return runCortexServe(ctx, port, cmd.OutOrStdout())
+			return runCortexServe(ctx, port, noAuth, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().IntVar(&port, "port", 3456, "Listen port")
+	cmd.Flags().BoolVar(&noAuth, "no-auth", false, "Serve without an access token (any local process can then call the API)")
 	return cmd
 }
 
-func runCortexServe(ctx context.Context, port int, out io.Writer) error {
+func runCortexServe(ctx context.Context, port int, noAuth bool, out io.Writer) error {
 	reg, _ := cli.NewProjectRegistry()
-	srv := server.NewServer(server.ServerConfig{Host: "127.0.0.1", Port: port}, reg, server.NewTelemetryHub())
+	cfg := server.ServerConfig{Host: "127.0.0.1", Port: port}
+	if !noAuth {
+		token, err := server.GenerateToken()
+		if err != nil {
+			return fmt.Errorf("generate access token: %w", err)
+		}
+		cfg.AuthToken = token
+	}
+	srv := server.NewServer(cfg, reg, server.NewTelemetryHub())
 	start := time.Now()
 	if err := srv.Start(); err != nil {
 		return fmt.Errorf("start Dendrite Web UI: %w", err)
 	}
 	defer func() { _ = srv.Shutdown(context.Background()) }()
-	fmt.Fprintf(out, "[✓] Dendrite Web UI listening at http://127.0.0.1:%d (Started in %v)\n", port, time.Since(start))
+	query := ""
+	if cfg.AuthToken != "" {
+		query = "/?token=" + cfg.AuthToken
+	}
+	fmt.Fprintf(out, "[✓] Dendrite Web UI listening at http://127.0.0.1:%d%s (Started in %v)\n", port, query, time.Since(start))
+	if cfg.AuthToken != "" {
+		fmt.Fprintln(out, "    - Access token required: open the URL above once, or send 'Authorization: Bearer <token>'.")
+	} else {
+		fmt.Fprintln(out, "[!] --no-auth: the API accepts any local request; only Host and Origin are checked.")
+	}
 	fmt.Fprintf(out, "    - WebSocket Telemetry: ws://127.0.0.1:%d/api/v1/telemetry/ws\n", port)
 	fmt.Fprintf(out, "    - REST API Snapshot:   http://127.0.0.1:%d/api/v1/telemetry/snapshot\n", port)
 	fmt.Fprintf(out, "    - Prometheus Metrics:  http://127.0.0.1:%d/metrics\n", port)

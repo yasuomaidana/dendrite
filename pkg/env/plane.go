@@ -104,35 +104,39 @@ func DefaultPlaneConfig() PlaneConfig {
 	}
 }
 
+// positiveOr returns v, or def when v is not positive.
+func positiveOr(v, def int) int {
+	if v <= 0 {
+		return def
+	}
+	return v
+}
+
+// nonEmptyOr returns v, or def when v is empty.
+func nonEmptyOr(v, def string) string {
+	if v == "" {
+		return def
+	}
+	return v
+}
+
+// withPlaneDefaults fills every unset field of cfg with its default.
+func withPlaneDefaults(cfg PlaneConfig) PlaneConfig {
+	cfg.Port = positiveOr(cfg.Port, 8090)
+	cfg.UIPort = positiveOr(cfg.UIPort, 8091)
+	cfg.DBPort = positiveOr(cfg.DBPort, 5434)
+	cfg.RedisPort = positiveOr(cfg.RedisPort, 6380)
+	cfg.ContainerName = nonEmptyOr(cfg.ContainerName, "dendrite-plane-api")
+	cfg.UIContainerName = nonEmptyOr(cfg.UIContainerName, "dendrite-plane-ui")
+	cfg.DockerImage = nonEmptyOr(cfg.DockerImage, "makeplane/plane-backend:v0.20-dev")
+	cfg.UIDockerImage = nonEmptyOr(cfg.UIDockerImage, "makeplane/plane-frontend:v0.20-dev")
+	cfg.SecretKey = nonEmptyOr(cfg.SecretKey, "dendrite_plane_secret_key_mock_local")
+	return cfg
+}
+
 // GeneratePlaneCompose renders a valid docker-compose configuration for self-hosted Plane.
 func GeneratePlaneCompose(cfg PlaneConfig) string {
-	if cfg.Port <= 0 {
-		cfg.Port = 8090
-	}
-	if cfg.UIPort <= 0 {
-		cfg.UIPort = 8091
-	}
-	if cfg.DBPort <= 0 {
-		cfg.DBPort = 5434
-	}
-	if cfg.RedisPort <= 0 {
-		cfg.RedisPort = 6380
-	}
-	if cfg.ContainerName == "" {
-		cfg.ContainerName = "dendrite-plane-api"
-	}
-	if cfg.UIContainerName == "" {
-		cfg.UIContainerName = "dendrite-plane-ui"
-	}
-	if cfg.DockerImage == "" {
-		cfg.DockerImage = "makeplane/plane-backend:v0.20-dev"
-	}
-	if cfg.UIDockerImage == "" {
-		cfg.UIDockerImage = "makeplane/plane-frontend:v0.20-dev"
-	}
-	if cfg.SecretKey == "" {
-		cfg.SecretKey = "dendrite_plane_secret_key_mock_local"
-	}
+	cfg = withPlaneDefaults(cfg)
 
 	uiService := ""
 	if cfg.IsUIEnabled() {
@@ -168,7 +172,7 @@ func GeneratePlaneCompose(cfg PlaneConfig) string {
       - plane-api
       - plane-ui
     ports:
-      - "${PLANE_UI_PORT:-%d}:80"
+      - "${DENDRITE_BIND_HOST:-127.0.0.1}:${PLANE_UI_PORT:-%d}:80"
     volumes:
       - ./plane_proxy.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
@@ -202,7 +206,7 @@ services:
       POSTGRES_USER: ${PLANE_DB_USER:-plane_user}
       POSTGRES_PASSWORD: ${PLANE_DB_PASSWORD:-plane_password}
     ports:
-      - "${PLANE_DB_PORT:-%d}:5432"
+      - "${DENDRITE_BIND_HOST:-127.0.0.1}:${PLANE_DB_PORT:-%d}:5432"
     volumes:
       - plane-postgres-data:/var/lib/postgresql/data
     networks:
@@ -218,7 +222,7 @@ services:
     container_name: dendrite-plane-redis
     restart: unless-stopped
     ports:
-      - "${PLANE_REDIS_PORT:-%d}:6379"
+      - "${DENDRITE_BIND_HOST:-127.0.0.1}:${PLANE_REDIS_PORT:-%d}:6379"
     volumes:
       - plane-redis-data:/data
     networks:

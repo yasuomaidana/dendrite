@@ -17,18 +17,25 @@ func TestCortex_ServeUntilCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	var buf bytes.Buffer
-	if err := runCortexServe(ctx, clitest.FreePort(t), &buf); err != nil {
+	if err := runCortexServe(ctx, clitest.FreePort(t), false, &buf); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "Dendrite Web UI listening") {
-		t.Fatalf("unexpected output %q", buf.String())
+	if !strings.Contains(buf.String(), "Dendrite Web UI listening") || !strings.Contains(buf.String(), "?token=") {
+		t.Fatalf("serve must print a tokenised URL, got %q", buf.String())
+	}
+	var open bytes.Buffer
+	if err := runCortexServe(ctx, clitest.FreePort(t), true, &open); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(open.String(), "token=") || !strings.Contains(open.String(), "--no-auth") {
+		t.Fatalf("--no-auth must say so and print no token, got %q", open.String())
 	}
 	busy, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer busy.Close()
-	if err := runCortexServe(ctx, busy.Addr().(*net.TCPAddr).Port, &buf); err == nil {
+	if err := runCortexServe(ctx, busy.Addr().(*net.TCPAddr).Port, false, &buf); err == nil {
 		t.Fatal("a busy port should fail")
 	}
 }
