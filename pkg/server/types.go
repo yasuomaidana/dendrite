@@ -32,6 +32,9 @@ type TelemetryFrame struct {
 	TokenSpend7d    float64           `json:"token_spend_7d_usd"`
 	DailyBudgetUSD  float64           `json:"daily_budget_usd"`
 	NodeHealth      map[string]string `json:"node_health"`
+	// Stale is true when the frame is older than the hub's freshness window: its values are the last
+	// ones measured, not current readings. Timestamp says when they were taken.
+	Stale bool `json:"stale,omitempty"`
 	// Unavailable names the fields this snapshot could not measure; their values are zero, not readings.
 	Unavailable []string `json:"unavailable,omitempty"`
 }

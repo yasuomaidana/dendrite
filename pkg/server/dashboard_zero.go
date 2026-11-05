@@ -81,7 +81,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
     fetch('/api/v1/telemetry/snapshot').then(function (r) { return r.json(); }).then(function (f) {
       var gone = f.unavailable || [];
       var show = function (id, key, text) { document.getElementById(id).textContent = gone.indexOf(key) >= 0 ? 'n/a' : text; };
-      show('soc-temp', 'soc_temperature_c', f.soc_temperature_c + '\u00b0C');
+      show('soc-temp', 'soc_temperature_c', f.soc_temperature_c + '\u00b0C' + (f.stale ? ' (stale, ' + f.timestamp + ')' : ''));
       show('token-spend', 'token_spend_24h_usd', '$' + f.token_spend_24h_usd.toFixed(2));
       document.getElementById('active-scenario').textContent = f.active_scenario || 'n/a';
     });

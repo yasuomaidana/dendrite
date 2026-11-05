@@ -60,6 +60,7 @@ First release from `develop` to `main` since 2026-10-19 (180 commits). Which com
 - `/api/v1/telemetry/snapshot` and the dashboard report measured values, or list a field as `unavailable`, instead of fixed numbers; `/api/v1/health` reports version `0.1.0` (DEN-865).
 - `dendrite ask --server` sends the central server's access token as a Bearer header (`--server-token`, else `DENDRITE_RAG_TOKEN`) and explains a 401 instead of failing opaquely (DEN-868).
 - The dashboard session cookie holds a random server-side session id (HttpOnly, SameSite=Strict, 12 h, one name per port) and never the access token, so another service on localhost learns nothing reusable (DEN-869).
+- The telemetry snapshot keeps each frame's own timestamp and flags frames older than 30 s as `stale`; the on-demand temperature is read at most every 30 s with a 3 s timeout, and a zero or failed reading is listed as `unavailable` (DEN-870).
 
 ### Quality
 

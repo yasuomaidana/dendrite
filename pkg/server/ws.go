@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 )
 
 const wsMagicKey = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -68,6 +69,9 @@ func (h *TelemetryHub) Broadcast(frame TelemetryFrame) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	if frame.Timestamp.IsZero() {
+		frame.Timestamp = time.Now().UTC()
+	}
 	h.lastFrame = &frame
 
 	// Broadcast to channel subscribers

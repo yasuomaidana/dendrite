@@ -1,11 +1,14 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func snapshotOf(t *testing.T, s *Server) TelemetryFrame {
@@ -59,5 +62,75 @@ func TestDashboardShowsNoInventedReadings(t *testing.T) {
 		if strings.Contains(rec.Body.String(), fake) {
 			t.Fatalf("dashboard still hard-codes %s", fake)
 		}
+	}
+}
+
+func TestSnapshotKeepsTheFrameTimeAndFlagsOldFrames(t *testing.T) {
+	hub := NewTelemetryHub()
+	old := time.Now().UTC().Add(-time.Hour)
+	hub.Broadcast(TelemetryFrame{Timestamp: old, SoCTemperatureC: 55})
+	f := snapshotOf(t, NewServer(ServerConfig{}, nil, hub))
+	if !f.Stale || !f.Timestamp.Equal(old) {
+		t.Fatalf("an hour-old frame must keep its time and be stale: %+v", f)
+	}
+	hub.Broadcast(TelemetryFrame{SoCTemperatureC: 56})
+	if f = snapshotOf(t, NewServer(ServerConfig{}, nil, hub)); f.Stale || time.Since(f.Timestamp) > time.Minute {
+		t.Fatalf("a fresh frame is stamped when broadcast and is not stale: %+v", f)
+	}
+}
+
+// countingSensor is a ThermalSensor that returns a fixed reading and counts its reads.
+type countingSensor struct {
+	temp  float64
+	err   error
+	reads int
+}
+
+func (c *countingSensor) GetSoCTemperature(context.Context) (float64, error) {
+	c.reads++
+	return c.temp, c.err
+}
+
+func TestThermalReadsAreCachedAndZeroIsNotATemperature(t *testing.T) {
+	cases := []struct {
+		name    string
+		sensor  *countingSensor
+		wantGap bool
+	}{
+		{"measured", &countingSensor{temp: 61}, false},
+		{"zero reading", &countingSensor{temp: 0}, true},
+		{"failing sensor", &countingSensor{err: errors.New("no powermetrics")}, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := NewServer(ServerConfig{}, nil, nil)
+			s.thermal = newThermalCache(c.sensor)
+			for i := 0; i < 5; i++ {
+				f := snapshotOf(t, s)
+				gap := strings.Contains(strings.Join(f.Unavailable, ","), "soc_temperature_c")
+				if gap != c.wantGap || (c.wantGap && f.SoCTemperatureC != 0) {
+					t.Fatalf("temperature gap=%v want %v: %+v", gap, c.wantGap, f)
+				}
+			}
+			if c.sensor.reads != 1 {
+				t.Fatalf("five snapshots must read the sensor once, read %d times", c.sensor.reads)
+			}
+		})
+	}
+}
+
+func TestThermalCacheReadsAgainAfterTheTTL(t *testing.T) {
+	sensor := &countingSensor{temp: 50}
+	c := newThermalCache(sensor)
+	now := time.Now()
+	c.now = func() time.Time { return now }
+	for _, step := range []time.Duration{0, time.Second, thermalCacheTTL + time.Second} {
+		now = now.Add(step)
+		if _, err := c.read(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if sensor.reads != 2 {
+		t.Fatalf("want 2 reads (first, and after the TTL), got %d", sensor.reads)
 	}
 }

@@ -29,6 +29,7 @@ type Server struct {
 	activeTop *topology.TopologyConfig
 	startTime time.Time
 	sessions  *sessionStore
+	thermal   *thermalCache
 	mu        sync.RWMutex
 }
 
@@ -63,6 +64,7 @@ func NewServer(cfg ServerConfig, reg *workspace.Registry, hub *TelemetryHub) *Se
 		activeTop: defaultTop,
 		startTime: time.Now(),
 		sessions:  newSessionStore(),
+		thermal:   newThermalCache(telemetry.NewHostThermalSensor()),
 	}
 
 	mux := http.NewServeMux()
@@ -292,22 +294,23 @@ func (s *Server) handleTelemetrySnapshot(w http.ResponseWriter, r *http.Request)
 	}
 
 	frame := s.measuredFrame(r)
-	frame.Timestamp = time.Now().UTC()
 	frame.ActiveScenario = topName
 	frame.ActiveWorkspace = activeWs
 
 	_ = json.NewEncoder(w).Encode(frame)
 }
 
-// measuredFrame is the last frame broadcast on the hub. With none yet, only the temperature can be read
-// on demand; spend, budget and node health have no source here, so they are reported as unavailable
-// instead of invented.
+// measuredFrame is the last frame broadcast on the hub, with its own timestamp; one older than
+// frameStaleAfter is flagged Stale instead of passing for a live reading. With none yet, only the
+// temperature can be read on demand (cached); spend, budget and node health have no source here, so
+// they are reported as unavailable instead of invented, and so is a temperature that cannot be read.
 func (s *Server) measuredFrame(r *http.Request) TelemetryFrame {
 	if frame, ok := s.hub.Latest(); ok {
+		frame.Stale = time.Since(frame.Timestamp) > frameStaleAfter
 		return frame
 	}
-	frame := TelemetryFrame{Unavailable: []string{"token_spend_24h_usd", "token_spend_7d_usd", "daily_budget_usd", "node_health"}}
-	temp, err := telemetry.NewHostThermalSensor().GetSoCTemperature(r.Context())
+	frame := TelemetryFrame{Timestamp: time.Now().UTC(), Unavailable: []string{"token_spend_24h_usd", "token_spend_7d_usd", "daily_budget_usd", "node_health"}}
+	temp, err := s.thermal.read(r.Context())
 	if err != nil {
 		frame.Unavailable = append(frame.Unavailable, "soc_temperature_c")
 		return frame
