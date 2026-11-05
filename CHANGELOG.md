@@ -54,6 +54,10 @@ First release from `develop` to `main` since 2026-10-19 (180 commits). Which com
 ### Security
 
 - The root `.env`, which held live credentials, is untracked and a test fails the build if an environment file is tracked again (DEN-901, DEN-343). The credentials that were committed before this release must be rotated; The keys were rotated and DEN-442 is closed.
+- `dendrite cortex serve` requires a generated access token (printed in the URL it opens; `--no-auth` turns it off), refuses foreign `Host` and `Origin` headers on HTTP, WebSocket and SSE, sends no CORS headers and accepts only `application/json` bodies (DEN-862).
+- The compose stacks publish every port on `127.0.0.1` (`DENDRITE_BIND_HOST` changes it), Redis requires a generated `REDIS_PASSWORD`, and the LiteLLM image is pinned by digest (DEN-863).
+- `dendrite quantal` pushes `HEAD:refs/heads/<branch>` to an explicit destination, so a branch that tracks `origin/main` cannot reach `main` (DEN-864).
+- `/api/v1/telemetry/snapshot` and the dashboard report measured values, or list a field as `unavailable`, instead of fixed numbers; `/api/v1/health` reports version `0.1.0` (DEN-865).
 
 ### Quality
 
