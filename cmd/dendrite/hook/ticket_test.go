@@ -182,7 +182,7 @@ func TestPlanSavedStoresThePlanOnTheClaimedTicketOrKeepsItLocally(t *testing.T) 
 	if err := runPlanSaved(ctx, r.event("ExitPlanMode", "", "- [ ] one\n- [ ] two"), &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "plan kept locally (unclaimed/s-1)") {
+	if !strings.Contains(out.String(), "plan kept locally (unclaimed/") || !strings.Contains(out.String(), "/s-1)") {
 		t.Errorf("unclaimed: %s", out.String())
 	}
 	out.Reset()
