@@ -102,15 +102,41 @@ func TestFinishWaitsForAPersonWhenPolicyOrLabelsSayNot(t *testing.T) {
 	}
 }
 
-func TestFinishWithoutCriteriaHasNothingToReview(t *testing.T) {
+func TestFinishWithoutCriteriaWaitsForAPerson(t *testing.T) {
 	r := newFinishRig(t, "To Do", "<p>goal only</p>")
 	r.checks.Review = func(context.Context, ReviewInput) ([]ACVerdict, error) {
 		t.Fatal("no criteria, no review")
 		return nil, nil
 	}
 	res, err := r.finish()
-	if err != nil || res.State != "Done" || !strings.Contains(strings.Join(res.Notes, " "), "no [AC-n] criteria") {
-		t.Fatalf("%+v, %v", res, err)
+	if err != nil || res.State != "To Verify" || r.board.State("DEN-377") != "To Verify" || !strings.Contains(strings.Join(res.Notes, " "), "no [AC-n] criteria") {
+		t.Fatalf("an unchecked ticket is never Done: %+v, %v", res, err)
+	}
+}
+
+func TestFinishHonoursTheConfiguredHumanReviewLabels(t *testing.T) {
+	cases := map[string]struct {
+		configured []string
+		label      string
+		want       string
+	}{
+		"a configured label holds the ticket":       {[]string{"security"}, "security", "To Verify"},
+		"the case of the label does not matter":     {[]string{"Security"}, "security", "To Verify"},
+		"a label that is not configured is ignored": {[]string{"security"}, HumanReviewLabel, "Done"},
+		"no configuration keeps the default label":  {nil, HumanReviewLabel, "To Verify"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := newFinishRig(t, "To Do", twoCriteria)
+			r.checks.HumanReviewLabels = tc.configured
+			if _, _, err := r.Board.Svc.PatchLabels(context.Background(), r.Board.Client, "DEN-377", []string{tc.label}, nil); err != nil {
+				t.Fatal(err)
+			}
+			res, err := r.finish()
+			if err != nil || res.State != tc.want {
+				t.Fatalf("state = %q, want %q (%v)", res.State, tc.want, err)
+			}
+		})
 	}
 }
 
@@ -358,6 +384,19 @@ func TestDefaultFinishChecksAreWiredToTheProject(t *testing.T) {
 	}
 	if r := proofReviewer(dir); r.Chat == nil || r.Rank == nil {
 		t.Error("the reviewer talks to the gateway and ranks hunks")
+	}
+}
+
+func TestHumanReviewLabelsComeFromTheDirectives(t *testing.T) {
+	dir := t.TempDir()
+	fsutiltest.WriteFile(t, dir, directive.Path, "[done]\nhuman_review_labels = [\"security\", \"legal\"]\n")
+	if got := DefaultFinishChecks(dir).HumanReviewLabels; strings.Join(got, ",") != "security,legal" {
+		t.Errorf("labels = %v", got)
+	}
+	broken := t.TempDir()
+	fsutiltest.WriteFile(t, broken, directive.Path, "[done\n")
+	if got := HumanReviewLabels(broken); got != nil {
+		t.Errorf("an unreadable file falls back to the default label: %v", got)
 	}
 }
 

@@ -6,7 +6,7 @@ sidebar_label: "dendrite_ticket_finish"
 
 # dendrite_ticket_finish
 
-Finish a ticket: run the quality gate and check the branch's diff against each [AC-n]. Sets Done when the project allows it and the ticket has no needs-human-review label, To Verify otherwise, and Blocked with a handoff when a check fails.
+Finish a ticket: run the quality gate and check the branch's diff against each [AC-n]. Sets Done when the project allows it, the ticket lists [AC-n] criteria and it has no human-review label, To Verify otherwise, and Blocked with a handoff when a check fails.
 
 ## Input Schema
 

@@ -235,8 +235,9 @@ func NewChronosFinishCmd() *cobra.Command {
 		Long: "Runs the quality gate in the working copy, then has the local model check the branch's diff against every [AC-n]\n" +
 			"of the ticket. A failed check blocks the ticket and writes the handoff (completed, challenges, missing). A clean\n" +
 			"finish sets Done when the project allows it (`[done] auto_done` in " + directive.Path + ", on by default)\n" +
-			"and the ticket has no " + ticketlock.HumanReviewLabel + " label; otherwise, or when the review could not run,\n" +
-			"it sets To Verify with the report as a comment. Exits non-zero when the ticket ended Blocked.",
+			"and the ticket has no " + ticketlock.HumanReviewLabel + " label (or other `[done] human_review_labels`); otherwise,\n" +
+			"or when the ticket lists no [AC-n] or the review could not run, it sets To Verify with the report as a\n" +
+			"comment. Exits non-zero when the ticket ended Blocked.",
 		Example: "dendrite chronos finish DEN-379",
 		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

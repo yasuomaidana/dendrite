@@ -19,7 +19,8 @@ import (
 	"time"
 )
 
-// HumanReviewLabel on a ticket keeps `finish` from setting Done: a person verifies it.
+// HumanReviewLabel is the default label that keeps `finish` from setting Done: a person verifies the ticket.
+// The project's `[done] human_review_labels` directive replaces it.
 const HumanReviewLabel = "needs-human-review"
 
 // GateResult is the outcome of the deterministic quality gate, the first stage of `finish`.
@@ -55,6 +56,8 @@ type FinishChecks struct {
 	Diff func(dir, ticket string) string
 	// AutoDone lets a clean finish set Done; without it every clean finish waits in To Verify.
 	AutoDone bool
+	// HumanReviewLabels are the ticket labels that always need a person; empty means HumanReviewLabel.
+	HumanReviewLabels []string
 }
 
 // FinishResult says where `finish` left the ticket and why.
@@ -71,8 +74,9 @@ var ErrNotInProgress = errors.New("only a ticket that is In Progress can be fini
 
 // Finish ends the session's work on a ticket. Stage 1 is the quality gate, stage 2 the review of the branch's
 // diff against each [AC-n]. A failed stage blocks the ticket with the three-part handoff. A clean finish sets
-// Done when the policy allows it and the ticket carries no needs-human-review label, and To Verify (with the
-// report as a comment) otherwise, including when the review could not run: an unchecked ticket is never Done.
+// Done when the policy allows it and the ticket carries no human-review label, and To Verify (with the report as
+// a comment) otherwise, including when the ticket lists no criteria or the review could not run: an unchecked
+// ticket is never Done.
 func (l *Lifecycle) Finish(ctx context.Context, ref string, c FinishChecks) (FinishResult, error) {
 	st, issue, err := l.Board.Status(ctx, ref)
 	if err != nil {
@@ -84,64 +88,88 @@ func (l *Lifecycle) Finish(ctx context.Context, ref string, c FinishChecks) (Fin
 	}
 	res := FinishResult{Ticket: ticket}
 
-	gate, gErr := c.Gate(ctx, l.Dir, ticket)
-	if gErr != nil {
-		gate = GateResult{Report: "the quality gate could not run: " + gErr.Error()}
-	}
-	res.Gate = gate
-	if !gate.Passed {
-		return l.blockFinish(ctx, res, "The quality gate failed.\n"+gate.Report, "Make the quality gate pass, then finish again.")
+	res.Gate = runGate(ctx, c, l.Dir, ticket)
+	if !res.Gate.Passed {
+		return l.blockFinish(ctx, res, "The quality gate failed.\n"+res.Gate.Report, "Make the quality gate pass, then finish again.")
 	}
 
 	qc, err := l.QueryContext(ctx, ticket)
 	if err != nil {
 		return FinishResult{}, err
 	}
-	human := !c.AutoDone
 	if !c.AutoDone {
 		res.Notes = append(res.Notes, "automatic Done is off for this project")
 	}
-	switch {
-	case len(qc.AcceptanceCriteria) == 0:
-		res.Notes = append(res.Notes, "the ticket lists no [AC-n] criteria, so there was nothing to review")
-	default:
-		verdicts, rErr := c.Review(ctx, ReviewInput{Ticket: ticket, Description: qc.Description, Criteria: qc.AcceptanceCriteria, Diff: c.Diff(l.Dir, ticket)})
-		if rErr != nil {
-			human = true
-			res.Notes = append(res.Notes, "the acceptance review could not run ("+rErr.Error()+"), so a person has to verify")
-			break
-		}
-		res.Verdicts = verdicts
-		// The review can fail to prove a criterion, or doubt it, but only the quality gate blocks a ticket: a small
-		// model cannot prove an absence, so its doubt goes to a person with its reason.
-		if unproven := judgeCriteria(qc.AcceptanceCriteria, verdicts); len(unproven) > 0 {
-			human = true
-			res.Notes = append(res.Notes, "no verifiable evidence in the change for:\n"+strings.Join(unproven, "\n"))
-		}
-	}
+	reviewed := l.reviewCriteria(ctx, c, ticket, qc, &res) // both stages always run, so every reason reaches the ticket
+	held := l.heldByLabel(ctx, c, ticket, &res)
+	human := !c.AutoDone || reviewed || held
 
-	if _, labels, err := l.Board.Svc.PatchLabels(ctx, l.Board.Client, ticket, nil, nil); err != nil {
-		human = true
-		res.Notes = append(res.Notes, "the ticket's labels could not be read ("+err.Error()+"), so a person has to verify")
-	} else if hasLabel(labels, HumanReviewLabel) {
-		human = true
-		res.Notes = append(res.Notes, "the ticket is labelled "+HumanReviewLabel)
-	}
+	return l.settle(ctx, res, human)
+}
 
+// settle posts the finish report and moves the ticket: To Verify when a person has to verify, else Done with the
+// claim released.
+func (l *Lifecycle) settle(ctx context.Context, res FinishResult, human bool) (FinishResult, error) {
 	claim, _ := l.Store.ClaimFor(l.Branch(l.Dir))
-	if err := l.post(ctx, ticket, "milestone", finishReport(res), claim); err != nil {
+	if err := l.post(ctx, res.Ticket, "milestone", finishReport(res), claim); err != nil {
 		return FinishResult{}, err
 	}
 	if human {
-		out, err := l.Transition(ctx, ticket, "verify", Handoff{})
+		out, err := l.Transition(ctx, res.Ticket, "verify", Handoff{})
 		res.State = out.State
 		return res, err
 	}
-	if err := l.Board.set(ctx, ticket, tracker.StatusDone); err != nil {
-		return FinishResult{}, fmt.Errorf("set %s to Done: %w", ticket, err)
+	if err := l.Board.set(ctx, res.Ticket, tracker.StatusDone); err != nil {
+		return FinishResult{}, fmt.Errorf("set %s to Done: %w", res.Ticket, err)
 	}
 	res.State = tracker.StatusDisplayName(tracker.StatusDone)
 	return res, l.Store.ReleaseClaim(l.Branch(l.Dir))
+}
+
+// runGate is stage 1 of a finish; a gate that cannot run fails with the reason as its report.
+func runGate(ctx context.Context, c FinishChecks, dir, ticket string) GateResult {
+	gate, err := c.Gate(ctx, dir, ticket)
+	if err != nil {
+		return GateResult{Report: "the quality gate could not run: " + err.Error()}
+	}
+	return gate
+}
+
+// reviewCriteria has the acceptance review judge the diff against each criterion of the ticket and records the
+// verdicts and notes in res. It reports whether a person has to verify: the ticket lists no criteria, the review
+// could not run, or it found no evidence for one.
+func (l *Lifecycle) reviewCriteria(ctx context.Context, c FinishChecks, ticket string, qc Context, res *FinishResult) (human bool) {
+	if len(qc.AcceptanceCriteria) == 0 {
+		res.Notes = append(res.Notes, "the ticket lists no [AC-n] criteria, so there was nothing to review and a person has to verify")
+		return true
+	}
+	verdicts, err := c.Review(ctx, ReviewInput{Ticket: ticket, Description: qc.Description, Criteria: qc.AcceptanceCriteria, Diff: c.Diff(l.Dir, ticket)})
+	if err != nil {
+		res.Notes = append(res.Notes, "the acceptance review could not run ("+err.Error()+"), so a person has to verify")
+		return true
+	}
+	res.Verdicts = verdicts
+	// The review can fail to prove a criterion, or doubt it, but only the quality gate blocks a ticket: a small
+	// model cannot prove an absence, so its doubt goes to a person with its reason.
+	if unproven := judgeCriteria(qc.AcceptanceCriteria, verdicts); len(unproven) > 0 {
+		res.Notes = append(res.Notes, "no verifiable evidence in the change for:\n"+strings.Join(unproven, "\n"))
+		return true
+	}
+	return false
+}
+
+// heldByLabel reports whether the ticket carries a human-review label, or its labels cannot be read, and notes why.
+func (l *Lifecycle) heldByLabel(ctx context.Context, c FinishChecks, ticket string, res *FinishResult) bool {
+	_, labels, err := l.Board.Svc.PatchLabels(ctx, l.Board.Client, ticket, nil, nil)
+	if err != nil {
+		res.Notes = append(res.Notes, "the ticket's labels could not be read ("+err.Error()+"), so a person has to verify")
+		return true
+	}
+	held := firstLabel(labels, c.humanReviewLabels())
+	if held != "" {
+		res.Notes = append(res.Notes, "the ticket is labelled "+held)
+	}
+	return held != ""
 }
 
 // blockFinish blocks the ticket with a handoff built from what the branch holds and why finishing failed.
@@ -181,6 +209,24 @@ func acID(s string) string {
 	return strings.ToUpper(strings.Trim(strings.TrimSpace(s), "[]"))
 }
 
+// humanReviewLabels are the labels that hold a ticket for a person: the configured ones, else the default.
+func (c FinishChecks) humanReviewLabels() []string {
+	if len(c.HumanReviewLabels) == 0 {
+		return []string{HumanReviewLabel}
+	}
+	return c.HumanReviewLabels
+}
+
+// firstLabel is the first of want that labels holds, in the spelling of want, or "" when it holds none.
+func firstLabel(labels, want []string) string {
+	for _, w := range want {
+		if hasLabel(labels, w) {
+			return w
+		}
+	}
+	return ""
+}
+
 func hasLabel(labels []string, want string) bool {
 	for _, l := range labels {
 		if strings.EqualFold(l, want) {
@@ -213,7 +259,7 @@ const gateTimeout = 30 * time.Minute
 // and coverage run as the gate, the local model behind the LiteLLM gateway as the acceptance reviewer, the
 // branch's diff against the integration branch, and the project's `[done] auto_done` directive (on when unset).
 func DefaultFinishChecks(dir string) FinishChecks {
-	return FinishChecks{Gate: qualityGate, Review: proofReviewer(dir).Review, Diff: branchDiff, AutoDone: AutoDone(dir)}
+	return FinishChecks{Gate: qualityGate, Review: proofReviewer(dir).Review, Diff: branchDiff, AutoDone: AutoDone(dir), HumanReviewLabels: HumanReviewLabels(dir)}
 }
 
 // qualityGate is stage 1 of a finish: the project's tests, then the quality gates of its directives judged on what
@@ -331,4 +377,14 @@ func proofReviewer(dir string) ProofReviewer {
 func AutoDone(dir string) bool {
 	set, err := directive.Load(dir)
 	return err == nil && set.Done.AutoDone
+}
+
+// HumanReviewLabels are the labels of the project's `[done] human_review_labels` directive, or nil (meaning the
+// default HumanReviewLabel) when the project has none or its directives cannot be read.
+func HumanReviewLabels(dir string) []string {
+	set, err := directive.Load(dir)
+	if err != nil {
+		return nil
+	}
+	return set.Done.HumanReviewLabels
 }
