@@ -174,33 +174,41 @@ func TestPreCommitChecksTheStagedPaths(t *testing.T) {
 	}
 }
 
-func TestPlanSavedStoresThePlanOnTheClaimedTicketOrKeepsItLocally(t *testing.T) {
+func TestPlanSavedKeepsAnUnclaimedPlanLocally(t *testing.T) {
 	r := newHookRig(t, "To Do")
-	ctx := context.Background()
 	var out bytes.Buffer
-
-	if err := runPlanSaved(ctx, r.event("ExitPlanMode", "", "- [ ] one\n- [ ] two"), &out); err != nil {
+	if err := runPlanSaved(context.Background(), r.event("ExitPlanMode", "", "- [ ] one\n- [ ] two"), &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "plan kept locally (unclaimed/") || !strings.Contains(out.String(), "/s-1)") {
 		t.Errorf("unclaimed: %s", out.String())
 	}
-	out.Reset()
+}
+
+func TestPlanSavedStoresThePlanOnTheClaimedTicket(t *testing.T) {
+	r := newHookRig(t, "To Do")
+	ctx := context.Background()
+	var out bytes.Buffer
 	r.claim()
 	if err := runPlanSaved(ctx, r.event("ExitPlanMode", "", "- [ ] one\n- [ ] two"), &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "[✓] plan v2 stored on DEN-377 (2 step(s) left)") {
+	if !strings.Contains(out.String(), "[✓] plan v1 stored on DEN-377 (2 step(s) left)") {
 		t.Errorf("claimed: %s", out.String())
 	}
 	if plan, err := planecli.LifecycleIn(mustClient(t), r.repo).GetPlan(ctx, "DEN-377"); err != nil || plan.NextStep != "one" {
 		t.Errorf("the ticket's plan = %+v, %v", plan, err)
 	}
+}
 
-	out.Reset()
+func TestPlanSavedNeverFailsTheAgent(t *testing.T) {
+	r := newHookRig(t, "To Do")
+	ctx := context.Background()
+	var out bytes.Buffer
 	if err := runPlanSaved(ctx, strings.NewReader("{broken"), &out); err != nil || out.Len() != 0 {
 		t.Errorf("malformed input: %v %q", err, out.String())
 	}
+	r.claim()
 	t.Setenv("PLANE_API_KEY", "")
 	if err := runPlanSaved(ctx, r.event("ExitPlanMode", "", "- [ ] one"), &out); err != nil || !strings.Contains(out.String(), "[!] plan not stored on DEN-377") {
 		t.Errorf("a hook after the fact never fails the agent, it reports: %v %q", err, out.String())
