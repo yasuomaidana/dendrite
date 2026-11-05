@@ -133,6 +133,7 @@ type RoutingTableUpdater struct {
 	mgr     *inference.Manager
 	client  *http.Client
 	stopCh  chan struct{}
+	stopFn  func() // stops the current daemon run; nil before the first start
 	running bool
 }
 
