@@ -109,7 +109,7 @@ func TestCheckEditFollowsTheClaim(t *testing.T) {
 	}
 }
 
-func TestCheckStagedAppliesTheGuardToEveryStagedPath(t *testing.T) {
+func TestCheckStagedRefusesStagedWorkWithoutAClaim(t *testing.T) {
 	s := newHookRig(t, "To Do")
 	ctx := context.Background()
 	d := s.hookDeps()
@@ -131,14 +131,60 @@ func TestCheckStagedAppliesTheGuardToEveryStagedPath(t *testing.T) {
 	if err := CheckStaged(ctx, d, s.Dir); err != nil {
 		t.Errorf("staged work with a claim: %v", err)
 	}
+}
 
-	notARepo := t.TempDir()
-	if err := CheckStaged(ctx, d, notARepo); err != nil {
+func TestCheckStagedLetsACommitOutsideGitThrough(t *testing.T) {
+	s := newHookRig(t, "To Do")
+	if err := CheckStaged(context.Background(), s.hookDeps(), t.TempDir()); err != nil {
 		t.Errorf("outside git: %v", err)
 	}
-	d.RepoTop = func(string) (string, error) { return notARepo, nil }
+}
+
+func TestCheckStagedFailsClosedWhenGitCannotListTheStagedFiles(t *testing.T) {
+	s := newHookRig(t, "To Do")
+	d := s.hookDeps()
+	d.RepoTop = func(string) (string, error) { return t.TempDir(), nil } // a top level git cannot read
+	var lock *ErrLocked
+	if err := CheckStaged(context.Background(), d, s.Dir); !errors.As(err, &lock) {
+		t.Errorf("a commit that cannot be judged must be refused: %v", err)
+	}
+}
+
+func TestCheckStagedIgnoresDendritesOwnState(t *testing.T) {
+	s := newHookRig(t, "To Do")
+	if err := os.MkdirAll(filepath.Join(s.Dir, ".dendrite"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.Dir, ".dendrite", "state.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, s.Dir, "add", "-f", ".dendrite/state.json")
+	if err := CheckStaged(context.Background(), s.hookDeps(), s.Dir); err != nil {
+		t.Errorf("Dendrite's own state is never locked: %v", err)
+	}
+}
+
+func TestCheckStagedJudgesTheRepositoryOnceWhateverNumberOfFilesIsStaged(t *testing.T) {
+	s := newHookRig(t, "To Do")
+	ctx := context.Background()
+	if _, err := s.Claim(ctx, "DEN-377", ClaimOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a.go", "b.go", "c.go", "d.go", "e.go"} {
+		if err := os.WriteFile(filepath.Join(s.Dir, name), []byte("package p"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitIn(t, s.Dir, "add", name)
+	}
+	d := s.hookDeps()
+	lookups := 0
+	repoTop := d.RepoTop
+	d.RepoTop = func(dir string) (string, error) { lookups++; return repoTop(dir) }
 	if err := CheckStaged(ctx, d, s.Dir); err != nil {
-		t.Errorf("a top level git cannot read: %v", err)
+		t.Fatal(err)
+	}
+	if lookups > 2 {
+		t.Errorf("%d repository lookups for 5 staged files, want a constant number", lookups)
 	}
 }
 

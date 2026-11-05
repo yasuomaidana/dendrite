@@ -207,8 +207,10 @@ func CheckEdit(ctx context.Context, d Deps, in HookInput) error {
 	return Require(ctx, d, target)
 }
 
-// CheckStaged is the git pre-commit hook: the same guard, applied to every staged path of the repository
-// at dir. Git reports paths relative to the repository's top level.
+// CheckStaged is the git pre-commit hook: the same guard, applied to the repository at dir when a path outside
+// Dendrite's own state is staged. The guard decides on the repository, its branch and its claim, never on the
+// file, so it runs once however many files are staged. It fails closed: staged files that git cannot list are
+// refused, because the commit cannot be judged.
 func CheckStaged(ctx context.Context, d Deps, dir string) error {
 	top, err := d.RepoTop(dir)
 	if err != nil || top == "" {
@@ -216,14 +218,11 @@ func CheckStaged(ctx context.Context, d Deps, dir string) error {
 	}
 	out, err := gitBytes(top, "diff", "--cached", "--name-only", "-z", "--diff-filter=ACMRD")
 	if err != nil {
-		return nil
+		return locked("git cannot list the staged files (%v), so the commit cannot be judged", err)
 	}
 	for _, rel := range bytes.Split(out, []byte{0}) {
-		if len(rel) == 0 {
-			continue
-		}
-		if err := Require(ctx, d, filepath.Join(top, string(rel))); err != nil {
-			return err
+		if len(rel) > 0 && !within(filepath.Join(top, string(rel)), filepath.Join(top, ".dendrite")) {
+			return Require(ctx, d, top)
 		}
 	}
 	return nil
