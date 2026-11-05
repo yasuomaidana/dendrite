@@ -28,6 +28,7 @@ type ciStep struct {
 
 // workflowFile is the part of a GitHub workflow the gate reads.
 type workflowFile struct {
+	Env  map[string]string `yaml:"env"`
 	Jobs map[string]struct {
 		Defaults struct {
 			Run struct {
@@ -90,19 +91,24 @@ func stepsOf(file string, wf workflowFile) []ciStep {
 	for _, id := range jobs {
 		job := wf.Jobs[id]
 		for _, s := range job.Steps {
-			env := map[string]string{}
-			for k, v := range job.Env {
-				env[k] = v
-			}
-			for k, v := range s.Env {
-				env[k] = v
-			}
+			env := mergeEnv(wf.Env, job.Env, s.Env)
 			with := map[string]string{}
 			for k, v := range s.With {
 				with[k] = stringOf(v)
 			}
 			dir := firstNonEmpty(s.WorkingDirectory, job.Defaults.Run.WorkingDirectory, ".")
 			out = append(out, ciStep{File: file, Job: id, Name: s.Name, Dir: filepath.ToSlash(filepath.Clean(dir)), Run: s.Run, Uses: s.Uses, With: with, Env: env})
+		}
+	}
+	return out
+}
+
+// mergeEnv combines env maps; a later map wins, so a step overrides its job and a job its workflow.
+func mergeEnv(layers ...map[string]string) map[string]string {
+	out := map[string]string{}
+	for _, l := range layers {
+		for k, v := range l {
+			out[k] = v
 		}
 	}
 	return out

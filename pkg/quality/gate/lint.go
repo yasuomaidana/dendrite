@@ -92,22 +92,36 @@ type loomPin struct {
 }
 
 var (
-	loomInstall = regexp.MustCompile(`cargo install[^\n]*--git\s+(\S+)[^\n]*?--(rev|branch|tag)\s+("[^"\n]*"|'[^'\n]*'|\S+)[^\n]*\bloom-gate\b`)
+	loomInstall = regexp.MustCompile(`cargo install[^\n]*--git\s+(\S+)[^\n]*?--(rev|branch|tag)\s+("[^"\n]*"|'[^'\n]*'|\$\{\{[^}\n]*\}\}|\S+)[^\n]*\bloom-gate\b`)
 	exprDefault = regexp.MustCompile(`\$\{\{[^}]*\|\|\s*'([^']*)'\s*\}\}`)
+	envRef      = regexp.MustCompile(`\$\{\{\s*env\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}|\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)`)
 )
 
+// expandEnv replaces ${{ env.X }}, ${X} and $X with the value the workflow, job or step sets for X. A name the
+// workflow does not set stays as written, so the pin reads as unresolved and is reported.
+func expandEnv(s string, env map[string]string) string {
+	return envRef.ReplaceAllStringFunc(s, func(m string) string {
+		g := envRef.FindStringSubmatch(m)
+		if v, ok := env[firstNonEmpty(g[1], g[2], g[3])]; ok {
+			return v
+		}
+		return m
+	})
+}
+
 // loomGatePin reads the repository and revision a step installs loom-gate from. An expression such as
-// ${{ vars.LOOM_GATE_REF || 'abc' }} counts as its default, which is what CI uses when the variable is unset.
+// ${{ vars.LOOM_GATE_REF || 'abc' }} counts as its default, which is what CI uses when the variable is unset;
+// ${{ env.X }}, ${X} and $X take the value set by the step, its job or the workflow.
 func loomGatePin(s ciStep) (loomPin, bool) {
 	m := loomInstall.FindStringSubmatch(s.Run)
 	if m == nil {
 		return loomPin{}, false
 	}
-	ref := strings.Trim(m[3], `"'`)
+	ref := expandEnv(strings.Trim(m[3], `"'`), s.Env)
 	if e := exprDefault.FindStringSubmatch(ref); e != nil {
 		ref = e[1]
 	}
-	return loomPin{Repo: m[1], Ref: ref}, ref != "" && !strings.Contains(ref, "${{")
+	return loomPin{Repo: m[1], Ref: ref}, ref != "" && !strings.ContainsAny(ref, "$")
 }
 
 // checkLoomGatePin fetches the pinned revision into a scratch repository and looks for the loom-gate crate in

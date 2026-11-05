@@ -10,6 +10,7 @@ import (
 
 	"Dendrite/pkg/directive"
 	"Dendrite/pkg/testkit"
+	"gopkg.in/yaml.v3"
 )
 
 // toolBox is a directory of real executables put first on PATH, so the real runner (sh -c) finds them. Each
@@ -239,6 +240,42 @@ func TestLoomGatePinReadingIgnoresInstallsItCannotResolve(t *testing.T) {
 	} {
 		if _, got := loomGatePin(ciStep{Run: run}); got != ok {
 			t.Errorf("%q: %v, want %v", run, got, ok)
+		}
+	}
+}
+
+func TestLoomGatePinExpandsWorkflowEnv(t *testing.T) {
+	const install = "cargo install --locked --git https://x/y --rev %s loom-gate"
+	for _, c := range []struct {
+		name, ref string
+		env       map[string]string
+		want      string
+		ok        bool
+	}{
+		{"expression", "${{ env.PIN }}", map[string]string{"PIN": "abc"}, "abc", true},
+		{"braced shell", "${PIN}", map[string]string{"PIN": "abc"}, "abc", true},
+		{"plain shell", "$PIN", map[string]string{"PIN": "abc"}, "abc", true},
+		{"undefined", "${{ env.PIN }}", nil, "", false},
+		{"undefined shell", "$PIN", map[string]string{"OTHER": "x"}, "", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			pin, ok := loomGatePin(ciStep{Run: strings.Replace(install, "%s", c.ref, 1), Env: c.env})
+			if ok != c.ok || (ok && pin.Ref != c.want) {
+				t.Fatalf("%+v %v, want %q %v", pin, ok, c.want, c.ok)
+			}
+		})
+	}
+}
+
+func TestStepsOfMergesWorkflowJobAndStepEnv(t *testing.T) {
+	wf := workflowFile{Env: map[string]string{"A": "wf", "B": "wf"}}
+	if err := yaml.Unmarshal([]byte("jobs:\n  j:\n    env: {B: job, C: job}\n    steps:\n      - run: x\n        env: {C: step}\n"), &wf); err != nil {
+		t.Fatal(err)
+	}
+	got := stepsOf("w.yml", wf)[0].Env
+	for k, want := range map[string]string{"A": "wf", "B": "job", "C": "step"} {
+		if got[k] != want {
+			t.Errorf("%s = %q, want %q", k, got[k], want)
 		}
 	}
 }
