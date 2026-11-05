@@ -220,3 +220,39 @@ func TestPushRemoteForReadsTheSynapseMember(t *testing.T) {
 		t.Fatalf("an empty dir means the working directory: %q", got)
 	}
 }
+
+// A branch that tracks origin/main must publish to its own name, not to main, whatever
+// push.default says.
+func TestPushNeverFollowsAnUpstreamOntoMain(t *testing.T) {
+	t.Setenv("DENDRITE_COMMIT_PUSH", "")
+	for _, pushDefault := range []string{"upstream", "simple", "current"} {
+		t.Run(pushDefault, func(t *testing.T) {
+			repo, bare := setupCommitRepoWithRemote(t, "main")
+			commitFile(t, repo, "base.txt")
+			gitIn(t, repo, "push", "-q", "origin", "main")
+			gitIn(t, repo, "switch", "-q", "-c", "agent/den-1", "--track", "origin/main")
+			gitIn(t, repo, "config", "push.default", pushDefault)
+			commitFile(t, repo, "work.txt")
+
+			out := PushCurrentBranch(context.Background(), repo)
+			if !out.Pushed || out.Err != nil {
+				t.Fatalf("%+v", out)
+			}
+			refs := func(ref string) string {
+				cmd := exec.Command("git", "rev-parse", "--verify", "-q", ref)
+				cmd.Dir = bare
+				b, _ := cmd.Output()
+				return string(b)
+			}
+			head := exec.Command("git", "rev-parse", "HEAD")
+			head.Dir = repo
+			sha, _ := head.Output()
+			if refs("refs/heads/main") == string(sha) {
+				t.Fatal("main on the remote moved: the guard was bypassed")
+			}
+			if refs("refs/heads/agent/den-1") != string(sha) {
+				t.Fatal("the branch was not published under its own name")
+			}
+		})
+	}
+}

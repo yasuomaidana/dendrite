@@ -126,10 +126,16 @@ func pushBranch(runGit func(args ...string) (string, error), prefer string) Push
 
 	out := PushOutcome{Branch: branch, Remote: targetRemote}
 	var pushErr error
+	// The destination is always the branch's own name: a bare "git push" follows the upstream and
+	// push.default, so a branch tracking origin/main would land on main past the guard above.
+	refspec := "HEAD:refs/heads/" + branch
 	if _, uErr := runGit("rev-parse", "--abbrev-ref", "@{u}"); uErr == nil {
-		_, pushErr = runGit("push")
+		if tracked, cErr := runGit("config", "--get", "branch."+branch+".remote"); cErr == nil && slices.Contains(remotes, tracked) {
+			targetRemote, out.Remote = tracked, tracked
+		}
+		_, pushErr = runGit("push", targetRemote, refspec)
 	} else {
-		_, pushErr = runGit("push", "-u", targetRemote, branch)
+		_, pushErr = runGit("push", "-u", targetRemote, refspec)
 	}
 	if pushErr != nil {
 		out.Err = pushErr
