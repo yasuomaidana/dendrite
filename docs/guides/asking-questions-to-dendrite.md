@@ -338,6 +338,7 @@ dendrite ask [flags] "<question>"
 | :--- | :--- | :--- | :--- |
 | `--hybrid` | | Local draft first, paid cloud refinement and verification | `false` |
 | `--server <url>` | `--central` | Delegate RAG query to a remote central Dendrite daemon | `$DENDRITE_RAG_SERVER` |
+| `--server-token <token>` | | Access token of the central daemon, sent as a Bearer header | `$DENDRITE_RAG_TOKEN` |
 | `--update-index` | `--refresh` | Rebuild the project index from scratch | `false` |
 | `--paid` | `--force-paid` | Bypass local LLM and directly query the paid cloud model | `false` |
 | `--tier <tier>` | | Explicitly set execution tier (`local`, `hybrid`, `paid`) | `local` |

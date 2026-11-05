@@ -35,6 +35,7 @@ None
 | `--paid-model` | Paid fallback model (default: gemini-4-argon-medium) |
 | `--project` | Project directory to index and search (default: .) |
 | `--server` | Ask a central Dendrite RAG service instead (e.g. http://host:3456) |
+| `--server-token` | Access token of the central service (default: $DENDRITE_RAG_TOKEN); 'dendrite cortex serve' prints it |
 | `--tier` | Shortcut for the tier: local, hybrid or paid |
 | `--top-k, -k` | Retrieve the N best chunks instead of a token-budgeted context pack |
 | `--update-index` | Rebuild the project index and ask the model again instead of reusing a cached answer |

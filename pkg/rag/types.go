@@ -57,6 +57,9 @@ type AskRequest struct {
 	ForcePaid       bool   `json:"force_paid"`           // --paid / --force-paid: bypass local LLM and query paid model directly
 	HybridMode      bool   `json:"hybrid_mode"`          // --hybrid: local draft first, then paid refinement
 	ServerURL       string `json:"server_url,omitempty"` // --server: query centralized remote RAG service
+	// ServerToken is the access token of the central server (--server-token, else DENDRITE_RAG_TOKEN).
+	// It is sent as a Bearer header and never forwarded in the request body.
+	ServerToken string `json:"-"`
 	UpdateIndex     bool   `json:"update_index"`         // --update-index: force refresh of incremental RAG cache
 	PaidModel       string `json:"paid_model,omitempty"`
 	LocalModel      string `json:"local_model,omitempty"`

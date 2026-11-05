@@ -18,6 +18,7 @@ type askOptions struct {
 	Hybrid      bool
 	UpdateIndex bool
 	Server      string
+	ServerToken string
 	Tier        string
 	Project     string
 	PaidModel   string
@@ -111,6 +112,7 @@ func NewAskCmd() *cobra.Command {
 				HybridMode:      o.Hybrid,
 				UpdateIndex:     o.UpdateIndex,
 				ServerURL:       o.Server,
+				ServerToken:     o.ServerToken,
 				PaidModel:       o.PaidModel,
 				LocalModel:      o.LocalModel,
 				TopK:            o.TopK,
@@ -125,6 +127,7 @@ func NewAskCmd() *cobra.Command {
 	f.BoolVar(&o.Hybrid, "hybrid", false, "Draft locally, then refine and verify with the paid model")
 	f.BoolVar(&o.UpdateIndex, "update-index", false, "Rebuild the project index and ask the model again instead of reusing a cached answer")
 	f.StringVar(&o.Server, "server", "", "Ask a central Dendrite RAG service instead (e.g. http://host:3456)")
+	f.StringVar(&o.ServerToken, "server-token", "", "Access token of the central service (default: $DENDRITE_RAG_TOKEN); 'dendrite cortex serve' prints it")
 	f.StringVar(&o.Tier, "tier", "", "Shortcut for the tier: local, hybrid or paid")
 	cli.AddProjectFlag(cmd, &o.Project, ".", "Project directory to index and search")
 	f.StringVar(&o.PaidModel, "paid-model", "gemini-4-argon-medium", "Paid fallback model")

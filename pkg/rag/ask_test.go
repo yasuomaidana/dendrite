@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -387,5 +388,60 @@ func TestAsk_PaidFailureIsAnError(t *testing.T) {
 	_, err := e.Ask(context.Background(), AskRequest{Question: "LocateBinary", ProjectPath: ragProject(t), AutoApprovePaid: true, Output: &bytes.Buffer{}})
 	if err == nil || !strings.Contains(err.Error(), "quota exceeded") {
 		t.Fatalf("expected the paid model's error, got %v", err)
+	}
+}
+
+// authServer answers only requests that carry the Bearer token, like 'dendrite cortex serve'.
+func authServer(t *testing.T, token string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if strings.Contains(readAll(t, r), token) {
+			t.Error("the token must travel in the header, never in the body")
+		}
+		_ = json.NewEncoder(w).Encode(AskResult{Answer: "ok"})
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func readAll(t *testing.T, r *http.Request) string {
+	t.Helper()
+	b, err := io.ReadAll(r.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestRemoteAskSendsTheAccessToken(t *testing.T) {
+	srv := authServer(t, "tok-123")
+	cases := []struct {
+		name, flag, env string
+		wantErr         string
+	}{
+		{"flag", "tok-123", "", ""},
+		{"environment", "", "tok-123", ""},
+		{"flag wins over a stale environment", "tok-123", "old", ""},
+		{"missing", "", "", "--server-token"},
+		{"wrong", "nope", "", "requires an access token"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv(remoteTokenEnv, c.env)
+			res, err := NewAskEngine().Ask(context.Background(), AskRequest{Question: "q", ServerURL: srv.URL, ServerToken: c.flag})
+			if c.wantErr == "" {
+				if err != nil || res.Answer != "ok" {
+					t.Fatalf("want an answer, got %v %v", res, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), c.wantErr) || !strings.Contains(err.Error(), remoteTokenEnv) {
+				t.Fatalf("want an error naming the flag and %s, got %v", remoteTokenEnv, err)
+			}
+		})
 	}
 }

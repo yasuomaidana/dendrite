@@ -290,6 +290,17 @@ func confirmPaid(req AskRequest, localError string) bool {
 	return false
 }
 
+// remoteTokenEnv names the environment variable that holds the central server's access token.
+const remoteTokenEnv = "DENDRITE_RAG_TOKEN"
+
+// remoteToken is the request's own token, else the environment's.
+func remoteToken(req AskRequest) string {
+	if req.ServerToken != "" {
+		return req.ServerToken
+	}
+	return strings.TrimSpace(os.Getenv(remoteTokenEnv))
+}
+
 // delegateToRemoteServer forwards the AskRequest to the central Dendrite RAG daemon.
 func (e *AskEngine) delegateToRemoteServer(ctx context.Context, serverURL string, req AskRequest) (*AskResult, error) {
 	serverURL = strings.TrimRight(serverURL, "/")
@@ -306,6 +317,9 @@ func (e *AskEngine) delegateToRemoteServer(ctx context.Context, serverURL string
 		return nil, fmt.Errorf("failed to construct central RAG request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	if token := remoteToken(req); token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
 
 	client := e.HTTPClient
 	if client == nil {
@@ -318,6 +332,9 @@ func (e *AskEngine) delegateToRemoteServer(ctx context.Context, serverURL string
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("central RAG server at %s requires an access token: pass --server-token or set %s (the token 'dendrite cortex serve' prints)", serverURL, remoteTokenEnv)
+	}
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("central RAG server returned HTTP %d: %s", resp.StatusCode, string(b))
