@@ -399,7 +399,8 @@ func authServer(t *testing.T, token string) *httptest.Server {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if strings.Contains(readAll(t, r), token) {
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), token) {
 			t.Error("the token must travel in the header, never in the body")
 		}
 		_ = json.NewEncoder(w).Encode(AskResult{Answer: "ok"})
@@ -408,40 +409,28 @@ func authServer(t *testing.T, token string) *httptest.Server {
 	return srv
 }
 
-func readAll(t *testing.T, r *http.Request) string {
-	t.Helper()
-	b, err := io.ReadAll(r.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b)
-}
-
 func TestRemoteAskSendsTheAccessToken(t *testing.T) {
 	srv := authServer(t, "tok-123")
-	cases := []struct {
-		name, flag, env string
-		wantErr         string
-	}{
-		{"flag", "tok-123", "", ""},
-		{"environment", "", "tok-123", ""},
-		{"flag wins over a stale environment", "tok-123", "old", ""},
-		{"missing", "", "", "--server-token"},
-		{"wrong", "nope", "", "requires an access token"},
+	for flag, env := range map[string]string{"tok-123": "", "": "tok-123"} {
+		t.Setenv(remoteTokenEnv, env)
+		res, err := NewAskEngine().Ask(context.Background(), AskRequest{Question: "q", ServerURL: srv.URL, ServerToken: flag})
+		if err != nil || res.Answer != "ok" {
+			t.Fatalf("flag %q env %q: want an answer, got %v %v", flag, env, res, err)
+		}
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			t.Setenv(remoteTokenEnv, c.env)
-			res, err := NewAskEngine().Ask(context.Background(), AskRequest{Question: "q", ServerURL: srv.URL, ServerToken: c.flag})
-			if c.wantErr == "" {
-				if err != nil || res.Answer != "ok" {
-					t.Fatalf("want an answer, got %v %v", res, err)
-				}
-				return
-			}
-			if err == nil || !strings.Contains(err.Error(), c.wantErr) || !strings.Contains(err.Error(), remoteTokenEnv) {
-				t.Fatalf("want an error naming the flag and %s, got %v", remoteTokenEnv, err)
-			}
-		})
+	t.Setenv(remoteTokenEnv, "stale")
+	if _, err := NewAskEngine().Ask(context.Background(), AskRequest{Question: "q", ServerURL: srv.URL, ServerToken: "tok-123"}); err != nil {
+		t.Fatalf("the flag must win over a stale environment: %v", err)
+	}
+}
+
+func TestRemoteAskExplainsAMissingOrWrongToken(t *testing.T) {
+	srv := authServer(t, "tok-123")
+	t.Setenv(remoteTokenEnv, "")
+	for _, wrong := range []string{"", "nope"} {
+		_, err := NewAskEngine().Ask(context.Background(), AskRequest{Question: "q", ServerURL: srv.URL, ServerToken: wrong})
+		if err == nil || !strings.Contains(err.Error(), "--server-token") || !strings.Contains(err.Error(), remoteTokenEnv) {
+			t.Fatalf("token %q: want an error naming the flag and %s, got %v", wrong, remoteTokenEnv, err)
+		}
 	}
 }

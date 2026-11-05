@@ -60,10 +60,10 @@ type AskRequest struct {
 	// ServerToken is the access token of the central server (--server-token, else DENDRITE_RAG_TOKEN).
 	// It is sent as a Bearer header and never forwarded in the request body.
 	ServerToken string `json:"-"`
-	UpdateIndex     bool   `json:"update_index"`         // --update-index: force refresh of incremental RAG cache
-	PaidModel       string `json:"paid_model,omitempty"`
-	LocalModel      string `json:"local_model,omitempty"`
-	TopK            int    `json:"top_k,omitempty"`
+	UpdateIndex bool   `json:"update_index"` // --update-index: force refresh of incremental RAG cache
+	PaidModel   string `json:"paid_model,omitempty"`
+	LocalModel  string `json:"local_model,omitempty"`
+	TopK        int    `json:"top_k,omitempty"`
 	// Corpus is "code" (dendrite ask without -d), "docs", or "all" (the default: code and
 	// documentation, with DocsShare of the context pack kept for documentation).
 	Corpus string `json:"corpus,omitempty"`

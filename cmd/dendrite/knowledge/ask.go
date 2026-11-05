@@ -30,6 +30,66 @@ type askOptions struct {
 }
 
 // newAskCmd builds `dendrite ask`: questions about a project answered from its RAG index.
+// corpusChoice is the corpus selection a command line resolves to.
+type corpusChoice struct {
+	corpus string
+	share  *float64
+	shared bool // --docs-share was given
+}
+
+// applyTier turns --tier into the --paid and --hybrid switches.
+func applyTier(o *askOptions) error {
+	switch strings.ToLower(o.Tier) {
+	case "", "local":
+	case "paid", "cloud":
+		o.Paid = true
+	case "hybrid":
+		o.Hybrid = true
+	default:
+		return cli.UsageErrorf("invalid --tier %q: use local, hybrid or paid", o.Tier)
+	}
+	return nil
+}
+
+// chooseCorpus validates --corpus, -d and --docs-share together.
+func chooseCorpus(o *askOptions, shared bool) (corpusChoice, error) {
+	corpus := strings.ToLower(o.Corpus)
+	switch corpus {
+	case "", "code", "all", "docs", ticketindex.Corpus:
+	default:
+		return corpusChoice{}, cli.UsageErrorf("invalid --corpus %q: use code, all, docs or tickets", o.Corpus)
+	}
+	if o.Docs || (shared && corpus == "") {
+		if corpus != "" && corpus != "all" {
+			return corpusChoice{}, cli.UsageErrorf("-d/--docs searches code and documentation; it conflicts with --corpus %s", corpus)
+		}
+		corpus = "all"
+	}
+	if corpus == "" {
+		corpus = "code"
+	}
+	choice := corpusChoice{corpus: corpus, shared: shared}
+	if shared {
+		share, err := docsShare(o, corpus)
+		if err != nil {
+			return corpusChoice{}, err
+		}
+		choice.share = share
+	}
+	return choice, nil
+}
+
+// docsShare validates --docs-share against the corpus it splits.
+func docsShare(o *askOptions, corpus string) (*float64, error) {
+	if corpus != "all" {
+		return nil, cli.UsageErrorf("--docs-share splits code and documentation; it needs --corpus all (or -d), not %s", corpus)
+	}
+	if o.DocsShare < 0 || o.DocsShare > 1 {
+		return nil, cli.UsageErrorf("--docs-share must be from 0 to 1, got %v", o.DocsShare)
+	}
+	return &o.DocsShare, nil
+}
+
 func NewAskCmd() *cobra.Command {
 	var o askOptions
 	cmd := &cobra.Command{
@@ -53,58 +113,29 @@ func NewAskCmd() *cobra.Command {
 			"dendrite ask --corpus docs \"what is the design of the session handoff?\"\n" +
 			"dendrite ask -d --docs-share 0.5 \"how do agents start a session?\"",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			switch strings.ToLower(o.Tier) {
-			case "":
-			case "paid", "cloud":
-				o.Paid = true
-			case "hybrid":
-				o.Hybrid = true
-			case "local":
-			default:
-				return cli.UsageErrorf("invalid --tier %q: use local, hybrid or paid", o.Tier)
+			if err := applyTier(&o); err != nil {
+				return err
 			}
 			if o.TopK < 0 {
 				return cli.UsageErrorf("--top-k must not be negative")
 			}
-			corpus := strings.ToLower(o.Corpus)
-			switch corpus {
-			case "", "code", "all", "docs", ticketindex.Corpus:
-			default:
-				return cli.UsageErrorf("invalid --corpus %q: use code, all, docs or tickets", o.Corpus)
-			}
-			shared := cmd.Flags().Changed("docs-share")
-			if o.Docs || (shared && corpus == "") {
-				if corpus != "" && corpus != "all" {
-					return cli.UsageErrorf("-d/--docs searches code and documentation; it conflicts with --corpus %s", corpus)
-				}
-				corpus = "all"
-			}
-			if corpus == "" {
-				corpus = "code"
-			}
-			var docsShare *float64
-			if shared {
-				if corpus != "all" {
-					return cli.UsageErrorf("--docs-share splits code and documentation; it needs --corpus all (or -d), not %s", corpus)
-				}
-				if o.DocsShare < 0 || o.DocsShare > 1 {
-					return cli.UsageErrorf("--docs-share must be from 0 to 1, got %v", o.DocsShare)
-				}
-				docsShare = &o.DocsShare
+			choice, err := chooseCorpus(&o, cmd.Flags().Changed("docs-share"))
+			if err != nil {
+				return err
 			}
 			project := o.Project
-			if corpus == ticketindex.Corpus {
-				if o.Docs || shared {
+			if choice.corpus == ticketindex.Corpus {
+				if o.Docs || choice.shared {
 					return cli.UsageErrorf("--corpus tickets searches the rendered tickets only; it conflicts with -d and --docs-share")
 				}
-				var err error
-				if project, corpus, err = ticketindex.Resolve(cmd.Context(), o.Project, corpus); err != nil {
+				if project, choice.corpus, err = ticketindex.Resolve(cmd.Context(), o.Project, choice.corpus); err != nil {
 					return err
 				}
 			}
+			corpus, share := choice.corpus, choice.share
 			req := rag.AskRequest{
 				Corpus:          corpus,
-				DocsShare:       docsShare,
+				DocsShare:       share,
 				Question:        strings.Join(args, " "),
 				ProjectPath:     project,
 				AutoApprovePaid: cli.Globals.Yes,
