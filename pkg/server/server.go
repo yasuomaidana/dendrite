@@ -305,93 +305,80 @@ func (s *Server) handleTelemetrySnapshot(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(frame)
 }
 
+// zeroCostRequest is the body of a zero-cost registry change.
+type zeroCostRequest struct {
+	Name     string `json:"name"`
+	IsPrefix bool   `json:"is_prefix"`
+	SyncEnv  bool   `json:"sync_env"`
+}
+
+// decodeZeroCostRequest reads and validates the body, answering 400 itself when it is unusable.
+func decodeZeroCostRequest(w http.ResponseWriter, r *http.Request) (zeroCostRequest, bool) {
+	var req zeroCostRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return req, false
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		http.Error(w, "name cannot be empty", http.StatusBadRequest)
+		return req, false
+	}
+	return req, true
+}
+
+// saveZeroCost persists the registry, and the .env file when asked.
+func saveZeroCost(reg *inference.ZeroCostRegistry, syncEnv bool) {
+	_ = reg.SaveToFile(statedir.Resolve(inference.DefaultZeroCostConfigFile))
+	if syncEnv {
+		_ = reg.SaveToEnvFile(".env")
+	}
+}
+
+func writeZeroCostReply(w http.ResponseWriter, reg *inference.ZeroCostRegistry, name string) {
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "name": name, "details": reg.GetDetails()})
+}
+
 func (s *Server) handleZeroCost(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	reg := inference.GetZeroCostRegistry()
 
 	switch r.Method {
 	case http.MethodGet:
-		details := reg.GetDetails()
-		_ = json.NewEncoder(w).Encode(details)
-
-	case http.MethodPost:
-		var req struct {
-			Name     string `json:"name"`
-			IsPrefix bool   `json:"is_prefix"`
-			SyncEnv  bool   `json:"sync_env"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(reg.GetDetails())
+	case http.MethodPost, http.MethodDelete:
+		req, ok := decodeZeroCostRequest(w, r)
+		if !ok {
 			return
 		}
-		if strings.TrimSpace(req.Name) == "" {
-			http.Error(w, "name cannot be empty", http.StatusBadRequest)
-			return
+		changeZeroCost(reg, r.Method == http.MethodPost, req)
+		saveZeroCost(reg, req.SyncEnv)
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusCreated)
 		}
-
-		// The name is not blank (checked above), which is the only way an add can fail.
-		if req.IsPrefix {
-			reg.AddPrefix(req.Name)
-		} else {
-			reg.Add(req.Name)
-		}
-
-		_ = reg.SaveToFile(statedir.Resolve(inference.DefaultZeroCostConfigFile))
-		if req.SyncEnv {
-			_ = reg.SaveToEnvFile(".env")
-		}
-
-		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"name":    req.Name,
-			"details": reg.GetDetails(),
-		})
-
-	case http.MethodDelete:
-		var req struct {
-			Name     string `json:"name"`
-			IsPrefix bool   `json:"is_prefix"`
-			SyncEnv  bool   `json:"sync_env"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if strings.TrimSpace(req.Name) == "" {
-			http.Error(w, "name cannot be empty", http.StatusBadRequest)
-			return
-		}
-
-		// The name is not blank (checked above), which is the only way a removal can fail.
-		if req.IsPrefix {
-			reg.RemovePrefix(req.Name)
-		} else {
-			reg.Remove(req.Name)
-		}
-
-		_ = reg.SaveToFile(statedir.Resolve(inference.DefaultZeroCostConfigFile))
-		if req.SyncEnv {
-			_ = reg.SaveToEnvFile(".env")
-		}
-
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"name":    req.Name,
-			"details": reg.GetDetails(),
-		})
-
+		writeZeroCostReply(w, reg, req.Name)
 	case http.MethodPatch:
-		// Reset to defaults
-		reg.Reset()
+		reg.Reset() // back to defaults and the active .env
 		reg.AutoLoad()
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"message": "reset to defaults and active .env",
 			"details": reg.GetDetails(),
 		})
-
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// changeZeroCost adds or removes a model name or prefix; a non-blank name is the only way either can fail.
+func changeZeroCost(reg *inference.ZeroCostRegistry, add bool, req zeroCostRequest) {
+	switch {
+	case add && req.IsPrefix:
+		reg.AddPrefix(req.Name)
+	case add:
+		reg.Add(req.Name)
+	case req.IsPrefix:
+		reg.RemovePrefix(req.Name)
+	default:
+		reg.Remove(req.Name)
 	}
 }

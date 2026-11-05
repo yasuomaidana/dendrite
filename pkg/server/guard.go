@@ -93,29 +93,43 @@ func jsonBodyOK(r *http.Request) bool {
 	return err == nil && mt == "application/json"
 }
 
+// screen rejects requests that name a foreign host or origin, and answers preflights.
+// It reports whether the request was handled.
+func (s *Server) screen(w http.ResponseWriter, r *http.Request) bool {
+	switch {
+	case !s.hostAllowed(r):
+		http.Error(w, "forbidden host", http.StatusForbidden)
+	case !originAllowed(r):
+		http.Error(w, "forbidden origin", http.StatusForbidden)
+	case r.Method == http.MethodOptions:
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		return false
+	}
+	return true
+}
+
+// authenticate enforces the token, and turns a dashboard visit's token into a session cookie.
+// It reports whether the request may continue.
+func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) bool {
+	if s.cfg.AuthToken == "" {
+		return true
+	}
+	ok, viaQuery := s.authorised(r)
+	if !ok {
+		http.Error(w, ErrUnauthorizedAccess.Error(), http.StatusUnauthorized)
+		return false
+	}
+	if viaQuery && r.URL.Path == "/" {
+		http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: s.cfg.AuthToken, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	}
+	return true
+}
+
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.hostAllowed(r) {
-			http.Error(w, "forbidden host", http.StatusForbidden)
+		if s.screen(w, r) || !s.authenticate(w, r) {
 			return
-		}
-		if !originAllowed(r) {
-			http.Error(w, "forbidden origin", http.StatusForbidden)
-			return
-		}
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if s.cfg.AuthToken != "" {
-			ok, viaQuery := s.authorised(r)
-			if !ok {
-				http.Error(w, ErrUnauthorizedAccess.Error(), http.StatusUnauthorized)
-				return
-			}
-			if viaQuery && r.URL.Path == "/" {
-				http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: s.cfg.AuthToken, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
-			}
 		}
 		if !jsonBodyOK(r) {
 			http.Error(w, "content type must be application/json", http.StatusUnsupportedMediaType)

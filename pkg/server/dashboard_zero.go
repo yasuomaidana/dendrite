@@ -198,16 +198,30 @@ func serveGraphList(w http.ResponseWriter, r *http.Request, what, key string, qu
 	writeJSON(w, map[string]interface{}{key: res})
 }
 
-func (s *Server) handleGraphCommunities(w http.ResponseWriter, r *http.Request) {
-	serveGraphList(w, r, "graph communities", "communities", func(ctx context.Context, b graphListBody) (interface{}, error) {
+// graphLists describes the two list endpoints: how they are named in errors and replies, and their query.
+var graphLists = map[string]struct {
+	what, key string
+	query     func(ctx context.Context, b graphListBody) (interface{}, error)
+}{
+	"communities": {"graph communities", "communities", func(ctx context.Context, b graphListBody) (interface{}, error) {
 		return rag.NewRetriever().Communities(ctx, projectOrDot(b.ProjectPath), rag.CommunitiesOptions{Limit: b.Limit, MinSize: b.MinSize})
-	})
+	}},
+	"god_nodes": {"graph god nodes", "nodes", func(ctx context.Context, b graphListBody) (interface{}, error) {
+		return rag.NewRetriever().GodNodes(ctx, projectOrDot(b.ProjectPath), rag.GodNodesOptions{MinInDegree: b.MinInDegree, Limit: b.Limit})
+	}},
+}
+
+func serveGraphKind(w http.ResponseWriter, r *http.Request, kind string) {
+	g := graphLists[kind]
+	serveGraphList(w, r, g.what, g.key, g.query)
+}
+
+func (s *Server) handleGraphCommunities(w http.ResponseWriter, r *http.Request) {
+	serveGraphKind(w, r, "communities")
 }
 
 func (s *Server) handleGraphGodNodes(w http.ResponseWriter, r *http.Request) {
-	serveGraphList(w, r, "graph god nodes", "nodes", func(ctx context.Context, b graphListBody) (interface{}, error) {
-		return rag.NewRetriever().GodNodes(ctx, projectOrDot(b.ProjectPath), rag.GodNodesOptions{MinInDegree: b.MinInDegree, Limit: b.Limit})
-	})
+	serveGraphKind(w, r, "god_nodes")
 }
 
 func (s *Server) handleGraphPath(w http.ResponseWriter, r *http.Request) {
