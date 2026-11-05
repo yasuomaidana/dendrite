@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
 )
 
 const guardToken = "guard-test-token"
@@ -66,7 +65,7 @@ func TestGuard_RejectsCrossOriginRebindingAndBadContentType(t *testing.T) {
 		{"dns rebinding host", http.MethodGet, "/api/v1/health", "", with(map[string]string{"Host": "attacker.example:3456"}), http.StatusForbidden},
 		{"same origin without a token", http.MethodGet, "/api/v1/health", "", map[string]string{"Origin": base}, http.StatusUnauthorized},
 		{"text/plain body", http.MethodPost, "/api/v1/workspaces/switch", `{}`, with(map[string]string{"Content-Type": "text/plain"}), http.StatusUnsupportedMediaType},
-		{"json body", http.MethodPost, "/api/v1/workspaces/switch", `{}`, with(map[string]string{"Content-Type": "application/json"}), http.StatusBadRequest},
+		{"json body reaches the handler (no registry: 500)", http.MethodPost, "/api/v1/workspaces/switch", `{}`, with(map[string]string{"Content-Type": "application/json"}), http.StatusInternalServerError},
 		{"same origin with the token", http.MethodGet, "/api/v1/health", "", with(map[string]string{"Origin": base}), http.StatusOK},
 	}
 	for _, c := range cases {
