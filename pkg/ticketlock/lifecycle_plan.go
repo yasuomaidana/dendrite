@@ -5,6 +5,8 @@ import (
 	"Dendrite/pkg/store/segmented"
 	"Dendrite/pkg/tracker"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,25 +48,31 @@ func (l *Lifecycle) planComment(ctx context.Context, key string) (id string, p P
 	return id, p, found, nil
 }
 
-// UploadPlan stores the plan of a ticket. The newest version is always kept on disk first, so it survives
-// Plane being down; in Plane one comment holds the plan and is edited in place, its version going up.
+// UploadPlan stores the plan of a ticket. The newest version is always kept on disk first, before Plane is
+// read or written, so it survives Plane being down; in Plane one comment holds the plan and is edited in place,
+// its version going up. With Plane unreadable the version follows the local copy.
 func (l *Lifecycle) UploadPlan(ctx context.Context, ref, markdown string) (Plan, error) {
 	if strings.TrimSpace(markdown) == "" {
 		return Plan{}, errors.New("a plan needs text")
 	}
 	key := l.keyOf(ctx, ref)
-	id, prev, found, err := l.planComment(ctx, key)
-	if err != nil {
-		return Plan{}, fmt.Errorf("read the plan comments of %s: %w", key, err)
-	}
+	id, prev, found, readErr := l.planComment(ctx, key)
 	version := 1
-	if found {
+	switch local, err := l.Plans.Load(key); {
+	case found:
 		version = prev.Version + 1
+	case readErr != nil && err == nil:
+		version = local.Version + 1
 	}
 	p := newPlan(markdown, version)
 	if err := l.Plans.Save(key, p); err != nil {
 		return Plan{}, err
 	}
+	p.Source = "engram"
+	if readErr != nil {
+		return p, fmt.Errorf("the plan is saved locally but Plane could not be read: %w", readErr)
+	}
+	var err error
 	if found {
 		err = l.Board.Svc.UpdateComment(ctx, l.Board.Client, key, id, planHTML(p))
 	} else {
@@ -366,27 +374,54 @@ func (s PlanStore) loadIndex(path string) (Plan, error) {
 	return p, nil
 }
 
-// TakeUnclaimed removes and returns the newest readable plan kept under unclaimed/<session> that was
-// saved after since. ok is false when there is none.
-func (s PlanStore) TakeUnclaimed(since time.Time) (best Plan, ok bool) {
+// TakeUnclaimed removes and returns the newest readable plan of the repository scope that was kept under
+// unclaimed/<scope>/<session> and saved after since. ok is false when there is none. A plan is taken by renaming its
+// index file, which only one of several concurrent callers can do, so no plan goes to two tickets.
+func (s PlanStore) TakeUnclaimed(scope string, since time.Time) (best Plan, ok bool) {
 	entries, _ := os.ReadDir(filepath.Join(s.Dir, "index"))
-	var bestPath string
-	var bestAt time.Time
+	prefix := slug(unclaimedKey(scope, ""))
+	type candidate struct {
+		path string
+		at   time.Time
+	}
+	var found []candidate
 	for _, e := range entries {
-		info, _ := e.Info()
-		if info == nil || !strings.HasPrefix(e.Name(), unclaimedPrefix) || !info.ModTime().After(since) || (ok && !info.ModTime().After(bestAt)) {
+		if info, _ := e.Info(); info != nil && strings.HasPrefix(e.Name(), prefix) && info.ModTime().After(since) {
+			found = append(found, candidate{filepath.Join(s.Dir, "index", e.Name()), info.ModTime()})
+		}
+	}
+	sort.Slice(found, func(i, j int) bool { return found[i].at.After(found[j].at) })
+	for _, c := range found {
+		p, err := s.loadIndex(c.path)
+		if err != nil {
 			continue
 		}
-		path := filepath.Join(s.Dir, "index", e.Name())
-		if p, err := s.loadIndex(path); err == nil {
-			best, bestPath, bestAt, ok = p, path, info.ModTime(), true
+		taken := filepath.Join(filepath.Dir(c.path), "taken-"+strconv.FormatInt(time.Now().UnixNano(), 36)+"-"+filepath.Base(c.path))
+		if renameIndex(c.path, taken) != nil {
+			continue // another claim took it first
 		}
+		_ = os.Remove(taken)
+		return p, true
 	}
-	if ok {
-		_ = os.Remove(bestPath)
-	}
-	return best, ok
+	return Plan{}, false
 }
 
-// unclaimedPrefix is the index file prefix of the keys hookSessionKey makes ("unclaimed/<session>").
-const unclaimedPrefix = "unclaimed-"
+// renameIndex moves an index file to claim it; tests replace it to make another claim win the race.
+var renameIndex = os.Rename
+
+// unclaimedKey names the plans a session of the repository with the given scope made before any ticket was claimed.
+func unclaimedKey(scope, session string) string {
+	return "unclaimed/" + scope + "/" + session
+}
+
+// repoScope identifies the repository at dir, the same for the repository and each of its worktrees, so a plan
+// made in one repository is never adopted by a ticket of another. Outside a repository it is the directory.
+func repoScope(dir string) string {
+	common, err := gitBytes(dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	id := strings.TrimSpace(string(common))
+	if err != nil || id == "" {
+		id, _ = filepath.Abs(dir)
+	}
+	sum := sha256.Sum256([]byte(filepath.Clean(id)))
+	return hex.EncodeToString(sum[:6])
+}

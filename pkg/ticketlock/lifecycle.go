@@ -183,10 +183,10 @@ const NeedsInputLabel = "needs-input"
 // UnclaimedPlanTTL is how long a plan made before any claim waits to be adopted by the next claim.
 const UnclaimedPlanTTL = 6 * time.Hour
 
-// adoptUnclaimedPlan attaches the newest plan saved while nothing was claimed to the ticket that has none,
-// so a plan made before the claim is not lost. Without one it returns ErrNoPlan.
+// adoptUnclaimedPlan attaches the newest plan this repository saved while nothing was claimed to the ticket that
+// has none, so a plan made before the claim is not lost. Without one it returns ErrNoPlan.
 func (l *Lifecycle) adoptUnclaimedPlan(ctx context.Context, ticket string, now time.Time) (Plan, error) {
-	p, ok := l.Plans.TakeUnclaimed(now.Add(-UnclaimedPlanTTL))
+	p, ok := l.Plans.TakeUnclaimed(repoScope(l.Dir), now.Add(-UnclaimedPlanTTL))
 	if !ok {
 		return Plan{}, ErrNoPlan
 	}

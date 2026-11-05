@@ -278,7 +278,7 @@ func PlaneStatusFor(ctx context.Context, top, ticket string) (tracker.Status, er
 // HookDeps are the real dependencies of the hooks.
 func HookDeps() Deps { return DefaultDeps(PlaneStatusFor) }
 
-// hookSessionKey names a session's plans that belong to no ticket.
+// hookSessionKey names a session's plans that belong to no ticket, within the repository of its working directory.
 func hookSessionKey(in HookInput) string {
-	return "unclaimed/" + strings.TrimSpace(firstNonEmpty(in.SessionID, "session"))
+	return unclaimedKey(repoScope(in.Cwd), strings.TrimSpace(firstNonEmpty(in.SessionID, "session")))
 }

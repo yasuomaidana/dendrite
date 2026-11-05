@@ -66,7 +66,7 @@ func TestPlanFromAPlaneNumberIsKeyedByItsTicket(t *testing.T) {
 	}
 }
 
-func TestPlanErrors(t *testing.T) {
+func TestUploadPlanRefusesAnEmptyPlan(t *testing.T) {
 	ctx := context.Background()
 	s := newSession(t, map[string]string{"DEN-377": "In Progress"})
 	if _, err := s.GetPlan(ctx, "DEN-377"); !errors.Is(err, ErrNoPlan) {
@@ -75,33 +75,50 @@ func TestPlanErrors(t *testing.T) {
 	if _, err := s.UploadPlan(ctx, "DEN-377", "  "); err == nil {
 		t.Error("an empty plan is refused")
 	}
+}
 
+func TestUploadPlanKeepsThePlanWhilePlaneCannotBeRead(t *testing.T) {
+	ctx := context.Background()
+	s := newSession(t, map[string]string{"DEN-377": "In Progress"})
 	s.board.Fail("comments/", 0)
-	if _, err := s.UploadPlan(ctx, "DEN-377", "- [ ] x"); err == nil || !strings.Contains(err.Error(), "read the plan comments") {
+	if _, err := s.UploadPlan(ctx, "DEN-377", "- [ ] x"); err == nil || !strings.Contains(err.Error(), "saved locally") {
 		t.Errorf("Plane failing on the read: %v", err)
 	}
+	if p, err := s.Plans.Load("DEN-377"); err != nil || p.Version != 1 || p.NextStep != "x" {
+		t.Errorf("a plan made while Plane is down must be kept locally: %+v, %v", p, err)
+	}
+	if p, err := s.UploadPlan(ctx, "DEN-377", "- [ ] y"); err == nil || p.Version != 2 || p.Source != "engram" {
+		t.Errorf("the next plan made while Plane is down is version 2, kept locally: %+v, %v", p, err)
+	}
+}
 
-	s2 := newSession(t, map[string]string{"DEN-377": "In Progress"})
-	s2.board.Fail("POST", 0)
-	if _, err := s2.UploadPlan(ctx, "DEN-377", "- [ ] x"); err == nil || !strings.Contains(err.Error(), "saved locally") {
+func TestUploadPlanKeepsThePlanWhenPlaneRefusesTheWrite(t *testing.T) {
+	s := newSession(t, map[string]string{"DEN-377": "In Progress"})
+	s.board.Fail("POST", 0)
+	if _, err := s.UploadPlan(context.Background(), "DEN-377", "- [ ] x"); err == nil || !strings.Contains(err.Error(), "saved locally") {
 		t.Errorf("Plane failing on the write: %v", err)
 	}
-	if p, err := s2.Plans.Load("DEN-377"); err != nil || p.Version != 1 {
+	if p, err := s.Plans.Load("DEN-377"); err != nil || p.Version != 1 {
 		t.Errorf("the plan must be kept locally when Plane fails: %+v, %v", p, err)
 	}
+}
 
-	s3 := newSession(t, map[string]string{"DEN-377": "In Progress"})
-	s3.Plans = PlanStore{Dir: filepath.Join(writeRegularFile(t), "plans")}
-	if _, err := s3.UploadPlan(ctx, "DEN-377", "- [ ] x"); err == nil || !strings.Contains(err.Error(), "store plan") {
+func TestUploadPlanReportsALocalStoreThatCannotBeWritten(t *testing.T) {
+	s := newSession(t, map[string]string{"DEN-377": "In Progress"})
+	s.Plans = PlanStore{Dir: filepath.Join(writeRegularFile(t), "plans")}
+	if _, err := s.UploadPlan(context.Background(), "DEN-377", "- [ ] x"); err == nil || !strings.Contains(err.Error(), "store plan") {
 		t.Errorf("local store failing: %v", err)
 	}
+}
 
-	s4 := newSession(t, map[string]string{"DEN-377": "In Progress"})
-	if _, err := s4.UploadPlan(ctx, "DEN-377", "- [ ] x"); err != nil {
+func TestUploadPlanKeepsThePlanWhenPlaneRefusesTheEdit(t *testing.T) {
+	ctx := context.Background()
+	s := newSession(t, map[string]string{"DEN-377": "In Progress"})
+	if _, err := s.UploadPlan(ctx, "DEN-377", "- [ ] x"); err != nil {
 		t.Fatal(err)
 	}
-	s4.board.Fail("PATCH", 0)
-	if _, err := s4.UploadPlan(ctx, "DEN-377", "- [ ] y"); err == nil || !strings.Contains(err.Error(), "saved locally") {
+	s.board.Fail("PATCH", 0)
+	if _, err := s.UploadPlan(ctx, "DEN-377", "- [ ] y"); err == nil || !strings.Contains(err.Error(), "saved locally") {
 		t.Errorf("Plane failing on the edit: %v", err)
 	}
 }

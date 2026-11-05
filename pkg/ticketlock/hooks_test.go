@@ -185,7 +185,7 @@ func TestPlaneStatusForUsesTheEnvironmentAndTheRepositorysProjectLink(t *testing
 	}
 }
 
-func TestSavePlanOnTheClaimedTicketOrLocally(t *testing.T) {
+func TestSavePlanKeepsAnUnclaimedPlanLocally(t *testing.T) {
 	ctx := context.Background()
 	s := newHookRig(t, "To Do")
 	in := HookInput{SessionID: "s-9", Cwd: s.Dir}
@@ -194,29 +194,48 @@ func TestSavePlanOnTheClaimedTicketOrLocally(t *testing.T) {
 		t.Errorf("no plan text: %q, %v", msg, err)
 	}
 	in.ToolInput.Plan = "- [ ] one\n- [ ] two"
+	key := unclaimedKey(repoScope(s.Dir), "s-9")
 	msg, err := SavePlan(ctx, s.Lifecycle, s.boardFunc(), in)
-	if err != nil || !strings.Contains(msg, "kept locally (unclaimed/s-9)") || !strings.Contains(msg, "dendrite chronos claim") {
+	if err != nil || !strings.Contains(msg, "kept locally ("+key+")") || !strings.Contains(msg, "dendrite chronos claim") {
 		t.Fatalf("unclaimed: %q, %v", msg, err)
 	}
-	if p, err := s.Plans.Load("unclaimed/s-9"); err != nil || p.PendingSteps != 2 {
+	if p, err := s.Plans.Load(key); err != nil || p.PendingSteps != 2 {
 		t.Errorf("local plan = %+v, %v", p, err)
 	}
 	in.SessionID = ""
-	if msg, _ := SavePlan(ctx, s.Lifecycle, s.boardFunc(), in); !strings.Contains(msg, "unclaimed/session") {
+	if msg, _ := SavePlan(ctx, s.Lifecycle, s.boardFunc(), in); !strings.Contains(msg, unclaimedKey(repoScope(s.Dir), "session")) {
 		t.Errorf("a session id is not required: %q", msg)
 	}
+}
 
+func TestSavePlanStoresThePlanOnTheClaimedTicket(t *testing.T) {
+	ctx := context.Background()
+	s := newHookRig(t, "To Do")
+	in := HookInput{SessionID: "s-9", Cwd: s.Dir}
+	in.ToolInput.Plan = "- [ ] one\n- [ ] two"
+	if _, err := SavePlan(ctx, s.Lifecycle, s.boardFunc(), in); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.Claim(ctx, "DEN-377", ClaimOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	msg, err = SavePlan(ctx, s.Lifecycle, s.boardFunc(), in)
+	msg, err := SavePlan(ctx, s.Lifecycle, s.boardFunc(), in)
 	if err != nil || msg != "plan v2 stored on DEN-377 (2 step(s) left)" {
 		t.Errorf("claimed: %q, %v", msg, err)
 	}
 	if got, err := s.GetPlan(ctx, "DEN-377"); err != nil || got.Version != 2 {
 		t.Errorf("plan on the ticket = %+v, %v", got, err)
 	}
+}
 
+func TestSavePlanReportsPlaneFailures(t *testing.T) {
+	ctx := context.Background()
+	s := newHookRig(t, "To Do")
+	if _, err := s.Claim(ctx, "DEN-377", ClaimOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	in := HookInput{SessionID: "s-9", Cwd: s.Dir}
+	in.ToolInput.Plan = "- [ ] one\n- [ ] two"
 	failing := func() (Board, error) { return Board{}, errors.New("Plane is not configured") }
 	if _, err := SavePlan(ctx, s.Lifecycle, failing, in); err == nil || !strings.Contains(err.Error(), "plan not stored on DEN-377") {
 		t.Errorf("no board: %v", err)

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -290,7 +291,7 @@ func TestReClaimClearsTheNeedsInputLabel(t *testing.T) {
 func TestClaimAdoptsAPlanMadeBeforeTheClaim(t *testing.T) {
 	ctx := context.Background()
 	s := newSession(t, map[string]string{"DEN-377": "To Do"})
-	if err := s.Plans.Save("unclaimed/s-9", newPlan("- [x] design\n- [ ] build", 1)); err != nil {
+	if err := s.Plans.Save(unclaimedKey(repoScope(s.Dir), "s-9"), newPlan("- [x] design\n- [ ] build", 1)); err != nil {
 		t.Fatal(err)
 	}
 	res, err := s.Claim(ctx, "DEN-377", ClaimOptions{})
@@ -303,7 +304,7 @@ func TestClaimAdoptsAPlanMadeBeforeTheClaim(t *testing.T) {
 	if got, err := s.GetPlan(ctx, "DEN-377"); err != nil || got.PendingSteps != 1 {
 		t.Errorf("plan on the ticket = %+v, %v", got, err)
 	}
-	if _, ok := s.Plans.TakeUnclaimed(time.Time{}); ok {
+	if _, ok := s.Plans.TakeUnclaimed(repoScope(s.Dir), time.Time{}); ok {
 		t.Error("the adopted plan must not stay unclaimed")
 	}
 }
@@ -311,32 +312,35 @@ func TestClaimAdoptsAPlanMadeBeforeTheClaim(t *testing.T) {
 func TestClaimKeepsTheTicketsOwnPlanOverAnUnclaimedOne(t *testing.T) {
 	s := newSession(t, map[string]string{"DEN-377": "To Do"})
 	_ = s.Plans.Save("DEN-377", newPlan("- [ ] own", 2))
-	_ = s.Plans.Save("unclaimed/s-9", newPlan("- [ ] stray", 1))
+	_ = s.Plans.Save(unclaimedKey(repoScope(s.Dir), "s-9"), newPlan("- [ ] stray", 1))
 	res, err := s.Claim(context.Background(), "DEN-377", ClaimOptions{})
 	if err != nil || res.Plan == nil || res.Plan.NextStep != "own" {
 		t.Fatalf("plan = %+v, %v", res.Plan, err)
 	}
-	if _, ok := s.Plans.TakeUnclaimed(time.Time{}); !ok {
+	if _, ok := s.Plans.TakeUnclaimed(repoScope(s.Dir), time.Time{}); !ok {
 		t.Error("the stray plan belongs to another ticket and must stay")
 	}
 }
+
+// testScope is the repository scope of the plans in unclaimedStore.
+const testScope = "abc123"
 
 // unclaimedStore holds a ticket's plan and unclaimed plans of different ages (and a broken one); now is the clock.
 func unclaimedStore(t *testing.T) (store PlanStore, now time.Time) {
 	t.Helper()
 	store = PlanStore{Dir: t.TempDir()}
 	_ = store.Save("DEN-1", newPlan("- [ ] ticket plan", 1))
-	_ = store.Save("unclaimed/old", newPlan("- [ ] old", 1))
-	_ = store.Save("unclaimed/new", newPlan("- [ ] new", 1))
-	_ = store.Save("unclaimed/older", newPlan("- [ ] older", 1))
+	_ = store.Save(unclaimedKey(testScope, "old"), newPlan("- [ ] old", 1))
+	_ = store.Save(unclaimedKey(testScope, "new"), newPlan("- [ ] new", 1))
+	_ = store.Save(unclaimedKey(testScope, "older"), newPlan("- [ ] older", 1))
 	index := filepath.Join(store.Dir, "index")
 	now = time.Now()
-	for name, age := range map[string]time.Duration{"unclaimed-old.json": 48 * time.Hour, "unclaimed-older.json": 72 * time.Hour, "unclaimed-new.json": time.Hour} {
+	for name, age := range map[string]time.Duration{"unclaimed-" + testScope + "-old.json": 48 * time.Hour, "unclaimed-" + testScope + "-older.json": 72 * time.Hour, "unclaimed-" + testScope + "-new.json": time.Hour} {
 		if err := os.Chtimes(filepath.Join(index, name), now.Add(-age), now.Add(-age)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(index, "unclaimed-broken.json"), []byte("{"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(index, "unclaimed-"+testScope+"-broken.json"), []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return store, now
@@ -344,26 +348,26 @@ func unclaimedStore(t *testing.T) (store PlanStore, now time.Time) {
 
 func TestTakeUnclaimedFromAnEmptyStore(t *testing.T) {
 	store := PlanStore{Dir: t.TempDir()}
-	if _, ok := store.TakeUnclaimed(time.Time{}); ok {
+	if _, ok := store.TakeUnclaimed(testScope, time.Time{}); ok {
 		t.Fatal("an empty store has nothing to take")
 	}
 }
 
 func TestTakeUnclaimedTakesTheNewestRecentPlanOnce(t *testing.T) {
 	store, now := unclaimedStore(t)
-	p, ok := store.TakeUnclaimed(now.Add(-6 * time.Hour))
+	p, ok := store.TakeUnclaimed(testScope, now.Add(-6*time.Hour))
 	if !ok || p.NextStep != "new" {
 		t.Fatalf("took %+v, %v: want the newest recent plan", p, ok)
 	}
-	if _, ok := store.TakeUnclaimed(now.Add(-6 * time.Hour)); ok {
+	if _, ok := store.TakeUnclaimed(testScope, now.Add(-6*time.Hour)); ok {
 		t.Error("the plan is gone once taken, and a ticket's plan or a broken file is never taken")
 	}
 }
 
 func TestTakeUnclaimedWithALongerWindowTakesAnOlderPlan(t *testing.T) {
 	store, now := unclaimedStore(t)
-	store.TakeUnclaimed(now.Add(-6 * time.Hour))
-	if p, ok := store.TakeUnclaimed(now.Add(-60 * time.Hour)); !ok || p.NextStep != "old" {
+	store.TakeUnclaimed(testScope, now.Add(-6*time.Hour))
+	if p, ok := store.TakeUnclaimed(testScope, now.Add(-60*time.Hour)); !ok || p.NextStep != "old" {
 		t.Errorf("with a longer window the older plan is taken: %+v, %v", p, ok)
 	}
 	if _, err := store.Load("DEN-1"); err != nil {
@@ -398,5 +402,80 @@ func TestCommentClaimedPostsToTheClaimedTicket(t *testing.T) {
 	}
 	if _, err := s.CommentClaimed(ctx, "bogus", "x"); err == nil || !strings.Contains(err.Error(), "unknown comment kind") {
 		t.Errorf("a bad kind must be refused: %v", err)
+	}
+}
+
+func TestTakeUnclaimedOnlyTakesPlansOfTheSameRepository(t *testing.T) {
+	store := PlanStore{Dir: t.TempDir()}
+	_ = store.Save(unclaimedKey("repo-a", "s-1"), newPlan("- [ ] a", 1))
+	_ = store.Save(unclaimedKey("repo-b", "s-1"), newPlan("- [ ] b", 1))
+	if p, ok := store.TakeUnclaimed("repo-b", time.Time{}); !ok || p.NextStep != "b" {
+		t.Fatalf("took %+v, %v: want the plan of repo-b", p, ok)
+	}
+	if _, ok := store.TakeUnclaimed("repo-b", time.Time{}); ok {
+		t.Error("repo-b has no other plan")
+	}
+	if p, ok := store.TakeUnclaimed("repo-a", time.Time{}); !ok || p.NextStep != "a" {
+		t.Errorf("the plan of repo-a must have stayed: %+v, %v", p, ok)
+	}
+}
+
+func TestTakeUnclaimedLeavesAPlanAnotherClaimTookFirst(t *testing.T) {
+	store := PlanStore{Dir: t.TempDir()}
+	_ = store.Save(unclaimedKey("repo", "s-1"), newPlan("- [ ] only", 1))
+	renameIndex = func(string, string) error { return os.ErrNotExist }
+	t.Cleanup(func() { renameIndex = os.Rename })
+	if _, ok := store.TakeUnclaimed("repo", time.Time{}); ok {
+		t.Error("a plan someone else took is not ours")
+	}
+}
+
+func TestTakeUnclaimedGivesOnePlanToOneOfManyConcurrentClaims(t *testing.T) {
+	store := PlanStore{Dir: t.TempDir()}
+	_ = store.Save(unclaimedKey("repo", "s-1"), newPlan("- [ ] only", 1))
+	const claimers = 16
+	var taken atomic.Int32
+	var wg sync.WaitGroup
+	for range claimers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, ok := store.TakeUnclaimed("repo", time.Time{}); ok {
+				taken.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if got := taken.Load(); got != 1 {
+		t.Errorf("%d claims took the one plan, want exactly 1", got)
+	}
+}
+
+func TestClaimDoesNotAdoptAPlanOfAnotherRepository(t *testing.T) {
+	s := newSession(t, map[string]string{"DEN-377": "To Do"})
+	if err := s.Plans.Save(unclaimedKey(repoScope(t.TempDir()), "s-9"), newPlan("- [ ] foreign", 1)); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.Claim(context.Background(), "DEN-377", ClaimOptions{})
+	if err != nil || res.Plan != nil {
+		t.Fatalf("plan = %+v, %v: a plan made in another repository must not land on this ticket", res.Plan, err)
+	}
+	if _, ok := s.Plans.TakeUnclaimed(repoScope(s.Dir), time.Time{}); ok {
+		t.Error("and this repository has no plan of its own to take")
+	}
+}
+
+func TestRepoScopeIsSharedByAWorktreeAndItsRepository(t *testing.T) {
+	repo := t.TempDir()
+	for _, args := range [][]string{{"init", "-q", "-b", "develop"}, {"-c", "user.name=t", "-c", "user.email=t@e.x", "commit", "-q", "--allow-empty", "-m", "base"}, {"worktree", "add", "-q", "-b", "agent/x", filepath.Join(repo, "wt")}} {
+		if out, err := gitCommand(repo, args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if repoScope(repo) != repoScope(filepath.Join(repo, "wt")) {
+		t.Error("a worktree belongs to the repository it was made from")
+	}
+	if repoScope(repo) == repoScope(t.TempDir()) {
+		t.Error("two repositories have different scopes")
 	}
 }
