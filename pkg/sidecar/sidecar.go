@@ -213,6 +213,32 @@ func ragEnv(getenv func(string) string, path string) []string {
 	return out
 }
 
+// reply is what one exchange with the sidecar produced.
+type reply struct {
+	resp response
+	err  error
+}
+
+// exchange writes one request line and reads the reply line.
+func (c *Client) exchange(data []byte) reply {
+	if _, err := c.stdin.Write(append(data, '\n')); err != nil {
+		return reply{err: fmt.Errorf("writing request: %w: %w", errNotSent, err)}
+	}
+	line, err := c.stdout.ReadBytes('\n')
+	if err != nil {
+		return reply{err: fmt.Errorf("reading response: %w", err)}
+	}
+	var r response
+	if err := json.Unmarshal(line, &r); err != nil {
+		return reply{err: fmt.Errorf("decoding response %q: %w", strings.TrimSpace(string(line)), err)}
+	}
+	return reply{resp: r}
+}
+
+// errNotSent marks a failure before the request reached the sidecar's stdin: the sidecar cannot have acted on it,
+// so it is always safe to send again.
+var errNotSent = errors.New("request not sent")
+
 // Call sends one request and decodes the result into result (which may be nil).
 // Calls are serialised; a context deadline kills the process, since a reply can no
 // longer be matched to its request.
@@ -224,28 +250,8 @@ func (c *Client) Call(ctx context.Context, method string, params, result interfa
 	if err != nil {
 		return err
 	}
-	type reply struct {
-		resp response
-		err  error
-	}
 	done := make(chan reply, 1)
-	go func() {
-		if _, err := c.stdin.Write(append(data, '\n')); err != nil {
-			done <- reply{err: fmt.Errorf("writing request: %w", err)}
-			return
-		}
-		line, err := c.stdout.ReadBytes('\n')
-		if err != nil {
-			done <- reply{err: fmt.Errorf("reading response: %w", err)}
-			return
-		}
-		var r response
-		if err := json.Unmarshal(line, &r); err != nil {
-			done <- reply{err: fmt.Errorf("decoding response %q: %w", strings.TrimSpace(string(line)), err)}
-			return
-		}
-		done <- reply{resp: r}
-	}()
+	go func() { done <- c.exchange(data) }()
 
 	select {
 	case <-ctx.Done():
