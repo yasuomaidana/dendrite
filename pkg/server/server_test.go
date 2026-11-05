@@ -218,12 +218,13 @@ func TestServer_AuthAndErrors(t *testing.T) {
 	// 4. Test OPTIONS preflight
 	reqOpt, _ := http.NewRequest(http.MethodOptions, baseURL+"/api/v1/health", nil)
 	respOpt, _ := client.Do(reqOpt)
-	if respOpt.StatusCode != http.StatusOK {
-		t.Errorf("expected 200 OK on OPTIONS, got: %d", respOpt.StatusCode)
+	if respOpt.StatusCode != http.StatusNoContent || respOpt.Header.Get("Access-Control-Allow-Origin") != "" {
+		t.Errorf("expected 204 without CORS headers on OPTIONS, got: %d", respOpt.StatusCode)
 	}
 
 	// 5. Test invalid JSON in workspace switch
 	reqInvalid, _ := http.NewRequest(http.MethodPost, baseURL+"/api/v1/workspaces/switch?token=super-secret-token", strings.NewReader("{invalid"))
+	reqInvalid.Header.Set("Content-Type", "application/json")
 	respInvalid, _ := client.Do(reqInvalid)
 	if respInvalid.StatusCode != http.StatusBadRequest {
 		t.Errorf("expected 400 Bad Request on invalid JSON, got: %d", respInvalid.StatusCode)
