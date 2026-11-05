@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -17,8 +16,122 @@ func (u *RoutingTableUpdater) buildDynamicConfig(
 	engines []inference.InferenceEngine,
 	discovered []DiscoveredModel,
 ) *LiteLLMConfig {
-	// Base commercial models
-	modelList := []ModelListEntry{
+	modelList := cloudModelList(opts)
+
+	normalizeEndpoint := func(ep string) string {
+		ep = strings.TrimRight(ep, "/")
+		if opts.UseContainerHost {
+			ep = strings.ReplaceAll(ep, "127.0.0.1", "host.docker.internal")
+			ep = strings.ReplaceAll(ep, "localhost", "host.docker.internal")
+		}
+		return ep
+	}
+
+	var fallbackModelNames []string
+	registeredAliases := make(map[string]bool)
+
+	// Helper to add a local model entry
+	addLocalEntry := func(aliasName string, modelID string, engType string, endpoint string, tokens int) {
+		if registeredAliases[aliasName] {
+			return
+		}
+		registeredAliases[aliasName] = true
+
+		normEP := normalizeEndpoint(endpoint)
+		modelList = append(modelList, localModelEntry(aliasName, modelID, engType, normEP, tokens))
+		fallbackModelNames = append(fallbackModelNames, aliasName)
+	}
+
+	// 1. Roles are assigned only among installed chat models that fit this machine's memory.
+	//    discovered is ordered smartest first; slower is acceptable, starving the machine is not.
+	chat, embed := splitFitting(discovered)
+	role := func(aliases []string, dm DiscoveredModel, tokens int) {
+		for _, a := range aliases {
+			addLocalEntry(a, dm.ModelName, dm.EngineType, dm.Endpoint, tokens)
+		}
+	}
+	if len(chat) > 0 {
+		// reason: the smartest model that fits (the old local-qwen3-27b slot).
+		role([]string{"local-reason", "local-qwen3-27b"}, chat[0], 8192)
+		// coder: the smartest coder-tuned model, else the smartest overall.
+		role([]string{"local-coder", "local-qwen-coder"}, pickCoder(chat), 8192)
+		// fast: the smallest model that is still capable (score >= 50), for short, frequent calls.
+		role([]string{"local-fast", "local-qwen3-9b"}, pickFast(chat), 4096)
+	}
+	if len(embed) > 0 {
+		role([]string{"local-embed"}, embed[0], 2048)
+	}
+	// Explicit per-model aliases, for the models that fit only.
+	for _, dm := range chat {
+		addLocalEntry(modelAlias(dm), dm.ModelName, dm.EngineType, dm.Endpoint, 4096)
+	}
+
+	routerSettings := buildRouterSettings(opts, fallbackModelNames)
+
+	generalSettings := &GeneralSettings{
+		MasterKey:   "os.environ/LITELLM_MASTER_KEY",
+		DatabaseURL: "os.environ/DATABASE_URL",
+		RedisURL:    "os.environ/REDIS_URL",
+	}
+
+	litellmSettings := &LitellmSettings{
+		DropParams:     true,
+		BudgetDuration: "7d",
+	}
+
+	return &LiteLLMConfig{
+		ModelList:       modelList,
+		RouterSettings:  routerSettings,
+		GeneralSettings: generalSettings,
+		LitellmSettings: litellmSettings,
+	}
+}
+
+// splitFitting separates the discovered models that fit this machine's memory into chat and embedding models,
+// keeping their order (smartest first). A model that does not fit is dropped.
+func splitFitting(discovered []DiscoveredModel) (chat, embed []DiscoveredModel) {
+	for _, dm := range discovered {
+		switch {
+		case !dm.Fits:
+		case dm.Embed:
+			embed = append(embed, dm)
+		default:
+			chat = append(chat, dm)
+		}
+	}
+	return chat, embed
+}
+
+// pickCoder is the smartest coder-tuned chat model, else the smartest overall. chat must not be empty.
+func pickCoder(chat []DiscoveredModel) DiscoveredModel {
+	for _, dm := range chat {
+		if strings.Contains(strings.ToLower(dm.ModelName), "coder") {
+			return dm
+		}
+	}
+	return chat[0]
+}
+
+// pickFast is the smallest chat model that is still capable (score >= 50), else the smallest. chat is ordered
+// smartest first and must not be empty.
+func pickFast(chat []DiscoveredModel) DiscoveredModel {
+	for i := len(chat) - 1; i >= 0; i-- {
+		if chat[i].IntelligenceScore >= 50 {
+			return chat[i]
+		}
+	}
+	return chat[len(chat)-1]
+}
+
+// modelAlias is the explicit per-model alias of a chat model, e.g. local-qwen3-8b for qwen3:8b.
+func modelAlias(dm DiscoveredModel) string {
+	clean := strings.ToLower(dm.ModelName)
+	return "local-" + strings.ReplaceAll(strings.ReplaceAll(clean, ":", "-"), "/", "-")
+}
+
+// cloudModelList is the commercial part of the model list: the primary, backup and fast cloud models.
+func cloudModelList(opts UpdaterOptions) []ModelListEntry {
+	return []ModelListEntry{
 		{
 			ModelName: opts.PrimaryCloudModel,
 			LitellmParams: ModelParams{
@@ -76,137 +189,71 @@ func (u *RoutingTableUpdater) buildDynamicConfig(
 			},
 		},
 	}
+}
 
-	normalizeEndpoint := func(ep string) string {
-		ep = strings.TrimRight(ep, "/")
-		if opts.UseContainerHost {
-			ep = strings.ReplaceAll(ep, "127.0.0.1", "host.docker.internal")
-			ep = strings.ReplaceAll(ep, "localhost", "host.docker.internal")
-		}
-		return ep
+// localModelEntry routes alias to modelID on a self-hosted engine reachable at normEP.
+func localModelEntry(aliasName, modelID, engType, normEP string, tokens int) ModelListEntry {
+	var upstreamModel, apiBase, apiKey, provider string
+
+	switch engType {
+	case string(inference.EngineOxiLLaMa):
+		upstreamModel = "openai/" + modelID
+		apiBase = normEP + "/v1"
+		apiKey = "EMPTY"
+		provider = "openai"
+
+	case string(inference.EngineOllama):
+		upstreamModel = "ollama/" + modelID
+		apiBase = normEP
+		provider = "ollama"
+
+	case string(inference.EngineVLLM):
+		upstreamModel = "openai/" + modelID
+		apiBase = normEP + "/v1"
+		apiKey = "EMPTY"
+		provider = "openai"
+
+	case string(inference.EngineLlamaCpp):
+		upstreamModel = "openai/" + modelID
+		apiBase = normEP + "/v1"
+		apiKey = "EMPTY"
+		provider = "openai"
+
+	default:
+		upstreamModel = "openai/" + modelID
+		apiBase = normEP + "/v1"
+		apiKey = "EMPTY"
 	}
 
-	var fallbackModelNames []string
-	registeredAliases := make(map[string]bool)
-
-	// Helper to add a local model entry
-	addLocalEntry := func(aliasName string, modelID string, engType string, endpoint string, tokens int) {
-		if registeredAliases[aliasName] {
-			return
-		}
-		registeredAliases[aliasName] = true
-
-		normEP := normalizeEndpoint(endpoint)
-		var upstreamModel, apiBase, apiKey, provider string
-
-		switch engType {
-		case string(inference.EngineOxiLLaMa):
-			upstreamModel = "openai/" + modelID
-			apiBase = normEP + "/v1"
-			apiKey = "EMPTY"
-			provider = "openai"
-
-		case string(inference.EngineOllama):
-			upstreamModel = "ollama/" + modelID
-			apiBase = normEP
-			provider = "ollama"
-
-		case string(inference.EngineVLLM):
-			upstreamModel = "openai/" + modelID
-			apiBase = normEP + "/v1"
-			apiKey = "EMPTY"
-			provider = "openai"
-
-		case string(inference.EngineLlamaCpp):
-			upstreamModel = "openai/" + modelID
-			apiBase = normEP + "/v1"
-			apiKey = "EMPTY"
-			provider = "openai"
-
-		default:
-			upstreamModel = "openai/" + modelID
-			apiBase = normEP + "/v1"
-			apiKey = "EMPTY"
-		}
-
-		if tokens <= 0 {
-			tokens = 4096
-		}
-
-		entry := ModelListEntry{
-			ModelName: aliasName,
-			LitellmParams: ModelParams{
-				Model:             upstreamModel,
-				APIBase:           apiBase,
-				APIKey:            apiKey,
-				CustomLLMProvider: provider,
-				MaxTokens:         tokens,
-			},
-			ModelInfo: &ModelInfo{
-				ID:                 aliasName,
-				Mode:               "chat",
-				InputCostPerToken:  0.0,
-				OutputCostPerToken: 0.0,
-				MaxInputTokens:     32768,
-				MaxOutputTokens:    tokens,
-				BaseModel:          modelID,
-				SkipBudgetChecks:   true,
-			},
-		}
-
-		modelList = append(modelList, entry)
-		fallbackModelNames = append(fallbackModelNames, aliasName)
+	if tokens <= 0 {
+		tokens = 4096
 	}
 
-	// 1. Roles are assigned only among installed chat models that fit this machine's memory.
-	//    discovered is ordered smartest first; slower is acceptable, starving the machine is not.
-	var chat, embed []DiscoveredModel
-	for _, dm := range discovered {
-		switch {
-		case !dm.Fits:
-		case dm.Embed:
-			embed = append(embed, dm)
-		default:
-			chat = append(chat, dm)
-		}
+	return ModelListEntry{
+		ModelName: aliasName,
+		LitellmParams: ModelParams{
+			Model:             upstreamModel,
+			APIBase:           apiBase,
+			APIKey:            apiKey,
+			CustomLLMProvider: provider,
+			MaxTokens:         tokens,
+		},
+		ModelInfo: &ModelInfo{
+			ID:                 aliasName,
+			Mode:               "chat",
+			InputCostPerToken:  0.0,
+			OutputCostPerToken: 0.0,
+			MaxInputTokens:     32768,
+			MaxOutputTokens:    tokens,
+			BaseModel:          modelID,
+			SkipBudgetChecks:   true,
+		},
 	}
-	role := func(aliases []string, dm DiscoveredModel, tokens int) {
-		for _, a := range aliases {
-			addLocalEntry(a, dm.ModelName, dm.EngineType, dm.Endpoint, tokens)
-		}
-	}
-	if len(chat) > 0 {
-		// reason: the smartest model that fits (the old local-qwen3-27b slot).
-		role([]string{"local-reason", "local-qwen3-27b"}, chat[0], 8192)
-		// coder: the smartest coder-tuned model, else the smartest overall.
-		coder := chat[0]
-		for _, dm := range chat {
-			if strings.Contains(strings.ToLower(dm.ModelName), "coder") {
-				coder = dm
-				break
-			}
-		}
-		role([]string{"local-coder", "local-qwen-coder"}, coder, 8192)
-		// fast: the smallest model that is still capable (score >= 50), for short, frequent calls.
-		fast := chat[len(chat)-1]
-		for i := len(chat) - 1; i >= 0; i-- {
-			if chat[i].IntelligenceScore >= 50 {
-				fast = chat[i]
-				break
-			}
-		}
-		role([]string{"local-fast", "local-qwen3-9b"}, fast, 4096)
-	}
-	if len(embed) > 0 {
-		role([]string{"local-embed"}, embed[0], 2048)
-	}
-	// Explicit per-model aliases, for the models that fit only.
-	for _, dm := range chat {
-		clean := strings.ToLower(dm.ModelName)
-		addLocalEntry(fmt.Sprintf("local-%s", strings.ReplaceAll(strings.ReplaceAll(clean, ":", "-"), "/", "-")),
-			dm.ModelName, dm.EngineType, dm.Endpoint, 4096)
-	}
+}
 
+// buildRouterSettings orders the local aliases by intelligence and builds the cascade of fallbacks between the cloud
+// models and the local ones.
+func buildRouterSettings(opts UpdaterOptions, fallbackModelNames []string) *RouterSettings {
 	// Dynamic cascade fallbacks
 	// Reorder fallbackModelNames by ModelIntelligenceScore
 	sort.SliceStable(fallbackModelNames, func(i, j int) bool {
@@ -227,33 +274,14 @@ func (u *RoutingTableUpdater) buildDynamicConfig(
 			{opts.BackupCloudModel: sonnetFallbacks},
 			{opts.FastCloudModel: flashFallbacks},
 		},
+		// The local aliases are added below, only for the ones that were emitted into model_list.
 		ContextWindowFallbacks: []map[string]string{
-			{"local-qwen-coder": opts.PrimaryCloudModel},
-			{"local-qwen3-27b": opts.PrimaryCloudModel},
-			{"local-qwen3-9b": opts.PrimaryCloudModel},
 			{opts.FastCloudModel: opts.PrimaryCloudModel},
 		},
 	}
 
 	addContextWindowFallbacks(routerSettings, fallbackModelNames, opts.PrimaryCloudModel)
-
-	generalSettings := &GeneralSettings{
-		MasterKey:   "os.environ/LITELLM_MASTER_KEY",
-		DatabaseURL: "os.environ/DATABASE_URL",
-		RedisURL:    "os.environ/REDIS_URL",
-	}
-
-	litellmSettings := &LitellmSettings{
-		DropParams:     true,
-		BudgetDuration: "7d",
-	}
-
-	return &LiteLLMConfig{
-		ModelList:       modelList,
-		RouterSettings:  routerSettings,
-		GeneralSettings: generalSettings,
-		LitellmSettings: litellmSettings,
-	}
+	return routerSettings
 }
 
 // StartDailyDaemon starts a background ticker executing routing table updates
@@ -268,7 +296,22 @@ func (u *RoutingTableUpdater) StartDailyDaemon(ctx context.Context) (<-chan *Upd
 		return ch, func() {}
 	}
 	u.running = true
-	u.stopCh = make(chan struct{})
+	// Each run owns its stop channel and its stop function: the goroutine of an earlier run can only ever stop its
+	// own run, never one started after it.
+	stop := make(chan struct{})
+	u.stopCh = stop
+	var stopOnce sync.Once
+	stopFunc := func() {
+		stopOnce.Do(func() {
+			u.mu.Lock()
+			if u.stopCh == stop {
+				u.running = false
+			}
+			u.mu.Unlock()
+			close(stop)
+		})
+	}
+	u.stopFn = stopFunc
 	interval := u.opts.Interval
 	if interval <= 0 {
 		interval = DefaultUpdateInterval
@@ -276,61 +319,52 @@ func (u *RoutingTableUpdater) StartDailyDaemon(ctx context.Context) (<-chan *Upd
 	u.mu.Unlock()
 
 	outCh := make(chan *UpdateReport, 10)
-	stopOnce := sync.Once{}
 
-	stopFunc := func() {
-		stopOnce.Do(func() {
-			u.mu.Lock()
-			if u.running {
-				close(u.stopCh)
-				u.running = false
-			}
-			u.mu.Unlock()
-		})
-	}
-
-	go func() {
-		defer close(outCh)
-		defer stopFunc()
-
-		// Run immediate first update on start
-		if rep, err := u.UpdateNow(ctx); err == nil {
-			select {
-			case outCh <- rep:
-			default:
-			}
-		}
-
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-u.stopCh:
-				return
-			case <-ticker.C:
-				rep, _ := u.UpdateNow(ctx)
-				if rep != nil {
-					select {
-					case outCh <- rep:
-					default:
-					}
-				}
-			}
-		}
-	}()
+	go u.runDaemon(ctx, stop, stopFunc, interval, outCh)
 
 	return outCh, stopFunc
+}
+
+// runDaemon is the body of one daemon run: an update at once, then one per tick, until ctx ends or stop closes.
+// Reports go to outCh without blocking; outCh is closed and the run stopped when it returns.
+func (u *RoutingTableUpdater) runDaemon(ctx context.Context, stop <-chan struct{}, stopRun func(), interval time.Duration, outCh chan<- *UpdateReport) {
+	defer close(outCh)
+	defer stopRun()
+
+	publish := func(rep *UpdateReport) {
+		if rep == nil {
+			return
+		}
+		select {
+		case outCh <- rep:
+		default:
+		}
+	}
+	if rep, err := u.UpdateNow(ctx); err == nil {
+		publish(rep)
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-stop:
+			return
+		case <-ticker.C:
+			rep, _ := u.UpdateNow(ctx)
+			publish(rep)
+		}
+	}
 }
 
 // Stop terminates a running background daemon.
 func (u *RoutingTableUpdater) Stop() {
 	u.mu.Lock()
-	defer u.mu.Unlock()
-	if u.running {
-		close(u.stopCh)
-		u.running = false
+	stop := u.stopFn
+	u.mu.Unlock()
+	if stop != nil {
+		stop()
 	}
 }

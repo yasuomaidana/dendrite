@@ -264,3 +264,47 @@ func TestRoutingTableUpdater_RoutesOnlyModelsThatFitMemory(t *testing.T) {
 		}
 	}
 }
+
+func TestRoutingTableUpdater_FallbacksOnlyNameAliasesInTheModelList(t *testing.T) {
+	// No engine, so no chat model fits: no local-* alias is emitted and none may be a fallback source.
+	report, err := NewRoutingTableUpdater(UpdaterOptions{
+		ConfigPath: filepath.Join(t.TempDir(), "litellm.yaml"), DryRun: true, Manager: inference.NewManager(),
+	}).UpdateNow(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(report.YAMLContent, "local-qwen") {
+		t.Errorf("YAML names local-qwen* although no local model is routed:\n%s", report.YAMLContent)
+	}
+}
+
+func TestRoutingTableUpdater_StaleDaemonCannotStopTheNextOne(t *testing.T) {
+	mgr := inference.NewManager()
+	u := NewRoutingTableUpdater(UpdaterOptions{
+		ConfigPath: filepath.Join(t.TempDir(), "litellm.yaml"), DryRun: true, Interval: time.Hour, Manager: mgr,
+	})
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	_, stop1 := u.StartDailyDaemon(ctx1)
+	u.Stop() // ends the first daemon through the updater
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	ch2, stop2 := u.StartDailyDaemon(ctx2)
+	defer stop2()
+	cancel1() // the first daemon's goroutine now exits, running its deferred stop for the first time
+	stop1()   // and so does its cancel func
+	time.Sleep(150 * time.Millisecond)
+
+	u.mu.RLock()
+	running := u.running
+	u.mu.RUnlock()
+	if !running {
+		t.Fatal("the stale daemon stopped the one started after it")
+	}
+	select {
+	case _, ok := <-ch2:
+		if !ok {
+			t.Fatal("the second daemon's report channel was closed: it was stopped")
+		}
+	case <-time.After(time.Second):
+	}
+}

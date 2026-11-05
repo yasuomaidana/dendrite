@@ -23,6 +23,9 @@ jobs:
       # Dendrite's tests run against the real dendrite-plane sidecar (there is no Go stand-in for it), so the runner
       # builds it. planetest finds it through DENDRITE_PLANE_TEST_BIN. The sidecar is taken from the ref named by
       # DENDRITE_PLANE_REF (default: its develop branch).
+      # TODO(DEN-860): once dendrite-plane-rs and dendrite-rag-rs are tagged v0.1.0, change both defaults below from
+      # 'develop' to 'v0.1.0' so a release builds against the sidecars it shipped with; a moving branch makes the
+      # result depend on commits this repository did not make. Set the repository variables to pin sooner.
       - name: Check out the dendrite-plane sidecar
         uses: actions/checkout@v4
         with:
@@ -73,7 +76,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.4.4 # exact, so the build does not change under us; raise it deliberately
 
       - name: Run Bun Tests & Build
         run: |
