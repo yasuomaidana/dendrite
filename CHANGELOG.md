@@ -7,6 +7,7 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 ### Changed
 
 - **Branches are named after their feature and ticket (DEN-879, DEN-880):** `dendrite work new` no longer creates `agent/<ticket>`. A ticket works on its own trunk `<TICKET>-<slug>/main` in the copy `dendrite-work/<repo>-<TICKET>-<slug>`; a sub-ticket works on `<ROOT>-<slug>/<TICKET>-<slug>` and merges into the trunk `<ROOT>-<slug>/main` of its top-most parent. The slug is the Plane title; without Plane the branch is `<name>/main`. Existing `agent/<ticket>` branches and `feature/<ROOT>-<slug>` trunks keep working, `dendrite work done DEN-123` finds the copy by its ticket, and `dendrite branch show --ticket` prints the work branch. The design is in [`docs/specs/2026-11-10-meaningful-branches-repairs-design.md`](docs/specs/2026-11-10-meaningful-branches-repairs-design.md).
+- **The integration branch defaults to `main` (DEN-879, DEN-881):** with no directive and no synapse member branch, work integrates on the remote's default branch, then `main`, then `master`; `develop` is chosen only when it is the one of them the repository has, or when `[git] integration_branch` or the member names it. In a repository that still has `develop`, branches made before feature folders (`agent/*`, `feature/*`) keep `develop` as their target (`dendrite branch show` says "branch made before feature folders"). The dev channel still tracks `develop`; the `dendrite vcs` guard is unchanged (DEN-886).
 
 ## [0.1.0] - 2026-11-01
 
@@ -32,7 +33,6 @@ First release from `develop` to `main` since 2026-10-19 (180 commits). Which com
 
 ### Changed
 
-- **The integration branch defaults to `main` (DEN-879, DEN-881):** with no directive and no synapse member branch, work integrates on the remote's default branch, then `main`, then `master`; `develop` is chosen only when it is the one of them the repository has, or when `[git] integration_branch` or the member names it. In a repository that still has `develop`, branches made before feature folders (`agent/*`, `feature/*`) keep `develop` as their target (`dendrite branch show` says "branch made before feature folders"). The dev channel still tracks `develop`; the `dendrite vcs` guard is unchanged (DEN-886).
 - **The Go complexity, folding and token analyzers in `pkg/ast` and `pkg/ai/tokenopt` are deleted (DEN-813).** A one-off comparison on 489 files and 2,955 functions found identical cyclomatic values (`docs/quality/core-parity.md`). Re-measured after DCORE-13 (which replaced tree-sitter for Go with a lexer scan), the sidecar takes about 19 ms against about 99 ms for the removed analyzer on that corpus, about 5 times faster, so the 3x target is met; the first measurement, 0.40 s against 0.10 s, is kept in the page. `pkg/ast` keeps the symbol graph until it moves (DRAG-79).
 - API keys and vendor settings are configured once in `$DENDRITE_HOME/.env`; a project `.env` no longer overrides them (DEN-1057, DEN-343).
 - Plane, Jira and Linear clients, topology, the HTTP server and the inference engines share transport and stream helpers instead of repeating blocks (DEN-419, DEN-444).
