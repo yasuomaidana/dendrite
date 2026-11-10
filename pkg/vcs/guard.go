@@ -105,12 +105,13 @@ func (g *GitGuard) CurrentBranch(ctx context.Context) (string, error) {
 
 // target is where this repository's work integrates (see pkg/branchpolicy). A trunk (main or master) that was
 // only detected, not chosen, is never an integration branch here: the guard keeps its rule that agents do not
-// work on main and moves to (creating when missing) develop. Choosing main in the directives lifts that rule.
+// work on main and moves to (creating when missing) the legacy integration branch. Choosing main in the
+// directives lifts that rule.
 func (g *GitGuard) target() branchpolicy.Target {
 	t := branchpolicy.For(g.RepoDir)
 	t.Branch = t.Integration // the guard keeps agents on the integration branch, not on a ticket's feature branch
 	if !t.Explicit() && (t.Branch == "main" || t.Branch == "master") {
-		t.Branch = "develop"
+		t.Branch = branchpolicy.LegacyIntegration
 	}
 	return t
 }

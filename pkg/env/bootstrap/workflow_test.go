@@ -41,7 +41,7 @@ func TestPrepare_AgentsAndRulesCarryTheDendriteFirstWorkflow(t *testing.T) {
 		"## Session Start & Handoff",
 		"dendrite session resume",
 		"dendrite session checkpoint",
-		"merge your branch into its target (`dendrite branch show`; `develop` unless",
+		"merge your branch into its target (`dendrite branch show`; `main` unless",
 		"git push origin HEAD:<target>",
 		"EGM artifact directory: docs/specs",
 	} {
@@ -72,7 +72,7 @@ func TestPrepare_EveryAgentFamilyGetsTheSameSkillAndThePointerFiles(t *testing.T
 	if !strings.HasPrefix(string(first), "---\nname: dendrite-workflow\n") {
 		t.Errorf("skill frontmatter missing: %q", string(first[:40]))
 	}
-	if !strings.Contains(string(first), "## Finishing a ticket") || !strings.Contains(string(first), "git merge origin/develop") {
+	if !strings.Contains(string(first), "## Finishing a ticket") || !strings.Contains(string(first), "git merge origin/main") {
 		t.Error("skill is missing the finish-and-merge steps")
 	}
 }
