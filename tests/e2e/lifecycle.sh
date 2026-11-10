@@ -55,14 +55,14 @@ out="$(dend chronos create --name "First ticket" --desc "Goal.
 T="$(grep -o 'E2E-[0-9]*' <<<"$out" | head -1)"; check "create returns a ticket id ($T)" test -n "$T"
 
 echo "== claim, the write lock and the comments"
-git -C "$REPO" checkout -q -b "agent/$(tr 'A-Z' 'a-z' <<<"$T")"
+git -C "$REPO" checkout -q -b "$T/main"
 out="$(dend chronos claim "$T")"; check "claim moves it to In Progress" contains "In Progress" "$out"
 out="$(dend chronos claim "$T" 2>&1)"; check "claiming it again from the same branch is fine" contains "Claimed" "$out"
 event="{\"session_id\":\"s\",\"cwd\":\"$REPO\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$REPO/new.txt\"}}"
 check "the lock allows an edit in a claimed copy" bash -c "cd '$REPO' && echo '$event' | '$BIN' hook pre-edit"
 git -C "$REPO" checkout -q develop
 check "the lock refuses an edit on develop of the main checkout" bash -c "! (cd '$REPO' && echo '$event' | '$BIN' hook pre-edit)"
-git -C "$REPO" checkout -q "agent/$(tr 'A-Z' 'a-z' <<<"$T")"
+git -C "$REPO" checkout -q "$T/main"
 dend chronos comment "$T" --kind progress --body "halfway" >/dev/null
 dend chronos decision "$T" --question "Which?" --answer "A" --option A --option B >/dev/null
 out="$(dend chronos comments "$T")"
@@ -83,7 +83,7 @@ new_repo "$WORK/module" module
 dend chronos project ensure --identifier E2G >/dev/null
 out="$(dend chronos create --name "Add the sum" --desc "A plain goal, no criteria." --estimate 1)"
 T2="$(grep -o 'E2G-[0-9]*' <<<"$out" | head -1)"
-git -C "$REPO" checkout -q -b "agent/$(tr 'A-Z' 'a-z' <<<"$T2")"
+git -C "$REPO" checkout -q -b "$T2/main"
 dend chronos claim "$T2" >/dev/null
 printf 'package e2e\n\nfunc Sub(a, b int) int { return a - b }\n' >"$REPO/sub.go"
 printf 'package e2e\n\nimport "testing"\n\nfunc TestSub(t *testing.T) {\n\tif Sub(3, 1) != 2 {\n\t\tt.Fatal("sub")\n\t}\n}\n' >"$REPO/sub_test.go"

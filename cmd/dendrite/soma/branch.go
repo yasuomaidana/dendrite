@@ -19,11 +19,11 @@ import (
 
 // NewBranchCmd builds `dendrite branch`.
 func NewBranchCmd() *cobra.Command {
-	cmd := cli.NewGroupCmd("branch", "Where finished work merges: the integration branch, a parent ticket's feature branch, a fork", "soma")
+	cmd := cli.NewGroupCmd("branch", "Which branch a ticket is worked on and where it merges: the integration branch, a parent ticket's trunk, a fork", "soma")
 	var ticket string
 	show := &cobra.Command{
 		Use:   "show",
-		Short: "Explain the branch work merges into, and where that came from",
+		Short: "Explain the branch a ticket is worked on, the branch it merges into, and where that came from",
 		Args:  cli.NoArgs,
 		Example: "dendrite branch show\n" +
 			"dendrite branch show --ticket DEN-843",
@@ -64,6 +64,9 @@ func NewBranchCmd() *cobra.Command {
 func writeBranchTarget(out io.Writer, t branchpolicy.Target, plan featurebranch.Plan) error {
 	if cli.Globals.JSON {
 		return cli.WriteJSON(out, map[string]any{"target": t, "plan": plan})
+	}
+	if plan.Branch != "" {
+		fmt.Fprintf(out, "Work branch:        %s\n", plan.Branch)
 	}
 	fmt.Fprintf(out, "Merges into:        %s  (%s)\n", t.Branch, t.Source)
 	fmt.Fprintf(out, "Integration branch: %s\n", t.Integration)

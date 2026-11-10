@@ -33,7 +33,7 @@ func TestBranchShowForATicketNamesItsFeatureBranch(t *testing.T) {
 	newTargetRig(t)
 	out, err := runBranch(t, "show", "--ticket", "DEN-841")
 	testkit.Check(t, err)
-	testkit.Contains(t, out, "Merges into:        feature/DEN-840-work  (ticket target recorded for this branch)", "Feature of:         DEN-840  (work)")
+	testkit.Contains(t, out, "Merges into:        DEN-840-work/main  (ticket target recorded for this branch)", "Feature of:         DEN-840  (work)")
 
 	out, err = runBranch(t, "show", "--ticket", "DEN-900")
 	testkit.Check(t, err)
@@ -50,7 +50,7 @@ func TestBranchShowAsJSON(t *testing.T) {
 	clitest.JsonOutput(t, true)
 	out, err := runBranch(t, "show", "--ticket", "DEN-841")
 	testkit.Check(t, err)
-	testkit.Contains(t, out, `"target"`, `"plan"`, `"Target": "feature/DEN-840-work"`)
+	testkit.Contains(t, out, `"target"`, `"plan"`, `"Target": "DEN-840-work/main"`)
 }
 
 func TestBranchParentLinksTheTicketsInPlane(t *testing.T) {

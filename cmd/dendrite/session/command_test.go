@@ -263,7 +263,7 @@ func TestSessionResumeRunsWorkCleanup(t *testing.T) {
 	}
 	clitest.RunGitT(t, sPath, "add", "s.txt")
 	clitest.RunGitT(t, sPath, "commit", "-q", "-m", "s")
-	clitest.RunGitT(t, repo, "merge", "-q", "--no-edit", "agent/s")
+	clitest.RunGitT(t, repo, "merge", "-q", "--no-edit", "s/main")
 
 	buf.Reset()
 	if err := RunSessionCommand(ctx, []string{"checkpoint", "--worktree", repo}, &buf); err != nil {

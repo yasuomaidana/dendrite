@@ -4,6 +4,10 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Changed
+
+- **Branches are named after their feature and ticket (DEN-879, DEN-880):** `dendrite work new` no longer creates `agent/<ticket>`. A ticket works on its own trunk `<TICKET>-<slug>/main` in the copy `dendrite-work/<repo>-<TICKET>-<slug>`; a sub-ticket works on `<ROOT>-<slug>/<TICKET>-<slug>` and merges into the trunk `<ROOT>-<slug>/main` of its top-most parent. The slug is the Plane title; without Plane the branch is `<name>/main`. Existing `agent/<ticket>` branches and `feature/<ROOT>-<slug>` trunks keep working, `dendrite work done DEN-123` finds the copy by its ticket, and `dendrite branch show --ticket` prints the work branch. The design is in [`docs/specs/2026-11-10-meaningful-branches-repairs-design.md`](docs/specs/2026-11-10-meaningful-branches-repairs-design.md).
+
 ## [0.1.0] - 2026-11-01
 
 First release from `develop` to `main` since 2026-10-19 (180 commits). Which commands are new is in [`docs/cli/availability.md`](docs/cli/availability.md).

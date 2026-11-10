@@ -193,8 +193,14 @@ func SanitizeName(name string) string {
 	return clean
 }
 
-// Create adds a new working copy called name on branch (default agent/<name>)
-// starting at base (default HEAD), and returns its path.
+// DefaultBranch is the branch of a copy that was given none: `<name>/main`, the trunk of a feature of its own.
+func DefaultBranch(name string) string {
+	return SanitizeName(name) + "/main"
+}
+
+// Create adds a new working copy called name on branch (default DefaultBranch(name)) and returns its path. A
+// branch that does not exist yet starts at base (default HEAD); one that exists, such as the trunk of a feature
+// whose sub-tickets started first, is checked out as it is.
 func (m *Manager) Create(ctx context.Context, name, branch, base string) (string, error) {
 	l, err := m.layout(ctx)
 	if err != nil {
@@ -205,25 +211,38 @@ func (m *Manager) Create(ctx context.Context, name, branch, base string) (string
 		return "", fmt.Errorf("workcopy: %s already exists", path)
 	}
 	if branch == "" {
-		branch = "agent/" + strings.ToLower(SanitizeName(name))
+		branch = DefaultBranch(name)
 	}
-	if base == "" {
-		base = "HEAD"
-	}
-	baseCommit, err := m.git(ctx, m.repoDir, "rev-parse", "--verify", base+"^{commit}")
+	add := []string{"worktree", "add", path, branch}
+	start, err := m.git(ctx, m.repoDir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
 	if err != nil {
-		return "", fmt.Errorf("workcopy: resolve base %q: %w", base, err)
+		if start, err = m.baseCommit(ctx, base); err != nil {
+			return "", err
+		}
+		add = []string{"worktree", "add", "-b", branch, path, start}
 	}
 	if err := os.MkdirAll(l.root, 0o755); err != nil {
 		return "", err
 	}
-	if _, err := m.git(ctx, m.repoDir, "worktree", "add", "-b", branch, path, baseCommit); err != nil {
+	if _, err := m.git(ctx, m.repoDir, add...); err != nil {
 		return "", fmt.Errorf("workcopy: %w", err)
 	}
-	if err := writeMeta(path, meta{Branch: branch, Base: baseCommit, Created: time.Now().UTC()}); err != nil {
+	if err := writeMeta(path, meta{Branch: branch, Base: start, Created: time.Now().UTC()}); err != nil {
 		return path, fmt.Errorf("workcopy: copy created but metadata not saved: %w", err)
 	}
 	return path, nil
+}
+
+// baseCommit is the commit a new branch starts at: base, or HEAD when none is given.
+func (m *Manager) baseCommit(ctx context.Context, base string) (string, error) {
+	if base == "" {
+		base = "HEAD"
+	}
+	commit, err := m.git(ctx, m.repoDir, "rev-parse", "--verify", base+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("workcopy: resolve base %q: %w", base, err)
+	}
+	return commit, nil
 }
 
 type worktreeEntry struct {
@@ -341,6 +360,19 @@ func (m *Manager) resolve(ctx context.Context, target string) (Copy, layout, err
 		if c.Path == Canon(abs) || c.Path == l.copyPath(target) {
 			return c, l, nil
 		}
+	}
+	// A copy made for a ticket is called <ticket>-<slug>, and is still found by the ticket alone.
+	var named []Copy
+	for _, c := range copies {
+		if strings.HasPrefix(c.Path, l.copyPath(target)+"-") {
+			named = append(named, c)
+		}
+	}
+	if len(named) == 1 {
+		return named[0], l, nil
+	}
+	if len(named) > 1 {
+		return Copy{}, l, fmt.Errorf("workcopy: %q matches %d working copies; name one in full or give its path", target, len(named))
 	}
 	return Copy{}, l, fmt.Errorf("workcopy: no working copy matches %q", target)
 }

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
+	"Dendrite/pkg/featurebranch"
 	"Dendrite/pkg/fsutil"
 	"Dendrite/pkg/tracker"
 )
@@ -84,11 +86,23 @@ func (s *Store) ClaimOfDir(dir string) (Claim, bool) {
 	return c, err == nil
 }
 
-// TicketOfBranch returns the ticket a dendrite working-copy branch (agent/<ticket>) is named after.
+// ticketLead matches the ticket id that starts a branch segment such as DEN-880-slug-names.
+var ticketLead = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9]*-[0-9]+)(-|$)`)
+
+// TicketOfBranch returns the ticket a dendrite working-copy branch is named after: the last segment of
+// `<ROOT>-<slug>/<TICKET>-<slug>`, the folder of a trunk `<TICKET>-<slug>/main`, or the rest of a legacy
+// `agent/<ticket>`.
 func TicketOfBranch(branch string) (string, bool) {
-	t, ok := strings.CutPrefix(branch, "agent/")
-	if !ok || t == "" {
-		return "", false
+	if t, ok := strings.CutPrefix(branch, "agent/"); ok {
+		return t, t != ""
 	}
-	return t, true
+	segments := strings.Split(branch, "/")
+	last := segments[len(segments)-1]
+	if last == featurebranch.TrunkLeaf && len(segments) > 1 {
+		last = segments[len(segments)-2]
+	}
+	if m := ticketLead.FindStringSubmatch(last); m != nil {
+		return strings.ToUpper(m[1]), true
+	}
+	return "", false
 }

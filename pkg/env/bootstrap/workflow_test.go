@@ -166,7 +166,8 @@ func TestTheRulesAndTheSkillNameTheProjectsIntegrationBranch(t *testing.T) {
 	writeNumberedRules(&rules, projectOn(t, "trunk"))
 	skill := renderDendriteWorkflowSkill(projectOn(t, "trunk"))
 	for name, text := range map[string]string{"rules": rules.String(), "skill": skill} {
-		testkit.Contains(t, text, "`trunk`", "feat/<PARENT>-<slug>")
+		testkit.Contains(t, text, "`trunk`", "<ROOT>-<slug>/main")
+		testkit.NotContains(t, text, "agent/", "feat/")
 		testkit.NotContains(t, text, "{integration}", "{feature}")
 		testkit.NotContains(t, text, "origin/develop", "HEAD:develop")
 		_ = name
@@ -177,6 +178,6 @@ func TestTheRulesAndTheSkillNameTheProjectsIntegrationBranch(t *testing.T) {
 func TestTheDefaultRulesStillSayDevelop(t *testing.T) {
 	var rules strings.Builder
 	writeNumberedRules(&rules, projectOn(t, ""))
-	testkit.Contains(t, rules.String(), "never directly on `develop`, `main` or `master`", "feature/<PARENT>-<slug>", "dendrite branch show --ticket <ticket>")
+	testkit.Contains(t, rules.String(), "never directly on `develop`, `main` or `master`", "<TICKET>-<slug>/main", "<ROOT>-<slug>/<TICKET>-<slug>", "dendrite branch show --ticket <ticket>")
 	testkit.NotContains(t, rules.String(), "{integration}", "{feature}")
 }

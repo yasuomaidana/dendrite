@@ -17,6 +17,20 @@ func (p parents) Parent(_ context.Context, ticket string) (Ticket, bool, error) 
 	return t, ok, nil
 }
 
+// titled is parents plus the title of each ticket itself.
+type titled struct {
+	parents
+	titles map[string]string
+}
+
+func (s titled) Title(_ context.Context, ticket string) (string, error) {
+	title, ok := s.titles[ticket]
+	if !ok {
+		return "", errors.New("no such ticket")
+	}
+	return title, nil
+}
+
 type failing struct{}
 
 func (failing) Parent(context.Context, string) (Ticket, bool, error) {
@@ -58,6 +72,55 @@ func TestResolveWithoutAParentTargetsTheIntegrationBranch(t *testing.T) {
 	testkit.Equal(t, "target", p.Target, "develop")
 	testkit.Equal(t, "feature", p.Feature, false)
 	testkit.Equal(t, "remote", p.PushRemote, "origin")
+	testkit.Equal(t, "branch without a title", p.Branch, "DEN-841/main")
+	testkit.Equal(t, "its own trunk", p.Trunk, p.Branch)
+	testkit.Equal(t, "copy", p.CopyName(), "DEN-841")
+}
+
+func TestResolveNamesALoneTicketsTrunkAfterItsTitle(t *testing.T) {
+	dir, _ := project(t)
+	src := titled{parents{}, map[string]string{"DEN-890": "Fix login crash"}}
+	p, err := Resolve(context.Background(), dir, "DEN-890", src)
+	testkit.Check(t, err)
+	testkit.Equal(t, "branch", p.Branch, "DEN-890-fix-login-crash/main")
+	testkit.Equal(t, "target", p.Target, "develop")
+	testkit.Equal(t, "copy", p.CopyName(), "DEN-890-fix-login-crash")
+
+	testkit.Git(t, dir, "branch", "DEN-890-old-title/main")
+	p, err = Resolve(context.Background(), dir, "DEN-890", src)
+	testkit.Check(t, err)
+	testkit.Equal(t, "an existing trunk keeps its name", p.Branch, "DEN-890-old-title/main")
+
+	if _, err := Resolve(context.Background(), dir, "DEN-1", src); err == nil {
+		t.Fatal("a title that cannot be read must not be taken for an empty one")
+	}
+}
+
+func TestResolvePutsASubTicketInTheFolderOfItsTopMostParent(t *testing.T) {
+	dir, _ := project(t)
+	src := titled{parents{"DEN-881": {"DEN-880", "Branch naming"}}, map[string]string{"DEN-881": "Slug names"}}
+	p, err := Resolve(context.Background(), dir, "DEN-881", src)
+	testkit.Check(t, err)
+	testkit.Equal(t, "branch", p.Branch, "DEN-880-branch-naming/DEN-881-slug-names")
+	testkit.Equal(t, "target", p.Target, "DEN-880-branch-naming/main")
+	testkit.Equal(t, "trunk", p.Trunk, p.Target)
+	testkit.Equal(t, "copy", p.CopyName(), "DEN-881-slug-names")
+
+	testkit.Git(t, dir, "branch", "DEN-880-renamed/main")
+	p, err = Resolve(context.Background(), dir, "DEN-881", src)
+	testkit.Check(t, err)
+	testkit.Equal(t, "existing folder", p.Branch, "DEN-880-renamed/DEN-881-slug-names")
+	testkit.Equal(t, "existing trunk", p.Target, "DEN-880-renamed/main")
+}
+
+func TestResolveKeepsALegacyFeatureBranchAsTheTrunk(t *testing.T) {
+	dir, _ := project(t)
+	testkit.Git(t, dir, "branch", "feature/DEN-880-old")
+	src := titled{parents{"DEN-881": {"DEN-880", "Branch naming"}}, map[string]string{"DEN-881": "Slug names"}}
+	p, err := Resolve(context.Background(), dir, "DEN-881", src)
+	testkit.Check(t, err)
+	testkit.Equal(t, "target", p.Target, "feature/DEN-880-old")
+	testkit.Equal(t, "branch beside it, not below it", p.Branch, "DEN-880-branch-naming/DEN-881-slug-names")
 }
 
 func TestResolveNamesTheFeatureBranchAfterTheTopMostParent(t *testing.T) {
@@ -65,7 +128,8 @@ func TestResolveNamesTheFeatureBranchAfterTheTopMostParent(t *testing.T) {
 	src := parents{"DEN-3": {"DEN-2", "Middle"}, "DEN-2": {"DEN-1", "Roadmap S2: gate wrapper"}}
 	p, err := Resolve(context.Background(), dir, "DEN-3", src)
 	testkit.Check(t, err)
-	testkit.Equal(t, "target", p.Target, "feature/DEN-1-roadmap-s2-gate-wrapper")
+	testkit.Equal(t, "target", p.Target, "DEN-1-roadmap-s2-gate-wrapper/main")
+	testkit.Equal(t, "branch", p.Branch, "DEN-1-roadmap-s2-gate-wrapper/DEN-3")
 	testkit.Equal(t, "feature", p.Feature, true)
 	testkit.Equal(t, "parent", p.Parent.ID, "DEN-1")
 }
@@ -177,5 +241,5 @@ func TestRecordMakesBranchpolicyTargetTheFeatureBranch(t *testing.T) {
 func TestResolveOutsideAGitRepositoryStillNamesTheBranch(t *testing.T) {
 	p, err := Resolve(context.Background(), t.TempDir(), "DEN-2", parents{"DEN-2": {"DEN-1", "No repo"}})
 	testkit.Check(t, err)
-	testkit.Equal(t, "target", p.Target, "feature/DEN-1-no-repo")
+	testkit.Equal(t, "target", p.Target, "DEN-1-no-repo/main")
 }

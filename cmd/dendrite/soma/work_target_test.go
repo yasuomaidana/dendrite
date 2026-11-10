@@ -57,11 +57,11 @@ func TestAChildTicketWorksOnItsParentsFeatureBranch(t *testing.T) {
 	r := newTargetRig(t)
 	wt, err := prepareWorkTarget(context.Background(), "DEN-841", "", "", true, &r.out)
 	testkit.Check(t, err)
-	testkit.Equal(t, "branch", wt.Branch, "feature/DEN-840-work")
-	testkit.Equal(t, "base", wt.Base, "feature/DEN-840-work")
+	testkit.Equal(t, "branch", wt.Branch, "DEN-840-work/main")
+	testkit.Equal(t, "base", wt.Base, "DEN-840-work/main")
 	testkit.Equal(t, "integration", wt.Integration, "develop")
 	testkit.Contains(t, r.out.String(), "DEN-841 is a sub-ticket of DEN-840")
-	testkit.Equal(t, "created", testkit.Git(t, r.repo, "rev-parse", "--verify", "refs/heads/feature/DEN-840-work") != "", true)
+	testkit.Equal(t, "created", testkit.Git(t, r.repo, "rev-parse", "--verify", "refs/heads/DEN-840-work/main") != "", true)
 }
 
 func TestATicketWithoutAParentKeepsTheDefaults(t *testing.T) {
@@ -87,7 +87,7 @@ func TestATargetFlagOrAnExplicitBaseWinsOverPlane(t *testing.T) {
 	wt, err = prepareWorkTarget(context.Background(), "DEN-841", "abc123", "", true, &r.out)
 	testkit.Check(t, err)
 	testkit.Equal(t, "explicit base kept with a feature target", wt.Base, "abc123")
-	testkit.Equal(t, "feature target still recorded", wt.Branch, "feature/DEN-840-work")
+	testkit.Equal(t, "feature target still recorded", wt.Branch, "DEN-840-work/main")
 }
 
 func TestNoPlaneLookupWhenTheGuardIsOff(t *testing.T) {
@@ -123,7 +123,7 @@ func TestAFeatureBranchThatCannotBeCreatedStopsTheCopy(t *testing.T) {
 	empty := t.TempDir()
 	testkit.GitInit(t, empty, "develop")
 	t.Chdir(empty)
-	if _, err := prepareWorkTarget(context.Background(), "DEN-841", "", "", true, &r.out); err == nil || !strings.Contains(err.Error(), "feature/DEN-840-work") {
+	if _, err := prepareWorkTarget(context.Background(), "DEN-841", "", "", true, &r.out); err == nil || !strings.Contains(err.Error(), "DEN-840-work/main") {
 		t.Fatalf("err = %v, want the failed feature branch named", err)
 	}
 }
@@ -133,23 +133,23 @@ func TestAFeatureBranchThatCannotBePushedIsOnlyAWarning(t *testing.T) {
 	testkit.Git(t, r.repo, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
 	wt, err := prepareWorkTarget(context.Background(), "DEN-841", "", "", true, &r.out)
 	testkit.Check(t, err)
-	testkit.Equal(t, "branch", wt.Branch, "feature/DEN-840-work")
+	testkit.Equal(t, "branch", wt.Branch, "DEN-840-work/main")
 	testkit.Contains(t, r.out.String(), "exists locally but was not pushed")
 }
 
 func TestRecordWorkTargetRemembersTheTarget(t *testing.T) {
 	r := newTargetRig(t)
-	recordWorkTarget("DEN-841", "", workTarget{Branch: "feature/DEN-840-work", Integration: "develop"}, &r.out)
-	testkit.Equal(t, "recorded", branchpolicy.ForBranch(r.repo, "agent/den-841").Branch, "feature/DEN-840-work")
+	recordWorkTarget("DEN-840-work/DEN-841-work", workTarget{Branch: "DEN-840-work/main", Integration: "develop"}, &r.out)
+	testkit.Equal(t, "recorded", branchpolicy.ForBranch(r.repo, "DEN-840-work/DEN-841-work").Branch, "DEN-840-work/main")
 
-	recordWorkTarget("DEN-5", "custom/five", workTarget{Branch: "release/2", Integration: "develop"}, &r.out)
+	recordWorkTarget("custom/five", workTarget{Branch: "release/2", Integration: "develop"}, &r.out)
 	testkit.Equal(t, "custom branch", branchpolicy.ForBranch(r.repo, "custom/five").Branch, "release/2")
 
-	recordWorkTarget("DEN-6", "", workTarget{}, &r.out)
+	recordWorkTarget("DEN-6/main", workTarget{}, &r.out)
 	testkit.Equal(t, "nothing to record", r.out.String(), "")
 
 	t.Chdir(t.TempDir())
-	recordWorkTarget("DEN-7", "", workTarget{Branch: "x", Integration: "develop"}, &r.out)
+	recordWorkTarget("DEN-7/main", workTarget{Branch: "x", Integration: "develop"}, &r.out)
 	testkit.Contains(t, r.out.String(), "was not recorded")
 }
 
@@ -157,9 +157,32 @@ func TestWorkNewStartsAChildOnItsParentsFeatureBranchAndRecordsTheTarget(t *test
 	r := newTargetRig(t)
 	t.Setenv("DENDRITE_AGENT", "claude")
 	testkit.Check(t, runWorkNew(context.Background(), "DEN-841", "", "", "", false, &r.out))
-	got := branchpolicy.ForBranch(r.repo, "agent/den-841")
-	testkit.Equal(t, "target", got.Branch, "feature/DEN-840-work")
+	got := branchpolicy.ForBranch(r.repo, "DEN-840-work/DEN-841-work")
+	testkit.Equal(t, "target", got.Branch, "DEN-840-work/main")
 	testkit.Equal(t, "source", got.Source, branchpolicy.SourceTicket)
-	testkit.Equal(t, "base commit is the feature branch's", testkit.Git(t, r.repo, "merge-base", "agent/den-841", "feature/DEN-840-work"), testkit.Git(t, r.repo, "rev-parse", "feature/DEN-840-work"))
+	testkit.Equal(t, "base commit is the feature branch's", testkit.Git(t, r.repo, "merge-base", "DEN-840-work/DEN-841-work", "DEN-840-work/main"), testkit.Git(t, r.repo, "rev-parse", "DEN-840-work/main"))
 	testkit.Contains(t, r.out.String(), "Working copy created")
+}
+
+func TestWorkNewNamesALoneTicketsTrunkAndCopyAfterItsTitle(t *testing.T) {
+	r := newTargetRig(t)
+	t.Setenv("DENDRITE_AGENT", "claude")
+	wt, err := prepareWorkTarget(context.Background(), "DEN-900", "", "", true, &r.out)
+	testkit.Check(t, err)
+	testkit.Equal(t, "nothing to record", wt.Branch, "")
+	testkit.Check(t, runWorkNew(context.Background(), "DEN-900", "", "", "", false, &r.out))
+	testkit.Equal(t, "branch", testkit.Git(t, r.repo, "rev-parse", "--verify", "refs/heads/"+wt.Work) != "", true)
+	if !strings.HasPrefix(wt.Work, "DEN-900") || !strings.HasSuffix(wt.Work, "/main") {
+		t.Fatalf("work branch = %q, want DEN-900[-slug]/main", wt.Work)
+	}
+	testkit.Contains(t, r.out.String(), "-"+wt.Copy)
+	testkit.Equal(t, "merges into the integration branch", branchpolicy.ForBranch(r.repo, wt.Work).Branch, "develop")
+}
+
+func TestWorkNewWithoutPlaneUsesTheDefaultBranchOfTheName(t *testing.T) {
+	r := newTargetRig(t)
+	testkit.Check(t, runWorkNew(context.Background(), "spike", "", "", "", true, &r.out))
+	testkit.Equal(t, "branch", testkit.Git(t, r.repo, "rev-parse", "--verify", "refs/heads/spike/main") != "", true)
+	testkit.Check(t, runWorkNew(context.Background(), "named", "custom/branch", "", "", true, &r.out))
+	testkit.Equal(t, "--branch wins", testkit.Git(t, r.repo, "rev-parse", "--verify", "refs/heads/custom/branch") != "", true)
 }
