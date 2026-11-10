@@ -53,6 +53,30 @@ func gitOut(dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
+// retiringRef is the ref that holds branch: the local branch, else the one on the push remote.
+func retiringRef(dir string, pol branchpolicy.Target, branch string) (string, error) {
+	if _, err := gitOut(dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		return branch, nil
+	}
+	ref := pol.PushRemote + "/" + branch
+	if _, err := gitOut(dir, "rev-parse", "--verify", "--quiet", "refs/remotes/"+ref); err != nil {
+		return "", cli.UsageErrorf("there is no branch %s here or on %s", branch, pol.PushRemote)
+	}
+	return ref, nil
+}
+
+// dependantsOf lists the local branches whose work merges into branch.
+func dependantsOf(dir, branch string) []string {
+	out := []string{}
+	heads, _ := gitOut(dir, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+	for _, b := range strings.Fields(heads) {
+		if b != branch && branchpolicy.ForBranch(dir, b).Branch == branch {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
 // retireBranch proposes what branch still holds to the integration branch and reports who still targets it.
 func retireBranch(ctx context.Context, dir, branch string) (retirement, error) {
 	pol := branchpolicy.Resolve(dir, branchpolicy.MemberOverride(dir))
@@ -60,19 +84,11 @@ func retireBranch(ctx context.Context, dir, branch string) (retirement, error) {
 	if branch == pol.Integration {
 		return r, cli.UsageErrorf("%s is the integration branch of this project; name another with `dendrite directive` before retiring it", branch)
 	}
-	ref := branch
-	if _, err := gitOut(dir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
-		ref = pol.PushRemote + "/" + branch
-		if _, err := gitOut(dir, "rev-parse", "--verify", "--quiet", "refs/remotes/"+ref); err != nil {
-			return r, cli.UsageErrorf("there is no branch %s here or on %s", branch, pol.PushRemote)
-		}
+	ref, err := retiringRef(dir, pol, branch)
+	if err != nil {
+		return r, err
 	}
-	heads, _ := gitOut(dir, "for-each-ref", "--format=%(refname:short)", "refs/heads")
-	for _, b := range strings.Fields(heads) {
-		if b != branch && branchpolicy.ForBranch(dir, b).Branch == branch {
-			r.Dependants = append(r.Dependants, b)
-		}
-	}
+	r.Dependants = dependantsOf(dir, branch)
 	base := pol.Integration
 	if _, err := gitOut(dir, "rev-parse", "--verify", "--quiet", "refs/remotes/"+pol.Ref()); err == nil {
 		base = pol.Ref()
