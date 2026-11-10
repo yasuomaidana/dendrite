@@ -54,6 +54,9 @@ type FinishChecks struct {
 	Review func(ctx context.Context, in ReviewInput) ([]ACVerdict, error)
 	// Diff is the whole patch of the work done for the ticket; Review picks the parts it needs.
 	Diff func(dir, ticket string) string
+	// Propose opens the pull request of a branch that merges into a trunk agents never push, and returns its URL.
+	// Nil proposes nothing.
+	Propose func(ctx context.Context, p Proposal) (string, error)
 	// AutoDone lets a clean finish set Done; without it every clean finish waits in To Verify.
 	AutoDone bool
 	// HumanReviewLabels are the ticket labels that always need a person; empty means HumanReviewLabel.
@@ -76,7 +79,8 @@ var ErrNotInProgress = errors.New("only a ticket that is In Progress can be fini
 // diff against each [AC-n]. A failed stage blocks the ticket with the three-part handoff. A clean finish sets
 // Done when the policy allows it and the ticket carries no human-review label, and To Verify (with the report as
 // a comment) otherwise, including when the ticket lists no criteria or the review could not run: an unchecked
-// ticket is never Done.
+// ticket is never Done. A branch that merges into main or master is proposed by pull request, and its ticket
+// waits in To Verify for a person to merge it.
 func (l *Lifecycle) Finish(ctx context.Context, ref string, c FinishChecks) (FinishResult, error) {
 	st, issue, err := l.Board.Status(ctx, ref)
 	if err != nil {
@@ -102,7 +106,8 @@ func (l *Lifecycle) Finish(ctx context.Context, ref string, c FinishChecks) (Fin
 	}
 	reviewed := l.reviewCriteria(ctx, c, ticket, qc, &res) // both stages always run, so every reason reaches the ticket
 	held := l.heldByLabel(ctx, c, ticket, &res)
-	human := !c.AutoDone || reviewed || held
+	proposed := l.propose(ctx, c, qc, &res)
+	human := !c.AutoDone || reviewed || held || proposed
 
 	return l.settle(ctx, res, human)
 }
@@ -259,7 +264,7 @@ const gateTimeout = 30 * time.Minute
 // and coverage run as the gate, the local model behind the LiteLLM gateway as the acceptance reviewer, the
 // branch's diff against the integration branch, and the project's `[done] auto_done` directive (on when unset).
 func DefaultFinishChecks(dir string) FinishChecks {
-	return FinishChecks{Gate: qualityGate, Review: proofReviewer(dir).Review, Diff: branchDiff, AutoDone: AutoDone(dir), HumanReviewLabels: HumanReviewLabels(dir)}
+	return FinishChecks{Gate: qualityGate, Review: proofReviewer(dir).Review, Diff: branchDiff, Propose: proposeByPullRequest, AutoDone: AutoDone(dir), HumanReviewLabels: HumanReviewLabels(dir)}
 }
 
 // qualityGate is stage 1 of a finish: the project's tests, then the quality gates of its directives judged on what

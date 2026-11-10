@@ -137,6 +137,10 @@ func (t Target) Protected() []string {
 	return out
 }
 
+// ByPullRequest reports whether finished work reaches Branch only by pull request: it is a trunk (main or
+// master), which agents never push.
+func (t Target) ByPullRequest() bool { return t.Branch == "main" || t.Branch == "master" }
+
 // IsProtected reports whether branch is one of Protected.
 func (t Target) IsProtected(branch string) bool {
 	for _, p := range t.Protected() {
