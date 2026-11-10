@@ -109,20 +109,22 @@ func (l *Ledger) Get(id string) (Link, error) {
 	return Link{}, fmt.Errorf("%w: %s", ErrNoLink, id)
 }
 
-// Put stores link, replacing the one with the same ID.
-func (l *Ledger) Put(link Link) error {
+// Put stores the links, each replacing the one with the same ID.
+func (l *Ledger) Put(put ...Link) error {
 	links, err := l.Links()
 	if err != nil {
 		return err
 	}
-	replaced := false
-	for i := range links {
-		if links[i].ID == link.ID {
-			links[i], replaced = link, true
+	for _, link := range put {
+		replaced := false
+		for i := range links {
+			if links[i].ID == link.ID {
+				links[i], replaced = link, true
+			}
 		}
-	}
-	if !replaced {
-		links = append(links, link)
+		if !replaced {
+			links = append(links, link)
+		}
 	}
 	return l.save(links)
 }

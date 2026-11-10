@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -61,18 +62,20 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 	return text, nil
 }
 
+// ticketLead is the ticket id that starts a branch segment such as DEN-890-fix-login-crash.
+var ticketLead = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*-[0-9]+-`)
+
 // BranchName is the repair branch: the trunk `<ticket>-<slug>/main` of the dependency's ticket when there is
-// one, else of the consumer's ticket. The slug is the one of the consumer's own branch, so both read alike.
+// one, else of the consumer's ticket. The slug is the one of the consumer's own branch, so every branch of a
+// chain reads alike.
 func BranchName(consumerBranch, ticket, depTicket string) string {
+	segments := strings.Split(strings.TrimSuffix(consumerBranch, "/"+featurebranch.TrunkLeaf), "/")
+	last := segments[len(segments)-1]
 	slug := ""
-	folder, _, _ := strings.Cut(consumerBranch, "/")
-	if rest, ok := strings.CutPrefix(strings.ToUpper(folder), strings.ToUpper(ticket)+"-"); ok {
-		slug = strings.ToLower(rest)
+	if lead := ticketLead.FindString(last); lead != "" {
+		slug = strings.ToLower(strings.TrimPrefix(last, lead))
 	}
-	owner := ticket
-	if depTicket != "" {
-		owner = depTicket
-	}
+	owner := cmp.Or(depTicket, ticket)
 	if slug == "" {
 		return owner + "/" + featurebranch.TrunkLeaf
 	}

@@ -63,7 +63,7 @@ func NewBranchCmd() *cobra.Command {
 
 func writeBranchTarget(out io.Writer, t branchpolicy.Target, plan featurebranch.Plan) error {
 	if cli.Globals.JSON {
-		return cli.WriteJSON(out, map[string]any{"target": t, "plan": plan})
+		return cli.WriteJSON(out, map[string]any{"target": t, "plan": plan, "repairs": repairsOf(".")})
 	}
 	if plan.Branch != "" {
 		fmt.Fprintf(out, "Work branch:        %s\n", plan.Branch)
@@ -74,6 +74,9 @@ func writeBranchTarget(out io.Writer, t branchpolicy.Target, plan featurebranch.
 	fmt.Fprintf(out, "Feature prefix:     %s\n", t.FeaturePrefix)
 	if plan.Feature {
 		fmt.Fprintf(out, "Feature of:         %s  (%s)\n", plan.Parent.ID, plan.Parent.Title)
+	}
+	for _, k := range repairsOf(".") {
+		fmt.Fprintf(out, "Repair:             %s  [%s]  %s\n", k.Dependency, k.Stage, repairWhere(k))
 	}
 	return nil
 }

@@ -170,3 +170,12 @@ func restorePackageJSON(data []byte, dep string, e Entry) (string, error) {
 	out, err := json.MarshalIndent(pkg, "", "  ")
 	return string(out), err
 }
+
+// gitTable is the Cargo.toml or pyproject.toml entry of a dependency taken from git: pinned to req.CommitSHA
+// when there is one, otherwise following req.BranchName.
+func gitTable(req SwitchRequest) string {
+	if req.CommitSHA != "" {
+		return fmt.Sprintf(`%s = { git = "%s", rev = "%s" }`, req.DependencyName, req.ForkURL, req.CommitSHA)
+	}
+	return fmt.Sprintf(`%s = { git = "%s", branch = "%s" }`, req.DependencyName, req.ForkURL, req.BranchName)
+}

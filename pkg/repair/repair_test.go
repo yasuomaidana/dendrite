@@ -75,7 +75,8 @@ func TestBranchNameFollowsTheConsumersBranch(t *testing.T) {
 	// consumer branch, consumer ticket, dependency ticket ("-" for none)
 	testkit.Table(t, map[string]string{
 		"DEN-890-fix-login-crash/main DEN-890 -":    "DEN-890-fix-login-crash/main",
-		"DEN-880-naming/DEN-890-part DEN-890 -":     "DEN-890/main",
+		"DEN-880-naming/DEN-890-part DEN-890 -":     "DEN-890-part/main",
+		"R1-3-fix-crash/main DEN-890 R2-7":          "R2-7-fix-crash/main",
 		"den-890-Fix-Crash/main DEN-890 EMBEDAG-12": "EMBEDAG-12-fix-crash/main",
 		"agent/den-890 DEN-890 -":                   "DEN-890/main",
 		"- DEN-890 DCORE-3":                         "DCORE-3/main",

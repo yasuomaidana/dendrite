@@ -154,3 +154,22 @@ func TestRestoreReportsWhatItCannotPutBack(t *testing.T) {
 		}
 	}
 }
+
+func TestABranchSwitchWithACommitPinsTheGitDependencyToIt(t *testing.T) {
+	dir := manifests(t)
+	if err := os.Remove(filepath.Join(dir, "go.mod")); err != nil {
+		t.Fatal(err)
+	}
+	req := SwitchRequest{TargetProjectDir: dir, DependencyName: "dep", Mode: ModeBranch, ForkURL: "https://x/up.git", BranchName: "main", CommitSHA: "abc123"}
+	if _, err := NewDependencySwitcher().Switch(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range content(t, dir, "Cargo.toml", "pyproject.toml") {
+		if !strings.Contains(text, `dep = { git = "https://x/up.git", rev = "abc123" }`) {
+			t.Errorf("%s is not pinned:\n%s", name, text)
+		}
+	}
+	if got := modeOf(t, dir, "dep", "Cargo.toml"); got != ModeBranch {
+		t.Errorf("a pinned dependency reads as %s", got)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"Dendrite/cmd/dendrite/internal/planecli"
 	"Dendrite/cmd/dendrite/soma"
 	"Dendrite/pkg/agentjobs"
+	"Dendrite/pkg/repair"
 	"Dendrite/pkg/statedir"
 	"Dendrite/pkg/ticketlock"
 	"context"
@@ -126,6 +127,7 @@ func RunSessionCheckpoint(ctx context.Context, o SessionCheckpointOptions, out i
 		commit.PostTicketComment(ctx, out, o.Worktree, "milestone", CheckpointSummary(cp))
 	}
 	soma.AutoCleanWorkCopies(ctx, out)
+	repair.AdvanceQuietly(ctx, out)
 	return nil
 }
 
@@ -203,6 +205,7 @@ func runSessionResume(ctx context.Context, targetPath string, asJSON bool, out i
 		fmt.Fprintf(out, "[i] %s\n", session)
 	}
 	soma.AutoCleanWorkCopies(ctx, out)
+	repair.AdvanceQuietly(ctx, out)
 	planecli.WarnStaleIndex(out)
 	WarnWatcherDown(ledger, time.Now(), out)
 	printSynapsePeers(".", out)

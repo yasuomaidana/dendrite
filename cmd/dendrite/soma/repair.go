@@ -22,8 +22,11 @@ func NewRepairCmd() *cobra.Command {
 		"there, and remembers how the dependency was named before. Run `repair start` again inside the repair's\n" +
 		"working copy to repair a dependency of the dependency: the repairs form a chain."
 	cmd.Example = "dendrite repair start embedag --dep-ticket EMBEDAG-12\n" +
-		"dendrite repair start serde --repo https://github.com/serde-rs/serde --fork https://github.com/me/serde"
-	cmd.AddCommand(newRepairStartCmd())
+		"dendrite repair start serde --repo https://github.com/serde-rs/serde --fork https://github.com/me/serde\n" +
+		"dendrite repair status\n" +
+		"dendrite repair pr\n" +
+		"dendrite repair advance"
+	cmd.AddCommand(newRepairStartCmd(), newRepairStatusCmd(), newRepairPRCmd(), newRepairAdvanceCmd(), newRepairDropCmd())
 	return cmd
 }
 
