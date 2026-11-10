@@ -109,7 +109,7 @@ func TestRenderAPolyglotProjectIsValidYAMLWithAJobPerComponent(t *testing.T) {
 	set := directive.Defaults()
 	set.Coverage.MinPercent = 87.5
 	text, wf := render(t, root, set, Extension{})
-	if got := jobIDs(wf); got != "bun-web,go,quality,rust-crates,uv-py" {
+	if got := jobIDs(wf); got != "bun-web,db-access,go,quality,rust-crates,uv-py" {
 		t.Errorf("jobs %s\n%s", got, text)
 	}
 	for _, want := range []string{
@@ -145,7 +145,7 @@ func TestRenderWithoutRustSkipsRstestAndTheExtensionShapesTheJobs(t *testing.T) 
 	if strings.Contains(text, "cargo install") || strings.Contains(text, "Coverage floor") || strings.Contains(text, "llvm-cov") {
 		t.Errorf("the extension replaces the install and the floor:\n%s", text)
 	}
-	if strings.Index(text, "  alpha:") > strings.Index(text, "  zeta:") || jobIDs(wf) != "alpha,go,quality,rust,zeta" {
+	if strings.Index(text, "  alpha:") > strings.Index(text, "  zeta:") || jobIDs(wf) != "alpha,db-access,go,quality,rust,zeta" {
 		t.Errorf("extra jobs are added in name order: %s", jobIDs(wf))
 	}
 	if strings.Count(text, "Build it") != 2 {
@@ -447,7 +447,41 @@ func TestTheWorkflowRunsForTheIntegrationMainAndFeatureBranches(t *testing.T) {
 	testkit.GitInit(t, root, "develop")
 	testkit.Git(t, root, "commit", "-q", "--allow-empty", "-m", "init")
 	text, _ := render(t, root, directive.Defaults(), Extension{})
-	if strings.Count(text, `branches: [ develop, main, "feature/**" ]`) != 2 {
-		t.Errorf("push and pull_request both run for the branches:\n%s", text)
+	if strings.Count(text, `branches: [ develop, main, "feature/**" ]`) != 1 {
+		t.Errorf("push runs for the branches:\n%s", text)
+	}
+}
+
+func TestEveryPullRequestRunsTheWorkflowWithoutFilters(t *testing.T) {
+	root := t.TempDir()
+	fsutiltest.WriteFile(t, root, "go.mod", "module x\n")
+	text, _ := render(t, root, directive.Defaults(), Extension{})
+	on := text[strings.Index(text, "on:"):strings.Index(text, "jobs:")]
+	if !strings.Contains(on, "  pull_request:\n") || strings.Count(on, "branches:") != 1 || strings.Contains(on, "paths") {
+		t.Errorf("pull_request must carry no branch or path filter, only push does:\n%s", on)
+	}
+}
+
+func TestRustProjectsGetTheDieselOnlyJobAndScript(t *testing.T) {
+	rust, other := t.TempDir(), t.TempDir()
+	fsutiltest.WriteFile(t, rust, "Cargo.toml", "[workspace]\n")
+	fsutiltest.WriteFile(t, other, "go.mod", "module x\n")
+	text, _ := render(t, rust, directive.Defaults(), Extension{})
+	for _, want := range []string{"db-access:", "name: db-access (diesel only)", "run: bash scripts/check-db-access.sh"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the Rust workflow lacks %q:\n%s", want, text)
+		}
+	}
+	if goText, _ := render(t, other, directive.Defaults(), Extension{}); strings.Contains(goText, "db-access") {
+		t.Errorf("a Go project has no Diesel job:\n%s", goText)
+	}
+	if got := dbAccessContent(rust, directive.Defaults()); !ownsDBAccess(got) || len(got) == 0 {
+		t.Error("a Rust project gets the managed script")
+	}
+	if dbAccessContent(other, directive.Defaults()) != nil {
+		t.Error("a Go project gets no script")
+	}
+	if ownsDBAccess([]byte("#!/bin/sh\necho mine\n")) {
+		t.Error("a hand-written script is not owned")
 	}
 }

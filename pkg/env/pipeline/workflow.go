@@ -147,7 +147,8 @@ func BranchesOf(root string) Branches {
 	return Branches{Integration: t.Integration, FeaturePrefix: t.FeaturePrefix}
 }
 
-// triggers is the flow list of branches a push or pull request runs CI for, without repeats.
+// triggers is the flow list of branches a push runs CI for, without repeats. Every pull request runs CI,
+// whatever its target: the generated workflow puts no branch or path filter on pull_request.
 func (b Branches) triggers() string {
 	list := []string{b.Integration}
 	if b.Integration != "main" {
@@ -163,13 +164,16 @@ func (b Branches) triggers() string {
 func Render(comps []Component, set directive.Set, ext Extension, br Branches) []byte {
 	o := Options{Set: set, SkipCoverageFloor: ext.SkipCoverageFloor}
 	var b strings.Builder
-	b.WriteString(ManagedHeader + "\nname: Dendrite CI/CD\n\non:\n  push:\n    branches: " + br.triggers() + "\n  pull_request:\n    branches: " + br.triggers() + "\n\n")
+	b.WriteString(ManagedHeader + "\nname: Dendrite CI/CD\n\non:\n  push:\n    branches: " + br.triggers() + "\n  pull_request:\n\n")
 	if len(ext.Env) > 0 {
 		b.WriteString("env:\n" + indent(marshal(ext.Env), 2) + "\n")
 	}
 	b.WriteString("jobs:\n")
 	var jobs strings.Builder
 	writeJob(&jobs, "quality", "Quality gates (loc, clones, complexity, structure)", gateSteps(comps, ext))
+	if hasKind(comps, Rust) {
+		writeDBAccessJob(&jobs)
+	}
 	for _, c := range comps {
 		writeComponentJob(&jobs, c, o, ext)
 	}
