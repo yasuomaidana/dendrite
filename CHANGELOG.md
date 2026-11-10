@@ -13,6 +13,7 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 ### Added
 
 - **`dendrite branch retire <branch>` (DEN-882):** opens the last pull request of a branch such as `develop` into the integration branch, lists the local branches that still merge into it, and says when nothing uses it any more.
+- **`dendrite repair start <dependency>` (DEN-879, DEN-883):** starts a temporary repair of a dependency. It gets a working copy of the dependency in `dendrite-work/` on a branch named after the ticket (`<TICKET>-<slug>/main`; a synapse peer is repaired in its own repository under `--dep-ticket`, anything else from `--repo`, pushed to `--fork` when given), pushes the branch, points this project's manifests at it and records the link, with how the dependency was named before, in `~/.dendrite/repairs.json` (`pkg/repair`). Run inside a repair's working copy it adds the next link of the chain. `go.mod` is pointed at the working copy, because a Go module cannot name a branch of another repository without a resolved version. `switcher.Current` and `switcher.Restore` read and put back a manifest's entry.
 
 ## [0.1.0] - 2026-11-01
 

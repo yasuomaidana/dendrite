@@ -8,17 +8,24 @@ import (
 	"testing"
 
 	"Dendrite/pkg/testkit"
+
+	"github.com/spf13/cobra"
 )
 
-func runBranch(t *testing.T, args ...string) (string, error) {
+// runCommand runs a command group with args and returns what it printed.
+func runCommand(t *testing.T, cmd *cobra.Command, args ...string) (string, error) {
 	t.Helper()
-	cmd := NewBranchCmd()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs(args)
 	err := cmd.ExecuteContext(context.Background())
 	return out.String(), err
+}
+
+func runBranch(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	return runCommand(t, NewBranchCmd(), args...)
 }
 
 func TestBranchShowExplainsTheCurrentTarget(t *testing.T) {
