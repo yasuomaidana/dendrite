@@ -99,10 +99,15 @@ func TestClaimOfDirFollowsTheCheckedOutBranch(t *testing.T) {
 }
 
 func TestTicketOfBranch(t *testing.T) {
-	for branch, want := range map[string]string{"agent/den-375": "den-375", "agent/": "", "feature/x": "", "develop": ""} {
-		got, ok := TicketOfBranch(branch)
-		if got != want || ok != (want != "") {
-			t.Errorf("TicketOfBranch(%q) = %q, %v", branch, got, ok)
+	for _, c := range []struct{ branch, want string }{
+		{"agent/den-375", "den-375"}, {"agent/", ""}, {"feature/x", ""}, {"develop", ""}, {"spike/main", ""}, {"main", ""},
+		{"DEN-890-fix-login-crash/main", "DEN-890"}, {"DEN-890/main", "DEN-890"}, {"DEN-8800x/main", ""},
+		{"DEN-880-branch-naming/DEN-881-slug-names", "DEN-881"}, {"den-880-branch-naming/den-881", "DEN-881"},
+		{"feature/DEN-840-work", "DEN-840"},
+	} {
+		got, ok := TicketOfBranch(c.branch)
+		if got != c.want || ok != (c.want != "") {
+			t.Errorf("TicketOfBranch(%q) = %q, %v", c.branch, got, ok)
 		}
 	}
 }

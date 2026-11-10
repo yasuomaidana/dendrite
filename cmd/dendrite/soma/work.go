@@ -7,6 +7,7 @@ import (
 	"Dendrite/pkg/devtool"
 	"Dendrite/pkg/ticketlock"
 	"Dendrite/pkg/workcopy"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -32,16 +33,16 @@ func NewWorkCmd() *cobra.Command {
 	newCmd := &cobra.Command{
 		Use:     "new <name>",
 		Aliases: []string{"create"},
-		Short:   "Create an isolated working copy (branch agent/<name>)",
+		Short:   "Create an isolated working copy (branch <TICKET>-<slug>/main, or <ROOT>-<slug>/<TICKET>-<slug> for a sub-ticket)",
 		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWorkNew(cmd.Context(), args[0], branch, base, target, noTicketGuard, cmd.OutOrStdout())
 		},
 	}
 	newCmd.Flags().BoolVar(&noTicketGuard, "no-ticket-guard", false, "Do not check or start the ticket in Plane (env "+devtool.TicketGuardEnv+"=off)")
-	newCmd.Flags().StringVar(&branch, "branch", "", "Branch to create (default agent/<name>)")
+	newCmd.Flags().StringVar(&branch, "branch", "", "Branch to create (default: named after the ticket and its parent, else <name>/main)")
 	newCmd.Flags().StringVar(&base, "base", "", "Commit-ish to start from (default HEAD, or the parent ticket's feature branch)")
-	newCmd.Flags().StringVar(&target, "target", "", "Branch the work merges into (default: the parent ticket's feature branch, else the integration branch)")
+	newCmd.Flags().StringVar(&target, "target", "", "Branch the work merges into (default: the trunk of the parent ticket, else the integration branch)")
 
 	list := &cobra.Command{
 		Use:     "list",
@@ -122,11 +123,13 @@ func runWorkNew(ctx context.Context, name, branch, base, target string, noTicket
 	if err != nil {
 		return err
 	}
-	path, err := cli.NewWorkManager().Create(ctx, name, branch, wt.Base)
+	copyName := cmp.Or(wt.Copy, name)
+	branch = cmp.Or(branch, wt.Work, workcopy.DefaultBranch(name))
+	path, err := cli.NewWorkManager().Create(ctx, copyName, branch, wt.Base)
 	if err != nil {
 		return err
 	}
-	recordWorkTarget(name, branch, wt, out)
+	recordWorkTarget(branch, wt, out)
 	fmt.Fprintf(out, "[✓] Working copy created: %s\n", path)
 	if ticketShaped.MatchString(name) && !noTicketGuard && devtool.GuardEnabled() {
 		ClaimInCopy(ctx, name, path, out)

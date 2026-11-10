@@ -1,12 +1,15 @@
-// Package featurebranch groups the sub-tickets of a Plane parent ticket on one feature branch. A ticket with a
-// parent starts from, and merges into, `feature/<PARENT>-<slug>` instead of the integration branch; when the
-// whole feature is done the parent's own work merges that branch into the integration branch.
+// Package featurebranch names the branches of a ticket after what they are for. A ticket with no parent works
+// on its own trunk, `<TICKET>-<slug>/main`, which merges into the integration branch. A sub-ticket works on
+// `<ROOT>-<slug>/<TICKET>-<slug>` and starts from, and merges into, the trunk of its top-most parent; when the
+// whole feature is done the trunk merges into the integration branch. A `feature/<ROOT>-<slug>` branch made
+// before these names existed keeps serving as the trunk of its feature.
 package featurebranch
 
 import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path"
 	"regexp"
 	"strings"
 
@@ -28,10 +31,25 @@ type Source interface {
 	Parent(ctx context.Context, ticket string) (parent Ticket, ok bool, err error)
 }
 
-// Plan says where work on a ticket starts from and merges into.
+// TrunkLeaf is the last segment of a trunk: the branch a feature folder merges through.
+const TrunkLeaf = "main"
+
+// Titled is a Source that also knows the title of a ticket itself, which names its own branch. A Source
+// without it gives branches named by the ticket id alone.
+type Titled interface {
+	// Title is the title of ticket without its [ID] prefix.
+	Title(ctx context.Context, ticket string) (string, error)
+}
+
+// Plan says which branch a ticket is worked on, and where that work starts from and merges into.
 type Plan struct {
 	// Ticket is the ticket the plan is for.
 	Ticket string
+	// Branch is the branch the ticket is worked on: its trunk when it has no parent, otherwise a branch in the
+	// folder of its top-most parent.
+	Branch string
+	// Trunk is the branch the whole feature merges through: Branch for a ticket with no parent, Target otherwise.
+	Trunk string
 	// Target is the branch the ticket's work merges into: a feature branch, or the integration branch.
 	Target string
 	// Feature is true when Target is a feature branch.
@@ -54,20 +72,35 @@ func Slug(title string) string {
 	return s
 }
 
-// Name is the feature branch of a parent ticket.
-func Name(prefix string, parent Ticket) string {
-	if slug := Slug(parent.Title); slug != "" {
-		return prefix + parent.ID + "-" + slug
+// Name is prefix followed by the ticket id and the slug of its title: the folder of a ticket's branches when
+// prefix is empty, and the feature branch of older repositories when it is "feature/".
+func Name(prefix string, t Ticket) string {
+	if slug := Slug(t.Title); slug != "" {
+		return prefix + t.ID + "-" + slug
 	}
-	return prefix + parent.ID
+	return prefix + t.ID
 }
 
-// Resolve decides where work on ticket merges. The top-most parent (up to maxDepth levels) names the feature
-// branch, so a whole tree of sub-tickets lands on one branch. A branch that already exists for that parent keeps
-// its name even if the parent was renamed. Without a parent the plan targets the integration branch.
+// CopyName is the readable name of the working copy of a plan's branch: `<TICKET>-<slug>`.
+func (p Plan) CopyName() string {
+	return path.Base(strings.TrimSuffix(p.Branch, "/"+TrunkLeaf))
+}
+
+// Resolve decides the branch of ticket and where its work merges. The top-most parent (up to maxDepth levels)
+// names the folder, so a whole tree of sub-tickets lands on one trunk. A trunk that already exists for a ticket
+// keeps its name even if the ticket was renamed. Without a parent the ticket works on its own trunk and the plan
+// targets the integration branch.
 func Resolve(ctx context.Context, dir, ticket string, src Source) (Plan, error) {
 	pol := branchpolicy.For(dir)
 	p := Plan{Ticket: ticket, Target: pol.Integration, Integration: pol.Integration, Remote: pol.Remote, PushRemote: pol.PushRemote}
+	self := Ticket{ID: ticket}
+	if t, ok := src.(Titled); ok {
+		title, err := t.Title(ctx, ticket)
+		if err != nil {
+			return p, fmt.Errorf("looking up the title of %s: %w", ticket, err)
+		}
+		self.Title = title
+	}
 	top := Ticket{ID: ticket}
 	for depth := 0; depth < maxDepth; depth++ {
 		parent, ok, err := src.Parent(ctx, top.ID)
@@ -81,14 +114,32 @@ func Resolve(ctx context.Context, dir, ticket string, src Source) (Plan, error) 
 		p.Parent = parent
 	}
 	if p.Parent.ID == "" {
+		p.Branch = trunkOf(dir, pol, self)
+		p.Trunk = p.Branch
 		return p, nil
 	}
 	p.Feature = true
-	p.Target = existing(dir, pol, pol.FeaturePrefix+p.Parent.ID)
-	if p.Target == "" {
-		p.Target = Name(pol.FeaturePrefix, p.Parent)
+	p.Target = trunkOf(dir, pol, p.Parent)
+	p.Trunk = p.Target
+	folder, isFolder := strings.CutSuffix(p.Target, "/"+TrunkLeaf)
+	if !isFolder {
+		// A legacy feature/<ROOT>-<slug> trunk is a branch, so nothing can live below it.
+		folder = Name("", p.Parent)
 	}
+	p.Branch = folder + "/" + Name("", self)
 	return p, nil
+}
+
+// trunkOf is the trunk of the feature a ticket names: the one that exists already (a folder trunk first, then a
+// legacy feature branch), otherwise `<ID>-<slug>/main`.
+func trunkOf(dir string, pol branchpolicy.Target, t Ticket) string {
+	if found := existing(dir, pol, t.ID, "/"+TrunkLeaf); found != "" {
+		return found
+	}
+	if found := existing(dir, pol, pol.FeaturePrefix+t.ID, ""); found != "" {
+		return found
+	}
+	return Name("", t) + "/" + TrunkLeaf
 }
 
 func git(dir string, args ...string) (string, bool) {
@@ -96,15 +147,19 @@ func git(dir string, args ...string) (string, bool) {
 	return strings.TrimSpace(string(out)), err == nil
 }
 
-// existing is the branch (local or on the remotes) whose name is stem or starts with stem + "-", or "".
-func existing(dir string, pol branchpolicy.Target, stem string) string {
-	out, ok := git(dir, "for-each-ref", "--format=%(refname:short)", "refs/heads/"+stem+"*", "refs/remotes/"+pol.PushRemote+"/"+stem+"*", "refs/remotes/"+pol.Remote+"/"+stem+"*")
+// existing is the branch (local or on the remotes) named stem + suffix or stem + "-<anything>" + suffix, or "".
+func existing(dir string, pol branchpolicy.Target, stem, suffix string) string {
+	args := []string{"for-each-ref", "--format=%(refname:short)"}
+	for _, root := range []string{"refs/heads/", "refs/remotes/" + pol.PushRemote + "/", "refs/remotes/" + pol.Remote + "/"} {
+		args = append(args, root+stem+suffix, root+stem+"-*"+suffix)
+	}
+	out, ok := git(dir, args...)
 	if !ok {
 		return ""
 	}
 	for _, ref := range strings.Fields(out) {
 		name := strings.TrimPrefix(strings.TrimPrefix(ref, pol.PushRemote+"/"), pol.Remote+"/")
-		if name == stem || strings.HasPrefix(name, stem+"-") {
+		if name == stem+suffix || (strings.HasPrefix(name, stem+"-") && strings.HasSuffix(name, suffix)) {
 			return name
 		}
 	}

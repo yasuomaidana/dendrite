@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"Dendrite/pkg/testkit"
 )
 
 // newRepo creates a real git repository at <tmp>/Proj with one commit on main,
@@ -105,21 +107,15 @@ func TestCreateListAndRootFromInsideCopy(t *testing.T) {
 	m := newManager(repo)
 
 	path, err := m.Create(ctx, "DEN-1 fix", "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := filepath.Join(root, "Proj-DEN-1-fix"); path != want {
-		t.Fatalf("path = %s, want %s", path, want)
-	}
+	testkit.Check(t, err)
+	testkit.Equal(t, "path", path, filepath.Join(root, "Proj-DEN-1-fix"))
 	if _, err := m.Create(ctx, "DEN-1 fix", "", ""); err == nil {
 		t.Fatal("expected duplicate create to fail")
 	}
 
 	copies, err := m.List(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(copies) != 1 || copies[0].Branch != "agent/den-1-fix" || !copies[0].Untouched || copies[0].Dirty {
+	testkit.Check(t, err)
+	if len(copies) != 1 || copies[0].Branch != "DEN-1-fix/main" || !copies[0].Untouched || copies[0].Dirty {
 		t.Fatalf("unexpected copies: %+v", copies)
 	}
 
@@ -138,13 +134,13 @@ func TestGCRemovesOnlyMergedCleanCopies(t *testing.T) {
 
 	merged, _ := m.Create(ctx, "merged", "", "")
 	commitIn(t, merged, "merged.txt")
-	git(t, repo, "merge", "-q", "--no-edit", "agent/merged")
+	git(t, repo, "merge", "-q", "--no-edit", "merged/main")
 
 	untouched, _ := m.Create(ctx, "untouched", "", "")
 
 	dirty, _ := m.Create(ctx, "dirty", "", "")
 	commitIn(t, dirty, "dirty.txt")
-	git(t, repo, "merge", "-q", "--no-edit", "agent/dirty")
+	git(t, repo, "merge", "-q", "--no-edit", "dirty/main")
 	writeFile(t, filepath.Join(dirty, "wip.txt"), "wip\n")
 
 	unmerged, _ := m.Create(ctx, "unmerged", "", "")
@@ -152,33 +148,23 @@ func TestGCRemovesOnlyMergedCleanCopies(t *testing.T) {
 
 	busy, _ := m.Create(ctx, "busy", "", "")
 	commitIn(t, busy, "busy.txt")
-	git(t, repo, "merge", "-q", "--no-edit", "agent/busy")
+	git(t, repo, "merge", "-q", "--no-edit", "busy/main")
 
 	stateOnly, _ := m.Create(ctx, "state", "", "")
 	commitIn(t, stateOnly, "state.txt")
-	git(t, repo, "merge", "-q", "--no-edit", "agent/state")
-	if err := os.MkdirAll(filepath.Join(stateOnly, ".dendrite", "jobs"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	git(t, repo, "merge", "-q", "--no-edit", "state/main")
+	testkit.Check(t, os.MkdirAll(filepath.Join(stateOnly, ".dendrite", "jobs"), 0o755))
 	writeFile(t, filepath.Join(stateOnly, ".dendrite", "jobs", "x.json"), "{}")
 
 	inUse := func(p string) bool { return p == Canon(busy) }
 
 	dry, err := m.GC(ctx, GCOptions{DryRun: true, InUse: inUse})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r := reportFor(t, dry, merged); r.Action != "would remove" {
-		t.Fatalf("dry run: %+v", r)
-	}
-	if !dirExists(merged) {
-		t.Fatal("dry run must not delete")
-	}
+	testkit.Check(t, err)
+	testkit.Equal(t, "dry run", reportFor(t, dry, merged).Action, "would remove")
+	testkit.Equal(t, "dry run deletes nothing", dirExists(merged), true)
 
 	reports, err := m.GC(ctx, GCOptions{InUse: inUse})
-	if err != nil {
-		t.Fatal(err)
-	}
+	testkit.Check(t, err)
 	want := map[string]string{
 		merged:    "removed",
 		stateOnly: "removed",
@@ -195,12 +181,8 @@ func TestGCRemovesOnlyMergedCleanCopies(t *testing.T) {
 			t.Errorf("%s: exists=%v after gc", filepath.Base(p), exists)
 		}
 	}
-	if out := git(t, repo, "branch", "--list", "agent/merged"); out != "" {
-		t.Errorf("merged branch not deleted: %q", out)
-	}
-	if out := git(t, repo, "branch", "--list", "agent/unmerged"); out == "" {
-		t.Error("unmerged branch must be kept")
-	}
+	testkit.Equal(t, "merged branch deleted", git(t, repo, "branch", "--list", "merged/main"), "")
+	testkit.Equal(t, "unmerged branch kept", git(t, repo, "branch", "--list", "unmerged/main") != "", true)
 	if _, err := os.Stat(filepath.Join(root, metaDirName, "Proj-merged.json")); !os.IsNotExist(err) {
 		t.Errorf("metadata of removed copy should be gone: %v", err)
 	}
@@ -213,7 +195,7 @@ func TestGCKeepsCurrentDirAndStoryVariants(t *testing.T) {
 
 	here, _ := m.Create(ctx, "here", "", "")
 	commitIn(t, here, "here.txt")
-	git(t, repo, "merge", "-q", "--no-edit", "agent/here")
+	git(t, repo, "merge", "-q", "--no-edit", "here/main")
 
 	stories, _ := m.StoriesDir(ctx)
 	variant := filepath.Join(stories, "S1", "v1")
@@ -242,13 +224,13 @@ func TestGCUpstreamGoneAndUnpushed(t *testing.T) {
 
 	gone, _ := m.Create(ctx, "gone", "", "")
 	commitIn(t, gone, "gone.txt")
-	git(t, gone, "push", "-q", "-u", "origin", "agent/gone")
-	git(t, repo, "push", "-q", "origin", "--delete", "agent/gone")
+	git(t, gone, "push", "-q", "-u", "origin", "gone/main")
+	git(t, repo, "push", "-q", "origin", "--delete", "gone/main")
 	git(t, repo, "fetch", "-q", "--prune", "origin")
 
 	ahead, _ := m.Create(ctx, "ahead", "", "")
 	commitIn(t, ahead, "a1.txt")
-	git(t, ahead, "push", "-q", "-u", "origin", "agent/ahead")
+	git(t, ahead, "push", "-q", "-u", "origin", "ahead/main")
 	commitIn(t, ahead, "a2.txt")
 
 	reports, err := m.GC(ctx, GCOptions{})
@@ -281,10 +263,10 @@ func TestRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(r.Reason, "branch agent/work kept") || dirExists(work) {
+	if !strings.Contains(r.Reason, "branch work/main kept") || dirExists(work) {
 		t.Fatalf("unexpected: %+v", r)
 	}
-	if out := git(t, repo, "branch", "--list", "agent/work"); out == "" {
+	if out := git(t, repo, "branch", "--list", "work/main"); out == "" {
 		t.Error("unmerged branch must survive a non-forced remove")
 	}
 
@@ -356,14 +338,14 @@ func TestGCCountsAMergeIntoTheRecordedTargetAndOnlyThat(t *testing.T) {
 	git(t, repo, "branch", "feature/DEN-1-x")
 
 	child, _ := m.Create(ctx, "child", "", "feature/DEN-1-x")
-	git(t, repo, "config", "branch.agent/child.dendrite-target", "feature/DEN-1-x")
+	git(t, repo, "config", "branch.child/main.dendrite-target", "feature/DEN-1-x")
 	commitIn(t, child, "child.txt")
 	other, _ := m.Create(ctx, "other", "", "")
 	commitIn(t, other, "other.txt")
 
 	// Merged into main only: for the child that is not where its work goes (main holds nothing of it), and for
 	// the unrecorded copy it is.
-	git(t, repo, "merge", "-q", "--no-edit", "agent/other")
+	git(t, repo, "merge", "-q", "--no-edit", "other/main")
 	cs, err := m.List(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -377,7 +359,7 @@ func TestGCCountsAMergeIntoTheRecordedTargetAndOnlyThat(t *testing.T) {
 
 	// Merging the child into its feature branch, not into main, is what finishes it.
 	git(t, repo, "checkout", "-q", "feature/DEN-1-x")
-	git(t, repo, "merge", "-q", "--no-edit", "agent/child")
+	git(t, repo, "merge", "-q", "--no-edit", "child/main")
 	git(t, repo, "checkout", "-q", "main")
 	cs, err = m.List(ctx)
 	if err != nil {
@@ -391,4 +373,46 @@ func TestGCCountsAMergeIntoTheRecordedTargetAndOnlyThat(t *testing.T) {
 func copyFor(t *testing.T, cs []Copy, path string) Copy {
 	t.Helper()
 	return byPath(t, cs, path, func(c Copy) string { return c.Path })
+}
+
+func TestCreateChecksOutABranchThatAlreadyExists(t *testing.T) {
+	repo, _ := newRepo(t)
+	ctx := context.Background()
+	m := newManager(repo)
+	git(t, repo, "branch", "DEN-880-naming/main")
+
+	path, err := m.Create(ctx, "DEN-880-naming", "DEN-880-naming/main", "no-such-ref")
+	if err != nil {
+		t.Fatalf("an existing trunk needs no base: %v", err)
+	}
+	if got := git(t, path, "symbolic-ref", "--short", "HEAD"); got != "DEN-880-naming/main" {
+		t.Fatalf("branch = %s", got)
+	}
+	if c, err := m.Resolve(ctx, path); err != nil || !c.Untouched {
+		t.Fatalf("a copy of an existing branch starts untouched: %+v, %v", c, err)
+	}
+}
+
+func TestResolveFindsATicketCopyByItsTicketAlone(t *testing.T) {
+	repo, _ := newRepo(t)
+	ctx := context.Background()
+	m := newManager(repo)
+	slugged, _ := m.Create(ctx, "DEN-88-slug-names", "", "")
+	if _, err := m.Create(ctx, "DEN-880-other", "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := m.Resolve(ctx, "DEN-88")
+	if err != nil || c.Path != Canon(slugged) {
+		t.Fatalf("DEN-88 = %+v, %v; DEN-880 is another ticket", c, err)
+	}
+	if _, err := m.Create(ctx, "DEN-88-second", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Resolve(ctx, "DEN-88"); err == nil || !strings.Contains(err.Error(), "matches 2") {
+		t.Fatalf("two copies of one ticket are ambiguous, got %v", err)
+	}
+	if c, err := m.Resolve(ctx, "DEN-88-second"); err != nil || c.Branch != "DEN-88-second/main" {
+		t.Fatalf("the full name still wins: %+v, %v", c, err)
+	}
 }
