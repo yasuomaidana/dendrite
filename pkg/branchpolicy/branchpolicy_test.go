@@ -251,3 +251,8 @@ func TestForOnADetachedHeadUsesTheIntegrationBranch(t *testing.T) {
 	testkit.Git(t, dir, "checkout", "-q", "--detach")
 	testkit.Equal(t, "detached", For(dir).Branch, "main")
 }
+
+func TestOnlyATrunkIsReachedByPullRequest(t *testing.T) {
+	testkit.Table(t, map[string]bool{"main": true, "master": true, "develop": false, "DEN-1-f/main": false, "release/2": false},
+		func(branch string) bool { return Target{Branch: branch}.ByPullRequest() })
+}

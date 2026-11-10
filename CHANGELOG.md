@@ -8,6 +8,11 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 
 - **Branches are named after their feature and ticket (DEN-879, DEN-880):** `dendrite work new` no longer creates `agent/<ticket>`. A ticket works on its own trunk `<TICKET>-<slug>/main` in the copy `dendrite-work/<repo>-<TICKET>-<slug>`; a sub-ticket works on `<ROOT>-<slug>/<TICKET>-<slug>` and merges into the trunk `<ROOT>-<slug>/main` of its top-most parent. The slug is the Plane title; without Plane the branch is `<name>/main`. Existing `agent/<ticket>` branches and `feature/<ROOT>-<slug>` trunks keep working, `dendrite work done DEN-123` finds the copy by its ticket, and `dendrite branch show --ticket` prints the work branch. The design is in [`docs/specs/2026-11-10-meaningful-branches-repairs-design.md`](docs/specs/2026-11-10-meaningful-branches-repairs-design.md).
 - **The integration branch defaults to `main` (DEN-879, DEN-881):** with no directive and no synapse member branch, work integrates on the remote's default branch, then `main`, then `master`; `develop` is chosen only when it is the one of them the repository has, or when `[git] integration_branch` or the member names it. In a repository that still has `develop`, branches made before feature folders (`agent/*`, `feature/*`) keep `develop` as their target (`dendrite branch show` says "branch made before feature folders"). The dev channel still tracks `develop`; the `dendrite vcs` guard is unchanged (DEN-886).
+- **A branch that merges into `main` is finished by pull request (DEN-879, DEN-882):** `dendrite chronos finish` pushes such a branch and opens its pull request with `gh` (`pkg/pullrequest`); the ticket waits in To Verify for a person to merge it, and `main`/`master` are still never pushed. When `gh` cannot open it, the finish note gives the command. The generated rules and the `dendrite-workflow` skill describe this for projects that integrate on `main`, and the direct merge for the others.
+
+### Added
+
+- **`dendrite branch retire <branch>` (DEN-882):** opens the last pull request of a branch such as `develop` into the integration branch, lists the local branches that still merge into it, and says when nothing uses it any more.
 
 ## [0.1.0] - 2026-11-01
 

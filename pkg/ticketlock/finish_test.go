@@ -3,7 +3,9 @@ package ticketlock
 import (
 	"Dendrite/pkg/directive"
 	"Dendrite/pkg/fsutil/fsutiltest"
+	"Dendrite/pkg/pullrequest"
 	"Dendrite/pkg/rag/ragtest"
+	"Dendrite/pkg/testkit"
 	"context"
 	"errors"
 	"fmt"
@@ -593,4 +595,66 @@ func TestQualityGateCannotGateADirectoryWithNoToolchain(t *testing.T) {
 	if _, err := gateTicket(t, t.TempDir()); err == nil {
 		t.Error("a directory with no toolchain cannot be gated")
 	}
+}
+
+// proposing is a finish rig whose working copy is a repository on a ticket trunk, with integration as the only
+// other branch and a bare origin that has it.
+func proposing(t *testing.T, integration string) (*finishRig, *[]pullrequest.Request) {
+	t.Helper()
+	r := newFinishRig(t, "To Do", twoCriteria)
+	origin := t.TempDir()
+	testkit.Git(t, origin, "init", "-q", "--bare", "-b", integration)
+	testkit.GitInit(t, r.Dir, integration)
+	testkit.Git(t, r.Dir, "commit", "-q", "--allow-empty", "-m", "base")
+	testkit.Git(t, r.Dir, "remote", "add", "origin", origin)
+	testkit.Git(t, r.Dir, "push", "-q", "origin", integration)
+	testkit.Git(t, r.Dir, "checkout", "-q", "-b", "DEN-377-work/main")
+	r.branch = "DEN-377-work/main"
+	var seen []pullrequest.Request
+	r.checks.Propose = func(_ context.Context, p pullrequest.Request) (string, error) {
+		seen = append(seen, p)
+		return "https://github.example/o/r/pull/9", nil
+	}
+	return r, &seen
+}
+
+func TestFinishProposesABranchThatMergesIntoMainAndWaits(t *testing.T) {
+	r, seen := proposing(t, "main")
+	res, err := r.finish()
+	testkit.Check(t, err)
+	testkit.Equal(t, "state", res.State, "To Verify")
+	testkit.Equal(t, "proposed once", len(*seen), 1)
+	p := (*seen)[0]
+	testkit.Equal(t, "base", p.Base, "main")
+	testkit.Equal(t, "head", p.Head, "DEN-377-work/main")
+	testkit.Equal(t, "remote", p.Remote, "origin")
+	testkit.Equal(t, "title", p.Title, "[DEN-377] work")
+	testkit.Contains(t, p.Body, "Ticket DEN-377", "[AC-1] it works", "[AC-2] it is tested")
+	testkit.Contains(t, strings.Join(res.Notes, "\n"), "pull request of DEN-377-work/main into main: https://github.example/o/r/pull/9")
+	testkit.Contains(t, r.lastComment(), "pull/9")
+}
+
+func TestFinishProposesNothingForABranchThatMergesElsewhere(t *testing.T) {
+	r, seen := proposing(t, "develop")
+	res, err := r.finish()
+	testkit.Check(t, err)
+	testkit.Equal(t, "state", res.State, "Done")
+	testkit.Equal(t, "not proposed", len(*seen), 0)
+}
+
+func TestAPullRequestThatCannotBeOpenedIsANoteThatSaysHow(t *testing.T) {
+	r, _ := proposing(t, "main")
+	r.checks.Propose = func(context.Context, pullrequest.Request) (string, error) {
+		return "", errors.New("gh: not logged in\nrun gh auth login")
+	}
+	res, err := r.finish()
+	testkit.Check(t, err)
+	testkit.Equal(t, "still waits for a person", res.State, "To Verify")
+	notes := strings.Join(res.Notes, "\n")
+	testkit.Contains(t, notes, "could not be opened (gh: not logged in)", "gh pr create --base main --head DEN-377-work/main")
+	testkit.NotContains(t, notes, "run gh auth login")
+}
+
+func TestTheDefaultChecksProposeByPullRequest(t *testing.T) {
+	testkit.Equal(t, "propose", DefaultFinishChecks(t.TempDir()).Propose != nil, true)
 }

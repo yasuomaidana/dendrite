@@ -24,11 +24,13 @@ var ErrNone = errors.New("no pull request for this branch")
 
 // Request is a pull request to open: Head proposed into Base, from the repository checked out in Dir.
 type Request struct {
-	Dir   string
-	Base  string
-	Head  string
-	Title string
-	Body  string
+	Dir string
+	// Remote is where PushAndOpen pushes Head before proposing it.
+	Remote string
+	Base   string
+	Head   string
+	Title  string
+	Body   string
 }
 
 // PullRequest is a pull request as GitHub reports it.
@@ -95,4 +97,14 @@ func Open(ctx context.Context, r Request) (PullRequest, error) {
 	// gh prints the URL of the new pull request on its last line.
 	lines := strings.Split(url, "\n")
 	return PullRequest{URL: strings.TrimSpace(lines[len(lines)-1]), State: StateOpen, Base: r.Base}, nil
+}
+
+// PushAndOpen pushes r.Head to r.Remote and opens its pull request; it returns the URL.
+func PushAndOpen(ctx context.Context, r Request) (string, error) {
+	if out, err := exec.CommandContext(ctx, "git", "-C", r.Dir, "push", "-u", r.Remote, r.Head).CombinedOutput(); err != nil {
+		line, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+		return "", fmt.Errorf("git push %s %s: %s", r.Remote, r.Head, line)
+	}
+	pr, err := Open(ctx, r)
+	return pr.URL, err
 }

@@ -57,7 +57,7 @@ func NewBranchCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.AddCommand(show, parent)
+	cmd.AddCommand(show, parent, newBranchRetireCmd())
 	return cmd
 }
 

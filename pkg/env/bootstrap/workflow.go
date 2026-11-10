@@ -34,7 +34,7 @@ var dendriteWorkflowRules = []string{
 	"Every repository we can modify is a Plane project: run `dendrite chronos project ensure` in it (it writes the local `.dendrite/plane.json` that `dendrite chronos`, `sync` and agents read; never commit anything under `.dendrite/`, and in a fresh clone this command recovers the project's identity). Repositories that depend on each other belong to the same synapse (`dendrite synapse create`). `dendrite chronos project audit` lists any repository that breaks this rule.",
 	"Work on your own branch, never directly on `{integration}`, `main` or `master` (nor on the trunk of another ticket): run `dendrite work new <ticket>` for each ticket. It creates a git worktree in `dendrite-work/` next to the main checkout, on a branch named after the ticket: its own trunk `<TICKET>-<slug>/main`, which merges into `{integration}`, or, for a sub-ticket of a Plane parent, `<ROOT>-<slug>/<TICKET>-<slug>`, which merges into the trunk `<ROOT>-<slug>/main` of its top-most parent (`dendrite branch show --ticket <ticket>` says which; `dendrite branch parent <ticket> <parent>` links tickets; `--target <branch>` overrides). Never hand-make `git clone` or `git worktree add ../<dir>` copies: those mix with human projects and are never cleaned up.",
 	"Commit with `dendrite quantal` (alias `commit`; it references the ticket and pushes your branch to origin, never to main/master).",
-	"When the ticket is finished, merge your branch into its target (`dendrite branch show`; `{integration}` unless the ticket is a sub-ticket, which merges into its parent's trunk) and push, so everyone's work syncs through it: from your copy run `git fetch origin && git merge origin/<target>`, fix conflicts and re-run the tests on your branch, then `git push origin HEAD:<target>`. The parent ticket's trunk merges into `{integration}` the same way when every sub-ticket is done. If the push is rejected, someone else merged first: fetch, merge and push again. Never merge into or push `main`/`master`.",
+	"{finish}",
 	"Explore with Dendrite before any raw text search, cheapest first: `dendrite rag search`/`dendrite_rag_retrieve` (detail `map`, then `dendrite rag show`/`dendrite_rag_show` for the bodies you need), `dendrite rag symbols` for definitions and references, `dendrite graph` (`dendrite_graph_explain`, `dendrite_graph_path`) for callers and structure, `dendrite rag history` for past changes, and `dendrite ask` for questions. `dendrite rag grep` is the exact-pattern fallback (index-aware, capped). Use `rg`/`grep`/`find` only when those return nothing, and then scoped to a path with a result cap, because unscoped `rg` output costs far more tokens than a retrieval map.",
 	"Questions about tickets (status, blockers, what a ticket is for) go to Plane through Dendrite: `dendrite ask --corpus tickets \"...\"` or `dendrite rag search --corpus tickets \"...\"` (MCP: `dendrite_rag_retrieve` with corpus `tickets`) for open questions, and `dendrite chronos`, `dendrite_plane_issues` or `dendrite_ticket_smart_select` for exact lookups. Never use `DEV_STATUS.md` or a search of the repository for this.",
 	"Route every LLM call through Dendrite: the LiteLLM gateway (`http://localhost:4000`) for model access and `dendrite bouton jobs submit --isolate` (alias `agent jobs`) to delegate to Antigravity (AGY) or other models. Do not call provider APIs or spawn other agent CLIs directly.",
@@ -43,16 +43,60 @@ var dendriteWorkflowRules = []string{
 }
 
 // workflowBranches are the project's branch names the rules and the skill spell out.
-type workflowBranches struct{ Integration string }
+type workflowBranches struct {
+	Integration string
+	// PullRequest says the integration branch is main or master, which finished work reaches by pull request.
+	PullRequest bool
+}
 
 // branchesOf reads the integration branch of the project at root (see pkg/branchpolicy).
 func branchesOf(root string) workflowBranches {
-	return workflowBranches{Integration: branchpolicy.For(root).Integration}
+	t := branchpolicy.Resolve(root, branchpolicy.MemberOverride(root))
+	return workflowBranches{Integration: t.Integration, PullRequest: t.ByPullRequest()}
 }
 
-// fill puts the project's branch names into text written with {integration}.
+// fill puts the project's branch names into text written with {integration}, and the rule for finishing a
+// ticket where the text says {finish}.
 func (b workflowBranches) fill(text string) string {
-	return strings.ReplaceAll(text, "{integration}", b.Integration)
+	return strings.NewReplacer("{finish}", b.finishRule(), "{integration}", b.Integration).Replace(text)
+}
+
+// finishRule says how finished work reaches the integration branch: by a push when agents may push it, by pull
+// request when it is main or master.
+func (b workflowBranches) finishRule() string {
+	if !b.PullRequest {
+		return strings.ReplaceAll("When the ticket is finished, merge your branch into its target (`dendrite branch show`; `{integration}` unless the ticket is a sub-ticket, which merges into its parent's trunk) and push, so everyone's work syncs through it: from your copy run `git fetch origin && git merge origin/<target>`, fix conflicts and re-run the tests on your branch, then `git push origin HEAD:<target>`. The parent ticket's trunk merges into `{integration}` the same way when every sub-ticket is done. If the push is rejected, someone else merged first: fetch, merge and push again. Never merge into or push `main`/`master`.", "{integration}", b.Integration)
+	}
+	return "When a sub-ticket is finished, merge its branch into its parent's trunk (`dendrite branch show` names it) and push, so the feature's work syncs through it: from your copy run `git fetch origin && git merge origin/<trunk>`, fix conflicts and re-run the tests on your branch, then `git push origin HEAD:<trunk>`. If the push is rejected, someone else merged first: fetch, merge and push again. A trunk reaches `" + b.Integration + "` only by pull request: `dendrite chronos finish` on the ticket that owns the trunk (a ticket with no parent, or the parent once every sub-ticket is done) pushes it and opens the pull request, the ticket waits in To Verify, and a person merges it. Never merge into or push `main`/`master`."
+}
+
+// finishSection is the skill's "Finishing a ticket" text, after its heading.
+func (b workflowBranches) finishSection() string {
+	var sb strings.Builder
+	br := b
+	if !b.PullRequest {
+		sb.WriteString(br.fill("Each agent works on its own branch and merges it into the branch its ticket targets when the ticket is done: `{integration}`, where everyone's work meets, or the trunk `<ROOT>-<slug>/main` of its top-most parent when the ticket is a sub-ticket (`dendrite branch show --ticket DEN-123` says which). From your `dendrite-work/` copy (where the integration branch cannot be checked out, because the main checkout holds it):\n\n"))
+		sb.WriteString("```bash\n")
+		sb.WriteString("dendrite quantal --ticket DEN-123        # commit and push the ticket's branch\n")
+		sb.WriteString("git fetch origin\n")
+		sb.WriteString(br.fill("git merge origin/{integration}           # or origin/<parent trunk>: take in everyone else's work; fix conflicts, re-run the tests\n"))
+		sb.WriteString(br.fill("git push origin HEAD:{integration}       # or HEAD:<parent trunk>: fast-forward it to your branch\n"))
+		sb.WriteString("dendrite session checkpoint              # record it; the merged copy is cleaned up later\n")
+		sb.WriteString("```\n\n")
+		sb.WriteString("A rejected push means the target moved since your fetch: fetch, merge and push again. When every sub-ticket of a feature is done, the parent ticket's trunk merges into `" + br.Integration + "` the same way. Never merge into or push `main`/`master`.\n\n")
+		return sb.String()
+	}
+	sb.WriteString("Each agent works on its own branch. A sub-ticket merges into the trunk `<ROOT>-<slug>/main` of its top-most parent when it is done (`dendrite branch show --ticket DEN-123` says which). From your `dendrite-work/` copy:\n\n")
+	sb.WriteString("```bash\n")
+	sb.WriteString("dendrite quantal --ticket DEN-123        # commit and push the ticket's branch\n")
+	sb.WriteString("dendrite chronos finish DEN-123          # the quality gate and the acceptance review\n")
+	sb.WriteString("git fetch origin\n")
+	sb.WriteString("git merge origin/<parent trunk>          # take in the other sub-tickets' work; fix conflicts, re-run the tests\n")
+	sb.WriteString("git push origin HEAD:<parent trunk>      # fast-forward the trunk to your branch\n")
+	sb.WriteString("dendrite session checkpoint              # record it; the merged copy is cleaned up later\n")
+	sb.WriteString("```\n\n")
+	sb.WriteString("A rejected push means the trunk moved since your fetch: fetch, merge and push again. A ticket with no parent, and the parent of a feature whose sub-tickets are all done, works on its own trunk `<TICKET>-<slug>/main`: there `dendrite chronos finish` pushes the trunk and opens a pull request into `" + b.Integration + "`, the ticket waits in To Verify, and a person merges it. Never merge into or push `main`/`master`.\n\n")
+	return sb.String()
 }
 
 func writeNumberedRules(sb *strings.Builder, root string) {
@@ -93,15 +137,7 @@ func renderDendriteWorkflowSkill(root string) string {
 	sb.WriteString("```\n\n")
 	sb.WriteString(br.fill("A copy is deleted automatically only when its branch is merged into main/master/{integration} or the target recorded for it, e.g. the trunk of its parent ticket (or its upstream branch was deleted) **and** it has no uncommitted or unpushed work. Copies used by in-flight agent jobs, the current directory, and story-fork variants are never removed.\n\n"))
 	sb.WriteString("## Finishing a ticket\n\n")
-	sb.WriteString(br.fill("Each agent works on its own branch and merges it into the branch its ticket targets when the ticket is done: `{integration}`, where everyone's work meets, or the trunk `<ROOT>-<slug>/main` of its top-most parent when the ticket is a sub-ticket (`dendrite branch show --ticket DEN-123` says which). From your `dendrite-work/` copy (where the integration branch cannot be checked out, because the main checkout holds it):\n\n"))
-	sb.WriteString("```bash\n")
-	sb.WriteString("dendrite quantal --ticket DEN-123        # commit and push the ticket's branch\n")
-	sb.WriteString("git fetch origin\n")
-	sb.WriteString(br.fill("git merge origin/{integration}           # or origin/<parent trunk>: take in everyone else's work; fix conflicts, re-run the tests\n"))
-	sb.WriteString(br.fill("git push origin HEAD:{integration}       # or HEAD:<parent trunk>: fast-forward it to your branch\n"))
-	sb.WriteString("dendrite session checkpoint              # record it; the merged copy is cleaned up later\n")
-	sb.WriteString("```\n\n")
-	sb.WriteString("A rejected push means the target moved since your fetch: fetch, merge and push again. When every sub-ticket of a feature is done, the parent ticket's trunk merges into `" + br.Integration + "` the same way. Never merge into or push `main`/`master`.\n\n")
+	sb.WriteString(br.finishSection())
 	sb.WriteString("## Delegating to other models\n\n")
 	sb.WriteString("```bash\n")
 	sb.WriteString("dendrite bouton jobs submit --ticket DEN-123 --agent agy --scope pkg/foo --prompt-file prompt.md --isolate\n")

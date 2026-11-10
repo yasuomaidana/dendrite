@@ -68,3 +68,25 @@ func TestFailuresOfGhAreReported(t *testing.T) {
 		t.Fatal("Open must report a failing gh")
 	}
 }
+
+func TestPushAndOpenPushesTheBranchThenProposesIt(t *testing.T) {
+	gh := prtest.New(t)
+	origin, dir := t.TempDir(), t.TempDir()
+	testkit.Git(t, origin, "init", "-q", "--bare", "-b", "main")
+	testkit.GitInit(t, dir, "main")
+	testkit.Git(t, dir, "commit", "-q", "--allow-empty", "-m", "base")
+	testkit.Git(t, dir, "remote", "add", "origin", origin)
+	testkit.Git(t, dir, "checkout", "-q", "-b", "DEN-1-fix/main")
+	req := pullrequest.Request{Dir: dir, Remote: "origin", Base: "main", Head: "DEN-1-fix/main", Title: "[DEN-1] Fix", Body: "b"}
+
+	url, err := pullrequest.PushAndOpen(context.Background(), req)
+	testkit.Check(t, err)
+	testkit.Equal(t, "url", url, "https://github.example/o/r/pull/1")
+	testkit.Equal(t, "pushed", testkit.Git(t, dir, "rev-parse", "origin/DEN-1-fix/main"), testkit.Git(t, dir, "rev-parse", "HEAD"))
+	testkit.Contains(t, gh.Calls(), "pr create --base main --head DEN-1-fix/main")
+
+	req.Remote = "nowhere"
+	if _, err := pullrequest.PushAndOpen(context.Background(), req); err == nil || !strings.Contains(err.Error(), "git push nowhere") {
+		t.Fatalf("a failed push must be reported, got %v", err)
+	}
+}
