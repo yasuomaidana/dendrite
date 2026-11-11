@@ -153,14 +153,14 @@ func releaseHolding(ctx context.Context, k Link) (string, error) {
 	if _, err := os.Stat(dir); err != nil {
 		tmp, _ := os.MkdirTemp("", "dendrite-repair-") // a failure here shows as a failed clone
 		defer os.RemoveAll(tmp)
-		if _, err := git(ctx, tmp, "clone", "-q", "--bare", "--filter=blob:none", k.Upstream, "."); err != nil {
+		if _, err := Git(ctx, tmp, "clone", "-q", "--bare", "--filter=blob:none", k.Upstream, "."); err != nil {
 			return "", fmt.Errorf("looking for a release of %s: %w", k.Dependency, err)
 		}
 		dir = tmp
-	} else if _, err := git(ctx, dir, "fetch", "-q", "--tags", remote); err != nil {
+	} else if _, err := Git(ctx, dir, "fetch", "-q", "--tags", remote); err != nil {
 		return "", fmt.Errorf("looking for a release of %s: %w", k.Dependency, err)
 	}
-	tags, err := git(ctx, dir, "tag", "--contains", k.MergeSHA, "--sort=version:refname")
+	tags, err := Git(ctx, dir, "tag", "--contains", k.MergeSHA, "--sort=version:refname")
 	if err != nil {
 		return "", fmt.Errorf("looking for a release of %s: %w", k.Dependency, err)
 	}

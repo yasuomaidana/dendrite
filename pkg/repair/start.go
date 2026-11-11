@@ -52,7 +52,8 @@ type Started struct {
 	Warnings []string
 }
 
-func git(ctx context.Context, dir string, args ...string) (string, error) {
+// Git runs git in dir and returns what it printed; a failure carries the first line of its output.
+func Git(ctx context.Context, dir string, args ...string) (string, error) {
 	out, err := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...).CombinedOutput()
 	text := strings.TrimSpace(string(out))
 	if err != nil {
@@ -93,10 +94,10 @@ func Start(ctx context.Context, ledger *Ledger, o StartOptions) (Started, error)
 	if link.Copy, err = makeCopy(ctx, link.Consumer, o, link.Branch); err != nil {
 		return Started{}, err
 	}
-	link.Remote, _ = git(ctx, link.Copy, "remote", "get-url", "origin")
+	link.Remote, _ = Git(ctx, link.Copy, "remote", "get-url", "origin")
 	link.Upstream = cmp.Or(link.Upstream, link.Remote)
 	res := Started{}
-	if _, err := git(ctx, link.Copy, "push", "-u", "origin", link.Branch); err != nil {
+	if _, err := Git(ctx, link.Copy, "push", "-u", "origin", link.Branch); err != nil {
 		res.Warnings = append(res.Warnings, fmt.Sprintf("%s was not pushed (%v): push it before others build %s", link.Branch, err, filepath.Base(link.Consumer)))
 	}
 	if err := pointAt(ctx, link); err != nil {
@@ -147,7 +148,7 @@ func newLink(ctx context.Context, ledger *Ledger, o StartOptions) (Link, error) 
 	if link.Original, err = switcher.Current(link.Consumer, o.Dependency); err != nil {
 		return Link{}, err
 	}
-	consumerBranch, _ := git(ctx, link.Consumer, "symbolic-ref", "--short", "HEAD")
+	consumerBranch, _ := Git(ctx, link.Consumer, "symbolic-ref", "--short", "HEAD")
 	link.Branch = BranchName(consumerBranch, o.Ticket, o.DepTicket)
 	return link, nil
 }
@@ -167,12 +168,12 @@ func makeCopy(ctx context.Context, consumer string, o StartOptions, branch strin
 	repo := strings.TrimSuffix(path.Base(filepath.ToSlash(source)), ".git")
 	dest := filepath.Join(root, workcopy.SanitizeName(repo+"-"+name))
 	for _, args := range [][]string{{"clone", "-q", source, dest}, {"-C", dest, "checkout", "-q", "-b", branch}} {
-		if _, err := git(ctx, filepath.Dir(consumer), args...); err != nil {
+		if _, err := Git(ctx, filepath.Dir(consumer), args...); err != nil {
 			return "", fmt.Errorf("repair: %w", err)
 		}
 	}
 	if o.Fork != "" && o.Upstream != "" {
-		_, _ = git(ctx, dest, "remote", "add", "upstream", o.Upstream)
+		_, _ = Git(ctx, dest, "remote", "add", "upstream", o.Upstream)
 	}
 	return workcopy.Canon(dest), nil
 }

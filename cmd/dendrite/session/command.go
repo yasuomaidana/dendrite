@@ -128,6 +128,7 @@ func RunSessionCheckpoint(ctx context.Context, o SessionCheckpointOptions, out i
 	}
 	soma.AutoCleanWorkCopies(ctx, out)
 	repair.AdvanceQuietly(ctx, out)
+	soma.OfferDisposal(ctx, out)
 	return nil
 }
 
@@ -206,6 +207,7 @@ func runSessionResume(ctx context.Context, targetPath string, asJSON bool, out i
 	}
 	soma.AutoCleanWorkCopies(ctx, out)
 	repair.AdvanceQuietly(ctx, out)
+	soma.OfferDisposal(ctx, out)
 	planecli.WarnStaleIndex(out)
 	WarnWatcherDown(ledger, time.Now(), out)
 	printSynapsePeers(".", out)

@@ -71,7 +71,7 @@ func (k Link) upstreamRemote() string {
 
 // baseBranch is the dependency's default branch, as the working copy knows it; main when it does not.
 func (k Link) baseBranch(ctx context.Context) string {
-	ref, err := git(ctx, k.Copy, "symbolic-ref", "--short", "refs/remotes/"+k.upstreamRemote()+"/HEAD")
+	ref, err := Git(ctx, k.Copy, "symbolic-ref", "--short", "refs/remotes/"+k.upstreamRemote()+"/HEAD")
 	if err != nil {
 		return "main"
 	}

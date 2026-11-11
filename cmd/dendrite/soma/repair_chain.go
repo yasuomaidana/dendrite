@@ -111,7 +111,11 @@ func newRepairAdvanceCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return writeRepairSteps(cmd.OutOrStdout(), steps)
+				if err := writeRepairSteps(cmd.OutOrStdout(), steps); err != nil || cli.Globals.JSON {
+					return err
+				}
+				OfferDisposal(cmd.Context(), cmd.OutOrStdout())
+				return nil
 			})
 		},
 	}

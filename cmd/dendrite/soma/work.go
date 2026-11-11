@@ -26,7 +26,8 @@ func NewWorkCmd() *cobra.Command {
 		"dendrite work list --json\n" +
 		"dendrite work done DEN-123 --force\n" +
 		"dendrite work gc --dry-run\n" +
-		"dendrite work adopt"
+		"dendrite work adopt\n" +
+		"dendrite work dispose"
 
 	var branch, base, target string
 	var noTicketGuard bool
@@ -89,7 +90,7 @@ func NewWorkCmd() *cobra.Command {
 	}
 	cli.AddDryRunFlag(adopt, &adoptDryRun)
 
-	cmd.AddCommand(newCmd, list, done, gc, adopt)
+	cmd.AddCommand(newCmd, list, done, gc, adopt, newWorkDisposeCmd())
 	return cmd
 }
 

@@ -134,6 +134,7 @@ func renderDendriteWorkflowSkill(root string) string {
 	sb.WriteString("dendrite work done DEN-123         # remove one copy (refuses unsaved work without --force)\n")
 	sb.WriteString("dendrite work gc [--dry-run]       # remove merged + clean copies\n")
 	sb.WriteString("dendrite work adopt [--dry-run]    # move legacy sibling worktrees into dendrite-work/\n")
+	sb.WriteString("dendrite work dispose [--dry-run]  # ask to delete what merged work left: repair copies and branches, finished features\n")
 	sb.WriteString("```\n\n")
 	sb.WriteString(br.fill("A copy is deleted automatically only when its branch is merged into main/master/{integration} or the target recorded for it, e.g. the trunk of its parent ticket (or its upstream branch was deleted) **and** it has no uncommitted or unpushed work. Copies used by in-flight agent jobs, the current directory, and story-fork variants are never removed.\n\n"))
 	sb.WriteString("## Finishing a ticket\n\n")
