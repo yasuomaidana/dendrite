@@ -47,8 +47,10 @@ func open(ctx context.Context, o Options) repo {
 
 // merged says why branch counts as merged into the integration branch: its commits are there, or (asked of
 // GitHub, so not offline) its pull request was merged, which is how a squash merge shows. "" when it is not.
-func (r repo) merged(ctx context.Context, branch string) string {
-	if isAncestor(ctx, r.dir, "refs/heads/"+branch, r.target) {
+// With started set, a branch that only points at a commit of the integration branch's own history does not
+// count: it is a trunk nothing was committed on yet, not a finished one.
+func (r repo) merged(ctx context.Context, branch string, started bool) string {
+	if isAncestor(ctx, r.dir, "refs/heads/"+branch, r.target) && !(started && r.untouched(ctx, branch)) {
 		return "merged into " + r.pol.Integration
 	}
 	if r.o.Offline {
@@ -58,6 +60,14 @@ func (r repo) merged(ctx context.Context, branch string) string {
 		return "its pull request into " + r.pol.Integration + " was merged"
 	}
 	return ""
+}
+
+// untouched reports whether branch points at a commit of the integration branch's first-parent history: where
+// a new branch starts, and where a branch that was merged by a merge commit never is.
+func (r repo) untouched(ctx context.Context, branch string) bool {
+	tip, _ := git(ctx, r.dir, "rev-parse", "refs/heads/"+branch)
+	mainline, _ := git(ctx, r.dir, "rev-list", "--first-parent", r.target)
+	return strings.Contains(mainline, tip)
 }
 
 // removeBranches deletes branches here and, where the push remote has them, there.
@@ -88,7 +98,7 @@ func Features(ctx context.Context, o Options) []Item {
 		if !isTrunk {
 			continue
 		}
-		why := r.merged(ctx, trunk)
+		why := r.merged(ctx, trunk, true)
 		if why == "" {
 			continue
 		}
@@ -122,7 +132,7 @@ func Retired(ctx context.Context, o Options) []Item {
 	if r.pol.Integration == legacy || !hasRef(ctx, r.dir, "refs/heads/"+legacy) {
 		return nil
 	}
-	why := r.merged(ctx, legacy)
+	why := r.merged(ctx, legacy, false)
 	if why == "" {
 		return nil
 	}

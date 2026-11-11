@@ -37,10 +37,10 @@ func branch(t *testing.T, dir, name, base string) {
 	testkit.Git(t, dir, "checkout", "-q", "main")
 }
 
-// land fast-forwards main (here and on origin) to ref.
+// land merges ref into main with a merge commit, here and on origin, as a merged pull request does.
 func land(t *testing.T, dir, ref string) {
 	t.Helper()
-	testkit.Git(t, dir, "merge", "-q", "--ff-only", ref)
+	testkit.Git(t, dir, "merge", "-q", "--no-ff", "-m", "merge "+ref, ref)
 	testkit.Git(t, dir, "push", "-q", "origin", "main")
 }
 
@@ -69,6 +69,7 @@ func TestAFeatureWhoseTrunkIsMergedGoesWithEveryBranchOfItsFolder(t *testing.T) 
 	branch(t, dir, "DEN-3-open/main", "main")
 	land(t, dir, "DEN-1-done/main")
 
+	testkit.Git(t, dir, "branch", "DEN-4-new/main", "main") // a trunk nothing was committed on yet
 	items := Features(ctx, Options{Dir: dir, Offline: true})
 	testkit.Equal(t, "only the merged feature", len(items), 1)
 	it := items[0]
