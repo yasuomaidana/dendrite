@@ -87,9 +87,11 @@ Until DEN-881 lands, a trunk merges into the integration branch the project alre
    (same seam style as `switcher.goGet`) so tests never reach GitHub. `chronos finish` uses it for root
    tickets; pushing `main`/`master` stays refused.
 6. **Retire** – `dendrite branch retire <branch>` in `cmd/dendrite/soma/branch.go`.
-7. **Dev channel** – `synapse.ChannelDev.DefaultRef()` (`pkg/synapse/types.go:91`) returns `main`; `dendrite
-   update --dev` gains `--branch <trunk>` to install an unmerged feature *(agent's call; the alternative is to
-   drop the dev channel)*.
+7. **Dev channel** – unchanged (decided during DEN-881): sync enforces the tracked ref, so pointing the dev
+   channel at `main` before a repository's `develop` is merged would check out `main` in every member. The
+   channel keeps tracking `develop` per repository until the member's `branch` is set to `main` after
+   `dendrite branch retire develop`; `work dispose` keeps `develop` while a synapse still tracks it. An unmerged
+   trunk is installed with the existing `--ref <alias>=<trunk>`.
 8. **Words** – the AGENTS.md generator text, the `dendrite-workflow` skill, `work new` help,
    `tests/e2e/lifecycle.sh`, `CHANGELOG.md`.
 
@@ -134,3 +136,17 @@ ticket asks for the sidecar methods.
   each stage), tag a release, `advance` again, `work dispose --dry-run` then `--yes`.
 - `dendrite allostasis gate --since origin/develop` per sub-ticket; `dendrite chronos finish` on each.
 - Last step, in this repository: `dendrite branch retire develop` (opens the pull request; a person merges it).
+
+## As built
+
+Differences from the plan above, found while building it:
+
+- A synapse peer is repaired under a ticket of its own project: `repair start` needs `--dep-ticket` and prints
+  the `dendrite chronos request` command instead of filing the ticket.
+- `go.mod` is pointed at the repair's working copy (a `replace` line), because a Go module cannot name a branch
+  of another repository without a resolved version; `go.work` is left as it was.
+- A release is detected from the repository's tags; whether the registry already serves it is not checked.
+- The ledger keeps how each manifest named the dependency (`switcher.Entry`), not a `SwitchRequest`.
+- Disposal lives in `pkg/dispose`, not `pkg/workcopy`. A feature counts as finished when its trunk was merged
+  by a merge commit or GitHub reports its pull request merged; a trunk nothing was committed on is not one.
+- The `dendrite vcs` guard and the audit pipeline still assume a shared agent branch (DEN-886).

@@ -186,3 +186,28 @@ func TestWorkNewWithoutPlaneUsesTheDefaultBranchOfTheName(t *testing.T) {
 	testkit.Check(t, runWorkNew(context.Background(), "named", "custom/branch", "", "", true, &r.out))
 	testkit.Equal(t, "--branch wins", testkit.Git(t, r.repo, "rev-parse", "--verify", "refs/heads/custom/branch") != "", true)
 }
+
+func TestATicketWhoseTrunkOnlyTheRemoteHasContinuesIt(t *testing.T) {
+	r := newTargetRig(t)
+	wt, err := prepareWorkTarget(context.Background(), "DEN-900", "", "", true, &r.out)
+	testkit.Check(t, err)
+	testkit.Equal(t, "a new trunk starts from HEAD", wt.Base, "")
+
+	// Someone else pushed the trunk with a commit: the copy starts there.
+	testkit.Git(t, r.repo, "checkout", "-q", "-b", wt.Work)
+	testkit.Git(t, r.repo, "commit", "-q", "--allow-empty", "-m", "their work")
+	testkit.Git(t, r.repo, "push", "-q", "origin", wt.Work)
+	theirs := testkit.Git(t, r.repo, "rev-parse", "HEAD")
+	testkit.Git(t, r.repo, "checkout", "-q", "develop")
+	testkit.Git(t, r.repo, "branch", "-D", wt.Work)
+
+	again, err := prepareWorkTarget(context.Background(), "DEN-900", "", "", true, &r.out)
+	testkit.Check(t, err)
+	testkit.Equal(t, "base", again.Base, "origin/"+wt.Work)
+	testkit.Check(t, runWorkNew(context.Background(), "DEN-900", "", "", "", false, &r.out))
+	testkit.Equal(t, "continues their commit", testkit.Git(t, r.repo, "rev-parse", wt.Work), theirs)
+
+	explicit, err := prepareWorkTarget(context.Background(), "DEN-900", "abc123", "", true, &r.out)
+	testkit.Check(t, err)
+	testkit.Equal(t, "an explicit base wins", explicit.Base, "abc123")
+}

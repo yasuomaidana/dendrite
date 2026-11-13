@@ -223,6 +223,18 @@ func TestStartPointsAGoModuleAtTheWorkingCopyAndStampsTheLink(t *testing.T) {
 	testkit.Check(t, err)
 	data, _ := os.ReadFile(filepath.Join(w.consumer, "go.mod"))
 	testkit.Contains(t, string(data), "replace example.com/r1 => "+res.Link.Copy)
+	if _, err := os.Stat(filepath.Join(w.consumer, "go.work")); !os.IsNotExist(err) {
+		t.Errorf("no go.work is left behind: %v", err)
+	}
+
+	// A consumer that already has a go.work keeps it as it was.
+	testkit.Git(t, w.consumer, "checkout", "-q", "-b", "DEN-892-again/main")
+	testkit.WriteFile(t, filepath.Join(w.consumer, "go.mod"), "module example.com/a\n\ngo 1.24\n\nrequire example.com/r1 v1.0.0\n", 0o644)
+	testkit.WriteFile(t, filepath.Join(w.consumer, "go.work"), "go 1.24\n\nuse .\n", 0o644)
+	_, err = Start(context.Background(), w.ledger, StartOptions{Consumer: w.consumer, Dependency: "example.com/r1", Ticket: "DEN-892", Upstream: w.r1})
+	testkit.Check(t, err)
+	work, _ := os.ReadFile(filepath.Join(w.consumer, "go.work"))
+	testkit.Equal(t, "go.work untouched", string(work), "go 1.24\n\nuse .\n")
 	testkit.Equal(t, "stamped now", res.Link.StartedAt.After(before), true)
 }
 

@@ -110,6 +110,9 @@ func TestWorkDisposeAsJSONAndWithAnUnreadableLedger(t *testing.T) {
 	testkit.Contains(t, disposeOut(t, disposal{}, ""), `"kind": "finished feature"`, `"name": "DEN-1-done"`)
 	testkit.Git(t, ".", "branch", "-D", "DEN-1-done/main", "develop")
 	testkit.Equal(t, "empty", strings.TrimSpace(disposeOut(t, disposal{}, "")), "[]")
+	var quiet bytes.Buffer
+	OfferDisposal(context.Background(), &quiet)
+	testkit.Equal(t, "no offer inside JSON output", quiet.String(), "")
 	clitest.JsonOutput(t, false)
 
 	ledger, err := repair.Open()

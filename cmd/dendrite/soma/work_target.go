@@ -2,9 +2,11 @@ package soma
 
 import (
 	"Dendrite/cmd/dendrite/internal/planecli"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
+	"os/exec"
 	"strings"
 
 	"Dendrite/pkg/featurebranch"
@@ -38,6 +40,7 @@ func prepareWorkTarget(ctx context.Context, ticket, base, target string, lookup 
 		plan, ok := lookUpPlan(ctx, ticket, out)
 		if ok {
 			wt.Work, wt.Copy, wt.Integration = plan.Branch, plan.CopyName(), plan.Integration
+			wt.Base = cmp.Or(base, remoteTrunk(plan))
 		}
 		if ok && plan.Feature && target == "" {
 			pushErr, err := featurebranch.Ensure(".", plan)
@@ -58,6 +61,17 @@ func prepareWorkTarget(ctx context.Context, ticket, base, target string, lookup 
 		}
 	}
 	return wt, nil
+}
+
+// remoteTrunk is the remote-tracking ref of a ticket's own trunk when only the remote has it (its sub-tickets
+// were started on another machine): the copy then continues that trunk instead of starting a second one.
+func remoteTrunk(plan featurebranch.Plan) string {
+	ref := plan.PushRemote + "/" + plan.Branch
+	if plan.Feature || exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+plan.Branch).Run() == nil ||
+		exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/remotes/"+ref).Run() != nil {
+		return ""
+	}
+	return ref
 }
 
 // lookUpPlan asks Plane for the branch plan of ticket; a failure is a warning, and ok is false.

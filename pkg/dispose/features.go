@@ -95,7 +95,7 @@ func Features(ctx context.Context, o Options) []Item {
 	var items []Item
 	for _, trunk := range r.heads {
 		folder, isTrunk := strings.CutSuffix(trunk, "/"+featurebranch.TrunkLeaf)
-		if !isTrunk {
+		if !isTrunk || r.pol.IsProtected(trunk) {
 			continue
 		}
 		why := r.merged(ctx, trunk, true)

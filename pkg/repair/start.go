@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -188,6 +189,15 @@ func pointAt(ctx context.Context, link Link) error {
 			req = switcher.SwitchRequest{TargetProjectDir: consumer, DependencyName: link.Dependency, Mode: switcher.ModeLocal, LocalPath: link.Copy}
 		}
 	}
+	// A local switch also lists the copy in go.work, where it would outlive the repair and break the build once
+	// the copy is disposed of; the replace line in go.mod is enough, so go.work is left as it was.
+	goWork := filepath.Join(consumer, "go.work")
+	before, readErr := os.ReadFile(goWork)
 	_, err := switcher.NewDependencySwitcher().Switch(ctx, req)
+	if readErr != nil {
+		_ = os.Remove(goWork)
+	} else {
+		_ = os.WriteFile(goWork, before, 0o644)
+	}
 	return err
 }

@@ -157,7 +157,10 @@ func deleteDisposalGroup(ctx context.Context, out io.Writer, g dispose.Group) {
 // OfferDisposal is the offer other commands make after their own work: when merged work left something behind
 // it is listed, and a person at a terminal is asked whether to delete it. It never fails the caller.
 func OfferDisposal(ctx context.Context, out io.Writer) {
-	d := disposal{Quiet: true, Interactive: cli.IsTerminal(os.Stdin) && !cli.Globals.JSON}
+	if cli.Globals.JSON {
+		return // the caller's output is JSON: an offer in prose would break it
+	}
+	d := disposal{Quiet: true, Interactive: cli.IsTerminal(os.Stdin)}
 	if err := runWorkDispose(ctx, d, os.Stdin, out); err != nil {
 		fmt.Fprintf(out, "[!] Disposal not offered: %v\n", err)
 	}
