@@ -22,10 +22,11 @@ Soma & Axon Hillock
 | Subcommand | Description |
 | :--- | :--- |
 | `adopt` | Move this repo's worktrees that live outside dendrite-work/ into it |
+| `dispose` | Ask to delete what merged work left behind: repair copies and branches, finished features, a retired develop |
 | `done` | Remove a copy (refuses uncommitted/unpushed work unless --force) |
 | `gc` | Remove copies that are merged (or whose upstream is gone) and clean |
 | `list` | List working copies and their cleanup status |
-| `new` | Create an isolated working copy (branch agent/<name>) |
+| `new` | Create an isolated working copy (branch <TICKET>-<slug>/main, or <ROOT>-<slug>/<TICKET>-<slug> for a sub-ticket) |
 
 ## Flags
 
@@ -44,6 +45,25 @@ dendrite work adopt [flags]
 | Flag | Description |
 | :--- | :--- |
 | `--dry-run` | Show what would happen without changing anything |
+
+### `dendrite work dispose`
+
+Ask to delete what merged work left behind: repair copies and branches, finished features, a retired develop
+
+```bash
+dendrite work dispose [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--dry-run` | Show what would happen without changing anything |
+| `--yes` | Delete every disposable item without asking |
+
+```bash
+dendrite work dispose
+dendrite work dispose --dry-run
+dendrite work dispose --yes
+```
 
 ### `dendrite work done`
 
@@ -85,7 +105,7 @@ Aliases: `ls`
 
 ### `dendrite work new`
 
-Create an isolated working copy (branch agent/<name>)
+Create an isolated working copy (branch <TICKET>-<slug>/main, or <ROOT>-<slug>/<TICKET>-<slug> for a sub-ticket)
 
 ```bash
 dendrite work new <name> [flags]
@@ -96,9 +116,9 @@ Aliases: `create`
 | Flag | Description |
 | :--- | :--- |
 | `--base` | Commit-ish to start from (default HEAD, or the parent ticket's feature branch) |
-| `--branch` | Branch to create (default agent/<name>) |
+| `--branch` | Branch to create (default: named after the ticket and its parent, else <name>/main) |
 | `--no-ticket-guard` | Do not check or start the ticket in Plane (env DENDRITE_TICKET_GUARD=off) |
-| `--target` | Branch the work merges into (default: the parent ticket's feature branch, else the integration branch) |
+| `--target` | Branch the work merges into (default: the trunk of the parent ticket, else the integration branch) |
 
 ## Examples
 
@@ -108,4 +128,5 @@ dendrite work list --json
 dendrite work done DEN-123 --force
 dendrite work gc --dry-run
 dendrite work adopt
+dendrite work dispose
 ```

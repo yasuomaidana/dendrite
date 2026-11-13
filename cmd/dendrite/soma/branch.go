@@ -19,11 +19,11 @@ import (
 
 // NewBranchCmd builds `dendrite branch`.
 func NewBranchCmd() *cobra.Command {
-	cmd := cli.NewGroupCmd("branch", "Where finished work merges: the integration branch, a parent ticket's feature branch, a fork", "soma")
+	cmd := cli.NewGroupCmd("branch", "Which branch a ticket is worked on and where it merges: the integration branch, a parent ticket's trunk, a fork", "soma")
 	var ticket string
 	show := &cobra.Command{
 		Use:   "show",
-		Short: "Explain the branch work merges into, and where that came from",
+		Short: "Explain the branch a ticket is worked on, the branch it merges into, and where that came from",
 		Args:  cli.NoArgs,
 		Example: "dendrite branch show\n" +
 			"dendrite branch show --ticket DEN-843",
@@ -57,13 +57,16 @@ func NewBranchCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.AddCommand(show, parent)
+	cmd.AddCommand(show, parent, newBranchRetireCmd())
 	return cmd
 }
 
 func writeBranchTarget(out io.Writer, t branchpolicy.Target, plan featurebranch.Plan) error {
 	if cli.Globals.JSON {
-		return cli.WriteJSON(out, map[string]any{"target": t, "plan": plan})
+		return cli.WriteJSON(out, map[string]any{"target": t, "plan": plan, "repairs": repairsOf(".")})
+	}
+	if plan.Branch != "" {
+		fmt.Fprintf(out, "Work branch:        %s\n", plan.Branch)
 	}
 	fmt.Fprintf(out, "Merges into:        %s  (%s)\n", t.Branch, t.Source)
 	fmt.Fprintf(out, "Integration branch: %s\n", t.Integration)
@@ -71,6 +74,9 @@ func writeBranchTarget(out io.Writer, t branchpolicy.Target, plan featurebranch.
 	fmt.Fprintf(out, "Feature prefix:     %s\n", t.FeaturePrefix)
 	if plan.Feature {
 		fmt.Fprintf(out, "Feature of:         %s  (%s)\n", plan.Parent.ID, plan.Parent.Title)
+	}
+	for _, k := range repairsOf(".") {
+		fmt.Fprintf(out, "Repair:             %s  [%s]  %s\n", k.Dependency, k.Stage, repairWhere(k))
 	}
 	return nil
 }

@@ -2,6 +2,7 @@ package mesh
 
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/repair"
 	"Dendrite/pkg/synapsesync"
 	"Dendrite/pkg/tracker/plane"
 	"context"
@@ -105,7 +106,11 @@ func NewSyncCmd() *cobra.Command {
 			}
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			return runSync(ctx, opts, mode, cmd.OutOrStdout())
+			err = runSync(ctx, opts, mode, cmd.OutOrStdout())
+			if !mode.asJSON && !mode.watch {
+				repair.AdvanceQuietly(ctx, cmd.OutOrStdout()) // repairs whose fix was merged or released move on
+			}
+			return err
 		},
 	}
 	f.bind(cmd)

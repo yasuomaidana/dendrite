@@ -290,3 +290,16 @@ func (b Board) Parent(ctx context.Context, ref string) (featurebranch.Ticket, bo
 	}
 	return featurebranch.Ticket{ID: strings.ToUpper(m[1]), Title: m[2]}, true, nil
 }
+
+// Title is the title of ref without its [ID] prefix. It makes a Board a featurebranch.Titled, so a ticket's
+// branch carries a readable name.
+func (b Board) Title(ctx context.Context, ref string) (string, error) {
+	_, issue, err := b.Status(ctx, ref)
+	if err != nil {
+		return "", err
+	}
+	if m := namePrefix.FindStringSubmatch(issue.Name); m != nil {
+		return m[2], nil
+	}
+	return issue.Name, nil
+}

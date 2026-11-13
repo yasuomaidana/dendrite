@@ -3,6 +3,7 @@ package soma
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/cmd/dendrite/internal/clitest"
+	"Dendrite/pkg/testkit"
 	"Dendrite/pkg/workcopy"
 	"bytes"
 	"context"
@@ -45,84 +46,49 @@ func TestWorkCommand_UsageAndErrors(t *testing.T) {
 	}
 }
 
+// workOut runs `dendrite work <args>` and returns what it printed; a failure stops the test.
+func workOut(t *testing.T, args ...string) string {
+	t.Helper()
+	var buf bytes.Buffer
+	testkit.Check(t, runWorkCommand(context.Background(), args, &buf))
+	return buf.String()
+}
+
+// workFails runs `dendrite work <args>` and stops the test unless it is refused.
+func workFails(t *testing.T, why string, args ...string) {
+	t.Helper()
+	if err := runWorkCommand(context.Background(), args, io.Discard); err == nil {
+		t.Fatal(why)
+	}
+}
+
 func TestWorkCommand_Lifecycle(t *testing.T) {
 	repo, root := clitest.SetupWorkRepo(t)
-	ctx := context.Background()
-	var buf bytes.Buffer
+	testkit.Equal(t, "empty json list", strings.TrimSpace(workOut(t, "list", "--json")), "[]")
 
-	if err := runWorkCommand(ctx, []string{"list", "--json"}, &buf); err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(buf.String()) != "[]" {
-		t.Fatalf("empty json list = %q", buf.String())
-	}
-
-	buf.Reset()
-	if err := runWorkCommand(ctx, []string{"new", "DEN-7", "--base", "main"}, &buf); err != nil {
-		t.Fatal(err)
-	}
 	copyPath := filepath.Join(root, "Proj-DEN-7")
-	if !strings.Contains(buf.String(), copyPath) {
-		t.Fatalf("new output: %s", buf.String())
-	}
-	if err := runWorkCommand(ctx, []string{"new", "DEN-7"}, &buf); err == nil {
-		t.Fatal("expected duplicate new to fail")
-	}
-
-	buf.Reset()
-	if err := runWorkCommand(ctx, []string{"list"}, &buf); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(buf.String(), "agent/den-7") || !strings.Contains(buf.String(), "no commits") {
-		t.Fatalf("list output: %s", buf.String())
-	}
+	testkit.Contains(t, workOut(t, "new", "DEN-7", "--base", "main"), copyPath)
+	workFails(t, "expected duplicate new to fail", "new", "DEN-7")
+	testkit.Contains(t, workOut(t, "list"), "DEN-7/main", "no commits")
 
 	// Commit in the copy and merge it: gc should remove it.
-	if err := os.WriteFile(filepath.Join(copyPath, "f.txt"), []byte("x\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	testkit.WriteFile(t, filepath.Join(copyPath, "f.txt"), "x\n", 0o644)
 	clitest.RunGitT(t, copyPath, "add", "f.txt")
 	clitest.RunGitT(t, copyPath, "commit", "-q", "-m", "f")
-	clitest.RunGitT(t, repo, "merge", "-q", "--no-edit", "agent/den-7")
+	clitest.RunGitT(t, repo, "merge", "-q", "--no-edit", "DEN-7/main")
 
-	buf.Reset()
-	if err := runWorkCommand(ctx, []string{"gc", "--dry-run"}, &buf); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(buf.String(), "would remove") {
-		t.Fatalf("dry run output: %s", buf.String())
-	}
-
-	buf.Reset()
-	if err := runWorkCommand(ctx, []string{"gc"}, &buf); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(buf.String(), "[✓] removed "+copyPath+" (merged into main)") {
-		t.Fatalf("gc output: %s", buf.String())
-	}
+	testkit.Contains(t, workOut(t, "gc", "--dry-run"), "would remove")
+	testkit.Contains(t, workOut(t, "gc"), "[✓] removed "+copyPath+" (merged into main)")
 	if _, err := os.Stat(copyPath); !os.IsNotExist(err) {
 		t.Fatalf("copy still exists: %v", err)
 	}
 
 	// done: explicit removal keeps an unmerged branch.
-	buf.Reset()
-	if err := runWorkCommand(ctx, []string{"new", "keep", "--branch", "feat/keep"}, &buf); err != nil {
-		t.Fatal(err)
-	}
+	workOut(t, "new", "keep", "--branch", "feat/keep")
 	keepPath := filepath.Join(root, "Proj-keep")
-	if err := os.WriteFile(filepath.Join(keepPath, "k.txt"), []byte("k\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := runWorkCommand(ctx, []string{"done", "keep"}, &buf); err == nil {
-		t.Fatal("expected refusal for dirty copy")
-	}
-	buf.Reset()
-	if err := runWorkCommand(ctx, []string{"done", "--force", "keep"}, &buf); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(buf.String(), "removed "+keepPath) {
-		t.Fatalf("done output: %s", buf.String())
-	}
+	testkit.WriteFile(t, filepath.Join(keepPath, "k.txt"), "k\n", 0o644)
+	workFails(t, "expected refusal for dirty copy", "done", "keep")
+	testkit.Contains(t, workOut(t, "done", "--force", "keep"), "removed "+keepPath)
 }
 
 func TestWorkCommand_Adopt(t *testing.T) {
@@ -194,7 +160,7 @@ func TestAutoCleanWorkCopiesPrintsOnlyRemovals(t *testing.T) {
 	}
 	clitest.RunGitT(t, aPath, "add", "a.txt")
 	clitest.RunGitT(t, aPath, "commit", "-q", "-m", "a")
-	clitest.RunGitT(t, repo, "merge", "-q", "--no-edit", "agent/a")
+	clitest.RunGitT(t, repo, "merge", "-q", "--no-edit", "a/main")
 
 	buf.Reset()
 	AutoCleanWorkCopies(ctx, &buf)

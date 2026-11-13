@@ -41,8 +41,8 @@ func TestPrepare_AgentsAndRulesCarryTheDendriteFirstWorkflow(t *testing.T) {
 		"## Session Start & Handoff",
 		"dendrite session resume",
 		"dendrite session checkpoint",
-		"merge your branch into its target (`dendrite branch show`; `develop` unless",
-		"git push origin HEAD:<target>",
+		"A trunk reaches `main` only by pull request: `dendrite chronos finish`",
+		"git push origin HEAD:<trunk>",
 		"EGM artifact directory: docs/specs",
 	} {
 		if !strings.Contains(string(agents), want) {
@@ -50,7 +50,7 @@ func TestPrepare_AgentsAndRulesCarryTheDendriteFirstWorkflow(t *testing.T) {
 		}
 	}
 	rules, _ := os.ReadFile(filepath.Join(root, ".agents", "rules.md"))
-	if !strings.Contains(string(rules), "dendrite work new <ticket>") || !strings.Contains(string(rules), "merge your branch into its target") {
+	if !strings.Contains(string(rules), "dendrite work new <ticket>") || !strings.Contains(string(rules), "only by pull request") {
 		t.Error(".agents/rules.md is missing the working-copy or merge-to-target rule")
 	}
 }
@@ -72,7 +72,7 @@ func TestPrepare_EveryAgentFamilyGetsTheSameSkillAndThePointerFiles(t *testing.T
 	if !strings.HasPrefix(string(first), "---\nname: dendrite-workflow\n") {
 		t.Errorf("skill frontmatter missing: %q", string(first[:40]))
 	}
-	if !strings.Contains(string(first), "## Finishing a ticket") || !strings.Contains(string(first), "git merge origin/develop") {
+	if !strings.Contains(string(first), "## Finishing a ticket") || !strings.Contains(string(first), "git merge origin/<parent trunk>") {
 		t.Error("skill is missing the finish-and-merge steps")
 	}
 }
@@ -166,7 +166,8 @@ func TestTheRulesAndTheSkillNameTheProjectsIntegrationBranch(t *testing.T) {
 	writeNumberedRules(&rules, projectOn(t, "trunk"))
 	skill := renderDendriteWorkflowSkill(projectOn(t, "trunk"))
 	for name, text := range map[string]string{"rules": rules.String(), "skill": skill} {
-		testkit.Contains(t, text, "`trunk`", "feat/<PARENT>-<slug>")
+		testkit.Contains(t, text, "`trunk`", "<ROOT>-<slug>/main")
+		testkit.NotContains(t, text, "agent/", "feat/")
 		testkit.NotContains(t, text, "{integration}", "{feature}")
 		testkit.NotContains(t, text, "origin/develop", "HEAD:develop")
 		_ = name
@@ -177,6 +178,20 @@ func TestTheRulesAndTheSkillNameTheProjectsIntegrationBranch(t *testing.T) {
 func TestTheDefaultRulesStillSayDevelop(t *testing.T) {
 	var rules strings.Builder
 	writeNumberedRules(&rules, projectOn(t, ""))
-	testkit.Contains(t, rules.String(), "never directly on `develop`, `main` or `master`", "feature/<PARENT>-<slug>", "dendrite branch show --ticket <ticket>")
+	testkit.Contains(t, rules.String(), "never directly on `develop`, `main` or `master`", "<TICKET>-<slug>/main", "<ROOT>-<slug>/<TICKET>-<slug>", "dendrite branch show --ticket <ticket>")
 	testkit.NotContains(t, rules.String(), "{integration}", "{feature}")
+}
+
+func TestAProjectThatIntegratesOnMainFinishesByPullRequest(t *testing.T) {
+	dir := t.TempDir()
+	testkit.GitInit(t, dir, "main")
+	testkit.Git(t, dir, "commit", "-q", "--allow-empty", "-m", "init")
+	var rules strings.Builder
+	writeNumberedRules(&rules, dir)
+	skill := renderDendriteWorkflowSkill(dir)
+	for _, text := range []string{rules.String(), skill} {
+		testkit.Contains(t, text, "pull request", "waits in To Verify", "a person merges it", "Never merge into or push `main`/`master`")
+		testkit.NotContains(t, text, "HEAD:main", "git merge origin/main", "{finish}", "{integration}")
+	}
+	testkit.Contains(t, skill, "dendrite chronos finish DEN-123", "git push origin HEAD:<parent trunk>")
 }

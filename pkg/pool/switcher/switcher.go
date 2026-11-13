@@ -323,14 +323,8 @@ func mutateCargoToml(path string, req SwitchRequest) (DependencyMode, error) {
 
 	reDep := regexp.MustCompile(fmt.Sprintf(`(?m)^%s\s*=.*$`, regexp.QuoteMeta(req.DependencyName)))
 	prevMode := ModePublished
-	if loc := reDep.FindString(string(data)); loc != "" {
-		if strings.Contains(loc, "path =") {
-			prevMode = ModeLocal
-		} else if strings.Contains(loc, "branch =") || strings.Contains(loc, "rev =") {
-			prevMode = ModeBranch
-		} else if strings.Contains(loc, "git =") {
-			prevMode = ModeFork
-		}
+	if e, ok := currentTomlLine(string(data), req.DependencyName); ok {
+		prevMode = e.Mode
 	}
 
 	var depReplacement string
@@ -342,7 +336,7 @@ func mutateCargoToml(path string, req SwitchRequest) (DependencyMode, error) {
 		if req.ForkURL == "" {
 			return "", errors.New("cargo branch mode needs the git repository URL (ForkURL)")
 		}
-		depReplacement = fmt.Sprintf(`%s = { git = "%s", branch = "%s" }`, req.DependencyName, req.ForkURL, req.BranchName)
+		depReplacement = gitTable(req)
 	case ModeLocal:
 		depReplacement = fmt.Sprintf(`%s = { path = "%s" }`, req.DependencyName, req.LocalPath)
 	case ModeFork:
@@ -425,14 +419,8 @@ func mutatePyprojectToml(path string, req SwitchRequest) (DependencyMode, error)
 	prevMode := ModePublished
 	reDep := regexp.MustCompile(fmt.Sprintf(`(?m)^%s\s*=.*$`, regexp.QuoteMeta(req.DependencyName)))
 
-	if loc := reDep.FindString(content); loc != "" {
-		if strings.Contains(loc, "editable = true") || strings.Contains(loc, "path =") {
-			prevMode = ModeLocal
-		} else if strings.Contains(loc, "branch =") {
-			prevMode = ModeBranch
-		} else if strings.Contains(loc, "git =") {
-			prevMode = ModeFork
-		}
+	if e, ok := currentTomlLine(content, req.DependencyName); ok {
+		prevMode = e.Mode
 	}
 
 	var depReplacement string
@@ -440,7 +428,7 @@ func mutatePyprojectToml(path string, req SwitchRequest) (DependencyMode, error)
 	case ModePublished:
 		depReplacement = fmt.Sprintf(`%s = "==%s"`, req.DependencyName, req.Version)
 	case ModeBranch:
-		depReplacement = fmt.Sprintf(`%s = { git = "%s", branch = "%s" }`, req.DependencyName, req.ForkURL, req.BranchName)
+		depReplacement = gitTable(req)
 	case ModeLocal:
 		depReplacement = fmt.Sprintf(`%s = { path = "%s", editable = true }`, req.DependencyName, req.LocalPath)
 	case ModeFork:

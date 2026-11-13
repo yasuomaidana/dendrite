@@ -8,17 +8,24 @@ import (
 	"testing"
 
 	"Dendrite/pkg/testkit"
+
+	"github.com/spf13/cobra"
 )
 
-func runBranch(t *testing.T, args ...string) (string, error) {
+// runCommand runs a command group with args and returns what it printed.
+func runCommand(t *testing.T, cmd *cobra.Command, args ...string) (string, error) {
 	t.Helper()
-	cmd := NewBranchCmd()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs(args)
 	err := cmd.ExecuteContext(context.Background())
 	return out.String(), err
+}
+
+func runBranch(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	return runCommand(t, NewBranchCmd(), args...)
 }
 
 func TestBranchShowExplainsTheCurrentTarget(t *testing.T) {
@@ -33,7 +40,7 @@ func TestBranchShowForATicketNamesItsFeatureBranch(t *testing.T) {
 	newTargetRig(t)
 	out, err := runBranch(t, "show", "--ticket", "DEN-841")
 	testkit.Check(t, err)
-	testkit.Contains(t, out, "Merges into:        feature/DEN-840-work  (ticket target recorded for this branch)", "Feature of:         DEN-840  (work)")
+	testkit.Contains(t, out, "Merges into:        DEN-840-work/main  (ticket target recorded for this branch)", "Feature of:         DEN-840  (work)")
 
 	out, err = runBranch(t, "show", "--ticket", "DEN-900")
 	testkit.Check(t, err)
@@ -50,7 +57,7 @@ func TestBranchShowAsJSON(t *testing.T) {
 	clitest.JsonOutput(t, true)
 	out, err := runBranch(t, "show", "--ticket", "DEN-841")
 	testkit.Check(t, err)
-	testkit.Contains(t, out, `"target"`, `"plan"`, `"Target": "feature/DEN-840-work"`)
+	testkit.Contains(t, out, `"target"`, `"plan"`, `"Target": "DEN-840-work/main"`)
 }
 
 func TestBranchParentLinksTheTicketsInPlane(t *testing.T) {

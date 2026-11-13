@@ -20,11 +20,11 @@ jobs:
           cache: true
 
       # Dendrite's tests run against the real dendrite-plane sidecar (there is no Go stand-in for it), so the runner
-      # builds it. planetest finds it through DENDRITE_PLANE_TEST_BIN. The sidecar is taken from the ref named by
-      # DENDRITE_PLANE_REF (default: its main branch; dendrite-plane-rs no longer has a develop branch).
-      # TODO(DEN-875): dendrite-rag-rs stays on develop until its release PR is merged; after that change
-      # DENDRITE_RAG_REF's default to 'main' (or to its v0.1.x tag), and pin the plane default to its tag once one
-      # exists, so a release builds against the sidecars it shipped with. Set the repository variables to pin sooner.
+      # builds it. planetest finds it through DENDRITE_PLANE_TEST_BIN. Each sidecar is taken from the ref named by
+      # its repository variable (DENDRITE_PLANE_REF, DENDRITE_RAG_REF; default: its main branch, because neither
+      # dendrite-plane-rs nor dendrite-rag-rs has a develop branch any more).
+      # TODO(DEN-875): pin both defaults to a release tag once the sidecars have one, so a release builds against
+      # the sidecars it shipped with. Set the repository variables to pin sooner.
       - name: Check out the dendrite-plane sidecar
         uses: actions/checkout@v4
         with:
@@ -36,7 +36,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: yasuomaidana/dendrite-rag-rs
-          ref: ${{ vars.DENDRITE_RAG_REF || 'develop' }}
+          ref: ${{ vars.DENDRITE_RAG_REF || 'main' }}
           path: .ci/dendrite-rag-rs
 
       - name: Set up Rust

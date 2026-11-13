@@ -3,9 +3,10 @@
 //
 // The answer comes from, in order: the synapse member's own branch (passed in as an Override, because
 // pkg/synapse imports pkg/vcs and this package must stay importable from there), the project's
-// [git] integration_branch directive, a local or origin "develop" (so a project with no configuration
-// keeps behaving as before), the remote's default branch (origin/HEAD), main, master, and last the
-// literal "develop" for a repository that has none of them yet.
+// [git] integration_branch directive, the remote's default branch (origin/HEAD), main, master, a "develop"
+// that is the only one of them the repository has, and last the literal "main" for a repository that has
+// none of them yet. A repository that has both main and develop integrates on main: develop is used only
+// when it is named, or by the branches made before feature folders existed (see LegacyIntegration).
 package branchpolicy
 
 import (
@@ -25,6 +26,13 @@ const DirectivePath = ".github/dendrite/directives.toml"
 
 // DefaultFeaturePrefix starts the branch that groups the sub-tickets of a parent ticket.
 const DefaultFeaturePrefix = "feature/"
+
+// LegacyIntegration is the branch every agent's work used to merge into. A repository that still has it keeps
+// it as the target of its `agent/<ticket>` and `feature/<PARENT>-<slug>` branches until it is retired.
+const LegacyIntegration = "develop"
+
+// legacyPrefixes start the branches made before feature folders: they were cut from LegacyIntegration.
+var legacyPrefixes = []string{"agent/", DefaultFeaturePrefix}
 
 // ValidBranch reports whether name is acceptable as a git branch name: non-empty, no spaces, control
 // characters or any of ~^:?*[\@{, no "..", "//", leading "-" or "/", and no trailing "/", "." or ".lock".
@@ -77,10 +85,11 @@ const (
 	SourceMember     Source = "synapse member branch"
 	SourceDirective  Source = "directive git.integration_branch"
 	SourceTicket     Source = "ticket target recorded for this branch"
-	SourceDevelop    Source = "existing develop branch"
+	SourceLegacy     Source = "branch made before feature folders, in a repository that still has develop"
 	SourceRemoteHEAD Source = "remote default branch (origin/HEAD)"
 	SourceMain       Source = "existing main branch"
 	SourceMaster     Source = "existing master branch"
+	SourceDevelop    Source = "existing develop branch (the repository has no main or master)"
 	SourceDefault    Source = "default (no branch found yet)"
 )
 
@@ -120,13 +129,17 @@ func (t Target) Ref() string { return t.Remote + "/" + t.Branch }
 // conventional trunk names.
 func (t Target) Protected() []string {
 	out := []string{t.Branch}
-	for _, b := range []string{t.Integration, "develop", "main", "master"} {
+	for _, b := range []string{t.Integration, LegacyIntegration, "main", "master"} {
 		if b != "" && !slices.Contains(out, b) {
 			out = append(out, b)
 		}
 	}
 	return out
 }
+
+// ByPullRequest reports whether finished work reaches Branch only by pull request: it is a trunk (main or
+// master), which agents never push.
+func (t Target) ByPullRequest() bool { return t.Branch == "main" || t.Branch == "master" }
 
 // IsProtected reports whether branch is one of Protected.
 func (t Target) IsProtected(branch string) bool {
@@ -168,8 +181,14 @@ func ForBranch(dir, branch string) Target {
 }
 
 func (t Target) withRecordedTarget(dir, branch string) Target {
-	if rec, ok := git(dir, "config", "--get", TargetKey(branch)); ok && ValidBranch(rec) && rec != t.Branch {
-		t.Branch, t.Source = rec, SourceTicket
+	rec, ok := git(dir, "config", "--get", TargetKey(branch))
+	switch {
+	case ok && ValidBranch(rec):
+		if rec != t.Branch {
+			t.Branch, t.Source = rec, SourceTicket
+		}
+	case t.Branch != LegacyIntegration && hasAny(branch, strings.HasPrefix, legacyPrefixes...) && branchExists(dir, t.Remote, LegacyIntegration):
+		t.Branch, t.Source = LegacyIntegration, SourceLegacy
 	}
 	return t
 }
@@ -207,9 +226,6 @@ func chooseBranch(dir, remote string, ov Override, d gitDirective) (string, Sour
 	if ValidBranch(d.IntegrationBranch) {
 		return d.IntegrationBranch, SourceDirective
 	}
-	if branchExists(dir, remote, "develop") {
-		return "develop", SourceDevelop
-	}
 	if b := remoteDefault(dir, remote); b != "" {
 		return b, SourceRemoteHEAD
 	}
@@ -219,7 +235,10 @@ func chooseBranch(dir, remote string, ov Override, d gitDirective) (string, Sour
 	if branchExists(dir, remote, "master") {
 		return "master", SourceMaster
 	}
-	return "develop", SourceDefault
+	if branchExists(dir, remote, LegacyIntegration) {
+		return LegacyIntegration, SourceDevelop
+	}
+	return "main", SourceDefault
 }
 
 func orElse(v, fallback string) string {

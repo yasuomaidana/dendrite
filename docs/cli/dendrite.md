@@ -28,10 +28,11 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 
 | Command | Aliases | Description |
 | :--- | :--- | :--- |
-| [`branch`](branch.md) |  | Where finished work merges: the integration branch, a parent ticket's feature branch, a fork |
+| [`branch`](branch.md) |  | Which branch a ticket is worked on and where it merges: the integration branch, a parent ticket's trunk, a fork |
 | [`engram`](engram.md) | `store`, `engram-store`, `gram` | Persistent segmented store, memory checkpointer, and chunk query |
 | [`ganglion`](ganglion.md) | `project`, `ganglion-workspace`, `prj` | Manage multi-project isolated workspaces |
 | [`plexus`](plexus.md) | `pool`, `connectome-pool`, `plexus-pool`, `connectome`, `plx` | Multi-directory dependency inference & topological DAG solver |
+| [`repair`](repair.md) |  | Fix a dependency on a branch or fork of its own, tracked until the fix is merged and released |
 | [`soma`](soma.md) | `env`, `homeostasis`, `soma-homeostasis` | Manage and replicate development environments |
 | [`work`](work.md) | `workcopy`, `wc` | Manage model-owned working copies in dendrite-work/ (create, list, remove, auto-clean merged) |
 

@@ -13,6 +13,7 @@ import (
 	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/planesvc/planetest"
 	"Dendrite/pkg/sidecar"
+	"Dendrite/pkg/testkit"
 	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/plane"
 )
@@ -341,6 +342,22 @@ func TestBoardParentReadsTheParentTicket(t *testing.T) {
 	s.board.Close()
 	if _, _, err := s.Board.Parent(ctx, "DEN-2"); err == nil {
 		t.Fatal("Plane down is an error, not 'no parent'")
+	}
+}
+
+func TestBoardTitleReadsATicketsOwnTitleWithoutItsID(t *testing.T) {
+	ctx := context.Background()
+	s := newSession(t, map[string]string{"DEN-1": "To Do", "DEN-2": "To Do"})
+	title, err := s.Board.Title(ctx, "DEN-1")
+	testkit.Check(t, err)
+	testkit.Equal(t, "title", title, "work")
+
+	s.board.SetTitle("DEN-2", "no prefix here")
+	title, err = s.Board.Title(ctx, "DEN-2")
+	testkit.Check(t, err)
+	testkit.Equal(t, "a title without an [ID] is returned whole", title, "no prefix here")
+	if _, err := s.Board.Title(ctx, "DEN-99"); err == nil {
+		t.Fatal("an unknown ticket is an error")
 	}
 }
 

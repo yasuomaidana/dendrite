@@ -40,7 +40,11 @@ func TestResolveChoosesTheStrongestSource(t *testing.T) {
 			withDirective(t, d, "trunk")
 			testkit.Git(t, d, "branch", "develop")
 		}, Override{}, "trunk", SourceDirective},
-		"develop keeps legacy projects working": {func(t *testing.T, d string) { testkit.Git(t, d, "branch", "develop") }, Override{}, "develop", SourceDevelop},
+		"main beats a develop beside it": {func(t *testing.T, d string) { testkit.Git(t, d, "branch", "develop") }, Override{}, "main", SourceMain},
+		"a named develop is still used": {func(t *testing.T, d string) {
+			withDirective(t, d, "develop")
+			testkit.Git(t, d, "branch", "develop")
+		}, Override{}, "develop", SourceDirective},
 		"remote default": {func(t *testing.T, d string) {
 			testkit.Git(t, d, "update-ref", "refs/remotes/origin/trunk", "HEAD")
 			testkit.Git(t, d, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
@@ -62,8 +66,12 @@ func TestResolveFallsBackWhenNothingExists(t *testing.T) {
 	testkit.Equal(t, "master", Resolve(master, Override{}).Source, SourceMaster)
 	other := repo(t, "scratch")
 	got := Resolve(other, Override{})
-	testkit.Equal(t, "branch", got.Branch, "develop")
+	testkit.Equal(t, "branch", got.Branch, "main")
 	testkit.Equal(t, "source", got.Source, SourceDefault)
+	only := repo(t, "develop")
+	got = Resolve(only, Override{})
+	testkit.Equal(t, "a develop with no trunk beside it", got.Branch, "develop")
+	testkit.Equal(t, "its source", got.Source, SourceDevelop)
 }
 
 func TestResolveSurvivesABrokenDirectivesFile(t *testing.T) {
@@ -200,13 +208,29 @@ func TestAnInstalledTargetOfTheCurrentBranchReplacesTheIntegrationBranch(t *test
 
 	got := For(dir)
 	testkit.Equal(t, "merge target", got.Branch, "feature/DEN-1-f")
-	testkit.Equal(t, "integration", got.Integration, "develop")
+	testkit.Equal(t, "integration", got.Integration, "main")
 	testkit.Equal(t, "source", got.Source, SourceTicket)
 	testkit.Equal(t, "protected first", got.Protected()[0], "feature/DEN-1-f")
-	testkit.Equal(t, "protected has integration", got.Protected()[1], "develop")
+	testkit.Equal(t, "protected has integration", got.Protected()[1], "main")
 	testkit.Equal(t, "no duplicates", len(got.Protected()), 4)
 	testkit.Equal(t, "named branch", ForBranch(dir, "agent/x").Branch, "feature/DEN-1-f")
-	testkit.Equal(t, "unrecorded branch", ForBranch(dir, "agent/y").Branch, "develop")
+}
+
+func TestBranchesMadeBeforeFeatureFoldersKeepDevelopWhileItExists(t *testing.T) {
+	dir := repo(t, "main")
+	testkit.Equal(t, "no develop to keep", ForBranch(dir, "agent/y").Branch, "main")
+	testkit.Git(t, dir, "branch", "develop")
+	for branch, want := range map[string]string{
+		"agent/y": "develop", "feature/DEN-1-f": "develop", "DEN-2-fix/main": "main", "DEN-1-f/DEN-3-part": "main",
+	} {
+		testkit.Equal(t, branch, ForBranch(dir, branch).Branch, want)
+	}
+	legacy := ForBranch(dir, "agent/y")
+	testkit.Equal(t, "source", legacy.Source, SourceLegacy)
+	testkit.Equal(t, "integration is still main", legacy.Integration, "main")
+
+	withDirective(t, dir, "develop")
+	testkit.Equal(t, "a named develop needs no legacy rule", ForBranch(dir, "agent/y").Source, SourceDirective)
 }
 
 func TestARecordedTargetThatIsNotABranchNameOrChangesNothingIsIgnored(t *testing.T) {
@@ -216,12 +240,19 @@ func TestARecordedTargetThatIsNotABranchNameOrChangesNothingIsIgnored(t *testing
 	testkit.Git(t, dir, "config", TargetKey("agent/x"), "not a branch")
 	testkit.Equal(t, "invalid", For(dir).Branch, "develop")
 	testkit.Git(t, dir, "config", TargetKey("agent/x"), "develop")
-	testkit.Equal(t, "same as integration", For(dir).Source, SourceDevelop)
+	testkit.Equal(t, "recorded develop", For(dir).Source, SourceTicket)
+	testkit.Git(t, dir, "config", TargetKey("agent/x"), "main")
+	testkit.Equal(t, "same as integration", For(dir).Source, SourceMain)
 }
 
 func TestForOnADetachedHeadUsesTheIntegrationBranch(t *testing.T) {
 	dir := repo(t, "main")
 	testkit.Git(t, dir, "branch", "develop")
 	testkit.Git(t, dir, "checkout", "-q", "--detach")
-	testkit.Equal(t, "detached", For(dir).Branch, "develop")
+	testkit.Equal(t, "detached", For(dir).Branch, "main")
+}
+
+func TestOnlyATrunkIsReachedByPullRequest(t *testing.T) {
+	testkit.Table(t, map[string]bool{"main": true, "master": true, "develop": false, "DEN-1-f/main": false, "release/2": false},
+		func(branch string) bool { return Target{Branch: branch}.ByPullRequest() })
 }

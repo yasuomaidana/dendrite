@@ -349,14 +349,14 @@ func TestRun_StandaloneUsesRepoPlaneLink(t *testing.T) {
 
 func TestRun_ReportsTheTargetAndWhetherTheCheckoutIsOffIt(t *testing.T) {
 	t.Setenv("DENDRITE_HOME", t.TempDir())
-	solo, _ := newRepo(t, "target") // on branch feature, with no develop
+	solo, _ := newRepo(t, "target") // on branch feature, with no main, master or develop
 	rep, err := Run(context.Background(), Options{StartDir: solo, GitOnly: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := rep.Members[0]
-	if m.Target != "develop" || !m.OffTarget {
-		t.Errorf("a checkout on feature with no develop is off the default target: target %q off %v", m.Target, m.OffTarget)
+	if m.Target != "main" || !m.OffTarget {
+		t.Errorf("a checkout on feature with no trunk is off the default target: target %q off %v", m.Target, m.OffTarget)
 	}
 
 	git(t, solo, "branch", "-m", "develop")

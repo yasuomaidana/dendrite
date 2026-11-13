@@ -105,20 +105,26 @@ func TestCreateErrors(t *testing.T) {
 	}
 }
 
-func TestGitFailuresAreReported(t *testing.T) {
+// mergedCopy is a manager whose only copy, "merged", has a commit that main already holds.
+func mergedCopy(t *testing.T) (m *Manager, root, merged string) {
+	t.Helper()
 	repo, root := newRepo(t)
-	ctx := context.Background()
-	m := newManager(repo)
-	merged, _ := m.Create(ctx, "merged", "", "")
+	m = newManager(repo)
+	merged, _ = m.Create(context.Background(), "merged", "", "")
 	commitIn(t, merged, "m.txt")
-	git(t, repo, "merge", "-q", "--no-edit", "agent/merged")
+	git(t, repo, "merge", "-q", "--no-edit", "merged/main")
+	return m, root, merged
+}
+
+func TestGitFailuresWhileListingAreReported(t *testing.T) {
+	ctx := context.Background()
+	m, _, _ := mergedCopy(t)
 
 	m.git = failingGit("worktree list")
-	if _, err := m.List(ctx); err == nil {
-		t.Error("List must surface worktree list failure")
-	}
-	if _, err := m.Adopt(ctx, GCOptions{}); err == nil {
-		t.Error("Adopt must surface worktree list failure")
+	_, listErr := m.List(ctx)
+	_, adoptErr := m.Adopt(ctx, GCOptions{})
+	if listErr == nil || adoptErr == nil {
+		t.Errorf("List and Adopt must surface worktree list failure: %v, %v", listErr, adoptErr)
 	}
 
 	m.git = failingGit("status")
@@ -126,19 +132,23 @@ func TestGitFailuresAreReported(t *testing.T) {
 	if err != nil || len(copies) != 1 || !copies[0].Dirty {
 		t.Errorf("unreadable status must count as dirty: %+v %v", copies, err)
 	}
+}
+
+func TestGitFailuresWhileRemovingAreReported(t *testing.T) {
+	ctx := context.Background()
+	m, root, merged := mergedCopy(t)
 
 	m.git = failingGit("worktree remove")
 	reports, err := m.GC(ctx, GCOptions{})
 	if err != nil || reports[0].Action != "kept" || !strings.Contains(reports[0].Reason, "injected") {
 		t.Errorf("gc removal failure: %+v %v", reports, err)
 	}
-	if _, err := m.Remove(ctx, "merged", RemoveOptions{}); err == nil {
-		t.Error("Remove must surface removal failure")
-	}
+	_, removeErr := m.Remove(ctx, "merged", RemoveOptions{})
 
 	m.git = failingGit("branch -D")
-	if _, err := m.Remove(ctx, "merged", RemoveOptions{}); err == nil || !strings.Contains(err.Error(), "branch not deleted") {
-		t.Errorf("branch delete failure: %v", err)
+	_, branchErr := m.Remove(ctx, "merged", RemoveOptions{})
+	if removeErr == nil || branchErr == nil || !strings.Contains(branchErr.Error(), "branch not deleted") {
+		t.Errorf("Remove must surface a removal failure and a branch delete failure: %v, %v", removeErr, branchErr)
 	}
 	if dirExists(merged) || dirExists(root) {
 		t.Error("copy and empty root should be gone even when the branch survives")
@@ -155,7 +165,7 @@ func TestRemoveRefusesUnpushedAndHandlesDetached(t *testing.T) {
 
 	ahead, _ := m.Create(ctx, "ahead", "", "")
 	commitIn(t, ahead, "a.txt")
-	git(t, ahead, "push", "-q", "-u", "origin", "agent/ahead")
+	git(t, ahead, "push", "-q", "-u", "origin", "ahead/main")
 	commitIn(t, ahead, "b.txt")
 	if _, err := m.Remove(ctx, ahead, RemoveOptions{}); err == nil || !strings.Contains(err.Error(), "unpushed") {
 		t.Errorf("expected unpushed refusal: %v", err)
