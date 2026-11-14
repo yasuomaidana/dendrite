@@ -92,8 +92,8 @@ func gateSteps(comps []Component, ext Extension) []Step {
 			Step{Name: "Set up Rust", Uses: "dtolnay/rust-toolchain@stable"},
 			Step{Name: "Cache loom-gate", Uses: "actions/cache@v4", With: [][2]string{
 				{"path", "~/.cargo/bin/loom-gate"},
-				{"key", "loom-gate-${{ runner.os }}-${{ vars.LOOM_GATE_REF || 'develop' }}"}}},
-			run("Install loom-gate", `command -v loom-gate >/dev/null || cargo install --locked --git `+loomGateRepo+` --branch "${{ vars.LOOM_GATE_REF || 'develop' }}" loom-gate`))
+				{"key", "loom-gate-${{ runner.os }}-${{ vars.LOOM_GATE_REF || 'v0.1.0' }}"}}},
+			run("Install loom-gate", `command -v loom-gate >/dev/null || cargo install --locked --git `+loomGateRepo+` --tag "${{ vars.LOOM_GATE_REF || 'v0.1.0' }}" loom-gate`))
 	}
 	checks := []string{"loc", "clones", "complexity", "structure"}
 	if hasKind(comps, Rust) {

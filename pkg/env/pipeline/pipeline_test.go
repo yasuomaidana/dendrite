@@ -117,6 +117,7 @@ func TestRenderAPolyglotProjectIsValidYAMLWithAJobPerComponent(t *testing.T) {
 		"working-directory: crates", "cargo clippy --workspace --all-targets -- -D warnings -W clippy::cognitive_complexity",
 		"cargo llvm-cov --workspace --fail-under-lines 87.5", "components: rustfmt, clippy, llvm-tools-preview", "bun install --frozen-lockfile", "bun run build",
 		"uvx ruff check .", "--cov-fail-under=87.5", "Coverage floor (>= 87.5%)", "go-version-file: go.mod",
+		`--tag "${{ vars.LOOM_GATE_REF || 'v0.1.0' }}" loom-gate`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q\n%s", want, text)
@@ -124,6 +125,9 @@ func TestRenderAPolyglotProjectIsValidYAMLWithAJobPerComponent(t *testing.T) {
 	}
 	if !strings.HasPrefix(text, ManagedHeader+"\n") {
 		t.Error("a generated workflow carries the managed header")
+	}
+	if strings.Contains(text, "--branch") {
+		t.Errorf("loom-gate is installed from a release tag, not a branch (the rag-rs develop branch is gone)\n%s", text)
 	}
 }
 
