@@ -16,6 +16,7 @@ core-rs = "cargo test"
 embedag = "cargo test --workspace"
 git-rs = "cargo test"
 mcp-hub = "go test ./..."
+plane-rs = "cargo test --workspace"
 rag-rs = "cargo test"
 
 [[members]]
@@ -45,6 +46,13 @@ alias = "git-rs"
 role = "producer"
 path_hint = "dendrite-git-rs"
 remote = "https://github.com/yasuomaidana/dendrite-git-rs.git"
+
+[[members]]
+project_id = "dpid_4a4118540c0bb08406af67dcf9188778"
+alias = "plane-rs"
+role = "producer"
+path_hint = "dendrite-plane-rs"
+remote = "https://github.com/yasuomaidana/dendrite-plane-rs.git"
 
 [[members]]
 project_id = "dpid_51e41909af53ad63c519ca9a2f266675"

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"Dendrite/pkg/testkit"
 )
 
 func TestSiteConfigBuilder(t *testing.T) {
@@ -61,26 +63,22 @@ func TestSiteConfigBuilder(t *testing.T) {
 		}
 	})
 
-	t.Run("InvalidPortValidation", func(t *testing.T) {
-		_, err := NewSiteConfigBuilder().WithPort(70000).Build()
-		if err == nil {
-			t.Fatal("expected error for invalid port > 65535, got nil")
-		}
-	})
-
-	t.Run("EmptySiteNameValidation", func(t *testing.T) {
-		_, err := NewSiteConfigBuilder().WithTitle("").Build()
-		if err == nil {
-			t.Fatal("expected error for empty site title, got nil")
-		}
-	})
-
-	t.Run("EmptyProjectNameValidation", func(t *testing.T) {
-		_, err := NewSiteConfigBuilder().WithProject("acme", "").Build()
-		if err == nil {
-			t.Fatal("expected error for empty project name, got nil")
-		}
-	})
+	validationTests := []struct {
+		name    string
+		builder *SiteConfigBuilder
+		wantErr string
+	}{
+		{"InvalidPortValidation", NewSiteConfigBuilder().WithPort(70000), "invalid port > 65535"},
+		{"EmptySiteNameValidation", NewSiteConfigBuilder().WithTitle(""), "empty site title"},
+		{"EmptyProjectNameValidation", NewSiteConfigBuilder().WithProject("acme", ""), "empty project name"},
+	}
+	for _, tc := range validationTests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := tc.builder.Build(); err == nil {
+				t.Fatalf("expected error for %s, got nil", tc.wantErr)
+			}
+		})
+	}
 }
 
 func TestManifestBuilder(t *testing.T) {
@@ -379,37 +377,32 @@ func TestServerLifecycle(t *testing.T) {
 	}
 }
 
-func TestAgentAndService(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "docusaurus-svc-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
+// docsFixture is a project directory holding one feature document under docs/.
+func docsFixture(t *testing.T) (projectDir, docsDir string) {
+	t.Helper()
+	projectDir = t.TempDir()
+	docsDir = filepath.Join(projectDir, "docs")
+	testkit.WriteFile(t, filepath.Join(docsDir, "FEAT-001-sample.md"), "# FEAT-001: Sample Feature\n## 3. Acceptance Criteria\n- [x] AC-1: Pass\n", 0o644)
+	if err := os.MkdirAll(filepath.Join(projectDir, "pkg", "samplepkg"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	defer os.RemoveAll(tempDir)
+	return projectDir, docsDir
+}
 
-	docsDir := filepath.Join(tempDir, "docs")
-	pkgDir := filepath.Join(tempDir, "pkg", "samplepkg")
-	_ = os.MkdirAll(docsDir, 0755)
-	_ = os.MkdirAll(pkgDir, 0755)
-
-	featContent := `# FEAT-001: Sample Feature
-## 3. Acceptance Criteria
-- [x] AC-1: Pass
-`
-	_ = os.WriteFile(filepath.Join(docsDir, "FEAT-001-sample.md"), []byte(featContent), 0644)
-
-	// Test agent with empty docsDir
-	agentDefault := NewDocusaurusAgent(tempDir, "")
-	agentNonExistent := NewDocusaurusAgent("/non/existent/path/999", "/non/existent/docs/999")
-	ctx := context.Background()
-	_, _ = agentNonExistent.Audit(ctx)
-	if agentDefault == nil {
+func TestAgentToleratesDefaultAndMissingPaths(t *testing.T) {
+	projectDir, _ := docsFixture(t)
+	if NewDocusaurusAgent(projectDir, "") == nil {
 		t.Fatalf("expected valid agent")
 	}
+	_, _ = NewDocusaurusAgent("/non/existent/path/999", "/non/existent/docs/999").Audit(context.Background())
+}
 
+func TestServiceInitAndAudit(t *testing.T) {
+	projectDir, docsDir := docsFixture(t)
+	ctx := context.Background()
 	svc := NewService()
 
-	// Test Init
-	initDir := filepath.Join(tempDir, "init-site")
+	initDir := filepath.Join(projectDir, "init-site")
 	if err := svc.Init(ctx, initDir); err != nil {
 		t.Fatalf("service init failed: %v", err)
 	}
@@ -417,17 +410,21 @@ func TestAgentAndService(t *testing.T) {
 		t.Errorf("package.json missing after service.Init")
 	}
 
-	// Test Audit
-	summary, err := svc.Audit(ctx, tempDir, docsDir)
+	summary, err := svc.Audit(ctx, projectDir, docsDir)
 	if err != nil {
 		t.Fatalf("agent audit failed: %v", err)
 	}
 	if summary.TotalFeatures != 1 {
 		t.Errorf("expected 1 feature in audit, got %d", summary.TotalFeatures)
 	}
+}
 
-	// Test Generate
-	siteDir := filepath.Join(tempDir, "site")
+func TestServiceGenerateExportAndServe(t *testing.T) {
+	projectDir, docsDir := docsFixture(t)
+	ctx := context.Background()
+	svc := NewService()
+
+	siteDir := filepath.Join(projectDir, "site")
 	res, err := svc.Generate(ctx, docsDir, siteDir, nil)
 	if err != nil {
 		t.Fatalf("service generate failed: %v", err)
@@ -435,43 +432,37 @@ func TestAgentAndService(t *testing.T) {
 	if res.TotalDocs != 1 {
 		t.Errorf("expected 1 total doc, got %d", res.TotalDocs)
 	}
-	if _, err := os.Stat(res.ManifestPath); os.IsNotExist(err) {
-		t.Errorf("manifest file was not generated: %s", res.ManifestPath)
-	}
-	if _, err := os.Stat(res.BundlePath); os.IsNotExist(err) {
-		t.Errorf("bundle file was not generated: %s", res.BundlePath)
+	for _, generated := range []string{res.ManifestPath, res.BundlePath} {
+		if _, err := os.Stat(generated); os.IsNotExist(err) {
+			t.Errorf("file was not generated: %s", generated)
+		}
 	}
 
-	// Test ExportBundle with custom and empty bundlePath
-	bundleDest := filepath.Join(tempDir, "exported-bundle.tar.gz")
-	manifest, err := svc.ExportBundle(ctx, siteDir, bundleDest)
+	manifest, err := svc.ExportBundle(ctx, siteDir, filepath.Join(projectDir, "exported-bundle.tar.gz"))
 	if err != nil {
 		t.Fatalf("service ExportBundle failed: %v", err)
 	}
 	if manifest.ProjectName != "dendrite" {
 		t.Errorf("unexpected project in exported manifest: %s", manifest.ProjectName)
 	}
-	// Default bundle path
-	_, err = svc.ExportBundle(ctx, siteDir, "")
-	if err != nil {
+	if _, err := svc.ExportBundle(ctx, siteDir, ""); err != nil {
 		t.Fatalf("service ExportBundle with empty bundlePath failed: %v", err)
 	}
-	// Empty siteDir error
 	if _, err := svc.ExportBundle(ctx, "", ""); err == nil {
 		t.Errorf("expected error for empty siteDir in ExportBundle")
 	}
 
-	// Test Serve
-	serverInst, err := svc.Serve(ctx, siteDir, 39998)
+	// A free port: a fixed one fails when two test runs overlap on the same machine.
+	serverInst, err := svc.Serve(ctx, siteDir, testkit.FreePort(t))
 	if err != nil {
 		t.Fatalf("service Serve failed: %v", err)
 	}
 	_ = serverInst.Shutdown(ctx)
+}
 
-	// Test Build with missing package.json error handling
-	emptyDir := filepath.Join(tempDir, "empty")
-	_ = os.MkdirAll(emptyDir, 0755)
-	if err := svc.Build(ctx, emptyDir); err == nil {
+func TestServiceBuildNeedsAPackageJSON(t *testing.T) {
+	emptyDir := t.TempDir()
+	if err := NewService().Build(context.Background(), emptyDir); err == nil {
 		t.Errorf("expected error when building directory without package.json")
 	}
 }

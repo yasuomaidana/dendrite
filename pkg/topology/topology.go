@@ -169,16 +169,20 @@ func (c *TopologyConfig) ToJSON() ([]byte, error) {
 	return json.MarshalIndent(c, "", "  ")
 }
 
-// FromJSON deserializes JSON bytes into a validated TopologyConfig.
-func FromJSON(data []byte) (*TopologyConfig, error) {
+func decodeTopologyConfig(data []byte, unmarshal func([]byte, any) error, formatName string) (*TopologyConfig, error) {
 	var cfg TopologyConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal JSON topology config: %w", err)
+	if err := unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal %s topology config: %w", formatName, err)
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// FromJSON deserializes JSON bytes into a validated TopologyConfig.
+func FromJSON(data []byte) (*TopologyConfig, error) {
+	return decodeTopologyConfig(data, json.Unmarshal, "JSON")
 }
 
 // ToYAML serializes the configuration into YAML format bytes.
@@ -188,12 +192,5 @@ func (c *TopologyConfig) ToYAML() ([]byte, error) {
 
 // FromYAML deserializes YAML bytes into a validated TopologyConfig.
 func FromYAML(data []byte) (*TopologyConfig, error) {
-	var cfg TopologyConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal YAML topology config: %w", err)
-	}
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
-	return &cfg, nil
+	return decodeTopologyConfig(data, yaml.Unmarshal, "YAML")
 }

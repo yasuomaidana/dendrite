@@ -12,9 +12,12 @@ var (
 	ErrInteractiveAuthDenied   = errors.New("interactive migration authorization denied by user")
 	ErrNonInteractiveNoForce   = errors.New("interactive terminal confirmation required; cannot proceed in non-interactive environment without explicit authorization")
 	ErrRemoteHealthCheckFailed = errors.New("remote health check probe failed within deadline")
-	ErrServiceNotFound         = errors.New("requested service is not registered in migration catalogue")
-	ErrInsufficientCapacity    = errors.New("target host has insufficient RAM or disk capacity for requested services")
-	ErrUnsupportedOS           = errors.New("target host operating system is not supported for this service")
+)
+
+var (
+	ErrServiceNotFound      = errors.New("requested service is not registered in migration catalogue")
+	ErrInsufficientCapacity = errors.New("target host has insufficient RAM or disk capacity for requested services")
+	ErrUnsupportedOS        = errors.New("target host operating system is not supported for this service")
 )
 
 // ServiceProfile defines resource footprints and operational metadata for a migratable service.

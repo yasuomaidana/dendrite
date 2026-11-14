@@ -1,12 +1,16 @@
 package importer_test
 
 import (
+	"Dendrite/pkg/coreclient/coretest"
 	"errors"
 	"strings"
 	"testing"
 
 	"Dendrite/pkg/ai/importer"
+	"Dendrite/pkg/testkit"
 )
+
+func TestMain(m *testing.M) { coretest.Main(m) }
 
 func TestDissectCapability(t *testing.T) {
 	// 1. Error on empty repo
@@ -27,13 +31,10 @@ func TestDissectCapability(t *testing.T) {
 	invariants := []string{"O(N) runtime", "Preserves ASCII fidelity"}
 
 	cap, err := importer.DissectCapability("github.com/simd/faststring", "StripSpaces", "c", invariants, vectors)
-	if err != nil {
-		t.Fatalf("unexpected error dissecting capability: %v", err)
-	}
+	testkit.Check(t, err)
 
-	if cap.SymbolName != "StripSpaces" || len(cap.TestVectors) != 2 {
-		t.Errorf("unexpected capability fields: %v", cap)
-	}
+	testkit.Equal(t, "symbol", cap.SymbolName, "StripSpaces")
+	testkit.Equal(t, "vectors length", len(cap.TestVectors), 2)
 }
 
 func TestSynthesizeCleanroom(t *testing.T) {
@@ -55,7 +56,7 @@ func TestSynthesizeCleanroom(t *testing.T) {
 		t.Errorf("expected ErrUnsupportedTarget for fortran, got: %v", err)
 	}
 
-	// 3. Valid synthesis for Go
+	// 3. Valid synthesis for Go with custom package and name
 	specValid := importer.CleanroomSpec{
 		TargetLanguage:   "go",
 		PackageName:      "faststr",
@@ -73,33 +74,65 @@ func TestSynthesizeCleanroom(t *testing.T) {
 	}
 
 	mod, err := importer.SynthesizeCleanroom(specValid)
-	if err != nil {
-		t.Fatalf("unexpected error synthesizing cleanroom module: %v", err)
-	}
+	testkit.Check(t, err)
 
-	// Verify package name
-	if mod.PackageName != "faststr" {
-		t.Errorf("expected package faststr, got %s", mod.PackageName)
-	}
+	testkit.Equal(t, "package name", mod.PackageName, "faststr")
 
-	// Verify source code
 	if !strings.Contains(mod.SourceCode, "func StripSpaces(input string) string") {
 		t.Errorf("expected function declaration in source code")
 	}
 	if !strings.Contains(mod.SourceCode, "Zero allocations on empty string") {
 		t.Errorf("expected invariant comments in source code")
 	}
-
-	// Verify test code
 	if !strings.Contains(mod.TestCode, "TestStripSpaces_Vectors") || !strings.Contains(mod.TestCode, "want: \"abc\"") {
 		t.Errorf("expected test vector assertions in test code")
 	}
 
-	// Verify AC-4 Complexity limits: CC <= 10, LOC <= 60
 	if mod.CyclomaticComplexity > 10 {
 		t.Errorf("expected CC <= 10, got %d", mod.CyclomaticComplexity)
 	}
 	if mod.TotalLOC > 60 {
 		t.Errorf("expected total LOC <= 60, got %d", mod.TotalLOC)
+	}
+
+	// 4. Valid synthesis with defaults (empty PackageName, empty StructOrFuncName, empty TargetLanguage)
+	specDefaults := importer.CleanroomSpec{
+		Capability: &importer.ExternalCapability{
+			SourceRepo: "github.com/simd/parser",
+			SymbolName: "StripSpaces",
+		},
+	}
+	modDefaults, err := importer.SynthesizeCleanroom(specDefaults)
+	testkit.Check(t, err)
+	testkit.Equal(t, "default package", modDefaults.PackageName, "imported")
+}
+
+func TestSynthesizeCleanroom_ComplexityLimits(t *testing.T) {
+	// Exceeded complexity
+	specExceeded := importer.CleanroomSpec{
+		TargetLanguage:   "go",
+		StructOrFuncName: "HighComplexity",
+		Capability: &importer.ExternalCapability{
+			SourceRepo: "github.com/simd/parser",
+			SymbolName: "HighComplexity",
+		},
+	}
+	_, err := importer.SynthesizeCleanroom(specExceeded)
+	if !errors.Is(err, importer.ErrComplexityExceeded) {
+		t.Fatalf("expected ErrComplexityExceeded, got %v", err)
+	}
+
+	// Analysis error
+	specError := importer.CleanroomSpec{
+		TargetLanguage:   "go",
+		StructOrFuncName: "FORCE_ERROR",
+		Capability: &importer.ExternalCapability{
+			SourceRepo: "github.com/simd/parser",
+			SymbolName: "FORCE_ERROR",
+		},
+	}
+	_, err = importer.SynthesizeCleanroom(specError)
+	if err == nil {
+		t.Fatal("expected error on complexity analysis error")
 	}
 }

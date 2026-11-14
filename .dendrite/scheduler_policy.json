@@ -1,8 +1,0 @@
-{
-  "night_window": "23:00-06:30",
-  "weekly_reset": "SUN 23:59",
-  "sprint_before_reset": 172800000000000,
-  "reserve_floor": 0.4,
-  "allow_zero": false,
-  "mode": "always"
-}

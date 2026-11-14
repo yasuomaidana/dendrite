@@ -1,17 +1,17 @@
 model_list:
-    - model_name: gemini-2.5-pro
+    - model_name: gemini-4-argon-medium
       litellm_params:
-        model: gemini/gemini-2.5-pro
+        model: gemini/gemini-4-argon-medium
         api_key: os.environ/GEMINI_API_KEY
         max_tokens: 8192
       model_info:
-        id: gemini-2.5-pro
+        id: gemini-4-argon-medium
         mode: chat
         input_cost_per_token: 1.25e-06
         output_cost_per_token: 5e-06
         max_input_tokens: 1048576
         max_output_tokens: 8192
-        base_model: gemini/gemini-2.5-pro
+        base_model: gemini/gemini-4-argon-medium
     - model_name: copilot-sonnet
       litellm_params:
         model: github_copilot/claude-sonnet-4.6
@@ -29,26 +29,112 @@ model_list:
         max_input_tokens: 200000
         max_output_tokens: 8192
         base_model: claude-sonnet-4.6
-    - model_name: gemini-2.5-flash
+    - model_name: gemini-3.8-flash-medium
       litellm_params:
-        model: gemini/gemini-2.5-flash
+        model: gemini/gemini-3.8-flash-medium
         api_key: os.environ/GEMINI_API_KEY
         max_tokens: 8192
       model_info:
-        id: gemini-2.5-flash
+        id: gemini-3.8-flash-medium
         mode: chat
         input_cost_per_token: 7.5e-08
         output_cost_per_token: 3e-07
         max_input_tokens: 1048576
         max_output_tokens: 8192
-        base_model: gemini/gemini-2.5-flash
+        base_model: gemini/gemini-3.8-flash-medium
+    - model_name: local-reason
+      litellm_params:
+        model: ollama/hermes3:8b
+        api_base: http://host.docker.internal:11434
+        custom_llm_provider: ollama
+        max_tokens: 8192
+        num_ctx: 8192
+        keep_alive: 30m
+      model_info:
+        id: local-reason
+        mode: chat
+        input_cost_per_token: 0
+        output_cost_per_token: 0
+        max_input_tokens: 32768
+        max_output_tokens: 8192
+        base_model: hermes3:8b
+        skip_budget_checks: true
+    - model_name: local-qwen3-27b
+      litellm_params:
+        model: ollama/hermes3:8b
+        api_base: http://host.docker.internal:11434
+        custom_llm_provider: ollama
+        max_tokens: 8192
+        num_ctx: 8192
+        keep_alive: 30m
+      model_info:
+        id: local-qwen3-27b
+        mode: chat
+        input_cost_per_token: 0
+        output_cost_per_token: 0
+        max_input_tokens: 32768
+        max_output_tokens: 8192
+        base_model: hermes3:8b
+        skip_budget_checks: true
+    - model_name: local-coder
+      litellm_params:
+        model: ollama/hermes3:8b
+        api_base: http://host.docker.internal:11434
+        custom_llm_provider: ollama
+        max_tokens: 8192
+        num_ctx: 8192
+        keep_alive: 30m
+      model_info:
+        id: local-coder
+        mode: chat
+        input_cost_per_token: 0
+        output_cost_per_token: 0
+        max_input_tokens: 32768
+        max_output_tokens: 8192
+        base_model: hermes3:8b
+        skip_budget_checks: true
+    - model_name: local-qwen-coder
+      litellm_params:
+        model: ollama/hermes3:8b
+        api_base: http://host.docker.internal:11434
+        custom_llm_provider: ollama
+        max_tokens: 8192
+        num_ctx: 8192
+        keep_alive: 30m
+      model_info:
+        id: local-qwen-coder
+        mode: chat
+        input_cost_per_token: 0
+        output_cost_per_token: 0
+        max_input_tokens: 32768
+        max_output_tokens: 8192
+        base_model: hermes3:8b
+        skip_budget_checks: true
+    - model_name: local-fast
+      litellm_params:
+        model: ollama/hermes3:8b
+        api_base: http://host.docker.internal:11434
+        custom_llm_provider: ollama
+        max_tokens: 4096
+        num_ctx: 8192
+        keep_alive: 30m
+      model_info:
+        id: local-fast
+        mode: chat
+        input_cost_per_token: 0
+        output_cost_per_token: 0
+        max_input_tokens: 32768
+        max_output_tokens: 4096
+        base_model: hermes3:8b
+        skip_budget_checks: true
     - model_name: local-qwen3-9b
       litellm_params:
-        model: openai/qwen3-8b-q4_k_m
-        api_key: EMPTY
-        api_base: http://host.docker.internal:8080/v1
-        custom_llm_provider: openai
+        model: ollama/hermes3:8b
+        api_base: http://host.docker.internal:11434
+        custom_llm_provider: ollama
         max_tokens: 4096
+        num_ctx: 8192
+        keep_alive: 30m
       model_info:
         id: local-qwen3-9b
         mode: chat
@@ -56,23 +142,22 @@ model_list:
         output_cost_per_token: 0
         max_input_tokens: 32768
         max_output_tokens: 4096
-        base_model: qwen3-8b-q4_k_m
+        base_model: hermes3:8b
         skip_budget_checks: true
-    - model_name: local-qwen3-8b-q4_k_m
+    - model_name: local-embed
       litellm_params:
-        model: openai/qwen3-8b-q4_k_m
-        api_key: EMPTY
-        api_base: http://host.docker.internal:8080/v1
-        custom_llm_provider: openai
-        max_tokens: 4096
+        model: ollama/nomic-embed-text:latest
+        api_base: http://host.docker.internal:11434
+        custom_llm_provider: ollama
+        max_tokens: 2048
       model_info:
-        id: local-qwen3-8b-q4_k_m
+        id: local-embed
         mode: chat
         input_cost_per_token: 0
         output_cost_per_token: 0
         max_input_tokens: 32768
-        max_output_tokens: 4096
-        base_model: qwen3-8b-q4_k_m
+        max_output_tokens: 2048
+        base_model: nomic-embed-text:latest
         skip_budget_checks: true
     - model_name: local-hermes3-8b
       litellm_params:
@@ -80,6 +165,8 @@ model_list:
         api_base: http://host.docker.internal:11434
         custom_llm_provider: ollama
         max_tokens: 4096
+        num_ctx: 8192
+        keep_alive: 30m
       model_info:
         id: local-hermes3-8b
         mode: chat
@@ -89,20 +176,22 @@ model_list:
         max_output_tokens: 4096
         base_model: hermes3:8b
         skip_budget_checks: true
-    - model_name: local-nomic-embed-text-latest
+    - model_name: local-qwen3-4b
       litellm_params:
-        model: ollama/nomic-embed-text:latest
+        model: ollama/qwen3:4b
         api_base: http://host.docker.internal:11434
         custom_llm_provider: ollama
         max_tokens: 4096
+        num_ctx: 8192
+        keep_alive: 30m
       model_info:
-        id: local-nomic-embed-text-latest
+        id: local-qwen3-4b
         mode: chat
         input_cost_per_token: 0
         output_cost_per_token: 0
         max_input_tokens: 32768
         max_output_tokens: 4096
-        base_model: nomic-embed-text:latest
+        base_model: qwen3:4b
         skip_budget_checks: true
     - model_name: local-tinyllama-latest
       litellm_params:
@@ -110,6 +199,8 @@ model_list:
         api_base: http://host.docker.internal:11434
         custom_llm_provider: ollama
         max_tokens: 4096
+        num_ctx: 8192
+        keep_alive: 30m
       model_info:
         id: local-tinyllama-latest
         mode: chat
@@ -125,6 +216,8 @@ model_list:
         api_base: http://host.docker.internal:11434
         custom_llm_provider: ollama
         max_tokens: 4096
+        num_ctx: 8192
+        keep_alive: 30m
       model_info:
         id: local-llama3.2-latest
         mode: chat
@@ -134,178 +227,60 @@ model_list:
         max_output_tokens: 4096
         base_model: llama3.2:latest
         skip_budget_checks: true
-    - model_name: local-qwen3-27b
-      litellm_params:
-        model: openai/qwen3.8:27b
-        api_key: EMPTY
-        api_base: http://host.docker.internal:8080/v1
-        custom_llm_provider: openai
-        max_tokens: 8192
-      model_info:
-        id: local-qwen3-27b
-        mode: chat
-        input_cost_per_token: 0
-        output_cost_per_token: 0
-        max_input_tokens: 32768
-        max_output_tokens: 8192
-        base_model: qwen3.8:27b
-        skip_budget_checks: true
-    - model_name: local-qwen-coder
-      litellm_params:
-        model: openai/qwen2.5-coder-7b
-        api_key: EMPTY
-        api_base: http://host.docker.internal:8080/v1
-        custom_llm_provider: openai
-        max_tokens: 4096
-      model_info:
-        id: local-qwen-coder
-        mode: chat
-        input_cost_per_token: 0
-        output_cost_per_token: 0
-        max_input_tokens: 32768
-        max_output_tokens: 4096
-        base_model: qwen2.5-coder-7b
-        skip_budget_checks: true
-    - model_name: oxillama-rust
-      litellm_params:
-        model: openai/qwen3.8:27b
-        api_key: EMPTY
-        api_base: http://host.docker.internal:8080/v1
-        custom_llm_provider: openai
-        max_tokens: 8192
-      model_info:
-        id: oxillama-rust
-        mode: chat
-        input_cost_per_token: 0
-        output_cost_per_token: 0
-        max_input_tokens: 32768
-        max_output_tokens: 8192
-        base_model: qwen3.8:27b
-        skip_budget_checks: true
-    - model_name: local-coder
-      litellm_params:
-        model: ollama/hermes3:8b
-        api_base: http://host.docker.internal:11434
-        custom_llm_provider: ollama
-        max_tokens: 4096
-      model_info:
-        id: local-coder
-        mode: chat
-        input_cost_per_token: 0
-        output_cost_per_token: 0
-        max_input_tokens: 32768
-        max_output_tokens: 4096
-        base_model: hermes3:8b
-        skip_budget_checks: true
-    - model_name: llamacpp-local
-      litellm_params:
-        model: openai/mistral-7b-instruct-q4
-        api_key: EMPTY
-        api_base: http://host.docker.internal:8081/v1
-        custom_llm_provider: openai
-        max_tokens: 4096
-      model_info:
-        id: llamacpp-local
-        mode: chat
-        input_cost_per_token: 0
-        output_cost_per_token: 0
-        max_input_tokens: 32768
-        max_output_tokens: 4096
-        base_model: mistral-7b-instruct-q4
-        skip_budget_checks: true
-    - model_name: vllm-cluster
-      litellm_params:
-        model: openai/Qwen/Qwen2.5-Coder-32B-Instruct
-        api_key: EMPTY
-        api_base: http://vllm-node:8000/v1
-        custom_llm_provider: openai
-        max_tokens: 4096
-      model_info:
-        id: vllm-cluster
-        mode: chat
-        input_cost_per_token: 0
-        output_cost_per_token: 0
-        max_input_tokens: 32768
-        max_output_tokens: 4096
-        base_model: Qwen/Qwen2.5-Coder-32B-Instruct
-        skip_budget_checks: true
-    - model_name: hf-deepseek
-      litellm_params:
-        model: openai/deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct
-        api_key: EMPTY
-        api_base: http://tgi-node:8080/v1
-        max_tokens: 4096
-      model_info:
-        id: hf-deepseek
-        mode: chat
-        input_cost_per_token: 0
-        output_cost_per_token: 0
-        max_input_tokens: 32768
-        max_output_tokens: 4096
-        base_model: deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct
-        skip_budget_checks: true
 router_settings:
     fallbacks:
-        - gemini-2.5-pro:
+        - gemini-4-argon-medium:
             - copilot-sonnet
-            - gemini-2.5-flash
+            - gemini-3.8-flash-medium
             - local-qwen3-27b
             - local-qwen3-9b
-            - local-qwen3-8b-q4_k_m
             - local-hermes3-8b
-            - local-qwen-coder
             - local-coder
-            - hf-deepseek
-            - local-nomic-embed-text-latest
+            - local-qwen-coder
+            - local-qwen3-4b
+            - local-reason
+            - local-fast
+            - local-embed
             - local-tinyllama-latest
-            - oxillama-rust
-            - llamacpp-local
-            - vllm-cluster
             - local-llama3.2-latest
         - copilot-sonnet:
-            - gemini-2.5-flash
+            - gemini-3.8-flash-medium
             - local-qwen3-27b
             - local-qwen3-9b
-            - local-qwen3-8b-q4_k_m
             - local-hermes3-8b
-            - local-qwen-coder
             - local-coder
-            - hf-deepseek
-            - local-nomic-embed-text-latest
+            - local-qwen-coder
+            - local-qwen3-4b
+            - local-reason
+            - local-fast
+            - local-embed
             - local-tinyllama-latest
-            - oxillama-rust
-            - llamacpp-local
-            - vllm-cluster
             - local-llama3.2-latest
-        - gemini-2.5-flash:
+        - gemini-3.8-flash-medium:
             - local-qwen3-27b
             - local-qwen3-9b
-            - local-qwen3-8b-q4_k_m
             - local-hermes3-8b
-            - local-qwen-coder
             - local-coder
-            - hf-deepseek
-            - local-nomic-embed-text-latest
+            - local-qwen-coder
+            - local-qwen3-4b
+            - local-reason
+            - local-fast
+            - local-embed
             - local-tinyllama-latest
-            - oxillama-rust
-            - llamacpp-local
-            - vllm-cluster
             - local-llama3.2-latest
     context_window_fallbacks:
-        - local-qwen-coder: gemini-2.5-pro
-        - local-qwen3-27b: gemini-2.5-pro
-        - local-qwen3-9b: gemini-2.5-pro
-        - gemini-2.5-flash: gemini-2.5-pro
-        - local-qwen3-8b-q4_k_m: gemini-2.5-pro
-        - local-hermes3-8b: gemini-2.5-pro
-        - local-coder: gemini-2.5-pro
-        - hf-deepseek: gemini-2.5-pro
-        - local-nomic-embed-text-latest: gemini-2.5-pro
-        - local-tinyllama-latest: gemini-2.5-pro
-        - oxillama-rust: gemini-2.5-pro
-        - llamacpp-local: gemini-2.5-pro
-        - vllm-cluster: gemini-2.5-pro
-        - local-llama3.2-latest: gemini-2.5-pro
+        - local-qwen-coder: gemini-4-argon-medium
+        - local-qwen3-27b: gemini-4-argon-medium
+        - local-qwen3-9b: gemini-4-argon-medium
+        - gemini-3.8-flash-medium: gemini-4-argon-medium
+        - local-hermes3-8b: gemini-4-argon-medium
+        - local-coder: gemini-4-argon-medium
+        - local-qwen3-4b: gemini-4-argon-medium
+        - local-reason: gemini-4-argon-medium
+        - local-fast: gemini-4-argon-medium
+        - local-embed: gemini-4-argon-medium
+        - local-tinyllama-latest: gemini-4-argon-medium
+        - local-llama3.2-latest: gemini-4-argon-medium
     routing_strategy: usage-based-routing
     timeout: 120
     enable_pre_call_checks: true

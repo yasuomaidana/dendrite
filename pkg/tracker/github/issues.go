@@ -22,6 +22,10 @@ type Issue struct {
 	StateReason string   `json:"stateReason"` // COMPLETED, NOT_PLANNED, REOPENED or ""
 	Labels      []string `json:"labels"`
 	TicketID    string   `json:"ticket_id"`
+	// Comments are the issue's comments when the listing carried them (ListTicketIssues does);
+	// CommentsKnown tells "no comments" from "not fetched".
+	Comments      []Comment `json:"-"`
+	CommentsKnown bool      `json:"-"`
 }
 
 // Open reports whether the issue is open.
@@ -62,7 +66,7 @@ func (c *GitHubClient) ListTicketIssues(ctx context.Context) (map[string]Issue, 
 	out, err := c.Executor.Execute(ctx, "gh", c.repoArgs("issue", "list",
 		"--state", "all",
 		"--limit", strconv.Itoa(issueListLimit),
-		"--json", "number,title,state,stateReason,labels")...)
+		"--json", "number,title,state,stateReason,labels,comments")...)
 	if err != nil {
 		return nil, fmt.Errorf("github: list issues: %w", err)
 	}
@@ -74,6 +78,8 @@ func (c *GitHubClient) ListTicketIssues(ctx context.Context) (map[string]Issue, 
 		Labels      []struct {
 			Name string `json:"name"`
 		} `json:"labels"`
+		// A pointer tells "comments: []" from a listing that did not carry the field at all.
+		Comments *[]rawComment `json:"comments"`
 	}
 	if out != "" {
 		if err := json.Unmarshal([]byte(out), &raw); err != nil {
@@ -87,6 +93,9 @@ func (c *GitHubClient) ListTicketIssues(ctx context.Context) (map[string]Issue, 
 			continue
 		}
 		iss := Issue{Number: r.Number, Title: r.Title, State: r.State, StateReason: r.StateReason, TicketID: id}
+		if r.Comments != nil {
+			iss.Comments, iss.CommentsKnown = toComments(*r.Comments), true
+		}
 		for _, l := range r.Labels {
 			iss.Labels = append(iss.Labels, l.Name)
 		}
@@ -147,20 +156,27 @@ func (c *GitHubClient) IssueComments(ctx context.Context, number int) ([]Comment
 		return nil, fmt.Errorf("github: read comments of #%d: %w", number, err)
 	}
 	var raw struct {
-		Comments []struct {
-			Author struct {
-				Login string `json:"login"`
-			} `json:"author"`
-			Body      string `json:"body"`
-			CreatedAt string `json:"createdAt"`
-		} `json:"comments"`
+		Comments []rawComment `json:"comments"`
 	}
 	if err := json.Unmarshal([]byte(out), &raw); err != nil {
 		return nil, fmt.Errorf("github: parse comments of #%d: %w", number, err)
 	}
-	comments := make([]Comment, 0, len(raw.Comments))
-	for _, rc := range raw.Comments {
+	return toComments(raw.Comments), nil
+}
+
+// rawComment is a comment as `gh ... --json comments` prints it.
+type rawComment struct {
+	Author struct {
+		Login string `json:"login"`
+	} `json:"author"`
+	Body      string `json:"body"`
+	CreatedAt string `json:"createdAt"`
+}
+
+func toComments(raw []rawComment) []Comment {
+	comments := make([]Comment, 0, len(raw))
+	for _, rc := range raw {
 		comments = append(comments, Comment{Author: rc.Author.Login, Body: rc.Body, CreatedAt: rc.CreatedAt})
 	}
-	return comments, nil
+	return comments
 }

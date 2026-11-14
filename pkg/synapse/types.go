@@ -129,16 +129,27 @@ type Member struct {
 	LockedAt  time.Time `toml:"locked_at" json:"locked_at,omitempty"`
 	// PlaneProject is the Plane project identifier (e.g. "DGIT") tracking this member\'s tickets.
 	PlaneProject string `toml:"plane_project" json:"plane_project,omitempty"`
+	// Branch is the integration branch work on this member merges into. Empty falls back to the
+	// project's directive, then its origin/HEAD, then develop. It is not Ref, which is what sync tracks.
+	Branch string `toml:"branch" json:"branch,omitempty"`
+	// PushRemote is the git remote branches are pushed to (typically a fork). Empty means origin.
+	PushRemote string `toml:"push_remote" json:"push_remote,omitempty"`
+	// TargetRemote is the remote whose Branch finished work is merged or proposed against
+	// (typically the upstream of a fork). Empty means PushRemote.
+	TargetRemote string `toml:"target_remote" json:"target_remote,omitempty"`
 }
 
 // IsRemote reports whether the member is consumed from its remote rather than its local checkout.
 func (m Member) IsRemote() bool { return m.Source == SourceRemote }
 
 // TrackedRef is the ref the member follows on channel c: its own Ref (an override) when
-// set, otherwise the channel's branch.
+// set, otherwise its integration Branch, otherwise the channel's branch.
 func (m Member) TrackedRef(c Channel) string {
 	if m.Ref != "" {
 		return m.Ref
+	}
+	if m.Branch != "" {
+		return m.Branch
 	}
 	return c.DefaultRef()
 }

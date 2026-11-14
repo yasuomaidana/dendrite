@@ -29,7 +29,7 @@ These are persistent flags on the root command, read through the `globals` varia
 | `--gateway-url` | Exported as `LITELLM_PROXY_URL`. Use `gatewayV1URL()` / `gatewayBaseURL()` and never hardcode `localhost:4000`. |
 | `--plane-url` | Exported as `PLANE_BASE_URL`. `plane.NewClientFromEnv` picks it up. |
 
-Secrets such as `PLANE_API_KEY` and `LITELLM_MASTER_KEY` stay env-only.
+Secrets such as `PLANE_API_KEY` and `LITELLM_MASTER_KEY` are never flags. They are configured once in `$DENDRITE_HOME/.env`; before any command runs, `applyGlobals` calls `dotenv.Load` (`pkg/dotenv`), which sets every variable the environment does not export, from the project's own `.env` (nearest git root) first, then from the global file. Code that resolves a key for another project (`dendrite ask --project`, agent jobs in a worktree) uses `dotenv.Lookup(dir, key)` and never reads `.env` files itself. Tests of `cmd/dendrite` set `DENDRITE_DOTENV=off`.
 
 ## Writing a command
 

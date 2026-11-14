@@ -7,13 +7,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 func TestPreFlightCascadeToFallbackWithZeroPromptLoss(t *testing.T) {
 	// Setup a healthy fallback server simulating Ollama Metal
-	var receivedPrompt string
+	var (
+		promptMu       sync.Mutex // the virtual users reach the handler at the same time
+		receivedPrompt string
+	)
 	fallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var payload struct {
@@ -23,7 +27,9 @@ func TestPreFlightCascadeToFallbackWithZeroPromptLoss(t *testing.T) {
 		}
 		_ = json.Unmarshal(body, &payload)
 		if len(payload.Messages) > 0 {
+			promptMu.Lock()
 			receivedPrompt = payload.Messages[0].Content
+			promptMu.Unlock()
 		}
 
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -83,8 +89,11 @@ func TestPreFlightCascadeToFallbackWithZeroPromptLoss(t *testing.T) {
 	}
 
 	// 2. Verify Zero Prompt Loss: Fallback server received identical prompt
-	if receivedPrompt != testPrompt {
-		t.Errorf("prompt loss detected! expected %q, received %q", testPrompt, receivedPrompt)
+	promptMu.Lock()
+	got := receivedPrompt
+	promptMu.Unlock()
+	if got != testPrompt {
+		t.Errorf("prompt loss detected! expected %q, received %q", testPrompt, got)
 	}
 
 	// 3. Verify Markdown Scorecard contains cascade details

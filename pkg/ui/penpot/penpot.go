@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/env"
-	"Dendrite/pkg/tracker"
+	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/tracker/plane"
 )
 
@@ -299,7 +299,7 @@ func (s *Synchronizer) Sync(ctx context.Context, opts SyncOptions) (*SyncResult,
 			time.Now().UTC().Format(time.RFC3339),
 		)
 
-		if commentErr := s.planeClient.AddComment(ctx, tracker.TicketID(opts.TicketID), commentMD); commentErr == nil {
+		if commentErr := planesvc.Default().Comment(ctx, s.planeClient, opts.TicketID, commentMD); commentErr == nil {
 			res.PlaneSynced = true
 		} else {
 			res.Notes = fmt.Sprintf("Plane comment notice: %v", commentErr)

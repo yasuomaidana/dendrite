@@ -155,20 +155,24 @@ func (q *LocalLLMQueue) workerLoop() {
 		q.activeWorkers++
 		q.mu.Unlock()
 
-		// Execute task if context is still valid
-		select {
-		case <-item.ctx.Done():
-			q.totalTimedOut.Add(1)
-			item.done <- item.ctx.Err()
-		default:
-			err := item.task(item.ctx)
-			q.totalExecuted.Add(1)
-			item.done <- err
-		}
+		q.execute(item)
 
 		q.mu.Lock()
 		q.activeWorkers--
 		q.mu.Unlock()
+	}
+}
+
+// execute runs a popped item's task, unless its context ended while it waited.
+func (q *LocalLLMQueue) execute(item *queueItem) {
+	select {
+	case <-item.ctx.Done():
+		q.totalTimedOut.Add(1)
+		item.done <- item.ctx.Err()
+	default:
+		err := item.task(item.ctx)
+		q.totalExecuted.Add(1)
+		item.done <- err
 	}
 }
 

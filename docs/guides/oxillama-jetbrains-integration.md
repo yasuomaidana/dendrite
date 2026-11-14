@@ -12,6 +12,8 @@ tags: [oxillama, jetbrains, inference, goland, intellij, rust, zero-ffi, zero-co
 
 **OxiLLaMa (`cool-japan/oxillama`)** is an ultra-efficient, 100% pure-Rust zero-FFI Large Language Model inference engine and OpenAI-compatible server. Unlike traditional C/C++ backends (like `llama.cpp`), OxiLLaMa executes entirely without FFI overhead, memory safety vulnerabilities, or runtime crashes, providing deterministic latency and minimal memory footprint on Apple Silicon and Linux workstations.
 
+> **GPU note:** oxillama-runtime 0.1.4 offloads only Q4_0 single-token decode to the GPU (`wgpu`); prompt prefill and embeddings run on the CPU. Dendrite therefore routes local work to GPU engines (candle, Hugging Face TGI/TEI, Ollama) first and uses OxiLLaMa only when it is requested or no GPU engine has a model. Embeddings for retrieval are served by `dendrite-rag` (candle on Metal/CUDA, a TEI server, or Ollama).
+
 Dendrite supports two complementary operational modes for integrating OxiLLaMa with JetBrains IDEs (GoLand, IntelliJ IDEA, PyCharm, RustRover, WebStorm, CLion):
 
 1. **Managed Mode (via Dendrite Control Plane)**:

@@ -63,10 +63,7 @@ func (e *HuggingFaceEndpointEngine) Generate(ctx context.Context, req Completion
 		payload["parameters"].(map[string]interface{})["max_new_tokens"] = 512
 	}
 
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
+	data, _ := json.Marshal(payload) // a map of strings and numbers always marshals
 
 	start := time.Now()
 	url := fmt.Sprintf("%s/%s", strings.TrimRight(e.cfg.Endpoint, "/"), model)
@@ -125,19 +122,7 @@ func (e *HuggingFaceEndpointEngine) Generate(ctx context.Context, req Completion
 }
 
 func (e *HuggingFaceEndpointEngine) Stream(ctx context.Context, req CompletionRequest) (<-chan StreamChunk, error) {
-	resp, err := e.Generate(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	ch := make(chan StreamChunk, 1)
-	ch <- StreamChunk{
-		Text:         resp.Text,
-		Done:         true,
-		OutputTokens: resp.OutputTokens,
-	}
-	close(ch)
-	return ch, nil
+	return streamUnaryGenerate(ctx, req, e.Generate)
 }
 
 func (e *HuggingFaceEndpointEngine) Health(ctx context.Context) EngineHealth {

@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"Dendrite/pkg/inference"
-	"Dendrite/pkg/rag"
 	"Dendrite/pkg/statedir"
+	"Dendrite/pkg/telemetry"
 	"Dendrite/pkg/telemetry/exporter"
 	"Dendrite/pkg/topology"
 	"Dendrite/pkg/workspace"
@@ -28,6 +28,8 @@ type Server struct {
 	listener  net.Listener
 	activeTop *topology.TopologyConfig
 	startTime time.Time
+	sessions  *sessionStore
+	thermal   *thermalCache
 	mu        sync.RWMutex
 }
 
@@ -38,6 +40,9 @@ func NewServer(cfg ServerConfig, reg *workspace.Registry, hub *TelemetryHub) *Se
 	}
 	if cfg.Host == "" {
 		cfg.Host = "127.0.0.1"
+	}
+	if cfg.Version == "" {
+		cfg.Version = "dev"
 	}
 	if cfg.ReadTimeout == 0 {
 		cfg.ReadTimeout = 15 * time.Second
@@ -58,6 +63,8 @@ func NewServer(cfg ServerConfig, reg *workspace.Registry, hub *TelemetryHub) *Se
 		exporter:  exporter.NewPrometheusExporter(nil),
 		activeTop: defaultTop,
 		startTime: time.Now(),
+		sessions:  newSessionStore(),
+		thermal:   newThermalCache(telemetry.NewHostThermalSensor()),
 	}
 
 	mux := http.NewServeMux()
@@ -75,6 +82,10 @@ func NewServer(cfg ServerConfig, reg *workspace.Registry, hub *TelemetryHub) *Se
 	mux.HandleFunc("/api/v1/inference/zero-cost/test", s.handleZeroCostTest)
 	mux.HandleFunc("/api/v1/rag/ask", s.handleRAGAsk)
 	mux.HandleFunc("/api/v1/rag/retrieve", s.handleRAGRetrieve)
+	mux.HandleFunc("/api/v1/graph/communities", s.handleGraphCommunities)
+	mux.HandleFunc("/api/v1/graph/god_nodes", s.handleGraphGodNodes)
+	mux.HandleFunc("/api/v1/graph/path", s.handleGraphPath)
+	mux.HandleFunc("/api/v1/graph/explain", s.handleGraphExplain)
 
 	s.server = &http.Server{
 		Handler:     s.authMiddleware(mux),
@@ -82,30 +93,6 @@ func NewServer(cfg ServerConfig, reg *workspace.Registry, hub *TelemetryHub) *Se
 	}
 
 	return s
-}
-
-func (s *Server) authMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PATCH, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key")
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		if s.cfg.AuthToken != "" {
-			authHeader := r.Header.Get("Authorization")
-			token := strings.TrimPrefix(authHeader, "Bearer ")
-			if token != s.cfg.AuthToken && r.URL.Query().Get("token") != s.cfg.AuthToken {
-				http.Error(w, ErrUnauthorizedAccess.Error(), http.StatusUnauthorized)
-				return
-			}
-		}
-
-		next.ServeHTTP(w, r)
-	})
 }
 
 // Start binds and starts the HTTP server.
@@ -174,7 +161,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	resp := map[string]interface{}{
 		"status":    "healthy",
-		"version":   "0.1.0-alpha",
+		"version":   s.cfg.Version,
 		"uptime_s":  time.Since(s.startTime).Seconds(),
 		"timestamp": time.Now().UTC(),
 	}
@@ -306,24 +293,64 @@ func (s *Server) handleTelemetrySnapshot(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	frame := TelemetryFrame{
-		Timestamp:       time.Now().UTC(),
-		ActiveScenario:  topName,
-		ActiveWorkspace: activeWs,
-		SoCTemperatureC: 48.5,
-		ThermalAlert:    false,
-		TokenSpend24h:   12.45,
-		TokenSpend7d:    54.20,
-		DailyBudgetUSD:  50.00,
-		NodeHealth: map[string]string{
-			"Debian":  "healthy",
-			"MacBook": "healthy",
-			"Azure":   "idle",
-			"AWS":     "standby",
-		},
-	}
+	frame := s.measuredFrame(r)
+	frame.ActiveScenario = topName
+	frame.ActiveWorkspace = activeWs
 
 	_ = json.NewEncoder(w).Encode(frame)
+}
+
+// measuredFrame is the last frame broadcast on the hub, with its own timestamp; one older than
+// frameStaleAfter is flagged Stale instead of passing for a live reading. With none yet, only the
+// temperature can be read on demand (cached); spend, budget and node health have no source here, so
+// they are reported as unavailable instead of invented, and so is a temperature that cannot be read.
+func (s *Server) measuredFrame(r *http.Request) TelemetryFrame {
+	if frame, ok := s.hub.Latest(); ok {
+		frame.Stale = time.Since(frame.Timestamp) > frameStaleAfter
+		return frame
+	}
+	frame := TelemetryFrame{Timestamp: time.Now().UTC(), Unavailable: []string{"token_spend_24h_usd", "token_spend_7d_usd", "daily_budget_usd", "node_health"}}
+	temp, err := s.thermal.read(r.Context())
+	if err != nil {
+		frame.Unavailable = append(frame.Unavailable, "soc_temperature_c")
+		return frame
+	}
+	frame.SoCTemperatureC = temp
+	frame.ThermalAlert = temp > 80.0
+	return frame
+}
+
+// zeroCostRequest is the body of a zero-cost registry change.
+type zeroCostRequest struct {
+	Name     string `json:"name"`
+	IsPrefix bool   `json:"is_prefix"`
+	SyncEnv  bool   `json:"sync_env"`
+}
+
+// decodeZeroCostRequest reads and validates the body, answering 400 itself when it is unusable.
+func decodeZeroCostRequest(w http.ResponseWriter, r *http.Request) (zeroCostRequest, bool) {
+	var req zeroCostRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return req, false
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		http.Error(w, "name cannot be empty", http.StatusBadRequest)
+		return req, false
+	}
+	return req, true
+}
+
+// saveZeroCost persists the registry, and the .env file when asked.
+func saveZeroCost(reg *inference.ZeroCostRegistry, syncEnv bool) {
+	_ = reg.SaveToFile(statedir.Resolve(inference.DefaultZeroCostConfigFile))
+	if syncEnv {
+		_ = reg.SaveToEnvFile(".env")
+	}
+}
+
+func writeZeroCostReply(w http.ResponseWriter, reg *inference.ZeroCostRegistry, name string) {
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "name": name, "details": reg.GetDetails()})
 }
 
 func (s *Server) handleZeroCost(w http.ResponseWriter, r *http.Request) {
@@ -332,258 +359,41 @@ func (s *Server) handleZeroCost(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		details := reg.GetDetails()
-		_ = json.NewEncoder(w).Encode(details)
-
-	case http.MethodPost:
-		var req struct {
-			Name     string `json:"name"`
-			IsPrefix bool   `json:"is_prefix"`
-			SyncEnv  bool   `json:"sync_env"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if strings.TrimSpace(req.Name) == "" {
-			http.Error(w, "name cannot be empty", http.StatusBadRequest)
-			return
-		}
-
-		var ok bool
-		if req.IsPrefix {
-			ok = reg.AddPrefix(req.Name)
-		} else {
-			ok, _ = reg.Add(req.Name)
-		}
-
+		_ = json.NewEncoder(w).Encode(reg.GetDetails())
+	case http.MethodPost, http.MethodDelete:
+		req, ok := decodeZeroCostRequest(w, r)
 		if !ok {
-			http.Error(w, "failed to add zero-cost entry", http.StatusInternalServerError)
 			return
 		}
-
-		_ = reg.SaveToFile(statedir.Resolve(inference.DefaultZeroCostConfigFile))
-		if req.SyncEnv {
-			_ = reg.SaveToEnvFile(".env")
+		changeZeroCost(reg, r.Method == http.MethodPost, req)
+		saveZeroCost(reg, req.SyncEnv)
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusCreated)
 		}
-
-		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"name":    req.Name,
-			"details": reg.GetDetails(),
-		})
-
-	case http.MethodDelete:
-		var req struct {
-			Name     string `json:"name"`
-			IsPrefix bool   `json:"is_prefix"`
-			SyncEnv  bool   `json:"sync_env"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if strings.TrimSpace(req.Name) == "" {
-			http.Error(w, "name cannot be empty", http.StatusBadRequest)
-			return
-		}
-
-		var ok bool
-		if req.IsPrefix {
-			ok = reg.RemovePrefix(req.Name)
-		} else {
-			ok, _ = reg.Remove(req.Name)
-		}
-
-		if !ok {
-			http.Error(w, "failed to remove zero-cost entry", http.StatusInternalServerError)
-			return
-		}
-
-		_ = reg.SaveToFile(statedir.Resolve(inference.DefaultZeroCostConfigFile))
-		if req.SyncEnv {
-			_ = reg.SaveToEnvFile(".env")
-		}
-
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"name":    req.Name,
-			"details": reg.GetDetails(),
-		})
-
+		writeZeroCostReply(w, reg, req.Name)
 	case http.MethodPatch:
-		// Reset to defaults
-		reg.Reset()
+		reg.Reset() // back to defaults and the active .env
 		reg.AutoLoad()
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"message": "reset to defaults and active .env",
 			"details": reg.GetDetails(),
 		})
-
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (s *Server) handleZeroCostTest(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	reg := inference.GetZeroCostRegistry()
-
-	model := r.URL.Query().Get("model")
-	if model == "" && r.Method == http.MethodPost {
-		var req struct {
-			Model string `json:"model"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
-			model = req.Model
-		}
+// changeZeroCost adds or removes a model name or prefix; a non-blank name is the only way either can fail.
+func changeZeroCost(reg *inference.ZeroCostRegistry, add bool, req zeroCostRequest) {
+	switch {
+	case add && req.IsPrefix:
+		reg.AddPrefix(req.Name)
+	case add:
+		reg.Add(req.Name)
+	case req.IsPrefix:
+		reg.RemovePrefix(req.Name)
+	default:
+		reg.Remove(req.Name)
 	}
-
-	if strings.TrimSpace(model) == "" {
-		http.Error(w, "query param 'model' or json body 'model' required", http.StatusBadRequest)
-		return
-	}
-
-	isZeroCost, reason := reg.Test(model)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"model":     model,
-		"zero_cost": isZeroCost,
-		"reason":    reason,
-	})
-}
-
-func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	html := `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Dendrite Control Plane Dashboard</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 2rem; }
-    h1 { font-size: 1.5rem; color: #38bdf8; margin-bottom: 1.5rem; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; }
-    .card { background: #1e293b; border-radius: 0.5rem; padding: 1.25rem; border: 1px solid #334155; }
-    .card h2 { font-size: 1.1rem; margin-top: 0; color: #94a3b8; }
-    .gauge { font-size: 2rem; font-weight: bold; color: #10b981; }
-    .alert { color: #ef4444; }
-  </style>
-</head>
-<body>
-  <h1>Dendrite Control Plane</h1>
-  <div class="grid">
-    <div class="card">
-      <h2>SoC Die Temperature</h2>
-      <div id="soc-temp" class="gauge">48.5°C</div>
-    </div>
-    <div class="card">
-      <h2>24h Token Spend</h2>
-      <div id="token-spend" class="gauge">$12.45</div>
-    </div>
-    <div class="card">
-      <h2>Active Scenario</h2>
-      <div id="active-scenario" class="gauge" style="font-size: 1.5rem;">local-hybrid</div>
-    </div>
-  </div>
-</body>
-</html>`
-	_, _ = w.Write([]byte(html))
-}
-
-func (s *Server) handleRAGAsk(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req rag.AskRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request payload: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	if strings.TrimSpace(req.Question) == "" {
-		http.Error(w, "question is required", http.StatusBadRequest)
-		return
-	}
-
-	if req.ProjectPath == "" {
-		req.ProjectPath = "."
-	}
-	if req.PaidModel == "" {
-		req.PaidModel = "gemini-2.5-pro"
-	}
-	if req.TopK <= 0 {
-		req.TopK = 4
-	}
-	req.Input = strings.NewReader("n\n")
-
-	engine := rag.NewAskEngine(nil)
-	res, err := engine.Ask(r.Context(), req)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("rag ask failed: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(res)
-}
-
-func (s *Server) handleRAGRetrieve(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var body struct {
-		Query       string  `json:"query"`
-		ProjectPath string  `json:"project_path"`
-		TopK        int     `json:"top_k"`
-		MinScore    float32 `json:"min_score"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, fmt.Sprintf("invalid request payload: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	if strings.TrimSpace(body.Query) == "" {
-		http.Error(w, "query is required", http.StatusBadRequest)
-		return
-	}
-
-	if body.ProjectPath == "" {
-		body.ProjectPath = "."
-	}
-	if body.TopK <= 0 {
-		body.TopK = 4
-	}
-	if body.MinScore <= 0 {
-		body.MinScore = 0.01
-	}
-
-	indexer := rag.NewIndexer()
-	if err := indexer.IndexProject(r.Context(), body.ProjectPath); err != nil {
-		http.Error(w, fmt.Sprintf("failed to index project: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	chunks, err := indexer.Retrieve(r.Context(), body.Query, rag.SearchOptions{
-		TopK:      body.TopK,
-		MinScore:  body.MinScore,
-		MaxTokens: 2500,
-	})
-	if err != nil {
-		http.Error(w, fmt.Sprintf("retrieval failed: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(chunks)
 }

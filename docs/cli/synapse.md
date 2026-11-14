@@ -21,14 +21,17 @@ Synaptic Cleft & Gating
 
 | Subcommand | Description |
 | :--- | :--- |
+| `add` | Add member projects to a synapse |
 | `channel` | Show or set the branch members track by default (stable: main, dev: develop) |
 | `create` | Create a synapse manifest linking member projects |
+| `delete` | Delete a synapse manifest |
 | `heal` | Find moved member projects and repair their paths |
 | `ide-sync` | Write IDE MCP configuration for a synapse's members |
 | `inspect` | Show members, contracts and parity commands of a synapse |
 | `list` | List synapses and their health |
 | `locate` | Locate a member project on disk |
 | `move` | Move a member project and update every manifest atomically |
+| `remove-member` | Remove a member project from a synapse |
 | `set-plane` | Bind a member to its Plane project identifier (- clears it) |
 | `set-source` | Consume a member from its local checkout or its remote, optionally tracking another ref |
 | `status` | Fetch every member and report ahead/behind, dirty files and drift against its tracked ref |
@@ -39,6 +42,23 @@ Synaptic Cleft & Gating
 None
 
 ## Subcommand Reference
+
+### `dendrite synapse add`
+
+Add member projects to a synapse
+
+```bash
+dendrite synapse add <id> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--members` | Members as <dir>[=alias][:role][@PLANE],... |
+
+```bash
+dendrite synapse add billing --members ../analytics=analytics:consumer
+dendrite synapse add billing --members ../web=web:consumer@PLANE
+```
 
 ### `dendrite synapse channel`
 
@@ -71,6 +91,21 @@ dendrite synapse create <id> [flags]
 
 ```bash
 dendrite synapse create billing --members ../api=api:producer,../web=web:consumer --contract openapi:api:spec.yaml>web:client.ts
+```
+
+### `dendrite synapse delete`
+
+Delete a synapse manifest
+
+```bash
+dendrite synapse delete <id>
+```
+
+Aliases: `rm`
+
+```bash
+dendrite synapse delete billing --yes
+dendrite synapse delete billing
 ```
 
 ### `dendrite synapse heal`
@@ -122,6 +157,21 @@ dendrite synapse move <alias|project-id> <new-path>
 ```
 
 Aliases: `mv`
+
+### `dendrite synapse remove-member`
+
+Remove a member project from a synapse
+
+```bash
+dendrite synapse remove-member <id> <alias|project-id>
+```
+
+Aliases: `rm-member`
+
+```bash
+dendrite synapse remove-member billing web
+dendrite synapse remove-member billing proj_abc123
+```
 
 ### `dendrite synapse set-plane`
 

@@ -1,8 +1,14 @@
 package inference
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"time"
 )
 
@@ -113,4 +119,251 @@ type InferenceEngine interface {
 	Health(ctx context.Context) EngineHealth
 	SupportedModels(ctx context.Context) ([]string, error)
 	IsSelfHosted() bool
+}
+
+// initSelfHostedEngine applies common defaults for self-hosted inference engine configs.
+func initSelfHostedEngine(cfg EngineConfig, client *http.Client, engineType EngineType, defaultEndpoint string) (EngineConfig, *http.Client) {
+	if client == nil {
+		client = &http.Client{Timeout: 60 * time.Second}
+	}
+	if cfg.Endpoint == "" {
+		cfg.Endpoint = defaultEndpoint
+	}
+	cfg.Type = engineType
+	cfg.SelfHosted = true
+	return cfg, client
+}
+
+// checkHTTPHealth executes a GET request to the engine's health endpoint and records latency and availability.
+func checkHTTPHealth(ctx context.Context, client *http.Client, base EngineHealth, path string, supportedModels func(context.Context) ([]string, error)) EngineHealth {
+	start := time.Now()
+	base.LastCheck = start
+
+	url := fmt.Sprintf("%s%s", strings.TrimRight(base.Endpoint, "/"), path)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		base.Error = err.Error()
+		return base
+	}
+
+	resp, err := client.Do(req)
+	base.Latency = time.Since(start)
+	if err != nil {
+		base.Error = err.Error()
+		return base
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		base.Reachable = true
+		if supportedModels != nil {
+			models, _ := supportedModels(ctx)
+			base.Models = models
+		}
+	} else {
+		base.Error = fmt.Sprintf("HTTP status %d", resp.StatusCode)
+	}
+
+	return base
+}
+
+// fetchV1Models queries standard /v1/models endpoints and parses data[].id names.
+func fetchV1Models(ctx context.Context, client *http.Client, endpoint string, fallback []string) ([]string, error) {
+	url := fmt.Sprintf("%s/v1/models", strings.TrimRight(endpoint, "/"))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fallback, nil
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fallback, nil
+	}
+	defer resp.Body.Close()
+
+	var res struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err == nil && len(res.Data) > 0 {
+		var names []string
+		for _, m := range res.Data {
+			names = append(names, m.ID)
+		}
+		return names, nil
+	}
+
+	return fallback, nil
+}
+
+// fetchHFInfoModelID queries HuggingFace /info endpoints to extract model_id.
+func fetchHFInfoModelID(ctx context.Context, client *http.Client, endpoint string, fallback []string) ([]string, error) {
+	url := fmt.Sprintf("%s/info", strings.TrimRight(endpoint, "/"))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fallback, nil
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fallback, nil
+	}
+	defer resp.Body.Close()
+
+	var res struct {
+		ModelID string `json:"model_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err == nil && res.ModelID != "" {
+		return []string{res.ModelID}, nil
+	}
+
+	return fallback, nil
+}
+
+// streamUnaryGenerate executes a unary Generate call and converts the single response into a stream channel.
+func streamUnaryGenerate(ctx context.Context, req CompletionRequest, generate func(context.Context, CompletionRequest) (*CompletionResponse, error)) (<-chan StreamChunk, error) {
+	resp, err := generate(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	ch := make(chan StreamChunk, 1)
+	ch <- StreamChunk{
+		Text:         resp.Text,
+		Done:         true,
+		OutputTokens: resp.OutputTokens,
+	}
+	close(ch)
+	return ch, nil
+}
+
+// postJSONRequest marshals payload and sends a POST request with application/json Content-Type.
+func postJSONRequest(ctx context.Context, client *http.Client, url string, payload interface{}) (*http.Response, error) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	return client.Do(httpReq)
+}
+
+// streamPrompt rejects a blank prompt, POSTs payload to endpoint+path and streams the SSE reply, turning
+// each JSON data line into a chunk with decode (ok=false skips the line, done=true ends the stream).
+func streamPrompt[T any](ctx context.Context, client *http.Client, req CompletionRequest, endpoint, path string, payload interface{}, decode func(T) (chunk StreamChunk, done bool)) (<-chan StreamChunk, error) {
+	if strings.TrimSpace(req.Prompt) == "" {
+		return nil, ErrEmptyPrompt
+	}
+	resp, err := postJSONRequest(ctx, client, strings.TrimRight(endpoint, "/")+path, payload)
+	if err != nil {
+		return nil, err
+	}
+	return streamSSEChunks(resp, func(data string) (StreamChunk, bool, bool) {
+		var v T
+		if err := json.Unmarshal([]byte(data), &v); err != nil {
+			return StreamChunk{}, false, false
+		}
+		chunk, done := decode(v)
+		return chunk, true, done
+	}), nil
+}
+
+// streamSSEChunks streams tokens from an SSE HTTP response, dispatching parsed payloads to caller.
+func streamSSEChunks(resp *http.Response, parsePayload func(payload string) (StreamChunk, bool, bool)) <-chan StreamChunk {
+	ch := make(chan StreamChunk)
+	go func() {
+		defer close(ch)
+		defer resp.Body.Close()
+
+		buf := make([]byte, 4096)
+		for {
+			n, err := resp.Body.Read(buf)
+			if n > 0 {
+				lines := strings.Split(string(buf[:n]), "\n")
+				for _, line := range lines {
+					line = strings.TrimSpace(line)
+					if !strings.HasPrefix(line, "data:") {
+						continue
+					}
+					dataPayload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+					if chunk, emit, stop := parsePayload(dataPayload); emit {
+						ch <- chunk
+						if stop {
+							return
+						}
+					}
+				}
+			}
+			if err != nil {
+				if err != io.EOF {
+					ch <- StreamChunk{Error: err}
+				}
+				return
+			}
+		}
+	}()
+	return ch
+}
+
+// openAIChunk reads one data line of an OpenAI-style chat stream: "[DONE]" ends it, a delta with
+// content is a chunk, anything else is skipped.
+func openAIChunk(data string) (StreamChunk, bool, bool) {
+	if data == "[DONE]" {
+		return StreamChunk{Done: true}, true, true
+	}
+	var v struct {
+		Choices []struct {
+			Delta struct {
+				Content string `json:"content"`
+			} `json:"delta"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal([]byte(data), &v) != nil || len(v.Choices) == 0 {
+		return StreamChunk{}, false, false
+	}
+	return StreamChunk{Text: v.Choices[0].Delta.Content}, true, false
+}
+
+// streamChatCompletions posts a streaming chat request to an OpenAI-compatible server and streams
+// the deltas of its answer. apiKey, when set, is sent as a bearer token.
+func streamChatCompletions(ctx context.Context, client *http.Client, req CompletionRequest, endpoint, apiKey, model string) (<-chan StreamChunk, error) {
+	if strings.TrimSpace(req.Prompt) == "" {
+		return nil, ErrEmptyPrompt
+	}
+	payload := map[string]interface{}{
+		"model":    model,
+		"messages": []map[string]string{{"role": "user", "content": req.Prompt}},
+		"stream":   true,
+	}
+	data, _ := json.Marshal(payload) // a map of strings and booleans always marshals
+	url := fmt.Sprintf("%s/v1/chat/completions", strings.TrimRight(endpoint, "/"))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	return streamSSEChunks(resp, openAIChunk), nil
+}
+
+// streamSpec describes one engine's streaming endpoint: where to post, what to send and how to read
+// a data line.
+type streamSpec[T any] struct {
+	path    string
+	payload func(CompletionRequest) map[string]interface{}
+	decode  func(T) (chunk StreamChunk, done bool)
+}
+
+func (sp streamSpec[T]) run(ctx context.Context, client *http.Client, endpoint string, req CompletionRequest) (<-chan StreamChunk, error) {
+	return streamPrompt(ctx, client, req, endpoint, sp.path, sp.payload(req), sp.decode)
 }

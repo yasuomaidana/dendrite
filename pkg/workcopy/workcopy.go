@@ -6,10 +6,15 @@
 // projects and lets Dendrite delete a copy once its work is merged and clean.
 package workcopy
 
+// TODO(move:dendrite-git-rs,DGIT-7): creating and removing isolated git worktrees with guaranteed cleanup is git.worktree.create and git.worktree.remove.
+//   When: those methods are implemented (DGIT-7); then the git calls here go through the sidecar.
+//   Stays in Go: the model-owned naming, claims and garbage collection of working copies.
+//   Until then: fix bugs here, but do not add features; add them in the Rust repository.
+
 import (
+	"Dendrite/pkg/branchpolicy"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -30,9 +35,6 @@ const (
 	// storiesSuffix names the per-repo directory holding story-fork variants.
 	storiesSuffix = "-stories"
 )
-
-// mergeTargets are the integration branches a copy's branch is checked against.
-var mergeTargets = []string{"main", "master", "develop"}
 
 var unsafeNameChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
@@ -191,8 +193,14 @@ func SanitizeName(name string) string {
 	return clean
 }
 
-// Create adds a new working copy called name on branch (default agent/<name>)
-// starting at base (default HEAD), and returns its path.
+// DefaultBranch is the branch of a copy that was given none: `<name>/main`, the trunk of a feature of its own.
+func DefaultBranch(name string) string {
+	return SanitizeName(name) + "/main"
+}
+
+// Create adds a new working copy called name on branch (default DefaultBranch(name)) and returns its path. A
+// branch that does not exist yet starts at base (default HEAD); one that exists, such as the trunk of a feature
+// whose sub-tickets started first, is checked out as it is.
 func (m *Manager) Create(ctx context.Context, name, branch, base string) (string, error) {
 	l, err := m.layout(ctx)
 	if err != nil {
@@ -203,25 +211,38 @@ func (m *Manager) Create(ctx context.Context, name, branch, base string) (string
 		return "", fmt.Errorf("workcopy: %s already exists", path)
 	}
 	if branch == "" {
-		branch = "agent/" + strings.ToLower(SanitizeName(name))
+		branch = DefaultBranch(name)
 	}
-	if base == "" {
-		base = "HEAD"
-	}
-	baseCommit, err := m.git(ctx, m.repoDir, "rev-parse", "--verify", base+"^{commit}")
+	add := []string{"worktree", "add", path, branch}
+	start, err := m.git(ctx, m.repoDir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
 	if err != nil {
-		return "", fmt.Errorf("workcopy: resolve base %q: %w", base, err)
+		if start, err = m.baseCommit(ctx, base); err != nil {
+			return "", err
+		}
+		add = []string{"worktree", "add", "-b", branch, path, start}
 	}
 	if err := os.MkdirAll(l.root, 0o755); err != nil {
 		return "", err
 	}
-	if _, err := m.git(ctx, m.repoDir, "worktree", "add", "-b", branch, path, baseCommit); err != nil {
+	if _, err := m.git(ctx, m.repoDir, add...); err != nil {
 		return "", fmt.Errorf("workcopy: %w", err)
 	}
-	if err := writeMeta(path, meta{Branch: branch, Base: baseCommit, Created: time.Now().UTC()}); err != nil {
+	if err := writeMeta(path, meta{Branch: branch, Base: start, Created: time.Now().UTC()}); err != nil {
 		return path, fmt.Errorf("workcopy: copy created but metadata not saved: %w", err)
 	}
 	return path, nil
+}
+
+// baseCommit is the commit a new branch starts at: base, or HEAD when none is given.
+func (m *Manager) baseCommit(ctx context.Context, base string) (string, error) {
+	if base == "" {
+		base = "HEAD"
+	}
+	commit, err := m.git(ctx, m.repoDir, "rev-parse", "--verify", base+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("workcopy: resolve base %q: %w", base, err)
+	}
+	return commit, nil
 }
 
 type worktreeEntry struct {
@@ -284,7 +305,7 @@ func (m *Manager) inspect(ctx context.Context, e worktreeEntry) Copy {
 	if md, err := readMeta(e.path); err == nil && md.Base == e.head {
 		c.Untouched = true
 	}
-	c.MergedInto = m.mergedInto(ctx, e.head)
+	c.MergedInto = m.mergedInto(ctx, e.head, e.branch)
 	if e.branch == "" {
 		return c // detached HEAD: no upstream to inspect
 	}
@@ -307,9 +328,11 @@ func hasUserChanges(status string) bool {
 	return false
 }
 
-func (m *Manager) mergedInto(ctx context.Context, head string) string {
-	for _, target := range mergeTargets {
-		for _, ref := range []string{"refs/heads/" + target, "refs/remotes/origin/" + target} {
+// mergedInto names the protected branch (or the recorded target, e.g. a feature branch) that already holds head.
+func (m *Manager) mergedInto(ctx context.Context, head, branch string) string {
+	policy := branchpolicy.ForBranch(m.repoDir, branch)
+	for _, target := range policy.Protected() {
+		for _, ref := range []string{"refs/heads/" + target, "refs/remotes/" + policy.Remote + "/" + target, "refs/remotes/origin/" + target} {
 			if _, err := m.git(ctx, m.repoDir, "rev-parse", "--verify", "--quiet", ref); err != nil {
 				continue
 			}
@@ -337,6 +360,19 @@ func (m *Manager) resolve(ctx context.Context, target string) (Copy, layout, err
 		if c.Path == Canon(abs) || c.Path == l.copyPath(target) {
 			return c, l, nil
 		}
+	}
+	// A copy made for a ticket is called <ticket>-<slug>, and is still found by the ticket alone.
+	var named []Copy
+	for _, c := range copies {
+		if strings.HasPrefix(c.Path, l.copyPath(target)+"-") {
+			named = append(named, c)
+		}
+	}
+	if len(named) == 1 {
+		return named[0], l, nil
+	}
+	if len(named) > 1 {
+		return Copy{}, l, fmt.Errorf("workcopy: %q matches %d working copies; name one in full or give its path", target, len(named))
 	}
 	return Copy{}, l, fmt.Errorf("workcopy: no working copy matches %q", target)
 }
@@ -442,103 +478,4 @@ func gcVerdict(c Copy, cwd string, inUse func(string) bool) (bool, string) {
 	default:
 		return true, "not merged"
 	}
-}
-
-// Adopt moves the repository's linked worktrees that live outside the root into it.
-func (m *Manager) Adopt(ctx context.Context, opts GCOptions) ([]Report, error) {
-	l, err := m.layout(ctx)
-	if err != nil {
-		return nil, err
-	}
-	entries, err := m.worktrees(ctx)
-	if err != nil {
-		return nil, err
-	}
-	cwd := m.cwd()
-	var reports []Report
-	for _, e := range entries {
-		if isWithin(l.root, e.path) || isWithin(l.top, e.path) {
-			continue // managed copies, the main checkout and in-repo state dirs stay put
-		}
-		r := Report{Path: e.path, Branch: e.branch, Action: "kept"}
-		name := filepath.Base(e.path)
-		if !strings.HasPrefix(name, l.repoName+"-") {
-			name = l.repoName + "-" + name
-		}
-		dest := filepath.Join(l.root, name)
-		switch {
-		case cwd != "" && isWithin(e.path, cwd):
-			r.Reason = "current working directory"
-		case opts.InUse != nil && opts.InUse(e.path):
-			r.Reason = "used by an in-flight agent job"
-		case dirExists(dest):
-			r.Reason = dest + " already exists"
-		case opts.DryRun:
-			r.Action, r.Reason = "would move", "to "+dest
-		default:
-			r.Action, r.Reason = m.move(ctx, l.root, e.path, dest)
-		}
-		reports = append(reports, r)
-	}
-	return reports, nil
-}
-
-func (m *Manager) move(ctx context.Context, root, src, dest string) (action, reason string) {
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		return "kept", err.Error()
-	}
-	if _, err := m.git(ctx, m.repoDir, "worktree", "move", src, dest); err != nil {
-		return "kept", err.Error()
-	}
-	return "moved", "to " + dest
-}
-
-func metaPath(copyPath string) string {
-	return filepath.Join(filepath.Dir(copyPath), metaDirName, filepath.Base(copyPath)+".json")
-}
-
-func writeMeta(copyPath string, md meta) error {
-	p := metaPath(copyPath)
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return err
-	}
-	data, _ := json.MarshalIndent(md, "", "  ")
-	return os.WriteFile(p, data, 0o644)
-}
-
-func readMeta(copyPath string) (meta, error) {
-	var md meta
-	data, err := os.ReadFile(metaPath(copyPath))
-	if err != nil {
-		return md, err
-	}
-	err = json.Unmarshal(data, &md)
-	return md, err
-}
-
-// isWithin reports whether path equals dir or lies beneath it.
-func isWithin(dir, path string) bool {
-	rel, err := filepath.Rel(Canon(dir), Canon(path))
-	if err != nil {
-		return false
-	}
-	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
-}
-
-func dirExists(p string) bool {
-	info, err := os.Stat(p)
-	return err == nil && info.IsDir()
-}
-
-// Canon resolves symlinks (e.g. /tmp -> /private/tmp) for the longest existing prefix.
-func Canon(p string) string {
-	p = filepath.Clean(p)
-	if resolved, err := evalSymlinks(p); err == nil {
-		return resolved
-	}
-	parent := filepath.Dir(p)
-	if parent == p {
-		return p
-	}
-	return filepath.Join(Canon(parent), filepath.Base(p))
 }

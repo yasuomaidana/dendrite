@@ -1,27 +1,28 @@
 # Sub-Project Map & Responsibilities
 
-Dendrite is split into sibling repositories that `dendrite pool` keeps in sync. This page is the control plane's index of who owns what. Each sub-project also has its own authoritative `RESPONSIBILITIES` document, plus the Dendrite docs that describe its scope, copied in on 2026-10-18.
+Dendrite is split into sibling repositories that `dendrite pool` keeps in sync. This page is the control plane's index of who owns what. Each sub-project owns its technical specification (`docs/ARCHITECTURE.md`) and its `RESPONSIBILITIES` boundary document.
 
 The boundary comes from [2026-10 Quality Audit & Execution Plan §5](./2026-10-quality-audit-execution-plan.md). Tickets were relocated in Plane on 2026-10-18; see the relocation section below.
 
 ## Repositories
 
-| Repository | Path | Language | Plane project | Extraction umbrella | Responsibilities doc |
+| Repository | Path | Language | Plane project | Extraction umbrella | Technical specification |
 |---|---|---|---|---|---|
 | **dendrite-control** (this repo) | `~/GoLandProjects/Dendrite` | Go | `DEN` (Dendrite Core) | — | this page |
-| **dendrite-mcp-hub** | `../dendrite-mcp-hub` | Go | `DMCP` | DEN-971 | `dendrite-mcp-hub/docs/RESPONSIBILITIES.md` |
-| **dendrite-core-rs** | `../dendrite-core-rs` | Rust | `DCORE` | DEN-972 | `dendrite-core-rs/docs/RESPONSIBILITIES.md` |
-| **dendrite-git-rs** | `../dendrite-git-rs` | Rust | `DGIT` | DEN-973 | `dendrite-git-rs/docs/RESPONSIBILITIES.md` |
-| **dendrite-rag-rs** | `../dendrite-rag-rs` | Rust | `DRAG` | DEN-974 | `dendrite-rag-rs/docs/RESPONSIBILITIES.md` |
-| **embedag** | `~/RustRoverProjects/embedag` | Rust | `EMBEDAG` (Milestone 9 imported from `DEV_STATUS.md`) | DEN-051 / 068 / 074 | `embedag/doc/dendrite-integration.md` |
+| **dendrite-mcp-hub** | `../dendrite-mcp-hub` | Go | `DMCP` | DEN-971 | [dendrite-mcp-hub `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-mcp-hub/blob/main/docs/ARCHITECTURE.md) |
+| **dendrite-core-rs** | `../dendrite-core-rs` | Rust | `DCORE` | DEN-972 | [dendrite-core-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-core-rs/blob/main/docs/ARCHITECTURE.md) |
+| **dendrite-git-rs** | `../dendrite-git-rs` | Rust | `DGIT` | DEN-973 | [dendrite-git-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-git-rs/blob/main/docs/ARCHITECTURE.md) |
+| **dendrite-rag-rs** | `../dendrite-rag-rs` | Rust | `DRAG` | DEN-974 | [dendrite-rag-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-rag-rs/blob/main/docs/ARCHITECTURE.md) + `docs/specs/` |
+| **embedag** | `~/RustRoverProjects/embedag` | Rust | `EMBEDAG` (Milestone 9 imported from `DEV_STATUS.md`) | DEN-051 / 068 / 074 | [embedag `doc/22_Dependency_Resolution_and_Merkle_Delta_API.md`](https://github.com/yasuomaidana/embedag/blob/main/doc/22_Dependency_Resolution_and_Merkle_Delta_API.md) |
 
 ## Projects and synapses rule
 
 Every repository we can modify is a Plane project, and repositories that depend on each other share a synapse (rule 3 in `AGENTS.md`).
 
-- **Link file:** each repository commits `.dendrite/plane.json` (identifier, project UUID, workspace) next to `.dendrite/project.id`. `dendrite plane …`, `dendrite sync` and agents use that board when run inside the repository; `PLANE_PROJECT_ID` still overrides it, and Dendrite Core is the fallback.
-- **Commands:** `dendrite plane project ensure [dir] [--identifier ID] [--import DEV_STATUS.md]` adopts or creates the project, converges its states onto the canonical set and writes the link. `dendrite plane project audit` checks the rule across the IDE project folders. Editable means the origin belongs to the owner of this repository's origin, or the repository has no remote.
-- **State on 2026-10-18:** 13 editable repositories, 13 Plane projects (DEN, DMCP, DCORE, DGIT, DRAG, EMBEDAG, DOCULA, OXI, K8SLAB, DIESELJP, EMBRUST, CAPACITANCE, INTROML). Two synapses: `dendrite-ecosystem` (this repo, the four sub-projects and embedag) and `docula-embedag` (docula's `docula-rag` depends on `embedag-rag`). `rqlite` is a third-party clone and is not a project.
+- **Link file:** each repository keeps `.dendrite/plane.json` (identifier, project UUID, workspace) next to `.dendrite/project.id`. `.dendrite/` is local tool state and is never committed (`dendrite soma prepare` gitignores it; `dendrite soma migrate-state` untracks it in existing repositories). `dendrite chronos …`, `dendrite sync` and agents use that board when run inside the repository; `PLANE_PROJECT_ID` still overrides it, and Dendrite Core is the fallback.
+- **Worktrees and clones:** a linked worktree (`dendrite-work/…`) shares the main checkout's `.dendrite/`, resolved through `git rev-parse --git-common-dir`. The global index `~/.dendrite/projects.json` also records each project's `root_commit` (its first commit) and Plane binding, so a fresh clone, which has no `.dendrite/`, gets its `dpid_` ID back from the index (same root commit and normalized remote) when `dendrite chronos project ensure` registers it, and `LinkForDir` falls back to the indexed Plane binding. A fork with a different remote gets a new ID.
+- **Commands:** `dendrite chronos project ensure [dir] [--identifier ID] [--import DEV_STATUS.md]` adopts or creates the project, converges its states onto the canonical set and writes the link. `dendrite chronos project audit` checks the rule across the project folders (direct children, plus repositories one level inside plain grouping folders; linked worktrees are skipped). Editable means the origin belongs to the GitHub user or one of their organizations, or the repository has no remote.
+- **State on 2026-10-19:** the audit over `~/GoLandProjects`, `~/RustRoverProjects`, `~/PycharmProjects`, `~/AndroidStudioProjects` and `~/Projects` finds 28 editable repositories (owners: the GitHub login and its organizations, from `gh`) in 27 Plane projects (`iml` is a second clone of introduction-to-machine-learning and shares INTROML). Three synapses: `dendrite-ecosystem` (this repo, the four sub-projects and embedag), `docula-embedag` (docula's `docula-rag` depends on `embedag-rag`) and `kakebo` (kakebo depends on kakebo-data-model, which kakebo-specs documents). `rqlite` is a third-party clone and is not a project.
 
 ## Who owns what
 
@@ -35,7 +36,7 @@ Every repository we can modify is a Plane project, and repositories that depend 
   - the server and UI (`pkg/server`, `pkg/ui`)
   - CI and quality gates
 
-  It also keeps an in-process Go fallback for every sidecar.
+  Where a sidecar has fully replaced a Go implementation, Dendrite only coordinates it and has no fallback; this is the case for retrieval (`dendrite-rag`). The other sidecars still have an in-process Go fallback until they reach parity.
 - **dendrite-mcp-hub** owns:
   - the MCP JSON-RPC server and tool registry (`pkg/mcpserver`)
   - the JetBrains bridge (`pkg/jetbrains`)
@@ -46,28 +47,42 @@ Every repository we can modify is a Plane project, and repositories that depend 
   - tree-sitter signature folding and last-complete-node detection
   - complexity metrics and CFG slices
   - BLAKE3 hashing and token counting
+  - changed symbols and the symbols a range defines and uses (`ast.defs_uses`)
 
-  It replaces the heuristics in `pkg/ast` and `pkg/ai/tokenopt`.
+  Implemented: complexity, folding, last-complete-node, changed symbols, defs and uses, BLAKE3 chunk identity and token estimates (estimates only; exact tokenizers are not bundled). CFG slices and the intermediate representation are not implemented. Dendrite uses it through `pkg/coreclient`; the Go analyzers in `pkg/ast` and `pkg/ai/tokenopt` are deleted (see `docs/quality/core-parity.md` for the comparison and the speed result).
 - **dendrite-git-rs** owns:
   - the gitoxide hunk dependency graph
   - the semantic commit clusterer
   - the `--local-review` stacked-branch engine
 
-  It sits behind the `pkg/vcs` / `pkg/devtool` commit flow.
+  Implemented so far: hunk extraction (`git.hunks`). The hunk graph, clusterer, plan validation, apply and the stacked-branch engine are specified and not built; the Go commit flow in `pkg/vcs` and `pkg/devtool` stays until they exist.
 - **dendrite-rag-rs** owns:
   - BM25 + vector hybrid retrieval
   - the content-addressed store
   - the memory sync modes (local-only, edge/WAL, push)
 
-  It replaces `pkg/rag`, the search primitives in `pkg/agentsearch`, and `pkg/store`.
+  Retrieval is complete: `pkg/rag` keeps only the sidecar client (`Retriever`) and the ask orchestration, and the Go indexer is gone. The search primitives in `pkg/agentsearch` and `pkg/store` are still to move.
 - **embedag** owns every graph and DAG algorithm: toposort, levels, reverse dependencies, critical path, Merkle delta trees, AST similarity graphs, and Graph-RAG primitives (RRF, community detection).
-  - It is consumed by `dendrite-core-rs` and `dendrite-rag-rs` with `default-features = false, features = ["core", "matcher"]`.
+  - Today the only dependent is `dendrite-rag-rs`, with feature `core`, for the Merkle delta trees. Planned: `dendrite-git-rs` for strongly connected components (EMBEDAG-83 is done) and `dendrite-core-rs` serving `dag.*` for the Go DAG code (DCORE-11).
   - New DAG code is not written in Go.
+
+## Pending moves (marked in the code)
+
+Go files that are going to live in another repository carry a `TODO(move:<repo>,<TICKET>)` block after their package clause: what moves, when, what stays in Go. Find them with `dendrite rag grep 'TODO\(move:'`. Until a move happens, fix bugs in the Go file but add features in the target repository.
+
+| Go code | Moves to | Ticket | When |
+|---|---|---|---|
+| `pkg/tracker/dag`, `pkg/topology/validate.go` | dendrite-core-rs (`dag.*` over embedag) | DCORE-11 | after EMBEDAG-83 (SCC) and embedag ticket 9.2.2 |
+| `pkg/ast/graph.go`, `pkg/agentsearch`, `pkg/store` | dendrite-rag-rs | DRAG-79 | `graph.*` and search cover the same queries; parity recorded once |
+| `pkg/story/fork/git_executor.go`, `pkg/workcopy` | dendrite-git-rs (`git.worktree.*`, `git.hunks`) | DGIT-4, DGIT-7 | the sidecar methods exist |
+| `pkg/vcs/reposync.go`, `pkg/vcs/orchestrator.go` | dendrite-git-rs (`git.divergence`, hunk graph, clusterer, apply) | DGIT-2, DGIT-3 | those methods exist; the branch guard stays in Go |
+| `pkg/tracker/plane` HTTP code | dendrite-plane-rs (typed methods) | DPLANE-7 | the protocol minor with projects, members, checklist and doc sync is out |
+| `pkg/mcpserver` | dendrite-mcp-hub (Go) | DMCP-1 | ports defined in the hub, tools moved group by group |
 
 ## Interface contract
 
 - Each Rust crate ships a `dendrite-<x>` binary that speaks JSON-RPC 2.0 over stdio. Its schema lives in `proto/*.json`, versioned with semver.
-- The Go side uses a `sidecar.Client` that does a health handshake and falls back to the in-process Go implementation when the binary is missing.
+- The Go side uses a `sidecar.Client` that does a health handshake. Until a sidecar replaces its Go implementation, `sidecar.Call` falls back to that implementation when the binary is missing; once replaced, the Go code is deleted and a missing binary is an error with install instructions (`dendrite-rag` today).
 - `dendrite-mcp-hub` is a Go module (`dendrite.dev/mcphub`).
 
 ## Ticket relocation (2026-10-18)
@@ -108,105 +123,26 @@ Each sub-project's `RESPONSIBILITIES` Ticket Map has the same mapping, with live
 
 ## Documentation that moved with the code
 
-These Dendrite docs remain here, because generated references and the docs audit gate depend on them. Copies with a provenance header live under each sub-project's `docs/imported/` (embedag: `doc/imported/`), listed in that repo's `imports.json`.
+Since 2026-10-20 (DEN-1042) each sub-project owns the technical description of what it implements: data model, algorithms, protocol and configuration, written about the repository itself. Sibling `dendrite-*` repositories may reference each other. embedag's specification is written in its own domain, with no references to its consumers.
 
-Until a sub-project's extraction umbrella lands, edit the Dendrite copy and re-copy. After extraction, the sub-project copy becomes the source of truth and the Dendrite page should link to it.
+The Dendrite pages below keep the product view (what the feature does for the user, CLI and MCP surface, Go fallback). Each one starts with a link to the sub-project specification that holds the internals. The generated CLI and MCP references (`docs/cli/`, `docs/mcp/`) stay here, because Dendrite exposes those commands.
 
-`scripts/sync_subproject_docs.py` does the copying. It also regenerates each sub-project's docs index (`docs/README.md`; embedag: `doc/dendrite-integration.md` §7) with working `imported/...` links, and the table below. `--check` reports missing, stale or orphaned copies and broken index links, and exits 1 if it finds any.
+| Sub-project | Specification | Dendrite pages that link to it |
+|---|---|---|
+| dendrite-rag-rs | `docs/ARCHITECTURE.md`, `docs/specs/{chunking,retrieval,store,protocol,memory-sync,topic-memory}.md` | FEAT-022, FEAT-031, FEAT-045, `guides/asking-questions-to-dendrite.md` |
+| dendrite-core-rs | `docs/ARCHITECTURE.md` | FEAT-010, FEAT-011, FEAT-030, `architecture/03-context-intelligence-re.md` |
+| dendrite-git-rs | `docs/ARCHITECTURE.md` | FEAT-032, FEAT-070, FEAT-098 |
+| dendrite-mcp-hub | `docs/ARCHITECTURE.md` | FEAT-014, FEAT-046, FEAT-100 |
+| embedag | `doc/22_Dependency_Resolution_and_Merkle_Delta_API.md` | FEAT-029, FEAT-033, FEAT-036 |
 
-```bash
-uv run scripts/sync_subproject_docs.py            # copy, re-index, refresh this table
-uv run scripts/sync_subproject_docs.py --check    # verify only
-```
-
-Which sub-project imports what was reviewed per repository against its `RESPONSIBILITIES` document on 2026-10-19 (DEN-1018).
-
-<!-- sync_subproject_docs:begin -->
-
-71 Dendrite docs are imported. After editing one, run `uv run scripts/sync_subproject_docs.py`.
-
-| Dendrite doc | Imported by |
-|---|---|
-| [`docs/architecture/03-context-intelligence-re.md`](03-context-intelligence-re.md) | dendrite-core-rs |
-| [`docs/architecture/2026-10-quality-audit-execution-plan.md`](2026-10-quality-audit-execution-plan.md) | dendrite-core-rs, dendrite-git-rs, dendrite-mcp-hub, dendrite-rag-rs, embedag |
-| [`docs/cli/analyze.md`](../cli/analyze.md) | dendrite-core-rs |
-| [`docs/cli/ask.md`](../cli/ask.md) | dendrite-rag-rs |
-| [`docs/cli/audit-changes.md`](../cli/audit-changes.md) | dendrite-git-rs |
-| [`docs/cli/canvas.md`](../cli/canvas.md) | dendrite-mcp-hub |
-| [`docs/cli/commit.md`](../cli/commit.md) | dendrite-git-rs |
-| [`docs/cli/jetbrains.md`](../cli/jetbrains.md) | dendrite-mcp-hub |
-| [`docs/cli/mcp.md`](../cli/mcp.md) | dendrite-mcp-hub |
-| [`docs/cli/pool.md`](../cli/pool.md) | embedag |
-| [`docs/cli/query.md`](../cli/query.md) | dendrite-core-rs |
-| [`docs/cli/store.md`](../cli/store.md) | dendrite-rag-rs |
-| [`docs/cli/story.md`](../cli/story.md) | dendrite-git-rs |
-| [`docs/cli/sync-remote.md`](../cli/sync-remote.md) | dendrite-git-rs |
-| [`docs/cli/vcs.md`](../cli/vcs.md) | dendrite-git-rs |
-| [`docs/features/FEAT-003-reverse-engineering-rea.md`](../features/FEAT-003-reverse-engineering-rea.md) | dendrite-mcp-hub |
-| [`docs/features/FEAT-004-repo-intel-ast.md`](../features/FEAT-004-repo-intel-ast.md) | dendrite-core-rs, embedag |
-| [`docs/features/FEAT-010-ai-assisted-token-optimization.md`](../features/FEAT-010-ai-assisted-token-optimization.md) | dendrite-core-rs |
-| [`docs/features/FEAT-011-polyglot-translation-synthesis.md`](../features/FEAT-011-polyglot-translation-synthesis.md) | dendrite-core-rs |
-| [`docs/features/FEAT-014-jetbrains-ide-mcp-integration.md`](../features/FEAT-014-jetbrains-ide-mcp-integration.md) | dendrite-mcp-hub |
-| [`docs/features/FEAT-022-agent-search-and-capability-discovery.md`](../features/FEAT-022-agent-search-and-capability-discovery.md) | dendrite-rag-rs, embedag |
-| [`docs/features/FEAT-026-distributed-codebase-ecosystem.md`](../features/FEAT-026-distributed-codebase-ecosystem.md) | embedag |
-| [`docs/features/FEAT-028-local-agent-triage-gateway-token-efficiency.md`](../features/FEAT-028-local-agent-triage-gateway-token-efficiency.md) | dendrite-mcp-hub |
-| [`docs/features/FEAT-029-autonomous-pool-dag-synchronization.md`](../features/FEAT-029-autonomous-pool-dag-synchronization.md) | embedag |
-| [`docs/features/FEAT-030-universal-query-engine-3tier-library-reuse.md`](../features/FEAT-030-universal-query-engine-3tier-library-reuse.md) | dendrite-core-rs |
-| [`docs/features/FEAT-031-persistent-store-hybrid-token-scheduler.md`](../features/FEAT-031-persistent-store-hybrid-token-scheduler.md) | dendrite-core-rs, dendrite-rag-rs |
-| [`docs/features/FEAT-032-polyglot-speculative-drift-workflows.md`](../features/FEAT-032-polyglot-speculative-drift-workflows.md) | dendrite-git-rs |
-| [`docs/features/FEAT-033-infrastructure-mobility-smart-backup.md`](../features/FEAT-033-infrastructure-mobility-smart-backup.md) | embedag |
-| [`docs/features/FEAT-035-multiprovider-agent-governance.md`](../features/FEAT-035-multiprovider-agent-governance.md) | dendrite-git-rs |
-| [`docs/features/FEAT-036-ticket-milestone-dag-story-prioritization.md`](../features/FEAT-036-ticket-milestone-dag-story-prioritization.md) | embedag |
-| [`docs/features/FEAT-037-penpot-ui-documentation-mcp-integration.md`](../features/FEAT-037-penpot-ui-documentation-mcp-integration.md) | dendrite-mcp-hub |
-| [`docs/features/FEAT-040-turso-offline-cache-outbox-sync.md`](../features/FEAT-040-turso-offline-cache-outbox-sync.md) | embedag |
-| [`docs/features/FEAT-041-agent-security-quality-resilience-guardrails.md`](../features/FEAT-041-agent-security-quality-resilience-guardrails.md) | dendrite-git-rs |
-| [`docs/features/FEAT-042-artifact-package-publisher-mcp.md`](../features/FEAT-042-artifact-package-publisher-mcp.md) | dendrite-mcp-hub |
-| [`docs/features/FEAT-045-code-knowledge-mcp-graphify.md`](../features/FEAT-045-code-knowledge-mcp-graphify.md) | dendrite-mcp-hub, dendrite-rag-rs |
-| [`docs/features/FEAT-046-multi-ide-plugins.md`](../features/FEAT-046-multi-ide-plugins.md) | dendrite-mcp-hub |
-| [`docs/features/FEAT-070-speculative-stacked-branches-and-audit-pipeline.md`](../features/FEAT-070-speculative-stacked-branches-and-audit-pipeline.md) | dendrite-git-rs |
-| [`docs/features/FEAT-098-autonomous-git-commit-engine.md`](../features/FEAT-098-autonomous-git-commit-engine.md) | dendrite-git-rs |
-| [`docs/features/FEAT-100-multi-ide-ecosystem-support.md`](../features/FEAT-100-multi-ide-ecosystem-support.md) | dendrite-mcp-hub |
-| [`docs/features/FEAT-101-personal-context-topic-memory-installer.md`](../features/FEAT-101-personal-context-topic-memory-installer.md) | dendrite-mcp-hub |
-| [`docs/guides/asking-questions-to-dendrite.md`](../guides/asking-questions-to-dendrite.md) | dendrite-rag-rs |
-| [`docs/guides/jetbrains-mcp-and-agents-setup.md`](../guides/jetbrains-mcp-and-agents-setup.md) | dendrite-mcp-hub |
-| [`docs/guides/using-dendrite-tools-with-jetbrains.md`](../guides/using-dendrite-tools-with-jetbrains.md) | dendrite-mcp-hub |
-| [`docs/mcp/dendrite_audit_changes.md`](../mcp/dendrite_audit_changes.md) | dendrite-git-rs |
-| [`docs/mcp/dendrite_canvas_action_dispatch.md`](../mcp/dendrite_canvas_action_dispatch.md) | dendrite-mcp-hub |
-| [`docs/mcp/dendrite_canvas_penpot_bridge.md`](../mcp/dendrite_canvas_penpot_bridge.md) | dendrite-mcp-hub |
-| [`docs/mcp/dendrite_commit.md`](../mcp/dendrite_commit.md) | dendrite-git-rs |
-| [`docs/mcp/dendrite_contract_drift_check.md`](../mcp/dendrite_contract_drift_check.md) | dendrite-mcp-hub |
-| [`docs/mcp/dendrite_jetbrains_setup.md`](../mcp/dendrite_jetbrains_setup.md) | dendrite-mcp-hub |
-| [`docs/mcp/dendrite_local_agent_triage.md`](../mcp/dendrite_local_agent_triage.md) | dendrite-mcp-hub |
-| [`docs/mcp/dendrite_pcontext_greeting_generate.md`](../mcp/dendrite_pcontext_greeting_generate.md) | dendrite-mcp-hub |
-| [`docs/mcp/dendrite_pool_resolve.md`](../mcp/dendrite_pool_resolve.md) | embedag |
-| [`docs/mcp/dendrite_query_slice.md`](../mcp/dendrite_query_slice.md) | dendrite-core-rs |
-| [`docs/mcp/dendrite_query_transpile.md`](../mcp/dendrite_query_transpile.md) | dendrite-core-rs |
-| [`docs/mcp/dendrite_rag_ask.md`](../mcp/dendrite_rag_ask.md) | dendrite-rag-rs |
-| [`docs/mcp/dendrite_rag_retrieve.md`](../mcp/dendrite_rag_retrieve.md) | dendrite-rag-rs |
-| [`docs/mcp/dendrite_rea_showcase.md`](../mcp/dendrite_rea_showcase.md) | dendrite-mcp-hub |
-| [`docs/mcp/dendrite_remote_sync.md`](../mcp/dendrite_remote_sync.md) | dendrite-git-rs |
-| [`docs/mcp/dendrite_store_commit_chunk.md`](../mcp/dendrite_store_commit_chunk.md) | dendrite-rag-rs |
-| [`docs/mcp/dendrite_store_inspect.md`](../mcp/dendrite_store_inspect.md) | dendrite-rag-rs |
-| [`docs/mcp/dendrite_store_query_partial.md`](../mcp/dendrite_store_query_partial.md) | dendrite-rag-rs |
-| [`docs/mcp/dendrite_store_rm.md`](../mcp/dendrite_store_rm.md) | dendrite-rag-rs |
-| [`docs/mcp/dendrite_store_status.md`](../mcp/dendrite_store_status.md) | dendrite-rag-rs |
-| [`docs/mcp/dendrite_story_abort.md`](../mcp/dendrite_story_abort.md) | dendrite-git-rs |
-| [`docs/mcp/dendrite_story_fork.md`](../mcp/dendrite_story_fork.md) | dendrite-git-rs |
-| [`docs/mcp/dendrite_story_resolve.md`](../mcp/dendrite_story_resolve.md) | dendrite-git-rs |
-| [`docs/mcp/dendrite_ticket_smart_select.md`](../mcp/dendrite_ticket_smart_select.md) | embedag |
-| [`docs/mcp/dendrite_ui_penpot_sync.md`](../mcp/dendrite_ui_penpot_sync.md) | dendrite-mcp-hub |
-| [`docs/mcp/dendrite_vcs_guard.md`](../mcp/dendrite_vcs_guard.md) | dendrite-git-rs |
-| [`docs/quality/scrum-and-complexity-scorecard.md`](../quality/scrum-and-complexity-scorecard.md) | dendrite-core-rs |
-| [`docs/reports/2026-10-17-done-ticket-audit.md`](../reports/2026-10-17-done-ticket-audit.md) | dendrite-core-rs |
-
-<!-- sync_subproject_docs:end -->
+The earlier copies (`docs/imported/`, `imports.json`) and `scripts/sync_subproject_docs.py` were removed.
 
 ## Open boundary questions
 
 Collected from the sub-project responsibility documents. Each is to be resolved in the `proto/*.json` contracts or by a ticket.
 
-- **Crate and binary naming:** §5 says `dendrite-core` / `dendrite-rag` / `dendrite-git`, but the scaffolds are named `*-rs` and have no `[[bin]]` yet.
-- **AST chunking and BLAKE3 for retrieval:** `pkg/rag/indexer.go` chunks Go ASTs itself. Decide whether `dendrite-rag-rs` links `dendrite-core` directly or receives pre-sliced chunks over RPC.
+- **Crate and binary naming:** §5 says `dendrite-core` / `dendrite-rag` / `dendrite-git`. Resolved for rag-rs (package and binary `dendrite-rag`, DRAG-9); core-rs and git-rs follow the same rule when implemented.
+- **AST chunking and BLAKE3 for retrieval:** resolved: `dendrite-rag-rs` chunks with tree-sitter itself (cAST, DRAG-10) and can move to a shared parser once `dendrite-core-rs` publishes one.
 - **Split packages:**
   - `pkg/agentsearch`: the search primitives go to `dendrite-rag-rs`; agent routing stays here.
   - `pkg/store`: the engine goes to `dendrite-rag-rs`; the CLI and UI stay here.
@@ -214,3 +150,7 @@ Collected from the sub-project responsibility documents. Each is to be resolved 
 - **MCP wire types:** they are defined twice, in `pkg/mcpserver/types.go` and `pkg/jetbrains/types.go`; unify them in the hub.
 - **Sidecar invocation from the hub:** decide whether the hub spawns its own sidecars or delegates through dendrite-control.
 - **Cyclic hunk graphs:** `dendrite-git-rs` needs SCC condensation over possibly-cyclic hunk graphs. That algorithm belongs in embedag (ticket 9.5.1), not in a local Tarjan pass.
+
+## Release references
+
+What goes to `main` refers to a sibling repository only by a release or by the sibling's `main` branch: a `vX.Y.Z` tag, a crates.io or `go.mod` version, or `main`. Working branches (`develop`, `feature/*`, `agent/*`), commits (`rev`), pseudo-versions and local paths stay in working branches. Every member of the `dendrite-ecosystem` synapse runs `scripts/check-release-refs.sh` in a CI job named `release refs` on every pull request; `dendrite soma prepare` writes the script and the job. A deliberate exception goes in `.github/dendrite/release-refs.allow` (`path:<prefix> # reason`).

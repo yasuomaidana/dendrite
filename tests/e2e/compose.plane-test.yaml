@@ -1,0 +1,105 @@
+# An isolated copy of the Plane stack (stacks/compose.plane.yaml) for testing Dendrite against a real Plane
+# without touching the one you work in. Run it only through tests/e2e/plane-test.sh, which passes
+# `docker compose -p dendrite-test`: the project name gives this stack its own network and volumes, and nothing
+# below sets container_name, so it cannot collide with the live dendrite-plane-* containers.
+#
+# Host ports are the live ones plus 100 (override with E2E_*). Inside the network the services keep their
+# usual names and ports, so the proxy configuration of the live stack is reused as it is.
+name: dendrite-test
+
+networks:
+  mesh:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  uploads:
+
+services:
+  plane-postgres:
+    image: postgres:16-alpine
+    restart: "no"
+    environment:
+      POSTGRES_DB: plane_test
+      POSTGRES_USER: plane_user
+      POSTGRES_PASSWORD: plane_test_password
+    ports:
+      - "${E2E_PLANE_DB_PORT:-5444}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [mesh]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plane_user -d plane_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  plane-redis:
+    image: redis:7-alpine
+    restart: "no"
+    ports:
+      - "${E2E_PLANE_REDIS_PORT:-6390}:6379"
+    volumes:
+      - redis-data:/data
+    networks: [mesh]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  plane-api:
+    image: makeplane/plane-backend:v0.20-dev
+    restart: "no"
+    command: sh /app/entrypoint.sh
+    depends_on:
+      plane-postgres:
+        condition: service_healthy
+      plane-redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://plane_user:plane_test_password@plane-postgres:5432/plane_test"
+      REDIS_URL: "redis://plane-redis:6379/0"
+      PORT: 8090
+      WEB_URL: "http://localhost:${E2E_PLANE_UI_PORT:-8191}"
+      SECRET_KEY: "dendrite_plane_secret_key_for_the_test_stack_only"
+    ports:
+      - "${E2E_PLANE_API_PORT:-8190}:8090"
+    volumes:
+      - uploads:/app/uploads
+      - ../../stacks/entrypoint-plane.sh:/app/entrypoint.sh:ro
+    networks: [mesh]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/api/instances/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  plane-ui:
+    image: makeplane/plane-frontend:v0.20-dev
+    restart: "no"
+    command: node web/server.js web
+    depends_on:
+      - plane-api
+    environment:
+      PORT: 3000
+      HOSTNAME: "0.0.0.0"
+      NEXT_PUBLIC_API_BASE_URL: "http://localhost:${E2E_PLANE_UI_PORT:-8191}"
+      NEXT_PUBLIC_WEB_BASE_URL: "http://localhost:${E2E_PLANE_UI_PORT:-8191}"
+      WEB_URL: "http://localhost:${E2E_PLANE_UI_PORT:-8191}"
+    expose:
+      - "3000"
+    networks: [mesh]
+
+  plane-proxy:
+    image: nginx:alpine
+    restart: "no"
+    depends_on:
+      - plane-api
+      - plane-ui
+    ports:
+      - "${E2E_PLANE_UI_PORT:-8191}:80"
+    volumes:
+      - ../../stacks/plane_proxy.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [mesh]

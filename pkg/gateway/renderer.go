@@ -2,32 +2,15 @@ package gateway
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"Dendrite/pkg/inference"
 	"Dendrite/pkg/topology"
 )
-
-func isOxiLLaMaPresent(endpoint string) bool {
-	client := &http.Client{Timeout: 300 * time.Millisecond}
-	resp, err := client.Get(strings.TrimRight(endpoint, "/") + "/v1/models")
-	if err == nil {
-		resp.Body.Close()
-		return resp.StatusCode == http.StatusOK
-	}
-	resp, err = client.Get(strings.TrimRight(endpoint, "/") + "/health")
-	if err == nil {
-		resp.Body.Close()
-		return resp.StatusCode == http.StatusOK
-	}
-	return false
-}
 
 // DefaultLiteLLMConfig creates a production-grade LiteLLM configuration with the 4-tier model hierarchy.
 func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
@@ -39,7 +22,9 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 	if oxillamaBaseURL == "" {
 		oxillamaBaseURL = "http://127.0.0.1:8080"
 	}
-	oxillamaOnline := isOxiLLaMaPresent(oxillamaBaseURL) || os.Getenv("DENDRITE_GATEWAY_OXILLAMA_ROUTING") == "true"
+	// Local Qwen tiers run on Ollama (GPU). OxiLLaMa prefills on the CPU, so it serves them
+	// only on request.
+	oxillamaOnline := os.Getenv("DENDRITE_GATEWAY_OXILLAMA_ROUTING") == "true"
 
 	qwen27bModel := "ollama/qwen3.8:27b"
 	qwen27bAPIBase := ollamaBaseURL
@@ -65,20 +50,20 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 
 	modelList := []ModelListEntry{
 		{
-			ModelName: "gemini-2.5-pro",
+			ModelName: "gemini-4-argon-medium",
 			LitellmParams: ModelParams{
-				Model:     "gemini/gemini-2.5-pro",
+				Model:     "gemini/gemini-4-argon-medium",
 				APIKey:    "os.environ/GEMINI_API_KEY",
 				MaxTokens: 8192,
 			},
 			ModelInfo: &ModelInfo{
-				ID:                 "gemini-2.5-pro",
+				ID:                 "gemini-4-argon-medium",
 				Mode:               "chat",
 				InputCostPerToken:  0.00000125,
 				OutputCostPerToken: 0.000005,
 				MaxInputTokens:     1048576,
 				MaxOutputTokens:    8192,
-				BaseModel:          "gemini/gemini-2.5-pro",
+				BaseModel:          "gemini/gemini-4-argon-medium",
 			},
 		},
 		{
@@ -104,20 +89,20 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 			},
 		},
 		{
-			ModelName: "gemini-2.5-flash",
+			ModelName: "gemini-3.8-flash-medium",
 			LitellmParams: ModelParams{
-				Model:     "gemini/gemini-2.5-flash",
+				Model:     "gemini/gemini-3.8-flash-medium",
 				APIKey:    "os.environ/GEMINI_API_KEY",
 				MaxTokens: 8192,
 			},
 			ModelInfo: &ModelInfo{
-				ID:                 "gemini-2.5-flash",
+				ID:                 "gemini-3.8-flash-medium",
 				Mode:               "chat",
 				InputCostPerToken:  0.000000075,
 				OutputCostPerToken: 0.0000003,
 				MaxInputTokens:     1048576,
 				MaxOutputTokens:    8192,
-				BaseModel:          "gemini/gemini-2.5-flash",
+				BaseModel:          "gemini/gemini-3.8-flash-medium",
 			},
 		},
 		{
@@ -198,15 +183,15 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 		EnablePreCallChecks: true,
 		// LiteLLM requires one model per fallback entry.
 		Fallbacks: []map[string][]string{
-			{"gemini-2.5-pro": {"copilot-sonnet", "gemini-2.5-flash", "local-qwen3-27b", "local-qwen-coder"}},
-			{"copilot-sonnet": {"gemini-2.5-flash", "local-qwen3-27b", "local-qwen-coder"}},
-			{"gemini-2.5-flash": {"local-qwen3-27b", "local-qwen-coder"}},
+			{"gemini-4-argon-medium": {"copilot-sonnet", "gemini-3.8-flash-medium", "local-qwen3-27b", "local-qwen-coder"}},
+			{"copilot-sonnet": {"gemini-3.8-flash-medium", "local-qwen3-27b", "local-qwen-coder"}},
+			{"gemini-3.8-flash-medium": {"local-qwen3-27b", "local-qwen-coder"}},
 		},
 		ContextWindowFallbacks: []map[string]string{
-			{"local-qwen-coder": "gemini-2.5-pro"},
-			{"local-qwen3-27b": "gemini-2.5-pro"},
-			{"local-qwen3-9b": "gemini-2.5-pro"},
-			{"gemini-2.5-flash": "gemini-2.5-pro"},
+			{"local-qwen-coder": "gemini-4-argon-medium"},
+			{"local-qwen3-27b": "gemini-4-argon-medium"},
+			{"local-qwen3-9b": "gemini-4-argon-medium"},
+			{"gemini-3.8-flash-medium": "gemini-4-argon-medium"},
 		},
 	}
 
@@ -361,9 +346,9 @@ func MultiEngineLiteLLMConfig(engines []inference.InferenceEngine) *LiteLLMConfi
 		sort.SliceStable(engineFallbackNames, func(i, j int) bool {
 			return inference.ModelIntelligenceScore(engineFallbackNames[i]) > inference.ModelIntelligenceScore(engineFallbackNames[j])
 		})
-		cascadeList := append([]string{"copilot-sonnet", "gemini-2.5-flash"}, engineFallbackNames...)
+		cascadeList := append([]string{"copilot-sonnet", "gemini-3.8-flash-medium"}, engineFallbackNames...)
 		cfg.RouterSettings.Fallbacks = []map[string][]string{
-			{"gemini-2.5-pro": cascadeList},
+			{"gemini-4-argon-medium": cascadeList},
 			{"copilot-sonnet": engineFallbackNames},
 		}
 	}
@@ -456,12 +441,40 @@ func RenderYAML(cfg *LiteLLMConfig) ([]byte, error) {
 		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
 
-	data, err := yaml.Marshal(cfg)
+	data, err := yaml.Marshal(withOllamaDefaults(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal YAML: %w", err)
 	}
 
 	return data, nil
+}
+
+// Ollama settings applied to every Ollama chat model when the configuration is rendered.
+const (
+	// OllamaNumCtx covers the 2500-token context pack of `dendrite ask` plus its answer; Ollama's
+	// default window would cut the prompt without any error.
+	OllamaNumCtx = 8192
+	// OllamaKeepAlive spares the 5-10 s model reload between calls.
+	OllamaKeepAlive = "30m"
+)
+
+// withOllamaDefaults returns cfg with a context window and keep-alive on its Ollama chat models.
+// Embedding models and entries that already set a value are left alone. cfg itself is not changed.
+func withOllamaDefaults(cfg *LiteLLMConfig) *LiteLLMConfig {
+	out := *cfg
+	out.ModelList = make([]ModelListEntry, len(cfg.ModelList))
+	for i, e := range cfg.ModelList {
+		if e.LitellmParams.CustomLLMProvider == "ollama" && !strings.Contains(strings.ToLower(e.ModelName+e.LitellmParams.Model), "embed") {
+			if e.LitellmParams.NumCtx == 0 {
+				e.LitellmParams.NumCtx = OllamaNumCtx
+			}
+			if e.LitellmParams.KeepAlive == "" {
+				e.LitellmParams.KeepAlive = OllamaKeepAlive
+			}
+		}
+		out.ModelList[i] = e
+	}
+	return &out
 }
 
 // RenderForTopology derives the Ollama base URL from an active TopologyConfig and generates the YAML.

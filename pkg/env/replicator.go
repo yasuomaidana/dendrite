@@ -1,6 +1,7 @@
 package env
 
 import (
+	"Dendrite/pkg/stacks"
 	"context"
 	"fmt"
 	"os"
@@ -122,7 +123,7 @@ func (r *Replicator) handleRenderAction(action PlanAction) (string, error) {
 	case TargetLinear:
 		cfg := DefaultLinearConfig()
 		yamlContent := GenerateLinearCompose(cfg)
-		outPath := filepath.Join("stacks", "compose.linear.yaml")
+		outPath := stacks.Path("compose.linear.yaml")
 		if err := writeStackFileIfAbsent(outPath, yamlContent); err != nil {
 			return "", err
 		}
@@ -131,7 +132,7 @@ func (r *Replicator) handleRenderAction(action PlanAction) (string, error) {
 	case TargetPlane:
 		cfg := DefaultPlaneConfig()
 		yamlContent := GeneratePlaneCompose(cfg)
-		outPath := filepath.Join("stacks", "compose.plane.yaml")
+		outPath := stacks.Path("compose.plane.yaml")
 		if err := writeStackFileIfAbsent(outPath, yamlContent); err != nil {
 			return "", err
 		}
@@ -144,7 +145,7 @@ func (r *Replicator) handleRenderAction(action PlanAction) (string, error) {
 	case TargetPenpot:
 		cfg := DefaultPenpotConfig()
 		yamlContent := GeneratePenpotCompose(cfg)
-		outPath := filepath.Join("stacks", "compose.penpot.yaml")
+		outPath := stacks.Path("compose.penpot.yaml")
 		if err := writeStackFileIfAbsent(outPath, yamlContent); err != nil {
 			return "", err
 		}
@@ -152,9 +153,13 @@ func (r *Replicator) handleRenderAction(action PlanAction) (string, error) {
 
 	case TargetLiteLLM, TargetPostgres, TargetRedis:
 		yamlContent := GenerateControlCompose()
-		outPath := filepath.Join("stacks", "compose.control.yaml")
+		outPath := stacks.Path("compose.control.yaml")
 		if err := writeStackFileIfAbsent(outPath, yamlContent); err != nil {
 			return "", err
+		}
+		initSqlPath := filepath.Join(filepath.Dir(outPath), "init-rag.sql")
+		if _, err := os.Stat(initSqlPath); os.IsNotExist(err) {
+			_ = os.WriteFile(initSqlPath, []byte(RagInitSQL), 0644)
 		}
 		return outPath, nil
 
@@ -254,6 +259,20 @@ func (r *Replicator) AuditComponents(ctx context.Context) []ComponentStatus {
 	return statuses
 }
 
+// RagInitSQL initializes the dendrite_rag database and pgvector extension for the shared tier.
+const RagInitSQL = `-- dendrite-rag shared tier: the dendrite_rag role and database with pgvector.
+-- Runs on a fresh volume through /docker-entrypoint-initdb.d; idempotent, so an existing
+-- stack can apply it too:
+--   docker exec -i dendrite-postgres psql -U dendrite -d postgres < ~/.dendrite/stacks/init-rag.sql
+SELECT 'CREATE ROLE dendrite_rag WITH LOGIN PASSWORD ''dendrite_rag'''
+WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'dendrite_rag')\gexec
+SELECT 'CREATE DATABASE dendrite_rag OWNER dendrite_rag'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'dendrite_rag')\gexec
+\connect dendrite_rag
+CREATE EXTENSION IF NOT EXISTS vector;
+GRANT ALL ON SCHEMA public TO dendrite_rag;
+`
+
 // GenerateControlCompose returns standard docker compose YAML for the control plane.
 // GenerateControlCompose returns the control-plane stack (Postgres, Redis, LiteLLM).
 // It must stay identical to stacks/compose.control.yaml (guarded by TestGenerateControlComposeMatchesCommittedStack).
@@ -271,7 +290,7 @@ volumes:
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg18
     container_name: dendrite-postgres
     restart: unless-stopped
     environment:
@@ -279,9 +298,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-dendrite}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dendrite_password}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${DENDRITE_BIND_HOST:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - dendrite-postgres-data:/var/lib/postgresql/data
+      - dendrite-postgres-data:/var/lib/postgresql
+      - ./init-rag.sql:/docker-entrypoint-initdb.d/init-rag.sql:ro
     networks:
       - dendrite-mesh
     healthcheck:
@@ -294,26 +314,26 @@ services:
     image: redis:7-alpine
     container_name: dendrite-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass "${REDIS_PASSWORD:?REDIS_PASSWORD is unset - run 'dendrite env secrets ensure'}"
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${DENDRITE_BIND_HOST:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     volumes:
       - dendrite-redis-data:/data
     networks:
       - dendrite-mesh
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD}\" --no-auth-warning ping"]
       interval: 5s
       timeout: 3s
       retries: 5
 
   litellm:
-    image: ghcr.io/berriai/litellm:main-latest
+    image: ghcr.io/berriai/litellm@sha256:ba1bdbba72f6e5e38e68385918a8f02be303481deca914c6c8b074bde24722b2
     container_name: dendrite-litellm
     restart: unless-stopped
-    command: ["--config", "/etc/litellm/config.yaml", "--port", "${LITELLM_PORT:-4000}"]
+    command: ["--config", "/etc/litellm/litellm_config.yaml", "--port", "${LITELLM_PORT:-4000}"]
     ports:
-      - "${LITELLM_PORT:-4000}:4000"
+      - "${DENDRITE_BIND_HOST:-127.0.0.1}:${LITELLM_PORT:-4000}:4000"
     environment:
       DATABASE_URL: "postgresql://${POSTGRES_USER:-dendrite}:${POSTGRES_PASSWORD:-dendrite_password}@postgres:5432/${POSTGRES_DB:-dendrite}"
       STORE_MODEL_IN_DB: "${STORE_MODEL_IN_DB:-True}"
@@ -322,7 +342,7 @@ services:
       # Encrypts credentials stored in Postgres; must stay stable across master-key rotations.
       LITELLM_SALT_KEY: "${LITELLM_SALT_KEY:?LITELLM_SALT_KEY is unset - run 'dendrite env secrets ensure'}"
     volumes:
-      - ./litellm_config.yaml:/etc/litellm/config.yaml
+      - ./:/etc/litellm:ro
       # GitHub Copilot OAuth token from the one-time device login (dendrite gateway copilot-login)
       - litellm-copilot-auth:/root/.config/litellm/github_copilot
     extra_hosts:

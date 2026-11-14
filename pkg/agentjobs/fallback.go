@@ -26,9 +26,12 @@ const (
 	providerAGY      = "agy"
 	providerCopilot  = "copilot"
 	providerOxillama = "oxillama"
+	providerLocal    = "local"
 
 	copilotModel  = "copilot-sonnet"
 	oxillamaModel = "qwen3-8b-q4_k_m"
+	// localModel is the gateway alias of the local tier, served by Ollama on the GPU.
+	localModel = "local-qwen3-9b"
 
 	maxCapsuleOutput = 4000
 )
@@ -40,7 +43,8 @@ type tier struct {
 }
 
 // ladder lists the tiers a job may use, in escalation order: the requested AGY model, the other
-// Gemini family's comparable model, then Copilot, then local oxillama for simple jobs.
+// Gemini family's comparable model, then Copilot, then a local GPU model (through the LiteLLM
+// gateway) for simple jobs.
 func ladder(job *Job) []tier {
 	var tiers []tier
 	if job.Agent == "agy" || job.Agent == "" {
@@ -51,7 +55,11 @@ func ladder(job *Job) []tier {
 	}
 	tiers = append(tiers, tier{Agent: "aider", Model: copilotModel})
 	if job.Complexity <= 4 {
-		tiers = append(tiers, tier{Agent: "oxillama", Model: oxillamaModel})
+		tiers = append(tiers, tier{Agent: "local", Model: localModel})
+	}
+	if job.Agent == "oxillama" {
+		// Explicitly requested OxiLLaMa jobs end where they started: they park on quota.
+		tiers = append(tiers, tier{Agent: "oxillama", Model: job.Model})
 	}
 	return tiers
 }

@@ -108,4 +108,3 @@ func (e *DefaultRemoteExecutor) ProbeHealth(ctx context.Context, url string, tim
 
 	return false, fmt.Errorf("%w: endpoint %s unreachable after %v", ErrRemoteHealthCheckFailed, url, timeout)
 }
-

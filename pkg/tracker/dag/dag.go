@@ -1,7 +1,13 @@
 package dag
 
+// TODO(move:dendrite-core-rs,DCORE-11): topological sort, levels, critical path and reverse dependencies are graph algorithms that embedag-core already implements.
+//   When: dendrite-core serves dag.* over JSON-RPC (needs EMBEDAG-83 SCC and the work-item prioritisation ticket 9.2.2); then this file becomes a client and the algorithms are deleted.
+//   Stays in Go: ticket-specific types and the mapping from Plane relations to nodes and edges.
+//   Until then: fix bugs here, but do not add features; add them in the Rust repository.
+
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -111,19 +117,8 @@ func (g *Graph) DetectCycles() ([]string, error) {
 
 		for _, v := range g.edges[u] {
 			if visited[v] == 1 {
-				// Cycle detected
-				cycleStart := -1
-				for i, node := range currentPath {
-					if node == v {
-						cycleStart = i
-						break
-					}
-				}
-				if cycleStart != -1 {
-					cycle = append(currentPath[cycleStart:], v)
-				} else {
-					cycle = append(currentPath, v)
-				}
+				// Cycle detected: v is being visited, so it is on the current path.
+				cycle = append(currentPath[slices.Index(currentPath, v):], v)
 				return true
 			}
 			if visited[v] == 0 {
@@ -366,7 +361,7 @@ func (g *Graph) SmartSelect(preferredTicketID string) (*SelectionResult, error) 
 		var blockingUnfinished []string
 		for _, bID := range node.BlockedBy {
 			if bNode, exists := g.nodes[bID]; exists {
-				if bNode.Status != tracker.StatusDone && bNode.Status != tracker.StatusInReview {
+				if !resolvedBlocker(bNode.Status) {
 					blockingUnfinished = append(blockingUnfinished, bID)
 				}
 			} else {
@@ -426,14 +421,14 @@ func (g *Graph) SmartSelect(preferredTicketID string) (*SelectionResult, error) 
 	var blockedCandidates []*Node
 
 	for _, node := range g.nodes {
-		if node.Status == tracker.StatusDone || node.Status == tracker.StatusInReview {
+		if node.Status == tracker.StatusDone || node.Status == tracker.StatusInReview || !selectable(node.Status) {
 			continue
 		}
 
 		isBlocked := false
 		for _, bID := range node.BlockedBy {
 			if bNode, exists := g.nodes[bID]; exists {
-				if bNode.Status != tracker.StatusDone && bNode.Status != tracker.StatusInReview {
+				if !resolvedBlocker(bNode.Status) {
 					isBlocked = true
 					break
 				}
@@ -496,4 +491,16 @@ func (g *Graph) SmartSelect(preferredTicketID string) (*SelectionResult, error) 
 		GanttStartDate:  optimal.StartDate,
 		GanttTargetDate: optimal.TargetDate,
 	}, nil
+}
+
+// resolvedBlocker reports whether a blocking ticket no longer holds back its dependents: it is
+// finished, awaiting human verification, or cancelled (it will never be done).
+func resolvedBlocker(st tracker.Status) bool {
+	return st == tracker.StatusDone || st == tracker.StatusInReview || st == tracker.StatusCancelled
+}
+
+// selectable reports whether a ticket may be picked as the next work item. Blocked tickets wait
+// for their blocker to clear and cancelled tickets are never worked.
+func selectable(st tracker.Status) bool {
+	return st != tracker.StatusBlocked && st != tracker.StatusCancelled
 }

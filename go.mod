@@ -3,9 +3,10 @@ module Dendrite
 go 1.25
 
 require (
+	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	github.com/yasuomaidana/dendrite-mcp-hub v0.0.0-20261019115823-d0404c18353e
+	github.com/yasuomaidana/dendrite-mcp-hub v0.1.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

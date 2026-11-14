@@ -23,8 +23,8 @@ Axon & Myelin Sheath
 
 | Subcommand | Description |
 | :--- | :--- |
-| `check` | Check the branch policy; on main/master, move to develop and exit 1 |
-| `evacuate` | Check out develop, creating it when missing |
+| `check` | Check the branch policy; on main/master, move to the integration branch and exit 1 |
+| `evacuate` | Check out the integration branch, creating it when missing |
 | `github-sync` | Open a GitHub verification issue for every Plane To Verify ticket and close those of Done tickets (--hitl then polls them) |
 | `sync-remote` | Fetch and rebase remote fixes and reconcile their tickets |
 
@@ -36,7 +36,7 @@ None
 
 ### `dendrite myelin check`
 
-Check the branch policy; on main/master, move to develop and exit 1
+Check the branch policy; on main/master, move to the integration branch and exit 1
 
 ```bash
 dendrite myelin check

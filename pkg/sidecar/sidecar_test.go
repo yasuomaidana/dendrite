@@ -323,3 +323,20 @@ func TestDefaultLocatorUsesLocalSynapseMembers(t *testing.T) {
 		t.Fatalf("homeless locator = %+v", loc)
 	}
 }
+
+func TestRagEnvPassesUnsetDendriteRagVariables(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rag.env")
+	content := "DENDRITE_RAG_PG_URL=\"postgresql://x@localhost:5432/dendrite_rag\"\n# comment\nOTHER=1\nDENDRITE_RAG_STORAGE_MODE=edge\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"DENDRITE_RAG_STORAGE_MODE": "remote"}
+	got := ragEnv(func(k string) string { return env[k] }, path)
+	want := []string{"DENDRITE_RAG_PG_URL=postgresql://x@localhost:5432/dendrite_rag"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("ragEnv = %v, want %v (exported variables win, others are skipped)", got, want)
+	}
+	if ragEnv(os.Getenv, filepath.Join(t.TempDir(), "missing")) != nil {
+		t.Fatal("a missing file adds nothing")
+	}
+}

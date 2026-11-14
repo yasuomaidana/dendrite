@@ -1,12 +1,23 @@
-import urllib.request
 import json
+import os
 import re
 import sys
+import urllib.request
 
-PLANE_URL = "http://localhost:8090"
-PLANE_WS = "dendrite-ws"
-PLANE_PROJ = "e6380603-1428-4a66-995e-e06039915d52"
-PLANE_KEY = "plane_sec_dendrite_token_12345"
+PLANE_BASE_URL = os.environ.get("PLANE_BASE_URL", "http://localhost:8090").rstrip("/")
+PLANE_WORKSPACE_SLUG = os.environ.get("PLANE_WORKSPACE_SLUG", "dendrite-ws")
+PLANE_PROJECT_ID = os.environ.get("PLANE_PROJECT_ID")
+PLANE_API_KEY = os.environ.get("PLANE_API_KEY")
+
+if not PLANE_API_KEY:
+    sys.exit("Error: PLANE_API_KEY environment variable is required")
+if not PLANE_PROJECT_ID:
+    sys.exit("Error: PLANE_PROJECT_ID environment variable is required")
+
+PLANE_URL = PLANE_BASE_URL
+PLANE_WS = PLANE_WORKSPACE_SLUG
+PLANE_PROJ = PLANE_PROJECT_ID
+PLANE_KEY = PLANE_API_KEY
 OXILLAMA_URL = "http://127.0.0.1:8080/v1/chat/completions"
 
 TICKETS_METADATA = {
@@ -186,11 +197,11 @@ for issue_id, meta in TICKETS_METADATA.items():
     html_desc = generate_html_context(meta)
     
     # Send PATCH request to Plane
-    url = f"{PLANE_URL}/api/v1/workspaces/{PLANE_WS}/projects/{PLANE_PROJ}/issues/{issue_id}/"
+    url = f"{PLANE_BASE_URL}/api/v1/workspaces/{PLANE_WORKSPACE_SLUG}/projects/{PLANE_PROJECT_ID}/issues/{issue_id}/"
     payload = json.dumps({"description_html": html_desc}).encode("utf-8")
     req = urllib.request.Request(url, data=payload, headers={
         "Content-Type": "application/json",
-        "x-api-key": PLANE_KEY
+        "x-api-key": PLANE_API_KEY
     }, method="PATCH")
     
     try:

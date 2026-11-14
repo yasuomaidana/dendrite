@@ -6,7 +6,7 @@ sidebar_label: "dendrite_vcs_guard"
 
 # dendrite_vcs_guard
 
-Check or enforce Git branch guardrails (prohibits direct work on main/master, guarantees develop default).
+Check or enforce Git branch guardrails (prohibits direct work on main/master, guarantees the integration branch as default).
 
 ## Input Schema
 

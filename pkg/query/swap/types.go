@@ -18,9 +18,9 @@ const (
 
 // Standard typed errors.
 var (
-	ErrUnsupportedSubsystem       = errors.New("unsupported subsystem target")
-	ErrDomainSimulationCorrupted   = errors.New("domain simulation kinematics parity check failed")
-	ErrInvalidSourcesPath         = errors.New("invalid or empty sources path")
+	ErrUnsupportedSubsystem      = errors.New("unsupported subsystem target")
+	ErrDomainSimulationCorrupted = errors.New("domain simulation kinematics parity check failed")
+	ErrInvalidSourcesPath        = errors.New("invalid or empty sources path")
 )
 
 // SceneNode models a scene graph node with 3D kinematic transform state.

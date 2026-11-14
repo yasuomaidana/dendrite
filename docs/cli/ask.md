@@ -26,15 +26,19 @@ None
 
 | Flag | Description |
 | :--- | :--- |
+| `--corpus` | Corpora searched: code (default), all (code and documentation), tickets (Plane tickets) or docs (documentation only, for design and conceptual questions) |
+| `--docs, -d` | Also search the documentation (default: code only); same as --corpus all |
+| `--docs-share` | Share of the context kept for documentation with --corpus all, 0 to 1 (default: [ask] docs_share in .dendrite/rag.toml or DENDRITE_RAG_ASK_DOCS_SHARE, else 0.2); implies --corpus all |
 | `--hybrid` | Draft locally, then refine and verify with the paid model |
-| `--local-model` | Preferred local model (default: detected from Ollama/OxiLLaMa) |
+| `--local-model` | Local model on the LiteLLM gateway (default: [ask] local_model in .dendrite/rag.toml, else the gateway's local model on the most preferred reachable GPU engine; never OxiLLaMa, which prefills on the CPU) |
 | `--paid` | Skip the local model and ask the paid model with the RAG context |
-| `--paid-model` | Paid fallback model (default: gemini-2.5-pro) |
+| `--paid-model` | Paid fallback model (default: gemini-4-argon-medium) |
 | `--project` | Project directory to index and search (default: .) |
 | `--server` | Ask a central Dendrite RAG service instead (e.g. http://host:3456) |
+| `--server-token` | Access token of the central service (default: $DENDRITE_RAG_TOKEN); 'dendrite cortex serve' prints it |
 | `--tier` | Shortcut for the tier: local, hybrid or paid |
-| `--top-k, -k` | Context chunks to retrieve (default: 4) |
-| `--update-index` | Re-index changed project files before answering |
+| `--top-k, -k` | Retrieve the N best chunks instead of a token-budgeted context pack |
+| `--update-index` | Rebuild the project index and ask the model again instead of reusing a cached answer |
 
 ## Examples
 
@@ -42,5 +46,8 @@ None
 dendrite ask "how do I check the available LLMs?"
 dendrite ask --hybrid "how does the token gateway work?"
 dendrite ask --server http://100.84.12.10:3456 "where is telemetry defined?"
-dendrite ask --update-index --json "what does soma prepare write?"
+dendrite ask -d --update-index --json "what does soma prepare write?"
+dendrite ask -d "how do I check the available LLMs?"
+dendrite ask --corpus docs "what is the design of the session handoff?"
+dendrite ask -d --docs-share 0.5 "how do agents start a session?"
 ```

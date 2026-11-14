@@ -1,0 +1,235 @@
+package opstools
+
+import (
+	"Dendrite/pkg/agent"
+	"Dendrite/pkg/agentjobs"
+	"Dendrite/pkg/gateway"
+	"Dendrite/pkg/inference"
+	"Dendrite/pkg/memfit"
+	"Dendrite/pkg/telemetry"
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+
+	. "Dendrite/pkg/mcpserver"
+)
+
+// registerAgentRunTool registers dendrite_agent_run.
+func registerAgentRunTool(s *Server, deps Dependencies) {
+	// 8. dendrite_agent_run
+	s.RegisterTool(Tool{
+		Name:        "dendrite_agent_run",
+		Description: "Launch an autonomous coding agent loop (aider, openhands, opencode, agy, copilot) with LiteLLM token governance",
+		InputSchema: map[string]interface{}{
+			"type":     "object",
+			"required": []string{"agent_type", "task"},
+			"properties": map[string]interface{}{
+				"agent_type":  TypedProp("string", "Agent tool: 'aider', 'openhands', 'opencode', 'agy', 'copilot'"),
+				"task":        TypedProp("string", "Task description or user prompt for the agent"),
+				"ticket_id":   TypedProp("string", "Associated ticket ID (e.g. DEN-034)"),
+				"model":       TypedProp("string", "Target LLM model (default: picked from Gemini 3.8 / Argon by load for agy, the DENDRITE_COPILOT_MODEL default for copilot)"),
+				"spend_limit": TypedProp("number", "Maximum USD spend allowed for this session"),
+				"sandbox":     TypedProp("boolean", "Execute inside ephemeral container sandbox"),
+			},
+		},
+	}, agentRunHandler())
+}
+
+// registerTelemetryAndInferenceTools registers dendrite_telemetry, dendrite_inference_list and dendrite_inference_probe.
+func registerTelemetryAndInferenceTools(s *Server, deps Dependencies) {
+	// 9. dendrite_telemetry
+	AddTool(s, "dendrite_telemetry", "Sample real-time SoC thermal metrics and 24h/7d token spend totals", PropsSchema(map[string]interface{}{}), telemetryHandler())
+
+	// 10. dendrite_inference_list
+	AddTool(s, "dendrite_inference_list", "List registered multi-provider inference engines (Ollama, OxiLLaMa, vLLM, TGI, TEI, llama.cpp), endpoints, and failover cascade order", PropsSchema(map[string]interface{}{}), inferenceListHandler())
+
+	// dendrite_inference_models
+	AddTool(s, "dendrite_inference_models", "List the local models installed on Ollama and OxiLLaMa with size, loaded state and whether each fits this machine's memory budget (models marked too large get no gateway route and are refused at call time)", PropsSchema(map[string]interface{}{}), inferenceModelsHandler())
+
+	// 11. dendrite_inference_probe
+	AddTool(s, "dendrite_inference_probe", "Probe multi-provider inference engines (< 2s) for health, reachability, latency, and loaded models", PropsSchema(map[string]interface{}{
+		"engine_id": TypedProp("string", "Optional engine ID to probe (e.g. 'ollama-metal', 'oxillama-rust'). If omitted, probes all engines."),
+	}), inferenceProbeHandler())
+}
+
+// AgentRunReport is what dendrite_agent_run answers with after a session.
+func AgentRunReport(summary *agent.SessionSummary, cmd []string, envVars interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"session_id": summary.SessionID,
+		"agent":      summary.AgentType,
+		"ticket_id":  summary.TicketID,
+		"command":    strings.Join(cmd, " "),
+		"duration":   summary.Duration.String(),
+		"tokens":     summary.TokensConsumed,
+		"cost_usd":   summary.EstimatedCostUSD,
+		"commits":    summary.CommitsGenerated,
+		"env":        envVars,
+		"status":     summary.Status,
+	}
+}
+
+// agentModelFor is the model an agent run uses: the one asked for, otherwise the type's default.
+func agentModelFor(aType agent.AgentType, model string) string {
+	switch {
+	case model != "":
+		return model
+	case aType == agent.AgentAGY || aType == agent.AgentAntigravity:
+		model, _ = agentjobs.DefaultDispatcher.PickAGYModel(0)
+		return model
+	case aType == agent.AgentCopilot || aType == agent.AgentGitHubCopilot:
+		return gateway.CopilotModel()
+	}
+	return "copilot-sonnet"
+}
+
+// agentConfigFromArgs builds the run configuration of an agent_run call. OpenHands runs sandboxed when it is not
+// installed on the host.
+func agentConfigFromArgs(args map[string]interface{}, aType agent.AgentType) agent.AgentConfig {
+	task, _ := args["task"].(string)
+	ticketID, _ := args["ticket_id"].(string)
+	model, _ := args["model"].(string)
+	sandbox, _ := args["sandbox"].(bool)
+	spendLimit, _ := args["spend_limit"].(float64)
+	if aType == agent.AgentOpenHands && !sandbox {
+		if _, err := exec.LookPath("openhands"); err != nil {
+			sandbox = true
+		}
+	}
+	cwd, _ := os.Getwd()
+	return agent.AgentConfig{
+		Type:            aType,
+		TaskDescription: task,
+		TicketID:        ticketID,
+		Model:           agentModelFor(aType, model),
+		Sandbox:         sandbox,
+		SpendLimitUSD:   spendLimit,
+		WorkspaceDir:    cwd,
+		LiteLLMBaseURL:  "http://localhost:4000/v1",
+		VirtualAPIKey:   "sk-dendrite-virtual-key",
+	}
+}
+
+// agentRunHandler handles the dendrite_agent_run tool.
+func agentRunHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		agentStr, _ := args["agent_type"].(string)
+		aType := agent.AgentType(strings.ToLower(strings.TrimSpace(agentStr)))
+		if !aType.IsValid() {
+			return nil, fmt.Errorf("invalid agent type: %s", agentStr)
+		}
+		cfg := agentConfigFromArgs(args, aType)
+		envVars, err := agent.BuildAgentEnv(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build agent env: %w", err)
+		}
+		cmd, _ := agent.BuildAgentCommand(cfg) // validated by BuildAgentEnv above
+
+		var runner agent.Runner = agent.NewHostRunner(false)
+		if cfg.Sandbox {
+			runner = agent.NewSandboxedRunner(nil, nil)
+		}
+		summary, err := runner.Execute(ctx, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("agent execution failed: %w", err)
+		}
+		return TextResult(string(IndentJSON(AgentRunReport(summary, cmd, envVars)))), nil
+	}
+}
+
+// telemetryHandler handles the dendrite_telemetry tool.
+func telemetryHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		daemon := telemetry.NewDaemon(telemetry.DaemonConfig{
+			Interval: 1 * time.Second,
+		}, nil, nil, nil, nil)
+		rep := daemon.CollectOnce(ctx)
+
+		data := IndentJSON(rep)
+		return TextResult(string(data)), nil
+	}
+}
+
+// inferenceListHandler handles the dendrite_inference_list tool.
+func inferenceListHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		mgr := inference.DefaultManager()
+		engines := mgr.ListEngines()
+		cascade := mgr.GetCascadeOrder()
+		type engInfo struct {
+			ID         string   `json:"id"`
+			Type       string   `json:"type"`
+			Endpoint   string   `json:"endpoint"`
+			SelfHosted bool     `json:"self_hosted"`
+			Models     []string `json:"models"`
+		}
+		var list []engInfo
+		for _, e := range engines {
+			cfg := e.Config()
+			list = append(list, engInfo{
+				ID:         e.ID(),
+				Type:       string(e.Type()),
+				Endpoint:   cfg.Endpoint,
+				SelfHosted: e.IsSelfHosted(),
+				Models:     cfg.Models,
+			})
+		}
+		res := map[string]interface{}{
+			"engines":       list,
+			"cascade_order": cascade,
+		}
+		data := IndentJSON(res)
+		return TextResult(string(data)), nil
+	}
+}
+
+// inferenceModelsHandler handles the dendrite_inference_models tool.
+func inferenceModelsHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		data := IndentJSON(memfit.Assess(ctx, "", ""))
+		return TextResult(string(data)), nil
+	}
+}
+
+// inferenceProbeHandler handles the dendrite_inference_probe tool.
+func inferenceProbeHandler() ToolHandler {
+	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
+		mgr := inference.DefaultManager()
+		engineID, _ := args["engine_id"].(string)
+		if engineID != "" {
+			eng, err := mgr.GetEngine(engineID)
+			if err != nil {
+				return nil, err
+			}
+			h := eng.Health(ctx)
+			data := IndentJSON(h)
+			return TextResult(string(data)), nil
+		}
+		results := mgr.PollHealthAll(ctx)
+		data := IndentJSON(results)
+		return TextResult(string(data)), nil
+	}
+}
+
+// Register registers the operations tools: audit, agents, canvas, scheduling, stores, story forks, migration, benchmarks and the smaller services on s.
+func Register(s *Server, deps Dependencies) {
+	registerAgentRunTool(s, deps)
+	registerTelemetryAndInferenceTools(s, deps)
+	registerPerfTools(s, deps)
+	registerREATools(s, deps)
+	registerDocusaurusTools(s, deps)
+	registerTriageTools(s, deps)
+	registerStoreTools(s, deps)
+	registerSchedulerTools(s, deps)
+	registerContractTools(s, deps)
+	registerStoryForkTools(s, deps)
+	registerAuditTools(s, deps)
+	registerInferenceTools(s, deps)
+	registerPenpotTools(s, deps)
+	registerMigrateTools(s, deps)
+	registerGreetingTools(s, deps)
+	registerEnvPrepareTools(s, deps)
+	RegisterCanvasTools(s, deps)
+}

@@ -11,6 +11,11 @@ func TestParseStatus(t *testing.T) {
 		want    Status
 		wantErr bool
 	}{
+		// Blocked / Cancelled
+		{name: "blocked", input: "Blocked", want: StatusBlocked},
+		{name: "cancelled", input: "cancelled", want: StatusCancelled},
+		{name: "canceled us", input: "Canceled", want: StatusCancelled},
+
 		// Backlog
 		{name: "backlog lower", input: "backlog", want: StatusBacklog, wantErr: false},
 		{name: "backlog upper", input: "BACKLOG", want: StatusBacklog, wantErr: false},

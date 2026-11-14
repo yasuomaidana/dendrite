@@ -105,18 +105,32 @@ func isExecutable(path string) bool {
 
 // Health is the sidecar's answer to the "health" handshake.
 type Health struct {
-	Name     string `json:"name"`
-	Version  string `json:"version"`
-	Protocol string `json:"protocol"`
+	Name     string   `json:"name"`
+	Version  string   `json:"version"`
+	Protocol string   `json:"protocol"`
+	Features []string `json:"features,omitempty"`
 }
 
 // RPCError is a JSON-RPC error object returned by a sidecar.
 type RPCError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data,omitempty"`
 }
 
 func (e *RPCError) Error() string { return fmt.Sprintf("sidecar error %d: %s", e.Code, e.Message) }
+
+// Kind returns data.kind for -32000 engine errors, or "".
+func (e *RPCError) Kind() string {
+	if len(e.Data) == 0 {
+		return ""
+	}
+	var d struct {
+		Kind string `json:"kind"`
+	}
+	_ = json.Unmarshal(e.Data, &d)
+	return d.Kind
+}
 
 type request struct {
 	JSONRPC string      `json:"jsonrpc"`
@@ -146,7 +160,18 @@ type Client struct {
 // Start launches the sidecar at path and performs the health handshake, requiring the
 // sidecar's protocol major version to equal major. The process lives until Close.
 func Start(ctx context.Context, path string, major int) (*Client, error) {
+	return StartWith(ctx, path, major, nil)
+}
+
+// StartWith is Start with extra KEY=VALUE lines in the sidecar's environment (after the
+// process environment and rag.env, so they win).
+func StartWith(ctx context.Context, path string, major int, extraEnv []string) (*Client, error) {
 	cmd := exec.Command(path)
+	cmd.Env = os.Environ()
+	if home, err := projectid.HomeDir(); err == nil {
+		cmd.Env = append(cmd.Env, ragEnv(os.Getenv, filepath.Join(home, "rag.env"))...)
+	}
+	cmd.Env = append(cmd.Env, extraEnv...)
 	cmd.Stderr = os.Stderr
 	// The pipe constructors only fail when Stdin/Stdout are already set or the process
 	// has started, neither of which holds for a fresh Cmd.
@@ -170,6 +195,50 @@ func Start(ctx context.Context, path string, major int) (*Client, error) {
 	return c, nil
 }
 
+// ragEnv returns the DENDRITE_RAG_* lines of the file at path (written by
+// `dendrite soma prepare`) that the environment does not set: an exported variable wins.
+func ragEnv(getenv func(string) string, path string) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, line := range strings.Split(string(data), "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok || !strings.HasPrefix(key, "DENDRITE_RAG_") || getenv(key) != "" {
+			continue
+		}
+		out = append(out, key+"="+strings.Trim(value, "\"'"))
+	}
+	return out
+}
+
+// reply is what one exchange with the sidecar produced.
+type reply struct {
+	resp response
+	err  error
+}
+
+// exchange writes one request line and reads the reply line.
+func (c *Client) exchange(data []byte) reply {
+	if _, err := c.stdin.Write(append(data, '\n')); err != nil {
+		return reply{err: fmt.Errorf("writing request: %w: %w", errNotSent, err)}
+	}
+	line, err := c.stdout.ReadBytes('\n')
+	if err != nil {
+		return reply{err: fmt.Errorf("reading response: %w", err)}
+	}
+	var r response
+	if err := json.Unmarshal(line, &r); err != nil {
+		return reply{err: fmt.Errorf("decoding response %q: %w", strings.TrimSpace(string(line)), err)}
+	}
+	return reply{resp: r}
+}
+
+// errNotSent marks a failure before the request reached the sidecar's stdin: the sidecar cannot have acted on it,
+// so it is always safe to send again.
+var errNotSent = errors.New("request not sent")
+
 // Call sends one request and decodes the result into result (which may be nil).
 // Calls are serialised; a context deadline kills the process, since a reply can no
 // longer be matched to its request.
@@ -181,28 +250,8 @@ func (c *Client) Call(ctx context.Context, method string, params, result interfa
 	if err != nil {
 		return err
 	}
-	type reply struct {
-		resp response
-		err  error
-	}
 	done := make(chan reply, 1)
-	go func() {
-		if _, err := c.stdin.Write(append(data, '\n')); err != nil {
-			done <- reply{err: fmt.Errorf("writing request: %w", err)}
-			return
-		}
-		line, err := c.stdout.ReadBytes('\n')
-		if err != nil {
-			done <- reply{err: fmt.Errorf("reading response: %w", err)}
-			return
-		}
-		var r response
-		if err := json.Unmarshal(line, &r); err != nil {
-			done <- reply{err: fmt.Errorf("decoding response %q: %w", strings.TrimSpace(string(line)), err)}
-			return
-		}
-		done <- reply{resp: r}
-	}()
+	go func() { done <- c.exchange(data) }()
 
 	select {
 	case <-ctx.Done():

@@ -1,6 +1,7 @@
 package env
 
 import (
+	"Dendrite/pkg/stacks"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,7 @@ func TestGenerateControlComposeMatchesCommittedStack(t *testing.T) {
 
 func TestReplicator_RenderNeverOverwritesExistingStack(t *testing.T) {
 	t.Chdir(t.TempDir())
+	t.Setenv(stacks.EnvDir, "stacks") // a stack directory inside the temp working directory
 	if err := os.MkdirAll("stacks", 0o755); err != nil {
 		t.Fatal(err)
 	}

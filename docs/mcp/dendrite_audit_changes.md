@@ -6,7 +6,7 @@ sidebar_label: "dendrite_audit_changes"
 
 # dendrite_audit_changes
 
-Topological vendor audit and rebase engine for local/* stacked branches. Validates diffs, runs test suites, non-fast-forward merges into develop, and rebases downstream branches.
+Topological vendor audit and rebase engine for local/* stacked branches. Validates diffs, runs test suites, non-fast-forward merges into the integration branch, and rebases downstream branches.
 
 ## Input Schema
 

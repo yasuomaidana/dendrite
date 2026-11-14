@@ -28,9 +28,11 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 
 | Command | Aliases | Description |
 | :--- | :--- | :--- |
+| [`branch`](branch.md) |  | Which branch a ticket is worked on and where it merges: the integration branch, a parent ticket's trunk, a fork |
 | [`engram`](engram.md) | `store`, `engram-store`, `gram` | Persistent segmented store, memory checkpointer, and chunk query |
 | [`ganglion`](ganglion.md) | `project`, `ganglion-workspace`, `prj` | Manage multi-project isolated workspaces |
 | [`plexus`](plexus.md) | `pool`, `connectome-pool`, `plexus-pool`, `connectome`, `plx` | Multi-directory dependency inference & topological DAG solver |
+| [`repair`](repair.md) |  | Fix a dependency on a branch or fork of its own, tracked until the fix is merged and released |
 | [`soma`](soma.md) | `env`, `homeostasis`, `soma-homeostasis` | Manage and replicate development environments |
 | [`work`](work.md) | `workcopy`, `wc` | Manage model-owned working copies in dendrite-work/ (create, list, remove, auto-clean merged) |
 
@@ -42,6 +44,7 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 | [`codex`](codex.md) | `doc`, `docs`, `engram-codex` | Docs-as-Code reflection, Docusaurus synthesis and portal |
 | [`cortex`](cortex.md) | `ui`, `cortex-cockpit` | Embedded Web Control Cockpit and telemetry server |
 | [`install`](install.md) | `bootstrap` | Install dendrite and its sub-projects from git: main (stable) or develop (--dev), per-member --ref overrides |
+| [`rag`](rag.md) | `retrieval`, `retriever` | Code & documentation retrieval sidecar orchestration (dendrite-rag) |
 | [`sensory`](sensory.md) | `telemetry`, `afferent-telemetry`, `tel` | Hardware thermal, token spend, and Prometheus telemetry |
 | [`update`](update.md) | `upgrade`, `self-update` | Update dendrite from a release, or rebuild it and its synapse siblings from local sources (--dev) |
 | [`version`](version.md) |  | Print Dendrite CLI version |
@@ -92,6 +95,8 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 | :--- | :--- | :--- |
 | [`allostasis`](allostasis.md) | `quality`, `homeostatic-audit`, `allostasis-audit`, `qlty` | Anti-mock scan, 100% coverage profiler, and HITL verification poller |
 | [`cognition`](cognition.md) | `analyze`, `cognitive-analysis`, `anlz` | Cognitive complexity analyzer, structural anti-pattern scanner, and policy router |
+| [`directive`](directive.md) | `directives` | Change what CI, the quality gate and the agents enforce: lines per file, coverage, duplication, who sets Done |
+| [`immune`](immune.md) |  | Scan agent skills with SkillSpector before they are installed |
 | [`prune`](prune.md) | `audit-changes`, `microglial-prune`, `synaptic-pruning`, `prn` | Topological vendor audit and rebase engine for local/* branches |
 
 ### Terminal Boutons & Vesicles
@@ -99,6 +104,7 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 | Command | Aliases | Description |
 | :--- | :--- | :--- |
 | [`chronos`](chronos.md) | `plane`, `chronos-tracker`, `pln` | Sovereign issue tracking, Gantt alignment, and DAG scheduler |
+| [`hook`](hook.md) |  | Entry points agent runtimes call around their tools (not for typing by hand) |
 | [`quantal`](quantal.md) | `commit`, `quantal-commit`, `cmt` | Autonomous Git commit with local model message generation |
 | [`sync`](sync.md) | `propagate` | Push commits and refresh Plane for this project and its synapse peers |
 | [`vesicle`](vesicle.md) | `tokens`, `token`, `vesicle-quota`, `quota`, `tok` | Inspect 24h & 7d token consumption windows and tier quotas |

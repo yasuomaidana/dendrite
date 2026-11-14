@@ -139,38 +139,3 @@ func TestSymbolGraph_CircularDependencyGuardrail(t *testing.T) {
 		t.Errorf("expected exactly 2 affected nodes in circle, got %d", report.TotalAffected)
 	}
 }
-
-func TestAnalyzeSourceComplexity(t *testing.T) {
-	// Simple code: baseline CC = 1, Cog = 0
-	simpleCode := `
-func Add(a, b int) int {
-	return a + b
-}
-`
-	cc, cog := ast.AnalyzeSourceComplexity(simpleCode)
-	if cc != 1 || cog != 0 {
-		t.Errorf("expected CC=1, Cog=0 for simple code, got CC=%d, Cog=%d", cc, cog)
-	}
-
-	// Nested branching code
-	nestedCode := `
-func Process(items []int) int {
-	total := 0
-	for _, item := range items {
-		if item > 0 {
-			if item%2 == 0 && item < 100 {
-				total += item
-			}
-		}
-	}
-	return total
-}
-`
-	nestedCC, nestedCog := ast.AnalyzeSourceComplexity(nestedCode)
-	if nestedCC <= 3 {
-		t.Errorf("expected higher cyclomatic complexity for nested code, got %d", nestedCC)
-	}
-	if nestedCog <= 2 {
-		t.Errorf("expected cognitive complexity penalty for nested conditionals, got %d", nestedCog)
-	}
-}

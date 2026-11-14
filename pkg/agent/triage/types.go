@@ -80,8 +80,8 @@ type TriageResult struct {
 	DeclarativePlan            *DeclarativePlan `json:"declarative_plan,omitempty"`
 	LocalWorkerExecutionResult string           `json:"local_worker_execution_result,omitempty"`
 	// RAG Context Fields
-	RetrievedRAGChunks         []rag.Chunk      `json:"retrieved_rag_chunks,omitempty"`
-	RAGTokens                  int              `json:"rag_tokens,omitempty"`
+	RetrievedRAGChunks []rag.Chunk `json:"retrieved_rag_chunks,omitempty"`
+	RAGTokens          int         `json:"rag_tokens,omitempty"`
 }
 
 // SkillMatcher holds a skill's metadata and matching keywords.

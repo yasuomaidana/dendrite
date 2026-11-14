@@ -7,101 +7,96 @@ import (
 	"Dendrite/pkg/topology"
 )
 
-func TestScenarios(t *testing.T) {
-	all := topology.AllScenarios()
-	if len(all) != 4 {
-		t.Fatalf("expected 4 scenarios, got %d", len(all))
+type enumTestCase[T interface {
+	~string
+	IsValid() bool
+}] struct {
+	groupName       string
+	invalidItemName string
+	typeName        string
+	all             []T
+	expectedLen     int
+	parse           func(string) (T, error)
+	validCases      []string
+	invalidCases    []string
+}
+
+func testEnumCases[T interface {
+	~string
+	IsValid() bool
+}](t *testing.T, tc enumTestCase[T]) {
+	t.Helper()
+	if len(tc.all) != tc.expectedLen {
+		t.Fatalf("expected %d %s, got %d", tc.expectedLen, tc.groupName, len(tc.all))
 	}
 
-	validCases := []string{
-		"local-hybrid",
-		"azure-burst",
-		"aws-burst",
-		"distributed",
-		"LOCAL-HYBRID",
-		"  azure-burst  ",
-	}
-
-	for _, tc := range validCases {
-		sc, err := topology.ParseScenario(tc)
+	for _, c := range tc.validCases {
+		val, err := tc.parse(c)
 		if err != nil {
-			t.Errorf("expected '%s' to parse successfully, got error: %v", tc, err)
+			t.Errorf("expected '%s' to parse successfully, got: %v", c, err)
 		}
-		if !sc.IsValid() {
-			t.Errorf("expected scenario '%s' to be valid", sc)
+		if !val.IsValid() {
+			t.Errorf("expected '%s' to be valid", val)
 		}
 	}
 
-	invalidCases := []string{"", "cloud-burst", "unknown", "docker-local"}
-	for _, tc := range invalidCases {
-		_, err := topology.ParseScenario(tc)
+	for _, c := range tc.invalidCases {
+		_, err := tc.parse(c)
 		if err == nil {
-			t.Errorf("expected error parsing invalid scenario '%s', got nil", tc)
+			t.Errorf("expected error parsing invalid %s '%s', got nil", tc.invalidItemName, c)
 		}
-		if topology.Scenario(tc).IsValid() {
-			t.Errorf("expected Scenario('%s').IsValid() to be false", tc)
+		if T(c).IsValid() {
+			t.Errorf("expected %s('%s').IsValid() to be false", tc.typeName, c)
 		}
 	}
+}
+
+func TestScenarios(t *testing.T) {
+	testEnumCases(t, enumTestCase[topology.Scenario]{
+		groupName:       "scenarios",
+		invalidItemName: "scenario",
+		typeName:        "Scenario",
+		all:             topology.AllScenarios(),
+		expectedLen:     4,
+		parse:           topology.ParseScenario,
+		validCases: []string{
+			"local-hybrid",
+			"azure-burst",
+			"aws-burst",
+			"distributed",
+			"LOCAL-HYBRID",
+			"  azure-burst  ",
+		},
+		invalidCases: []string{"", "cloud-burst", "unknown", "docker-local"},
+	})
 }
 
 func TestComputeNodes(t *testing.T) {
-	nodes := topology.AllComputeNodes()
-	if len(nodes) != 4 {
-		t.Fatalf("expected 4 compute nodes, got %d", len(nodes))
-	}
-
-	validNodes := []string{"debian", "macbook", "azure", "aws", "DEBIAN", "  aws "}
-	for _, vn := range validNodes {
-		node, err := topology.ParseComputeNode(vn)
-		if err != nil {
-			t.Errorf("expected '%s' to parse successfully, got: %v", vn, err)
-		}
-		if !node.IsValid() {
-			t.Errorf("expected '%s' to be valid", node)
-		}
-	}
-
-	invalidNodes := []string{"", "windows", "gcp", "unknown"}
-	for _, in := range invalidNodes {
-		_, err := topology.ParseComputeNode(in)
-		if err == nil {
-			t.Errorf("expected error parsing invalid node '%s', got nil", in)
-		}
-		if topology.ComputeNode(in).IsValid() {
-			t.Errorf("expected ComputeNode('%s').IsValid() to be false", in)
-		}
-	}
+	testEnumCases(t, enumTestCase[topology.ComputeNode]{
+		groupName:       "compute nodes",
+		invalidItemName: "node",
+		typeName:        "ComputeNode",
+		all:             topology.AllComputeNodes(),
+		expectedLen:     4,
+		parse:           topology.ParseComputeNode,
+		validCases:      []string{"debian", "macbook", "azure", "aws", "DEBIAN", "  aws "},
+		invalidCases:    []string{"", "windows", "gcp", "unknown"},
+	})
 }
 
 func TestStackComponents(t *testing.T) {
-	comps := topology.AllStackComponents()
-	if len(comps) != 6 {
-		t.Fatalf("expected 6 stack components, got %d", len(comps))
-	}
-
-	validComps := []string{
-		"control_plane", "inference", "linux_re", "repo_intel", "docs_portal", "database",
-	}
-	for _, vc := range validComps {
-		c, err := topology.ParseStackComponent(vc)
-		if err != nil {
-			t.Errorf("expected '%s' to parse successfully, got: %v", vc, err)
-		}
-		if !c.IsValid() {
-			t.Errorf("expected '%s' to be valid", c)
-		}
-	}
-
-	invalidComps := []string{"", "monitoring", "frontend"}
-	for _, ic := range invalidComps {
-		_, err := topology.ParseStackComponent(ic)
-		if err == nil {
-			t.Errorf("expected error parsing invalid component '%s', got nil", ic)
-		}
-		if topology.StackComponent(ic).IsValid() {
-			t.Errorf("expected StackComponent('%s').IsValid() to be false", ic)
-		}
-	}
+	testEnumCases(t, enumTestCase[topology.StackComponent]{
+		groupName:       "stack components",
+		invalidItemName: "component",
+		typeName:        "StackComponent",
+		all:             topology.AllStackComponents(),
+		expectedLen:     6,
+		parse:           topology.ParseStackComponent,
+		validCases: []string{
+			"control_plane", "inference", "linux_re", "repo_intel", "docs_portal", "database",
+		},
+		invalidCases: []string{"", "monitoring", "frontend"},
+	})
 }
 
 func TestDefaultPlacement(t *testing.T) {
@@ -323,74 +318,66 @@ func TestValidationErrors(t *testing.T) {
 	}
 }
 
-func TestJSONRoundtrip(t *testing.T) {
-	endpoints := topology.TailscaleEndpoints{
-		ControlPlane:   "100.64.0.1",
-		ExecutionPlane: "100.64.0.2",
-		AzureBurst:     "100.64.0.3",
-	}
-	cfg, err := topology.NewTopologyConfig(topology.ScenarioAzureBurst, endpoints)
+func runConfigRoundtripTest(
+	t *testing.T,
+	scenario topology.Scenario,
+	scenarioDesc string,
+	formatName string,
+	endpoints topology.TailscaleEndpoints,
+	marshal func(*topology.TopologyConfig) ([]byte, error),
+	unmarshal func([]byte) (*topology.TopologyConfig, error),
+	invalidData []byte,
+	assertEndpoint func(t *testing.T, loaded *topology.TopologyConfig),
+) {
+	t.Helper()
+	cfg, err := topology.NewTopologyConfig(scenario, endpoints)
 	if err != nil {
-		t.Fatalf("failed to create azure burst config: %v", err)
+		t.Fatalf("failed to create %s config: %v", scenarioDesc, err)
 	}
 
-	data, err := cfg.ToJSON()
+	data, err := marshal(cfg)
 	if err != nil {
-		t.Fatalf("failed to marshal JSON: %v", err)
+		t.Fatalf("failed to marshal %s: %v", formatName, err)
 	}
 
-	loaded, err := topology.FromJSON(data)
+	loaded, err := unmarshal(data)
 	if err != nil {
-		t.Fatalf("failed to unmarshal JSON: %v", err)
+		t.Fatalf("failed to unmarshal %s: %v", formatName, err)
 	}
 
 	if loaded.Scenario != cfg.Scenario {
 		t.Errorf("expected scenario %s, got %s", cfg.Scenario, loaded.Scenario)
 	}
-	if loaded.TailscaleEndpoints.ControlPlane != endpoints.ControlPlane {
-		t.Errorf("expected control plane %s, got %s", endpoints.ControlPlane, loaded.TailscaleEndpoints.ControlPlane)
-	}
+	assertEndpoint(t, loaded)
 
-	// Invalid JSON
-	_, err = topology.FromJSON([]byte("{invalid-json"))
+	// Invalid format
+	_, err = unmarshal(invalidData)
 	if err == nil {
-		t.Errorf("expected error on invalid JSON")
+		t.Errorf("expected error on invalid %s", formatName)
 	}
 }
 
-func TestYAMLRoundtrip(t *testing.T) {
-	endpoints := topology.TailscaleEndpoints{
-		ControlPlane:   "100.70.1.10",
-		ExecutionPlane: "100.70.1.20",
-		AWSBurst:       "100.70.1.30",
-	}
-	cfg, err := topology.NewTopologyConfig(topology.ScenarioAWSBurst, endpoints)
-	if err != nil {
-		t.Fatalf("failed to create aws burst config: %v", err)
-	}
-
-	data, err := cfg.ToYAML()
-	if err != nil {
-		t.Fatalf("failed to marshal YAML: %v", err)
-	}
-
-	loaded, err := topology.FromYAML(data)
-	if err != nil {
-		t.Fatalf("failed to unmarshal YAML: %v", err)
-	}
-
-	if loaded.Scenario != cfg.Scenario {
-		t.Errorf("expected scenario %s, got %s", cfg.Scenario, loaded.Scenario)
-	}
-	if loaded.TailscaleEndpoints.AWSBurst != endpoints.AWSBurst {
-		t.Errorf("expected AWS burst %s, got %s", endpoints.AWSBurst, loaded.TailscaleEndpoints.AWSBurst)
-	}
-
-	// Invalid YAML
-	_, err = topology.FromYAML([]byte(":::invalid yaml"))
-	if err == nil {
-		t.Errorf("expected error on invalid YAML")
-	}
+func TestConfigRoundtrip(t *testing.T) {
+	jsonEndpoints := topology.TailscaleEndpoints{ControlPlane: "100.64.0.1", ExecutionPlane: "100.64.0.2", AzureBurst: "100.64.0.3"}
+	yamlEndpoints := topology.TailscaleEndpoints{ControlPlane: "100.70.1.10", ExecutionPlane: "100.70.1.20", AWSBurst: "100.70.1.30"}
+	t.Run("JSON", func(t *testing.T) {
+		runConfigRoundtripTest(t, topology.ScenarioAzureBurst, "azure burst", "JSON", jsonEndpoints,
+			(*topology.TopologyConfig).ToJSON, topology.FromJSON, []byte("{invalid-json"),
+			func(t *testing.T, loaded *topology.TopologyConfig) {
+				if got := loaded.TailscaleEndpoints.ControlPlane; got != jsonEndpoints.ControlPlane {
+					t.Errorf("expected control plane %s, got %s", jsonEndpoints.ControlPlane, got)
+				}
+			})
+	})
+	t.Run("YAML", func(t *testing.T) {
+		runConfigRoundtripTest(t, topology.ScenarioAWSBurst, "aws burst", "YAML", yamlEndpoints,
+			(*topology.TopologyConfig).ToYAML, topology.FromYAML, []byte(":::invalid yaml"),
+			func(t *testing.T, loaded *topology.TopologyConfig) {
+				if got := loaded.TailscaleEndpoints.AWSBurst; got != yamlEndpoints.AWSBurst {
+					t.Errorf("expected AWS burst %s, got %s", yamlEndpoints.AWSBurst, got)
+				}
+			})
+	})
 }
 
 func TestValidateEndpointHost(t *testing.T) {

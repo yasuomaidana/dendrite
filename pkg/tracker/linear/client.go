@@ -7,14 +7,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
 	"Dendrite/pkg/tracker"
 )
-
-var specRegex = regexp.MustCompile(`\b(FEAT-\d+|ADR-\d+)\b`)
 
 // Client is a Linear GraphQL API client adhering to tracker.UnifiedIssueTracker.
 type Client struct {
@@ -175,7 +172,7 @@ func (c *Client) GetIssue(ctx context.Context, id tracker.TicketID) (*tracker.Un
 		labels = append(labels, l.Name)
 	}
 
-	specs := extractLinkedSpecs(iss.Title + " " + iss.Description)
+	specs := tracker.LinkedSpecs(iss.Title + " " + iss.Description)
 	createdAt, _ := time.Parse(time.RFC3339, iss.CreatedAt)
 	updatedAt, _ := time.Parse(time.RFC3339, iss.UpdatedAt)
 
@@ -322,20 +319,4 @@ func findMatchingLinearState(states []struct {
 		}
 	}
 	return ""
-}
-
-func extractLinkedSpecs(content string) []string {
-	matches := specRegex.FindAllString(content, -1)
-	if len(matches) == 0 {
-		return nil
-	}
-	seen := make(map[string]bool)
-	var unique []string
-	for _, m := range matches {
-		if !seen[m] {
-			seen[m] = true
-			unique = append(unique, m)
-		}
-	}
-	return unique
 }

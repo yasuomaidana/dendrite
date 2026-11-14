@@ -98,6 +98,7 @@ func (w *Watcher) Tick(ctx context.Context) error {
 	}
 
 	now := w.now()
+	w.Ledger.writeHeartbeat(now)
 	stallTimeout := w.StallTimeout
 	if stallTimeout <= 0 {
 		stallTimeout = DefaultStallTimeout
@@ -181,16 +182,17 @@ func (w *Watcher) handleFailedJob(ctx context.Context, job *Job) error {
 	return w.Dispatcher.Retry(job.ID)
 }
 
-func (w *Watcher) checkStall(ctx context.Context, job *Job, now time.Time, stallTimeout time.Duration) error {
+// lastActivity is the newest sign of life of a job: its ledger entry, agent.log, agy's own log (one line
+// per model request) and the files in its scope. An agent that is thinking or reading makes model
+// requests without touching a file, so the agy log is what keeps it from being called stalled.
+func (w *Watcher) lastActivity(job *Job) time.Time {
 	lastActivity := job.UpdatedAt
 	if job.CreatedAt.After(lastActivity) {
 		lastActivity = job.CreatedAt
 	}
 
-	// Check agent.log mtime
-	logPath := w.Ledger.AgentLogPath(job.ID)
-	if fi, err := os.Stat(logPath); err == nil {
-		if fi.ModTime().After(lastActivity) {
+	for _, logPath := range []string{w.Ledger.AgentLogPath(job.ID), w.Ledger.AgyLogPath(job.ID)} {
+		if fi, err := os.Stat(logPath); err == nil && fi.ModTime().After(lastActivity) {
 			lastActivity = fi.ModTime()
 		}
 	}
@@ -220,7 +222,11 @@ func (w *Watcher) checkStall(ctx context.Context, job *Job, now time.Time, stall
 			}
 		}
 	}
+	return lastActivity
+}
 
+func (w *Watcher) checkStall(ctx context.Context, job *Job, now time.Time, stallTimeout time.Duration) error {
+	lastActivity := w.lastActivity(job)
 	if now.Sub(lastActivity) <= stallTimeout {
 		return nil
 	}

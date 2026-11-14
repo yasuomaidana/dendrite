@@ -19,13 +19,13 @@ type PromptHandler func(m *modal.DirectoryPickerModal) (string, error)
 
 // FuseRequest specifies inputs for combining multiple artifacts into a single unified member.
 type FuseRequest struct {
-	Sources          []string      `json:"sources"`
-	FusedMemberName  string        `json:"fused_member_name"`
-	TargetLanguage   string        `json:"target_language"` // rust, go
-	TargetDirectory  string        `json:"target_directory,omitempty"`
-	RegisterInPool   bool          `json:"register_in_pool"`
-	PoolConfigFile   string        `json:"pool_config_file,omitempty"`
-	Prompt           PromptHandler `json:"-"`
+	Sources         []string      `json:"sources"`
+	FusedMemberName string        `json:"fused_member_name"`
+	TargetLanguage  string        `json:"target_language"` // rust, go
+	TargetDirectory string        `json:"target_directory,omitempty"`
+	RegisterInPool  bool          `json:"register_in_pool"`
+	PoolConfigFile  string        `json:"pool_config_file,omitempty"`
+	Prompt          PromptHandler `json:"-"`
 }
 
 // FuseResult encapsulates the outcome of architectural fusion.

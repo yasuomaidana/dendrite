@@ -67,10 +67,7 @@ func (e *VLLMEngine) Generate(ctx context.Context, req CompletionRequest) (*Comp
 		payload["max_tokens"] = req.MaxTokens
 	}
 
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
+	data, _ := json.Marshal(payload) // a map of strings and numbers always marshals
 
 	start := time.Now()
 	url := fmt.Sprintf("%s/v1/chat/completions", strings.TrimRight(e.cfg.Endpoint, "/"))
@@ -130,146 +127,23 @@ func (e *VLLMEngine) Generate(ctx context.Context, req CompletionRequest) (*Comp
 }
 
 func (e *VLLMEngine) Stream(ctx context.Context, req CompletionRequest) (<-chan StreamChunk, error) {
-	if strings.TrimSpace(req.Prompt) == "" {
-		return nil, ErrEmptyPrompt
-	}
-
 	model := req.Model
 	if model == "" && len(e.cfg.Models) > 0 {
 		model = e.cfg.Models[0]
 	}
-
-	messages := []map[string]string{
-		{"role": "user", "content": req.Prompt},
-	}
-	payload := map[string]interface{}{
-		"model":    model,
-		"messages": messages,
-		"stream":   true,
-	}
-
-	data, _ := json.Marshal(payload)
-	url := fmt.Sprintf("%s/v1/chat/completions", strings.TrimRight(e.cfg.Endpoint, "/"))
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if e.cfg.APIKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+e.cfg.APIKey)
-	}
-
-	resp, err := e.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, err
-	}
-
-	ch := make(chan StreamChunk)
-	go func() {
-		defer close(ch)
-		defer resp.Body.Close()
-
-		buf := make([]byte, 4096)
-		for {
-			n, err := resp.Body.Read(buf)
-			if n > 0 {
-				lines := strings.Split(string(buf[:n]), "\n")
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if !strings.HasPrefix(line, "data: ") {
-						continue
-					}
-					dataPayload := strings.TrimPrefix(line, "data: ")
-					if dataPayload == "[DONE]" {
-						ch <- StreamChunk{Done: true}
-						return
-					}
-					var chunkRes struct {
-						Choices []struct {
-							Delta struct {
-								Content string `json:"content"`
-							} `json:"delta"`
-						} `json:"choices"`
-					}
-					if err := json.Unmarshal([]byte(dataPayload), &chunkRes); err == nil && len(chunkRes.Choices) > 0 {
-						ch <- StreamChunk{
-							Text: chunkRes.Choices[0].Delta.Content,
-							Done: false,
-						}
-					}
-				}
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-
-	return ch, nil
+	return streamChatCompletions(ctx, e.httpClient, req, e.cfg.Endpoint, e.cfg.APIKey, model)
 }
 
 func (e *VLLMEngine) Health(ctx context.Context) EngineHealth {
-	start := time.Now()
-	h := EngineHealth{
+	return checkHTTPHealth(ctx, e.httpClient, EngineHealth{
 		EngineID:   e.cfg.ID,
 		Type:       EngineVLLM,
 		Endpoint:   e.cfg.Endpoint,
 		SelfHosted: e.cfg.SelfHosted,
 		ZeroCost:   e.cfg.SelfHosted,
-		LastCheck:  time.Now(),
-	}
-
-	url := fmt.Sprintf("%s/health", strings.TrimRight(e.cfg.Endpoint, "/"))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		h.Error = err.Error()
-		return h
-	}
-
-	resp, err := e.httpClient.Do(req)
-	h.Latency = time.Since(start)
-	if err != nil {
-		h.Error = err.Error()
-		return h
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK {
-		h.Reachable = true
-		models, _ := e.SupportedModels(ctx)
-		h.Models = models
-	} else {
-		h.Error = fmt.Sprintf("HTTP status %d", resp.StatusCode)
-	}
-
-	return h
+	}, "/health", e.SupportedModels)
 }
 
 func (e *VLLMEngine) SupportedModels(ctx context.Context) ([]string, error) {
-	url := fmt.Sprintf("%s/v1/models", strings.TrimRight(e.cfg.Endpoint, "/"))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return e.cfg.Models, nil
-	}
-
-	resp, err := e.httpClient.Do(req)
-	if err != nil {
-		return e.cfg.Models, nil
-	}
-	defer resp.Body.Close()
-
-	var res struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err == nil && len(res.Data) > 0 {
-		var names []string
-		for _, m := range res.Data {
-			names = append(names, m.ID)
-		}
-		return names, nil
-	}
-
-	return e.cfg.Models, nil
+	return fetchV1Models(ctx, e.httpClient, e.cfg.Endpoint, e.cfg.Models)
 }

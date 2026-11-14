@@ -2,7 +2,6 @@ package env
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,27 +11,31 @@ import (
 	"time"
 )
 
-type mockCommandRunner struct {
-	paths    map[string]string
-	commands map[string]string
-	errors   map[string]error
+// withTools runs the real DefaultCommandRunner against shell scripts installed as the named
+// tools: PATH holds only their directory and the system directories sh needs, so each test
+// decides which tools exist and what they print or fail with, and no real docker or
+// network is touched.
+func withTools(t *testing.T, tools map[string]string) CommandRunner {
+	t.Helper()
+	dir := t.TempDir()
+	for name, body := range tools {
+		script := "#!/bin/sh\n" + body + "\n"
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+"/bin"+string(os.PathListSeparator)+"/usr/bin")
+	return &DefaultCommandRunner{}
 }
 
-func (m *mockCommandRunner) LookPath(file string) (string, error) {
-	if p, ok := m.paths[file]; ok {
-		return p, nil
+// stackTools answer the commands a replication plan and its audit run: docker succeeds
+// (failInfo makes `docker info` fail like a stopped daemon) and curl reports healthy.
+func stackTools(failInfo bool) map[string]string {
+	docker := "echo ok"
+	if failInfo {
+		docker = "if [ \"$1\" = info ]; then echo 'daemon stopped' >&2; exit 1; fi\necho ok"
 	}
-	return "", fmt.Errorf("command not found: %s", file)
-}
-
-func (m *mockCommandRunner) Run(ctx context.Context, cmdStr string, env map[string]string) (string, error) {
-	if err, ok := m.errors[cmdStr]; ok {
-		return m.commands[cmdStr], err
-	}
-	if out, ok := m.commands[cmdStr]; ok {
-		return out, nil
-	}
-	return "ok", nil
+	return map[string]string{"docker": docker, "curl": "echo ok"}
 }
 
 func TestInstallMode_IsValid(t *testing.T) {
@@ -74,21 +77,17 @@ func TestAllTargets(t *testing.T) {
 }
 
 func TestDetector_Detect(t *testing.T) {
-	runner := &mockCommandRunner{
-		paths: map[string]string{
-			"docker":    "/usr/local/bin/docker",
-			"ollama":    "/usr/local/bin/ollama",
-			"go":        "/usr/local/bin/go",
-			"brew":      "/opt/homebrew/bin/brew",
-			"npm":       "/usr/local/bin/npm",
-			"node":      "/usr/local/bin/node",
-			"tailscale": "/usr/local/bin/tailscale",
-			"linear":    "/usr/local/bin/linear",
-		},
-		commands: map[string]string{
-			"docker compose version": "Docker Compose version v2.24.5",
-		},
+	installed := map[string]string{
+		"docker":    "if [ \"$1\" = compose ] && [ \"$2\" = version ]; then echo 'Docker Compose version v2.24.5'; fi",
+		"ollama":    "exit 0",
+		"go":        "exit 0",
+		"brew":      "exit 0",
+		"npm":       "exit 0",
+		"node":      "exit 0",
+		"tailscale": "exit 0",
+		"linear":    "exit 0",
 	}
+	runner := withTools(t, installed)
 
 	detector := NewDetector(runner)
 	ctx := context.Background()
@@ -432,116 +431,4 @@ func TestHealthChecks(t *testing.T) {
 	_ = CheckPlaneHealth(ctx, "http://invalid-endpoint-1234:9999", 50*time.Millisecond)
 	_ = CheckPlaneUIHealth(ctx, "http://invalid-endpoint-1234:9999", 50*time.Millisecond)
 	_ = CheckPenpotHealth(ctx, "http://invalid-endpoint-1234:9999", 50*time.Millisecond)
-}
-
-func TestReplicator_DryRun(t *testing.T) {
-	runner := &mockCommandRunner{}
-	host := HostInfo{OS: "darwin", HasDocker: true}
-	replicator := NewReplicator(runner, host)
-
-	planner := NewPlanner(host)
-	plan, err := planner.PlanReplication(ReplicationRequest{
-		Mode:       ModeContainer,
-		WithLinear: true,
-		WithPlane:  true,
-		WithPenpot: true,
-	})
-	if err != nil {
-		t.Fatalf("failed to plan: %v", err)
-	}
-
-	ctx := context.Background()
-	res, err := replicator.ExecutePlan(ctx, plan, true)
-	if err != nil {
-		t.Fatalf("dry run failed: %v", err)
-	}
-
-	if !res.Success {
-		t.Errorf("expected dry run result to be successful")
-	}
-	for _, act := range res.ActionResults {
-		if !act.Skipped {
-			t.Errorf("expected action %s to be skipped in dry-run", act.ActionID)
-		}
-		if !strings.Contains(act.Output, "[DRY-RUN]") {
-			t.Errorf("expected dry-run marker in output: %s", act.Output)
-		}
-	}
-}
-
-func TestReplicator_RenderActions(t *testing.T) {
-	tmpDir := t.TempDir()
-	origDir, _ := os.Getwd()
-	_ = os.Chdir(tmpDir)
-	defer func() { _ = os.Chdir(origDir) }()
-
-	runner := &mockCommandRunner{}
-	host := HostInfo{OS: "darwin", HasDocker: true}
-	replicator := NewReplicator(runner, host)
-
-	planner := NewPlanner(host)
-	plan, err := planner.PlanReplication(ReplicationRequest{
-		Mode:       ModeContainer,
-		WithLinear: true,
-		WithPlane:  true,
-		WithPenpot: true,
-	})
-	if err != nil {
-		t.Fatalf("failed to plan: %v", err)
-	}
-
-	ctx := context.Background()
-	res, err := replicator.ExecutePlan(ctx, plan, false)
-	if err != nil {
-		t.Fatalf("execution failed: %v", err)
-	}
-
-	if !res.Success {
-		t.Errorf("expected successful execution")
-	}
-
-	linearFile := filepath.Join("stacks", "compose.linear.yaml")
-	if _, err := os.Stat(linearFile); os.IsNotExist(err) {
-		t.Errorf("expected %s to be created", linearFile)
-	}
-	planeFile := filepath.Join("stacks", "compose.plane.yaml")
-	if _, err := os.Stat(planeFile); os.IsNotExist(err) {
-		t.Errorf("expected %s to be created", planeFile)
-	}
-	penpotFile := filepath.Join("stacks", "compose.penpot.yaml")
-	if _, err := os.Stat(penpotFile); os.IsNotExist(err) {
-		t.Errorf("expected %s to be created", penpotFile)
-	}
-}
-
-func TestReplicator_MandatoryFailure(t *testing.T) {
-	runner := &mockCommandRunner{
-		errors: map[string]error{
-			"docker info && docker compose version": fmt.Errorf("daemon stopped"),
-		},
-	}
-	host := HostInfo{OS: "darwin"}
-	replicator := NewReplicator(runner, host)
-
-	plan := &ReplicationPlan{
-		Mode: ModeContainer,
-		Actions: []PlanAction{
-			{
-				ID:        "check-docker",
-				Type:      ActionCheckDependency,
-				Command:   "docker info && docker compose version",
-				Rollback:  "echo rollback",
-				Mandatory: true,
-			},
-		},
-	}
-
-	ctx := context.Background()
-	res, err := replicator.ExecutePlan(ctx, plan, false)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if res.Success {
-		t.Errorf("expected result to indicate failure")
-	}
 }

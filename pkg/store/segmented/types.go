@@ -20,10 +20,10 @@ var (
 type ChunkState string
 
 const (
-	StateStored            ChunkState = "STORED"            // 100% complete analysis
-	StateAnalyzingPartial  ChunkState = "ANALYZING_PARTIAL" // Partially committed, queryable
-	StateQueuedNightLocal  ChunkState = "QUEUED_NIGHT_LOCAL"
-	StatePausedQuotaFloor  ChunkState = "PAUSED_QUOTA_FLOOR"
+	StateStored           ChunkState = "STORED"            // 100% complete analysis
+	StateAnalyzingPartial ChunkState = "ANALYZING_PARTIAL" // Partially committed, queryable
+	StateQueuedNightLocal ChunkState = "QUEUED_NIGHT_LOCAL"
+	StatePausedQuotaFloor ChunkState = "PAUSED_QUOTA_FLOOR"
 )
 
 // SegmentType identifies the granularity of an indexed code artifact.

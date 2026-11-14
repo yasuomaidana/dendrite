@@ -45,7 +45,7 @@ var (
 // Dendrite's identity for the control-plane MCP server.
 const (
 	defaultName    = "Dendrite Control Plane MCP Server"
-	defaultVersion = "0.1.0-alpha"
+	defaultVersion = "0.1.0"
 )
 
 // NewServer creates a hub MCP server branded as the Dendrite control plane when cfg

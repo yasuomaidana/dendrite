@@ -1,7 +1,7 @@
 package devtool
 
 import (
-	"bytes"
+	"Dendrite/pkg/branchpolicy"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,12 +11,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
-	"Dendrite/pkg/quality"
-	"Dendrite/pkg/sidecar"
+	"Dendrite/pkg/tracker"
 	"Dendrite/pkg/tracker/plane"
 )
 
@@ -43,6 +41,8 @@ type CommitOptions struct {
 	LiteLLMKey       string           `json:"litellm_key,omitempty"`
 	RepoDir          string           `json:"repo_dir,omitempty"`
 	AllowMocks       bool             `json:"allow_mocks,omitempty"`
+	// NoTicketGuard skips the ticket lifecycle check (see EnsureTicketInProgress).
+	NoTicketGuard bool `json:"no_ticket_guard,omitempty"`
 }
 
 // CommitResult encapsulates the outcome of a commit operation.
@@ -55,11 +55,13 @@ type CommitResult struct {
 	CostUSD     float64          `json:"cost_usd"`
 	DryRun      bool             `json:"dry_run,omitempty"`
 	SmartTicket *SmartTicketInfo `json:"smart_ticket,omitempty"`
-	SmartSource string           `json:"smart_source,omitempty"`
-	Pushed      bool             `json:"pushed,omitempty"`
-	PushSkipped bool             `json:"push_skipped,omitempty"`
-	PushReason  string           `json:"push_reason,omitempty"`
-	PushError   error            `json:"push_error,omitempty"`
+	// Guard is what the ticket lifecycle guard found; nil when it was off.
+	Guard       *GuardResult `json:"guard,omitempty"`
+	SmartSource string       `json:"smart_source,omitempty"`
+	Pushed      bool         `json:"pushed,omitempty"`
+	PushSkipped bool         `json:"push_skipped,omitempty"`
+	PushReason  string       `json:"push_reason,omitempty"`
+	PushError   error        `json:"push_error,omitempty"`
 }
 
 // SmartTicketInfo represents ticket intelligence resolved automatically.
@@ -86,155 +88,26 @@ func FormatTicketCommit(ticketID, message string) string {
 	return fmt.Sprintf("%s %s", prefix, msg)
 }
 
+var (
+	branchTicketRe    = regexp.MustCompile(`\b(DEN-\d+|DEND-\d+)\b`)
+	devStatusTicketRe = regexp.MustCompile(`\*\*(DEN-\d+|DEND-\d+)\*\*:\s*([^\n\r]+)`)
+)
+
 // ResolveSmartTicket automatically detects active ticket provenance using:
 // 1. Current Git branch name
 // 2. Authoritative Plane v2 live issues (In Progress, file correlation with staged changes, or recent transitions)
 // 3. Repository documentation / DEV_STATUS.md file correlation fallback
 func ResolveSmartTicket(ctx context.Context, repoDir string, stagedFiles []string) (*SmartTicketInfo, error) {
-	// 1. Try Git Branch
-	gitBranchCmd := exec.CommandContext(ctx, "git", "rev-parse", "--abbrev-ref", "HEAD")
-	if repoDir != "" {
-		gitBranchCmd.Dir = repoDir
+	if info := ticketFromBranch(ctx, repoDir, stagedFiles); info != nil {
+		return info, nil
 	}
-	if out, err := gitBranchCmd.Output(); err == nil {
-		branch := strings.TrimSpace(string(out))
-		if branch != "main" && branch != "master" && branch != "develop" {
-			re := regexp.MustCompile(`\b(DEN-\d+|DEND-\d+)\b`)
-			if m := re.FindString(branch); m != "" {
-				return &SmartTicketInfo{
-					ID:     m,
-					Title:  fmt.Sprintf("Work from branch %s", branch),
-					Scope:  inferScopeFromFiles(stagedFiles),
-					Type:   "feat",
-					Source: fmt.Sprintf("Git Branch (%s)", branch),
-				}, nil
-			}
-		}
+	if info := ticketFromPlane(ctx, stagedFiles); info != nil {
+		return info, nil
 	}
-
-	// 2. Query Plane v2 live API if available
-	if pClient, err := plane.NewClientFromEnv(); err == nil {
-		planeIssues, pErr := fetchPlaneIssues(ctx, pClient)
-		if pErr == nil && len(planeIssues) > 0 {
-			// 2a. Look for an In Progress ticket
-			for _, iss := range planeIssues {
-				// State group or slug check for in-progress
-				if iss.StateSlug == "in-progress" || iss.State == "8e46611a-87ed-457f-8be0-3c238b37e6eb" {
-					tid, title := extractTicketIDAndTitle(iss.Name)
-					if tid != "" {
-						return &SmartTicketInfo{
-							ID:          tid,
-							Title:       title,
-							Scope:       inferScopeFromFiles(stagedFiles),
-							Type:        inferTypeFromTitle(title),
-							Source:      "Plane v2 (In Progress)",
-							Description: iss.DescriptionHTML,
-						}, nil
-					}
-				}
-			}
-
-			// 2b. Match staged files against Plane issues
-			type scoredTicket struct {
-				info  SmartTicketInfo
-				score int
-			}
-			var scored []scoredTicket
-
-			for _, iss := range planeIssues {
-				tid, title := extractTicketIDAndTitle(iss.Name)
-				if tid == "" {
-					continue
-				}
-				searchCorpus := strings.ToLower(iss.Name + " " + iss.DescriptionHTML)
-				score := 0
-				for _, f := range stagedFiles {
-					fLower := strings.ToLower(f)
-					baseLower := strings.ToLower(filepath.Base(f))
-					dirLower := strings.ToLower(filepath.Dir(f))
-					if strings.Contains(searchCorpus, fLower) {
-						score += 15
-					} else if strings.Contains(searchCorpus, baseLower) && len(baseLower) > 4 {
-						score += 8
-					} else if dirLower != "." && strings.Contains(searchCorpus, dirLower) {
-						score += 5
-					}
-				}
-
-				// Bonus if recently updated
-				if iss.State == "f36249b3-f67a-427a-ab8a-cf1693ebdada" || iss.StateSlug == "to-verify" {
-					score += 10
-				}
-
-				if score > 0 {
-					scored = append(scored, scoredTicket{
-						info: SmartTicketInfo{
-							ID:          tid,
-							Title:       title,
-							Scope:       inferScopeFromFiles(stagedFiles),
-							Type:        inferTypeFromTitle(title),
-							Source:      fmt.Sprintf("Plane v2 (Diff Correlation Score %d)", score),
-							Description: iss.DescriptionHTML,
-						},
-						score: score,
-					})
-				}
-			}
-
-			if len(scored) > 0 {
-				sort.Slice(scored, func(i, j int) bool {
-					return scored[i].score > scored[j].score
-				})
-				best := scored[0].info
-				return &best, nil
-			}
-
-			// 2c. Most recent ticket transitioned to "To Verify"
-			for _, iss := range planeIssues {
-				if iss.State == "f36249b3-f67a-427a-ab8a-cf1693ebdada" || iss.StateSlug == "to-verify" {
-					tid, title := extractTicketIDAndTitle(iss.Name)
-					if tid != "" {
-						return &SmartTicketInfo{
-							ID:          tid,
-							Title:       title,
-							Scope:       inferScopeFromFiles(stagedFiles),
-							Type:        inferTypeFromTitle(title),
-							Source:      "Plane v2 (Recent To Verify)",
-							Description: iss.DescriptionHTML,
-						}, nil
-					}
-				}
-			}
-		}
+	if info := ticketFromDevStatus(repoDir, stagedFiles); info != nil {
+		return info, nil
 	}
-
-	// 3. Fallback: Parse DEV_STATUS.md
-	devStatusPath := filepath.Join(repoDir, "DEV_STATUS.md")
-	if data, err := os.ReadFile(devStatusPath); err == nil {
-		content := string(data)
-		reTicket := regexp.MustCompile(`\*\*(DEN-\d+|DEND-\d+)\*\*:\s*([^\n\r]+)`)
-		matches := reTicket.FindAllStringSubmatch(content, -1)
-		for _, m := range matches {
-			tid := m[1]
-			title := strings.TrimSpace(m[2])
-			for _, f := range stagedFiles {
-				base := filepath.Base(f)
-				dir := filepath.Dir(f)
-				if strings.Contains(strings.ToLower(title), strings.ToLower(base)) ||
-					(dir != "." && strings.Contains(strings.ToLower(title), strings.ToLower(dir))) {
-					return &SmartTicketInfo{
-						ID:     tid,
-						Title:  title,
-						Scope:  inferScopeFromFiles(stagedFiles),
-						Type:   inferTypeFromTitle(title),
-						Source: "DEV_STATUS.md (File Correlation)",
-					}, nil
-				}
-			}
-		}
-	}
-
-	// 4. Fallback: Default smart correlation from changed files
+	// Default smart correlation from changed files.
 	scope := inferScopeFromFiles(stagedFiles)
 	return &SmartTicketInfo{
 		ID:     "",
@@ -243,6 +116,171 @@ func ResolveSmartTicket(ctx context.Context, repoDir string, stagedFiles []strin
 		Type:   "feat",
 		Source: "Heuristic Staged File Inference",
 	}, nil
+}
+
+// ticketFromBranch reads the ticket out of the checked-out branch's name. The project's protected branches (its
+// integration branch, main, master) name no ticket.
+func ticketFromBranch(ctx context.Context, repoDir string, stagedFiles []string) *SmartTicketInfo {
+	gitBranchCmd := exec.CommandContext(ctx, "git", "rev-parse", "--abbrev-ref", "HEAD")
+	if repoDir != "" {
+		gitBranchCmd.Dir = repoDir
+	}
+	out, err := gitBranchCmd.Output()
+	if err != nil {
+		return nil
+	}
+	branch := strings.TrimSpace(string(out))
+	if branchpolicy.For(repoDir).IsProtected(branch) {
+		return nil
+	}
+	m := branchTicketRe.FindString(branch)
+	if m == "" {
+		return nil
+	}
+	return &SmartTicketInfo{
+		ID:     m,
+		Title:  fmt.Sprintf("Work from branch %s", branch),
+		Scope:  inferScopeFromFiles(stagedFiles),
+		Type:   "feat",
+		Source: fmt.Sprintf("Git Branch (%s)", branch),
+	}
+}
+
+// planeTicket is the ticket an issue stands for, found by source.
+func planeTicket(iss planeIssueLite, tid, title string, stagedFiles []string, source string) *SmartTicketInfo {
+	return &SmartTicketInfo{
+		ID:          tid,
+		Title:       title,
+		Scope:       inferScopeFromFiles(stagedFiles),
+		Type:        inferTypeFromTitle(title),
+		Source:      source,
+		Description: iss.DescriptionHTML,
+	}
+}
+
+// ticketFromPlane asks the live Plane board: the ticket In Progress, else the one whose text best matches the
+// staged files, else a ticket recently moved to To Verify.
+func ticketFromPlane(ctx context.Context, stagedFiles []string) *SmartTicketInfo {
+	pClient, err := plane.NewClientFromEnv()
+	if err != nil {
+		return nil
+	}
+	issues, pErr := fetchPlaneIssues(ctx, pClient)
+	if pErr != nil || len(issues) == 0 {
+		return nil
+	}
+	stateOf := planeStateResolver(ctx, pClient)
+	if info := firstInState(issues, stateOf, tracker.StatusInProgress, "Plane v2 (In Progress)", stagedFiles); info != nil {
+		return info
+	}
+	if info := bestCorrelated(issues, stateOf, stagedFiles); info != nil {
+		return info
+	}
+	return firstInState(issues, stateOf, tracker.StatusInReview, "Plane v2 (Recent To Verify)", stagedFiles)
+}
+
+// firstInState is the first issue in the state that carries a ticket id.
+func firstInState(issues []planeIssueLite, stateOf func(planeIssueLite) tracker.Status, want tracker.Status, source string, stagedFiles []string) *SmartTicketInfo {
+	for _, iss := range issues {
+		if stateOf(iss) != want {
+			continue
+		}
+		if tid, title := extractTicketIDAndTitle(iss.Name); tid != "" {
+			return planeTicket(iss, tid, title, stagedFiles, source)
+		}
+	}
+	return nil
+}
+
+// correlationScore rates how much of an issue's text mentions the staged files: a full path counts most, then
+// the file name, then its directory; a ticket in To Verify gets a bonus.
+func correlationScore(corpus string, status tracker.Status, stagedFiles []string) int {
+	score := 0
+	for _, f := range stagedFiles {
+		fLower := strings.ToLower(f)
+		baseLower := strings.ToLower(filepath.Base(f))
+		dirLower := strings.ToLower(filepath.Dir(f))
+		switch {
+		case strings.Contains(corpus, fLower):
+			score += 15
+		case strings.Contains(corpus, baseLower) && len(baseLower) > 4:
+			score += 8
+		case dirLower != "." && strings.Contains(corpus, dirLower):
+			score += 5
+		}
+	}
+	if status == tracker.StatusInReview {
+		score += 10
+	}
+	return score
+}
+
+// bestCorrelated is the issue whose text matches the staged files best, or nil when none matches.
+func bestCorrelated(issues []planeIssueLite, stateOf func(planeIssueLite) tracker.Status, stagedFiles []string) *SmartTicketInfo {
+	var best *SmartTicketInfo
+	bestScore := 0
+	for _, iss := range issues {
+		tid, title := extractTicketIDAndTitle(iss.Name)
+		if tid == "" {
+			continue
+		}
+		score := correlationScore(strings.ToLower(iss.Name+" "+iss.DescriptionHTML), stateOf(iss), stagedFiles)
+		if score > bestScore {
+			bestScore = score
+			best = planeTicket(iss, tid, title, stagedFiles, fmt.Sprintf("Plane v2 (Diff Correlation Score %d)", score))
+		}
+	}
+	return best
+}
+
+// ticketFromDevStatus matches the staged files against the tickets listed in DEV_STATUS.md.
+func ticketFromDevStatus(repoDir string, stagedFiles []string) *SmartTicketInfo {
+	data, err := os.ReadFile(filepath.Join(repoDir, "DEV_STATUS.md"))
+	if err != nil {
+		return nil
+	}
+	for _, m := range devStatusTicketRe.FindAllStringSubmatch(string(data), -1) {
+		title := strings.TrimSpace(m[2])
+		if mentionsStagedFile(strings.ToLower(title), stagedFiles) {
+			return &SmartTicketInfo{ID: m[1], Title: title, Scope: inferScopeFromFiles(stagedFiles), Type: inferTypeFromTitle(title), Source: "DEV_STATUS.md (File Correlation)"}
+		}
+	}
+	return nil
+}
+
+// mentionsStagedFile reports whether the lower-cased text names a staged file or its directory.
+func mentionsStagedFile(text string, stagedFiles []string) bool {
+	for _, f := range stagedFiles {
+		dir := filepath.Dir(f)
+		if strings.Contains(text, strings.ToLower(filepath.Base(f))) || (dir != "." && strings.Contains(text, strings.ToLower(dir))) {
+			return true
+		}
+	}
+	return false
+}
+
+// planeStateResolver maps an issue to its tracker status through the project's own workflow
+// states, so it works on every board; boards differ in state UUIDs, which must never be hard-coded.
+// An issue whose state cannot be resolved falls back to the legacy state_slug field.
+func planeStateResolver(ctx context.Context, client *plane.Client) func(planeIssueLite) tracker.Status {
+	byID := map[string]tracker.Status{}
+	if states, err := client.ListStates(ctx); err == nil {
+		for _, st := range states {
+			byID[st.ID] = plane.StatusFor(st.Group, st.Name)
+		}
+	}
+	return func(iss planeIssueLite) tracker.Status {
+		if st, ok := byID[iss.State]; ok {
+			return st
+		}
+		switch iss.StateSlug {
+		case "in-progress":
+			return tracker.StatusInProgress
+		case "to-verify":
+			return tracker.StatusInReview
+		}
+		return tracker.StatusBacklog
+	}
 }
 
 type planeIssueLite struct {
@@ -255,18 +293,12 @@ type planeIssueLite struct {
 }
 
 func fetchPlaneIssues(ctx context.Context, client *plane.Client) ([]planeIssueLite, error) {
-	url := fmt.Sprintf("%s/api/v1/workspaces/%s/projects/%s/issues/?order_by=-updated_at",
-		client.BaseURL(), client.WorkspaceSlug(), client.ProjectID())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	endpoint := fmt.Sprintf("/api/v1/workspaces/%s/projects/%s/issues/?order_by=-updated_at",
+		client.WorkspaceSlug(), client.ProjectID())
+	req, err := client.NewRequest(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
-	apiKey := os.Getenv("PLANE_API_KEY")
-	if apiKey == "" {
-		apiKey = "plane_sec_dendrite_token_12345"
-	}
-	req.Header.Set("x-api-key", apiKey)
-	req.Header.Set("Accept", "application/json")
 
 	httpCli := &http.Client{Timeout: 4 * time.Second}
 	resp, err := httpCli.Do(req)
@@ -289,12 +321,13 @@ func fetchPlaneIssues(ctx context.Context, client *plane.Client) ([]planeIssueLi
 }
 
 func extractTicketIDAndTitle(name string) (string, string) {
-	re := regexp.MustCompile(`\[(DEN-\d+|DEND-\d+)\]\s*(.*)`)
+	re := regexp.MustCompile(`\[([A-Z][A-Z0-9]*-\d+)\]\s*(.*)`)
 	matches := re.FindStringSubmatch(name)
 	if len(matches) >= 3 {
 		return matches[1], strings.TrimSpace(matches[2])
 	}
-	reSolo := regexp.MustCompile(`\b(DEN-\d+|DEND-\d+)\b`)
+	// Unbracketed ids: any project identifier at the start of the title, or a legacy DEN id anywhere.
+	reSolo := regexp.MustCompile(`^[A-Z][A-Z0-9]*-\d+\b|\b(?:DEN|DEND)-\d+\b`)
 	if tid := reSolo.FindString(name); tid != "" {
 		return tid, strings.TrimSpace(strings.ReplaceAll(name, tid, ""))
 	}
@@ -439,410 +472,4 @@ func synthesizeDeterministicCommitMessage(ticketID string, smart *SmartTicketInf
 // GenerateLocalCommitMessage synthesizes a Conventional Commit message using local models.
 func GenerateLocalCommitMessage(ctx context.Context, diffStat, fullDiff, ticketID, model string, ollamaURL, litellmURL, litellmKey string) (string, string, error) {
 	return GenerateLocalCommitMessageWithContext(ctx, diffStat, fullDiff, ticketID, nil, model, ollamaURL, litellmURL, litellmKey, nil)
-}
-
-// GenerateLocalCommitMessageWithContext synthesizes Conventional Commit with active ticket context.
-func GenerateLocalCommitMessageWithContext(ctx context.Context, diffStat, fullDiff, ticketID string, smartTicket *SmartTicketInfo, model string, ollamaURL, litellmURL, litellmKey string, stagedFiles []string) (string, string, error) {
-	if model == "" {
-		model = "qwen3.8:27b"
-	}
-
-	ticketContext := ""
-	if ticketID != "" {
-		ticketContext = fmt.Sprintf("\nActive Ticket: [%s]", ticketID)
-		if smartTicket != nil && smartTicket.Title != "" {
-			ticketContext = fmt.Sprintf("\nActive Ticket: [%s] %s", ticketID, smartTicket.Title)
-		}
-	}
-
-	prompt := fmt.Sprintf(`You are an expert Git and AI engineer following the Conventional Commits specification.%s
-Based on the following staged git diff summary and details, synthesize a clear, professional git commit message.
-Format requirements:
-- First line: <type>(<scope>): <imperative summary>
-- Optional body: Bullet points summarizing key modifications.
-- DO NOT wrap in markdown code blocks. Return plain text only.
-
-Git Diff Summary:
-%s
-
-Git Diff Content (truncated):
-%s`, ticketContext, diffStat, truncateString(fullDiff, 2000))
-
-	client := &http.Client{Timeout: 4 * time.Second}
-
-	// 1. Try OxiLLaMa Pure-Rust Zero-FFI Engine
-	oxillamaURL := os.Getenv("DENDRITE_OXILLAMA_ENDPOINT")
-	if oxillamaURL == "" {
-		oxillamaURL = "http://127.0.0.1:8080"
-	}
-	tryOxillama := strings.Contains(strings.ToLower(model), "oxillama") ||
-		ollamaURL == "" || ollamaURL == "http://localhost:11434" || ollamaURL == "http://127.0.0.1:11434" ||
-		os.Getenv("DENDRITE_COMMIT_PREFER_OXILLAMA") == "true"
-
-	if tryOxillama {
-		oxModel := strings.TrimPrefix(model, "oxillama/")
-		if oxModel == "" || !strings.Contains(oxModel, "qwen") {
-			oxModel = "qwen3.8:27b"
-		}
-		oxPayload := map[string]interface{}{
-			"model": oxModel,
-			"messages": []map[string]string{
-				{"role": "user", "content": prompt},
-			},
-			"max_tokens": 256,
-		}
-		oxBytes, _ := json.Marshal(oxPayload)
-		oxReq, oxErr := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(oxillamaURL, "/")+"/v1/chat/completions", bytes.NewReader(oxBytes))
-		if oxErr == nil {
-			oxReq.Header.Set("Content-Type", "application/json")
-			oxClient := &http.Client{Timeout: 3 * time.Second}
-			oxResp, oxDoErr := oxClient.Do(oxReq)
-			if oxDoErr == nil {
-				defer oxResp.Body.Close()
-				if oxResp.StatusCode == http.StatusOK {
-					var oxRes struct {
-						Choices []struct {
-							Message struct {
-								Content string `json:"content"`
-							} `json:"message"`
-						} `json:"choices"`
-					}
-					if json.NewDecoder(oxResp.Body).Decode(&oxRes) == nil && len(oxRes.Choices) > 0 {
-						cleaned := cleanCommitText(oxRes.Choices[0].Message.Content)
-						if !isCannedOrInvalidCommitMessage(cleaned) {
-							return FormatTicketCommit(ticketID, cleaned), oxModel + " (OxiLLaMa HTTP)", nil
-						}
-					}
-				}
-			}
-		}
-
-		// Fallback to OxiLLaMa CLI ($DENDRITE_OXILLAMA_BIN, synapse member builds,
-		// $DENDRITE_HOME/bin, PATH, ~/.cargo/bin)
-		oxillamaPath, _ := sidecar.DefaultLocator().Locate("oxillama")
-		if oxillamaPath != "" {
-			modelBaseDir := os.Getenv("DENDRITE_OXILLAMA_MODELS_DIR")
-			if modelBaseDir == "" {
-				home, _ := os.UserHomeDir()
-				modelBaseDir = filepath.Join(home, ".oxillama", "models")
-			}
-			normModel := strings.ReplaceAll(strings.TrimPrefix(model, "oxillama/"), ":", "_")
-			modelDir := filepath.Join(modelBaseDir, normModel)
-			if _, err := os.Stat(modelDir); err == nil {
-				cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				oxCmd := exec.CommandContext(cmdCtx, oxillamaPath, "run", "--model", modelDir, prompt, "--max-tokens", "64")
-				var outBuf, errBuf bytes.Buffer
-				oxCmd.Stdout = &outBuf
-				oxCmd.Stderr = &errBuf
-				if err := oxCmd.Run(); err == nil {
-					cancel()
-					outStr := outBuf.String()
-					lines := strings.Split(outStr, "\n")
-					var filtered []string
-					for _, l := range lines {
-						trimmed := strings.TrimSpace(l)
-						if trimmed == "" || strings.HasPrefix(trimmed, "INFO") || strings.HasPrefix(trimmed, "WARN") || strings.HasPrefix(trimmed, "✓") || strings.HasPrefix(trimmed, "OxiLLaMa") {
-							continue
-						}
-						filtered = append(filtered, l)
-					}
-					cleaned := cleanCommitText(strings.Join(filtered, "\n"))
-					if !isCannedOrInvalidCommitMessage(cleaned) {
-						return FormatTicketCommit(ticketID, cleaned), model + " (OxiLLaMa Pure-Rust Zero-FFI)", nil
-					}
-				} else {
-					cancel()
-				}
-			}
-		}
-	}
-
-	// 2. Try Ollama directly
-	if ollamaURL == "" {
-		ollamaURL = "http://localhost:11434"
-	}
-	ollamaReq := map[string]interface{}{
-		"model":  model,
-		"prompt": prompt,
-		"stream": false,
-	}
-	reqBytes, _ := json.Marshal(ollamaReq)
-	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(ollamaURL, "/")+"/api/generate", bytes.NewReader(reqBytes))
-	if err == nil {
-		req.Header.Set("Content-Type", "application/json")
-		resp, rErr := client.Do(req)
-		if rErr == nil && resp.StatusCode == http.StatusOK {
-			defer resp.Body.Close()
-			var res struct {
-				Response string `json:"response"`
-			}
-			if decErr := json.NewDecoder(resp.Body).Decode(&res); decErr == nil && strings.TrimSpace(res.Response) != "" {
-				cleaned := cleanCommitText(res.Response)
-				if !isCannedOrInvalidCommitMessage(cleaned) {
-					return FormatTicketCommit(ticketID, cleaned), model + " (Ollama Metal)", nil
-				}
-			}
-		}
-	}
-
-	// 3. Try LiteLLM Proxy (:4000)
-	if litellmURL == "" {
-		litellmURL = "http://localhost:4000/v1"
-	}
-	if litellmKey == "" {
-		litellmKey = "sk-dendrite-master-key"
-	}
-
-	litellmModel := "local-qwen3-27b"
-	litellmReq := map[string]interface{}{
-		"model": litellmModel,
-		"messages": []map[string]string{
-			{"role": "system", "content": "You are a git commit message synthesizer following Conventional Commits format."},
-			{"role": "user", "content": prompt},
-		},
-		"max_tokens": 512,
-	}
-	lBytes, _ := json.Marshal(litellmReq)
-	lReq, err := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(litellmURL, "/")+"/chat/completions", bytes.NewReader(lBytes))
-	if err == nil {
-		lReq.Header.Set("Content-Type", "application/json")
-		lReq.Header.Set("Authorization", "Bearer "+litellmKey)
-		lResp, lErr := client.Do(lReq)
-		if lErr == nil && lResp.StatusCode == http.StatusOK {
-			defer lResp.Body.Close()
-			var lRes struct {
-				Choices []struct {
-					Message struct {
-						Content string `json:"content"`
-					} `json:"message"`
-				} `json:"choices"`
-			}
-			if decErr := json.NewDecoder(lResp.Body).Decode(&lRes); decErr == nil && len(lRes.Choices) > 0 {
-				cleaned := cleanCommitText(lRes.Choices[0].Message.Content)
-				if !isCannedOrInvalidCommitMessage(cleaned) {
-					return FormatTicketCommit(ticketID, cleaned), litellmModel + " (LiteLLM)", nil
-				}
-			}
-		}
-	}
-
-	// 4. Fallback deterministic message
-	defaultMsg := synthesizeDeterministicCommitMessage(ticketID, smartTicket, diffStat, stagedFiles)
-	return FormatTicketCommit(ticketID, defaultMsg), "deterministic-fallback", nil
-}
-
-// ExecuteCommit performs git staging, smart ticket resolution, commit synthesis, and commit execution.
-func ExecuteCommit(ctx context.Context, opts CommitOptions) (*CommitResult, error) {
-	runGit := func(args ...string) (string, error) {
-		cmd := exec.CommandContext(ctx, "git", args...)
-		if opts.RepoDir != "" {
-			cmd.Dir = opts.RepoDir
-		}
-		var out, errOut bytes.Buffer
-		cmd.Stdout = &out
-		cmd.Stderr = &errOut
-		err := cmd.Run()
-		if err != nil {
-			return "", fmt.Errorf("git %s failed: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(errOut.String()))
-		}
-		return strings.TrimSpace(out.String()), nil
-	}
-
-	// 1. Staging
-	// Check if there are already staged files in index
-	alreadyStaged, _ := runGit("diff", "--cached", "--name-only")
-	if strings.TrimSpace(alreadyStaged) != "" && !opts.StageAll && len(opts.Files) == 0 {
-		// Developer or agent already staged specific files; do not clobber with git add -A
-	} else if len(opts.Files) > 0 {
-		for _, f := range opts.Files {
-			if strings.TrimSpace(f) != "" {
-				if _, err := runGit("add", strings.TrimSpace(f)); err != nil {
-					return nil, err
-				}
-			}
-		}
-	} else if opts.StageAll {
-		if _, err := runGit("add", "-A"); err != nil {
-			return nil, err
-		}
-	} else if strings.TrimSpace(alreadyStaged) == "" && !opts.Amend {
-		if _, err := runGit("add", "-A"); err != nil {
-			return nil, err
-		}
-	}
-
-	// 2. Query staged files and diff
-	stagedStatus, err := runGit("diff", "--cached", "--name-only")
-	if err != nil {
-		return nil, fmt.Errorf("failed to check staged files: %w", err)
-	}
-	if strings.TrimSpace(stagedStatus) == "" && !opts.Amend {
-		return nil, ErrNothingToCommit
-	}
-
-	var stagedFiles []string
-	if strings.TrimSpace(stagedStatus) != "" {
-		stagedFiles = strings.Split(strings.TrimSpace(stagedStatus), "\n")
-	} else if opts.Amend {
-		// When amending with no new staged changes, examine HEAD files
-		if headFiles, hErr := runGit("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"); hErr == nil {
-			stagedFiles = strings.Split(strings.TrimSpace(headFiles), "\n")
-		}
-	}
-
-	diffStat, _ := runGit("diff", "--cached", "--stat")
-	fullDiff, _ := runGit("diff", "--cached")
-	if opts.Amend && diffStat == "" {
-		diffStat, _ = runGit("show", "--stat", "HEAD")
-		fullDiff, _ = runGit("show", "HEAD")
-	}
-
-	// 2a. Zero-Mock Policy Enforcement Gate
-	if !opts.AllowMocks {
-		if hasMocks, mockLocs, _ := quality.ScanFilesForMocks(opts.RepoDir, stagedFiles); hasMocks {
-			return nil, fmt.Errorf("zero-mock policy violation: staged changes contain banned mocks/stubs:\n%s\nMust implement real production services (or pass --allow-mocks for emergency bypass)", strings.Join(mockLocs, "\n"))
-		}
-	}
-
-	// 3. Smart Ticket Resolution
-	var smartTicket *SmartTicketInfo
-	smartSource := ""
-	if opts.TicketID == "" && !opts.NoSmart {
-		resolved, sErr := ResolveSmartTicket(ctx, opts.RepoDir, stagedFiles)
-		if sErr == nil && resolved != nil && resolved.ID != "" {
-			opts.TicketID = resolved.ID
-			smartTicket = resolved
-			smartSource = resolved.Source
-		}
-	} else if opts.SmartTicket != nil {
-		smartTicket = opts.SmartTicket
-		smartSource = smartTicket.Source
-	}
-
-	// 4. Determine commit message
-	commitMsg := strings.TrimSpace(opts.Message)
-	modelUsed := "user-specified"
-	if commitMsg == "" {
-		if opts.UseLocalModel {
-			genMsg, mUsed, genErr := GenerateLocalCommitMessageWithContext(
-				ctx,
-				diffStat,
-				fullDiff,
-				opts.TicketID,
-				smartTicket,
-				opts.Model,
-				opts.OllamaEndpoint,
-				opts.LiteLLMEndpoint,
-				opts.LiteLLMKey,
-				stagedFiles,
-			)
-			if genErr == nil && genMsg != "" {
-				commitMsg = genMsg
-				modelUsed = mUsed
-			} else {
-				commitMsg = FormatTicketCommit(opts.TicketID, synthesizeDeterministicCommitMessage(opts.TicketID, smartTicket, diffStat, stagedFiles))
-				modelUsed = "fallback"
-			}
-		} else {
-			commitMsg = FormatTicketCommit(opts.TicketID, "chore: repository update")
-			modelUsed = "manual-format"
-		}
-	} else {
-		commitMsg = FormatTicketCommit(opts.TicketID, commitMsg)
-	}
-
-	if opts.DryRun {
-		res := &CommitResult{
-			CommitSHA:   "dry-run-preview-sha",
-			Message:     commitMsg,
-			Files:       stagedFiles,
-			TicketID:    opts.TicketID,
-			ModelUsed:   modelUsed,
-			CostUSD:     0.00,
-			DryRun:      true,
-			SmartTicket: smartTicket,
-			SmartSource: smartSource,
-		}
-		_ = pushAfterCommit(ctx, opts, res, runGit)
-		return res, nil
-	}
-
-	// 5. Execute git commit
-	gitArgs := []string{"commit"}
-	if opts.Amend {
-		gitArgs = append(gitArgs, "--amend")
-	}
-	gitArgs = append(gitArgs, "-m", commitMsg)
-	if _, err := runGit(gitArgs...); err != nil {
-		return nil, fmt.Errorf("git commit failed: %w", err)
-	}
-
-	// 6. Get commit SHA
-	sha, err := runGit("rev-parse", "HEAD")
-	if err != nil {
-		sha = "unknown-sha"
-	}
-
-	res := &CommitResult{
-		CommitSHA:   sha,
-		Message:     commitMsg,
-		Files:       stagedFiles,
-		TicketID:    opts.TicketID,
-		ModelUsed:   modelUsed,
-		CostUSD:     0.00,
-		DryRun:      false,
-		SmartTicket: smartTicket,
-		SmartSource: smartSource,
-	}
-
-	_ = pushAfterCommit(ctx, opts, res, runGit)
-
-	return res, nil
-}
-
-func pushAfterCommit(ctx context.Context, opts CommitOptions, res *CommitResult, runGit func(args ...string) (string, error)) error {
-	if opts.DryRun || res.DryRun {
-		res.PushSkipped = true
-		res.PushReason = "dry-run mode"
-		return nil
-	}
-
-	if opts.NoPush {
-		res.PushSkipped = true
-		res.PushReason = "--no-push flag specified"
-		return nil
-	}
-
-	if strings.EqualFold(os.Getenv("DENDRITE_COMMIT_PUSH"), "false") {
-		res.PushSkipped = true
-		res.PushReason = "DENDRITE_COMMIT_PUSH=false"
-		return nil
-	}
-
-	out := pushBranch(runGit)
-	res.Pushed = out.Pushed
-	res.PushSkipped = out.Skipped
-	res.PushReason = out.Reason
-	res.PushError = out.Err
-	return out.Err
-}
-
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "\n...[truncated]"
-}
-
-func cleanCommitText(raw string) string {
-	lines := strings.Split(raw, "\n")
-	var cleanedLines []string
-	for _, l := range lines {
-		trimmed := strings.TrimSpace(l)
-		if strings.HasPrefix(trimmed, "```") {
-			continue
-		}
-		cleanedLines = append(cleanedLines, l)
-	}
-	return strings.TrimSpace(strings.Join(cleanedLines, "\n"))
 }

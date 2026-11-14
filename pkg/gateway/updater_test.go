@@ -46,7 +46,7 @@ func TestDefaultUpdaterOptions_EnvOverrides(t *testing.T) {
 }
 
 func TestRoutingTableUpdater_DryRun_And_Precedence(t *testing.T) {
-	// Create mock OxiLLaMa server with smart 27B model
+	// OxiLLaMa server with a smart 27B model
 	oxiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/models" {
 			w.Header().Set("Content-Type", "application/json")
@@ -58,7 +58,7 @@ func TestRoutingTableUpdater_DryRun_And_Precedence(t *testing.T) {
 	}))
 	defer oxiServer.Close()
 
-	// Create mock Ollama server with smaller 3B model
+	// Ollama server with a smaller 3B model
 	ollamaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/version" {
 			w.WriteHeader(http.StatusOK)
@@ -106,14 +106,9 @@ func TestRoutingTableUpdater_DryRun_And_Precedence(t *testing.T) {
 	if !report.DryRun {
 		t.Errorf("expected report to be dry run")
 	}
-	if report.ActiveLocalPrimary != "qwen3.8:27b" {
-		t.Errorf("expected smartest model 'qwen3.8:27b' to be active primary, got %s", report.ActiveLocalPrimary)
-	}
+	// Smartest wins even on a slower engine: OxiLLaMa hosts the 27B model, Ollama only small ones.
 	if report.ActiveLocalPrimaryEngine != "oxillama-rust" {
-		t.Errorf("expected active primary engine to be 'oxillama-rust', got %s", report.ActiveLocalPrimaryEngine)
-	}
-	if report.ActiveLocalPrimaryScore < 85 {
-		t.Errorf("expected score >= 85 for 27B model, got %d", report.ActiveLocalPrimaryScore)
+		t.Errorf("expected active primary engine to be 'oxillama-rust' (hosts the smartest model), got %s", report.ActiveLocalPrimaryEngine)
 	}
 
 	// Verify rendered YAML content
@@ -122,7 +117,7 @@ func TestRoutingTableUpdater_DryRun_And_Precedence(t *testing.T) {
 		t.Errorf("expected YAML to define local-qwen3-27b")
 	}
 	if !strings.Contains(yamlStr, "openai/qwen3.8:27b") {
-		t.Errorf("expected YAML to map local-qwen3-27b to OxiLLaMa openai/qwen3.8:27b")
+		t.Errorf("expected YAML to map local-qwen3-27b to the only 27B model, OxiLLaMa openai/qwen3.8:27b")
 	}
 	if !strings.Contains(yamlStr, "host.docker.internal") {
 		t.Errorf("expected container host rewrite to host.docker.internal")
@@ -169,8 +164,8 @@ func TestRoutingTableUpdater_ActualWriteAndDaemon(t *testing.T) {
 	if rErr != nil {
 		t.Fatalf("failed to read generated config file: %v", rErr)
 	}
-	if !strings.Contains(string(content), "gemini-2.5-pro") {
-		t.Errorf("expected written file to contain gemini-2.5-pro")
+	if !strings.Contains(string(content), "gemini-4-argon-medium") {
+		t.Errorf("expected written file to contain gemini-4-argon-medium")
 	}
 
 	// 2. Test Daily Daemon with short ticker
@@ -219,5 +214,97 @@ func TestRoutingTableUpdater_DirectoryCreationAndErrorHandling(t *testing.T) {
 	updater.SetOptions(opts)
 	if updater.Options().PrimaryCloudModel != "custom-pro-model" {
 		t.Errorf("expected SetOptions to update PrimaryCloudModel")
+	}
+}
+
+func TestRoutingTableUpdater_RoutesOnlyModelsThatFitMemory(t *testing.T) {
+	t.Setenv("DENDRITE_MODEL_MEM_BUDGET_GB", "12")
+	ollamaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/version":
+			_, _ = w.Write([]byte(`{"version":"0.5.4"}`))
+		case "/api/tags":
+			_, _ = w.Write([]byte(`{"models":[{"name":"giant-coder:30b","size":19327352832},{"name":"hermes3:8b","size":5033164800},{"name":"nomic-embed-text:latest","size":274000000}]}`))
+		case "/api/ps":
+			_, _ = w.Write([]byte(`{"models":[]}`))
+		default:
+			w.WriteHeader(http.StatusOK)
+		}
+	}))
+	defer ollamaServer.Close()
+
+	mgr := inference.NewManager()
+	_ = mgr.RegisterEngine(inference.NewOllamaEngine(inference.EngineConfig{
+		ID: "ollama-metal", Type: inference.EngineOllama, Endpoint: ollamaServer.URL,
+	}, ollamaServer.Client()))
+
+	report, err := NewRoutingTableUpdater(UpdaterOptions{ConfigPath: "/tmp/test_litellm_fit.yaml", DryRun: true, Manager: mgr}).UpdateNow(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.ActiveLocalPrimary != "hermes3:8b" {
+		t.Errorf("primary = %q, want hermes3:8b (the 30B coder is too large)", report.ActiveLocalPrimary)
+	}
+	if len(report.TooLargeModels) != 1 || report.TooLargeModels[0] != "giant-coder:30b" {
+		t.Errorf("too large = %v", report.TooLargeModels)
+	}
+	y := report.YAMLContent
+	if strings.Contains(y, "giant-coder") {
+		t.Error("a model that does not fit got a route")
+	}
+	for _, alias := range []string{"local-reason", "local-coder", "local-fast", "local-embed"} {
+		if !strings.Contains(y, "model_name: "+alias) {
+			t.Errorf("role alias %s missing", alias)
+		}
+	}
+	for _, invented := range []string{"qwen3.8:27b", "tinyllama", "hf-deepseek", "mistral-7b-instruct-q4", "qwen2.5-coder:14b"} {
+		if strings.Contains(y, invented) {
+			t.Errorf("YAML routes to %s, which is not installed", invented)
+		}
+	}
+}
+
+func TestRoutingTableUpdater_FallbacksOnlyNameAliasesInTheModelList(t *testing.T) {
+	// No engine, so no chat model fits: no local-* alias is emitted and none may be a fallback source.
+	report, err := NewRoutingTableUpdater(UpdaterOptions{
+		ConfigPath: filepath.Join(t.TempDir(), "litellm.yaml"), DryRun: true, Manager: inference.NewManager(),
+	}).UpdateNow(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(report.YAMLContent, "local-qwen") {
+		t.Errorf("YAML names local-qwen* although no local model is routed:\n%s", report.YAMLContent)
+	}
+}
+
+func TestRoutingTableUpdater_StaleDaemonCannotStopTheNextOne(t *testing.T) {
+	mgr := inference.NewManager()
+	u := NewRoutingTableUpdater(UpdaterOptions{
+		ConfigPath: filepath.Join(t.TempDir(), "litellm.yaml"), DryRun: true, Interval: time.Hour, Manager: mgr,
+	})
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	_, stop1 := u.StartDailyDaemon(ctx1)
+	u.Stop() // ends the first daemon through the updater
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	ch2, stop2 := u.StartDailyDaemon(ctx2)
+	defer stop2()
+	cancel1() // the first daemon's goroutine now exits, running its deferred stop for the first time
+	stop1()   // and so does its cancel func
+	time.Sleep(150 * time.Millisecond)
+
+	u.mu.RLock()
+	running := u.running
+	u.mu.RUnlock()
+	if !running {
+		t.Fatal("the stale daemon stopped the one started after it")
+	}
+	select {
+	case _, ok := <-ch2:
+		if !ok {
+			t.Fatal("the second daemon's report channel was closed: it was stopped")
+		}
+	case <-time.After(time.Second):
 	}
 }

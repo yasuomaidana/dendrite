@@ -24,9 +24,16 @@ Soma & Axon Hillock
 | :--- | :--- |
 | `diagnose` | Run environment pre-flight diagnostics (local Ollama, project status) |
 | `install` | Install an agent (aider, openhands, copilot, agy) or a service (plane, litellm, ollama, ...) |
+| `migrate-state` | Stop tracking .dendrite/ in every indexed repository (nothing is committed) |
 | `plan` | Show the replication plan for this host |
 | `prepare` | Sync agent rules and skills, and enforce CI/CD tooling defaults |
 | `replicate` | Execute the replication plan (compose files, services, status) |
+| `secrets` | Create .env from the published defaults and change them at install |
+| `secrets ensure` | Set credentials once in ~/.dendrite/.env; the committed .env keeps the published defaults |
+| `secrets status` | Show which credentials are the published default, custom or missing (never prints values) |
+| `stacks` | Where the compose files and litellm_config.yaml live (~/.dendrite/stacks) |
+| `stacks migrate` | Copy a checkout's stack files into ~/.dendrite/stacks (never overwrites) |
+| `stacks path` | Print the stacks directory |
 | `status` | Show real-time status of environment components |
 
 ## Flags
@@ -62,6 +69,23 @@ dendrite soma install agy --yes
 dendrite soma install litellm --mode host
 ```
 
+### `dendrite soma migrate-state`
+
+Stop tracking .dendrite/ in every indexed repository (nothing is committed)
+
+```bash
+dendrite soma migrate-state [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--dry-run` | Show what would happen without changing anything |
+
+```bash
+dendrite soma migrate-state --dry-run
+dendrite soma migrate-state
+```
+
 ### `dendrite soma plan`
 
 Show the replication plan for this host
@@ -93,10 +117,11 @@ Sync agent rules and skills, and enforce CI/CD tooling defaults
 dendrite soma prepare [path|project] [flags]
 ```
 
-Aliases: `sync`, `update`
+Aliases: `sync`, `update`, `configure`
 
 | Flag | Description |
 | :--- | :--- |
+| `--adopt-ci` | Replace a hand-written CI workflow with the generated one (the old file is archived in .github/dendrite/) |
 | `--dry-run` | Show what would happen without changing anything |
 | `--no-cicd` | Disable CI/CD and Copilot enforcement |
 | `--no-skills` | Disable agent rules and skills synchronization |
@@ -130,6 +155,64 @@ dendrite soma replicate [flags]
 dendrite soma replicate --dry-run
 dendrite soma replicate --with-plane --no-plane-ui
 ```
+
+### `dendrite soma secrets`
+
+Create .env from the published defaults and change them at install
+
+```bash
+dendrite soma secrets
+```
+
+```bash
+dendrite soma secrets ensure
+dendrite soma secrets ensure --set POSTGRES_PASSWORD=mine --set LITELLM_MASTER_KEY=sk-mine
+dendrite soma secrets ensure --generate
+dendrite soma secrets status
+```
+
+### `dendrite soma secrets ensure`
+
+Set credentials once in ~/.dendrite/.env; the committed .env keeps the published defaults
+
+```bash
+dendrite soma secrets ensure [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--generate` | Random values for every managed key still at its published default |
+| `--local` | Write to this checkout's .env.local instead of the global file |
+| `--rotate` | With --generate: replace custom values too |
+| `--set` | Set KEY=VALUE (repeatable) |
+
+### `dendrite soma stacks`
+
+Where the compose files and litellm_config.yaml live (~/.dendrite/stacks)
+
+```bash
+dendrite soma stacks
+```
+
+```bash
+dendrite soma stacks path
+dendrite soma stacks migrate --dry-run
+dendrite soma stacks migrate --up
+```
+
+### `dendrite soma stacks migrate`
+
+Copy a checkout's stack files into ~/.dendrite/stacks (never overwrites)
+
+```bash
+dendrite soma stacks migrate [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--dry-run` | Show what would happen without changing anything |
+| `--from` | Source stacks folder (default: this checkout's stacks/) |
+| `--up` | Then start the control stack from the new location (recreates containers whose mounts moved) |
 
 ## Examples
 

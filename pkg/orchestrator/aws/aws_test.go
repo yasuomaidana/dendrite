@@ -148,3 +148,56 @@ func TestVolumeLifecycler_Lifecycle(t *testing.T) {
 		t.Errorf("expected ErrVolumeNotFound for missing volume")
 	}
 }
+
+func TestVolumeLifecycler_DefaultDeviceAndExplicitFields(t *testing.T) {
+	lifecycler := aws.NewVolumeLifecycler()
+
+	// Register volume with explicit VolumeType "gp3" and explicit State StateAvailable
+	vol := aws.EBSVolume{
+		VolumeID:   "vol-explicit",
+		SizeGB:     50,
+		VolumeType: "gp3",
+		State:      aws.StateAvailable,
+	}
+	if err := lifecycler.RegisterVolume(vol); err != nil {
+		t.Fatalf("failed to register volume: %v", err)
+	}
+
+	// Attach with empty deviceName: must default to "/dev/xvdf"
+	if err := lifecycler.AttachVolume("vol-explicit", "i-spot789", ""); err != nil {
+		t.Fatalf("unexpected error attaching volume: %v", err)
+	}
+
+	attached, err := lifecycler.GetVolume("vol-explicit")
+	if err != nil {
+		t.Fatalf("failed to get volume: %v", err)
+	}
+	if attached.DeviceName != "/dev/xvdf" {
+		t.Errorf("expected default device /dev/xvdf, got %s", attached.DeviceName)
+	}
+}
+
+func TestValidateZeroIngressSecurityGroup_EdgeCases(t *testing.T) {
+	// Empty rules
+	if err := aws.ValidateZeroIngressSecurityGroup(aws.SecurityGroupConfig{}); err != nil {
+		t.Errorf("expected nil for empty rules, got: %v", err)
+	}
+
+	// SecurityValidationError Error and Unwrap methods
+	rule := aws.SecurityGroupRule{
+		Type:     "ingress",
+		CIDR:     "0.0.0.0/0",
+		FromPort: 80,
+		ToPort:   80,
+	}
+	sve := &aws.SecurityValidationError{
+		Rule: rule,
+		Err:  aws.ErrPublicIngressDetected,
+	}
+	if !strings.Contains(sve.Error(), "security validation failed for rule") {
+		t.Errorf("unexpected Error() string: %s", sve.Error())
+	}
+	if !errors.Is(sve, aws.ErrPublicIngressDetected) {
+		t.Errorf("expected Unwrap to yield ErrPublicIngressDetected")
+	}
+}

@@ -220,11 +220,7 @@ func (m *ModelMigrator) Migrate(ctx context.Context, opts ModelMigrationOptions)
 		Layers:       manifest.Layers,
 	}
 
-	targetManifestBytes, err := json.MarshalIndent(targetManifest, "", "  ")
-	if err != nil {
-		res.Error = fmt.Sprintf("failed to serialize oxillama manifest: %v", err)
-		return res, err
-	}
+	targetManifestBytes, _ := json.MarshalIndent(targetManifest, "", "  ") // plain fields always marshal
 
 	targetManifestPath := filepath.Join(targetModelDir, "oxillama-manifest.json")
 	if err := os.WriteFile(targetManifestPath, targetManifestBytes, 0644); err != nil {
@@ -247,13 +243,7 @@ func (m *ModelMigrator) Migrate(ctx context.Context, opts ModelMigrationOptions)
 
 	// 8. Evict from Ollama if DeleteSource is set
 	if opts.DeleteSource {
-		evicted, freedBytes, evictErr := m.evictFromOllama(ctx, manifestPath, opts.ModelName, totalBytes)
-		if evictErr != nil {
-			// Record error but don't fail migration since model is safely in oxillama
-			res.Error = fmt.Sprintf("migration succeeded, but source eviction warning: %v", evictErr)
-		}
-		res.SourceEvicted = evicted
-		res.BytesFreed = freedBytes
+		res.SourceEvicted, res.BytesFreed = m.evictFromOllama(ctx, manifestPath, opts.ModelName, totalBytes)
 	}
 
 	res.Success = true
@@ -386,7 +376,7 @@ func (m *ModelMigrator) verifyMigratedModel(oxillamaDir string, mf OxiLLaMaManif
 }
 
 // evictFromOllama sends delete request to Ollama daemon and unlinks local manifest.
-func (m *ModelMigrator) evictFromOllama(ctx context.Context, manifestPath, modelName string, freedBytes int64) (bool, int64, error) {
+func (m *ModelMigrator) evictFromOllama(ctx context.Context, manifestPath, modelName string, freedBytes int64) (bool, int64) {
 	evicted := false
 
 	// 1. Delete via Ollama HTTP API
@@ -412,5 +402,5 @@ func (m *ModelMigrator) evictFromOllama(ctx context.Context, manifestPath, model
 		}
 	}
 
-	return evicted, freedBytes, nil
+	return evicted, freedBytes
 }

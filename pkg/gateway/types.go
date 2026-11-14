@@ -14,13 +14,17 @@ var (
 
 // ModelParams defines the provider-level parameters for an LLM endpoint.
 type ModelParams struct {
-	Model             string            `yaml:"model" json:"model"`
-	APIKey            string            `yaml:"api_key,omitempty" json:"api_key,omitempty"`
-	APIBase           string            `yaml:"api_base,omitempty" json:"api_base,omitempty"`
-	CustomLLMProvider string            `yaml:"custom_llm_provider,omitempty" json:"custom_llm_provider,omitempty"`
-	MaxTokens         int               `yaml:"max_tokens,omitempty" json:"max_tokens,omitempty"`
-	DropParams        bool              `yaml:"drop_params,omitempty" json:"drop_params,omitempty"`
-	ExtraHeaders      map[string]string `yaml:"extra_headers,omitempty" json:"extra_headers,omitempty"`
+	Model             string `yaml:"model" json:"model"`
+	APIKey            string `yaml:"api_key,omitempty" json:"api_key,omitempty"`
+	APIBase           string `yaml:"api_base,omitempty" json:"api_base,omitempty"`
+	CustomLLMProvider string `yaml:"custom_llm_provider,omitempty" json:"custom_llm_provider,omitempty"`
+	MaxTokens         int    `yaml:"max_tokens,omitempty" json:"max_tokens,omitempty"`
+	// NumCtx is the Ollama context window. Ollama's own default is small enough to silently
+	// truncate a retrieval prompt; KeepAlive keeps the model loaded between calls.
+	NumCtx       int               `yaml:"num_ctx,omitempty" json:"num_ctx,omitempty"`
+	KeepAlive    string            `yaml:"keep_alive,omitempty" json:"keep_alive,omitempty"`
+	DropParams   bool              `yaml:"drop_params,omitempty" json:"drop_params,omitempty"`
+	ExtraHeaders map[string]string `yaml:"extra_headers,omitempty" json:"extra_headers,omitempty"`
 }
 
 // ModelInfo defines token limits, billing metrics, and cost metadata.

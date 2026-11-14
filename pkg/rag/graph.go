@@ -1,0 +1,240 @@
+package rag
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+)
+
+// CommunitiesOptions controls Leiden community listing parameters.
+type CommunitiesOptions struct {
+	Limit   int `json:"limit,omitempty"`
+	MinSize int `json:"min_size,omitempty"`
+}
+
+// TopSymbol represents a high-in-degree symbol defined within a community or file.
+type TopSymbol struct {
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Line     int    `json:"line"`
+	InDegree int    `json:"in_degree"`
+}
+
+// Community describes a Leiden cluster of files with top symbols and summary.
+type Community struct {
+	ID         int         `json:"id"`
+	Label      string      `json:"label"`
+	Size       int         `json:"size"`
+	Files      []string    `json:"files"`
+	TopSymbols []TopSymbol `json:"top_symbols"`
+	Summary    string      `json:"summary"`
+}
+
+// CommunityRef references a community by its stable id and label.
+type CommunityRef struct {
+	ID    int    `json:"id"`
+	Label string `json:"label"`
+}
+
+// GodNodesOptions specifies filters for retrieving central symbols.
+type GodNodesOptions struct {
+	MinInDegree int `json:"min_in_degree,omitempty"`
+	Limit       int `json:"limit,omitempty"`
+}
+
+// GodNode is a symbol with prominent callers and type users across the project.
+type GodNode struct {
+	Symbol        string        `json:"symbol"`
+	Path          string        `json:"path"`
+	Line          int           `json:"line"`
+	InDegree      int           `json:"in_degree"`
+	OutDegree     int           `json:"out_degree"`
+	UsedFromFiles int           `json:"used_from_files"`
+	Community     *CommunityRef `json:"community,omitempty"`
+	Summary       string        `json:"summary"`
+}
+
+// PathOptions specifies search constraints for graph traversal.
+type PathOptions struct {
+	Kinds   []string `json:"kinds,omitempty"`
+	MaxHops int      `json:"max_hops,omitempty"`
+}
+
+// PathStep represents a single node transition in a graph path.
+type PathStep struct {
+	Node     string `json:"node"`
+	Location string `json:"location,omitempty"`
+	Via      string `json:"via,omitempty"`
+	Reversed bool   `json:"reversed,omitempty"`
+}
+
+// GraphPath holds the shortest path found between two symbols or files.
+type GraphPath struct {
+	Found    bool       `json:"found"`
+	Directed bool       `json:"directed"`
+	Level    string     `json:"level"`
+	Steps    []PathStep `json:"steps"`
+}
+
+// Site locates where a symbol is defined.
+type Site struct {
+	Path  string `json:"path"`
+	Line  int    `json:"line"`
+	Chunk string `json:"chunk"`
+}
+
+// Neighbour describes an adjacent symbol in the code graph.
+type Neighbour struct {
+	Symbol string `json:"symbol"`
+	Path   string `json:"path"`
+	Line   int    `json:"line"`
+	Kind   string `json:"kind"`
+}
+
+// Explanation describes the structural relationships of a symbol or a file.
+type Explanation struct {
+	Kind            string        `json:"kind"` // "symbol" or "file"
+	Symbol          string        `json:"symbol,omitempty"`
+	Path            string        `json:"path,omitempty"`
+	Sites           []Site        `json:"sites,omitempty"`
+	Community       *CommunityRef `json:"community,omitempty"`
+	GodNode         bool          `json:"god_node,omitempty"`
+	InDegree        int           `json:"in_degree,omitempty"`
+	OutDegree       int           `json:"out_degree,omitempty"`
+	Users           []Neighbour   `json:"users,omitempty"`
+	Uses            []Neighbour   `json:"uses,omitempty"`
+	Defines         []TopSymbol   `json:"defines,omitempty"`
+	Imports         []string      `json:"imports,omitempty"`
+	ImportedBy      []string      `json:"imported_by,omitempty"`
+	ExternalImports []string      `json:"external_imports,omitempty"`
+	DependsOn       []string      `json:"depends_on,omitempty"`
+	UsedBy          []string      `json:"used_by,omitempty"`
+	Summary         string        `json:"summary"`
+}
+
+// runGraph locates the sidecar, indexes projectPath if needed, and invokes query.
+func (r *Retriever) runGraph(ctx context.Context, projectPath string, query func(c *conn, root string) error) error {
+	if projectPath == "" {
+		projectPath = "."
+	}
+	root, _, err := projectRoot(projectPath)
+	if err != nil {
+		return err
+	}
+	c, err := r.dial(ctx)
+	if err != nil {
+		return err
+	}
+
+	indexParams := map[string]interface{}{"root": root, "full": false}
+	if r.EmbedBudget > 0 {
+		indexParams["embed_budget_ms"] = r.EmbedBudget.Milliseconds()
+	}
+	var report sidecarIndexReport
+	if err := c.Call(ctx, "index", indexParams, &report); err != nil {
+		return fmt.Errorf("index %s: %w", root, err)
+	}
+	return query(c, root)
+}
+
+// graphCall runs one graph method over projectPath: params gains the project root and out
+// receives the sidecar's reply.
+func (r *Retriever) graphCall(ctx context.Context, projectPath, method string, params map[string]interface{}, out interface{}) error {
+	if r == nil {
+		r = NewRetriever()
+	}
+	return r.runGraph(ctx, projectPath, func(c *conn, root string) error {
+		params["root"] = root
+		if err := c.Call(ctx, method, params, out); err != nil {
+			return fmt.Errorf("%s: %w", method, err)
+		}
+		return nil
+	})
+}
+
+// graphList runs a graph method whose reply holds a list under field.
+func graphList[T any](ctx context.Context, r *Retriever, projectPath, method, field string, params map[string]interface{}) ([]T, error) {
+	var res map[string]json.RawMessage
+	if err := r.graphCall(ctx, projectPath, method, params, &res); err != nil {
+		return nil, err
+	}
+	var list []T
+	if raw, ok := res[field]; ok {
+		if err := json.Unmarshal(raw, &list); err != nil {
+			return nil, fmt.Errorf("%s: %w", method, err)
+		}
+	}
+	return list, nil
+}
+
+// Communities returns the Leiden communities of the project's file graph.
+func (r *Retriever) Communities(ctx context.Context, projectPath string, opts CommunitiesOptions) ([]Community, error) {
+	return graphCounts[Community](ctx, r, projectPath, "graph.communities", "communities", map[string]int{"limit": opts.Limit, "min_size": opts.MinSize})
+}
+
+// GodNodes returns the symbols with the most callers and type users in the project.
+func (r *Retriever) GodNodes(ctx context.Context, projectPath string, opts GodNodesOptions) ([]GodNode, error) {
+	return graphCounts[GodNode](ctx, r, projectPath, "graph.god_nodes", "nodes", map[string]int{"min_in_degree": opts.MinInDegree, "limit": opts.Limit})
+}
+
+// graphCounts runs a graph list method whose only parameters are counts; zero counts are left out
+// so the sidecar keeps its defaults.
+func graphCounts[T any](ctx context.Context, r *Retriever, projectPath, method, field string, counts map[string]int) ([]T, error) {
+	params := map[string]interface{}{}
+	for key, n := range counts {
+		setPositive(params, key, n)
+	}
+	return graphList[T](ctx, r, projectPath, method, field, params)
+}
+
+// setPositive stores n under key only when it is set (above zero), so the sidecar keeps its default.
+func setPositive(params map[string]interface{}, key string, n int) {
+	if n > 0 {
+		params[key] = n
+	}
+}
+
+// Path finds the shortest path between two symbols or files in the code graph.
+func (r *Retriever) Path(ctx context.Context, projectPath, from, to string, opts PathOptions) (GraphPath, error) {
+	if strings.TrimSpace(from) == "" || strings.TrimSpace(to) == "" {
+		return GraphPath{}, errors.New("from and to are required")
+	}
+	params := map[string]interface{}{"from": from, "to": to}
+	if len(opts.Kinds) > 0 {
+		params["kinds"] = opts.Kinds
+	}
+	setPositive(params, "max_hops", opts.MaxHops)
+	var path GraphPath
+	err := r.graphCall(ctx, projectPath, "graph.path", params, &path)
+	return path, err
+}
+
+// Explain explains a symbol or file: callers, callees, definitions, imports, and community membership.
+func (r *Retriever) Explain(ctx context.Context, projectPath, target string) ([]Explanation, error) {
+	if strings.TrimSpace(target) == "" {
+		return nil, errors.New("target is required")
+	}
+	return graphList[Explanation](ctx, r, projectPath, "graph.explain", "matches", map[string]interface{}{"target": target})
+}
+
+// Communities returns the Leiden communities of the project's file graph using default settings.
+func Communities(ctx context.Context, projectPath string, opts CommunitiesOptions) ([]Community, error) {
+	return NewRetriever().Communities(ctx, projectPath, opts)
+}
+
+// GodNodes returns the symbols with the most callers and type users using default settings.
+func GodNodes(ctx context.Context, projectPath string, opts GodNodesOptions) ([]GodNode, error) {
+	return NewRetriever().GodNodes(ctx, projectPath, opts)
+}
+
+// Path finds the shortest path between two symbols or files using default settings.
+func Path(ctx context.Context, projectPath, from, to string, opts PathOptions) (GraphPath, error) {
+	return NewRetriever().Path(ctx, projectPath, from, to, opts)
+}
+
+// Explain explains a symbol or file using default settings.
+func Explain(ctx context.Context, projectPath, target string) ([]Explanation, error) {
+	return NewRetriever().Explain(ctx, projectPath, target)
+}

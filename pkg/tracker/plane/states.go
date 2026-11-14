@@ -25,6 +25,7 @@ var CanonicalStates = []StateSpec{
 	{Name: "To Do", Group: "unstarted", Color: "#3A3A3A", Sequence: 25000},
 	{Name: "In Progress", Group: "started", Color: "#F59E0B", Sequence: 35000},
 	{Name: "To Verify", Group: "started", Color: "#FCB900", Sequence: 40000},
+	{Name: "Blocked", Group: "started", Color: "#DC2626", Sequence: 42000},
 	{Name: "Done", Group: "completed", Color: "#16A34A", Sequence: 45000},
 	{Name: "Cancelled", Group: "cancelled", Color: "#EF4444", Sequence: 55000},
 }
@@ -192,22 +193,11 @@ func (c *Client) ReconcileStates(ctx context.Context, projectID string, dryRun b
 // sendState writes a state and returns Plane's stored copy (zero value when the body is not a state).
 func (c *Client) sendState(ctx context.Context, method, endpoint string, body map[string]interface{}) (PlaneState, error) {
 	var stored PlaneState
-	req, err := c.newRequest(ctx, method, endpoint, body)
+	data, err := c.callRaw(ctx, method, endpoint, body, callSpec{failure: "plane state " + method + " failed"})
 	if err != nil {
 		return stored, err
 	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return stored, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return stored, ErrUnauthorized
-	}
-	if resp.StatusCode >= 400 {
-		return stored, fmt.Errorf("plane state %s failed: status %d", method, resp.StatusCode)
-	}
-	_ = json.NewDecoder(resp.Body).Decode(&stored)
+	_ = json.Unmarshal(data, &stored)
 	return stored, nil
 }
 

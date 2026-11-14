@@ -105,19 +105,8 @@ func (a *Auditor) AuditChanges(ctx context.Context, opts AuditOptions) (*AuditSu
 
 	ordered := OrderTopological(items)
 
-	// Filter if specific branch requested
 	if opts.TargetBranch != "" {
-		target := opts.TargetBranch
-		if !strings.HasPrefix(target, "local/") {
-			target = "local/" + target
-		}
-		var filtered []*vcs.AuditQueueItem
-		for _, it := range ordered {
-			if it.Branch == target {
-				filtered = append(filtered, it)
-			}
-		}
-		ordered = filtered
+		ordered = onlyBranch(ordered, opts.TargetBranch)
 	}
 
 	for i, item := range ordered {
@@ -137,16 +126,9 @@ func (a *Auditor) AuditChanges(ctx context.Context, opts AuditOptions) (*AuditSu
 		if res.Merged {
 			summary.BranchesMerged++
 
-			// Rebase downstream stacked branches onto develop
-			for j := i + 1; j < len(ordered); j++ {
-				next := ordered[j]
-				if next.BaseBranch == item.Branch {
-					if !opts.DryRun {
-						_ = a.RebaseDownstream(ctx, next.Branch, item.HeadSHA)
-						next.BaseBranch = "develop"
-						_ = a.Orchestrator.SaveManifest(items)
-					}
-				}
+			// Rebase downstream stacked branches onto the integration branch
+			if !opts.DryRun {
+				a.rebaseStack(ctx, ordered[i+1:], item, items)
 			}
 		}
 	}
@@ -169,16 +151,18 @@ func (a *Auditor) AuditBranch(ctx context.Context, item *vcs.AuditQueueItem, opt
 		return res, nil
 	}
 
-	// 1. Checkout and sync branch with develop
+	base, remote := a.Guard.IntegrationBranch(), a.Guard.PushRemote()
+
+	// 1. Checkout and sync branch with the integration branch
 	if _, err := a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "checkout", item.Branch); err != nil {
 		return res, fmt.Errorf("failed to checkout %s: %w", item.Branch, err)
 	}
 
-	// Rebase onto develop
-	_, _ = a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "rebase", "develop")
+	// Rebase onto the integration branch
+	_, _ = a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "rebase", base)
 
 	// 2. Token-efficient context assembly: unified diff
-	diff, _ := a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "diff", "develop...HEAD")
+	diff, _ := a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "diff", base+"...HEAD")
 	res.DiffLines = len(strings.Split(diff, "\n"))
 
 	// Local test verification gate
@@ -192,21 +176,21 @@ func (a *Auditor) AuditBranch(ctx context.Context, item *vcs.AuditQueueItem, opt
 	// If diff is clean and verified, Verdict = PASS
 	res.Verdict = "PASS"
 
-	// 4. Merge to develop & Push
-	if _, err := a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "checkout", "develop"); err != nil {
-		return res, fmt.Errorf("failed to checkout develop for merge: %w", err)
+	// 4. Merge to the integration branch & Push
+	if _, err := a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "checkout", base); err != nil {
+		return res, fmt.Errorf("failed to checkout %s for merge: %w", base, err)
 	}
 
-	mergeMsg := fmt.Sprintf("merge(audit): validate and merge %s into develop", item.Branch)
+	mergeMsg := fmt.Sprintf("merge(audit): validate and merge %s into %s", item.Branch, base)
 	if _, err := a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "merge", "--no-ff", item.Branch, "-m", mergeMsg); err != nil {
-		return res, fmt.Errorf("failed to merge %s into develop: %w", item.Branch, err)
+		return res, fmt.Errorf("failed to merge %s into %s: %w", item.Branch, base, err)
 	}
 
-	// Push develop immediately
-	if _, err := a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "push", "origin", "develop"); err != nil {
+	// Push the integration branch immediately
+	if _, err := a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "push", remote, base); err != nil {
 		// Attempt rebase retry on divergence
-		_, _ = a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "pull", "--rebase", "origin", "develop")
-		_, _ = a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "push", "origin", "develop")
+		_, _ = a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "pull", "--rebase", remote, base)
+		_, _ = a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "push", remote, base)
 	}
 
 	// Mark status as MERGED in manifest
@@ -226,15 +210,40 @@ func (a *Auditor) AuditBranch(ctx context.Context, item *vcs.AuditQueueItem, opt
 	return res, nil
 }
 
-// RebaseDownstream rebases a child branch onto develop after parent has merged.
+// onlyBranch keeps the queue item for target (with or without its local/ prefix).
+func onlyBranch(ordered []*vcs.AuditQueueItem, target string) []*vcs.AuditQueueItem {
+	if !strings.HasPrefix(target, "local/") {
+		target = "local/" + target
+	}
+	var filtered []*vcs.AuditQueueItem
+	for _, it := range ordered {
+		if it.Branch == target {
+			filtered = append(filtered, it)
+		}
+	}
+	return filtered
+}
+
+// rebaseStack rebases the branches stacked on merged onto the integration branch and records their new base.
+func (a *Auditor) rebaseStack(ctx context.Context, later []*vcs.AuditQueueItem, merged *vcs.AuditQueueItem, items []*vcs.AuditQueueItem) {
+	for _, next := range later {
+		if next.BaseBranch == merged.Branch {
+			_ = a.RebaseDownstream(ctx, next.Branch, merged.HeadSHA)
+			next.BaseBranch = a.Guard.IntegrationBranch()
+			_ = a.Orchestrator.SaveManifest(items)
+		}
+	}
+}
+
+// RebaseDownstream rebases a child branch onto the integration branch after parent has merged.
 func (a *Auditor) RebaseDownstream(ctx context.Context, childBranch string, oldParentSHA string) error {
 	if _, err := a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "checkout", childBranch); err != nil {
 		return err
 	}
 	if oldParentSHA != "" {
-		_, _ = a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "rebase", "--onto", "develop", oldParentSHA, childBranch)
+		_, _ = a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "rebase", "--onto", a.Guard.IntegrationBranch(), oldParentSHA, childBranch)
 	} else {
-		_, _ = a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "rebase", "develop")
+		_, _ = a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "rebase", a.Guard.IntegrationBranch())
 	}
 	// Push force-with-lease to child branch
 	_, _ = a.Guard.Runner.RunGit(ctx, a.Guard.RepoDir, "push", "--force-with-lease", "origin", childBranch)

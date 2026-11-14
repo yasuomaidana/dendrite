@@ -1,5 +1,10 @@
 package vcs
 
+// TODO(move:dendrite-git-rs,DGIT-4): fetch, ahead/behind and fast-forward of repositories is git plumbing; dendrite-git computes divergence from the commit graph (git.divergence).
+//   When: git.divergence and the sync operations exist in dendrite-git (DGIT-2 and follow-ups); then this file becomes a client.
+//   Stays in Go: which members to sync and the channel policy (synapse tracking).
+//   Until then: fix bugs here, but do not add features; add them in the Rust repository.
+
 import (
 	"context"
 	"errors"

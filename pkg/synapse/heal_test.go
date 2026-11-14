@@ -1,15 +1,14 @@
 package synapse
 
 import (
+	"Dendrite/pkg/pool/dag"
+	"Dendrite/pkg/projectid"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"Dendrite/pkg/pool/dag"
-	"Dendrite/pkg/projectid"
 )
 
 // healEnv is a self-contained workspace: a synapse store, a project index and member dirs.
@@ -76,15 +75,21 @@ func move(t *testing.T, from, to string) {
 	}
 }
 
-func rowFor(t *testing.T, rows []HealRow, alias string) HealRow {
+// rowWhere returns the first row for which match is true, stopping the test when there is none.
+func rowWhere[R any](t *testing.T, rows []R, what string, match func(R) bool) R {
 	t.Helper()
 	for _, r := range rows {
-		if r.Alias == alias {
+		if match(r) {
 			return r
 		}
 	}
-	t.Fatalf("no row for %s in %+v", alias, rows)
-	return HealRow{}
+	t.Fatalf("no row for %s in %+v", what, rows)
+	var zero R
+	return zero
+}
+
+func rowFor(t *testing.T, rows []HealRow, alias string) HealRow {
+	return rowWhere(t, rows, alias, func(r HealRow) bool { return r.Alias == alias })
 }
 
 func TestHealAppliesMovedMemberEverywhere(t *testing.T) {
@@ -416,70 +421,69 @@ func TestRebindPoolFiles(t *testing.T) {
 	}
 }
 
-func TestHealPropagatesErrors(t *testing.T) {
-	t.Run("store list", func(t *testing.T) {
-		file := filepath.Join(t.TempDir(), "synapses")
-		if err := os.WriteFile(file, nil, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := Heal(NewStore(file), HealOptions{NoDefaultRoots: true}); err == nil {
-			t.Fatal("expected list error")
-		}
-	})
+// healErrorsSetup is a synapse of two projects, one of which has moved.
+func healErrorsSetup(t *testing.T) (*healEnv, string) {
+	e := newHealEnv(t)
+	aDir, aID := e.project("a")
+	bDir, bID := e.project("b")
+	e.synapse("ab", Member{ProjectID: aID, Alias: "a", Role: RolePeer, PathHint: aDir}, Member{ProjectID: bID, Alias: "b", Role: RolePeer, PathHint: bDir})
+	move(t, aDir, filepath.Join(e.root, "moved", "a"))
+	return e, aID
+}
 
-	setup := func(t *testing.T) (*healEnv, string) {
-		e := newHealEnv(t)
-		aDir, aID := e.project("a")
-		bDir, bID := e.project("b")
-		e.synapse("ab", Member{ProjectID: aID, Alias: "a", Role: RolePeer, PathHint: aDir}, Member{ProjectID: bID, Alias: "b", Role: RolePeer, PathHint: bDir})
-		move(t, aDir, filepath.Join(e.root, "moved", "a"))
-		return e, aID
+func TestHealPropagatesErrorsStoreList(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "synapses")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
 	}
+	if _, err := Heal(NewStore(file), HealOptions{NoDefaultRoots: true}); err == nil {
+		t.Fatal("expected list error")
+	}
+}
 
-	t.Run("manifest save", func(t *testing.T) {
-		e, _ := setup(t)
-		if err := os.Chmod(e.store.Dir(), 0o500); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = os.Chmod(e.store.Dir(), 0o755) })
-		if _, err := Heal(e.store, e.opts(true)); err == nil || !strings.Contains(err.Error(), "saving synapse") {
-			t.Fatalf("got %v, want manifest save error", err)
-		}
-	})
+func TestHealPropagatesErrorsManifestSave(t *testing.T) {
+	e, _ := healErrorsSetup(t)
+	if err := os.Chmod(e.store.Dir(), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(e.store.Dir(), 0o755) })
+	if _, err := Heal(e.store, e.opts(true)); err == nil || !strings.Contains(err.Error(), "saving synapse") {
+		t.Fatalf("got %v, want manifest save error", err)
+	}
+}
 
-	t.Run("index save", func(t *testing.T) {
-		e, _ := setup(t)
-		home := filepath.Dir(e.store.Dir())
-		if err := os.Chmod(home, 0o500); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = os.Chmod(home, 0o755) })
-		// Manifests live one level deeper and stay writable.
-		if _, err := Heal(e.store, e.opts(true)); err == nil || !strings.Contains(err.Error(), "project index") {
-			t.Fatalf("got %v, want index save error", err)
-		}
-	})
+func TestHealPropagatesErrorsIndexSave(t *testing.T) {
+	e, _ := healErrorsSetup(t)
+	home := filepath.Dir(e.store.Dir())
+	if err := os.Chmod(home, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(home, 0o755) })
+	// Manifests live one level deeper and stay writable.
+	if _, err := Heal(e.store, e.opts(true)); err == nil || !strings.Contains(err.Error(), "project index") {
+		t.Fatalf("got %v, want index save error", err)
+	}
+}
 
-	t.Run("restoring identity of a clone", func(t *testing.T) {
-		e := newHealEnv(t)
-		apiDir, apiID := e.project("api")
-		gitInit(t, apiDir, "git@github.com:acme/api.git")
-		_, _ = e.index.Register(apiDir)
-		webDir, webID := e.project("web")
-		e.synapse("web-api", Member{ProjectID: apiID, Alias: "api", Role: RoleProducer, PathHint: apiDir}, Member{ProjectID: webID, Alias: "web", Role: RoleConsumer, PathHint: webDir})
-		if err := os.RemoveAll(apiDir); err != nil {
-			t.Fatal(err)
-		}
-		clone := filepath.Join(e.root, "clone", "api")
-		gitInit(t, clone, "git@github.com:acme/api.git")
-		if err := os.Chmod(clone, 0o500); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = os.Chmod(clone, 0o755) })
-		if _, err := Heal(e.store, e.opts(true)); err == nil {
-			t.Fatal("expected error writing project.id into a read-only clone")
-		}
-	})
+func TestHealPropagatesErrorsRestoringIdentityOfAClone(t *testing.T) {
+	e := newHealEnv(t)
+	apiDir, apiID := e.project("api")
+	gitInit(t, apiDir, "git@github.com:acme/api.git")
+	_, _ = e.index.Register(apiDir)
+	webDir, webID := e.project("web")
+	e.synapse("web-api", Member{ProjectID: apiID, Alias: "api", Role: RoleProducer, PathHint: apiDir}, Member{ProjectID: webID, Alias: "web", Role: RoleConsumer, PathHint: webDir})
+	if err := os.RemoveAll(apiDir); err != nil {
+		t.Fatal(err)
+	}
+	clone := filepath.Join(e.root, "clone", "api")
+	gitInit(t, clone, "git@github.com:acme/api.git")
+	if err := os.Chmod(clone, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(clone, 0o755) })
+	if _, err := Heal(e.store, e.opts(true)); err == nil {
+		t.Fatal("expected error writing project.id into a read-only clone")
+	}
 }
 
 func TestHealWithoutIndex(t *testing.T) {
@@ -496,6 +500,21 @@ func TestHealWithoutIndex(t *testing.T) {
 	if r := rowFor(t, rows, "a"); !r.Applied || r.NewPath != dst {
 		t.Fatalf("row = %+v", r)
 	}
+}
+
+// appliedCoreRows counts the rows that healed "core" to dst, and fails on a "ghost" row that is not missing.
+func appliedCoreRows(t *testing.T, rows []HealRow, dst string) int {
+	t.Helper()
+	applied := 0
+	for _, r := range rows {
+		if r.Alias == "core" && r.Applied && r.NewPath == dst {
+			applied++
+		}
+		if r.Alias == "ghost" && r.Status != StatusMissing {
+			t.Fatalf("ghost row = %+v", r)
+		}
+	}
+	return applied
 }
 
 func TestHealSharedMemberAndUnindexedProject(t *testing.T) {
@@ -521,15 +540,7 @@ func TestHealSharedMemberAndUnindexedProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	applied := 0
-	for _, r := range rows {
-		if r.Alias == "core" && r.Applied && r.NewPath == dst {
-			applied++
-		}
-		if r.Alias == "ghost" && r.Status != StatusMissing {
-			t.Fatalf("ghost row = %+v", r)
-		}
-	}
+	applied := appliedCoreRows(t, rows, dst)
 	if applied != 2 {
 		t.Fatalf("core healed in %d synapses, want 2: %+v", applied, rows)
 	}

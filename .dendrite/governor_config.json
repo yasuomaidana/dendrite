@@ -1,6 +1,0 @@
-{
-  "reserve_floor": 0.2,
-  "allow_zero_drain": false,
-  "mode": "always",
-  "config_file": ".dendrite/governor_config.json"
-}

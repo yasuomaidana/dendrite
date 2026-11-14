@@ -123,11 +123,13 @@ func (s *TokenScheduler) Resume() {
 	}
 }
 
+var evaluateFunc = Evaluate
+
 // Status evaluates the current state and returns detailed scheduling diagnostics.
 func (s *TokenScheduler) Status() (*SchedulerStatus, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return Evaluate(s.clock.Now(), &s.policy, s.remainingQuota, s.cloudSpendUSD)
+	return evaluateFunc(s.clock.Now(), &s.policy, s.remainingQuota, s.cloudSpendUSD)
 }
 
 // SelectModel resolves the appropriate model and execution tier for current conditions.

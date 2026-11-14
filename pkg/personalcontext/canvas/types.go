@@ -37,13 +37,13 @@ const (
 type WritingMode string
 
 const (
-	ModeDraft     WritingMode = "DRAFT"
-	ModeRefine    WritingMode = "REFINE"
-	ModeExpand    WritingMode = "EXPAND"
-	ModeCondense  WritingMode = "CONDENSE"
-	ModeTone      WritingMode = "CHANGE_TONE"
-	ModeCritique  WritingMode = "CRITIQUE"
-	ModeFormat    WritingMode = "FORMAT"
+	ModeDraft    WritingMode = "DRAFT"
+	ModeRefine   WritingMode = "REFINE"
+	ModeExpand   WritingMode = "EXPAND"
+	ModeCondense WritingMode = "CONDENSE"
+	ModeTone     WritingMode = "CHANGE_TONE"
+	ModeCritique WritingMode = "CRITIQUE"
+	ModeFormat   WritingMode = "FORMAT"
 )
 
 // ActionRequest carries the input parameters for executing a canvas action.

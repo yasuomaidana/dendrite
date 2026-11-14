@@ -84,3 +84,19 @@ func TestIssueListJSON(t *testing.T) {
 		t.Error("no rows must render []")
 	}
 }
+
+func TestIssueListJSONIncludesCommentsWhenGiven(t *testing.T) {
+	out := IssueListJSON(
+		IssueRow{Number: 1, Comments: []IssueComment{{Author: "ana", Body: "looks right", CreatedAt: "2026-11-01T10:00:00Z"}}},
+		IssueRow{Number: 2, Comments: []IssueComment{}},
+		IssueRow{Number: 3},
+	)
+	for _, want := range []string{`"login":"ana"`, `"body":"looks right"`, `"createdAt":"2026-11-01T10:00:00Z"`, `"comments":[]`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s in %s", want, out)
+		}
+	}
+	if strings.Count(out, `"comments"`) != 2 {
+		t.Errorf("a row without comments must omit the field: %s", out)
+	}
+}
