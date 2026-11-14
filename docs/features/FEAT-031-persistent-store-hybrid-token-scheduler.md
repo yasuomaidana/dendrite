@@ -10,7 +10,7 @@ tags: [dendrite-store, hybrid-scheduler, blake3, chunking, gemini-sprint, quota-
 
 # FEAT-031: Persistent Segmented Analysis Store & Token-Aware Hybrid Scheduler
 
-> **Implementation spec:** the engine behind this feature is implemented in **dendrite-rag-rs**. Its data model, algorithms and protocol are specified in [dendrite-rag-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-rag-rs/blob/develop/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
+> **Implementation spec:** the engine behind this feature is implemented in **dendrite-rag-rs**. Its data model, algorithms and protocol are specified in [dendrite-rag-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-rag-rs/blob/main/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
 
 ## 1. Executive Summary & Problem Statement
 
@@ -50,7 +50,7 @@ stateDiagram-v2
 
 ### 2.1 Content-Addressed Persistent Segmented Store (`dendrite store`)
 - BLAKE3 content-addressed segments (files, functions, CFG blocks) with chunk checkpoint states (`STORED`, `ANALYZING_PARTIAL`, `QUEUED_NIGHT_LOCAL`, `PAUSED_QUOTA_FLOOR`); intermediate queries run on partially analysed projects.
-- Storage layout, segment types and the purge lifecycle are specified in [dendrite-rag-rs `docs/specs/store.md`](https://github.com/yasuomaidana/dendrite-rag-rs/blob/develop/docs/specs/store.md). Dendrite keeps the `dendrite store` CLI, the UI views and the Go fallback (`pkg/store/segmented`).
+- Storage layout, segment types and the purge lifecycle are specified in [dendrite-rag-rs `docs/specs/store.md`](https://github.com/yasuomaidana/dendrite-rag-rs/blob/main/docs/specs/store.md). Dendrite keeps the `dendrite store` CLI, the UI views and the Go fallback (`pkg/store/segmented`).
 
 ### 2.2 Hybrid Scheduler Governance Directives
 - **Zero-Token Pass**: Fast AST extraction using Go tree-sitter.

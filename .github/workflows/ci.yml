@@ -6,6 +6,15 @@ on:
   pull_request:
 
 jobs:
+  release-refs:
+    name: release refs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Siblings are referenced by release or main only
+        run: bash scripts/check-release-refs.sh
+
   verify:
     name: Test, Coverage Ratchet & Docs Gate
     runs-on: ubuntu-latest
@@ -20,23 +29,21 @@ jobs:
           cache: true
 
       # Dendrite's tests run against the real dendrite-plane sidecar (there is no Go stand-in for it), so the runner
-      # builds it. planetest finds it through DENDRITE_PLANE_TEST_BIN. Each sidecar is taken from the ref named by
-      # its repository variable (DENDRITE_PLANE_REF, DENDRITE_RAG_REF; default: its main branch, because neither
-      # dendrite-plane-rs nor dendrite-rag-rs has a develop branch any more).
-      # TODO(DEN-875): pin both defaults to a release tag once the sidecars have one, so a release builds against
-      # the sidecars it shipped with. Set the repository variables to pin sooner.
+      # builds it. planetest finds it through DENDRITE_PLANE_TEST_BIN. Each sidecar is taken from the release tag
+      # named by its repository variable (DENDRITE_PLANE_REF, DENDRITE_RAG_REF; default: v0.1.0), so a release
+      # builds against the sidecars it shipped with. scripts/check-release-refs.sh allows only main or a vX.Y.Z tag.
       - name: Check out the dendrite-plane sidecar
         uses: actions/checkout@v4
         with:
           repository: yasuomaidana/dendrite-plane-rs
-          ref: ${{ vars.DENDRITE_PLANE_REF || 'main' }}
+          ref: ${{ vars.DENDRITE_PLANE_REF || 'v0.1.0' }}
           path: .ci/dendrite-plane-rs
 
       - name: Check out the dendrite-rag sidecar
         uses: actions/checkout@v4
         with:
           repository: yasuomaidana/dendrite-rag-rs
-          ref: ${{ vars.DENDRITE_RAG_REF || 'main' }}
+          ref: ${{ vars.DENDRITE_RAG_REF || 'v0.1.0' }}
           path: .ci/dendrite-rag-rs
 
       - name: Set up Rust

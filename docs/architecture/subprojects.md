@@ -9,11 +9,11 @@ The boundary comes from [2026-10 Quality Audit & Execution Plan §5](./2026-10-q
 | Repository | Path | Language | Plane project | Extraction umbrella | Technical specification |
 |---|---|---|---|---|---|
 | **dendrite-control** (this repo) | `~/GoLandProjects/Dendrite` | Go | `DEN` (Dendrite Core) | — | this page |
-| **dendrite-mcp-hub** | `../dendrite-mcp-hub` | Go | `DMCP` | DEN-971 | [dendrite-mcp-hub `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-mcp-hub/blob/develop/docs/ARCHITECTURE.md) |
-| **dendrite-core-rs** | `../dendrite-core-rs` | Rust | `DCORE` | DEN-972 | [dendrite-core-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-core-rs/blob/develop/docs/ARCHITECTURE.md) |
-| **dendrite-git-rs** | `../dendrite-git-rs` | Rust | `DGIT` | DEN-973 | [dendrite-git-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-git-rs/blob/develop/docs/ARCHITECTURE.md) |
-| **dendrite-rag-rs** | `../dendrite-rag-rs` | Rust | `DRAG` | DEN-974 | [dendrite-rag-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-rag-rs/blob/develop/docs/ARCHITECTURE.md) + `docs/specs/` |
-| **embedag** | `~/RustRoverProjects/embedag` | Rust | `EMBEDAG` (Milestone 9 imported from `DEV_STATUS.md`) | DEN-051 / 068 / 074 | [embedag `doc/22_Dependency_Resolution_and_Merkle_Delta_API.md`](https://github.com/yasuomaidana/embedag/blob/develop/doc/22_Dependency_Resolution_and_Merkle_Delta_API.md) |
+| **dendrite-mcp-hub** | `../dendrite-mcp-hub` | Go | `DMCP` | DEN-971 | [dendrite-mcp-hub `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-mcp-hub/blob/main/docs/ARCHITECTURE.md) |
+| **dendrite-core-rs** | `../dendrite-core-rs` | Rust | `DCORE` | DEN-972 | [dendrite-core-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-core-rs/blob/main/docs/ARCHITECTURE.md) |
+| **dendrite-git-rs** | `../dendrite-git-rs` | Rust | `DGIT` | DEN-973 | [dendrite-git-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-git-rs/blob/main/docs/ARCHITECTURE.md) |
+| **dendrite-rag-rs** | `../dendrite-rag-rs` | Rust | `DRAG` | DEN-974 | [dendrite-rag-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-rag-rs/blob/main/docs/ARCHITECTURE.md) + `docs/specs/` |
+| **embedag** | `~/RustRoverProjects/embedag` | Rust | `EMBEDAG` (Milestone 9 imported from `DEV_STATUS.md`) | DEN-051 / 068 / 074 | [embedag `doc/22_Dependency_Resolution_and_Merkle_Delta_API.md`](https://github.com/yasuomaidana/embedag/blob/main/doc/22_Dependency_Resolution_and_Merkle_Delta_API.md) |
 
 ## Projects and synapses rule
 
@@ -150,3 +150,7 @@ Collected from the sub-project responsibility documents. Each is to be resolved 
 - **MCP wire types:** they are defined twice, in `pkg/mcpserver/types.go` and `pkg/jetbrains/types.go`; unify them in the hub.
 - **Sidecar invocation from the hub:** decide whether the hub spawns its own sidecars or delegates through dendrite-control.
 - **Cyclic hunk graphs:** `dendrite-git-rs` needs SCC condensation over possibly-cyclic hunk graphs. That algorithm belongs in embedag (ticket 9.5.1), not in a local Tarjan pass.
+
+## Release references
+
+What goes to `main` refers to a sibling repository only by a release or by the sibling's `main` branch: a `vX.Y.Z` tag, a crates.io or `go.mod` version, or `main`. Working branches (`develop`, `feature/*`, `agent/*`), commits (`rev`), pseudo-versions and local paths stay in working branches. Every member of the `dendrite-ecosystem` synapse runs `scripts/check-release-refs.sh` in a CI job named `release refs` on every pull request; `dendrite soma prepare` writes the script and the job. A deliberate exception goes in `.github/dendrite/release-refs.allow` (`path:<prefix> # reason`).

@@ -171,6 +171,7 @@ func Render(comps []Component, set directive.Set, ext Extension, br Branches) []
 	b.WriteString("jobs:\n")
 	var jobs strings.Builder
 	writeJob(&jobs, "quality", "Quality gates (loc, clones, complexity, structure)", gateSteps(comps, ext))
+	writeReleaseRefsJob(&jobs)
 	if hasKind(comps, Rust) {
 		writeDBAccessJob(&jobs)
 	}

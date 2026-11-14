@@ -8,7 +8,7 @@ tags: [rag, qa, query, ask, local-llm, hybrid, central-rag, ollama, oxillama, li
 
 # Tutorial: Asking Project Questions with Local RAG & Paid LLM Escalation
 
-> **Implementation spec:** the engine behind this feature is implemented in **dendrite-rag-rs**. Its data model, algorithms and protocol are specified in [dendrite-rag-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-rag-rs/blob/develop/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour and commands. Dendrite coordinates; all retrieval runs in the `dendrite-rag` sidecar.
+> **Implementation spec:** the engine behind this feature is implemented in **dendrite-rag-rs**. Its data model, algorithms and protocol are specified in [dendrite-rag-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-rag-rs/blob/main/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour and commands. Dendrite coordinates; all retrieval runs in the `dendrite-rag` sidecar.
 
 This tutorial demonstrates how to use the `dendrite ask` command to ask questions about your codebase, documentation, and infrastructure.
 
@@ -316,7 +316,7 @@ backend = "ollama"            # auto (default) | openai (LiteLLM gateway) | olla
 model = "nomic-embed-text"
 ```
 
-`DENDRITE_RAG_EMBED_BACKEND`, `DENDRITE_RAG_EMBED_MODEL` and the other `DENDRITE_RAG_*` variables override the file for one machine. `dendrite-rag embedders` lists the backends of your build, and `dendrite-rag settings <project>` shows the settings in effect. Every key is described in [dendrite-rag-rs `docs/specs/embedders.md`](https://github.com/yasuomaidana/dendrite-rag-rs/blob/develop/docs/specs/embedders.md).
+`DENDRITE_RAG_EMBED_BACKEND`, `DENDRITE_RAG_EMBED_MODEL` and the other `DENDRITE_RAG_*` variables override the file for one machine. `dendrite-rag embedders` lists the backends of your build, and `dendrite-rag settings <project>` shows the settings in effect. Every key is described in [dendrite-rag-rs `docs/specs/embedders.md`](https://github.com/yasuomaidana/dendrite-rag-rs/blob/main/docs/specs/embedders.md).
 
 ### Measured retrieval quality
 

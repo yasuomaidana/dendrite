@@ -8,7 +8,7 @@ tags: [architecture, rea, context-intelligence, ast]
 
 # Context Intelligence & REA Reverse Engineering Architecture
 
-> **Implementation spec:** the engine behind this feature is implemented in **dendrite-core-rs**. Its data model, algorithms and protocol are specified in [dendrite-core-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-core-rs/blob/develop/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
+> **Implementation spec:** the engine behind this feature is implemented in **dendrite-core-rs**. Its data model, algorithms and protocol are specified in [dendrite-core-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-core-rs/blob/main/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
 
 ## 1. Context Engineering vs. Monolithic Context Dumps
 

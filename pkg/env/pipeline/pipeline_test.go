@@ -109,7 +109,7 @@ func TestRenderAPolyglotProjectIsValidYAMLWithAJobPerComponent(t *testing.T) {
 	set := directive.Defaults()
 	set.Coverage.MinPercent = 87.5
 	text, wf := render(t, root, set, Extension{})
-	if got := jobIDs(wf); got != "bun-web,db-access,go,quality,rust-crates,uv-py" {
+	if got := jobIDs(wf); got != "bun-web,db-access,go,quality,release-refs,rust-crates,uv-py" {
 		t.Errorf("jobs %s\n%s", got, text)
 	}
 	for _, want := range []string{
@@ -145,14 +145,14 @@ func TestRenderWithoutRustSkipsRstestAndTheExtensionShapesTheJobs(t *testing.T) 
 	if strings.Contains(text, "cargo install") || strings.Contains(text, "Coverage floor") || strings.Contains(text, "llvm-cov") {
 		t.Errorf("the extension replaces the install and the floor:\n%s", text)
 	}
-	if strings.Index(text, "  alpha:") > strings.Index(text, "  zeta:") || jobIDs(wf) != "alpha,db-access,go,quality,rust,zeta" {
+	if strings.Index(text, "  alpha:") > strings.Index(text, "  zeta:") || jobIDs(wf) != "alpha,db-access,go,quality,release-refs,rust,zeta" {
 		t.Errorf("extra jobs are added in name order: %s", jobIDs(wf))
 	}
 	if strings.Count(text, "Build it") != 2 {
 		t.Errorf("pre_test steps run in every component job:\n%s", text)
 	}
 	_, wf = render(t, t.TempDir(), directive.Defaults(), Extension{})
-	if jobIDs(wf) != "quality" {
+	if jobIDs(wf) != "quality,release-refs" {
 		t.Errorf("a project with no component still runs the quality gates: %s", jobIDs(wf))
 	}
 }

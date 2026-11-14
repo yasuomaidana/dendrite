@@ -10,7 +10,7 @@ tags: [git, commit, local-models, qwen, ollama, mcp, zero-cost, automation]
 
 # FEAT-098: Autonomous Git Commit Engine with Local Model Message Delegation & Zero-Cost Synthesis
 
-> **Implementation spec:** the engine behind this feature is implemented in **dendrite-git-rs**. Its data model, algorithms and protocol are specified in [dendrite-git-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-git-rs/blob/develop/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
+> **Implementation spec:** the engine behind this feature is implemented in **dendrite-git-rs**. Its data model, algorithms and protocol are specified in [dendrite-git-rs `docs/ARCHITECTURE.md`](https://github.com/yasuomaidana/dendrite-git-rs/blob/main/docs/ARCHITECTURE.md). This page covers the Dendrite side: user-facing behaviour, commands and the in-process Go fallback.
 
 ## 1. Executive Summary & Problem Statement
 
