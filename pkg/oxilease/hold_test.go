@@ -68,7 +68,7 @@ func TestHoldJoinsARunningServerAndKeepAliveKeepsIt(t *testing.T) {
 	if err := second.Release(); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(700 * time.Millisecond) // more than two lease lifetimes
+	time.Sleep(r.M.TTL() + r.M.TTL()/4) // past the lease's lifetime: only the heartbeat keeps it
 	if got := r.Holders(t); len(got) != 1 || got[0] != "a" {
 		t.Fatalf("holders with KeepAlive running = %v", got)
 	}

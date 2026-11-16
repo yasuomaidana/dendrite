@@ -39,8 +39,9 @@ func New(t *testing.T) *Rig {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	r.M = oxilease.New(oxilease.Options{
-		// The lease outlives the 100ms health poll of Acquire, so a hold is not lost while it waits.
-		Dir: t.TempDir(), TTL: 300 * time.Millisecond, IdleGrace: 300 * time.Millisecond, Poll: 10 * time.Millisecond, Port: 8123,
+		// The lease lives two seconds: a loaded runner can take over a second to start the child
+		// and to schedule the first heartbeat, and a lease that expired meanwhile is never renewed.
+		Dir: t.TempDir(), TTL: 2 * time.Second, IdleGrace: 300 * time.Millisecond, Poll: 10 * time.Millisecond, Port: 8123,
 		Healthy: r.Answering.Load,
 		Fits:    func(oxilease.Request) error { return r.Fits },
 		ChildCmd: func(oxilease.Request) (*exec.Cmd, error) {

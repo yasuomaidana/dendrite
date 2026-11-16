@@ -68,7 +68,7 @@ func TestSpike_ServeHoldsTheServerUntilInterrupted(t *testing.T) {
 	if got := r.Holders(t); len(got) != 1 || got[0] != "serve" {
 		t.Fatalf("holders while serving = %v", got)
 	}
-	time.Sleep(700 * time.Millisecond) // two lease lifetimes: only the heartbeat keeps the hold
+	time.Sleep(r.M.TTL() + r.M.TTL()/4) // past the lease's lifetime: only the heartbeat keeps the hold
 	if got := r.Holders(t); len(got) != 1 {
 		t.Fatalf("the hold expired while serving: %v", got)
 	}
