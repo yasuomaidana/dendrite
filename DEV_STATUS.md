@@ -560,7 +560,7 @@ self-contained) to highest complexity (multi-component, distributed persistence,
 - [x] **DEN-423**: Roadmap S0: tickets-RAG health + Plane board reconciliation [State: Done, Priority: Medium]
 - [x] **DEN-424**: Roadmap S1: bootstrap - adopt EGM, speq-skill, superpowers; SkillSpector pre-scan; agy zero-trust [State: Done, Priority: Medium]
 - [ ] **DEN-425**: Roadmap S2: dendrite immune - SkillSpector gate wrapper [State: Backlog, Priority: Medium]
-- [ ] **DEN-426**: Roadmap S3: real local inference - kill the spike serve mock; finish capability catalog [State: In Progress, Priority: Medium]
+- [ ] **DEN-426**: Roadmap S3: real local inference - kill the spike serve mock; finish capability catalog [State: Backlog, Priority: Medium]
 - [ ] **DEN-427**: Roadmap S4: Engram adoption + frozen session-start snapshot [State: Backlog, Priority: Medium]
 - [ ] **DEN-428**: Roadmap S5: consolidation and curation - Engram-native dream job, HRR gap evaluation, minimal skill ledger [State: Backlog, Priority: Medium]
 - [ ] **DEN-429**: Roadmap S6: Harness2-lite - tools.toml 8-component schema (DEN-953) + Level-2 rule extraction; k=2 deferred [State: Backlog, Priority: Medium]
