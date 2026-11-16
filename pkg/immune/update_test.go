@@ -98,6 +98,13 @@ func TestRefreshFailures(t *testing.T) {
 		t.Fatalf("an install that lands on another version: %v", err)
 	}
 
+}
+
+// What Refresh needs and cannot find is named: the scanner an install took away, uv, or a
+// scanner override that does not work.
+func TestRefreshNamesWhatIsMissing(t *testing.T) {
+	uvWorld(t)
+	ctx := context.Background()
 	// An install that takes the scanner away is reported, not taken for success.
 	gone := scannerScript(t, `echo "SkillSpector v1.0.0"`)
 	t.Setenv(immune.BinaryEnv, gone)
