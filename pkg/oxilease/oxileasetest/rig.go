@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"Dendrite/pkg/oxilease"
+	"Dendrite/pkg/testkit"
 )
 
 // Rig is a manager over a sleeping child process, in a home with two installed models, "small"
@@ -32,13 +33,7 @@ func New(t *testing.T) *Rig {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	for file, body := range map[string]string{"small/small.gguf": "12", "big/big.gguf": "123456"} {
-		path := filepath.Join(home, ".oxillama", "models", file)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		testkit.WriteFile(t, filepath.Join(home, ".oxillama", "models", file), body, 0o644)
 	}
 	r := &Rig{}
 	ctx, cancel := context.WithCancel(context.Background())

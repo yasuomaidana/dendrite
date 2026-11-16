@@ -11,16 +11,37 @@ import (
 	"time"
 )
 
-// syncBuffer is a buffer the command writes to while the test reads it.
+// syncBuffer is a buffer the command writes to while the test reads it. ready is closed once the
+// banner's last line has been written.
 type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
+	mu    sync.Mutex
+	buf   bytes.Buffer
+	once  sync.Once
+	ready chan struct{}
 }
+
+func newSyncBuffer() *syncBuffer { return &syncBuffer{ready: make(chan struct{})} }
 
 func (b *syncBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.buf.Write(p)
+	n, err := b.buf.Write(p)
+	if strings.Contains(b.buf.String(), "Press Ctrl+C") {
+		b.once.Do(func() { close(b.ready) })
+	}
+	return n, err
+}
+
+// awaitBanner waits until the banner is complete; the command ending first is a failure.
+func (b *syncBuffer) awaitBanner(t *testing.T, done <-chan error) {
+	t.Helper()
+	select {
+	case <-b.ready:
+	case err := <-done:
+		t.Fatalf("serve ended before it announced the server: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the banner")
+	}
 }
 
 func (b *syncBuffer) String() string {
@@ -29,26 +50,16 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-func eventually(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
-		if cond() {
-			return
-		}
-	}
-	t.Fatalf("timed out waiting for %s", what)
-}
-
 // serve starts the server on the named model through the lease manager, holds a lease while it
 // runs, keeps the lease alive, and releases it when interrupted.
 func TestSpike_ServeHoldsTheServerUntilInterrupted(t *testing.T) {
 	r := oxileasetest.New(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	var out syncBuffer
+	out := newSyncBuffer()
 	done := make(chan error, 1)
-	go func() { done <- runSpikeServe(ctx, r.M, 8123, "small", &out) }()
+	go func() { done <- runSpikeServe(ctx, r.M, 8123, "small", out) }()
 
-	eventually(t, "the banner", func() bool { return strings.Contains(out.String(), "Press Ctrl+C") })
+	out.awaitBanner(t, done)
 	for _, want := range []string{"OxiLLaMa serves small at http://127.0.0.1:8123", "http://127.0.0.1:8123/v1/chat/completions", "it stops 300ms after the last session"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("banner lacks %q:\n%s", want, out.String())
@@ -76,7 +87,7 @@ func TestSpike_ServeHoldsTheServerUntilInterrupted(t *testing.T) {
 func TestSpike_ServeHoldsAServerStartedByHand(t *testing.T) {
 	r := oxileasetest.New(t)
 	r.Answering.Store(true)
-	var out syncBuffer
+	out := newSyncBuffer()
 	if err := holdServer(context.Background(), r.M, holdOptions{Holder: "hold", For: 20 * time.Millisecond}, func() { _, _ = out.Write([]byte(serveBanner(r.M, 8123))) }); err != nil {
 		t.Fatal(err)
 	}
@@ -91,19 +102,19 @@ func TestSpike_ServeHoldsAServerStartedByHand(t *testing.T) {
 func TestSpike_ServeRefusesWhatItCannotStart(t *testing.T) {
 	r := oxileasetest.New(t)
 	ctx := context.Background()
-	var out syncBuffer
-	err := runSpikeServe(ctx, r.M, 8123, "absent", &out)
+	out := newSyncBuffer()
+	err := runSpikeServe(ctx, r.M, 8123, "absent", out)
 	if err == nil || !strings.Contains(err.Error(), `model "absent" is not installed`) || !strings.Contains(err.Error(), "big, small") {
 		t.Fatalf("an unknown model must be named with what is installed: %v", err)
 	}
 
 	r.Fits = errors.New("the model does not fit the memory budget")
-	if err := runSpikeServe(ctx, r.M, 8123, "big", &out); err == nil || !strings.Contains(err.Error(), "does not fit") {
+	if err := runSpikeServe(ctx, r.M, 8123, "big", out); err == nil || !strings.Contains(err.Error(), "does not fit") {
 		t.Fatalf("a model that does not fit: %v", err)
 	}
 
 	t.Setenv("HOME", t.TempDir())
-	if err := runSpikeServe(ctx, r.M, 8123, "", &out); err == nil || !strings.Contains(err.Error(), "no OxiLLaMa model installed") {
+	if err := runSpikeServe(ctx, r.M, 8123, "", out); err == nil || !strings.Contains(err.Error(), "no OxiLLaMa model installed") {
 		t.Fatalf("without an installed model: %v", err)
 	}
 	if out.String() != "" {
