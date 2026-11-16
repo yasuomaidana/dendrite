@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,6 +16,8 @@ import (
 
 	"Dendrite/pkg/directive"
 	"Dendrite/pkg/immune"
+	"Dendrite/pkg/oxilease"
+	"Dendrite/pkg/oxilease/oxileasetest"
 	"Dendrite/pkg/statedir"
 	"Dendrite/pkg/testkit"
 )
@@ -330,4 +333,52 @@ func TestImmuneAllow(t *testing.T) {
 	if err := runImmuneAllow(failingWriter{}, held, "reviewed: our mirror"); err == nil {
 		t.Fatal("a failure to print the result must be reported")
 	}
+}
+
+// scan --llm without a provider holds the local model server for the scan and points the scanner
+// at it; with a provider it leaves the server alone; without either it says what is missing.
+func TestImmuneScanModelPassUsesTheLocalServer(t *testing.T) {
+	rig := oxileasetest.New(t)
+	prev := immuneServer
+	immuneServer = func() *oxilease.Manager { return rig.M }
+	t.Cleanup(func() { immuneServer = prev })
+	seen := filepath.Join(t.TempDir(), "seen")
+	bin := filepath.Join(t.TempDir(), "skillspector")
+	testkit.WriteFile(t, bin, `#!/bin/sh
+if [ "$1" = "--version" ]; then echo "SkillSpector v2.12.0"; exit 0; fi
+echo "$SKILLSPECTOR_PROVIDER|$SKILLSPECTOR_COMPAT_BASE_URL|$SKILLSPECTOR_MODEL" > "`+seen+`"
+echo '{"skill":{"name":"s"},"risk_assessment":{"score":0,"severity":"LOW"},"issues":[]}' > "$6"
+`, 0o755)
+	t.Setenv(immune.BinaryEnv, bin)
+	t.Setenv("DENDRITE_STATE_DIR", t.TempDir())
+	t.Setenv(immune.ProviderEnv, "")
+	t.Chdir(t.TempDir())
+	skill := t.TempDir()
+	testkit.WriteFile(t, filepath.Join(skill, "SKILL.md"), immuneHead+"Format the date.\n", 0o644)
+	sawProvider := func() string {
+		t.Helper()
+		data, err := os.ReadFile(seen)
+		testkit.Check(t, err)
+		return strings.TrimSpace(string(data))
+	}
+
+	_, err := immuneRun(t, "scan", skill, "--llm")
+	testkit.Check(t, err)
+	testkit.Equal(t, "local endpoint", sawProvider(), "openai_compatible|http://127.0.0.1:8123/v1|big")
+	testkit.Equal(t, "holders after the scan", len(rig.Holders(t)), 0)
+
+	t.Setenv(immune.ProviderEnv, "ollama")
+	_, err = immuneRun(t, "scan", skill, "--llm")
+	testkit.Check(t, err)
+	testkit.Equal(t, "configured provider", sawProvider(), "ollama||")
+
+	t.Setenv(immune.ProviderEnv, "")
+	cold := oxileasetest.New(t) // no server, and no model may start
+	cold.Fits = errors.New("no model fits the memory budget")
+	immuneServer = func() *oxilease.Manager { return cold.M }
+	_, err = immuneRun(t, "scan", skill, "--llm")
+	if err == nil {
+		t.Fatal("without a provider or a local model the model pass cannot run")
+	}
+	testkit.Contains(t, err.Error(), immune.ProviderEnv, "no model fits")
 }

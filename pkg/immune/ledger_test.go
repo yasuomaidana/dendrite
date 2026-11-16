@@ -259,3 +259,49 @@ func TestScanRecordsEveryResultInTheLedger(t *testing.T) {
 		t.Fatalf("unwritable ledger: %v", err)
 	}
 }
+
+// envScanner stands in for SkillSpector and writes the provider settings and arguments it was
+// started with to the returned file.
+func envScanner(t *testing.T) (bin, seen string) {
+	t.Helper()
+	seen = filepath.Join(t.TempDir(), "seen")
+	return scannerScript(t, `if [ "$1" = "--version" ]; then echo "SkillSpector v2.12.0"; exit 0; fi
+echo "$SKILLSPECTOR_PROVIDER|$SKILLSPECTOR_COMPAT_BASE_URL|$SKILLSPECTOR_COMPAT_API_KEY|$SKILLSPECTOR_MODEL|$*" > "`+seen+`"
+echo '{"skill":{"name":"s"},"risk_assessment":{"score":0,"severity":"LOW"},"issues":[]}' > "$6"`), seen
+}
+
+// The model pass runs against the local endpoint when the environment names no provider, and
+// against the configured provider when it does; a static scan is never pointed anywhere.
+func TestScanModelPassUsesTheLocalEndpointWithoutAProvider(t *testing.T) {
+	skill := fixture(t, map[string]string{"SKILL.md": skillHead})
+	local := &immune.LocalLLM{BaseURL: "http://127.0.0.1:8080/v1", Model: "qwen3"}
+	for name, tc := range map[string]struct {
+		provider string
+		scanner  immune.Scanner
+		want     string
+		noLLM    bool
+	}{
+		"local":            {"", immune.Scanner{LLM: true, Local: local}, "openai_compatible|http://127.0.0.1:8080/v1|local|qwen3|", false},
+		"local, any model": {"", immune.Scanner{LLM: true, Local: &immune.LocalLLM{BaseURL: "http://127.0.0.1:8080/v1"}}, "openai_compatible|http://127.0.0.1:8080/v1|local||", false},
+		"configured":       {"ollama", immune.Scanner{LLM: true, Local: local}, "ollama||||", false},
+		"no local":         {"", immune.Scanner{LLM: true}, "||||", false},
+		"static":           {"", immune.Scanner{Local: local}, "||||", true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(immune.ProviderEnv, tc.provider)
+			for _, v := range []string{"SKILLSPECTOR_COMPAT_BASE_URL", "SKILLSPECTOR_COMPAT_API_KEY", "SKILLSPECTOR_MODEL"} {
+				t.Setenv(v, "")
+			}
+			bin, seen := envScanner(t)
+			tc.scanner.Bin = bin
+			_, err := tc.scanner.Scan(context.Background(), skill)
+			testkit.Check(t, err)
+			data, err := os.ReadFile(seen)
+			testkit.Check(t, err)
+			if !strings.HasPrefix(string(data), tc.want) {
+				t.Errorf("scanner saw %q, want prefix %q", data, tc.want)
+			}
+			testkit.Equal(t, "--no-llm passed", strings.Contains(string(data), "--no-llm"), tc.noLLM)
+		})
+	}
+}

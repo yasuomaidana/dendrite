@@ -6,6 +6,7 @@ import (
 	"Dendrite/pkg/dotenv"
 	"Dendrite/pkg/gateway"
 	"Dendrite/pkg/inference"
+	"Dendrite/pkg/oxilease"
 	"Dendrite/pkg/statedir"
 	"context"
 	"fmt"
@@ -261,34 +262,46 @@ func addPortFlag(cmd *cobra.Command, p *int) {
 
 func newSpikeServeCmd() *cobra.Command {
 	var port int
+	var model string
 	cmd := &cobra.Command{
 		Use:     "serve",
 		Aliases: []string{"start"},
-		Short:   "Run the OxiLLaMa OpenAI-compatible server in the foreground (Ctrl+C stops it)",
+		Short:   "Run the real OxiLLaMa OpenAI-compatible server in the foreground (Ctrl+C releases it)",
+		Long: "Starts the OxiLLaMa binary on a local model through the lease manager (the largest installed model that\n" +
+			"fits the memory budget, or --model) and holds it until Ctrl+C. A server that already runs is held, not\n" +
+			"restarted. Ctrl+C releases this session's hold; the server stops once no session has held it for the idle\n" +
+			"grace (`dendrite spike status` shows who holds it, `dendrite spike stop` stops it now).",
+		Example: "dendrite spike serve\ndendrite spike serve --model qwen3_8b_q4km\ncurl http://127.0.0.1:8080/v1/chat/completions -d '{\"model\":\"qwen3_8b_q4km\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}'",
 		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			return runSpikeServe(ctx, port, cmd.OutOrStdout())
+			return runSpikeServe(ctx, oxilease.NewManager(port, ""), port, model, cmd.OutOrStdout())
 		},
 	}
 	addPortFlag(cmd, &port)
+	cmd.Flags().StringVar(&model, "model", "", "installed model to serve (default: the largest that fits the memory budget)")
 	return cmd
 }
 
-func runSpikeServe(ctx context.Context, port int, out io.Writer) error {
-	srv := inference.NewOxiLLaMaServer(inference.OxiLLaMaServerConfig{Host: "127.0.0.1", Port: port})
-	if err := srv.Start(); err != nil {
-		return fmt.Errorf("start OxiLLaMa server: %w", err)
+// runSpikeServe holds the real OxiLLaMa server on port until ctx ends and says where it answers.
+func runSpikeServe(ctx context.Context, m *oxilease.Manager, port int, model string, out io.Writer) error {
+	return holdServer(ctx, m, holdOptions{Holder: "serve", Model: model}, func() {
+		fmt.Fprint(out, serveBanner(m, port))
+	})
+}
+
+// serveBanner says which model answers where, and what Ctrl+C does to the server.
+func serveBanner(m *oxilease.Manager, port int) string {
+	st, _ := m.Status()
+	served, after := st.Model, "it stops "+st.IdleGrace+" after the last session"
+	if !st.Managed {
+		served, after = "a model started by hand", "it was not started by Dendrite, so it keeps running"
 	}
-	defer func() { _ = srv.Stop(context.Background()) }()
-	fmt.Fprintf(out, "[✓] OxiLLaMa Pure-Rust OpenAI Server listening at http://127.0.0.1:%d\n", port)
-	fmt.Fprintf(out, "    * Models Endpoint:     http://127.0.0.1:%d/v1/models\n", port)
-	fmt.Fprintf(out, "    * Chat Endpoint:       http://127.0.0.1:%d/v1/chat/completions\n", port)
-	fmt.Fprintln(out, "    * Storage Directory:   ~/.oxillama/models")
-	fmt.Fprintln(out, "[+] Press Ctrl+C to stop.")
-	<-ctx.Done()
-	return nil
+	return fmt.Sprintf("[✓] OxiLLaMa serves %s at http://127.0.0.1:%d\n", served, port) +
+		fmt.Sprintf("    * Models Endpoint:     http://127.0.0.1:%d/v1/models\n", port) +
+		fmt.Sprintf("    * Chat Endpoint:       http://127.0.0.1:%d/v1/chat/completions\n", port) +
+		fmt.Sprintf("[+] Press Ctrl+C to release it; %s.\n", after)
 }
 
 func newSpikeStopCmd() *cobra.Command {

@@ -30,7 +30,7 @@ Synaptic Cleft & Gating
 | `probe` | Check engine reachability, latency and models (all engines, one engine, or a raw Ollama endpoint) |
 | `prune` | List the installed Ollama models nothing uses and remove them to reclaim disk |
 | `render` | Render the registered engines' model routes as LiteLLM config |
-| `serve` | Run the OxiLLaMa OpenAI-compatible server in the foreground (Ctrl+C stops it) |
+| `serve` | Run the real OxiLLaMa OpenAI-compatible server in the foreground (Ctrl+C releases it) |
 | `status` | Show whether the OxiLLaMa server runs, who started it and which sessions hold it |
 | `stop` | Stop a running OxiLLaMa server and free its port |
 | `switch` | Move an engine to the front of the failover cascade |
@@ -67,6 +67,7 @@ dendrite spike bench [flags]
 | `--out` | Where to write the raw runs as JSON (default: $DENDRITE_HOME/bench/) |
 | `--project` | Project whose code supplies the context packs (default: .) |
 | `--runs` | Runs per prompt and model (default: 2) |
+| `--save` | Record each model's measured tokens/s in the capability catalog (.dendrite/models.toml or models.json) |
 
 ```bash
 dendrite spike bench --models hermes3:8b,gpt-oss:20b --judge gemini-3.8-flash-medium --budget 60s
@@ -162,7 +163,7 @@ dendrite spike prune --keep gpt-oss:20b -y
 
 ### `dendrite spike serve`
 
-Run the OxiLLaMa OpenAI-compatible server in the foreground (Ctrl+C stops it)
+Run the real OxiLLaMa OpenAI-compatible server in the foreground (Ctrl+C releases it)
 
 ```bash
 dendrite spike serve [flags]
@@ -172,7 +173,14 @@ Aliases: `start`
 
 | Flag | Description |
 | :--- | :--- |
+| `--model` | installed model to serve (default: the largest that fits the memory budget) |
 | `--port` | OxiLLaMa server port (default: 8080) |
+
+```bash
+dendrite spike serve
+dendrite spike serve --model qwen3_8b_q4km
+curl http://127.0.0.1:8080/v1/chat/completions -d '{"model":"qwen3_8b_q4km","messages":[{"role":"user","content":"hi"}]}'
+```
 
 ### `dendrite spike status`
 
