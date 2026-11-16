@@ -27,6 +27,10 @@ type Entry struct {
 	Verdict        Verdict   `json:"verdict"`
 	ScannerVersion string    `json:"scanner_version"`
 	LLM            bool      `json:"llm,omitempty"`
+	// Decision is DecisionAllowed on the entry that records a person accepting a held scan, with
+	// the Reason they gave.
+	Decision string `json:"decision,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 // same reports whether o records the same scan result as e, whenever each was taken.

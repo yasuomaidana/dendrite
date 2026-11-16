@@ -20,6 +20,7 @@ None
 
 | Subcommand | Description |
 | :--- | :--- |
+| `allow` | Record a person's decision to accept a held scan of a skill |
 | `scan` | Scan a skill and print approve / hold / quarantine |
 | `update` | Install the pinned SkillSpector version, or the latest when none is pinned |
 
@@ -28,6 +29,22 @@ None
 None
 
 ## Subcommand Reference
+
+### `dendrite immune allow`
+
+Record a person's decision to accept a held scan of a skill
+
+```bash
+dendrite immune allow <skill-path> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--reason` | why the held skill is safe to use (required) |
+
+```bash
+dendrite immune allow .claude/skills/my-skill --reason "reviewed: the URL is our own mirror"
+```
 
 ### `dendrite immune scan`
 
@@ -62,4 +79,5 @@ dendrite immune update --json
 dendrite immune scan .claude/skills/my-skill
 dendrite immune scan ./skills --json
 dendrite immune update
+dendrite immune allow .claude/skills/my-skill --reason "reviewed: the URL is our own mirror"
 ```

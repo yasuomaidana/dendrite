@@ -6,6 +6,7 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 
 ### Added
 
+- **The hooks enforce the skill gate (DEN-390):** `dendrite hook pre-commit` refuses a commit that stages files of a skill under `.claude/skills/` or `.agents/skills/` unless the latest scan of the skill's current content clears it: approved, or held and accepted with the new `dendrite immune allow <skill> --reason "..."` (quarantined and unscanned content cannot be allowed), and made with the pinned scanner version when one is pinned. `dendrite hook pre-edit` refuses to change a skill that is committed at HEAD while its content is not cleared; a new skill may be written and is judged at commit time. The refusal names the command to run. `immune scan` records into the ledger of the repository that holds the skill (a linked worktree shares its main checkout's), so scans and hooks meet wherever they are started from. `DENDRITE_TICKET_GUARD=off` does not switch the skill gate off.
 - **`dendrite immune update` and the scan ledger (DEN-388):** the directive `immune.scanner_version` pins the SkillSpector version. `immune update` installs the pin with `uv tool install` and does nothing when the scanner is already there; without a pin it installs or upgrades to the latest. `immune scan` refuses a scanner that is not the pinned version, and appends every result (path, content digest, score, verdict, scanner version) to `.dendrite/immune/scans.jsonl` under a file lock; scanning unchanged content again adds no line.
 
 ### Fixed
