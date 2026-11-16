@@ -274,3 +274,47 @@ func TestOwnerRecordPointsAtTheRunningChild(t *testing.T) {
 		t.Errorf("owner = %+v, %v", o, err)
 	}
 }
+
+// Installed lists the models under ~/.oxillama/models, largest first; a model's id is the first
+// line of its `id` file when there is one, its directory name otherwise.
+func TestInstalledListsModelsLargestFirst(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if got := Installed(); len(got) != 0 {
+		t.Fatalf("no models directory: %+v", got)
+	}
+	for file, body := range map[string]string{
+		"small/small.gguf": "12", "big/big.gguf": "123456", "big/id": "qwen3:14b\nrest\n", "blank/blank.gguf": "1234", "blank/id": "\n",
+	} {
+		path := filepath.Join(home, ".oxillama", "models", file)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := Installed()
+	want := []Model{
+		{ID: "qwen3:14b", Path: filepath.Join(home, ".oxillama", "models", "big", "big.gguf"), SizeBytes: 6},
+		{ID: "blank", Path: filepath.Join(home, ".oxillama", "models", "blank", "blank.gguf"), SizeBytes: 4},
+		{ID: "small", Path: filepath.Join(home, ".oxillama", "models", "small", "small.gguf"), SizeBytes: 2},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("Installed = %+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("model %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestEnvDurationIgnoresWhatIsNotAPositiveDuration(t *testing.T) {
+	for value, want := range map[string]time.Duration{"90s": 90 * time.Second, "": 0, "soon": 0, "-5s": 0} {
+		t.Setenv("DENDRITE_TEST_DURATION", value)
+		if got := envDuration("DENDRITE_TEST_DURATION"); got != want {
+			t.Errorf("%q = %s, want %s", value, got, want)
+		}
+	}
+}
