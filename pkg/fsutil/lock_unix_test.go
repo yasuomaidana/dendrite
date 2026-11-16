@@ -6,13 +6,17 @@ import (
 	"errors"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
-// Lock serializes the code between it and its release, also for calls within one process.
+// Lock serializes the code between it and its release, also for calls within one process: no
+// two holders are ever inside at once. (The counters are atomic because the race detector cannot
+// see a file lock.)
 func TestLockSerializes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lock")
-	counter, inside := 0, 0
+	var inside, entered atomic.Int32
 	var wg sync.WaitGroup
 	for range 16 {
 		wg.Add(1)
@@ -24,17 +28,17 @@ func TestLockSerializes(t *testing.T) {
 				return
 			}
 			defer release()
-			inside++
-			if inside != 1 {
-				t.Errorf("%d holders inside the lock", inside)
+			if n := inside.Add(1); n != 1 {
+				t.Errorf("%d holders inside the lock", n)
 			}
-			counter++
-			inside--
+			entered.Add(1)
+			time.Sleep(time.Millisecond)
+			inside.Add(-1)
 		}()
 	}
 	wg.Wait()
-	if counter != 16 {
-		t.Fatalf("counter = %d, want 16", counter)
+	if entered.Load() != 16 {
+		t.Fatalf("%d holders entered, want 16", entered.Load())
 	}
 }
 
