@@ -47,6 +47,13 @@ func NewStore() *Store {
 	return &Store{Dir: statedir.Resolve(".dendrite/session")}
 }
 
+// NewStoreAt returns the store of the repository containing dir: .dendrite/session in the main checkout that owns
+// it. The write guard judges a file by its own repository, so it must read that repository's claims even when the
+// session was started in another one.
+func NewStoreAt(dir string) *Store {
+	return &Store{Dir: statedir.ResolveIn(dir, ".dendrite/session")}
+}
+
 // TokenOptions are the inputs of MintToken; empty fields are detected from the environment.
 type TokenOptions struct {
 	SessionID string

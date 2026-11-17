@@ -50,6 +50,8 @@ type Deps struct {
 	Branch func(top string) string
 	// Linked reports whether the repository at top is a Plane project.
 	Linked func(top string) bool
+	// StoreFor returns the session store of the repository at top; nil means Store for every repository.
+	StoreFor func(top string) *Store
 	// PlaneStatus asks Plane for the state of a ticket of the repository at top.
 	PlaneStatus func(ctx context.Context, top, ticket string) (tracker.Status, error)
 }
@@ -78,6 +80,7 @@ func DefaultDeps(planeStatus func(ctx context.Context, top, ticket string) (trac
 			_, _, err := plane.LinkForDir(top)
 			return err == nil
 		},
+		StoreFor:    NewStoreAt,
 		PlaneStatus: planeStatus,
 	}
 }
@@ -128,6 +131,9 @@ func Require(ctx context.Context, d Deps, target string) error {
 	}
 	if within(target, filepath.Join(top, ".dendrite")) || !d.Linked(top) {
 		return nil
+	}
+	if d.StoreFor != nil {
+		d.Store = d.StoreFor(top)
 	}
 
 	branch := d.Branch(top)
