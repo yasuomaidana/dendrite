@@ -28,6 +28,6 @@ func releaseRefsContent(string, directive.Set) []byte { return releaseRefsScript
 // writeReleaseRefsJob adds the release-references job.
 func writeReleaseRefsJob(b *strings.Builder) {
 	b.WriteString("  release-refs:\n    name: " + scalar(releaseRefsJobName) + "\n    runs-on: ubuntu-latest\n    steps:\n" +
-		"      - name: Checkout\n        uses: actions/checkout@v4\n" +
+		checkoutStep +
 		"      - name: Siblings are referenced by release or main only\n        run: bash " + ReleaseRefsScriptPath + "\n")
 }
