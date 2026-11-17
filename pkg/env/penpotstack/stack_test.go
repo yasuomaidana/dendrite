@@ -17,9 +17,10 @@ import (
 )
 
 var (
-	serviceName = regexp.MustCompile(`(?m)^  (penpot-[a-z]+):\s*$`)
-	flagsLine   = regexp.MustCompile(`(?m)^\s*PENPOT_FLAGS: "([^"]+)"`)
-	healthcheck = regexp.MustCompile(`(?m)^    healthcheck:`)
+	serviceName   = regexp.MustCompile(`(?m)^  (penpot-[a-z]+):\s*$`)
+	flagsLine     = regexp.MustCompile(`(?m)^\s*PENPOT_FLAGS: "([^"]+)"`)
+	secretKeyLine = regexp.MustCompile(`(?m)^\s+PENPOT_SECRET_KEY:`)
+	healthcheck   = regexp.MustCompile(`(?m)^    healthcheck:`)
 )
 
 func shippedPenpotCompose(t *testing.T) string {
@@ -61,6 +62,9 @@ func TestPenpotComposeEnablesAccessTokensAndRunsAnExporter(t *testing.T) {
 				t.Errorf("%s: PENPOT_FLAGS lacks enable-access-tokens: %q", name, flags)
 			}
 		}
+		if n := len(secretKeyLine.FindAllString(compose, -1)); n != 2 {
+			t.Errorf("%s: the backend and the exporter both need PENPOT_SECRET_KEY, found %d", name, n)
+		}
 		for _, want := range []string{"penpot-exporter:", "penpotapp/exporter", `PENPOT_EXPORTER_URI: "http://penpot-exporter:6061"`} {
 			if !strings.Contains(compose, want) {
 				t.Errorf("%s lacks %q", name, want)
@@ -73,7 +77,7 @@ func TestGeneratedPenpotComposeHonoursTheExporterPortAndFillsDefaults(t *testing
 	if got := env.GeneratePenpotCompose(env.PenpotConfig{ExporterPort: 9123}); !strings.Contains(got, `"9123:6061"`) {
 		t.Errorf("exporter port not used:\n%s", got)
 	}
-	if got := env.GeneratePenpotCompose(env.PenpotConfig{}); !strings.Contains(got, `"9002:6061"`) || !strings.Contains(got, env.DefaultPenpotConfig().SecretKey) {
+	if got := env.GeneratePenpotCompose(env.PenpotConfig{}); !strings.Contains(got, `"9002:6061"`) || strings.Count(got, env.DefaultPenpotConfig().SecretKey) != 2 {
 		t.Errorf("defaults not filled:\n%s", got)
 	}
 }

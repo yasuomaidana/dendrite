@@ -9,7 +9,7 @@ type Profile struct {
 	Fullname string `json:"fullname"`
 }
 
-// Team, Project and File carry the fields the triad glue reads; Penpot returns more.
+// Penpot speaks camelCase JSON when asked for application/json (kebab-case in transit). Team, Project and File carry the fields the triad glue reads; Penpot returns more.
 type Team struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -18,7 +18,7 @@ type Team struct {
 type Project struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
-	TeamID string `json:"team-id"`
+	TeamID string `json:"teamId"`
 }
 
 type File struct {
@@ -32,7 +32,7 @@ type File struct {
 // UpdateFileParams is the payload of update-file: Changes are Penpot change objects, applied on top of Revn.
 type UpdateFileParams struct {
 	ID        string           `json:"id"`
-	SessionID string           `json:"session-id"`
+	SessionID string           `json:"sessionId"`
 	Revn      int              `json:"revn"`
 	Changes   []map[string]any `json:"changes"`
 }
@@ -52,7 +52,7 @@ func (c *Client) GetTeams(ctx context.Context) ([]Team, error) {
 // GetProjects lists the projects of a team.
 func (c *Client) GetProjects(ctx context.Context, teamID string) ([]Project, error) {
 	var p []Project
-	return p, c.Call(ctx, "get-projects", map[string]any{"team-id": teamID}, &p)
+	return p, c.Call(ctx, "get-projects", map[string]any{"teamId": teamID}, &p)
 }
 
 // GetFile reads one file, including its data.

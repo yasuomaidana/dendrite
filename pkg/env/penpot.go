@@ -143,6 +143,7 @@ services:
     environment:
       PENPOT_PUBLIC_URI: "http://penpot-frontend:8080"
       PENPOT_REDIS_URI: "redis://penpot-redis:6379/0"
+      PENPOT_SECRET_KEY: "%s"
     ports:
       - "%d:6061"
     networks:
@@ -176,7 +177,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-`, cfg.DBPort, cfg.RedisPort, cfg.SecretKey, cfg.FrontendPort, cfg.BackendPort, cfg.ExporterPort, cfg.FrontendPort, cfg.FrontendPort)
+`, cfg.DBPort, cfg.RedisPort, cfg.SecretKey, cfg.FrontendPort, cfg.BackendPort, cfg.SecretKey, cfg.ExporterPort, cfg.FrontendPort, cfg.FrontendPort)
 }
 
 // CheckPenpotHealth tests reachability of a running Penpot service instance.
