@@ -81,10 +81,10 @@ func coreLang(ext string) string {
 	switch ext {
 	case ".svelte":
 		return "svelte"
-	case ".tsx":
+	case ".tsx", ".jsx":
+		// The tsx grammar parses JSX and plain JavaScript alike, and every dendrite-core that has
+		// ast.component_props accepts it (the `jsx` alias came later).
 		return "tsx"
-	case ".jsx":
-		return "javascript"
 	}
 	return ""
 }
