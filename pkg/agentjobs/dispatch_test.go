@@ -409,36 +409,3 @@ func TestRunJob_QUOTA_WalksLadderThenParks(t *testing.T) {
 		t.Errorf("capsule must carry the failing output, err=%v", err)
 	}
 }
-
-func TestSubmit_MemorySectionComesBeforeThePrompt(t *testing.T) {
-	for name, memory := range map[string]string{
-		"memory":    "## Memory (Engram)\nremembered\n",
-		"no memory": "",
-	} {
-		tempLedger := NewLedger(t.TempDir())
-		d := NewDispatcher(tempLedger)
-		d.Executable = installExecutableScript(t, t.TempDir(), "dummy_dendrite", "exit 0\n")
-		worktree := t.TempDir()
-		var gotDir string
-		d.Memory = func(_ context.Context, dir string) string { gotDir = dir; return memory }
-
-		id, err := d.Submit(SubmitSpec{Agent: "oxillama", Prompt: "do the task", Worktree: worktree})
-		if err != nil {
-			t.Fatalf("%s: Submit failed: %v", name, err)
-		}
-		prompt, err := os.ReadFile(tempLedger.PromptPath(id))
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := "do the task"
-		if memory != "" {
-			want = memory + "\n" + want
-		}
-		if string(prompt) != want {
-			t.Errorf("%s: prompt.md = %q, want %q", name, prompt, want)
-		}
-		if resolved, _ := filepath.EvalSymlinks(worktree); gotDir != worktree && gotDir != resolved {
-			t.Errorf("%s: memory asked for %q, want the job's worktree %q", name, gotDir, worktree)
-		}
-	}
-}

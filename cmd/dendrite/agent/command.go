@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -107,7 +108,9 @@ func newJobsSubmitCmd() *cobra.Command {
 					fmt.Fprintln(cmd.ErrOrStderr(), "[!] Running in a checkout with uncommitted changes. The agent will see them; use --isolate to run in a dendrite-work/ copy.")
 				}
 			}
-			agentjobs.DefaultDispatcher.Memory = engram.JobMemory
+			if err := withMemory(cmd.Context(), &spec); err != nil {
+				return err
+			}
 			id, err := agentjobs.Submit(spec)
 			if err != nil {
 				return fmt.Errorf("submit job: %w", err)
@@ -152,4 +155,25 @@ func ensureJobWatcher(d *agentjobs.Dispatcher, errOut io.Writer) {
 	case pid > 0:
 		fmt.Fprintf(errOut, "[i] Stall watcher started (pid %d, log %s)\n", pid, d.Ledger.WatcherLogPath())
 	}
+}
+
+// withMemory puts the Engram memory snapshot of the current project in front of the job's prompt. The
+// prompt file is read here so the memory and the task reach the job as one prompt; a job with no memory
+// (Engram missing, failing or empty) keeps its prompt untouched.
+func withMemory(ctx context.Context, spec *agentjobs.SubmitSpec) error {
+	memory := engram.JobMemory(ctx, ".")
+	if memory == "" {
+		return nil
+	}
+	if spec.Prompt == "" && spec.PromptFile != "" {
+		data, err := os.ReadFile(spec.PromptFile)
+		if err != nil {
+			return fmt.Errorf("read prompt file %q: %w", spec.PromptFile, err)
+		}
+		spec.Prompt, spec.PromptFile = string(data), ""
+	}
+	if strings.TrimSpace(spec.Prompt) != "" {
+		spec.Prompt = memory + "\n" + spec.Prompt
+	}
+	return nil
 }
