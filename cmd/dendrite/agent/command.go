@@ -3,6 +3,7 @@ package agent
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/agentjobs"
+	"Dendrite/pkg/engram"
 	"bytes"
 	"context"
 	"fmt"
@@ -106,6 +107,7 @@ func newJobsSubmitCmd() *cobra.Command {
 					fmt.Fprintln(cmd.ErrOrStderr(), "[!] Running in a checkout with uncommitted changes. The agent will see them; use --isolate to run in a dendrite-work/ copy.")
 				}
 			}
+			agentjobs.DefaultDispatcher.Memory = engram.JobMemory
 			id, err := agentjobs.Submit(spec)
 			if err != nil {
 				return fmt.Errorf("submit job: %w", err)

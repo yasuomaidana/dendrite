@@ -57,6 +57,9 @@ type Dispatcher struct {
 	// SharedDir holds state shared by every repository's ledger on this machine: provider cooldowns
 	// and the registry of ledgers used to count model load. Empty means the ledger root.
 	SharedDir string
+	// Memory returns a memory section to put in front of a job's prompt, given the job's working
+	// directory ("" for none). Nil means jobs get no memory.
+	Memory func(ctx context.Context, worktree string) string
 }
 
 // DefaultDispatcher is the shared default dispatcher.
@@ -102,52 +105,16 @@ func sysProcAttrSetsid() *syscall.SysProcAttr {
 
 // Submit creates a new ledger job and starts it detached by re-executing the current binary.
 func (d *Dispatcher) Submit(spec SubmitSpec) (string, error) {
-	if spec.Ticket == "" {
-		spec.Ticket = "JOB"
+	modelReason, err := d.applyDefaults(&spec)
+	if err != nil {
+		return "", err
 	}
-	if spec.Agent == "" {
-		spec.Agent = "agy"
+	if err := d.resolveWorktree(&spec); err != nil {
+		return "", err
 	}
-	var modelReason string
-	if spec.Agent == "agy" {
-		if spec.Model == "" || spec.Model == AutoModel {
-			spec.Model, modelReason = d.PickAGYModel(spec.Complexity)
-		}
-		if err := d.validateAGYModel(spec.Model); err != nil {
-			return "", err
-		}
-	} else if spec.Model == "" {
-		spec.Model = "default"
-	}
-	if spec.Worktree == "" && spec.Isolate {
-		wt, err := d.isolatedWorktree(spec.Ticket)
-		if err != nil {
-			return "", err
-		}
-		spec.Worktree = wt
-	}
-	if spec.Worktree == "" {
-		wt, err := os.Getwd()
-		if err != nil {
-			return "", fmt.Errorf("agentjobs: failed to resolve worktree: %w", err)
-		}
-		spec.Worktree = wt
-	}
-	absWorktree, err := filepath.Abs(spec.Worktree)
-	if err == nil {
-		spec.Worktree = absWorktree
-	}
-
-	promptText := spec.Prompt
-	if promptText == "" && spec.PromptFile != "" {
-		data, err := os.ReadFile(spec.PromptFile)
-		if err != nil {
-			return "", fmt.Errorf("agentjobs: failed to read prompt file %q: %w", spec.PromptFile, err)
-		}
-		promptText = string(data)
-	}
-	if strings.TrimSpace(promptText) == "" {
-		return "", errors.New("agentjobs: prompt or prompt-file is required and cannot be empty")
+	promptText, err := d.jobPrompt(spec)
+	if err != nil {
+		return "", err
 	}
 
 	job := &Job{
@@ -200,6 +167,71 @@ func (d *Dispatcher) Submit(spec SubmitSpec) (string, error) {
 	_ = d.Ledger.Save(created)
 
 	return created.ID, nil
+}
+
+// applyDefaults fills the ticket, agent and model a spec leaves out and returns why the model was picked.
+func (d *Dispatcher) applyDefaults(spec *SubmitSpec) (modelReason string, err error) {
+	if spec.Ticket == "" {
+		spec.Ticket = "JOB"
+	}
+	if spec.Agent == "" {
+		spec.Agent = "agy"
+	}
+	if spec.Agent == "agy" {
+		if spec.Model == "" || spec.Model == AutoModel {
+			spec.Model, modelReason = d.PickAGYModel(spec.Complexity)
+		}
+		return modelReason, d.validateAGYModel(spec.Model)
+	}
+	if spec.Model == "" {
+		spec.Model = "default"
+	}
+	return "", nil
+}
+
+// resolveWorktree makes spec.Worktree the absolute directory the job runs in: the ticket's isolated copy,
+// or the current directory when none is given.
+func (d *Dispatcher) resolveWorktree(spec *SubmitSpec) error {
+	if spec.Worktree == "" && spec.Isolate {
+		wt, err := d.isolatedWorktree(spec.Ticket)
+		if err != nil {
+			return err
+		}
+		spec.Worktree = wt
+	}
+	if spec.Worktree == "" {
+		wt, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("agentjobs: failed to resolve worktree: %w", err)
+		}
+		spec.Worktree = wt
+	}
+	if abs, err := filepath.Abs(spec.Worktree); err == nil {
+		spec.Worktree = abs
+	}
+	return nil
+}
+
+// jobPrompt returns the prompt of a job: the text or file of the spec, behind the memory section when the
+// dispatcher has one.
+func (d *Dispatcher) jobPrompt(spec SubmitSpec) (string, error) {
+	promptText := spec.Prompt
+	if promptText == "" && spec.PromptFile != "" {
+		data, err := os.ReadFile(spec.PromptFile)
+		if err != nil {
+			return "", fmt.Errorf("agentjobs: failed to read prompt file %q: %w", spec.PromptFile, err)
+		}
+		promptText = string(data)
+	}
+	if strings.TrimSpace(promptText) == "" {
+		return "", errors.New("agentjobs: prompt or prompt-file is required and cannot be empty")
+	}
+	if d.Memory != nil {
+		if memory := d.Memory(context.Background(), spec.Worktree); memory != "" {
+			promptText = memory + "\n" + promptText
+		}
+	}
+	return promptText, nil
 }
 
 // isolatedWorktree returns the dendrite-work/ copy for ticket, creating it on first use
