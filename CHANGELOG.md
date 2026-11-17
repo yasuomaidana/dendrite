@@ -4,6 +4,10 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Added
+
+- **Penpot readiness (DEN-835):** the Penpot stack runs with `enable-access-tokens`, a `penpot-exporter` service (:9002) and a backend healthcheck, in both `stacks/compose.penpot.yaml` and `GeneratePenpotCompose` (a test keeps their services, flags and healthchecks equal). `dendrite motor health penpot` probes the frontend, the backend and the exporter and lists each as UP or DOWN; before, it probed the frontend only. `PENPOT_ACCESS_TOKEN=` is an empty slot in the env template (Penpot issues the token, so `secrets ensure --generate` leaves it alone). New `pkg/ui/penpot/rpc` is a token-authenticated client of Penpot's RPC API (`get-profile`, `get-teams`, `get-projects`, `get-file`, `update-file`). See [`docs/guides/penpot-access-token.md`](docs/guides/penpot-access-token.md).
+
 ### Fixed
 
 - **The write lock judges a file by its own repository's claims (DEN-899):** `dendrite hook pre-edit` read the claims of the directory the session was started in, so a session in one repository could not write into a claimed work copy of another ("no Dendrite session/ticket claim" although the claim existed). `ticketlock.Require` now reads the session store of the repository that contains the file (`statedir.ResolveIn`); a repository with no claim is still refused.

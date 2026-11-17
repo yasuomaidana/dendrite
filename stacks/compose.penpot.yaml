@@ -56,7 +56,7 @@ services:
       penpot-redis:
         condition: service_healthy
     environment:
-      PENPOT_FLAGS: "enable-prepl-server disable-email-verification disable-secure-session-cookies"
+      PENPOT_FLAGS: "enable-prepl-server enable-access-tokens disable-email-verification disable-secure-session-cookies"
       PENPOT_DATABASE_URI: "postgresql://penpot-postgres:5432/${PENPOT_DB_NAME:-penpot_dev}"
       PENPOT_DATABASE_USERNAME: "${PENPOT_DB_USER:-penpot_user}"
       PENPOT_DATABASE_PASSWORD: "${PENPOT_DB_PASSWORD:-penpot_password}"
@@ -69,18 +69,46 @@ services:
       - penpot-assets:/opt/data/assets
     networks:
       - dendrite-mesh
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6060"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  penpot-exporter:
+    image: penpotapp/exporter:latest
+    container_name: dendrite-penpot-exporter
+    restart: unless-stopped
+    depends_on:
+      penpot-backend:
+        condition: service_healthy
+    environment:
+      PENPOT_PUBLIC_URI: "http://penpot-frontend:8080"
+      PENPOT_REDIS_URI: "redis://penpot-redis:6379/0"
+    ports:
+      - "${DENDRITE_BIND_HOST:-127.0.0.1}:${PENPOT_EXPORTER_PORT:-9002}:6061"
+    networks:
+      - dendrite-mesh
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6061"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
 
   penpot-frontend:
     image: penpotapp/frontend:latest
     container_name: dendrite-penpot-frontend
     restart: unless-stopped
     depends_on:
-      - penpot-backend
+      penpot-backend:
+        condition: service_healthy
+      penpot-exporter:
+        condition: service_started
     environment:
-      PENPOT_FLAGS: "enable-prepl-server disable-email-verification disable-secure-session-cookies"
+      PENPOT_FLAGS: "enable-prepl-server enable-access-tokens disable-email-verification disable-secure-session-cookies"
       PENPOT_PUBLIC_URI: "http://localhost:${PENPOT_FRONTEND_PORT:-9000}"
       PENPOT_BACKEND_URI: "http://penpot-backend:6060"
-      PENPOT_EXPORTER_URI: "http://penpot-backend:6060"
+      PENPOT_EXPORTER_URI: "http://penpot-exporter:6061"
     ports:
       - "${DENDRITE_BIND_HOST:-127.0.0.1}:${PENPOT_FRONTEND_PORT:-9000}:8080"
     networks:
