@@ -114,6 +114,61 @@ func propNames(ext, source string) ([]string, error) {
 	return names, nil
 }
 
+// frameworkOf names the UI framework of a file by its extension; unknown extensions are plain html.
+func frameworkOf(ext string) string {
+	switch ext {
+	case ".svelte":
+		return "svelte"
+	case ".tsx", ".jsx":
+		return "react"
+	case ".vue":
+		return "vue"
+	case ".css":
+		return "css"
+	}
+	return "html"
+}
+
+// tokenCategories maps a Tailwind class prefix to its design-token category, most specific first.
+var tokenCategories = []struct{ prefix, category string }{
+	{"bg-", "background"}, {"text-", "typography"},
+	{"p-", "spacing"}, {"px-", "spacing"}, {"py-", "spacing"}, {"gap-", "spacing"},
+	{"rounded-", "border-radius"}, {"border-", "border"}, {"shadow-", "shadow"},
+}
+
+// tokenCategory is the design-token category of one Tailwind class; classes like flex and grid are layout.
+func tokenCategory(tok string) string {
+	for _, c := range tokenCategories {
+		if strings.HasPrefix(tok, c.prefix) {
+			return c.category
+		}
+	}
+	return "layout"
+}
+
+// designTokens finds the Tailwind classes of the markup and the category of each.
+func designTokens(content string) map[string]string {
+	tokens := make(map[string]string)
+	for _, tok := range tokenRegex.FindAllString(content, -1) {
+		tokens[tok] = tokenCategory(tok)
+	}
+	return tokens
+}
+
+// stateVariants lists the state prefixes (hover:, focus:, ...) the markup uses, sorted.
+func stateVariants(content string) []string {
+	seen := make(map[string]bool)
+	var states []string
+	for _, m := range stateRegex.FindAllStringSubmatch(content, -1) {
+		if !seen[m[1]] {
+			seen[m[1]] = true
+			states = append(states, m[1])
+		}
+	}
+	sort.Strings(states)
+	return states
+}
+
 // ParseFile inspects a UI file and builds its ComponentSpec.
 func (p *Parser) ParseFile(filePath string) (*ComponentSpec, error) {
 	data, err := os.ReadFile(filePath)
@@ -121,71 +176,19 @@ func (p *Parser) ParseFile(filePath string) (*ComponentSpec, error) {
 		return nil, fmt.Errorf("failed to read UI file %s: %w", filePath, err)
 	}
 	content := string(data)
-
 	ext := strings.ToLower(filepath.Ext(filePath))
-	base := filepath.Base(filePath)
-	name := strings.TrimSuffix(base, ext)
-
-	framework := "html"
-	switch ext {
-	case ".svelte":
-		framework = "svelte"
-	case ".tsx", ".jsx":
-		framework = "react"
-	case ".vue":
-		framework = "vue"
-	case ".css":
-		framework = "css"
-	}
-
-	spec := &ComponentSpec{
-		Name:      name,
-		FilePath:  filePath,
-		Framework: framework,
-		Tokens:    make(map[string]string),
-	}
-
-	// 1. Extract props
 	props, err := propNames(ext, content)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", filePath, err)
 	}
-	spec.Props = props
-
-	// 2. Extract design tokens
-	tokenMatches := tokenRegex.FindAllString(content, -1)
-	for _, tok := range tokenMatches {
-		category := "layout"
-		if strings.HasPrefix(tok, "bg-") {
-			category = "background"
-		} else if strings.HasPrefix(tok, "text-") {
-			category = "typography"
-		} else if strings.HasPrefix(tok, "p-") || strings.HasPrefix(tok, "px-") || strings.HasPrefix(tok, "py-") || strings.HasPrefix(tok, "gap-") {
-			category = "spacing"
-		} else if strings.HasPrefix(tok, "rounded-") {
-			category = "border-radius"
-		} else if strings.HasPrefix(tok, "border-") {
-			category = "border"
-		} else if strings.HasPrefix(tok, "shadow-") {
-			category = "shadow"
-		}
-		spec.Tokens[tok] = category
-	}
-
-	// 3. Extract state variants
-	stateMap := make(map[string]bool)
-	stateMatches := stateRegex.FindAllStringSubmatch(content, -1)
-	for _, m := range stateMatches {
-		if len(m) > 1 {
-			stateMap[m[1]] = true
-		}
-	}
-	for st := range stateMap {
-		spec.States = append(spec.States, st)
-	}
-	sort.Strings(spec.States)
-
-	return spec, nil
+	return &ComponentSpec{
+		Name:      strings.TrimSuffix(filepath.Base(filePath), ext),
+		FilePath:  filePath,
+		Framework: frameworkOf(ext),
+		Props:     props,
+		Tokens:    designTokens(content),
+		States:    stateVariants(content),
+	}, nil
 }
 
 // Diff compares previous tokens with new tokens.
