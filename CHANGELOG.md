@@ -4,6 +4,10 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Added
+
+- **Engram agent memory (DEN-427):** `dendrite soma install engram` installs the Engram binary (Homebrew, after a prompt) and registers its MCP server for Claude Code (`--mcp-only`) and Antigravity; `soma diagnose` reports its version and doctor status. Engram's own Claude plugin is not installed: SkillSpector scores it 71, which the immune gate quarantines. Instead `session resume` and `bouton jobs submit` put a bounded snapshot of `engram context` (5,200 bytes) in front of the session or job prompt, and run without it when Engram is missing or fails.
+
 ### Fixed
 
 - **Generated CI installs `loom-gate` from the rag-rs release tag (DEN-889):** the generator installed it with `--branch develop`, a branch `dendrite-rag-rs` no longer has, so a cache miss failed every generated pipeline. The install and its cache key now use `${{ vars.LOOM_GATE_REF || 'v0.1.0' }}` as a tag.
