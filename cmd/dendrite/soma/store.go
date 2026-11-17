@@ -25,14 +25,15 @@ func withStore(fn func(*segmented.SegmentedStore) error) error {
 // shortHash returns the first 12 characters of a content hash (all of it when shorter).
 func shortHash(h string) string { return h[:min(12, len(h))] }
 
-// newEngramCmd builds `dendrite engram` (alias store): the persistent segmented analysis store.
-func NewEngramCmd() *cobra.Command {
-	cmd := cli.NewGroupCmd("engram", "Persistent segmented store, memory checkpointer, and chunk query", "soma",
-		"store", "engram-store", "gram")
-	cmd.Example = "dendrite engram status\n" +
-		"dendrite engram inspect dendrite --json\n" +
-		"dendrite engram commit --project dendrite --chunk ast-1 --file graph.json --final\n" +
-		"dendrite engram rm old-project --force"
+// NewStoreCmd builds `dendrite store`: the persistent segmented analysis store. It no longer answers to
+// `engram`, the name of the Engram agent-memory binary (DEN-898).
+func NewStoreCmd() *cobra.Command {
+	cmd := cli.NewGroupCmd("store", "Persistent segmented store, checkpointer, and chunk query", "soma",
+		"segstore", "gram")
+	cmd.Example = "dendrite store status\n" +
+		"dendrite store inspect dendrite --json\n" +
+		"dendrite store commit --project dendrite --chunk ast-1 --file graph.json --final\n" +
+		"dendrite store rm old-project --force"
 
 	var project string
 	statusCmd := &cobra.Command{

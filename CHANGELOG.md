@@ -4,6 +4,10 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Changed
+
+- **`dendrite store` no longer answers to `engram` (DEN-898):** the segmented-store command was named `engram`, which now clashes with the Engram agent-memory binary. `store` is the command name; `segstore` and `gram` are its aliases. Scripts that ran `dendrite engram …` use `dendrite store …`.
+
 ### Fixed
 
 - **Generated CI installs `loom-gate` from the rag-rs release tag (DEN-889):** the generator installed it with `--branch develop`, a branch `dendrite-rag-rs` no longer has, so a cache miss failed every generated pipeline. The install and its cache key now use `${{ vars.LOOM_GATE_REF || 'v0.1.0' }}` as a tag.
