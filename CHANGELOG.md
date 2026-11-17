@@ -6,6 +6,7 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 
 ### Fixed
 
+- **Penpot component props are read from the syntax tree (DEN-897):** `pkg/ui/penpot` found Svelte and React props with three regexes, which broke on Svelte 5 `$props()` destructuring with object defaults, renames or `...rest`, and on Props interfaces with nested braces or callback types. It now asks `dendrite-core` (`ast.component_props`, DCORE-30) through `coreclient.ComponentProps`. `dendrite-core` must be 1.2 or newer (`dendrite update --dev`); without it a Svelte or React file fails to parse with the binary-missing error, while Vue, HTML and CSS files, which have no props, parse as before. The Tailwind token and state scans stay regular expressions: they read class-name text, not syntax.
 - **The write lock judges a file by its own repository's claims (DEN-899):** `dendrite hook pre-edit` read the claims of the directory the session was started in, so a session in one repository could not write into a claimed work copy of another ("no Dendrite session/ticket claim" although the claim existed). `ticketlock.Require` now reads the session store of the repository that contains the file (`statedir.ResolveIn`); a repository with no claim is still refused.
 - **Generated CI installs `loom-gate` from the rag-rs release tag (DEN-889):** the generator installed it with `--branch develop`, a branch `dendrite-rag-rs` no longer has, so a cache miss failed every generated pipeline. The install and its cache key now use `${{ vars.LOOM_GATE_REF || 'v0.1.0' }}` as a tag.
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"Dendrite/pkg/coreclient"
 	"Dendrite/pkg/env"
 	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/tracker/plane"
@@ -65,13 +66,53 @@ func NewParser() *Parser {
 	return &Parser{}
 }
 
+// tokenRegex and stateRegex classify Tailwind class names in the markup. That is a scan of text inside
+// class strings, not syntax, so it stays a regex; the props are read from the syntax tree by dendrite-core.
 var (
-	sveltePropRegex   = regexp.MustCompile(`export\s+let\s+([a-zA-Z0-9_]+)`)
-	sveltePropsRegex2 = regexp.MustCompile(`let\s*\{\s*([^}]+)\s*\}\s*=\s*\$props\(\)`)
-	reactPropRegex    = regexp.MustCompile(`interface\s+[a-zA-Z0-9_]*Props\s*\{([^}]+)\}`)
-	tokenRegex        = regexp.MustCompile(`\b(bg-[a-z0-9-]+|text-[a-z0-9-]+|p-[0-9]+|px-[0-9]+|py-[0-9]+|rounded-[a-z0-9-]+|border-[a-z0-9-]+|shadow-[a-z0-9-]+|gap-[0-9]+|flex|grid)\b`)
-	stateRegex        = regexp.MustCompile(`\b(hover|focus|active|disabled|dark):`)
+	tokenRegex = regexp.MustCompile(`\b(bg-[a-z0-9-]+|text-[a-z0-9-]+|p-[0-9]+|px-[0-9]+|py-[0-9]+|rounded-[a-z0-9-]+|border-[a-z0-9-]+|shadow-[a-z0-9-]+|gap-[0-9]+|flex|grid)\b`)
+	stateRegex = regexp.MustCompile(`\b(hover|focus|active|disabled|dark):`)
 )
+
+// propsTimeout bounds one props request to the sidecar.
+const propsTimeout = 10 * time.Second
+
+// coreLang is the language dendrite-core parses a component file as; "" means its props are not read.
+func coreLang(ext string) string {
+	switch ext {
+	case ".svelte":
+		return "svelte"
+	case ".tsx":
+		return "tsx"
+	case ".jsx":
+		return "javascript"
+	}
+	return ""
+}
+
+// propNames reads the props of a component with dendrite-core: sorted, unique, without `...rest` collectors.
+// Frameworks without a grammar (vue, html, css) have none.
+func propNames(ext, source string) ([]string, error) {
+	lang := coreLang(ext)
+	if lang == "" {
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), propsTimeout)
+	defer cancel()
+	props, err := coreclient.ComponentProps(ctx, lang, source)
+	if err != nil {
+		return nil, fmt.Errorf("reading the props with dendrite-core: %w", err)
+	}
+	seen := map[string]bool{}
+	var names []string
+	for _, p := range props {
+		if !p.Rest && !seen[p.Name] {
+			seen[p.Name] = true
+			names = append(names, p.Name)
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
 
 // ParseFile inspects a UI file and builds its ComponentSpec.
 func (p *Parser) ParseFile(filePath string) (*ComponentSpec, error) {
@@ -105,40 +146,11 @@ func (p *Parser) ParseFile(filePath string) (*ComponentSpec, error) {
 	}
 
 	// 1. Extract props
-	propMap := make(map[string]bool)
-	switch framework {
-	case "svelte":
-		matches := sveltePropRegex.FindAllStringSubmatch(content, -1)
-		for _, m := range matches {
-			if len(m) > 1 {
-				propMap[m[1]] = true
-			}
-		}
-		if m2 := sveltePropsRegex2.FindStringSubmatch(content); len(m2) > 1 {
-			for _, item := range strings.Split(m2[1], ",") {
-				clean := strings.TrimSpace(strings.Split(item, ":")[0])
-				if clean != "" {
-					propMap[clean] = true
-				}
-			}
-		}
-	case "react":
-		if m := reactPropRegex.FindStringSubmatch(content); len(m) > 1 {
-			lines := strings.Split(m[1], "\n")
-			for _, l := range lines {
-				l = strings.TrimSpace(l)
-				if l != "" && strings.Contains(l, ":") {
-					fieldName := strings.TrimSpace(strings.Split(l, ":")[0])
-					fieldName = strings.TrimSuffix(fieldName, "?")
-					propMap[fieldName] = true
-				}
-			}
-		}
+	props, err := propNames(ext, content)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", filePath, err)
 	}
-	for prop := range propMap {
-		spec.Props = append(spec.Props, prop)
-	}
-	sort.Strings(spec.Props)
+	spec.Props = props
 
 	// 2. Extract design tokens
 	tokenMatches := tokenRegex.FindAllString(content, -1)
