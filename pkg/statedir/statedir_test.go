@@ -1,6 +1,7 @@
 package statedir
 
 import (
+	"Dendrite/pkg/testkit"
 	"errors"
 	"os/exec"
 	"path/filepath"
@@ -182,32 +183,25 @@ func TestResolveIn_UsesTheStateOfTheGivenRepository(t *testing.T) {
 	t.Cleanup(func() { isTestBinary = origTest })
 	isTestBinary = func() bool { return false }
 
-	other := t.TempDir()
-	run := func(dir string, args ...string) {
-		t.Helper()
-		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	run(other, "init", "-q", "-b", "main")
-	run(other, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x")
+	owner := t.TempDir()
+	testkit.GitInit(t, owner, "main")
+	testkit.Git(t, owner, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x")
 	copyDir := filepath.Join(t.TempDir(), "copy")
-	run(other, "worktree", "add", "-q", "-b", "work", copyDir)
-	canonical, _ := filepath.EvalSymlinks(other)
+	testkit.Git(t, owner, "worktree", "add", "-q", "-b", "work", copyDir)
+	canonical, _ := filepath.EvalSymlinks(owner)
 
-	for name, dir := range map[string]string{"main checkout": other, "linked work copy": copyDir, "subdirectory": filepath.Join(copyDir, ".")} {
+	for name, dir := range map[string]string{"main checkout": owner, "linked work copy": copyDir} {
 		root := filepath.Dir(filepath.Dir(ResolveIn(dir, ".dendrite/session/x.json")))
-		owner, _ := filepath.EvalSymlinks(filepath.Dir(root))
-		if filepath.Base(root) != ".dendrite" || owner != canonical {
+		parent, _ := filepath.EvalSymlinks(filepath.Dir(root))
+		if filepath.Base(root) != ".dendrite" || parent != canonical {
 			t.Errorf("%s: ResolveIn state root = %q; want .dendrite inside %q", name, root, canonical)
 		}
 	}
-
 	if got := ResolveIn(t.TempDir(), ".dendrite/a.json"); got != ".dendrite/a.json" {
 		t.Errorf("outside a repository: ResolveIn = %q; want the path unchanged", got)
 	}
 	t.Setenv("DENDRITE_STATE_DIR", "/forced")
-	if got := ResolveIn(other, ".dendrite/a.json"); got != "/forced/a.json" {
+	if got := ResolveIn(owner, ".dendrite/a.json"); got != "/forced/a.json" {
 		t.Errorf("$DENDRITE_STATE_DIR must win: got %q", got)
 	}
 }
