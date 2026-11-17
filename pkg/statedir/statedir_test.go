@@ -1,6 +1,7 @@
 package statedir
 
 import (
+	"Dendrite/pkg/testkit"
 	"errors"
 	"os/exec"
 	"path/filepath"
@@ -171,5 +172,36 @@ func TestResolve_GitStateDir_EmptyTopLevel(t *testing.T) {
 	gitTopLevel = func() ([]byte, error) { return []byte("   \n"), nil }
 	if got := Resolve(".dendrite/x.json"); got != ".dendrite/x.json" {
 		t.Errorf("empty top level: Resolve = %q; want unchanged", got)
+	}
+}
+
+// ResolveIn answers for the repository that contains the directory it is given, and a linked worktree
+// shares the state of the main checkout it was made from.
+func TestResolveIn_UsesTheStateOfTheGivenRepository(t *testing.T) {
+	t.Setenv("DENDRITE_STATE_DIR", "")
+	origTest := isTestBinary
+	t.Cleanup(func() { isTestBinary = origTest })
+	isTestBinary = func() bool { return false }
+
+	owner := t.TempDir()
+	testkit.GitInit(t, owner, "main")
+	testkit.Git(t, owner, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x")
+	copyDir := filepath.Join(t.TempDir(), "copy")
+	testkit.Git(t, owner, "worktree", "add", "-q", "-b", "work", copyDir)
+	canonical, _ := filepath.EvalSymlinks(owner)
+
+	for name, dir := range map[string]string{"main checkout": owner, "linked work copy": copyDir} {
+		root := filepath.Dir(filepath.Dir(ResolveIn(dir, ".dendrite/session/x.json")))
+		parent, _ := filepath.EvalSymlinks(filepath.Dir(root))
+		if filepath.Base(root) != ".dendrite" || parent != canonical {
+			t.Errorf("%s: ResolveIn state root = %q; want .dendrite inside %q", name, root, canonical)
+		}
+	}
+	if got := ResolveIn(t.TempDir(), ".dendrite/a.json"); got != ".dendrite/a.json" {
+		t.Errorf("outside a repository: ResolveIn = %q; want the path unchanged", got)
+	}
+	t.Setenv("DENDRITE_STATE_DIR", "/forced")
+	if got := ResolveIn(owner, ".dendrite/a.json"); got != "/forced/a.json" {
+		t.Errorf("$DENDRITE_STATE_DIR must win: got %q", got)
 	}
 }

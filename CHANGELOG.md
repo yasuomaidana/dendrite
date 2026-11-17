@@ -6,6 +6,7 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 
 ### Fixed
 
+- **The write lock judges a file by its own repository's claims (DEN-899):** `dendrite hook pre-edit` read the claims of the directory the session was started in, so a session in one repository could not write into a claimed work copy of another ("no Dendrite session/ticket claim" although the claim existed). `ticketlock.Require` now reads the session store of the repository that contains the file (`statedir.ResolveIn`); a repository with no claim is still refused.
 - **Generated CI installs `loom-gate` from the rag-rs release tag (DEN-889):** the generator installed it with `--branch develop`, a branch `dendrite-rag-rs` no longer has, so a cache miss failed every generated pipeline. The install and its cache key now use `${{ vars.LOOM_GATE_REF || 'v0.1.0' }}` as a tag.
 
 ## [0.1.0] - 2026-11-13
