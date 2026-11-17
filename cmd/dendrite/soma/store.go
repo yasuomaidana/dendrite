@@ -35,6 +35,12 @@ func NewStoreCmd() *cobra.Command {
 		"dendrite store commit --project dendrite --chunk ast-1 --file graph.json --final\n" +
 		"dendrite store rm old-project --force"
 
+	cmd.AddCommand(newStoreStatusCmd(), newStoreInspectCmd(), newStoreRmCmd(), newStoreChunksCmd(), newStoreQueryCmd(), newStorePurgeCmd(), newEngramCommitCmd())
+	return cmd
+}
+
+// newStoreStatusCmd builds `dendrite store status`
+func newStoreStatusCmd() *cobra.Command {
 	var project string
 	statusCmd := &cobra.Command{
 		Use:   "status",
@@ -47,7 +53,11 @@ func NewStoreCmd() *cobra.Command {
 		},
 	}
 	cli.AddProjectFlag(statusCmd, &project, "", "Only this project")
+	return statusCmd
+}
 
+// newStoreInspectCmd builds `dendrite store inspect`
+func newStoreInspectCmd() *cobra.Command {
 	inspect := &cobra.Command{
 		Use:   "inspect <id>",
 		Short: "Show one store's checkpoints and sample segments",
@@ -58,7 +68,11 @@ func NewStoreCmd() *cobra.Command {
 			})
 		},
 	}
+	return inspect
+}
 
+// newStoreRmCmd builds `dendrite store rm`
+func newStoreRmCmd() *cobra.Command {
 	var force bool
 	rm := &cobra.Command{
 		Use:     "rm <id>",
@@ -81,7 +95,11 @@ func NewStoreCmd() *cobra.Command {
 		},
 	}
 	rm.Flags().BoolVarP(&force, "force", "f", false, "Confirm the deletion")
+	return rm
+}
 
+// newStoreChunksCmd builds `dendrite store chunks`
+func newStoreChunksCmd() *cobra.Command {
 	var chunksProject string
 	chunks := &cobra.Command{
 		Use:     "chunks",
@@ -108,7 +126,11 @@ func NewStoreCmd() *cobra.Command {
 		},
 	}
 	cli.AddProjectFlag(chunks, &chunksProject, "", "Only this project")
+	return chunks
+}
 
+// newStoreQueryCmd builds `dendrite store query`
+func newStoreQueryCmd() *cobra.Command {
 	var queryProject string
 	query := &cobra.Command{
 		Use:   "query",
@@ -134,7 +156,11 @@ func NewStoreCmd() *cobra.Command {
 	}
 	cli.AddProjectFlag(query, &queryProject, "", "Project to query")
 	cli.RequireFlags(query, "project")
+	return query
+}
 
+// newStorePurgeCmd builds `dendrite store purge`
+func newStorePurgeCmd() *cobra.Command {
 	var purgeProject string
 	purge := &cobra.Command{
 		Use:   "purge",
@@ -152,9 +178,7 @@ func NewStoreCmd() *cobra.Command {
 	}
 	cli.AddProjectFlag(purge, &purgeProject, "", "Project to purge")
 	cli.RequireFlags(purge, "project")
-
-	cmd.AddCommand(statusCmd, inspect, rm, chunks, query, purge, newEngramCommitCmd())
-	return cmd
+	return purge
 }
 
 func runEngramStatus(ctx context.Context, st *segmented.SegmentedStore, project string, out io.Writer) error {
