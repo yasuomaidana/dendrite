@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"Dendrite/pkg/fsutil"
 	"Dendrite/pkg/projectid"
 )
 
@@ -154,7 +155,7 @@ func (m *Manager) lock() (func(), error) {
 	if err := os.MkdirAll(m.leasesDir(), 0o755); err != nil {
 		return nil, err
 	}
-	return flock(filepath.Join(m.o.Dir, "lock"))
+	return fsutil.Lock(filepath.Join(m.o.Dir, "lock"))
 }
 
 // liveLeases returns the live leases and deletes the dead ones. The caller holds the lock.
