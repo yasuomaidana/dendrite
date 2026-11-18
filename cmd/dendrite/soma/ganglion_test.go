@@ -79,7 +79,7 @@ func TestGanglion_RegistryUnavailable(t *testing.T) {
 }
 
 // Runners over the commands this package builds (the full tree lives in package main).
-var runCmd = clitest.Runner(NewGanglionCmd, NewPlexusCmd, NewEngramCmd, NewWorkCmd, analysis.NewCognitionCmd)
-var cliOutput = clitest.Output(NewGanglionCmd, NewPlexusCmd, NewEngramCmd, NewWorkCmd, analysis.NewCognitionCmd)
+var runCmd = clitest.Runner(NewGanglionCmd, NewPlexusCmd, NewStoreCmd, NewWorkCmd, analysis.NewCognitionCmd)
+var cliOutput = clitest.Output(NewGanglionCmd, NewPlexusCmd, NewStoreCmd, NewWorkCmd, analysis.NewCognitionCmd)
 
 func TestMain(m *testing.M) { clitest.Main(m) }

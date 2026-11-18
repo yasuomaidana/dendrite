@@ -4,6 +4,10 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Changed
+
+- **`dendrite store` no longer answers to `engram` (DEN-898):** the segmented-store command was named `engram`, which now clashes with the Engram agent-memory binary. `store` is the command name; `segstore` and `gram` are its aliases. Scripts that ran `dendrite engram …` use `dendrite store …`.
+
 ### Fixed
 
 - **Generated CI uses Node 24 actions and shows the coverage gate (Plane #901):** the generator pinned `actions/checkout@v4`, `setup-go@v5`, `cache@v4`, `golangci-lint-action@v8` and `setup-uv@v5`, which run on Node.js 20 (GitHub: "Node.js 20 is deprecated"). They are now `checkout@v7`, `setup-go@v7`, `cache@v6`, `golangci-lint-action@v9` and `setup-uv@v10`, in one table (`pkg/env/pipeline/actions.go`), and a test fails if a generated workflow pins an older one. The Go coverage step is named `Gate: coverage (>= N%)` and writes the measured total to the job summary, so the floor reads as a quality gate. Regenerate a project's workflow with `dendrite soma prepare` to pick this up.

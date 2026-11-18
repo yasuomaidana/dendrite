@@ -28,7 +28,7 @@ func newRootCmd() *cobra.Command {
 	root := cli.NewBareRootCmd()
 	root.AddCommand(
 		// Soma & Axon Hillock
-		env.NewSomaCmd(), soma.NewGanglionCmd(), soma.NewWorkCmd(), soma.NewPlexusCmd(), soma.NewEngramCmd(),
+		env.NewSomaCmd(), soma.NewGanglionCmd(), soma.NewWorkCmd(), soma.NewPlexusCmd(), soma.NewStoreCmd(),
 		// Cortex & Sensory Integration
 		cortex.NewCortexCmd(), hook.NewSensoryCmd(), hook.NewHookCmd(), cortex.NewCodexCmd(), knowledge.NewAskCmd(), knowledge.NewRagCmd(), newVersionCmd(), install.NewUpdateCmd(), install.NewInstallCmd(),
 		// Postsynaptic Effectors & Actuation
