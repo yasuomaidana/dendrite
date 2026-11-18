@@ -98,6 +98,28 @@ func jobIDs(wf workflow) string {
 	return strings.Join(out, ",")
 }
 
+// node20Actions are the majors of the actions the generator uses that still run on Node.js 20.
+var node20Actions = []string{"actions/checkout@v4", "actions/checkout@v5", "actions/checkout@v6", "actions/setup-go@v5", "actions/setup-go@v6", "actions/cache@v4", "actions/cache@v5", "golangci/golangci-lint-action@v8", "astral-sh/setup-uv@v5"}
+
+func TestRenderPinsNoActionThatRunsOnNode20(t *testing.T) {
+	root := t.TempDir()
+	fsutiltest.WriteFile(t, root, "go.mod", "module x\n")
+	fsutiltest.WriteFile(t, root, "crates/Cargo.toml", "[workspace]\n")
+	fsutiltest.WriteFile(t, root, "py/pyproject.toml", "[project]\n")
+	fsutiltest.WriteFile(t, root, "py/tests/test_a.py", "")
+	text, _ := render(t, root, directive.Defaults(), Extension{})
+	for _, old := range node20Actions {
+		if strings.Contains(text, old) {
+			t.Errorf("a generated workflow still uses %s (Node.js 20 is deprecated)", old)
+		}
+	}
+	for _, want := range []string{actionCheckout, actionSetupGo, actionCache, actionGolangci, actionSetupUV} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %s", want)
+		}
+	}
+}
+
 func TestRenderAPolyglotProjectIsValidYAMLWithAJobPerComponent(t *testing.T) {
 	root := t.TempDir()
 	fsutiltest.WriteFile(t, root, "go.mod", "module x\n")
@@ -113,10 +135,10 @@ func TestRenderAPolyglotProjectIsValidYAMLWithAJobPerComponent(t *testing.T) {
 		t.Errorf("jobs %s\n%s", got, text)
 	}
 	for _, want := range []string{
-		"loom-gate complexity --format github", "loom-gate rstest --format github", "golangci/golangci-lint-action@v8",
+		"loom-gate complexity --format github", "loom-gate rstest --format github", "golangci/golangci-lint-action@v9",
 		"working-directory: crates", "cargo clippy --workspace --all-targets -- -D warnings -W clippy::cognitive_complexity",
 		"cargo llvm-cov --workspace --fail-under-lines 87.5", "components: rustfmt, clippy, llvm-tools-preview", "bun install --frozen-lockfile", "bun run build",
-		"uvx ruff check .", "--cov-fail-under=87.5", "Coverage floor (>= 87.5%)", "go-version-file: go.mod",
+		"uvx ruff check .", "--cov-fail-under=87.5", "Gate: coverage (>= 87.5%)", "GITHUB_STEP_SUMMARY", "go-version-file: go.mod",
 		`--tag "${{ vars.LOOM_GATE_REF || 'v0.1.0' }}" loom-gate`,
 	} {
 		if !strings.Contains(text, want) {
@@ -146,7 +168,7 @@ func TestRenderWithoutRustSkipsRstestAndTheExtensionShapesTheJobs(t *testing.T) 
 	if wf.Env["A"] != "1" || !strings.Contains(text, "cargo run -q -p loom-gate -- rstest --format github") {
 		t.Errorf("%s", text)
 	}
-	if strings.Contains(text, "cargo install") || strings.Contains(text, "Coverage floor") || strings.Contains(text, "llvm-cov") {
+	if strings.Contains(text, "cargo install") || strings.Contains(text, "Gate: coverage") || strings.Contains(text, "llvm-cov") {
 		t.Errorf("the extension replaces the install and the floor:\n%s", text)
 	}
 	if strings.Index(text, "  alpha:") > strings.Index(text, "  zeta:") || jobIDs(wf) != "alpha,db-access,go,quality,release-refs,rust,zeta" {

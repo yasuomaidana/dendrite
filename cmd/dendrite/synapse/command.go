@@ -257,40 +257,16 @@ func runSynapseList(ctx context.Context, jsonMode bool, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-
-	synapses, err := st.List()
+	// The stored state is re-derived first, so the list shows where the members stand now.
+	synapses, err := synapse.RefreshStates(ctx, st)
 	if err != nil {
 		return err
 	}
-
-	if len(synapses) == 0 {
-		if jsonMode {
-			fmt.Fprintln(out, "[]")
-		} else {
-			fmt.Fprintln(out, "[+] No synapses defined.")
-		}
-		return nil
-	}
-
 	if jsonMode {
-		listJSON := make([]synapseListJSON, 0, len(synapses))
-		for _, s := range synapses {
-			membersJSON := make([]memberJSON, 0, len(s.Members))
-			for _, m := range s.Members {
-				membersJSON = append(membersJSON, toMemberJSON(m))
-			}
-			listJSON = append(listJSON, synapseListJSON{
-				ID:      s.ID,
-				Name:    s.Name,
-				State:   string(s.State),
-				Members: membersJSON,
-			})
-		}
-		data, err := json.MarshalIndent(listJSON, "", "  ")
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(out, string(data))
+		return printSynapseListJSON(out, synapses)
+	}
+	if len(synapses) == 0 {
+		fmt.Fprintln(out, "[+] No synapses defined.")
 		return nil
 	}
 
@@ -301,10 +277,27 @@ func runSynapseList(ctx context.Context, jsonMode bool, out io.Writer) error {
 		for _, m := range s.Members {
 			aliases = append(aliases, m.Alias)
 		}
-		health := synapseHealth(s)
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", s.ID, s.State, strings.Join(aliases, ", "), health)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", s.ID, s.State, strings.Join(aliases, ", "), synapseHealth(s))
 	}
 	return w.Flush()
+}
+
+// printSynapseListJSON prints the synapses as a JSON array ([] when there are none).
+func printSynapseListJSON(out io.Writer, synapses []*synapse.Synapse) error {
+	listJSON := make([]synapseListJSON, 0, len(synapses))
+	for _, s := range synapses {
+		membersJSON := make([]memberJSON, 0, len(s.Members))
+		for _, m := range s.Members {
+			membersJSON = append(membersJSON, toMemberJSON(m))
+		}
+		listJSON = append(listJSON, synapseListJSON{ID: s.ID, Name: s.Name, State: string(s.State), Members: membersJSON})
+	}
+	data, err := json.MarshalIndent(listJSON, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(out, string(data))
+	return nil
 }
 
 // runSynapseInspect executes the inspect subcommand.

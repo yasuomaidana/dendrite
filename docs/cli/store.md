@@ -1,12 +1,12 @@
 ---
-id: engram
-title: "dendrite engram"
-sidebar_label: "engram"
+id: store
+title: "dendrite store"
+sidebar_label: "store"
 ---
 
-# dendrite engram
+# dendrite store
 
-Persistent segmented store, memory checkpointer, and chunk query
+Persistent segmented store, checkpointer, and chunk query
 
 ## Category
 
@@ -14,8 +14,7 @@ Soma & Axon Hillock
 
 ## Aliases
 
-- `store`
-- `engram-store`
+- `segstore`
 - `gram`
 
 ## Subcommands
@@ -36,12 +35,12 @@ None
 
 ## Subcommand Reference
 
-### `dendrite engram chunks`
+### `dendrite store chunks`
 
 List chunk checkpoints
 
 ```bash
-dendrite engram chunks [flags]
+dendrite store chunks [flags]
 ```
 
 Aliases: `checkpoints`
@@ -50,12 +49,12 @@ Aliases: `checkpoints`
 | :--- | :--- |
 | `--project` | Only this project |
 
-### `dendrite engram commit`
+### `dendrite store commit`
 
 Commit a file as one segment of a chunk checkpoint
 
 ```bash
-dendrite engram commit [flags]
+dendrite store commit [flags]
 ```
 
 | Flag | Description |
@@ -65,36 +64,36 @@ dendrite engram commit [flags]
 | `--final` | Mark the chunk as complete |
 | `--project` | Project the chunk belongs to |
 
-### `dendrite engram purge`
+### `dendrite store purge`
 
 Delete all segmented analysis data of a project
 
 ```bash
-dendrite engram purge [flags]
+dendrite store purge [flags]
 ```
 
 | Flag | Description |
 | :--- | :--- |
 | `--project` | Project to purge |
 
-### `dendrite engram query`
+### `dendrite store query`
 
 List the committed segments of a project, including partial chunks
 
 ```bash
-dendrite engram query [flags]
+dendrite store query [flags]
 ```
 
 | Flag | Description |
 | :--- | :--- |
 | `--project` | Project to query |
 
-### `dendrite engram rm`
+### `dendrite store rm`
 
 Delete a store's segments and blobs (needs --force or --yes)
 
 ```bash
-dendrite engram rm <id> [flags]
+dendrite store rm <id> [flags]
 ```
 
 Aliases: `remove`
@@ -103,12 +102,12 @@ Aliases: `remove`
 | :--- | :--- |
 | `--force, -f` | Confirm the deletion |
 
-### `dendrite engram status`
+### `dendrite store status`
 
 Summarize every stored project (segments, bytes, progress)
 
 ```bash
-dendrite engram status [flags]
+dendrite store status [flags]
 ```
 
 | Flag | Description |
@@ -118,8 +117,8 @@ dendrite engram status [flags]
 ## Examples
 
 ```bash
-dendrite engram status
-dendrite engram inspect dendrite --json
-dendrite engram commit --project dendrite --chunk ast-1 --file graph.json --final
-dendrite engram rm old-project --force
+dendrite store status
+dendrite store inspect dendrite --json
+dendrite store commit --project dendrite --chunk ast-1 --file graph.json --final
+dendrite store rm old-project --force
 ```
