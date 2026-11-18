@@ -18,7 +18,9 @@ func writeScript(t *testing.T, body string) string {
 	return path
 }
 
-func TestDefaultFeedsEverySourceFromTheEnvironment(t *testing.T) {
+// configuredManager is Default() with every address and key coming from the environment.
+func configuredManager(t *testing.T) *Manager {
+	t.Helper()
 	home := t.TempDir()
 	t.Setenv("DENDRITE_HOME", home)
 	t.Setenv("LITELLM_PROXY_URL", "http://gw:4000")
@@ -33,27 +35,33 @@ func TestDefaultFeedsEverySourceFromTheEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Dir != home || m.Spawn == nil || len(m.Sources) != 5 {
-		t.Fatalf("manager = dir %q, %d sources", m.Dir, len(m.Sources))
-	}
+	return m
+}
+
+func TestDefaultHasEverySourceAndSpawnsItself(t *testing.T) {
+	m := configuredManager(t)
 	var names []string
 	for _, s := range m.Sources {
 		names = append(names, s.Name())
 	}
-	if got := strings.Join(names, ","); got != "gateway,ollama,agy,gemini,copilot" {
-		t.Errorf("sources = %s", got)
+	if got := strings.Join(names, ","); got != "gateway,ollama,agy,gemini,copilot" || m.Spawn == nil {
+		t.Errorf("sources = %s, spawn set = %v", got, m.Spawn != nil)
 	}
-	if g := m.Sources[0].(GatewaySource); g.URL != "http://gw:4000" {
-		t.Errorf("gateway = %+v", g)
+}
+
+func TestDefaultReadsAddressesAndKeysFromTheEnvironment(t *testing.T) {
+	m := configuredManager(t)
+	got := []any{m.Sources[0], m.Sources[1], m.Sources[3], m.Sources[4]}
+	want := []any{
+		GatewaySource{URL: "http://gw:4000"},
+		OllamaSource{URL: "http://ollama-box:11434"}, // a bare host gets a scheme
+		GeminiSource{Key: "g-key", Preview: true},    // include_preview comes from models.toml
+		CopilotSource{Token: "c-key"},
 	}
-	if o := m.Sources[1].(OllamaSource); o.URL != "http://ollama-box:11434" {
-		t.Errorf("ollama = %+v (a bare host gets a scheme)", o)
-	}
-	if g := m.Sources[3].(GeminiSource); g.Key != "g-key" || !g.Preview {
-		t.Errorf("gemini = %+v", g)
-	}
-	if c := m.Sources[4].(CopilotSource); c.Token != "c-key" {
-		t.Errorf("copilot = %+v", c)
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("source %d = %+v, want %+v", i, got[i], want[i])
+		}
 	}
 }
 
