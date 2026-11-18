@@ -153,3 +153,101 @@ func TestPrintSyncReportVariants(t *testing.T) {
 		t.Fatal("short")
 	}
 }
+
+// staleStack creates synapse "stack" over two in-sync checkouts and returns its store and the
+// hub checkout. storeAs writes a state into the manifest, as an earlier status would have.
+func staleStack(t *testing.T) (*synapse.Store, string) {
+	t.Helper()
+	for k, v := range map[string]string{
+		"HOME": t.TempDir(), "DENDRITE_HOME": t.TempDir(), "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
+		"GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com",
+	} {
+		t.Setenv(k, v)
+	}
+	root := t.TempDir()
+	hub, _ := clonedModule(t, root, "hub", "1.25")
+	control, _ := clonedModule(t, root, "control", "1.25")
+	runOK(t, "create", "stack", "--members", control+"=control:consumer,"+hub+"=hub:producer")
+	st, err := synapse.DefaultStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	storeAs(t, st, synapse.StateDrifted)
+	return st, hub
+}
+
+func storeAs(t *testing.T, st *synapse.Store, state synapse.State) {
+	t.Helper()
+	s, err := st.Load("stack")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.State = state
+	if err := st.Save(s); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertStored(t *testing.T, st *synapse.Store, want synapse.State) {
+	t.Helper()
+	s, err := st.Load("stack")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.State != want {
+		t.Fatalf("stored state = %s, want %s", s.State, want)
+	}
+}
+
+// assertOutput checks that out holds every want and none of the unwanted strings.
+func assertOutput(t *testing.T, out string, want, unwanted []string) {
+	t.Helper()
+	for _, w := range want {
+		if !strings.Contains(out, w) {
+			t.Errorf("output lacks %q:\n%s", w, out)
+		}
+	}
+	for _, u := range unwanted {
+		if strings.Contains(out, u) {
+			t.Errorf("output holds %q:\n%s", u, out)
+		}
+	}
+}
+
+// list shows the state the members are in now, not the one an earlier status stored.
+func TestSynapseCommand_ListRefreshesState(t *testing.T) {
+	st, _ := staleStack(t)
+	assertOutput(t, runOK(t, "list"), []string{"active"}, []string{"drifted"})
+	assertStored(t, st, synapse.StateActive)
+
+	storeAs(t, st, synapse.StateDrifted)
+	var listed []struct{ State string }
+	if err := json.Unmarshal([]byte(runOK(t, "list", "--json")), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 || listed[0].State != "active" {
+		t.Fatalf("list --json = %+v", listed)
+	}
+}
+
+// heal --auto stores the state the members are in now; a dry run changes nothing.
+func TestSynapseCommand_HealAutoRefreshesState(t *testing.T) {
+	st, _ := staleStack(t)
+	runOK(t, "heal")
+	assertStored(t, st, synapse.StateDrifted)
+	runOK(t, "heal", "--auto")
+	assertStored(t, st, synapse.StateActive)
+}
+
+// A checkout that is where the manifest says but lost its identity file is named as such,
+// even when another clone of the same remote sits next to it, and --auto restores it.
+func TestSynapseCommand_HealNamesMissingIdentity(t *testing.T) {
+	st, hub := staleStack(t)
+	if err := os.Remove(filepath.Join(hub, ".dendrite", "project.id")); err != nil {
+		t.Fatal(err)
+	}
+	assertOutput(t, runOK(t, "heal"), []string{"identity missing", "--auto"}, []string{"->", "AMBIGUOUS"})
+	assertOutput(t, runOK(t, "heal", "--auto"), []string{"identity restored"}, []string{"[!]"})
+	assertOutput(t, runOK(t, "list"), []string{"active", "ok"}, []string{"unresolved"})
+	assertStored(t, st, synapse.StateActive)
+}

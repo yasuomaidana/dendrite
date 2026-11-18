@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -64,6 +65,12 @@ func runSynapseHeal(ctx context.Context, o synapseHealOptions, jsonMode bool, ou
 	if err != nil {
 		return err
 	}
+	if o.Auto {
+		// The repairs can end a drift as well as a break: store the state the members are in now.
+		if _, err := synapse.RefreshStates(ctx, st); err != nil {
+			return err
+		}
+	}
 	if jsonMode {
 		if rows == nil {
 			rows = []synapse.HealRow{}
@@ -72,29 +79,25 @@ func runSynapseHeal(ctx context.Context, o synapseHealOptions, jsonMode bool, ou
 		fmt.Fprintln(out, string(data))
 		return nil
 	}
+	return printHealRows(out, rows)
+}
+
+// printHealRows prints the health matrix and what is left to do about it.
+func printHealRows(out io.Writer, rows []synapse.HealRow) error {
 	if len(rows) == 0 {
 		fmt.Fprintln(out, "[+] No synapses defined.")
 		return nil
 	}
-
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "SYNAPSE\tMEMBER\tSTATUS\tPATH")
-	pending, broken := 0, 0
+	pending, unresolved := 0, 0
 	for _, r := range rows {
-		path := r.OldPath
-		switch {
-		case r.NewPath != "":
-			path = r.OldPath + " -> " + r.NewPath
-			if r.Applied {
-				path += " (applied)"
-			} else {
-				pending++
-			}
-		case len(r.Candidates) > 0:
-			path = r.OldPath + " ? " + strings.Join(r.Candidates, " | ")
-			broken++
-		case !r.Status.Healthy():
-			broken++
+		path, isPending, isUnresolved := healCell(r)
+		if isPending {
+			pending++
+		}
+		if isUnresolved {
+			unresolved++
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Synapse, r.Alias, r.Status, path)
 	}
@@ -102,12 +105,39 @@ func runSynapseHeal(ctx context.Context, o synapseHealOptions, jsonMode bool, ou
 		return err
 	}
 	if pending > 0 {
-		fmt.Fprintf(out, "[!] %d relocation(s) found; re-run with --auto to apply.\n", pending)
+		fmt.Fprintf(out, "[!] %d repair(s) found; re-run with --auto to apply.\n", pending)
 	}
-	if broken > 0 {
-		fmt.Fprintf(out, "[!] %d member(s) unresolved; pass --roots or use `dendrite synapse locate <alias> <dir>`.\n", broken)
+	if unresolved > 0 {
+		fmt.Fprintf(out, "[!] %d member(s) unresolved; pass --roots or use `dendrite synapse locate <alias> <dir>`.\n", unresolved)
 	}
 	return nil
+}
+
+// healCell renders the PATH column of a row and says whether the row is a repair still to
+// apply (pending) or a member nothing could be found for (unresolved).
+func healCell(r synapse.HealRow) (path string, pending, unresolved bool) {
+	switch {
+	case r.NewPath != "":
+		return healRepair(r), !r.Applied, false
+	case len(r.Candidates) > 0:
+		return r.OldPath + " ? " + strings.Join(r.Candidates, " | "), false, true
+	}
+	return r.OldPath, false, !r.Status.Healthy()
+}
+
+// healRepair describes the repair of a located member: the move to its new path, or, when the
+// checkout never moved, the identity file it lost.
+func healRepair(r synapse.HealRow) string {
+	if filepath.Clean(r.NewPath) == filepath.Clean(r.OldPath) {
+		if r.Applied {
+			return r.OldPath + " (identity restored: .dendrite/project.id)"
+		}
+		return r.OldPath + " (identity missing: .dendrite/project.id)"
+	}
+	if r.Applied {
+		return r.OldPath + " -> " + r.NewPath + " (applied)"
+	}
+	return r.OldPath + " -> " + r.NewPath
 }
 
 // findMember resolves an alias or project ID to one member across all synapses.
