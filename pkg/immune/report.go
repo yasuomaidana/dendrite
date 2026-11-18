@@ -18,13 +18,15 @@ type Issue struct {
 
 // Report is the gate's answer for one scanned path.
 type Report struct {
-	Path           string  `json:"path"`
-	Skill          string  `json:"skill"`
-	ScannerVersion string  `json:"scanner_version"`
-	Score          int     `json:"score"`
-	Severity       string  `json:"severity"`
-	Verdict        Verdict `json:"verdict"`
-	Issues         []Issue `json:"issues"`
+	Path           string `json:"path"`
+	Skill          string `json:"skill"`
+	ScannerVersion string `json:"scanner_version"`
+	// Digest identifies the scanned content (see Digest), so a later check can tell whether it changed.
+	Digest   string  `json:"digest"`
+	Score    int     `json:"score"`
+	Severity string  `json:"severity"`
+	Verdict  Verdict `json:"verdict"`
+	Issues   []Issue `json:"issues"`
 }
 
 // rawReport is the part of SkillSpector's JSON report the gate reads.

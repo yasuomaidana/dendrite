@@ -4,6 +4,10 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+### Added
+
+- **`dendrite immune update` and the scan ledger (DEN-388):** the directive `immune.scanner_version` pins the SkillSpector version. `immune update` installs the pin with `uv tool install` and does nothing when the scanner is already there; without a pin it installs or upgrades to the latest. `immune scan` refuses a scanner that is not the pinned version, and appends every result (path, content digest, score, verdict, scanner version) to `.dendrite/immune/scans.jsonl` under a file lock; scanning unchanged content again adds no line.
+
 ### Fixed
 
 - **The write lock judges a file by its own repository's claims (DEN-899):** `dendrite hook pre-edit` read the claims of the directory the session was started in, so a session in one repository could not write into a claimed work copy of another ("no Dendrite session/ticket claim" although the claim existed). `ticketlock.Require` now reads the session store of the repository that contains the file (`statedir.ResolveIn`); a repository with no claim is still refused.

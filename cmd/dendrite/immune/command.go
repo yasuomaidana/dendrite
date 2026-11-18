@@ -10,14 +10,16 @@ import (
 
 	"Dendrite/pkg/directive"
 	"Dendrite/pkg/immune"
+	"Dendrite/pkg/statedir"
 )
 
 // NewImmuneCmd builds `dendrite immune`: the gate that decides whether an agent skill may be installed.
 func NewImmuneCmd() *cobra.Command {
 	cmd := cli.NewGroupCmd("immune", "Scan agent skills with SkillSpector before they are installed", "glia")
 	cmd.Example = "dendrite immune scan .claude/skills/my-skill\n" +
-		"dendrite immune scan ./skills --json"
-	cmd.AddCommand(newImmuneScanCmd())
+		"dendrite immune scan ./skills --json\n" +
+		"dendrite immune update"
+	cmd.AddCommand(newImmuneScanCmd(), newImmuneUpdateCmd())
 	return cmd
 }
 
@@ -25,14 +27,25 @@ func NewImmuneCmd() *cobra.Command {
 type immuneScanOptions struct {
 	immune.Thresholds
 	LLM bool
+	// Pin is the scanner version the directives require (immune.scanner_version); empty accepts any.
+	Pin string
 }
 
-// immuneThresholds are the bands to judge by: the project's directives (immune.approve_max and
-// immune.hold_max), then any band a flag sets.
-func immuneThresholds(cmd *cobra.Command, o immuneScanOptions) (immune.Thresholds, error) {
+// immunePin is the scanner version the project's directives pin; empty when they pin none.
+func immunePin() (string, error) {
 	set, err := directive.Load(".")
 	if err != nil {
-		return immune.Thresholds{}, err
+		return "", err
+	}
+	return set.Immune.ScannerVersion, nil
+}
+
+// immuneSettings fills o from the project's directives: the bands to judge by (immune.approve_max and
+// immune.hold_max, then any band a flag sets) and the scanner version they pin.
+func immuneSettings(cmd *cobra.Command, o immuneScanOptions) (immuneScanOptions, error) {
+	set, err := directive.Load(".")
+	if err != nil {
+		return o, err
 	}
 	t := immune.Thresholds{ApproveMax: set.Immune.ApproveMax, HoldMax: set.Immune.HoldMax}
 	if cmd.Flags().Changed("approve-max") {
@@ -41,7 +54,8 @@ func immuneThresholds(cmd *cobra.Command, o immuneScanOptions) (immune.Threshold
 	if cmd.Flags().Changed("hold-max") {
 		t.HoldMax = o.HoldMax
 	}
-	return t, nil
+	o.Thresholds, o.Pin = t, set.Immune.ScannerVersion
+	return o, nil
 }
 
 func newImmuneScanCmd() *cobra.Command {
@@ -52,14 +66,15 @@ func newImmuneScanCmd() *cobra.Command {
 		Long: "Runs SkillSpector over a skill directory and maps its risk score to a verdict: up to immune.approve_max\n" +
 			"(20) approve (exit 0), up to immune.hold_max (50) hold (exit 3, a human decision is needed), above that\n" +
 			"quarantine (exit 4). The bands come from .github/dendrite/directives.toml; a flag overrides one. The scanner is static by\n" +
-			"default; --llm adds its model pass, which needs a provider in the environment (SKILLSPECTOR_PROVIDER).",
+			"default; --llm adds its model pass, which needs a provider in the environment (SKILLSPECTOR_PROVIDER).\n" +
+			"When the directives pin a scanner version (immune.scanner_version), a scanner of another version is refused:\n" +
+			"run `dendrite immune update`. Every result is appended to the scan ledger, .dendrite/immune/scans.jsonl.",
 		Args: cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			t, err := immuneThresholds(cmd, o)
+			o, err := immuneSettings(cmd, o)
 			if err != nil {
 				return err
 			}
-			o.Thresholds = t
 			return runImmuneScan(cmd.Context(), cmd.OutOrStdout(), args[0], o)
 		},
 	}
@@ -73,7 +88,8 @@ func runImmuneScan(ctx context.Context, out io.Writer, path string, o immuneScan
 	if err := o.Validate(); err != nil {
 		return cli.UsageErrorf("%v", err)
 	}
-	r, err := immune.Scanner{Thresholds: o.Thresholds, LLM: o.LLM}.Scan(ctx, path)
+	ledger := immune.Ledger{Path: statedir.Resolve(immune.LedgerFile)}
+	r, err := immune.Scanner{Thresholds: o.Thresholds, LLM: o.LLM, Pin: o.Pin, Ledger: &ledger}.Scan(ctx, path)
 	if err != nil {
 		return err
 	}
@@ -98,4 +114,49 @@ func printImmuneReport(out io.Writer, r immune.Report) {
 	for _, i := range r.Issues {
 		fmt.Fprintf(out, "    - %s %s (%s) %s:%d\n", i.ID, i.Pattern, i.Severity, i.File, i.Line)
 	}
+}
+
+func newImmuneUpdateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "update",
+		Short: "Install the pinned SkillSpector version, or the latest when none is pinned",
+		Long: "Brings the installed scanner to the version the directives pin (immune.scanner_version in\n" +
+			".github/dendrite/directives.toml, set with `dendrite directive set immune.scanner_version=<version>`) using\n" +
+			"`uv tool install`. A scanner already at the pin is left alone. Without a pin it installs the scanner when\n" +
+			"there is none and upgrades it to the latest otherwise.",
+		Example: "dendrite immune update\ndendrite immune update --json",
+		Args:    cli.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runImmuneUpdate(cmd.Context(), cmd.OutOrStdout())
+		},
+	}
+}
+
+func runImmuneUpdate(ctx context.Context, out io.Writer) error {
+	pin, err := immunePin()
+	if err != nil {
+		return err
+	}
+	u, err := immune.Refresh(ctx, pin)
+	if err != nil {
+		return err
+	}
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, u)
+	}
+	_, err = fmt.Fprintln(out, immuneUpdateLine(u))
+	return err
+}
+
+// immuneUpdateLine says what `immune update` did.
+func immuneUpdateLine(u immune.Update) string {
+	switch {
+	case u.Changed && u.Before == "":
+		return fmt.Sprintf("[+] SkillSpector %s installed", u.After)
+	case u.Changed:
+		return fmt.Sprintf("[+] SkillSpector %s -> %s", u.Before, u.After)
+	case u.Pin != "":
+		return fmt.Sprintf("[✓] SkillSpector %s is the pinned version; nothing to do", u.After)
+	}
+	return fmt.Sprintf("[✓] SkillSpector %s is the latest; pin it with `dendrite directive set immune.scanner_version=%s`", u.After, u.After)
 }
