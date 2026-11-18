@@ -24,7 +24,7 @@ func NewCleftCmd() *cobra.Command {
 	cmd.Example = "dendrite cleft update --dry-run\n" +
 		"dendrite cleft schedule --interval 12h\n" +
 		"dendrite cleft render azure-burst"
-	cmd.AddCommand(newCleftUpdateCmd(), newCleftScheduleCmd(), newCleftRenderCmd())
+	cmd.AddCommand(newCleftUpdateCmd(), newCleftScheduleCmd(), newCleftRenderCmd(), newModelsCmd())
 	return cmd
 }
 
@@ -139,6 +139,7 @@ func runCleftSchedule(ctx context.Context, opts gateway.UpdaterOptions, out io.W
 			if !ok {
 				return nil
 			}
+			refreshCatalogIfStale(ctx, out)
 			if rep != nil {
 				fmt.Fprintf(out, "[%s] [✓] Synced %d routes (%d discovered models). Primary: %s (Score: %d on %s)\n",
 					rep.Timestamp.Format("15:04:05"), rep.TotalModelsConfigured, len(rep.DiscoveredModels),
