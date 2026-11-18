@@ -22,6 +22,9 @@ Synaptic Cleft & Gating
 
 | Subcommand | Description |
 | :--- | :--- |
+| `models` | Show the model catalog and which model plays each role (local, cheap, strong, copilot) |
+| `models refresh` | Ask every source for its models and rebuild the catalog |
+| `models schedule` | Install (or --remove) the weekly LaunchAgent that refreshes the catalog |
 | `render` | Render the LiteLLM config for a topology scenario (default local-hybrid) |
 | `schedule` | Keep the LiteLLM routing table updated on an interval (foreground; Ctrl+C stops it) |
 | `update` | Discover live inference engines and rewrite the LiteLLM routing table |
@@ -31,6 +34,31 @@ Synaptic Cleft & Gating
 None
 
 ## Subcommand Reference
+
+### `dendrite cleft models refresh`
+
+Ask every source for its models and rebuild the catalog
+
+```bash
+dendrite cleft models refresh [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--quiet` | No output (used by the weekly job and background refreshes) |
+
+### `dendrite cleft models schedule`
+
+Install (or --remove) the weekly LaunchAgent that refreshes the catalog
+
+```bash
+dendrite cleft models schedule [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--no-load` | Write the plist without loading it |
+| `--remove` | Unload and delete the weekly job |
 
 ### `dendrite cleft schedule`
 
