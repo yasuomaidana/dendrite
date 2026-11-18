@@ -17,8 +17,15 @@ func TestPreToolHookBlocksOnceAllowsTheRepeatAndFailsOpen(t *testing.T) {
 	if err == nil || cli.ExitCodeFor(err) != cli.ExitUsage || !strings.Contains(err.Error(), "dendrite rag search") {
 		t.Fatalf("first attempt: err = %v (exit %d), want exit 2 with the dendrite equivalents", err, cli.ExitCodeFor(err))
 	}
+	if err := runPreTool(strings.NewReader(event), g); err == nil || !strings.Contains(err.Error(), "no Dendrite lookup") {
+		t.Errorf("the repeat without a lookup: err = %v, want it denied with the reason", err)
+	}
+	lookup := `{"session_id":"s","cwd":"/r","tool_name":"Bash","tool_input":{"command":"dendrite rag search foo"}}`
+	if err := runPreTool(strings.NewReader(lookup), g); err != nil {
+		t.Fatalf("a lookup was blocked: %v", err)
+	}
 	if err := runPreTool(strings.NewReader(event), g); err != nil {
-		t.Errorf("the repeat was blocked: %v", err)
+		t.Errorf("the repeat after a lookup was blocked: %v", err)
 	}
 	for _, bad := range []string{"", "not json", `{"tool_name":""}`, `{}`} {
 		if err := runPreTool(strings.NewReader(bad), g); err != nil {
