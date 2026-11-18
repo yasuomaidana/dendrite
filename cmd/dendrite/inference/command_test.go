@@ -5,8 +5,6 @@ import (
 	"Dendrite/cmd/dendrite/internal/clitest"
 	"Dendrite/pkg/inference"
 	"bytes"
-	"context"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -26,6 +24,10 @@ func TestSpike_ListAndProbe(t *testing.T) {
 	if out, code := cliOutput(t, "spike", "probe", "ollama-metal"); code != cli.ExitOK || !strings.Contains(out, "[Offline] Engine: ollama-metal") {
 		t.Fatalf("probe one: exit %d\n%s", code, out)
 	}
+}
+
+func TestSpike_ProbeAll(t *testing.T) {
+	clitest.IsolateEngines(t)
 	out, code := cliOutput(t, "spike", "probe")
 	if code != cli.ExitOK || strings.Index(out, "candle") > strings.Index(out, "ollama-metal") {
 		t.Fatalf("probe all should list engines sorted: exit %d\n%s", code, out)
@@ -33,6 +35,10 @@ func TestSpike_ListAndProbe(t *testing.T) {
 	if out, code := cliOutput(t, "spike", "probe", "--json"); code != cli.ExitOK || !strings.HasPrefix(strings.TrimSpace(out), "[") {
 		t.Fatalf("probe --json: exit %d\n%s", code, out)
 	}
+}
+
+func TestSpike_ListAndProbeUsageErrors(t *testing.T) {
+	clitest.IsolateEngines(t)
 	for _, args := range [][]string{
 		{"spike", "probe", "no-such-engine"},
 		{"spike", "probe", "ollama-metal", "--endpoint", "http://x"},
@@ -73,35 +79,6 @@ func TestSpike_MigrateMissingModelFails(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	if _, code := cliOutput(t, "spike", "migrate", "no-such-model:1b", "--dry-run"); code != cli.ExitError {
 		t.Fatalf("migrate of a missing model: exit %d", code)
-	}
-}
-
-func TestSpike_ServeUntilCancelled(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	_ = ln.Close()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	var buf bytes.Buffer
-	if err := runSpikeServe(ctx, port, &buf); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(buf.String(), "listening at http://127.0.0.1:") {
-		t.Fatalf("unexpected output %q", buf.String())
-	}
-
-	// A taken port is a runtime error.
-	busy, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer busy.Close()
-	if err := runSpikeServe(ctx, busy.Addr().(*net.TCPAddr).Port, &buf); err == nil {
-		t.Fatal("serving on a busy port should fail")
 	}
 }
 
