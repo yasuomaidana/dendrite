@@ -356,3 +356,37 @@ func TestAllowedByState(t *testing.T) {
 		}
 	}
 }
+
+// A session started in one repository must be able to write into a claimed work copy of another: the guard
+// reads the claims of the repository the file is in (DEN-899), not those of the session's directory.
+func TestRequireReadsTheStoreOfTheEditedRepository(t *testing.T) {
+	w := newWorld(t)
+	w.session(time.Hour)
+	w.claim("DEN-375", tracker.StatusInProgress, time.Minute)
+	sessionStore := &Store{Dir: t.TempDir()} // the store of the repository the session runs in: no claim there
+
+	d := w.deps()
+	d.Store = sessionStore
+	if err := Require(context.Background(), d, w.target()); err == nil {
+		t.Fatal("without StoreFor the guard reads the session's store and must refuse")
+	}
+
+	var asked string
+	d.StoreFor = func(top string) *Store { asked = top; return w.store }
+	if err := Require(context.Background(), d, w.target()); err != nil {
+		t.Fatalf("the edited repository's claim must allow the write: %v", err)
+	}
+	testkit.Equal(t, "store asked for the edited repository", asked, w.top)
+
+	d.StoreFor = func(string) *Store { return &Store{Dir: t.TempDir()} }
+	if err := Require(context.Background(), d, w.target()); err == nil {
+		t.Fatal("a repository with no claim must still refuse")
+	}
+}
+
+func TestNewStoreAtIsTheSessionStoreOfThatRepository(t *testing.T) {
+	repo := t.TempDir()
+	testkit.GitInit(t, repo, "main")
+	t.Setenv("DENDRITE_STATE_DIR", "")
+	testkit.Equal(t, "store dir of a test binary is isolated, whatever the repository", NewStoreAt(repo).Dir, NewStore().Dir)
+}

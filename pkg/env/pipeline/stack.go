@@ -38,7 +38,7 @@ func run(name, cmd string) Step { return Step{Name: name, Run: cmd} }
 type goStack struct{}
 
 func (goStack) setup(c Component) []Step {
-	return []Step{{Name: "Set up Go", Uses: "actions/setup-go@v5", With: [][2]string{{"go-version-file", join(c.Dir, "go.mod")}, {"cache", "true"}}}}
+	return []Step{{Name: "Set up Go", Uses: actionSetupGo, With: [][2]string{{"go-version-file", join(c.Dir, "go.mod")}, {"cache", "true"}}}}
 }
 
 func (goStack) lint(c Component, _ Options) []Step {
@@ -46,12 +46,13 @@ func (goStack) lint(c Component, _ Options) []Step {
 	if c.Dir != "." {
 		with = append(with, [2]string{"working-directory", c.Dir})
 	}
-	return []Step{{Name: "Lint (golangci-lint, cyclomatic and cognitive limits from the directives)", Uses: "golangci/golangci-lint-action@v8", With: with}}
+	return []Step{{Name: "Lint (golangci-lint, cyclomatic and cognitive limits from the directives)", Uses: actionGolangci, With: with}}
 }
 
 const goCoverageFloor = `total=$(go tool cover -func=coverage.out | awk '/^total:/ {sub("%%","",$3); print $3}')
 echo "Total statement coverage: ${total}%%"
-awk -v cov="$total" -v min=%s 'BEGIN { if (cov+0 < min+0) { print "coverage " cov "%% is below the required " min "%%"; exit 1 } }'`
+echo "Total statement coverage: ${total}%% (floor %[1]s%%)" >> "$GITHUB_STEP_SUMMARY"
+awk -v cov="$total" -v min=%[1]s 'BEGIN { if (cov+0 < min+0) { print "coverage " cov "%% is below the required " min "%%"; exit 1 } }'`
 
 func (goStack) test(_ Component, o Options) []Step {
 	steps := []Step{run("Test (race detector, coverage profile)", "go test -race -coverprofile=coverage.out -covermode=atomic ./...")}
@@ -59,7 +60,7 @@ func (goStack) test(_ Component, o Options) []Step {
 		return steps
 	}
 	min := percent(o.Set.Coverage.MinPercent)
-	return append(steps, run(fmt.Sprintf("Coverage floor (>= %s%%)", min), fmt.Sprintf(goCoverageFloor, min)))
+	return append(steps, run(fmt.Sprintf("Gate: coverage (>= %s%%)", min), fmt.Sprintf(goCoverageFloor, min)))
 }
 
 type rustStack struct{}
@@ -124,7 +125,7 @@ func (bunStack) test(c Component, _ Options) []Step {
 type uvStack struct{}
 
 func (uvStack) setup(Component) []Step {
-	return []Step{{Name: "Set up uv", Uses: "astral-sh/setup-uv@v5", With: [][2]string{{"enable-cache", "true"}}}}
+	return []Step{{Name: "Set up uv", Uses: actionSetupUV, With: [][2]string{{"enable-cache", "true"}}}}
 }
 
 func (uvStack) lint(Component, Options) []Step {

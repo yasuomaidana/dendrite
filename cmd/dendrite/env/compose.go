@@ -1,9 +1,9 @@
 package env
 
 import (
-	"Dendrite/cmd/dendrite/cortex"
 	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/env"
+	"Dendrite/pkg/env/penpotstack"
 	"Dendrite/pkg/node/migrate"
 	"Dendrite/pkg/ui/penpot"
 	"context"
@@ -159,6 +159,9 @@ func runMotorHealth(ctx context.Context, p migrate.ServiceProfile, deep bool, ou
 	} else {
 		fmt.Fprintf(out, "[-] Status: OFFLINE / UNREACHABLE on port %d\n", p.Port)
 	}
+	if p.Name == "penpot" {
+		fmt.Fprint(out, penpotstack.Summary(probePenpot(ctx)))
+	}
 	if deep && len(p.Containers) > 0 {
 		fmt.Fprintf(out, "    - Container Invariants (%d):\n", len(p.Containers))
 		for _, c := range p.Containers {
@@ -168,13 +171,14 @@ func runMotorHealth(ctx context.Context, p migrate.ServiceProfile, deep bool, ou
 	return nil
 }
 
+// probePenpot checks the frontend, the backend and the exporter of the local Penpot stack.
+func probePenpot(ctx context.Context) []penpotstack.Probe {
+	return penpotstack.Check(ctx, "127.0.0.1", env.DefaultPenpotConfig(), 1500*time.Millisecond)
+}
+
 func checkServiceHealth(ctx context.Context, profile migrate.ServiceProfile) bool {
 	if profile.Name == "penpot" {
-		endpoint := fmt.Sprintf("http://localhost:%d", profile.Port)
-		if profile.Port == 9001 {
-			endpoint = cortex.DefaultPenpotEndpoint
-		}
-		return env.CheckPenpotHealth(ctx, endpoint, 1500*time.Millisecond)
+		return penpotstack.Healthy(probePenpot(ctx))
 	}
 	if conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", profile.Port), time.Second); err == nil {
 		_ = conn.Close()
