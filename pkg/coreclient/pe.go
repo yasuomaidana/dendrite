@@ -31,7 +31,8 @@ type PEImport struct {
 }
 
 // PEInfo is the structure of a PE32 or PE32+ image: headers, sections, imports and exports. The sidecar caps the
-// import and export lists and says so in Truncated.
+// answer (one budget of 500 names for DLLs, imported functions and exports, 96 sections) and says so in Truncated;
+// see docs/specs/rea-pe-parse-contract.md.
 type PEInfo struct {
 	Machine    string      `json:"machine"`
 	Subsystem  string      `json:"subsystem"`
