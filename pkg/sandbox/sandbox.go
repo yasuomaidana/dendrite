@@ -91,6 +91,10 @@ func (c *SandboxConfig) BuildDockerRunArgs() ([]string, error) {
 		args = append(args, "-w", "/workspace")
 	}
 
+	for _, m := range c.ReadOnlyMounts {
+		args = append(args, "-v", fmt.Sprintf("%s:%s:ro", m.Host, m.Container))
+	}
+
 	// Environment variables sorted for determinism
 	keys := make([]string, 0, len(c.Environment))
 	for k := range c.Environment {

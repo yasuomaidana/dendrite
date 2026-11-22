@@ -1,8 +1,11 @@
 package planetools
 
 import (
+	"Dendrite/pkg/directive"
 	"Dendrite/pkg/rea/analysis"
+	"Dendrite/pkg/rea/engine"
 	"Dendrite/pkg/rea/insight"
+	"Dendrite/pkg/rea/ownership"
 	"context"
 	"errors"
 
@@ -15,14 +18,21 @@ func RegisterReaAnalysisTools(s *Server, deps Dependencies, service func() (*ana
 	idProp := TypedProp("string", "Analysis id, as printed by dendrite_rea_analyze")
 	tierProp := TypedProp("string", "Model tier: local or paid")
 	modelProp := TypedProp("string", "Model to use on that tier")
+	engineProps := map[string]interface{}{
+		"engine":  TypedProp("string", "Engine to run over the target: auto (best usable open-source one), none, rizin, radare2 or objdump (default: the [rea] directive)"),
+		"sandbox": TypedProp("string", "Where the engine runs: container (default) or host"),
+		"trusted": TypedProp("boolean", "The target is safe to open on the host (needed for a binary with sandbox=host)"),
+	}
 	registerReaDefs(s, service, []reaToolDef{
 		{"dendrite_rea_analyze", "Analyze any target (PE, ELF, Mach-O, ASAR/ZIP package, JS bundle, unknown file or a directory of source): inspect it, write its structure as documents and index them. Returns an evidence bundle under 4,000 tokens and an analysis id; read more with dendrite_rea_search instead of dumping the target again. A paused analysis is returned with paused=true.",
-			[]string{"binary"}, map[string]interface{}{"binary": TypedProp("string", "Path of the file or directory to analyze"), "format": TypedProp("string", "Format the target must have (default: detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree, unknown"),
+			[]string{"binary"}, withProps(engineProps, map[string]interface{}{"binary": TypedProp("string", "Path of the file or directory to analyze"), "format": TypedProp("string", "Format the target must have (default: detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree, unknown"),
 				"id": TypedProp("string", "Name of the analysis (default: generated)"), "tier": tierProp, "model": modelProp,
-				"ticket": TypedProp("string", "Leave a note with the summary and the analysis id on this ticket")}, reaAnalyze(deps)},
+				"ticket": TypedProp("string", "Leave a note with the summary and the analysis id on this ticket")}), reaAnalyze(deps)},
+		{"dendrite_rea_engines", "List the open-source reverse-engineering engines (rizin, radare2, objdump; Ghidra planned) with their license, capabilities and whether each is usable in the container or on the host here.",
+			nil, map[string]interface{}{}, reaEngines},
 		{"dendrite_rea_pause", "Pause an analysis at its next stage boundary; its checkpoint is kept.", []string{"id"}, map[string]interface{}{"id": idProp}, reaPause},
 		{"dendrite_rea_resume", "Continue an analysis from its last checkpoint, optionally on another model tier or model.", []string{"id"},
-			map[string]interface{}{"id": idProp, "tier": tierProp, "model": modelProp}, reaResume},
+			withProps(engineProps, map[string]interface{}{"id": idProp, "tier": tierProp, "model": modelProp}), reaResume},
 		{"dendrite_rea_purge", "Delete an analysis: its documents, its index and its checkpoint. Needs force=true.", []string{"id", "force"},
 			map[string]interface{}{"id": idProp, "force": TypedProp("boolean", "Confirm the deletion")}, reaPurge},
 		{"dendrite_rea_search", "Search the documents of a finished analysis; returns only the best passages, within the 4,000-token boundary.", []string{"id", "query"},
@@ -65,8 +75,28 @@ func reaTool(service func() (*analysis.Service, error), required []string, run f
 	}
 }
 
+// withProps is base with the extra properties added.
+func withProps(extra, base map[string]interface{}) map[string]interface{} {
+	for k, v := range extra {
+		base[k] = v
+	}
+	return base
+}
+
 func reaOptions(args map[string]interface{}) analysis.Options {
-	return analysis.Options{ID: stringArg(args, "id"), Format: stringArg(args, "format"), Tier: stringArg(args, "tier"), Model: stringArg(args, "model")}
+	trusted, _ := args["trusted"].(bool)
+	return analysis.Options{ID: stringArg(args, "id"), Format: stringArg(args, "format"), Tier: stringArg(args, "tier"), Model: stringArg(args, "model"),
+		Engine: stringArg(args, "engine"), Sandbox: stringArg(args, "sandbox"), Trusted: trusted}
+}
+
+// reaEngineDefaults fills the engine and sandbox of a new analysis from the environment and the [rea] directive of
+// the server's project; a directive that cannot be read leaves the defaults.
+func reaEngineDefaults(o analysis.Options) analysis.Options {
+	set, err := ownership.LoadRule(".")
+	if err != nil {
+		set = directive.Defaults()
+	}
+	return o.WithEngineDefaults(set.Rea)
 }
 
 // reaOutcome returns the result of a run; a pause the caller asked for is a result (paused=true in its state).
@@ -90,7 +120,7 @@ type analyzed struct {
 // that cannot be posted is reported in the result and never fails the analysis.
 func reaAnalyze(deps Dependencies) func(context.Context, *analysis.Service, map[string]interface{}) (interface{}, error) {
 	return func(ctx context.Context, svc *analysis.Service, args map[string]interface{}) (interface{}, error) {
-		res, err := svc.Analyze(ctx, stringArg(args, "binary"), reaOptions(args))
+		res, err := svc.Analyze(ctx, stringArg(args, "binary"), reaEngineDefaults(reaOptions(args)))
 		out, err := reaOutcome(res, err)
 		ticket := stringArg(args, "ticket")
 		if err != nil || ticket == "" || res.State.Stage != analysis.StageDone {
@@ -109,6 +139,10 @@ func postTicketNote(ctx context.Context, deps Dependencies, args map[string]inte
 		return "not posted: " + err.Error()
 	}
 	return "posted"
+}
+
+func reaEngines(ctx context.Context, _ *analysis.Service, _ map[string]interface{}) (interface{}, error) {
+	return engine.Statuses(ctx, engine.NewService().Env), nil
 }
 
 func reaPause(_ context.Context, svc *analysis.Service, args map[string]interface{}) (interface{}, error) {

@@ -150,5 +150,7 @@ func Encode(s Set) []byte {
 	line("title_prefixes = %s", quoted(s.Rea.TitlePrefixes))
 	line("refusal_owner = %s", strconv.Quote(s.Rea.RefusalOwner))
 	line("refusal_model = %s", strconv.Quote(s.Rea.RefusalModel))
+	line("engine = %s", strconv.Quote(s.Rea.Engine))
+	line("sandbox = %s", strconv.Quote(s.Rea.Sandbox))
 	return []byte(b.String())
 }

@@ -33,7 +33,7 @@ func reaCommands() []*cobra.Command {
 		Example: "dendrite retro analyze sample.exe --tier local\ndendrite retro analyze ./app.asar\ndendrite retro analyze ./src --format source-tree\ndendrite retro search pe-1a2b3c4d \"CreateFileW\"",
 		Args:    cli.ExactArgs(1),
 		RunE: runStages(func(ctx context.Context, s *analysis.Service, args []string) (*analysis.Result, error) {
-			return s.Analyze(ctx, args[0], o)
+			return s.Analyze(ctx, args[0], engineDefaults(o))
 		}, func(cmd *cobra.Command, res *analysis.Result) {
 			if ticket != "" {
 				postTicketNote(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), ticket, res)
@@ -46,6 +46,7 @@ func reaCommands() []*cobra.Command {
 	f.StringVar(&o.ID, "id", "", "Name of the analysis (default: generated from the binary)")
 	f.StringVar(&o.Tier, "tier", "local", "Model tier: local or paid")
 	f.StringVar(&o.Model, "model", "", "Model to use on that tier")
+	addEngineFlags(f, &o)
 
 	pause := &cobra.Command{
 		Use:   "pause <id>",
@@ -74,6 +75,7 @@ func reaCommands() []*cobra.Command {
 	}
 	resume.Flags().StringVar(&ro.Tier, "tier", "", "Switch to this model tier: local or paid")
 	resume.Flags().StringVar(&ro.Model, "model", "", "Switch to this model")
+	addEngineFlags(resume.Flags(), &ro)
 
 	var force bool
 	purge := &cobra.Command{
@@ -152,6 +154,7 @@ func reportRun(out io.Writer, res *analysis.Result, err error) error {
 	st, b := res.State, res.Bundle
 	fmt.Fprintf(out, "[✓] Analysis %s: %s (%s, tier %s)\n", st.ID, st.Stage, st.Format, st.Tier)
 	fmt.Fprintf(out, "    Evidence: %d tokens (truncated: %t); imported DLLs: %s\n", b.TokenEstimate, b.Truncated, strings.Join(b.CrossReferences, ", "))
+	fmt.Fprintf(out, "    Engine: %s\n", engineLine(st))
 	fmt.Fprintf(out, "    Read more: dendrite retro search %s \"<question>\"\n", st.ID)
 	return nil
 }
@@ -307,4 +310,15 @@ func postTicketNote(ctx context.Context, out, warn io.Writer, ticket string, res
 		return
 	}
 	fmt.Fprintf(out, "    Note posted on %s\n", ticket)
+}
+
+// engineLine says which engine ran and where, or why none did.
+func engineLine(st analysis.State) string {
+	if st.EngineRan != "" {
+		return fmt.Sprintf("%s (%s)", st.EngineRan, st.EngineMode)
+	}
+	if st.EngineNote != "" {
+		return "none: " + st.EngineNote
+	}
+	return "not run"
 }

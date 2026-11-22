@@ -7,6 +7,7 @@ import (
 	"Dendrite/pkg/rag"
 	"Dendrite/pkg/rag/ragtest"
 	"Dendrite/pkg/rea/analysis"
+	"Dendrite/pkg/rea/engine"
 	"Dendrite/pkg/testkit"
 	"errors"
 	"os"
@@ -19,6 +20,7 @@ import (
 func useReaSidecars(t *testing.T) string {
 	t.Helper()
 	t.Setenv("DENDRITE_HOME", t.TempDir())
+	t.Setenv(engine.EnvEngine, engine.EngineNone) // these tests are about the analysis; engines have their own
 	coretest.UseStandin(t)
 	ragtest.UseStandin(t, "1.11.0")
 	t.Cleanup(rag.CloseSidecars)

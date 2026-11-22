@@ -7,6 +7,7 @@ import (
 	"Dendrite/pkg/rag"
 	"Dendrite/pkg/rag/ragtest"
 	"Dendrite/pkg/rea/analysis"
+	"Dendrite/pkg/rea/engine"
 	"context"
 	"errors"
 	"os"
@@ -27,6 +28,7 @@ func reaTools(t *testing.T, service func() (*analysis.Service, error)) (*Server,
 func reaToolsWith(t *testing.T, deps Dependencies, service func() (*analysis.Service, error)) (*Server, string) {
 	t.Helper()
 	t.Setenv("DENDRITE_HOME", t.TempDir())
+	t.Setenv(engine.EnvEngine, engine.EngineNone) // these tests are about the analysis; engines have their own
 	coretest.UseStandin(t)
 	ragtest.UseStandin(t, "1.11.0")
 	t.Cleanup(rag.CloseSidecars)

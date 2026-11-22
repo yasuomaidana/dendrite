@@ -26,6 +26,7 @@ const (
 	StageNew     Stage = "new"     // created, nothing parsed yet
 	StageParsed  Stage = "parsed"  // the inspected structure is saved in image.json
 	StageWritten Stage = "written" // the workspace documents are written
+	StageEngine  Stage = "engine"  // the engine listed the functions (engine.json), or recorded why not
 	StageTriaged Stage = "triaged" // the functions are routed to a model tier (triage.json), when the target has any
 	StageDone    Stage = "done"    // the workspace is indexed and searchable
 )
@@ -42,19 +43,27 @@ var (
 
 // State is the checkpoint of one analysis, kept in <root>/<id>/state.json.
 type State struct {
-	ID        string    `json:"id"`
-	Binary    string    `json:"binary"`
-	Format    string    `json:"format"`
-	Kind      string    `json:"kind,omitempty"`
-	Tier      string    `json:"tier"`
-	Model     string    `json:"model,omitempty"`
-	Stage     Stage     `json:"stage"`
-	Paused    bool      `json:"paused"`
-	Gate      string    `json:"gate,omitempty"`
-	Triage    *Triage   `json:"triage,omitempty"`
-	Error     string    `json:"error,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID     string  `json:"id"`
+	Binary string  `json:"binary"`
+	Format string  `json:"format"`
+	Kind   string  `json:"kind,omitempty"`
+	Tier   string  `json:"tier"`
+	Model  string  `json:"model,omitempty"`
+	Stage  Stage   `json:"stage"`
+	Paused bool    `json:"paused"`
+	Gate   string  `json:"gate,omitempty"`
+	Triage *Triage `json:"triage,omitempty"`
+	// Engine, Sandbox and Trusted are the policy asked for (empty: from the [rea] directive); EngineRan, EngineMode
+	// and EngineNote say what ran and where, or why nothing did.
+	Engine     string    `json:"engine,omitempty"`
+	Sandbox    string    `json:"sandbox,omitempty"`
+	Trusted    bool      `json:"trusted,omitempty"`
+	EngineRan  string    `json:"engine_ran,omitempty"`
+	EngineMode string    `json:"engine_mode,omitempty"`
+	EngineNote string    `json:"engine_note,omitempty"`
+	Error      string    `json:"error,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 var idPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)

@@ -14,6 +14,7 @@ import (
 	"Dendrite/pkg/coreclient"
 	"Dendrite/pkg/fsutil"
 	"Dendrite/pkg/rea"
+	"Dendrite/pkg/rea/engine"
 )
 
 // Indexer indexes the documents of an analysis and searches them; RagIndex is the real one (the RAG sidecar).
@@ -33,7 +34,13 @@ type Hit struct {
 
 // Options say what to analyze with: an explicit id, the format the target is expected to have (empty or auto: any),
 // the model tier (local or paid) and model.
-type Options struct{ ID, Format, Tier, Model string }
+type Options struct {
+	ID, Format, Tier, Model string
+	// Engine and Sandbox choose the reverse-engineering engine and where it runs (empty: the directive's choice);
+	// Trusted says the target is safe to open on the host.
+	Engine, Sandbox string
+	Trusted         bool
+}
 
 // Result is an analysis after a run: its checkpoint and, once finished, its bounded evidence bundle.
 type Result struct {
@@ -54,6 +61,7 @@ type Service struct {
 	Store     *Store
 	Inspector Inspector
 	Functions FunctionLister // nil: the functions are not triaged
+	Engines   EngineRunner   // nil: no engine runs
 	Index     Indexer
 	Now       func() time.Time
 }
@@ -66,7 +74,7 @@ func NewService() (*Service, error) {
 		return nil, err
 	}
 	return &Service{Store: store, Inspector: &CoreInspector{Client: coreclient.Default()},
-		Functions: coreclient.Default(), Index: NewRagIndex()}, nil
+		Functions: coreclient.Default(), Engines: engine.NewService(), Index: NewRagIndex()}, nil
 }
 
 func (s *Service) now() time.Time {
@@ -107,7 +115,7 @@ func (s *Service) Analyze(ctx context.Context, target string, o Options) (*Resul
 	}
 	now := s.now()
 	st := State{ID: orDefault(o.ID, NewID(abs, now)), Binary: abs, Format: format, Tier: tier, Model: o.Model,
-		Stage: StageNew, CreatedAt: now, UpdatedAt: now}
+		Engine: o.Engine, Sandbox: o.Sandbox, Trusted: o.Trusted, Stage: StageNew, CreatedAt: now, UpdatedAt: now}
 	if err := s.Store.Create(st); err != nil {
 		return nil, err
 	}
@@ -156,6 +164,7 @@ func (s *Service) Resume(ctx context.Context, id string, o Options) (*Result, er
 		st.Gate = "" // the paid tier is what the gate asks for
 	}
 	st.Model = orDefault(o.Model, st.Model)
+	s.retarget(&st, o)
 	st.Paused, st.UpdatedAt = st.Gate != "", s.now() // a gate still standing keeps the analysis paused
 	if err := s.Store.Save(&st); err != nil {
 		return nil, err
@@ -260,6 +269,13 @@ func (s *Service) step(ctx context.Context, st *State) error {
 	case StageParsed:
 		return s.writeDocs(st)
 	case StageWritten:
+		if s.Engines != nil {
+			return s.runEngine(ctx, st)
+		}
+		if s.Functions != nil {
+			return s.triage(ctx, st)
+		}
+	case StageEngine:
 		if s.Functions != nil {
 			return s.triage(ctx, st)
 		}

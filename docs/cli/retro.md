@@ -23,6 +23,8 @@ Dendritic Arbor
 | :--- | :--- |
 | `adr` | Draft a proposed Architecture Decision Record from a finished analysis |
 | `analyze` | Analyze any target (PE, ELF, Mach-O, package, bundle, source directory): inspect it, write its structure as documents and index them for search |
+| `engines` | List the reverse-engineering engines and where each can run on this machine |
+| `engines build` | Build the container image of an engine from its Dockerfile (never done implicitly) |
 | `export` | Write the structure of a finished analysis as safe Rust structs under --output |
 | `handoff` | Hand an REA ticket this session refuses to AGY (rule: the [rea] directive) |
 | `list` | List the open-source showcase targets |
@@ -67,17 +69,33 @@ dendrite retro analyze <target> [flags]
 
 | Flag | Description |
 | :--- | :--- |
+| `--engine` | Engine to run over the target: auto (the best usable open-source one), none, rizin, radare2 or objdump (default: the [rea] directive) |
 | `--format` | Format the target must have (default: detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree or unknown |
 | `--id` | Name of the analysis (default: generated from the binary) |
 | `--model` | Model to use on that tier |
+| `--sandbox` | Where the engine runs: container (default) or host |
 | `--ticket` | Leave a note with the summary and the analysis id on this ticket |
 | `--tier` | Model tier: local or paid (default: local) |
+| `--trusted` | Say the target is safe to open on the host (needed for a binary with --sandbox host) |
 
 ```bash
 dendrite retro analyze sample.exe --tier local
 dendrite retro analyze ./app.asar
 dendrite retro analyze ./src --format source-tree
 dendrite retro search pe-1a2b3c4d "CreateFileW"
+```
+
+### `dendrite retro engines`
+
+List the reverse-engineering engines and where each can run on this machine
+
+```bash
+dendrite retro engines
+```
+
+```bash
+dendrite retro engines
+dendrite retro engines build rizin
 ```
 
 ### `dendrite retro export`
@@ -147,8 +165,11 @@ dendrite retro resume <id> [flags]
 
 | Flag | Description |
 | :--- | :--- |
+| `--engine` | Engine to run over the target: auto (the best usable open-source one), none, rizin, radare2 or objdump (default: the [rea] directive) |
 | `--model` | Switch to this model |
+| `--sandbox` | Where the engine runs: container (default) or host |
 | `--tier` | Switch to this model tier: local or paid |
+| `--trusted` | Say the target is safe to open on the host (needed for a binary with --sandbox host) |
 
 ```bash
 dendrite retro resume pe-1a2b3c4d --tier paid --model cloud-pro

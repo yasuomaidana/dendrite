@@ -103,6 +103,8 @@ func TestValidateNamesTheBrokenRule(t *testing.T) {
 		{"security.fail_on", func(s *Set) { s.Security.FailOn = "never" }},
 		{"languages.preference", func(s *Set) { s.Languages.Preference = nil }},
 		{"rea.refusal_owner", func(s *Set) { s.Rea.RefusalOwner = "copilot" }},
+		{"rea.engine", func(s *Set) { s.Rea.Engine = "ida" }},
+		{"rea.sandbox", func(s *Set) { s.Rea.Sandbox = "vm" }},
 		{"rea.labels or rea.title_prefixes", func(s *Set) { s.Rea.Labels, s.Rea.TitlePrefixes = nil, nil }},
 	} {
 		s := Defaults()
@@ -199,7 +201,7 @@ func TestParseValueReadsTypedText(t *testing.T) {
 
 func TestKeysAndDescribeCoverEverySetting(t *testing.T) {
 	ks := Keys()
-	testkit.Equal(t, "len(Keys)", len(ks), 35)
+	testkit.Equal(t, "len(Keys)", len(ks), 37)
 	testkit.Equal(t, "Keys[0]", ks[0], "complexity.exclude")
 	text := Describe()
 	for _, k := range ks {
@@ -330,7 +332,7 @@ func TestInterpretReturnsTheStoredValueOfEveryKey(t *testing.T) {
 		"lint.strictness": `"standard"`, "security.fail_on": `"medium"`, "security.secrets": "false",
 		"done.auto_done": "false", "done.human_review_labels": `["x"]`, "languages.preference": `["go"]`,
 		"git.integration_branch": `"main"`, "git.feature_prefix": `"feat/"`,
-		"rea.labels": `["reverse"]`, "rea.title_prefixes": `["[RE]"]`, "rea.refusal_owner": `"none"`, "rea.refusal_model": `"gemini-3.8-flash-high"`,
+		"rea.labels": `["reverse"]`, "rea.title_prefixes": `["[RE]"]`, "rea.refusal_owner": `"none"`, "rea.refusal_model": `"gemini-3.8-flash-high"`, "rea.engine": `"rizin"`, "rea.sandbox": `"host"`,
 	}
 	for _, key := range Keys() {
 		answer := `[{"key":"` + key + `","value":` + sample[key] + `}]`

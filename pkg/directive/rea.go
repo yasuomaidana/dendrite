@@ -18,6 +18,10 @@ type Rea struct {
 	TitlePrefixes []string `toml:"title_prefixes"`
 	RefusalOwner  string   `toml:"refusal_owner"`
 	RefusalModel  string   `toml:"refusal_model"`
+	// Engine is the reverse-engineering tool to run over a target: auto (the best usable open-source one), none,
+	// or a name of the engine catalog. Sandbox is where it runs: container (the default) or host.
+	Engine  string `toml:"engine"`
+	Sandbox string `toml:"sandbox"`
 }
 
 // defaultRea is the REA directive of a project that has none: AGY takes over a refused REA ticket.
@@ -26,6 +30,8 @@ func defaultRea() Rea {
 		Labels:        []string{"rea"},
 		TitlePrefixes: []string{"[REA]"},
 		RefusalOwner:  RefusalOwnerAGY,
+		Engine:        "auto",
+		Sandbox:       "container",
 	}
 }
 
@@ -33,6 +39,12 @@ func defaultRea() Rea {
 func (r Rea) validate() error {
 	if !oneOf(r.RefusalOwner, RefusalOwnerAGY, RefusalOwnerNone) {
 		return fmt.Errorf("rea.refusal_owner must be %s or %s", RefusalOwnerAGY, RefusalOwnerNone)
+	}
+	if !oneOf(r.Engine, "auto", "none", "rizin", "radare2", "objdump", "ghidra") { // the names of pkg/rea/engine's catalog
+		return fmt.Errorf("rea.engine must be auto, none, rizin, radare2, objdump or ghidra")
+	}
+	if !oneOf(r.Sandbox, "container", "host") {
+		return fmt.Errorf("rea.sandbox must be container or host")
 	}
 	if r.RefusalOwner == RefusalOwnerAGY && len(r.Labels) == 0 && len(r.TitlePrefixes) == 0 {
 		return fmt.Errorf("rea.labels or rea.title_prefixes needs an entry when rea.refusal_owner is %s", RefusalOwnerAGY)
