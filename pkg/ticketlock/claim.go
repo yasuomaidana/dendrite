@@ -32,6 +32,17 @@ type Claim struct {
 	PlaneState tracker.Status `json:"plane_state"`
 	// CheckedAt is when PlaneState was last confirmed against Plane; the guard trusts it for a while.
 	CheckedAt time.Time `json:"checked_at"`
+	// RefusalSuspected is set by the Stop hook when the session's last reply only declined in words (an REA
+	// ticket): the session may still go on, so nothing is handed over yet. A later reply that does not decline
+	// clears it, and the session-end hook hands the ticket over while it stands.
+	RefusalSuspected *SuspectedRefusal `json:"refusal_suspected,omitempty"`
+}
+
+// SuspectedRefusal is the mark a claim carries while its last reply looks like a refusal.
+type SuspectedRefusal struct {
+	// Excerpt is the start of the reply, kept on the ticket as evidence if it is handed over.
+	Excerpt string    `json:"excerpt"`
+	At      time.Time `json:"at"`
 }
 
 func (s *Store) claimPath(branch string) string {
