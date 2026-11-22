@@ -41,15 +41,61 @@ type ToolInput struct {
 // Classify returns the raw-search kinds a tool call would run and whether it calls Dendrite.
 // Searches over piped input (`dendrite ... | rg foo`) are filters, not repository searches.
 func Classify(toolName string, in ToolInput) (searches []string, usesDendrite bool) {
+	sc := scan(toolName, in)
+	return sc.searches, sc.usesDendrite
+}
+
+// scanResult is everything the guard reads from one tool call.
+type scanResult struct {
+	searches     []string
+	usesDendrite bool
+	// retrieval is set for a Dendrite lookup (rag, ask, brief, graph), which earns a raw-search retry.
+	retrieval bool
+	// targets holds the paths each raw search names; an empty list means the working directory.
+	targets [][]string
+}
+
+func scan(toolName string, in ToolInput) scanResult {
 	switch {
 	case strings.HasPrefix(toolName, "mcp__dendrite"):
-		return nil, true
+		return scanResult{usesDendrite: true, retrieval: isRetrievalMCP(toolName)}
 	case toolName == "Grep":
-		return []string{KindGrepTool}, false
+		var t []string
+		if in.Path != "" {
+			t = []string{in.Path}
+		}
+		return scanResult{searches: []string{KindGrepTool}, targets: [][]string{t}}
 	case toolName == "Bash":
-		return classifyCommand(in.Command)
+		return scanCommand(in.Command)
 	}
-	return nil, false
+	return scanResult{}
+}
+
+// retrievalMCP names the MCP tools that look something up in the index.
+var retrievalMCP = []string{"rag_", "graph_", "query_context", "synapse_search"}
+
+func isRetrievalMCP(tool string) bool {
+	for _, k := range retrievalMCP {
+		if strings.Contains(tool, k) {
+			return true
+		}
+	}
+	return false
+}
+
+// retrievalCommands are the `dendrite` subcommands that retrieve context.
+var retrievalCommands = map[string]bool{
+	"rag": true, "ask": true, "q": true, "query-project": true, "rag-ask": true, "brief": true, "graph": true,
+}
+
+// firstArg returns the first argument that is not a flag.
+func firstArg(args []string) string {
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			return a
+		}
+	}
+	return ""
 }
 
 type segment struct {
@@ -58,7 +104,8 @@ type segment struct {
 	pipeIndex int
 }
 
-func classifyCommand(command string) (searches []string, usesDendrite bool) {
+func scanCommand(command string) scanResult {
+	var sc scanResult
 	seen := map[string]bool{}
 	for _, seg := range splitSegments(command) {
 		head, args := commandHead(seg.tokens)
@@ -67,20 +114,44 @@ func classifyCommand(command string) (searches []string, usesDendrite bool) {
 		}
 		switch head {
 		case "dendrite":
-			usesDendrite = true
+			sc.usesDendrite = true
+			if retrievalCommands[firstArg(args)] {
+				sc.retrieval = true
+			}
 		case "rg", "ag", "ack":
-			if !filtersStdin(seg, args) && !seen[head] {
-				seen[head] = true
-				searches = append(searches, head)
+			if !filtersStdin(seg, args) {
+				sc.addSearch(seen, head, args)
 			}
 		case "grep", "egrep", "fgrep", "ugrep", "ug":
-			if isRecursiveGrep(args) && !filtersStdin(seg, args) && !seen[KindGrep] {
-				seen[KindGrep] = true
-				searches = append(searches, KindGrep)
+			if isRecursiveGrep(args) && !filtersStdin(seg, args) {
+				sc.addSearch(seen, KindGrep, args)
 			}
 		}
 	}
-	return searches, usesDendrite
+	return sc
+}
+
+func (sc *scanResult) addSearch(seen map[string]bool, kind string, args []string) {
+	sc.targets = append(sc.targets, searchPaths(args))
+	if !seen[kind] {
+		seen[kind] = true
+		sc.searches = append(sc.searches, kind)
+	}
+}
+
+// searchPaths returns the paths a search names: the positionals after the pattern, or all of them
+// when the pattern comes from -e, -f or --regexp.
+func searchPaths(args []string) []string {
+	pos := positionalArgs(args)
+	for _, a := range args {
+		if a == "-e" || a == "-f" || a == "--regexp" || a == "--file" || strings.HasPrefix(a, "--regexp=") {
+			return pos
+		}
+	}
+	if len(pos) == 0 {
+		return nil
+	}
+	return pos[1:]
 }
 
 // commandHead returns the program a segment runs, skipping NAME=value assignments and wrappers
@@ -126,26 +197,27 @@ var valueFlags = map[string]bool{
 	"--include": true, "--exclude-dir": true,
 }
 
-// positionals counts the arguments that are neither flags nor flag values.
-func positionals(args []string) int {
-	n := 0
+// positionalArgs returns the arguments that are neither flags nor flag values.
+func positionalArgs(args []string) []string {
+	var out []string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
 		case a == "--":
-			n += len(args) - i - 1
-			return n
+			return append(out, args[i+1:]...)
 		case strings.HasPrefix(a, "--") && strings.Contains(a, "="):
 		case strings.HasPrefix(a, "-") && len(a) > 1:
 			if valueFlags[a] {
 				i++
 			}
 		default:
-			n++
+			out = append(out, a)
 		}
 	}
-	return n
+	return out
 }
+
+func positionals(args []string) int { return len(positionalArgs(args)) }
 
 // filtersStdin reports whether a segment reads a pipe: it is not the first command of its pipeline
 // and names at most a pattern (no path), so it narrows another command's output.

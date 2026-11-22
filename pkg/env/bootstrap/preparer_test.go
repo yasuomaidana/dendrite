@@ -804,7 +804,7 @@ func TestTheProjectExtensionAddsEnvPreTestStepsAndJobs(t *testing.T) {
 			t.Errorf("the workflow lacks %q:\n%s", want, ci)
 		}
 	}
-	if strings.Contains(ci, "Coverage floor") {
+	if strings.Contains(ci, "Gate: coverage") {
 		t.Error("skip_coverage_floor leaves the threshold to the project")
 	}
 }

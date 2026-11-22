@@ -35,8 +35,9 @@ func NewHookCmd() *cobra.Command {
 		Short: "Pre-tool hook: stop a raw recursive search once, point at the Dendrite equivalent, and log tool use",
 		Long: "Reads a Claude Code PreToolUse event on stdin. The first time a session runs a raw recursive search\n" +
 			"(rg, grep -r, the Grep tool) it exits 2 with the Dendrite equivalents on stderr; repeating the same\n" +
-			"command goes through. " + searchguard.AllowEnv + "=1 bypasses. Dendrite calls are only counted\n" +
-			"(see `dendrite sensory usage`). Any malformed input is allowed: a hook must never break the agent.",
+			"command goes through only after the session made a Dendrite lookup (rag, ask, brief, graph) in between.\n" +
+			"Searches naming only files are never stopped. " + searchguard.AllowEnv + "=1 bypasses. Dendrite calls are\n" +
+			"only counted (see `dendrite sensory usage`). Any malformed input is allowed: a hook must never break the agent.",
 		Args: cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPreTool(cmd.InOrStdin(), searchguard.New(searchGuardDir()))
@@ -101,6 +102,7 @@ func runSensoryUsage(out io.Writer, since time.Duration) error {
 		fmt.Fprintf(out, "  %s=%d", k, s.Blocked[k])
 	}
 	fmt.Fprintln(out)
+	fmt.Fprintf(out, "    - Retries denied (no lookup): %d   File searches allowed: %d\n", s.Denied, s.Scoped)
 	fmt.Fprintf(out, "    - Dendrite share:        %.0f%% of retrieval calls\n", s.Share*100)
 	return nil
 }

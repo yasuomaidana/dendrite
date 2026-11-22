@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -207,42 +208,53 @@ func Locate(m Member, opts HealOptions, hints ...string) Location {
 			remote, name = e.Remote, e.Name
 		}
 	}
-	if remote != "" {
-		var hits []string
-		for _, c := range cands {
-			// A directory that already carries a different identity is another project,
-			// and a linked worktree is a second checkout of one that was already scanned.
-			if c.id != "" || c.worktree {
-				continue
-			}
-			if projectid.NormalizeRemote(projectid.GitRemote(c.path)) == remote {
-				hits = append(hits, c.path)
-			}
-		}
-		if len(hits) == 1 {
-			return Location{Path: hits[0], Match: MatchRemote}
-		}
-		if len(hits) > 1 {
-			sort.Strings(hits)
-			return Location{Match: MatchRemote, Candidates: hits}
-		}
+	if loc, ok := locateByRemote(cands, remote, normalizePath(m.PathHint)); ok {
+		return loc
 	}
+	return locateByName(cands, m.Alias, filepath.Base(m.PathHint), name)
+}
 
-	names := map[string]bool{m.Alias: true, filepath.Base(m.PathHint): true}
-	if name != "" {
-		names[name] = true
+// locateByRemote ties the member to the scanned directories cloned from remote. A directory
+// that already carries an identity is another project, and a linked worktree is a second
+// checkout of one that was already scanned. The checkout the manifest already points at (hint)
+// outranks other clones of the same remote: it did not move, it only lost its identity file.
+func locateByRemote(cands []candidate, remote, hint string) (Location, bool) {
+	if remote == "" {
+		return Location{}, false
 	}
 	var hits []string
 	for _, c := range cands {
-		if c.id == "" && names[filepath.Base(c.path)] {
+		if c.id == "" && !c.worktree && projectid.NormalizeRemote(projectid.GitRemote(c.path)) == remote {
 			hits = append(hits, c.path)
 		}
 	}
-	if len(hits) > 0 {
-		sort.Strings(hits)
-		return Location{Match: MatchName, Candidates: hits}
+	if slices.Contains(hits, hint) {
+		hits = []string{hint}
 	}
-	return Location{}
+	switch len(hits) {
+	case 0:
+		return Location{}, false
+	case 1:
+		return Location{Path: hits[0], Match: MatchRemote}, true
+	}
+	sort.Strings(hits)
+	return Location{Match: MatchRemote, Candidates: hits}, true
+}
+
+// locateByName lists the identity-less directories named like the member. A name is weak
+// evidence, so they are only ever candidates, never a Path.
+func locateByName(cands []candidate, names ...string) Location {
+	var hits []string
+	for _, c := range cands {
+		if c.id == "" && slices.Contains(names, filepath.Base(c.path)) {
+			hits = append(hits, c.path)
+		}
+	}
+	if len(hits) == 0 {
+		return Location{}
+	}
+	sort.Strings(hits)
+	return Location{Match: MatchName, Candidates: hits}
 }
 
 // locateByID resolves id against the scanned candidates. Main checkouts win over
