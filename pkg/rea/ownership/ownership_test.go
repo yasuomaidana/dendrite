@@ -3,6 +3,7 @@ package ownership
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -85,19 +86,38 @@ func TestTransferHandsARefusedTicketToAGY(t *testing.T) {
 	var r run
 	res, err := Transfer(context.Background(), r.ports(reaIssue(), ""), directive.Defaults().Rea, "DEN-1062",
 		Refusal{Reason: "stop_reason", Excerpt: "No."})
-	if err != nil || res.JobID != "job-1" || res.AlreadyOwned || res.Ticket != "DEN-1062" {
-		t.Fatalf("result %+v, %v", res, err)
+	if err != nil {
+		t.Fatal(err)
 	}
+	if want := (Result{Ticket: "DEN-1062", JobID: "job-1"}); res != want {
+		t.Errorf("result %+v, want %+v", res, want)
+	}
+	r.checkRecorded(t)
+	r.checkJob(t)
+}
+
+// checkRecorded checks the refusal was recorded, the ticket labelled and the Claude claim released.
+func (r *run) checkRecorded(t *testing.T) {
+	t.Helper()
 	if len(r.comments) != 1 || !strings.HasPrefix(r.comments[0], "decision: ") || !strings.Contains(r.comments[0], "No.") {
 		t.Errorf("the refusal must be recorded as a decision: %v", r.comments)
 	}
-	if len(r.labels) != 1 || r.labels[0] != OwnerLabel || len(r.released) != 1 || r.released[0] != "DEN-1062" {
+	if !reflect.DeepEqual(r.labels, []string{OwnerLabel}) || !reflect.DeepEqual(r.released, []string{"DEN-1062"}) {
 		t.Errorf("labels %v, released %v", r.labels, r.released)
 	}
+}
+
+// checkJob checks the AGY job: isolated, for the ticket, sized by its estimate and briefed with its text.
+func (r *run) checkJob(t *testing.T) {
+	t.Helper()
 	spec := r.specs[0]
-	if spec.Agent != "agy" || !spec.Isolate || spec.Ticket != "DEN-1062" || spec.Complexity != 8 ||
-		!strings.Contains(spec.Prompt, "Parse PE64.") || !strings.Contains(spec.Prompt, "No.") {
+	if spec.Agent != "agy" || !spec.Isolate || spec.Ticket != "DEN-1062" || spec.Complexity != 8 {
 		t.Errorf("job spec %+v", spec)
+	}
+	for _, want := range []string{"Parse PE64.", "No."} {
+		if !strings.Contains(spec.Prompt, want) {
+			t.Errorf("the job prompt lacks %q:\n%s", want, spec.Prompt)
+		}
 	}
 }
 

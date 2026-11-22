@@ -55,20 +55,27 @@ func (r *reaRig) stopEvent(content string) *strings.Reader {
 	return strings.NewReader(`{"session_id":"s-1","cwd":"` + r.repo + `","transcript_path":"` + path + `"}`)
 }
 
+// quietStop runs the Stop hook on a transcript and fails the test unless it said and did nothing.
+func (r *reaRig) quietStop(t *testing.T, transcript string) {
+	t.Helper()
+	var out bytes.Buffer
+	if err := runStop(context.Background(), r.stopEvent(transcript), &out); err != nil || out.Len() != 0 || len(r.jobs) != 0 {
+		t.Errorf("the hook must leave this alone: %v %q jobs=%d", err, out.String(), len(r.jobs))
+	}
+}
+
+func TestStopLeavesASessionThatIsNotRefusingAlone(t *testing.T) {
+	r := newReaRig(t, "[DEN-377] [REA] retro analyze")
+	r.quietStop(t, refusalTranscript) // no claim, nothing to judge
+	r.claim()
+	r.quietStop(t, workingTranscript)
+}
+
 func TestStopHandsARefusedREATicketToAGY(t *testing.T) {
 	r := newReaRig(t, "[DEN-377] [REA] retro analyze")
-	ctx := context.Background()
-	var out bytes.Buffer
-
-	if err := runStop(ctx, r.stopEvent(refusalTranscript), &out); err != nil || out.Len() != 0 {
-		t.Errorf("no claim, nothing to judge: %v %q", err, out.String())
-	}
 	r.claim()
-	if err := runStop(ctx, r.stopEvent(workingTranscript), &out); err != nil || out.Len() != 0 || len(r.jobs) != 0 {
-		t.Errorf("a session that is working is left alone: %v %q", err, out.String())
-	}
-
-	if err := runStop(ctx, r.stopEvent(refusalTranscript), &out); err != nil {
+	var out bytes.Buffer
+	if err := runStop(context.Background(), r.stopEvent(refusalTranscript), &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "DEN-377 refused by Claude: handed to AGY (job job-3)") || len(r.jobs) != 1 || r.jobs[0].Agent != "agy" {
@@ -80,32 +87,22 @@ func TestStopHandsARefusedREATicketToAGY(t *testing.T) {
 	if _, ok := ticketlock.NewStore().ClaimOfDir(r.repo); ok {
 		t.Error("the Claude claim must be released")
 	}
-
-	out.Reset()
-	if err := runStop(ctx, r.stopEvent(refusalTranscript), &out); err != nil || out.Len() != 0 || len(r.jobs) != 1 {
-		t.Errorf("a second Stop changes nothing: %v %q jobs=%d", err, out.String(), len(r.jobs))
-	}
+	r.jobs = nil
+	r.quietStop(t, refusalTranscript) // a second Stop changes nothing
 }
 
 func TestStopLeavesWhatItCannotJudgeAlone(t *testing.T) {
-	ctx := context.Background()
 	t.Run("not an REA ticket", func(t *testing.T) {
 		r := newReaRig(t, "[DEN-377] Fix the parser")
 		r.claim()
-		var out bytes.Buffer
-		if err := runStop(ctx, r.stopEvent(refusalTranscript), &out); err != nil || out.Len() != 0 || len(r.jobs) != 0 {
-			t.Errorf("%v %q jobs=%d", err, out.String(), len(r.jobs))
-		}
+		r.quietStop(t, refusalTranscript)
 	})
 	t.Run("another agent holds the claim", func(t *testing.T) {
 		r := newReaRig(t, "[DEN-377] [REA] x")
-		if _, err := planecli.LifecycleIn(mustClient(t), r.repo).Claim(ctx, "DEN-377", ticketlock.ClaimOptions{Agent: "agy"}); err != nil {
+		if _, err := planecli.LifecycleIn(mustClient(t), r.repo).Claim(context.Background(), "DEN-377", ticketlock.ClaimOptions{Agent: "agy"}); err != nil {
 			t.Fatal(err)
 		}
-		var out bytes.Buffer
-		if err := runStop(ctx, r.stopEvent(refusalTranscript), &out); err != nil || out.Len() != 0 || len(r.jobs) != 0 {
-			t.Errorf("%v %q jobs=%d", err, out.String(), len(r.jobs))
-		}
+		r.quietStop(t, refusalTranscript)
 	})
 	for name, toml := range map[string]string{
 		"the directive keeps it with Claude": "schema = 1\n[rea]\nrefusal_owner = \"none\"\n",
@@ -114,18 +111,21 @@ func TestStopLeavesWhatItCannotJudgeAlone(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			r := newReaRig(t, "[DEN-377] [REA] x")
 			r.claim()
-			file := filepath.Join(r.repo, filepath.FromSlash(directive.Path))
-			if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(file, []byte(toml), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			var out bytes.Buffer
-			if err := runStop(ctx, r.stopEvent(refusalTranscript), &out); err != nil || out.Len() != 0 || len(r.jobs) != 0 {
-				t.Errorf("%v %q jobs=%d", err, out.String(), len(r.jobs))
-			}
+			r.writeDirectives(t, toml)
+			r.quietStop(t, refusalTranscript)
 		})
+	}
+}
+
+// writeDirectives gives the working copy a directives file.
+func (r *reaRig) writeDirectives(t *testing.T, toml string) {
+	t.Helper()
+	file := filepath.Join(r.repo, filepath.FromSlash(directive.Path))
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

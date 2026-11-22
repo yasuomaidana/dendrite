@@ -38,7 +38,7 @@ func newReaBoard(t *testing.T, title string) *reaBoard {
 	l := &ticketlock.Lifecycle{
 		Board: ticketlock.Board{Svc: svc, Client: client}, Store: &ticketlock.Store{Dir: t.TempDir()},
 		Plans: ticketlock.PlanStore{Dir: t.TempDir()}, Now: time.Now, Dir: t.TempDir(),
-		Branch: func(string) string { return "DEND-501-x/DEN-1062-y" }, Head: func(string) string { return "abc1234" },
+		Branch: func(string) string { return claudeBranch }, Head: func(string) string { return "abc1234" },
 	}
 	return &reaBoard{Lifecycle: l, board: board}
 }
@@ -46,13 +46,7 @@ func newReaBoard(t *testing.T, title string) *reaBoard {
 func TestBoardPortsTransferARefusedTicketOnARealBoard(t *testing.T) {
 	b := newReaBoard(t, "[DEN-1062] [REA] retro analyze")
 	b.board.SetDescription("DEN-1062", "<p>Parse PE64 headers.</p>")
-	claudeBranch := "DEND-501-x/DEN-1062-y"
-	if err := b.Store.WriteClaim(ticketlock.Claim{Ticket: "DEN-1062", Agent: "claude", Branch: claudeBranch, SessionID: "s-1"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := b.Store.WriteClaim(ticketlock.Claim{Ticket: "DEN-1062", Agent: "agy", Branch: "agy-branch", SessionID: "s-2"}); err != nil {
-		t.Fatal(err)
-	}
+	b.writeClaims(t)
 
 	ports := BoardPorts(b.Lifecycle)
 	var spec agentjobs.SubmitSpec
@@ -62,19 +56,8 @@ func TestBoardPortsTransferARefusedTicketOnARealBoard(t *testing.T) {
 	if err != nil || res.JobID != "job-7" || res.Ticket != "DEN-1062" {
 		t.Fatalf("transfer: %+v, %v", res, err)
 	}
-	if got := b.board.LabelNames("DEN-1062"); !reflect.DeepEqual(got, []string{OwnerLabel}) {
-		t.Errorf("labels %v", got)
-	}
-	texts := b.board.Texts("DEN-1062")
-	if len(texts) != 1 || !strings.HasPrefix(texts[0], "[dendrite:decision]") || !strings.Contains(texts[0], "AGY takes ownership") {
-		t.Errorf("comments %q", texts)
-	}
-	if _, err := b.Store.ClaimFor(claudeBranch); !errors.Is(err, ticketlock.ErrNoClaim) {
-		t.Errorf("the Claude claim must be released: %v", err)
-	}
-	if _, err := b.Store.ClaimFor("agy-branch"); err != nil {
-		t.Errorf("the AGY claim stays: %v", err)
-	}
+	b.checkPlane(t)
+	b.checkClaims(t)
 	if spec.Ticket != "DEN-1062" || !strings.Contains(spec.Prompt, "Parse PE64 headers.") {
 		t.Errorf("job spec %+v", spec)
 	}
@@ -82,6 +65,44 @@ func TestBoardPortsTransferARefusedTicketOnARealBoard(t *testing.T) {
 	again, err := Transfer(context.Background(), ports, directive.Defaults().Rea, "DEN-1062", Refusal{})
 	if err != nil || !again.AlreadyOwned {
 		t.Errorf("a second transfer changes nothing: %+v, %v", again, err)
+	}
+}
+
+const claudeBranch = "DEND-501-x/DEN-1062-y"
+
+// writeClaims gives the ticket a Claude claim and an AGY claim.
+func (b *reaBoard) writeClaims(t *testing.T) {
+	t.Helper()
+	for _, c := range []ticketlock.Claim{
+		{Ticket: "DEN-1062", Agent: "claude", Branch: claudeBranch, SessionID: "s-1"},
+		{Ticket: "DEN-1062", Agent: "agy", Branch: "agy-branch", SessionID: "s-2"},
+	} {
+		if err := b.Store.WriteClaim(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// checkPlane checks the owner label and the decision comment on the board.
+func (b *reaBoard) checkPlane(t *testing.T) {
+	t.Helper()
+	if got := b.board.LabelNames("DEN-1062"); !reflect.DeepEqual(got, []string{OwnerLabel}) {
+		t.Errorf("labels %v", got)
+	}
+	texts := b.board.Texts("DEN-1062")
+	if len(texts) != 1 || !strings.HasPrefix(texts[0], "[dendrite:decision]") || !strings.Contains(texts[0], "AGY takes ownership") {
+		t.Errorf("comments %q", texts)
+	}
+}
+
+// checkClaims checks the Claude claim was released and the AGY claim kept.
+func (b *reaBoard) checkClaims(t *testing.T) {
+	t.Helper()
+	if _, err := b.Store.ClaimFor(claudeBranch); !errors.Is(err, ticketlock.ErrNoClaim) {
+		t.Errorf("the Claude claim must be released: %v", err)
+	}
+	if _, err := b.Store.ClaimFor("agy-branch"); err != nil {
+		t.Errorf("the AGY claim stays: %v", err)
 	}
 }
 
