@@ -97,8 +97,8 @@ func TestExportRustReportsADamagedAnalysis(t *testing.T) {
 	if _, err := r.Analyze(ctx(), r.binary, Options{ID: "pe-bad"}); err != nil {
 		t.Fatal(err)
 	}
-	info := filepath.Join(r.Store.Dir("pe-bad"), "pe.json")
-	if err := os.WriteFile(info, []byte(`{"entry_point":"nope","image_base":"0x1"}`), 0o600); err != nil {
+	info := filepath.Join(r.Store.Dir("pe-bad"), "image.json")
+	if err := os.WriteFile(info, []byte(`{"kind":"executable","format":"pe","entry":"nope","base":"0x1"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.ExportRust("pe-bad", t.TempDir()); err == nil || !strings.Contains(err.Error(), "pe-bad") {

@@ -21,7 +21,8 @@ Dendritic Arbor
 
 | Subcommand | Description |
 | :--- | :--- |
-| `analyze` | Analyze a Windows PE image: parse it, write its structure as documents and index them for search |
+| `analyze` | Analyze any target (PE, ELF, Mach-O, package, bundle, source directory): inspect it, write its structure as documents and index them for search |
+| `export` | Write the structure of a finished analysis as safe Rust structs under --output |
 | `handoff` | Hand an REA ticket this session refuses to AGY (rule: the [rea] directive) |
 | `list` | List the open-source showcase targets |
 | `pause` | Pause an analysis at its next stage boundary; its checkpoint is kept |
@@ -38,22 +39,41 @@ None
 
 ### `dendrite retro analyze`
 
-Analyze a Windows PE image: parse it, write its structure as documents and index them for search
+Analyze any target (PE, ELF, Mach-O, package, bundle, source directory): inspect it, write its structure as documents and index them for search
 
 ```bash
-dendrite retro analyze <binary> [flags]
+dendrite retro analyze <target> [flags]
 ```
 
 | Flag | Description |
 | :--- | :--- |
-| `--format` | Image format: pe32 or pe64 (default: pe64) |
+| `--format` | Format the target must have (default: detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree or unknown |
 | `--id` | Name of the analysis (default: generated from the binary) |
 | `--model` | Model to use on that tier |
 | `--tier` | Model tier: local or paid (default: local) |
 
 ```bash
-dendrite retro analyze sample.exe --format pe64 --tier local
+dendrite retro analyze sample.exe --tier local
+dendrite retro analyze ./app.asar
+dendrite retro analyze ./src --format source-tree
 dendrite retro search pe-1a2b3c4d "CreateFileW"
+```
+
+### `dendrite retro export`
+
+Write the structure of a finished analysis as safe Rust structs under --output
+
+```bash
+dendrite retro export <id> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--output` | Directory to write the generated file into |
+| `--target-language` | Language of the generated code (rust) (default: rust) |
+
+```bash
+dendrite retro export pe-1a2b3c4d --target-language rust --output ./generated
 ```
 
 ### `dendrite retro handoff`

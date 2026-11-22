@@ -81,7 +81,7 @@ func TestNewServiceUsesTheDendriteHomeAndTheSharedSidecars(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("DENDRITE_HOME", home)
 	s, err := NewService()
-	if err != nil || s.Store.Root != filepath.Join(home, "rea") || s.Parser == nil || s.Index == nil {
+	if err != nil || s.Store.Root != filepath.Join(home, "rea") || s.Inspector == nil || s.Index == nil {
 		t.Fatalf("%+v, %v", s, err)
 	}
 	t.Setenv("DENDRITE_HOME", "")

@@ -55,7 +55,7 @@ func TestReaToolsRunAnAnalysisSearchAndResume(t *testing.T) {
 	if err != nil || !strings.Contains(out, `"stage": "done"`) || !strings.Contains(out, "KERNEL32.dll") {
 		t.Fatalf("analyze: %v\n%s", err, out)
 	}
-	if out, err = callRea(t, s, "dendrite_rea_search", map[string]any{"id": "pe-mcp", "query": "CreateFileW", "k": float64(2)}); err != nil || !strings.Contains(out, "imports/kernel32.dll.md") {
+	if out, err = callRea(t, s, "dendrite_rea_search", map[string]any{"id": "pe-mcp", "query": "CreateFileW", "k": float64(2)}); err != nil || !strings.Contains(out, "libraries/kernel32.dll.md") {
 		t.Errorf("search: %v\n%s", err, out)
 	}
 	if out, err = callRea(t, s, "dendrite_rea_resume", map[string]any{"id": "pe-mcp", "tier": "paid"}); err != nil || !strings.Contains(out, `"tier": "paid"`) {
@@ -78,12 +78,12 @@ func TestReaPurgeToolNeedsForce(t *testing.T) {
 
 // pauseDuringParse pauses its analysis while the image is parsed, as another process could.
 type pauseDuringParse struct {
-	inner analysis.Parser
+	inner analysis.Inspector
 	svc   *analysis.Service
 }
 
-func (p pauseDuringParse) PEParse(c context.Context, path string) (*coreclient.PEInfo, error) {
-	info, err := p.inner.PEParse(c, path)
+func (p pauseDuringParse) Inspect(c context.Context, path string) (*coreclient.Image, error) {
+	info, err := p.inner.Inspect(c, path)
 	if err == nil {
 		_, err = p.svc.Pause("pe-pz")
 	}
@@ -94,7 +94,7 @@ func TestReaToolsReturnAPauseAsAResult(t *testing.T) {
 	var svc *analysis.Service
 	s, pe := reaTools(t, func() (*analysis.Service, error) { return svc, nil })
 	svc, _ = analysis.NewService()
-	svc.Parser = pauseDuringParse{inner: svc.Parser, svc: svc}
+	svc.Inspector = pauseDuringParse{inner: svc.Inspector, svc: svc}
 
 	out, err := callRea(t, s, "dendrite_rea_analyze", map[string]any{"binary": pe, "id": "pe-pz"})
 	if err != nil || !strings.Contains(out, `"paused": true`) || !strings.Contains(out, `"stage": "parsed"`) {
@@ -103,7 +103,7 @@ func TestReaToolsReturnAPauseAsAResult(t *testing.T) {
 	if out, err = callRea(t, s, "dendrite_rea_pause", map[string]any{"id": "pe-pz"}); err != nil || !strings.Contains(out, `"paused": true`) {
 		t.Errorf("pause: %v\n%s", err, out)
 	}
-	svc.Parser = svc.Parser.(pauseDuringParse).inner
+	svc.Inspector = svc.Inspector.(pauseDuringParse).inner
 	if out, err = callRea(t, s, "dendrite_rea_resume", map[string]any{"id": "pe-pz"}); err != nil || !strings.Contains(out, `"stage": "done"`) {
 		t.Errorf("resume after the pause: %v\n%s", err, out)
 	}

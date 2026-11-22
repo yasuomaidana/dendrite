@@ -274,8 +274,11 @@ func complexityOf(source string) (functions []map[string]interface{}, failed boo
 // peParse answers pe.parse for any file that starts with the DOS signature "MZ"; any other file is not a PE
 // image. Mode "nope" plays a dendrite-core that predates the method.
 func peParse(params json.RawMessage, o options) (any, map[string]interface{}) {
-	if o.mode == "nope" {
+	if o.mode == "nope" || o.mode == "old" {
 		return nil, rpcError(-32601, "method not found: pe.parse")
+	}
+	if o.mode == "pefail" {
+		return nil, rpcError(-32000, "parse failed")
 	}
 	var p struct {
 		Path string `json:"path"`

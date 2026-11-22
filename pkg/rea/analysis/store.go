@@ -24,7 +24,7 @@ type Stage string
 
 const (
 	StageNew     Stage = "new"     // created, nothing parsed yet
-	StageParsed  Stage = "parsed"  // the PE structure is saved in pe.json
+	StageParsed  Stage = "parsed"  // the inspected structure is saved in image.json
 	StageWritten Stage = "written" // the workspace documents are written
 	StageDone    Stage = "done"    // the workspace is indexed and searchable
 )
@@ -44,6 +44,7 @@ type State struct {
 	ID        string    `json:"id"`
 	Binary    string    `json:"binary"`
 	Format    string    `json:"format"`
+	Kind      string    `json:"kind,omitempty"`
 	Tier      string    `json:"tier"`
 	Model     string    `json:"model,omitempty"`
 	Stage     Stage     `json:"stage"`

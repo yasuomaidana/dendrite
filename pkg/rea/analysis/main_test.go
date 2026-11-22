@@ -45,7 +45,7 @@ func newRig(t *testing.T) *rig {
 	core := coreclient.New(sidecar.DefaultLocator())
 	t.Cleanup(func() { _ = core.Close(); rag.CloseSidecars() })
 	return &rig{
-		Service: &Service{Store: &Store{Root: filepath.Join(t.TempDir(), "rea")}, Parser: core, Index: NewRagIndex()},
+		Service: &Service{Store: &Store{Root: filepath.Join(t.TempDir(), "rea")}, Inspector: &CoreInspector{Client: core}, Index: NewRagIndex()},
 		t:       t,
 		binary:  writeBinary(t, "MZ\x90\x00 pe image"),
 	}

@@ -16,11 +16,6 @@ import (
 	"Dendrite/pkg/rea"
 )
 
-// Parser reads the structure of a PE image; *coreclient.Client is the real one (the dendrite-core sidecar).
-type Parser interface {
-	PEParse(ctx context.Context, path string) (*coreclient.PEInfo, error)
-}
-
 // Indexer indexes the documents of an analysis and searches them; RagIndex is the real one (the RAG sidecar).
 type Indexer interface {
 	Index(ctx context.Context, dir string) error
@@ -36,7 +31,8 @@ type Hit struct {
 	Score   float32 `json:"score,omitempty"`
 }
 
-// Options say what to analyze with: an explicit id, the image format, the model tier (local or paid) and model.
+// Options say what to analyze with: an explicit id, the format the target is expected to have (empty or auto: any),
+// the model tier (local or paid) and model.
 type Options struct{ ID, Format, Tier, Model string }
 
 // Result is an analysis after a run: its checkpoint and, once finished, its bounded evidence bundle.
@@ -45,10 +41,7 @@ type Result struct {
 	Bundle *rea.EvidenceBundle `json:"bundle,omitempty"`
 }
 
-var (
-	formats = []string{"pe32", "pe64"}
-	tiers   = []string{"local", "paid"}
-)
+var tiers = []string{"local", "paid"}
 
 const (
 	defaultHits = 5
@@ -58,10 +51,10 @@ const (
 
 // Service runs analyses against a store, a parser and an index.
 type Service struct {
-	Store  *Store
-	Parser Parser
-	Index  Indexer
-	Now    func() time.Time
+	Store     *Store
+	Inspector Inspector
+	Index     Indexer
+	Now       func() time.Time
 }
 
 // NewService is the real service: analyses kept under the Dendrite home, the shared dendrite-core client and the
@@ -71,7 +64,7 @@ func NewService() (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{Store: store, Parser: coreclient.Default(), Index: NewRagIndex()}, nil
+	return &Service{Store: store, Inspector: &CoreInspector{Client: coreclient.Default()}, Index: NewRagIndex()}, nil
 }
 
 func (s *Service) now() time.Time {
@@ -95,14 +88,19 @@ func orDefault(value, fallback string) string {
 	return fallback
 }
 
-// Analyze starts an analysis of the binary and runs it to the end, or to the first pause.
-func (s *Service) Analyze(ctx context.Context, binary string, o Options) (*Result, error) {
-	abs, _ := filepath.Abs(binary) // on failure abs is empty and the stat below reports the file unreadable
-	if info, err := os.Stat(abs); err != nil || info.IsDir() {
-		return nil, fmt.Errorf("%s is not a readable file", binary)
+// Analyze starts an analysis of the target (a file of any format, or a directory) and runs it to the end, or to
+// the first pause.
+func (s *Service) Analyze(ctx context.Context, target string, o Options) (*Result, error) {
+	abs, _ := filepath.Abs(target) // on failure abs is empty and the stat below reports the target unreadable
+	if _, err := os.Stat(abs); err != nil {
+		return nil, fmt.Errorf("%s is not readable: %w", target, err)
 	}
-	format, tier := orDefault(o.Format, "pe64"), orDefault(o.Tier, "local")
-	if err := errors.Join(oneOf(format, formats, "format"), oneOf(tier, tiers, "tier")); err != nil {
+	format, err := normalizeFormat(o.Format)
+	if err != nil {
+		return nil, err
+	}
+	tier := orDefault(o.Tier, "local")
+	if err := oneOf(tier, tiers, "tier"); err != nil {
 		return nil, err
 	}
 	now := s.now()
@@ -222,11 +220,11 @@ func (s *Service) run(ctx context.Context, st *State) (*Result, error) {
 			return nil, err
 		}
 	}
-	info, err := s.loadInfo(st.ID)
+	img, err := s.loadImage(st.ID)
 	if err != nil {
 		return nil, err
 	}
-	return &Result{State: *st, Bundle: Bundle(*st, info)}, nil
+	return &Result{State: *st, Bundle: Bundle(*st, img)}, nil
 }
 
 // checkpoint saves the state after a stage, keeping a pause another process asked for in the meantime.
@@ -250,27 +248,31 @@ func (s *Service) step(ctx context.Context, st *State) error {
 	return s.indexDocs(ctx, st)
 }
 
-// parse reads the PE structure and saves it, so later stages and a resume never parse again.
+// parse inspects the target and saves what it found, so later stages and a resume never inspect again. A format
+// the analysis was told to expect must be the format found.
 func (s *Service) parse(ctx context.Context, st *State) error {
-	info, err := s.Parser.PEParse(ctx, st.Binary)
+	img, err := s.Inspector.Inspect(ctx, st.Binary)
 	if err != nil {
 		return err
 	}
-	data, _ := json.MarshalIndent(info, "", "  ") // a struct of strings and numbers always marshals
-	if err := fsutil.WriteFileAtomic(s.infoPath(st.ID), data); err != nil {
+	if st.Format != "" && st.Format != img.Format {
+		return fmt.Errorf("expected a %s target but %s is %s", st.Format, filepath.Base(st.Binary), img.Format)
+	}
+	data, _ := json.MarshalIndent(img, "", "  ") // a struct of strings and numbers always marshals
+	if err := fsutil.WriteFileAtomic(s.imagePath(st.ID), data); err != nil {
 		return err
 	}
-	st.Stage = StageParsed
+	st.Format, st.Kind, st.Stage = img.Format, img.Kind, StageParsed
 	return nil
 }
 
 // writeDocs writes the documents of the saved structure into the workspace.
 func (s *Service) writeDocs(st *State) error {
-	info, err := s.loadInfo(st.ID)
+	img, err := s.loadImage(st.ID)
 	if err != nil {
 		return err
 	}
-	if err := writeWorkspace(s.Store.WorkspaceDir(st.ID), *st, info); err != nil {
+	if err := writeWorkspace(s.Store.WorkspaceDir(st.ID), *st, img); err != nil {
 		return err
 	}
 	st.Stage = StageWritten
@@ -286,16 +288,36 @@ func (s *Service) indexDocs(ctx context.Context, st *State) error {
 	return nil
 }
 
-func (s *Service) infoPath(id string) string { return filepath.Join(s.Store.Dir(id), "pe.json") }
+func (s *Service) imagePath(id string) string { return filepath.Join(s.Store.Dir(id), "image.json") }
 
-func (s *Service) loadInfo(id string) (*coreclient.PEInfo, error) {
-	data, err := os.ReadFile(s.infoPath(id))
+// legacyPEPath is where analyses made before the format-neutral model kept the structure of a PE image.
+func (s *Service) legacyPEPath(id string) string { return filepath.Join(s.Store.Dir(id), "pe.json") }
+
+// loadImage reads what the inspection of analysis id found. An analysis saved before the format-neutral model
+// holds a PE structure in pe.json, which is read as the image of a PE target.
+func (s *Service) loadImage(id string) (*Image, error) {
+	data, err := os.ReadFile(s.imagePath(id))
+	if errors.Is(err, os.ErrNotExist) {
+		return s.loadLegacyPE(id)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("analysis %s: the parsed structure is missing: %w", id, err)
+		return nil, fmt.Errorf("analysis %s: the inspected structure is unreadable: %w", id, err)
 	}
-	var info coreclient.PEInfo
-	if err := json.Unmarshal(data, &info); err != nil {
-		return nil, fmt.Errorf("analysis %s: unreadable parsed structure: %w", id, err)
+	var img Image
+	if err := json.Unmarshal(data, &img); err != nil {
+		return nil, fmt.Errorf("analysis %s: unreadable inspected structure: %w", id, err)
 	}
-	return &info, nil
+	return &img, nil
+}
+
+func (s *Service) loadLegacyPE(id string) (*Image, error) {
+	data, err := os.ReadFile(s.legacyPEPath(id))
+	if err != nil {
+		return nil, fmt.Errorf("analysis %s: the inspected structure is missing: %w", id, err)
+	}
+	var pe coreclient.PEInfo
+	if err := json.Unmarshal(data, &pe); err != nil {
+		return nil, fmt.Errorf("analysis %s: unreadable inspected structure: %w", id, err)
+	}
+	return coreclient.FromPE(&pe), nil
 }

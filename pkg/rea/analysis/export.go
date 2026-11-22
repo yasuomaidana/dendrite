@@ -14,6 +14,22 @@ import (
 // ErrNeedsOutput means no output directory was given: an export never guesses where to write.
 var ErrNeedsOutput = errors.New("an output directory is required: pass --output")
 
+// ErrExportUnsupported means the export knows no output for the format of the analysis yet (see DEN-1065).
+var ErrExportUnsupported = errors.New("export only writes PE images for now")
+
+// peOf is the PE structure of an image of format pe, the shape the Rust export renders.
+func peOf(img *Image) *coreclient.PEInfo {
+	pe := &coreclient.PEInfo{Machine: img.Arch, Subsystem: img.Notes["subsystem"], PE32Plus: img.Bits == 64, EntryPoint: img.Entry,
+		ImageBase: img.Base, Exports: img.Exports, Truncated: img.Truncated}
+	for _, sec := range img.Sections {
+		pe.Sections = append(pe.Sections, coreclient.PESection{Name: sec.Name, VirtualAddress: sec.Address, VirtualSize: sec.Size, RawSize: sec.RawSize, Flags: sec.Flags})
+	}
+	for _, lib := range img.Libraries {
+		pe.Imports = append(pe.Imports, coreclient.PEImport{DLL: lib.Name, Functions: lib.Symbols})
+	}
+	return pe
+}
+
 // ExportRust writes the structure of a finished analysis as a safe Rust module, <output>/<id>.rs, and returns its
 // path. The module holds plain data (no unsafe code, no dependencies), so it compiles on its own.
 func (s *Service) ExportRust(id, output string) (string, error) {
@@ -27,11 +43,14 @@ func (s *Service) ExportRust(id, output string) (string, error) {
 	if st.Stage != StageDone {
 		return "", ErrNotDone
 	}
-	info, err := s.loadInfo(id)
+	img, err := s.loadImage(id)
 	if err != nil {
 		return "", err
 	}
-	src, err := rustModule(st, info)
+	if img.Format != coreclient.FormatPE {
+		return "", fmt.Errorf("%w: analysis %s is a %s target", ErrExportUnsupported, id, img.Format)
+	}
+	src, err := rustModule(st, peOf(img))
 	if err != nil {
 		return "", fmt.Errorf("analysis %s: %w", id, err)
 	}

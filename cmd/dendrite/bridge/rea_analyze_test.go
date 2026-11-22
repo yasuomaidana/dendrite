@@ -38,10 +38,10 @@ func TestRetroAnalyzeThenSearch(t *testing.T) {
 		t.Fatalf("analyze: exit %d\n%s", code, out)
 	}
 	out, code = cliOutput(t, "retro", "search", "pe-cli", "CreateFileW", "-k", "3")
-	if code != cli.ExitOK || !strings.Contains(out, "--- imports/kernel32.dll.md") {
+	if code != cli.ExitOK || !strings.Contains(out, "--- libraries/kernel32.dll.md") {
 		t.Fatalf("search: exit %d\n%s", code, out)
 	}
-	if out, code = cliOutput(t, "rea", "search", "pe-cli", "CreateFileW", "--json"); code != cli.ExitOK || !strings.Contains(out, `"file": "imports/kernel32.dll.md"`) {
+	if out, code = cliOutput(t, "rea", "search", "pe-cli", "CreateFileW", "--json"); code != cli.ExitOK || !strings.Contains(out, `"file": "libraries/kernel32.dll.md"`) {
 		t.Errorf("search --json: exit %d\n%s", code, out)
 	}
 }
@@ -75,9 +75,9 @@ func TestRetroAnalyzeJSONAndMatchlessSearch(t *testing.T) {
 
 func TestRetroResumeAfterAFailedParseAndPause(t *testing.T) {
 	useReaSidecars(t)
-	bad := writePE(t, "ELF")
-	if _, code := cliOutput(t, "retro", "analyze", bad, "--id", "pe-r"); code != cli.ExitError {
-		t.Fatalf("a file that is not a PE image: exit %d", code)
+	bad := writePE(t, "plain text")
+	if _, code := cliOutput(t, "retro", "analyze", bad, "--id", "pe-r", "--format", "pe"); code != cli.ExitError {
+		t.Fatalf("a target that is not the expected format: exit %d", code)
 	}
 	if out, code := cliOutput(t, "retro", "pause", "pe-r"); code != cli.ExitOK || !strings.Contains(out, "will pause after stage new") {
 		t.Errorf("pause: exit %d\n%s", code, out)
@@ -151,5 +151,21 @@ func TestRetroExportWritesRustUnderOutput(t *testing.T) {
 		if _, code = cliOutput(t, args...); code != cli.ExitError {
 			t.Errorf("%v: exit %d, want an error", args, code)
 		}
+	}
+}
+
+func TestRetroAnalyzeIsNotLimitedToWindows(t *testing.T) {
+	useReaSidecars(t)
+	elf := writePE(t, "\x7fELF\x02\x01")
+	out, code := cliOutput(t, "retro", "analyze", elf, "--id", "elf-cli")
+	if code != cli.ExitOK || !strings.Contains(out, "(elf, tier local)") || !strings.Contains(out, "libc.so.6") {
+		t.Fatalf("an ELF target: exit %d\n%s", code, out)
+	}
+	out, code = cliOutput(t, "retro", "analyze", t.TempDir(), "--id", "dir-cli", "--format", "source-tree")
+	if code != cli.ExitOK || !strings.Contains(out, "(source-tree, tier local)") {
+		t.Errorf("a directory: exit %d\n%s", code, out)
+	}
+	if out, code = cliOutput(t, "retro", "search", "elf-cli", "strcmp"); code != cli.ExitOK || !strings.Contains(out, "--- libraries/libc.so.6.md") {
+		t.Errorf("search an ELF analysis: exit %d\n%s", code, out)
 	}
 }

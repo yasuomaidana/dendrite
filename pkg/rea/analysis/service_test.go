@@ -19,7 +19,7 @@ func TestAnalyzeRunsEveryStageAndWritesTheWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := res.State
-	if st.Stage != StageDone || st.Format != "pe64" || st.Tier != "local" || st.Paused || st.Binary != r.binary {
+	if st.Stage != StageDone || st.Format != "pe" || st.Kind != "executable" || st.Tier != "local" || st.Paused || st.Binary != r.binary {
 		t.Errorf("state %+v", st)
 	}
 	checkWorkspace(t, r.Store.WorkspaceDir("pe-test"))
@@ -33,7 +33,7 @@ func TestAnalyzeRunsEveryStageAndWritesTheWorkspace(t *testing.T) {
 func checkWorkspace(t *testing.T, dir string) {
 	t.Helper()
 	var missing []string
-	for _, doc := range []string{"overview.md", "sections.md", "exports.md", "imports/kernel32.dll.md", "imports/advapi32.dll.md"} {
+	for _, doc := range []string{"overview.md", "sections.md", "exports.md", "libraries/kernel32.dll.md", "libraries/advapi32.dll.md"} {
 		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(doc))); err != nil {
 			missing = append(missing, doc)
 		}
@@ -56,15 +56,15 @@ func checkBundle(t *testing.T, b *rea.EvidenceBundle) {
 
 // pausingParser asks for a pause while the PE structure is being read, as another process could, and counts parses.
 type pausingParser struct {
-	inner Parser
+	inner Inspector
 	svc   *Service
 	id    string
 	calls int
 }
 
-func (p *pausingParser) PEParse(c context.Context, path string) (*coreclient.PEInfo, error) {
+func (p *pausingParser) Inspect(c context.Context, path string) (*coreclient.Image, error) {
 	p.calls++
-	info, err := p.inner.PEParse(c, path)
+	info, err := p.inner.Inspect(c, path)
 	if err == nil {
 		_, err = p.svc.Pause(p.id)
 	}
@@ -73,7 +73,7 @@ func (p *pausingParser) PEParse(c context.Context, path string) (*coreclient.PEI
 
 func TestPauseStopsAtTheStageBoundary(t *testing.T) {
 	r := newRig(t)
-	r.Parser = &pausingParser{inner: r.Parser, svc: r.Service, id: "pe-pause"}
+	r.Inspector = &pausingParser{inner: r.Inspector, svc: r.Service, id: "pe-pause"}
 	res, err := r.Analyze(ctx(), r.binary, Options{ID: "pe-pause"})
 	if !errors.Is(err, ErrPaused) || res.State.Stage != StageParsed || !res.State.Paused {
 		t.Fatalf("a paused analysis: %+v, %v", res, err)
@@ -85,8 +85,8 @@ func TestPauseStopsAtTheStageBoundary(t *testing.T) {
 
 func TestResumeContinuesWithoutParsingAgain(t *testing.T) {
 	r := pausedAtParsed(t, "pe-resume")
-	p := &pausingParser{inner: r.Parser, svc: r.Service, id: "pe-resume"}
-	r.Parser = p
+	p := &pausingParser{inner: r.Inspector, svc: r.Service, id: "pe-resume"}
+	r.Inspector = p
 
 	done, err := r.Resume(ctx(), "pe-resume", Options{Tier: "paid", Model: "cloud-pro"})
 	if err != nil || done.State.Stage != StageDone || done.State.Paused || done.Bundle == nil {
@@ -110,16 +110,16 @@ func TestResumingAFinishedAnalysisChangesNothing(t *testing.T) {
 
 func TestAFailedStageIsRecordedAndResumeRetriesIt(t *testing.T) {
 	r := newRig(t)
-	notPE := writeBinary(t, "ELF")
-	res, err := r.Analyze(ctx(), notPE, Options{ID: "pe-bad"})
-	if !errors.Is(err, coreclient.ErrNotPE) || res.State.Stage != StageNew || !strings.Contains(res.State.Error, "not a PE file") {
-		t.Fatalf("a file that is not a PE image: %+v, %v", res, err)
+	target := writeBinary(t, "plain text, not a PE image")
+	res, err := r.Analyze(ctx(), target, Options{ID: "pe-bad", Format: "pe"})
+	if err == nil || res.State.Stage != StageNew || !strings.Contains(res.State.Error, "expected a pe target") {
+		t.Fatalf("a target of another format than the one expected: %+v, %v", res, err)
 	}
-	if err := os.WriteFile(notPE, []byte("MZ fixed"), 0o600); err != nil {
+	if err := os.WriteFile(target, []byte("MZ fixed"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	done, err := r.Resume(ctx(), "pe-bad", Options{})
-	if err != nil || done.State.Stage != StageDone || done.State.Error != "" {
+	if err != nil || done.State.Stage != StageDone || done.State.Error != "" || done.State.Format != "pe" {
 		t.Errorf("resume after fixing the file: %+v, %v", done, err)
 	}
 }
@@ -156,9 +156,9 @@ func TestAnalyzeValidatesItsInput(t *testing.T) {
 		o      Options
 		want   string
 	}{
-		"missing file":   {filepath.Join(t.TempDir(), "none.exe"), Options{}, "not a readable file"},
-		"a directory":    {t.TempDir(), Options{}, "not a readable file"},
-		"unknown format": {r.binary, Options{Format: "elf"}, "unknown format"},
+		"missing file":   {filepath.Join(t.TempDir(), "none.exe"), Options{}, "is not readable"},
+		"unknown format": {r.binary, Options{Format: "exe"}, "unknown format"},
+		"another format": {r.binary, Options{Format: "elf"}, "expected a elf target"},
 		"unknown tier":   {r.binary, Options{Tier: "free"}, "unknown tier"},
 		"id in use":      {r.binary, Options{ID: "pe-dup"}, "already exists"},
 		"unsafe id":      {r.binary, Options{ID: "a/b"}, "letters, digits"},
@@ -168,7 +168,7 @@ func TestAnalyzeValidatesItsInput(t *testing.T) {
 		}
 	}
 	res, err := r.Analyze(ctx(), r.binary, Options{Format: "pe32"})
-	if err != nil || !strings.HasPrefix(res.State.ID, "pe-") || res.State.Format != "pe32" {
+	if err != nil || !strings.HasPrefix(res.State.ID, "pe-") || res.State.Format != "pe" {
 		t.Errorf("a generated id and the pe32 format: %+v, %v", res, err)
 	}
 }

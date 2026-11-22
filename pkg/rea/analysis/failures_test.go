@@ -11,14 +11,14 @@ import (
 	"Dendrite/pkg/coreclient"
 )
 
-// sabotagingParser parses for real, then breaks the analysis the way the test asks.
-type sabotagingParser struct {
-	inner Parser
+// sabotagingInspector parses for real, then breaks the analysis the way the test asks.
+type sabotagingInspector struct {
+	inner Inspector
 	after func()
 }
 
-func (p sabotagingParser) PEParse(c context.Context, path string) (*coreclient.PEInfo, error) {
-	info, err := p.inner.PEParse(c, path)
+func (p sabotagingInspector) Inspect(c context.Context, path string) (*coreclient.Image, error) {
+	info, err := p.inner.Inspect(c, path)
 	p.after()
 	return info, err
 }
@@ -27,12 +27,12 @@ func (p sabotagingParser) PEParse(c context.Context, path string) (*coreclient.P
 func pausedAtParsed(t *testing.T, id string) *rig {
 	t.Helper()
 	r := newRig(t)
-	inner := r.Parser
-	r.Parser = &pausingParser{inner: inner, svc: r.Service, id: id}
+	inner := r.Inspector
+	r.Inspector = &pausingParser{inner: inner, svc: r.Service, id: id}
 	if _, err := r.Analyze(ctx(), r.binary, Options{ID: id}); err == nil {
 		t.Fatal("expected a pause")
 	}
-	r.Parser = inner
+	r.Inspector = inner
 	return r
 }
 
@@ -48,8 +48,8 @@ func TestAnalyzeUsesTheServiceClock(t *testing.T) {
 
 func TestResumeReportsDamagedCheckpoints(t *testing.T) {
 	for name, damage := range map[string]func(r *rig, id string){
-		"parsed structure deleted": func(r *rig, id string) { _ = os.Remove(r.infoPath(id)) },
-		"parsed structure corrupt": func(r *rig, id string) { _ = os.WriteFile(r.infoPath(id), []byte("{"), 0o600) },
+		"parsed structure deleted": func(r *rig, id string) { _ = os.Remove(r.imagePath(id)) },
+		"parsed structure corrupt": func(r *rig, id string) { _ = os.WriteFile(r.imagePath(id), []byte("{"), 0o600) },
 		"workspace path blocked": func(r *rig, id string) {
 			_ = os.WriteFile(r.Store.WorkspaceDir(id), nil, 0o600)
 		},
@@ -68,8 +68,8 @@ func TestResumeReportsDamagedCheckpoints(t *testing.T) {
 func TestResumeReportsAFinishedAnalysisWhoseStructureIsGone(t *testing.T) {
 	r := newRig(t)
 	finished(t, r, "pe-gone")
-	_ = os.Remove(r.infoPath("pe-gone"))
-	if _, err := r.Resume(ctx(), "pe-gone", Options{}); err == nil || !strings.Contains(err.Error(), "parsed structure is missing") {
+	_ = os.Remove(r.imagePath("pe-gone"))
+	if _, err := r.Resume(ctx(), "pe-gone", Options{}); err == nil || !strings.Contains(err.Error(), "inspected structure is missing") {
 		t.Errorf("err = %v", err)
 	}
 }
@@ -85,7 +85,7 @@ func TestIndexFailureIsRecordedAtTheWrittenStage(t *testing.T) {
 
 func TestACheckpointFailsWhenTheAnalysisIsDeletedMidRun(t *testing.T) {
 	r := newRig(t)
-	r.Parser = sabotagingParser{inner: r.Parser, after: func() { _ = os.RemoveAll(r.Store.Dir("pe-del")) }}
+	r.Inspector = sabotagingInspector{inner: r.Inspector, after: func() { _ = os.RemoveAll(r.Store.Dir("pe-del")) }}
 	if _, err := r.Analyze(ctx(), r.binary, Options{ID: "pe-del"}); err == nil {
 		t.Error("an analysis purged while it runs must not come back")
 	}
@@ -95,7 +95,7 @@ func TestStoresThatCannotBeWrittenAreReported(t *testing.T) {
 	// parse: the structure cannot be saved
 	r := newRig(t)
 	stops := false
-	r.Parser = sabotagingParser{inner: r.Parser, after: func() { stops = readOnly(t, r.Store.Dir("pe-ro")) }}
+	r.Inspector = sabotagingInspector{inner: r.Inspector, after: func() { stops = readOnly(t, r.Store.Dir("pe-ro")) }}
 	if _, err := r.Analyze(ctx(), r.binary, Options{ID: "pe-ro"}); (err != nil) != stops {
 		t.Errorf("parse: permissions stop writing = %t but err = %v", stops, err)
 	}

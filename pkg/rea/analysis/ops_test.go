@@ -20,7 +20,7 @@ func TestSearchReturnsThePassagesOfAFinishedAnalysis(t *testing.T) {
 	r := newRig(t)
 	finished(t, r, "pe-s")
 	hits, err := r.Search(ctx(), "pe-s", "CreateFileW", 0)
-	if err != nil || len(hits) == 0 || hits[0].File != "imports/kernel32.dll.md" || !strings.Contains(hits[0].Text, "CreateFileW") {
+	if err != nil || len(hits) == 0 || hits[0].File != "libraries/kernel32.dll.md" || !strings.Contains(hits[0].Text, "CreateFileW") {
 		t.Errorf("hits %+v, %v", hits, err)
 	}
 	if hits, err := r.Search(ctx(), "pe-s", "CreateFileW", 1000); err != nil || len(hits) > maxHits {
@@ -33,15 +33,15 @@ func TestSearchRefusesWhatItCannotAnswer(t *testing.T) {
 	if _, err := r.Search(ctx(), "pe-none", "x", 1); !errors.Is(err, ErrNotFound) {
 		t.Errorf("an unknown analysis: %v", err)
 	}
-	p := &pausingParser{inner: r.Parser, svc: r.Service, id: "pe-early"}
-	r.Parser = p
+	p := &pausingParser{inner: r.Inspector, svc: r.Service, id: "pe-early"}
+	r.Inspector = p
 	if _, err := r.Analyze(ctx(), r.binary, Options{ID: "pe-early"}); !errors.Is(err, ErrPaused) {
 		t.Fatal(err)
 	}
 	if _, err := r.Search(ctx(), "pe-early", "x", 1); !errors.Is(err, ErrNotDone) {
 		t.Errorf("an unfinished analysis: %v", err)
 	}
-	r.Parser = p.inner
+	r.Inspector = p.inner
 	finished(t, r, "pe-late")
 	t.Setenv("STANDIN_FAIL", "search")
 	if _, err := r.Search(ctx(), "pe-late", "x", 1); err == nil {

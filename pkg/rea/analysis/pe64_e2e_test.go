@@ -63,7 +63,7 @@ func TestAnalyzeRealPE64(t *testing.T) {
 	checkPE64(t, info)
 
 	svc := newRig(t)
-	svc.Parser = core
+	svc.Inspector = &CoreInspector{Client: core}
 	got, err := svc.Analyze(ctx(), pe64Fixture(t), Options{ID: "pe64-real"})
 	if err != nil || got.Bundle == nil || got.State.Stage != StageDone {
 		t.Fatalf("analysis did not finish: %v %+v", err, got)

@@ -19,21 +19,22 @@ var newReaService = analysis.NewService
 func reaCommands() []*cobra.Command {
 	var o analysis.Options
 	analyze := &cobra.Command{
-		Use:   "analyze <binary>",
-		Short: "Analyze a Windows PE image: parse it, write its structure as documents and index them for search",
-		Long: "Parses the PE32 or PE32+ image in the dendrite-core sidecar, writes its sections, exports and one document per\n" +
-			"imported DLL, and indexes them with the RAG sidecar, saving a checkpoint after every stage. The answer is a\n" +
+		Use:   "analyze <target>",
+		Short: "Analyze any target (PE, ELF, Mach-O, package, bundle, source directory): inspect it, write its structure as documents and index them for search",
+		Long: "Inspects the target in the dendrite-core sidecar, whatever its format (PE, ELF, Mach-O, fat Mach-O, ASAR, ZIP/APK, a\n" +
+			"JS bundle, an unknown file or a directory of source), writes its sections, exports, files, strings and one document per\n" +
+			"dependency, and indexes them with the RAG sidecar, saving a checkpoint after every stage. The answer is a\n" +
 			"bounded evidence bundle (under 4,000 tokens) and an analysis id; read more with `dendrite retro search <id> \"...\"`\n" +
 			"instead of dumping the image again. `pause` stops it at the next stage and `resume` continues it, on another\n" +
 			"model tier if you like.",
-		Example: "dendrite retro analyze sample.exe --format pe64 --tier local\ndendrite retro search pe-1a2b3c4d \"CreateFileW\"",
+		Example: "dendrite retro analyze sample.exe --tier local\ndendrite retro analyze ./app.asar\ndendrite retro analyze ./src --format source-tree\ndendrite retro search pe-1a2b3c4d \"CreateFileW\"",
 		Args:    cli.ExactArgs(1),
 		RunE: runStages(func(ctx context.Context, s *analysis.Service, args []string) (*analysis.Result, error) {
 			return s.Analyze(ctx, args[0], o)
 		}),
 	}
 	f := analyze.Flags()
-	f.StringVar(&o.Format, "format", "pe64", "Image format: pe32 or pe64")
+	f.StringVar(&o.Format, "format", "", "Format the target must have (default: detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree or unknown")
 	f.StringVar(&o.ID, "id", "", "Name of the analysis (default: generated from the binary)")
 	f.StringVar(&o.Tier, "tier", "local", "Model tier: local or paid")
 	f.StringVar(&o.Model, "model", "", "Model to use on that tier")

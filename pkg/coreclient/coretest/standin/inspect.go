@@ -24,10 +24,10 @@ var signatures = []signature{
 
 // binInspect answers bin.inspect: a directory is a source tree, a file is recognised by its first bytes or its
 // extension, and anything else is an unknown file (not an error). Mode "noinspect" plays a dendrite-core that
-// predates the method and "rpcfail" one that fails for another reason.
+// predates the method (it still has pe.parse; "old" has neither) and "rpcfail" one that fails for another reason.
 func binInspect(params json.RawMessage, o options) (any, map[string]interface{}) {
 	switch o.mode {
-	case "noinspect":
+	case "noinspect", "old", "pefail":
 		return nil, rpcError(-32601, "method not found: bin.inspect")
 	case "rpcfail":
 		return nil, rpcError(-32000, "inspection failed")
@@ -68,9 +68,13 @@ func byContent(path string, data []byte) map[string]interface{} {
 func peImage() map[string]interface{} {
 	return map[string]interface{}{"kind": "executable", "format": "pe", "arch": "x86_64", "bits": 64, "endian": "little",
 		"entry": "0x140001000", "base": "0x140000000", "notes": map[string]string{"subsystem": "console"},
-		"sections":  []map[string]interface{}{{"name": ".text", "address": "0x1000", "size": 4096, "raw_size": 4096, "flags": []string{"code", "execute", "read"}}},
-		"libraries": []map[string]interface{}{{"name": "KERNEL32.dll", "symbols": []string{"CreateFileW", "ReadFile"}}},
-		"exports":   []string{"ComputeChecksum"}}
+		"sections": []map[string]interface{}{
+			{"name": ".text", "address": "0x1000", "size": 4096, "raw_size": 4096, "flags": []string{"code", "execute", "read"}},
+			{"name": ".rdata", "address": "0x2000", "size": 512, "raw_size": 512, "flags": []string{"read"}}},
+		"libraries": []map[string]interface{}{
+			{"name": "KERNEL32.dll", "symbols": []string{"CreateFileW", "ReadFile"}},
+			{"name": "ADVAPI32.dll", "symbols": []string{"CryptHashData"}}},
+		"exports": []string{"ComputeChecksum"}}
 }
 
 func elfImage() map[string]interface{} {

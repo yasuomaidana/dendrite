@@ -20,8 +20,8 @@ func RegisterReaAnalysisTools(s *Server, service func() (*analysis.Service, erro
 		props      map[string]interface{}
 		run        func(ctx context.Context, svc *analysis.Service, args map[string]interface{}) (interface{}, error)
 	}{
-		{"dendrite_rea_analyze", "Analyze a Windows PE image: parse it, write its structure as documents and index them. Returns an evidence bundle under 4,000 tokens and an analysis id; read more with dendrite_rea_search instead of dumping the image again. A paused analysis is returned with paused=true.",
-			[]string{"binary"}, map[string]interface{}{"binary": TypedProp("string", "Path of the PE image"), "format": TypedProp("string", "pe32 or pe64 (default pe64)"),
+		{"dendrite_rea_analyze", "Analyze any target (PE, ELF, Mach-O, ASAR/ZIP package, JS bundle, unknown file or a directory of source): inspect it, write its structure as documents and index them. Returns an evidence bundle under 4,000 tokens and an analysis id; read more with dendrite_rea_search instead of dumping the target again. A paused analysis is returned with paused=true.",
+			[]string{"binary"}, map[string]interface{}{"binary": TypedProp("string", "Path of the file or directory to analyze"), "format": TypedProp("string", "Format the target must have (default: detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree, unknown"),
 				"id": TypedProp("string", "Name of the analysis (default: generated)"), "tier": tierProp, "model": modelProp}, reaAnalyze},
 		{"dendrite_rea_pause", "Pause an analysis at its next stage boundary; its checkpoint is kept.", []string{"id"}, map[string]interface{}{"id": idProp}, reaPause},
 		{"dendrite_rea_resume", "Continue an analysis from its last checkpoint, optionally on another model tier or model.", []string{"id"},

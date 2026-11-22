@@ -3,7 +3,9 @@ package analysis
 import (
 	"fmt"
 	"path/filepath"
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 
 	"Dendrite/pkg/coreclient"
@@ -13,11 +15,11 @@ import (
 
 var unsafeName = regexp.MustCompile(`[^a-z0-9._-]+`)
 
-// docName makes a document name from a DLL name: lower case, safe characters only, and unique among used.
-func docName(dll string, used map[string]int) string {
-	base := strings.Trim(unsafeName.ReplaceAllString(strings.ToLower(dll), "_"), "._-")
+// docName makes a document name from a library name: lower case, safe characters only, and unique among used.
+func docName(name string, used map[string]int) string {
+	base := strings.Trim(unsafeName.ReplaceAllString(strings.ToLower(filepath.Base(name)), "_"), "._-")
 	if base == "" {
-		base = "dll"
+		base = "library"
 	}
 	n := used[base]
 	used[base]++
@@ -27,60 +29,98 @@ func docName(dll string, used map[string]int) string {
 	return base + ".md"
 }
 
-// overview is the first document: the facts of the headers and where the rest is.
-func overview(st State, info *coreclient.PEInfo) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "# PE analysis %s: %s\n\n", st.ID, filepath.Base(st.Binary))
-	fmt.Fprintf(&sb, "- Format: %s (PE32+: %t)\n- Machine: %s\n- Subsystem: %s\n", st.Format, info.PE32Plus, info.Machine, info.Subsystem)
-	fmt.Fprintf(&sb, "- Entry point: %s\n- Image base: %s\n", info.EntryPoint, info.ImageBase)
-	fmt.Fprintf(&sb, "- Sections: %d, imported DLLs: %d, exports: %d\n", len(info.Sections), len(info.Imports), len(info.Exports))
-	if info.Truncated {
-		sb.WriteString("- The import and export lists were cut by the parser; they are not complete.\n")
+// libraryLabel names what an image of this format depends on.
+func libraryLabel(format string) string {
+	switch format {
+	case coreclient.FormatPE:
+		return "Imported DLLs"
+	case coreclient.FormatELF:
+		return "Shared libraries (DT_NEEDED)"
+	case coreclient.FormatMachO, coreclient.FormatFatMachO:
+		return "Dylibs"
+	case coreclient.FormatASAR, coreclient.FormatZIP, coreclient.FormatJSBundle, coreclient.FormatSourceTree:
+		return "Dependencies"
 	}
-	sb.WriteString("\nSee sections.md, exports.md and one imports/<dll>.md per imported DLL.\n")
+	return "Libraries"
+}
+
+// overview is the first document: the facts of the target and where the rest is.
+func overview(st State, img *Image) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "# Analysis %s: %s\n\n", st.ID, filepath.Base(st.Binary))
+	fmt.Fprintf(&sb, "- Kind: %s\n- Format: %s\n", img.Kind, img.Format)
+	for _, f := range [][2]string{{"Architecture", img.Arch}, {"Endian", img.Endian}, {"Entry point", img.Entry}, {"Base address", img.Base}} {
+		if f[1] != "" {
+			fmt.Fprintf(&sb, "- %s: %s\n", f[0], f[1])
+		}
+	}
+	if img.Bits > 0 {
+		fmt.Fprintf(&sb, "- Bits: %d\n", img.Bits)
+	}
+	if img.Entropy > 0 {
+		fmt.Fprintf(&sb, "- Entropy: %.2f bits per byte\n", img.Entropy)
+	}
+	for _, k := range slices.Sorted(maps.Keys(img.Notes)) {
+		fmt.Fprintf(&sb, "- %s: %s\n", k, img.Notes[k])
+	}
+	fmt.Fprintf(&sb, "- Sections: %d, %s: %d, exports: %d, files: %d\n", len(img.Sections), strings.ToLower(libraryLabel(img.Format)), len(img.Libraries), len(img.Exports), len(img.Files))
+	if img.Truncated {
+		sb.WriteString("- The lists were cut by the inspector; they are not complete.\n")
+	}
+	sb.WriteString("\nSee sections.md, exports.md, files.md, strings.md and one libraries/<name>.md per dependency.\n")
 	return sb.String()
 }
 
-func sectionsDoc(info *coreclient.PEInfo) string {
+func sectionsDoc(img *Image) string {
 	var sb strings.Builder
-	sb.WriteString("# Sections\n\n| Name | Virtual address | Virtual size | Raw size | Flags |\n|---|---|---|---|---|\n")
-	for _, s := range info.Sections {
-		fmt.Fprintf(&sb, "| %s | %s | %d | %d | %s |\n", s.Name, s.VirtualAddress, s.VirtualSize, s.RawSize, strings.Join(s.Flags, ", "))
+	sb.WriteString("# Sections\n\n| Name | Address | Size | Raw size | Flags |\n|---|---|---|---|---|\n")
+	for _, s := range img.Sections {
+		fmt.Fprintf(&sb, "| %s | %s | %d | %d | %s |\n", s.Name, s.Address, s.Size, s.RawSize, strings.Join(s.Flags, ", "))
 	}
 	return sb.String()
 }
 
-func exportsDoc(info *coreclient.PEInfo) string {
-	var sb strings.Builder
-	sb.WriteString("# Exports\n\n")
-	if len(info.Exports) == 0 {
-		sb.WriteString("The image exports nothing.\n")
+// listDoc renders a heading and a bullet list, or the empty text when there is nothing to list.
+func listDoc(heading, empty string, items []string) string {
+	body := empty + "\n"
+	if len(items) > 0 {
+		body = "- " + strings.Join(items, "\n- ") + "\n"
 	}
-	for _, e := range info.Exports {
-		fmt.Fprintf(&sb, "- %s\n", e)
-	}
-	return sb.String()
+	return "# " + heading + "\n\n" + body
 }
 
-func importDoc(imp coreclient.PEImport) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "# Imports from %s\n\n", imp.DLL)
-	for _, f := range imp.Functions {
-		fmt.Fprintf(&sb, "- %s\n", f)
+func filesDoc(img *Image) string {
+	items := make([]string, 0, len(img.Files))
+	for _, f := range img.Files {
+		items = append(items, fmt.Sprintf("%s (%d bytes%s)", f.Path, f.Size, withPrefix(", ", f.Kind)))
 	}
-	return sb.String()
+	return listDoc("Files", "The target holds no listed files.", items)
+}
+
+func withPrefix(prefix, s string) string {
+	if s == "" {
+		return ""
+	}
+	return prefix + s
+}
+
+func libraryDoc(label string, lib coreclient.ImageLibrary) string {
+	return listDoc(fmt.Sprintf("%s: %s", label, lib.Name), "No symbols are recorded for it.", lib.Symbols)
 }
 
 // writeWorkspace writes the documents of an analysis under dir, replacing earlier ones of the same name.
-func writeWorkspace(dir string, st State, info *coreclient.PEInfo) error {
+func writeWorkspace(dir string, st State, img *Image) error {
 	docs := map[string]string{
-		"overview.md": overview(st, info),
-		"sections.md": sectionsDoc(info),
-		"exports.md":  exportsDoc(info),
+		"overview.md": overview(st, img),
+		"sections.md": sectionsDoc(img),
+		"exports.md":  listDoc("Exports", "The target exports nothing.", img.Exports),
+		"files.md":    filesDoc(img),
+		"strings.md":  listDoc("Strings", "No strings were extracted.", img.Strings),
 	}
 	used := map[string]int{}
-	for _, imp := range info.Imports {
-		docs[filepath.Join("imports", docName(imp.DLL, used))] = importDoc(imp)
+	label := libraryLabel(img.Format)
+	for _, lib := range img.Libraries {
+		docs[filepath.Join("libraries", docName(lib.Name, used))] = libraryDoc(label, lib)
 	}
 	for name, text := range docs {
 		if err := fsutil.WriteFileAtomic(filepath.Join(dir, name), []byte(text)); err != nil {
@@ -90,12 +130,12 @@ func writeWorkspace(dir string, st State, info *coreclient.PEInfo) error {
 	return nil
 }
 
-// Bundle is the evidence bundle of an analysis: the overview, the imported DLLs as cross-references and the exports
+// Bundle is the evidence bundle of an analysis: the overview, the dependencies as cross-references and the exports
 // as constants, capped to the 4,000-token boundary of FEAT-003.
-func Bundle(st State, info *coreclient.PEInfo) *rea.EvidenceBundle {
-	dlls := make([]string, 0, len(info.Imports))
-	for _, imp := range info.Imports {
-		dlls = append(dlls, imp.DLL)
+func Bundle(st State, img *Image) *rea.EvidenceBundle {
+	libs := make([]string, 0, len(img.Libraries))
+	for _, l := range img.Libraries {
+		libs = append(libs, l.Name)
 	}
-	return rea.NewEvidenceBundle(st.Binary, rea.FormatPE, "<pe overview>", overview(st, info), "", dlls, info.Exports)
+	return rea.NewEvidenceBundle(st.Binary, reaFormat(img.Format), "<overview>", overview(st, img), "", libs, img.Exports)
 }

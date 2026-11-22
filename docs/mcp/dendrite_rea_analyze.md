@@ -6,7 +6,7 @@ sidebar_label: "dendrite_rea_analyze"
 
 # dendrite_rea_analyze
 
-Analyze a Windows PE image: parse it, write its structure as documents and index them. Returns an evidence bundle under 4,000 tokens and an analysis id; read more with dendrite_rea_search instead of dumping the image again. A paused analysis is returned with paused=true.
+Analyze any target (PE, ELF, Mach-O, ASAR/ZIP package, JS bundle, unknown file or a directory of source): inspect it, write its structure as documents and index them. Returns an evidence bundle under 4,000 tokens and an analysis id; read more with dendrite_rea_search instead of dumping the target again. A paused analysis is returned with paused=true.
 
 ## Input Schema
 
@@ -14,11 +14,11 @@ Analyze a Windows PE image: parse it, write its structure as documents and index
 {
   "properties": {
     "binary": {
-      "description": "Path of the PE image",
+      "description": "Path of the file or directory to analyze",
       "type": "string"
     },
     "format": {
-      "description": "pe32 or pe64 (default pe64)",
+      "description": "Format the target must have (default: detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree, unknown",
       "type": "string"
     },
     "id": {
@@ -53,7 +53,7 @@ Analyze a Windows PE image: parse it, write its structure as documents and index
   "params": {
     "arguments": {
       "binary": "sample",
-      "format": "sample",
+      "format": "detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree, unknown",
       "id": "generated",
       "model": "sample",
       "tier": "sample"
@@ -66,5 +66,5 @@ Analyze a Windows PE image: parse it, write its structure as documents and index
 ### CLI
 
 ```bash
-dendrite mcp call dendrite_rea_analyze '{"binary":"sample","format":"sample","id":"generated","model":"sample","tier":"sample"}'
+dendrite mcp call dendrite_rea_analyze '{"binary":"sample","format":"detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree, unknown","id":"generated","model":"sample","tier":"sample"}'
 ```
