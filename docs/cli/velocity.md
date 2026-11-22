@@ -61,7 +61,7 @@ dendrite velocity inference [flags]
 | :--- | :--- |
 | `--duration` | Test duration (default: 15s) |
 | `--endpoint` | Target API endpoint (default: the engine's endpoint) |
-| `--engine` | Inference engine ID (default: oxillama) |
+| `--engine` | Inference engine ID (default: llamacpp-local) |
 | `--model` | LLM model name (default: qwen2.5-coder-7b) |
 | `--output, -o` | Write the Markdown scorecard to this file instead of stdout |
 | `--vus` | Concurrent virtual users (default: 5) |
@@ -96,7 +96,7 @@ dendrite velocity stress [flags]
 ## Examples
 
 ```bash
-dendrite velocity inference --engine oxillama --vus 5 --duration 15s
+dendrite velocity inference --engine llamacpp-local --vus 5 --duration 15s
 dendrite velocity gateway --fault 429 --output gateway.md
 dendrite velocity matrix
 dendrite velocity stress --vus 50 --spends 1000

@@ -6,7 +6,7 @@ sidebar_label: "dendrite_inference_models"
 
 # dendrite_inference_models
 
-List the local models installed on Ollama and OxiLLaMa with size, loaded state and whether each fits this machine's memory budget (models marked too large get no gateway route and are refused at call time)
+List the local models installed on Ollama and llama.cpp with size, loaded state and whether each fits this machine's memory budget (models marked too large get no gateway route and are refused at call time)
 
 ## Input Schema
 

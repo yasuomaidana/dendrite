@@ -14,7 +14,7 @@ Probe multi-provider inference engines (< 2s) for health, reachability, latency,
 {
   "properties": {
     "engine_id": {
-      "description": "Optional engine ID to probe (e.g. 'ollama-metal', 'oxillama-rust'). If omitted, probes all engines.",
+      "description": "Optional engine ID to probe (e.g. 'ollama-metal', 'llamacpp-local'). If omitted, probes all engines.",
       "type": "string"
     }
   },

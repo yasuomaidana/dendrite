@@ -26,7 +26,7 @@ As a software engineer and AI systems developer operating in multi-agent environ
    - **Reciprocal Rank Fusion (RRF)**: Merges sparse and dense search scores into a normalized rank score ($0.0 \le S \le 1.0$).
 2. **Task-to-Agent Routing & Inference Matching**:
    - Assesses incoming task complexity against historical agent success metrics:
-     - *Lightweight file-local refactor / unit test*: Routes to **Aider** backed by local **Ollama** or **OxiLLaMa** (`qwen2.5-coder:14b`).
+     - *Lightweight file-local refactor / unit test*: Routes to **Aider** backed by local **Ollama** or **llama.cpp** (`qwen2.5-coder:14b`).
      - *Complex multi-repo architectural task / root-cause debugging*: Routes to **Google AGY** or **OpenHands** in containerized sandbox backed by **vLLM** or cloud models.
      - *Batch translation / doc reflection*: Routes to **OpenCode** or polyglot synthesizer.
 3. **Graphify AST Knowledge Coupling**:
@@ -63,7 +63,7 @@ flowchart TD
 
     subgraph "Recommendation & Dispatch"
         RRF --> Matcher["Optimal Agent & Engine Matcher"]
-        Matcher --> RecAider["Aider + OxiLLaMa (Local Rapid)"]
+        Matcher --> RecAider["Aider + llama.cpp (Local Rapid)"]
         Matcher --> RecAGY["Google AGY + Cloud Burst (Complex)"]
         Matcher --> RecOpenHands["OpenHands + Ephemeral Sandbox"]
     end

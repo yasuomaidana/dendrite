@@ -16,7 +16,7 @@
 **Dendrite** is an autonomous AI development and infrastructure control plane that orchestrates distributed multi-node compute tiers, governs token budgets, unifies inference providers, and empowers developers with sovereign project management and IDE intelligence:
 
 - **Token Budget Governance**: Enforces sliding 24-hour and 7-day expenditure limits, rate-bounded supervisory throttling ($R_{\text{target}}$), and per-agent virtual key isolation through a managed LiteLLM gateway.
-- **Pluggable Multi-Engine Inference**: Unifies local Apple Silicon Metal GPU engines (Ollama, pure-Rust OxiLLaMa), high-throughput containerized inference (vLLM, Hugging Face TGI/TEI, llama.cpp), and commercial fallback models (Gemini, Claude, Copilot) under a single automatic failover cascade.
+- **Pluggable Multi-Engine Inference**: Unifies local Apple Silicon Metal GPU engines (Ollama, llama.cpp `llama-server`), high-throughput containerized inference (vLLM, Hugging Face TGI/TEI), and commercial fallback models (Gemini, Claude, Copilot) under a single automatic failover cascade.
 - **Sovereign Issue Tracking & DAG Scheduling**: Integrates directly with self-hosted Plane v2 (`stacks/compose.plane.yaml`) as the authoritative source of truth for tickets, milestones, and Gantt charts.
 - **Autonomous Coding Agent Harness**: Dispatches, monitors, and records autonomous agent loops (Aider, OpenHands, OpenCode, Google AGY, GitHub Copilot) inside ephemeral, RAII-cleaned container sandboxes.
 - **IDE Intelligence & Model Context Protocol (MCP)**: Bridges GoLand, IntelliJ, and JetBrains IDEs via bidirectional MCP servers connecting AST symbols, diagnostic problem inspections, and background run configurations.
@@ -154,7 +154,7 @@ Dendrite supports **dual nomenclature**: developers may invoke commands using st
 | | `analyze <status\|policy>` | `cognitive-analysis` | `cognition` / `anlz` | Cognitive complexity analyzer and execution policy router | `Active [x]` |
 | **Terminal Boutons & Vesicles**<br/>*(Presynaptic Packaging & Quantal Release)* | `commit [flags]` | `quantal-commit` [1] | `quantal` / `cmt` | Discrete vesicular packaging with local LLM commit synthesis | `Active [x]` |
 | | `tokens [status]` | `vesicle-quota` | `quota` / `tok` | Sliding 24h/7d financial expenditure limiter and token quota | `Active [x]` |
-| **Synaptic Cleft & Gating**<br/>*(Governed Intercellular Transmission)* | `inference <list\|probe>` | `action-potential` | `spike` / `inf` | Pluggable multi-engine inference (Ollama, OxiLLaMa, vLLM, TGI) | `Active [x]` |
+| **Synaptic Cleft & Gating**<br/>*(Governed Intercellular Transmission)* | `inference <list\|probe>` | `action-potential` | `spike` / `inf` | Pluggable multi-engine inference (Ollama, llama.cpp, vLLM, TGI) | `Active [x]` |
 | | `gateway` / `dev gateway` | `synaptic-cleft` | `cleft` / `gate` | LiteLLM token governance, rate-limiting, and key provisioning | `Active [x]` |
 | | `mcp <serve\|tools\|call>` | `interneuron-mcp` [3] | `inter` / `mcp` | Intercellular Model Context Protocol bridge connecting nodes/IDEs | `Active [x]` |
 | | `jetbrains <probe\|open>` | `neuromuscular-bridge`| `bridge` / `jb` | GoLand/IntelliJ PSI symbol indexer, problems probe, and run harness | `Active [x]` |
@@ -180,7 +180,7 @@ flowchart TB
     subgraph ExecutionPlane["Tier 1: Execution Plane (Developer Workstation)"]
         IDE["JetBrains IDE Bridge (pkg/jetbrains)"]
         OllamaLocal["Ollama Engine (Metal GPU)<br/>qwen2.5-coder:14b (:11434)"]
-        OxillamaLocal["OxiLLaMa Pure-Rust GGUF (:8080)"]
+        LlamaCppLocal["llama.cpp llama-server (:8080)"]
         DendriteCLI["Dendrite CLI & Embedded Web UI (:3456)"]
     end
 
@@ -207,7 +207,7 @@ flowchart TB
     NetworkMesh <--> CloudBurst
 ```
 
-1. **Execution Plane (Workstation)**: Interactive, latency-critical tools: JetBrains IDE MCP Bridge, Apple Silicon Metal GPU inference (`qwen2.5-coder:14b`), pure-Rust OxiLLaMa server, and the single-binary embedded Web Control Cockpit.
+1. **Execution Plane (Workstation)**: Interactive, latency-critical tools: JetBrains IDE MCP Bridge, Apple Silicon Metal GPU inference (`qwen2.5-coder:14b`), llama.cpp `llama-server`, and the single-binary embedded Web Control Cockpit.
 2. **Persistent Control Plane (Debian / Remote Server)**: Continuous stateful services: LiteLLM Token Governance Gateway, PostgreSQL 16 + pgvector, Redis 7, self-hosted Plane v2, self-hosted Penpot design platform, and documentation reflection portals.
 3. **Elastic Cloud-Burst Tier (AWS & Azure)**: On-demand Spot VMs with persistent block storage (AWS EBS gp3 or Azure Managed Disks) for headless Ghidra decompilation, monorepo AST indexing, and distributed vLLM inference.
 
@@ -217,7 +217,8 @@ flowchart TB
 
 ### 🧠 Pluggable Inference Engines ([FEAT-020](docs/features/FEAT-020-pluggable-inference-engines.md))
 - **Ollama Engine**: Metal GPU acceleration on Apple Silicon with zero-cost token accounting.
-- **OxiLLaMa (`cool-japan/oxillama`)**: 100% pure Rust GGUF inference engine and OpenAI-compatible server with zero C/C++/Fortran FFI dependencies.
+- **llama.cpp (`ggml-org/llama.cpp`)**: GGUF inference through `llama-server`, an OpenAI-compatible server. `dendrite spike` starts it on demand on port 8080 and stops it after the last session; `scripts/install-helpers.sh --llamacpp` installs it. Models live in `$DENDRITE_HOME/models/<id>/*.gguf` (or `$DENDRITE_GGUF_MODELS_DIR`).
+- **Upgrading from the previous local engine**: the CHANGELOG lists the renamed settings and how to move your models.
 - **Hugging Face TGI & TEI**: Containerized Text Generation and Text Embeddings Inference with FlashAttention-2.
 - **vLLM Engine**: High-throughput PagedAttention server for multi-agent concurrency.
 - **llama.cpp Server**: Minimalist GGUF runner for low-overhead CPU or single-GPU deployments.

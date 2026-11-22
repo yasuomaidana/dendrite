@@ -73,7 +73,7 @@ Every milestone in Plane has non-overlapping, strictly ordered `start_date` and 
 | **M15** | Azure Cloud-Burst Infrastructure & Storage | Spot VM lifecycler, managed disks | 2026-11-07 | 2026-11-16 | 2 |
 | **M21** | Model Context Protocol & Code Knowledge MCP | MCP bridge, AST queries, Graphify RAG | 2026-11-17 | 2026-11-28 | 4 |
 | **M22** | Distributed Codebase Ecosystem & Interop | Multi-repo sync, cross-project adapters | 2026-11-29 | 2026-12-16 | 6 |
-| **M16** | Pluggable Multi-Provider Inference Engines | OxiLLaMa, TGI, TEI, vLLM, llama.cpp | 2026-12-17 | 2026-12-24 | 2 |
+| **M16** | Pluggable Multi-Provider Inference Engines | llama.cpp, TGI, TEI, vLLM | 2026-12-17 | 2026-12-24 | 2 |
 | **M17** | Performance Testing & k6 Benchmarks | TTFT/TPS benchmarks, failover cascade | 2026-12-25 | 2027-01-02 | 2 |
 | **M20** | Open-Source REA Showcase Pipeline | macOS Windows PE analysis, cleanroom Rust | 2027-01-03 | 2027-01-11 | 2 |
 | **M19** | Test Automation, Anti-Mock & uv/bun | Zero-mock AST guard, To Verify state, uv/bun | 2027-01-12 | 2027-01-26 | 4 |

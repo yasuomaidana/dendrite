@@ -6,7 +6,7 @@ sidebar_label: "dendrite_local_agent_triage"
 
 # dendrite_local_agent_triage
 
-Intercepts developer prompts, evaluates local compute across multi-provider inference (Ollama, Ollama Validated, Hugging Face, Candle/OxiLLaMa), routes chores to zero-cost local models, and enhances/compacts prompts with project skills for cloud escalation
+Intercepts developer prompts, evaluates local compute across multi-provider inference (Ollama, Ollama Validated, Hugging Face, Candle/llama.cpp), routes chores to zero-cost local models, and enhances/compacts prompts with project skills for cloud escalation
 
 ## Input Schema
 
@@ -34,7 +34,7 @@ Intercepts developer prompts, evaluates local compute across multi-provider infe
       "type": "string"
     },
     "target_engine": {
-      "description": "Target inference backend: 'ollama', 'ollama-validated', 'huggingface', 'candle', 'oxillama'",
+      "description": "Target inference backend: 'ollama', 'ollama-validated', 'huggingface', 'candle', 'llamacpp'",
       "type": "string"
     }
   },

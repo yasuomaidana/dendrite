@@ -1,277 +1,165 @@
 ---
-id: oxillama-jetbrains-integration
-title: "Using OxiLLaMa with JetBrains IDEs (Managed & Direct Sovereign Modes)"
-sidebar_label: "OxiLLaMa & JetBrains Setup"
+id: llamacpp-jetbrains-integration
+title: "Using llama.cpp with JetBrains IDEs (Managed & Direct Modes)"
+sidebar_label: "llama.cpp & JetBrains Setup"
 sidebar_position: 6
-tags: [oxillama, jetbrains, inference, goland, intellij, rust, zero-ffi, zero-cost, local-ai]
+tags: [llamacpp, jetbrains, inference, goland, intellij, zero-cost, local-ai]
 ---
 
-# Using OxiLLaMa with JetBrains IDEs (Managed & Direct Sovereign Modes)
+# Using llama.cpp with JetBrains IDEs (Managed & Direct Modes)
 
 ## 1. Overview & Architecture
 
-**OxiLLaMa (`cool-japan/oxillama`)** is an ultra-efficient, 100% pure-Rust zero-FFI Large Language Model inference engine and OpenAI-compatible server. Unlike traditional C/C++ backends (like `llama.cpp`), OxiLLaMa executes entirely without FFI overhead, memory safety vulnerabilities, or runtime crashes, providing deterministic latency and minimal memory footprint on Apple Silicon and Linux workstations.
+**llama.cpp** (`ggml-org/llama.cpp`) runs GGUF models locally, and its `llama-server` binary is an OpenAI-compatible HTTP server. It uses Metal on Apple Silicon, CUDA on NVIDIA GPUs and the CPU elsewhere.
 
-> **GPU note:** oxillama-runtime 0.1.4 offloads only Q4_0 single-token decode to the GPU (`wgpu`); prompt prefill and embeddings run on the CPU. Dendrite therefore routes local work to GPU engines (candle, Hugging Face TGI/TEI, Ollama) first and uses OxiLLaMa only when it is requested or no GPU engine has a model. Embeddings for retrieval are served by `dendrite-rag` (candle on Metal/CUDA, a TEI server, or Ollama).
+Dendrite supports two ways of running it for JetBrains IDEs (GoLand, IntelliJ IDEA, PyCharm, RustRover, WebStorm, CLion):
 
-Dendrite supports two complementary operational modes for integrating OxiLLaMa with JetBrains IDEs (GoLand, IntelliJ IDEA, PyCharm, RustRover, WebStorm, CLion):
-
-1. **Managed Mode (via Dendrite Control Plane)**:
-   Dendrite autonomously orchestrates OxiLLaMa lifecycle, model registration, zero-cost token accounting exemption, port binding (`127.0.0.1:8080`), and graceful shutdown.
-2. **Direct Sovereign Mode (Native `oxillama` CLI)**:
-   Developers run the sovereign `oxillama` native Rust binary directly from terminal or background daemons, binding the OpenAI-compatible REST server to any port.
+1. **Managed mode (Dendrite control plane)**: Dendrite starts `llama-server` when a session needs it, binds `127.0.0.1:8080`, keeps it alive while any session holds a lease, and stops it after the idle grace. Zero-cost token accounting applies.
+2. **Direct mode (`llama-server` CLI)**: you run `llama-server` yourself on any port.
 
 ```mermaid
 flowchart TD
-    subgraph JetBrains_IDE ["JetBrains IDE (GoLand, IntelliJ, RustRover)"]
-        AIAssistant["JetBrains AI Assistant / Local LLM"]
+    subgraph JetBrains_IDE ["JetBrains IDE"]
+        AIAssistant["JetBrains AI Assistant"]
         ContinuePlugin["Continue Plugin (~/.continue/config.json)"]
         CodeGPT["CodeGPT / Custom OpenAI Provider"]
-        RunConfig["JetBrains Run Toolbar (OxiLLaMa Serve / Stop)"]
     end
 
-    subgraph OperationalModes ["Inference Service Orchestration"]
-        subgraph Mode1 ["Mode 1: Dendrite Managed Server"]
-            DendriteCLI["dendrite spike serve --port 8080"]
-            DendriteStop["dendrite spike stop --port 8080"]
-            ZeroCostReg["Zero-Cost Accounting Exemption (.dendrite/zero_cost_models.json)"]
-        end
-
-        subgraph Mode2 ["Mode 2: Direct OxiLLaMa Sovereign Server"]
-            OxillamaCLI["oxillama serve --model ~/.oxillama/models/qwen3.5_9b --port 8080"]
-            OxillamaKill["pkill -f 'oxillama serve' / lsof -ti :8080 | xargs kill -9"]
-        end
+    subgraph Modes ["Inference Service Orchestration"]
+        Managed["Managed: dendrite spike serve / hold (leases, idle grace)"]
+        Direct["Direct: llama-server -m model.gguf --port 8080"]
     end
 
-    subgraph OxiLLaMa_Rust_Engine ["OxiLLaMa Pure-Rust Zero-FFI Engine"]
-        Storage["Model Store: ~/.oxillama/models/ (qwen3.5_9b, qwen3.8_27b)"]
-        KVCache["Pure-Rust KV Cache (f32/f16) & SciRS2 Tensor Math"]
+    subgraph Server ["llama-server"]
+        Storage["Models: $DENDRITE_HOME/models/&lt;id&gt;/model.gguf"]
         API["OpenAI API: http://127.0.0.1:8080/v1/chat/completions"]
     end
 
     AIAssistant & ContinuePlugin & CodeGPT -->|OpenAI JSON / SSE stream| API
-    RunConfig -->|Triggers| Mode1 & Mode2
-    Mode1 -->|Manages Lifecycle| API
-    Mode2 -->|Direct Process| API
-    API --> Storage & KVCache
+    Managed -->|manages lifecycle| API
+    Direct -->|direct process| API
+    API --> Storage
 ```
 
 ---
 
-## 2. Model Storage & Resolution Architecture
+## 2. Installation & Model Storage
 
-OxiLLaMa stores migrated models and tensors in `~/.oxillama/`:
-
-```
-~/.oxillama/
-├── blobs/                        # De-duplicated SHA-256 tensor blobs (hardlinked from Ollama)
-│   ├── sha256-10986d0f...        # 2.4 GB embed_tokens blob
-│   ├── sha256-830bcce7...        # 682 MB lm_head blob
-│   └── ...                       # 24.04 GB total reclaimed zero-copy storage
-└── models/
-    ├── qwen3.5_9b/               # Migrated Qwen 3.5 9B Model Directory
-    │   ├── model.gguf            # Unified GGUF model descriptor (auto-discovered)
-    │   ├── oxillama-manifest.json# Typed OxiLLaMa manifest layer catalog
-    │   ├── config.json           # Model architecture parameters
-    │   └── tokenizer.json        # Fast BPE tokenizer vocabulary
-    └── qwen3.8_27b/              # Migrated Qwen 3.8 27B Model Directory
-        ├── model.gguf            # Unified GGUF model descriptor (auto-discovered)
-        ├── oxillama-manifest.json# Typed OxiLLaMa manifest layer catalog
-        └── config.json
-```
-
-### Healed CLI Ergonomics & Path Auto-Resolution
-The native `oxillama` CLI includes built-in enhancements:
-- **Positional Prompts**: Allows passing prompt directly: `oxillama run --model <path> "Prompt text"` without requiring `-p` / `--prompt`.
-- **Tilde Expansion**: Auto-expands `~/` paths (e.g. `~/.oxillama/models/qwen3.5_9b`).
-- **Directory Auto-Discovery**: When `--model` targets a model directory (e.g. `~/.oxillama/models/qwen3.5_9b`), it automatically resolves the internal `model.gguf` without throwing `EINVAL` OS error 22.
-
----
-
-## 3. Mode 1: Using OxiLLaMa via Dendrite (Managed Mode)
-
-In Managed Mode, Dendrite handles the entire server lifecycle, ensuring proper port allocation, health monitoring, zero-cost token governance, and clean process termination.
-
-### 3.1 Starting the Server
-Start the OpenAI-compatible HTTP server:
+Install llama.cpp with Dendrite's helper (Homebrew on macOS, the official release on Linux):
 
 ```bash
-# Runs in the foreground until Ctrl+C; use your process manager to keep it running
+scripts/install-helpers.sh --llamacpp
+```
+
+Dendrite looks for models in `$DENDRITE_HOME/models` (default `~/.dendrite/models`), or in `$DENDRITE_GGUF_MODELS_DIR` when set:
+
+```
+~/.dendrite/models/
+├── qwen3_8b_q4km/
+│   ├── model.gguf     # the weights llama-server loads
+│   └── id             # optional: first line is the model id the server serves it under
+└── qwen3.5_9b/
+    └── model.gguf
+```
+
+Move a model from Ollama's store without copying it (a hardlink when the disk allows):
+
+```bash
+dendrite spike migrate qwen3.5:9b --to llamacpp
+```
+
+`dendrite spike models` lists what is installed and whether each model fits this machine's memory budget. Dendrite never starts a model that would starve the machine.
+
+---
+
+## 3. Mode 1: Managed (via Dendrite)
+
+### 3.1 Starting the server
+
+```bash
+# Holds the server in the foreground until Ctrl+C
 dendrite spike serve --port 8080
+
+# Keep it alive for a while, or until Ctrl+C
+dendrite spike hold --for 30m
 ```
 
-Expected output:
+With no `--model`, Dendrite starts the largest installed model that fits the memory budget. Expected output:
+
 ```
-[✓] OxiLLaMa Pure-Rust OpenAI Server listening at http://127.0.0.1:8080
-    * Models Endpoint:     http://127.0.0.1:8080/v1/models
-    * Chat Endpoint:       http://127.0.0.1:8080/v1/chat/completions
-    * Storage Directory:   ~/.oxillama/models
+[✓] llama-server serves qwen3_8b_q4km at http://127.0.0.1:8080
+    * Chat Endpoint: http://127.0.0.1:8080/v1/chat/completions
 ```
 
-### 3.2 Checking Server Health & Status
-Verify that OxiLLaMa is responding and check available models:
-
-```bash
-dendrite spike probe oxillama-rust
-```
-
-Output:
-```
-[+] Probing engine 'oxillama-rust' (oxillama at http://127.0.0.1:8080)...
-    * [Online] Engine: oxillama-rust Type: oxillama Status: Online Latency: 1.2ms Cost: zero-cost
-        Models: qwen3.5:9b, qwen3.8:27b
-```
-
-### 3.3 Stopping the Server Cleanly
-To stop the server and release port 8080:
+### 3.2 Health and status
 
 ```bash
-dendrite spike stop
+dendrite spike status
+dendrite spike probe llamacpp-local
 ```
 
-Or for a non-standard port:
+### 3.3 Stopping
+
 ```bash
-dendrite spike stop --port 8080
+dendrite spike stop            # frees the port
 ```
 
-Output:
-```
-[+] Stopping OxiLLaMa server on port 8080...
-[✓] Successfully stopped OxiLLaMa server (terminated 1 process(es) on port 8080)
-```
+The managed server also stops by itself after the idle grace once no session holds it.
 
 ---
 
-## 4. Mode 2: Using OxiLLaMa Directly (Sovereign CLI Mode)
-
-Developers who prefer standalone CLI execution can invoke the native `oxillama` binary directly.
-
-### 4.1 Running Direct One-Shot Terminal Inference
-Test prompt generation instantly in your terminal:
+## 4. Mode 2: Direct (`llama-server`)
 
 ```bash
-# Positional prompt with model directory
-oxillama run --model ~/.oxillama/models/qwen3.5_9b "Explain zero-FFI inference."
-
-# Limiting tokens or adjusting temperature
-oxillama run --model ~/.oxillama/models/qwen3.8_27b "Generate a Go HTTP handler" --max-tokens 128 --temp 0.2
+llama-server -m ~/.dendrite/models/qwen3_8b_q4km/model.gguf --alias qwen3_8b --host 127.0.0.1 --port 8080 -c 8192
 ```
 
-### 4.2 Starting the Native Server
-Launch the native pure-Rust OpenAI server:
-
-```bash
-# Foreground execution
-oxillama serve --model ~/.oxillama/models/qwen3.5_9b --port 8080
-
-# Background execution (redirecting logs)
-nohup oxillama serve --model ~/.oxillama/models/qwen3.5_9b --port 8080 > ~/.oxillama/server.log 2>&1 &
-```
-
-### 4.3 Stopping the Direct Server
-To terminate a direct OxiLLaMa server instance:
-
-```bash
-# Method A: Using Dendrite (works across both managed and direct servers)
-dendrite spike stop
-
-# Method B: Process kill by name
-pkill -f "oxillama serve"
-
-# Method C: Port kill via lsof
-lsof -ti :8080 | xargs kill -9
-```
+Dendrite never stops a server it did not start. Stop one you started by hand with `dendrite spike stop`, `pkill -f llama-server`, or `lsof -ti :8080 | xargs kill`.
 
 ---
 
-## 5. Configuring JetBrains IDEs to Use OxiLLaMa
+## 5. Configuring JetBrains IDEs
 
-Once the server is running on `http://127.0.0.1:8080`, configure your JetBrains IDE using any of the following integrations:
+Once the server answers on `http://127.0.0.1:8080`:
 
-### 5.2 Option A: JetBrains AI Assistant (Built-in Chat)
-Starting with JetBrains 2024.3 and 2025+, AI Assistant supports custom OpenAI-compatible endpoints:
+### 5.1 JetBrains AI Assistant
 
-1. Open **Settings / Preferences** (`Cmd + ,` on macOS).
-2. Navigate to **Tools $\to$ AI Assistant $\to$ Models**.
-3. Under **Custom Models**, click **+ (Add Custom Model Provider)** and select **OpenAI Compatible**.
-4. Configure the provider parameters:
-   - **Provider Name**: `OxiLLaMa Pure-Rust`
-   - **Server URL**: `http://127.0.0.1:8080/v1`
-   - **API Key**: `dummy` (or leave blank if auth is disabled)
-   - **Model Name**: `qwen3.5:9b` or `qwen3.8:27b`
-5. Click **Test Connection**; JetBrains queries `GET /v1/models` and confirms a green checkmark.
-6. Select `OxiLLaMa Pure-Rust` as your active chat or code completion engine.
+1. Open **Settings / Preferences** and go to **Tools → AI Assistant → Models**.
+2. Under **Custom Models**, add an **OpenAI Compatible** provider.
+3. Set **Server URL** to `http://127.0.0.1:8080/v1`, **API Key** to `dummy`, and **Model Name** to the model id the server serves (see `curl -s http://127.0.0.1:8080/v1/models`).
+4. Click **Test Connection**, then select the provider as the active model.
 
-### 5.3 Option B: Continue Plugin (Recommended for Zero-Subscription)
-The **Continue** extension (`continue.dev`) is the premier open-source coding copilot for JetBrains:
+### 5.2 Continue plugin
 
-1. Install **Continue** from **Settings $\to$ Plugins $\to$ Marketplace**.
-2. Open the Continue configuration file at `~/.continue/config.json`.
-3. Add the OxiLLaMa models to the `models` array:
+Add the model to `~/.continue/config.json`:
 
 ```json
 {
   "models": [
     {
-      "title": "OxiLLaMa Qwen 3.5 9B (Pure-Rust Zero-FFI)",
+      "title": "llama.cpp (local)",
       "provider": "openai",
-      "model": "qwen3.5:9b",
-      "apiBase": "http://127.0.0.1:8080/v1",
-      "apiKey": "dummy-token"
-    },
-    {
-      "title": "OxiLLaMa Qwen 3.8 27B (High Capacity)",
-      "provider": "openai",
-      "model": "qwen3.8:27b",
+      "model": "qwen3_8b_q4km",
       "apiBase": "http://127.0.0.1:8080/v1",
       "apiKey": "dummy-token"
     }
-  ],
-  "tabAutocompleteModel": {
-    "title": "OxiLLaMa Fast Tab Autocomplete",
-    "provider": "openai",
-    "model": "qwen3.5:9b",
-    "apiBase": "http://127.0.0.1:8080/v1"
-  }
+  ]
 }
 ```
-4. Save the file. Continue will immediately reload and expose the local sovereign OxiLLaMa engine in the IDE sidebar and inline autocomplete.
 
-### 5.4 Option C: CodeGPT Plugin
-1. Install **CodeGPT** from **Settings $\to$ Plugins**.
-2. Navigate to **Settings $\to$ Tools $\to$ CodeGPT $\to$ Providers**.
-3. Select **Custom OpenAI**.
-4. Set:
-   - **Base URL**: `http://127.0.0.1:8080/v1`
-   - **API Key**: `sk-oxillama`
-   - **Model**: `qwen3.5:9b`
-5. Click **Apply**.
+### 5.3 CodeGPT plugin
+
+Choose **Custom OpenAI**, set **Base URL** to `http://127.0.0.1:8080/v1`, any **API Key**, and the served model id.
 
 ---
 
-## 6. JetBrains Toolbar Run Configurations (1-Click Start / Stop)
+## 6. Verification Checklist
 
-Dendrite can generate JetBrains run configurations in `.idea/runConfigurations/` allowing developers to control OxiLLaMa directly from the IDE run toolbar:
-
-Run the automated setup:
-```bash
-dendrite jetbrains setup
-```
-
-This registers:
-- `OxiLLaMa_Serve.xml`: Starts `dendrite spike serve --port 8080` in the background.
-- `OxiLLaMa_Stop.xml`: Executes `dendrite spike stop` to release port 8080.
-- `OxiLLaMa_Probe.xml`: Performs a quick health probe and prints available models in the IDE console.
-
----
-
-## 7. Verification Checklist
-
-| Check | Command | Expected Result |
+| Check | Command | Expected result |
 | :--- | :--- | :--- |
-| **Direct Inference** | `oxillama run --model ~/.oxillama/models/qwen3.5_9b "Hello"` | Emits completion in terminal zero-FFI (`✓ Done`). |
-| **Server Startup** | `dendrite spike serve` | Listening on `http://127.0.0.1:8080`. |
-| **API Health** | `curl -s http://127.0.0.1:8080/health` | `{"status":"online","engine":"oxillama-rust"}`. |
-| **Models API** | `curl -s http://127.0.0.1:8080/v1/models` | Lists `qwen3.5:9b` and `qwen3.8:27b`. |
-| **JetBrains Integration** | Prompt JetBrains AI Assistant / Continue | Instant response generated with zero cloud token cost. |
-| **Clean Shutdown** | `dendrite spike stop` | Terminated and port 8080 released. |
+| **Binary installed** | `llama-server --version` | Prints the llama.cpp build. |
+| **Server startup** | `dendrite spike serve` | Serves a model at `http://127.0.0.1:8080`. |
+| **API health** | `curl -s http://127.0.0.1:8080/health` | `{"status":"ok"}`. |
+| **Models API** | `curl -s http://127.0.0.1:8080/v1/models` | Lists the served model. |
+| **IDE integration** | Prompt AI Assistant or Continue | A local answer with no cloud token cost. |
+| **Clean shutdown** | `dendrite spike stop` | Port 8080 is released. |

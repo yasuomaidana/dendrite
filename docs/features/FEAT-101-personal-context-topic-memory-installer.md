@@ -14,12 +14,12 @@
 
 ## 1. Executive Summary & Architectural Overview
 
-`FEAT-101` defines the formal technical architecture, deterministic prompt engineering directives, multi-turn state machines, and automated installer helper subsystems for **Personal Context, Topic Memory Zero State, Canvas Creative Actions, and Dual Zero-Cost Inference (Ollama Metal + OxiLLaMa Pure-Rust)**, derived from production AI system specifications (Google Gemini Personal Context, Canvas, and Workspace connectors) and enhanced via local zero-cost LLM reasoning.
+`FEAT-101` defines the formal technical architecture, deterministic prompt engineering directives, multi-turn state machines, and automated installer helper subsystems for **Personal Context, Topic Memory Zero State, Canvas Creative Actions, and Dual Zero-Cost Inference (Ollama Metal + llama.cpp)**, derived from production AI system specifications (Google Gemini Personal Context, Canvas, and Workspace connectors) and enhanced via local zero-cost LLM reasoning.
 
 The system serves three foundational missions:
 1. **Personal Context & Topic Memory Runtime**: A deterministic state machine and prompt framework that consumes structured user data (calendar, email, search history, photo albums, active projects) to generate context-aware topic home pages ("Zero State"), structured memory code blocks, and multi-persona onboarding experiences ("Welcome Prompt Suite") while strictly enforcing user data privacy and anti-hallucination guardrails.
 2. **Canvas Direct Action & MCP Workspace Connectivity**: Native support for 15 interactive Canvas writing actions (`WRITE_EMAIL`, `WRITE_STORY`, `WRITE_REVIEW`, etc.) and enterprise tool connectors (`workspace_tool`, `monday-connector`, `mcp-evernote`, `shopify-connector`, `instacart_mcp`).
-3. **Automated Installer Helpers & Dual Zero-Cost Inference**: An enterprise-grade bootstrap, pre-flight verification, hardware topology probe, and container orchestration layer that provisions zero-cost local inference engines (**Ollama Metal GPU** `:11434` and **OxiLLaMa Pure-Rust GGUF** `:8080`), token governance proxies (LiteLLM `:4000`), and self-hosted project management (Plane v2 `:8090`) in a single deterministic command.
+3. **Automated Installer Helpers & Dual Zero-Cost Inference**: An enterprise-grade bootstrap, pre-flight verification, hardware topology probe, and container orchestration layer that provisions zero-cost local inference engines (**Ollama Metal GPU** `:11434` and **llama.cpp `llama-server`** `:8080`), token governance proxies (LiteLLM `:4000`), and self-hosted project management (Plane v2 `:8090`) in a single deterministic command.
 
 ```mermaid
 flowchart TD
@@ -33,7 +33,7 @@ flowchart TD
         IH_Script["scripts/install-helpers.sh"]
         PF_Check["Pre-Flight Hardware, Cargo & Port Audit"]
         Prov_Ollama["Local Model Provisioner (Ollama Metal)"]
-        Prov_OxiLLaMa["OxiLLaMa Pure-Rust Daemon (:8080)"]
+        Prov_LlamaCpp["llama.cpp llama-server (:8080)"]
         Prov_Stack["Multi-Service Container Orchestrator"]
     end
 
@@ -57,7 +57,7 @@ flowchart TD
     subgraph Inference & Governance Gateway
         LiteLLM["LiteLLM Token Proxy (:4000)"]
         OllamaLocal["Local Ollama Metal (:11434)"]
-        OxiLLaMaLocal["OxiLLaMa Pure-Rust GGUF (:8080)"]
+        LlamaCppLocal["llama.cpp GGUF (:8080)"]
         CloudLLM["Cloud Commercial Tier (AGY / Gemini)"]
     end
 
@@ -69,7 +69,7 @@ flowchart TD
     CLI --> IH_Script
     IH_Script --> PF_Check
     PF_Check --> Prov_Ollama
-    PF_Check --> Prov_OxiLLaMa
+    PF_Check --> Prov_LlamaCpp
     PF_Check --> Prov_Stack
 
     UI --> SM
@@ -90,7 +90,7 @@ flowchart TD
 
     SM --> LiteLLM
     LiteLLM -->|Zero-Cost Tier A| OllamaLocal
-    LiteLLM -->|Zero-Cost Tier B| OxiLLaMaLocal
+    LiteLLM -->|Zero-Cost Tier B| LlamaCppLocal
     LiteLLM -->|Escalation Tier| CloudLLM
 
     IH_Script --> Plane
@@ -254,7 +254,7 @@ The Welcome Prompt Suite powers the initial onboarding experience ("Hello World"
 > [!IMPORTANT]
 > **Governing Tickets**:
 > - `DEN-804`: System Installer Helpers: Pre-Flight Audit & Port/Hardware Prober
-> - `DEN-805`: Local LLM Model Provisioner & OxiLLaMa Daemon Bridge
+> - `DEN-805`: Local LLM Model Provisioner & llama.cpp Daemon Bridge
 
 To support deterministic automated deployments across developer workstations, ephemeral CI/CD environments, and autonomous agent loops, the system includes native **Installer Helpers** implemented in [`scripts/install-helpers.sh`](file:///Users/yasuomaidana/GoLandProjects/Dendrite/scripts/install-helpers.sh) and [`pkg/installer`](file:///Users/yasuomaidana/GoLandProjects/Dendrite/pkg/installer).
 
@@ -267,7 +267,7 @@ sequenceDiagram
     participant Script as scripts/install-helpers.sh
     participant Sys as System OS & Hardware
     participant Ollama as Ollama Engine (:11434)
-    participant Oxi as OxiLLaMa Pure-Rust (:8080)
+    participant Llama as llama.cpp llama-server (:8080)
     participant LiteLLM as LiteLLM Proxy (:4000)
     participant Plane as Plane Project Management (:8090)
 
@@ -278,8 +278,8 @@ sequenceDiagram
     Sys-->>Script: Ports available / mapped
     Script->>Ollama: Gate 3A: Probe Ollama & Pull Zero-Cost Models (llama3.2, nomic-embed)
     Ollama-->>Script: Models loaded on Metal GPU
-    Script->>Oxi: Gate 3B: Probe OxiLLaMa pure-Rust zero-FFI daemon (:8080)
-    Oxi-->>Script: OxiLLaMa binary verified & ready
+    Script->>Llama: Gate 3C: Probe llama-server (:8080)
+    Llama-->>Script: llama-server binary verified & ready
     Script->>LiteLLM: Gate 4: Bootstrap LiteLLM Config & Validate Routes
     LiteLLM-->>Script: Routes healthy (local-zero-cost + cloud cascade)
     Script->>Plane: Gate 5: Verify Plane API Reachability & Sync Tickets
@@ -287,14 +287,14 @@ sequenceDiagram
     Script-->>Dev: [SUCCESS] System fully provisioned and verified
 ```
 
-### 5.2 OxiLLaMa Pure-Rust Zero-FFI Engine Coverage
+### 5.2 llama.cpp Engine Coverage
 
-In addition to Ollama Metal, the installer helpers orchestrate **OxiLLaMa** (`cool-japan/oxillama`), Dendrite's pure-Rust GGUF inference runtime:
-- **Port Assignment**: `8080` (with fallback to `8081` if conflict detected).
-- **Cargo Detection**: Verifies `cargo` toolchain availability for on-the-fly native compilation.
-- **Pre-Built Binary Auto-Discovery**: Audits system PATH and `./bin/oxillama`.
-- **Zero-FFI Sovereign Isolation**: Delivers zero memory unsafety and sandbox isolation for sensitive personal context data.
-- **Failover Cascade**: LiteLLM automatically cascades between Ollama Metal (`:11434`) and OxiLLaMa (`:8080`) before escalating to commercial cloud models.
+In addition to Ollama Metal, the installer helpers orchestrate **llama.cpp** (`ggml-org/llama.cpp`), Dendrite's GGUF inference runtime (`llama-server`):
+- **Port Assignment**: `8080`.
+- **Installation**: `scripts/install-helpers.sh --llamacpp` installs llama.cpp (Homebrew, or the official release on Linux) when `llama-server` is missing.
+- **Binary Discovery**: Audits the system PATH for `llama-server`.
+- **Local Isolation**: Keeps sensitive personal context data on the workstation.
+- **Failover Cascade**: LiteLLM automatically cascades between Ollama Metal (`:11434`) and llama.cpp (`:8080`) before escalating to commercial cloud models.
 
 ### 5.3 Local LLM Inference Concurrency Limiter & FIFO Priority Queue
 
@@ -327,7 +327,7 @@ flowchart LR
 
     subgraph Local Inference Daemon
         Metal["Ollama Metal GPU (:11434)"]
-        OxiLLaMa["OxiLLaMa Pure-Rust (:8080)"]
+        LlamaCpp["llama.cpp llama-server (:8080)"]
     end
 
     UserUI -->|PriorityUrgent| Backpressure
@@ -339,11 +339,11 @@ flowchart LR
     Backpressure -->|Admitted| PQ
     PQ --> Limiter
     Limiter -->|Worker Slot 1| Metal
-    Limiter -->|Worker Slot 2| OxiLLaMa
+    Limiter -->|Worker Slot 2| llama.cpp
 ```
 
 #### Queue Architecture & Invariant Specifications:
-1. **Bounded Concurrency Semaphore**: Local execution is strictly capped at `MaxConcurrency` (default `1` for single-GPU Metal, configurable up to `2` for dual-engine Ollama + OxiLLaMa).
+1. **Bounded Concurrency Semaphore**: Local execution is strictly capped at `MaxConcurrency` (default `1` for single-GPU Metal, configurable up to `2` for dual-engine Ollama + llama.cpp).
 2. **Priority Preemption**: Requests carry an explicit `RequestPriority`:
    - `PriorityUrgent`: User-facing interactive turns and conventional commit synthesis.
    - `PriorityHigh`: Interactive autonomous agent loops (Aider / OpenHands).
@@ -519,7 +519,7 @@ The feature is decomposed into 8 atomic, testable tickets tracked authoritativel
 | `DEN-802` | Welcome Prompt Suite & Cross-Source Synthesis Dispatcher | `high` | 5 pts | `DEN-801` | `pkg/personalcontext/welcome` |
 | `DEN-803` | Structured Topic Memory Parser & Zero-Extrapolation Fidelity Guard | `medium` | 3 pts | `DEN-801` | `pkg/personalcontext/memory` |
 | `DEN-804` | System Installer Helpers: Pre-Flight Audit & Port/Hardware Prober | `high` | 5 pts | *None (Root)* | `scripts/`, `pkg/installer` |
-| `DEN-805` | Local LLM Model Provisioner & OxiLLaMa Daemon Bridge | `medium` | 3 pts | `DEN-804` | `pkg/installer/models`, `pkg/inference` |
+| `DEN-805` | Local LLM Model Provisioner & llama.cpp Daemon Bridge | `medium` | 3 pts | `DEN-804` | `pkg/installer/models`, `pkg/inference` |
 | `DEN-806` | Dynamic 10-Style Greeting Matrix & Cliché Suppression Engine | `medium` | 3 pts | `DEN-801` | `pkg/personalcontext/greeting` |
 | `DEN-807` | Canvas Interactive Writing & Direct Creative Action Handlers | `medium` | 5 pts | `DEN-801` | `pkg/personalcontext/canvas` |
 | `DEN-808` | Personal Context MCP Connectors: Workspace & Enterprise Tool Adapters | `medium` | 5 pts | `DEN-802` | `pkg/personalcontext/mcp` |

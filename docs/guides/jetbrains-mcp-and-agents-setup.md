@@ -173,7 +173,7 @@ Once saved, JetBrains's `McpProjectServerConfigurationService` reloads the file 
 | `dendrite_telemetry` | Real-time Apple Silicon SoC thermals and LiteLLM spend window totals. | `{}` |
 | `dendrite_jetbrains_setup`| Auto-configure JetBrains MCP server, Run Configurations, and Tools. | `project_only`, `global_only` |
 | `dendrite_ollama_probe` | Probe local Ollama Metal GPU instance, check models and local latency. | `{}` |
-| `dendrite_inference_list` | List all operational engines (Ollama, OxiLLaMa, vLLM, TGI, LiteLLM). | `{}` |
+| `dendrite_inference_list` | List all operational engines (Ollama, llama.cpp, vLLM, TGI, LiteLLM). | `{}` |
 | `dendrite_inference_probe`| Health-check and sample TTFT/TPS latency on target engine. | `engine_type` |
 | `dendrite_topology_advisor`| Recommend hardware placement topologies for target scenario. | `scenario` |
 | `dendrite_gateway_render` | Dynamically render LiteLLM gateway routing configurations. | `template_path` |

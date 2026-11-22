@@ -185,6 +185,6 @@ dendrite agent run aider --ticket DEN-036 --model copilot-sonnet
 # 9. Run Google AGY (Antigravity) bound to LiteLLM gateway and ticket
 dendrite agent run agy --ticket DEN-042 --task "Decompose monolithic renderer" --model gemini-2.5-pro
 
-# 10. Run k6 performance benchmarks against local OxiLLaMa or LiteLLM gateway
-dendrite bench inference --engine oxillama --vus 25 --duration 30s
+# 10. Run k6 performance benchmarks against local llama-server or LiteLLM gateway
+dendrite bench inference --engine llamacpp-local --vus 25 --duration 30s
 ```

@@ -6,7 +6,7 @@ sidebar_label: "dendrite_gateway_update"
 
 # dendrite_gateway_update
 
-Dynamically discover live inference engines (Ollama, OxiLLaMa, etc.), score loaded models by intelligence, and update LiteLLM routing table (default: ~/.dendrite/stacks/litellm_config.yaml)
+Dynamically discover live inference engines (Ollama, llama.cpp, etc.), score loaded models by intelligence, and update LiteLLM routing table (default: ~/.dendrite/stacks/litellm_config.yaml)
 
 ## Input Schema
 

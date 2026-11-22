@@ -5,7 +5,7 @@ Cross-project typed links (Synapses) with scoped MCP servers and self-healing pa
 Tickets: DEN-997 … DEN-1016 (Milestone 40: Synapse Cross-Project Links & Multi-Agent Arbitration Mesh)
 
 ## Goals
-Dendrite links projects only through `dendrite pool` (`pkg/pool/dag`, per-git-root `.dendrite/pool.json`) and the global workspace registry (`pkg/workspace`, `~/.dendrite/config.json`). Neither has a stable project identity: entries are name + absolute path, so a manual `mv` silently breaks them. Concurrent agents (`dendrite agent jobs` → AGY/OxiLLaMa, interactive `agent run`, external Claude/Gemini CLIs) share a working tree with no cross-process coordination — the only guard is `CheckScope`, evaluated *after* the agent has already edited. Goal: typed cross-project links (Synapses) with scoped MCP servers and self-healing paths, plus a lease/blackboard/worktree mesh so concurrent agents cooperate instead of clobbering.
+Dendrite links projects only through `dendrite pool` (`pkg/pool/dag`, per-git-root `.dendrite/pool.json`) and the global workspace registry (`pkg/workspace`, `~/.dendrite/config.json`). Neither has a stable project identity: entries are name + absolute path, so a manual `mv` silently breaks them. Concurrent agents (`dendrite agent jobs` → AGY/the former pure-Rust runner, interactive `agent run`, external Claude/Gemini CLIs) share a working tree with no cross-process coordination — the only guard is `CheckScope`, evaluated *after* the agent has already edited. Goal: typed cross-project links (Synapses) with scoped MCP servers and self-healing paths, plus a lease/blackboard/worktree mesh so concurrent agents cooperate instead of clobbering.
 
 ## 1. Nomenclature — verdict: **Synapse**
 | Candidate | Fit | Verdict |
@@ -153,7 +153,7 @@ sequenceDiagram
 **Build natively**: projectid, synapse manifest/heal, scoped MCP server mode, mesh sessions/leases/blackboard, exec shim, reconcile.
 
 ## 6. Plane roadmap (Milestone 40)
-Tier key: **OX** = OxiLLaMa local (complexity ≤3, vendor audit after), **AGY** = AGY job (Gemini 3.x flash/pro), **CL** = Claude (this session: architecture, concurrency-critical code, review of OX/AGY output).
+Tier key: **OX** = the former pure-Rust runner local (complexity ≤3, vendor audit after), **AGY** = AGY job (Gemini 3.x flash/pro), **CL** = Claude (this session: architecture, concurrency-critical code, review of OX/AGY output).
 
 | Ticket | Title | Pkg | Cx | Tier | Blocked by |
 |---|---|---|---|---|---|
