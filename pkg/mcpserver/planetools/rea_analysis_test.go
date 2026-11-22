@@ -43,6 +43,14 @@ func reaToolsWith(t *testing.T, deps Dependencies, service func() (*analysis.Ser
 	return s, pe
 }
 
+// expectToolError calls a tool and requires an error that holds want.
+func expectToolError(t *testing.T, s *Server, name, tool string, args map[string]any, want string) {
+	t.Helper()
+	if _, err := callRea(t, s, tool, args); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("%s: %v, want %q", name, err, want)
+	}
+}
+
 func callRea(t *testing.T, s *Server, tool string, args map[string]any) (string, error) {
 	t.Helper()
 	h, ok := s.Handler(tool)
@@ -133,9 +141,7 @@ func TestReaToolsReportWhatTheyCannotDo(t *testing.T) {
 		"search unknown": {"dendrite_rea_search", map[string]any{"id": "pe-none", "query": "x"}, "no such analysis"},
 		"pause unknown":  {"dendrite_rea_pause", map[string]any{"id": "pe-none"}, "no such analysis"},
 	} {
-		if _, err := callRea(t, s, tc.tool, tc.args); err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("%s: %v, want %q", name, err, tc.want)
-		}
+		expectToolError(t, s, name, tc.tool, tc.args, tc.want)
 	}
 
 	broken, _ := reaTools(t, func() (*analysis.Service, error) { return nil, errors.New("no Dendrite home") })

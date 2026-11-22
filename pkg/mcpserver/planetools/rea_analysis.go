@@ -15,12 +15,7 @@ func RegisterReaAnalysisTools(s *Server, deps Dependencies, service func() (*ana
 	idProp := TypedProp("string", "Analysis id, as printed by dendrite_rea_analyze")
 	tierProp := TypedProp("string", "Model tier: local or paid")
 	modelProp := TypedProp("string", "Model to use on that tier")
-	tools := []struct {
-		name, desc string
-		required   []string
-		props      map[string]interface{}
-		run        func(ctx context.Context, svc *analysis.Service, args map[string]interface{}) (interface{}, error)
-	}{
+	registerReaDefs(s, service, []reaToolDef{
 		{"dendrite_rea_analyze", "Analyze any target (PE, ELF, Mach-O, ASAR/ZIP package, JS bundle, unknown file or a directory of source): inspect it, write its structure as documents and index them. Returns an evidence bundle under 4,000 tokens and an analysis id; read more with dendrite_rea_search instead of dumping the target again. A paused analysis is returned with paused=true.",
 			[]string{"binary"}, map[string]interface{}{"binary": TypedProp("string", "Path of the file or directory to analyze"), "format": TypedProp("string", "Format the target must have (default: detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree, unknown"),
 				"id": TypedProp("string", "Name of the analysis (default: generated)"), "tier": tierProp, "model": modelProp,
@@ -32,10 +27,21 @@ func RegisterReaAnalysisTools(s *Server, deps Dependencies, service func() (*ana
 			map[string]interface{}{"id": idProp, "force": TypedProp("boolean", "Confirm the deletion")}, reaPurge},
 		{"dendrite_rea_search", "Search the documents of a finished analysis; returns only the best passages, within the 4,000-token boundary.", []string{"id", "query"},
 			map[string]interface{}{"id": idProp, "query": TypedProp("string", "What to look for, e.g. an imported function"), "k": TypedProp("number", "How many passages (default 5, at most 20)")}, reaSearch},
-	}
-	for _, t := range tools {
-		s.RegisterTool(Tool{Name: t.name, Description: t.desc, InputSchema: ObjectSchema(t.required, t.props)},
-			reaTool(service, t.required, t.run))
+	})
+}
+
+// reaToolDef defines one REA tool: its name, description, required arguments, argument schema and operation.
+type reaToolDef struct {
+	name, desc string
+	required   []string
+	props      map[string]interface{}
+	run        func(ctx context.Context, svc *analysis.Service, args map[string]interface{}) (interface{}, error)
+}
+
+// registerReaDefs registers each definition on s, over the analysis service that service builds.
+func registerReaDefs(s *Server, service func() (*analysis.Service, error), defs []reaToolDef) {
+	for _, t := range defs {
+		s.RegisterTool(Tool{Name: t.name, Description: t.desc, InputSchema: ObjectSchema(t.required, t.props)}, reaTool(service, t.required, t.run))
 	}
 }
 
