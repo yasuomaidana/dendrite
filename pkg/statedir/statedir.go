@@ -24,14 +24,23 @@ var (
 // mainCheckout prints the checkout that owns the git directory: for a linked worktree that is
 // the main checkout, so every working copy shares one untracked .dendrite/. Outside a
 // standard layout (bare repository) it falls back to the current top level.
-func mainCheckout() ([]byte, error) {
-	out, err := exec.Command("git", "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+func mainCheckout() ([]byte, error) { return mainCheckoutIn("") }
+
+// mainCheckoutIn is mainCheckout for the repository containing dir ("" is the current directory).
+func mainCheckoutIn(dir string) ([]byte, error) {
+	git := func(args ...string) ([]byte, error) {
+		if dir != "" {
+			args = append([]string{"-C", dir}, args...)
+		}
+		return exec.Command("git", args...).Output()
+	}
+	out, err := git("rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err == nil {
 		if common := strings.TrimSpace(string(out)); filepath.Base(common) == ".git" {
 			return []byte(filepath.Dir(common) + "\n"), nil
 		}
 	}
-	return exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	return git("rev-parse", "--show-toplevel")
 }
 
 // testStateDir isolates state per test binary so `go test` never mutates the
@@ -65,7 +74,22 @@ func gitStateDir() string {
 //  2. a per-process temp dir when running inside a `go test` binary
 //  3. <git rev-parse --show-toplevel>/.dendrite (computed once, cached with sync.Once)
 //  4. the path unchanged (CWD-relative) when not inside a git repository
-func Resolve(p string) string {
+func Resolve(p string) string { return resolve(p, gitStateDir) }
+
+// ResolveIn is Resolve for the repository that contains dir instead of the current directory: a guard that
+// judges a file in another repository must read that repository's state, not its own. $DENDRITE_STATE_DIR
+// and the per-test directory still win, as in Resolve.
+func ResolveIn(dir, p string) string {
+	return resolve(p, func() string {
+		out, err := mainCheckoutIn(dir)
+		if top := strings.TrimSpace(string(out)); err == nil && top != "" {
+			return filepath.Join(top, ".dendrite")
+		}
+		return ""
+	})
+}
+
+func resolve(p string, gitDir func() string) string {
 	if filepath.IsAbs(p) {
 		return p
 	}
@@ -80,8 +104,8 @@ func Resolve(p string) string {
 		root = envDir
 	} else if isTestBinary() && testStateDir() != "" {
 		root = testStateDir()
-	} else if gitDir := gitStateDir(); gitDir != "" {
-		root = gitDir
+	} else if dir := gitDir(); dir != "" {
+		root = dir
 	} else {
 		return p
 	}

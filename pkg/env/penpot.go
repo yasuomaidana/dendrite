@@ -14,6 +14,7 @@ type PenpotConfig struct {
 	BackendPort   int    `json:"backend_port"`
 	DBPort        int    `json:"db_port"`
 	RedisPort     int    `json:"redis_port"`
+	ExporterPort  int    `json:"exporter_port"`
 	LocalEndpoint string `json:"local_endpoint"`
 	SecretKey     string `json:"secret_key"`
 }
@@ -25,28 +26,35 @@ func DefaultPenpotConfig() PenpotConfig {
 		BackendPort:   9001,
 		DBPort:        5435,
 		RedisPort:     6381,
+		ExporterPort:  9002,
 		LocalEndpoint: "http://localhost:9000",
 		SecretKey:     "dendrite_penpot_secret_key_mock_local",
 	}
 }
 
-// GeneratePenpotCompose renders a valid docker-compose configuration for self-hosted Penpot.
-func GeneratePenpotCompose(cfg PenpotConfig) string {
-	if cfg.FrontendPort <= 0 {
-		cfg.FrontendPort = 9000
-	}
-	if cfg.BackendPort <= 0 {
-		cfg.BackendPort = 9001
-	}
-	if cfg.DBPort <= 0 {
-		cfg.DBPort = 5435
-	}
-	if cfg.RedisPort <= 0 {
-		cfg.RedisPort = 6381
+// WithDefaults fills every port and the secret that was left unset.
+func (cfg PenpotConfig) WithDefaults() PenpotConfig {
+	def := DefaultPenpotConfig()
+	for _, f := range []struct {
+		got  *int
+		want int
+	}{
+		{&cfg.FrontendPort, def.FrontendPort}, {&cfg.BackendPort, def.BackendPort}, {&cfg.DBPort, def.DBPort},
+		{&cfg.RedisPort, def.RedisPort}, {&cfg.ExporterPort, def.ExporterPort},
+	} {
+		if *f.got <= 0 {
+			*f.got = f.want
+		}
 	}
 	if cfg.SecretKey == "" {
-		cfg.SecretKey = "dendrite_penpot_secret_key_mock_local"
+		cfg.SecretKey = def.SecretKey
 	}
+	return cfg
+}
+
+// GeneratePenpotCompose renders a valid docker-compose configuration for self-hosted Penpot.
+func GeneratePenpotCompose(cfg PenpotConfig) string {
+	cfg = cfg.WithDefaults()
 
 	return fmt.Sprintf(`version: "3.8"
 
@@ -106,7 +114,7 @@ services:
       penpot-redis:
         condition: service_healthy
     environment:
-      PENPOT_FLAGS: "enable-prepl-server disable-email-verification disable-secure-session-cookies"
+      PENPOT_FLAGS: "enable-prepl-server enable-access-tokens disable-email-verification disable-secure-session-cookies"
       PENPOT_DATABASE_URI: "postgresql://penpot-postgres:5432/penpot_dev"
       PENPOT_DATABASE_USERNAME: "penpot_user"
       PENPOT_DATABASE_PASSWORD: "penpot_password"
@@ -119,18 +127,47 @@ services:
       - penpot-assets:/opt/data/assets
     networks:
       - dendrite-mesh
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6060"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  penpot-exporter:
+    image: penpotapp/exporter:latest
+    container_name: dendrite-penpot-exporter
+    restart: unless-stopped
+    depends_on:
+      penpot-backend:
+        condition: service_healthy
+    environment:
+      PENPOT_PUBLIC_URI: "http://penpot-frontend:8080"
+      PENPOT_REDIS_URI: "redis://penpot-redis:6379/0"
+      PENPOT_SECRET_KEY: "%s"
+    ports:
+      - "%d:6061"
+    networks:
+      - dendrite-mesh
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6061"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
 
   penpot-frontend:
     image: penpotapp/frontend:latest
     container_name: dendrite-penpot-frontend
     restart: unless-stopped
     depends_on:
-      - penpot-backend
+      penpot-backend:
+        condition: service_healthy
+      penpot-exporter:
+        condition: service_started
     environment:
-      PENPOT_FLAGS: "enable-prepl-server disable-email-verification disable-secure-session-cookies"
+      PENPOT_FLAGS: "enable-prepl-server enable-access-tokens disable-email-verification disable-secure-session-cookies"
       PENPOT_PUBLIC_URI: "http://localhost:%d"
       PENPOT_BACKEND_URI: "http://penpot-backend:6060"
-      PENPOT_EXPORTER_URI: "http://penpot-backend:6060"
+      PENPOT_EXPORTER_URI: "http://penpot-exporter:6061"
     ports:
       - "%d:8080"
     networks:
@@ -140,7 +177,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-`, cfg.DBPort, cfg.RedisPort, cfg.SecretKey, cfg.FrontendPort, cfg.BackendPort, cfg.FrontendPort, cfg.FrontendPort)
+`, cfg.DBPort, cfg.RedisPort, cfg.SecretKey, cfg.FrontendPort, cfg.BackendPort, cfg.SecretKey, cfg.ExporterPort, cfg.FrontendPort, cfg.FrontendPort)
 }
 
 // CheckPenpotHealth tests reachability of a running Penpot service instance.
