@@ -85,8 +85,12 @@ func TestInspectFailures(t *testing.T) {
 func TestInspectReportsASidecarThatCannotAnswer(t *testing.T) {
 	for mode, want := range map[string]func(error) bool{
 		"noinspect": func(err error) bool { return errors.Is(err, ErrInspectUnsupported) },
-		"rpcfail":   func(err error) bool { return err != nil && !errors.Is(err, ErrInspectUnsupported) && !errors.Is(err, ErrNotRecognised) },
-		"exit":      func(err error) bool { return err != nil && !errors.Is(err, ErrInspectUnsupported) && !errors.Is(err, ErrNotRecognised) },
+		"rpcfail": func(err error) bool {
+			return err != nil && !errors.Is(err, ErrInspectUnsupported) && !errors.Is(err, ErrNotRecognised)
+		},
+		"exit": func(err error) bool {
+			return err != nil && !errors.Is(err, ErrInspectUnsupported) && !errors.Is(err, ErrNotRecognised)
+		},
 	} {
 		t.Setenv("TESTSIDECAR_MODE", mode)
 		if _, err := testClient(t).Inspect(context.Background(), target(t, "a.exe", "MZ")); !want(err) {
