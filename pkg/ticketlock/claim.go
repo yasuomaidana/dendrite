@@ -1,6 +1,7 @@
 package ticketlock
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"Dendrite/pkg/featurebranch"
 	"Dendrite/pkg/fsutil"
 	"Dendrite/pkg/tracker"
+	"Dendrite/pkg/tracker/plane"
 )
 
 // Claim ties one working copy (identified by its branch) to one Plane ticket. It lives in
@@ -105,4 +107,52 @@ func TicketOfBranch(branch string) (string, bool) {
 		return strings.ToUpper(m[1]), true
 	}
 	return "", false
+}
+
+// OwnerAGYLabel marks a ticket AGY took over from a Claude session that refused it (the `[rea]` directive).
+// Claude may not claim it again unless the claim steals it.
+const OwnerAGYLabel = "owner:agy"
+
+// ownerPrefix is the label family a steal clears, so a later handoff can run again.
+const ownerPrefix = "owner:"
+
+// CanonicalTicket is the IDENT-N of an issue, from its title; the reference itself when the title has none.
+func CanonicalTicket(issue *plane.PlaneIssue, ref string) string { return canonical(issue, ref) }
+
+// claudeClaims reports whether the claim is made by a Claude session: the named agent, else the detected one.
+func claudeClaims(o ClaimOptions) bool {
+	agent := o.Agent
+	if agent == "" {
+		agent = DetectAgent()
+	}
+	return strings.EqualFold(agent, "claude")
+}
+
+// refuseAGYOwned stops a Claude claim on a ticket AGY owns. Other agents and a steal pass. A ticket whose
+// labels cannot be read is let through: the guard must not block work it cannot judge.
+func (l *Lifecycle) refuseAGYOwned(ctx context.Context, ticket string, o ClaimOptions) error {
+	if o.Steal || !claudeClaims(o) {
+		return nil
+	}
+	// PatchLabels with nothing to add or drop is the only call that returns label names; it changes nothing.
+	_, names, err := l.Board.Svc.PatchLabels(ctx, l.Board.Client, ticket, nil, nil)
+	if err != nil {
+		return nil
+	}
+	for _, n := range names {
+		if strings.EqualFold(n, OwnerAGYLabel) {
+			return fmt.Errorf("%s is owned by AGY: a Claude session refused it and it was handed over (label %s); pass --steal to take it back", ticket, OwnerAGYLabel)
+		}
+	}
+	return nil
+}
+
+// claimRemovals are the label prefixes a claim replaces: its own agent and tier labels, the needs-input mark and,
+// when Claude steals a ticket back from AGY, the owner label.
+func claimRemovals(o ClaimOptions) []string {
+	out := []string{"agent:", "tier:", NeedsInputLabel}
+	if o.Steal && claudeClaims(o) {
+		out = append(out, ownerPrefix)
+	}
+	return out
 }

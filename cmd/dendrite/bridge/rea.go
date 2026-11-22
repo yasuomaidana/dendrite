@@ -19,7 +19,8 @@ func NewRetroCmd() *cobra.Command {
 	cmd.Example = "dendrite retro list\n" +
 		"dendrite retro showcase\n" +
 		"dendrite retro showcase aegis --format markdown --output aegis.md\n" +
-		"dendrite retro showcase ctf --json"
+		"dendrite retro showcase ctf --json\n" +
+		"dendrite retro handoff DEN-1062 --refused"
 
 	list := &cobra.Command{
 		Use:     "list",
@@ -58,7 +59,7 @@ func NewRetroCmd() *cobra.Command {
 	showcaseCmd.Flags().StringVar(&format, "format", "text", "Report format: text or markdown (use --json for JSON)")
 	showcaseCmd.Flags().StringVarP(&output, "output", "o", "", "Write the report to this file instead of stdout")
 
-	cmd.AddCommand(list, showcaseCmd)
+	cmd.AddCommand(list, showcaseCmd, newRetroHandoffCmd())
 	return cmd
 }
 

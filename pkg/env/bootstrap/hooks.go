@@ -40,6 +40,9 @@ const (
 	decisionCommand = `command -v dendrite >/dev/null 2>&1 || exit 0; dendrite hook decision; exit 0`
 	// sessionEndCommand hands a ticket that is still In Progress over when the session ends.
 	sessionEndCommand = `command -v dendrite >/dev/null 2>&1 || exit 0; dendrite hook session-end; exit 0`
+	// stopCommand runs at the end of every turn: when the claimed ticket is REA work and the Claude reply refused
+	// it, the ticket goes to AGY (the [rea] directive). Like the session-end hook it fails open.
+	stopCommand = `command -v dendrite >/dev/null 2>&1 || exit 0; dendrite hook stop; exit 0`
 
 	// dendriteHookMarker identifies every hook command Dendrite owns, so a rewrite replaces them.
 	dendriteHookMarker = "dendrite hook "
@@ -56,6 +59,7 @@ var dendriteHooks = []hookSpec{
 	{"PreToolUse", editLockMatcher, editLockCommand},
 	{"PostToolUse", planSavedMatcher, planSavedCommand},
 	{"PostToolUse", decisionMatcher, decisionCommand},
+	{"Stop", "", stopCommand},
 	{"SessionEnd", "", sessionEndCommand},
 }
 

@@ -21,6 +21,7 @@ Dendritic Arbor
 
 | Subcommand | Description |
 | :--- | :--- |
+| `handoff` | Hand an REA ticket this session refuses to AGY (rule: the [rea] directive) |
 | `list` | List the open-source showcase targets |
 | `showcase` | Run cleanroom analysis and parity verification for one target or all (all, aegis, dxball, ctf, th04, mattermost) |
 
@@ -29,6 +30,24 @@ Dendritic Arbor
 None
 
 ## Subcommand Reference
+
+### `dendrite retro handoff`
+
+Hand an REA ticket this session refuses to AGY (rule: the [rea] directive)
+
+```bash
+dendrite retro handoff <ticket> --refused [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--reason` | Why, in a sentence; kept on the ticket |
+| `--refused` | This session refuses the ticket (required) |
+| `--worktree` | Working copy of this session (default: the current directory) |
+
+```bash
+dendrite retro handoff DEN-1062 --refused --reason "declined to analyse the binary"
+```
 
 ### `dendrite retro list`
 
@@ -60,4 +79,5 @@ dendrite retro list
 dendrite retro showcase
 dendrite retro showcase aegis --format markdown --output aegis.md
 dendrite retro showcase ctf --json
+dendrite retro handoff DEN-1062 --refused
 ```

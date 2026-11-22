@@ -102,6 +102,8 @@ func TestValidateNamesTheBrokenRule(t *testing.T) {
 		{"lint.strictness", func(s *Set) { s.Lint.Strictness = "wild" }},
 		{"security.fail_on", func(s *Set) { s.Security.FailOn = "never" }},
 		{"languages.preference", func(s *Set) { s.Languages.Preference = nil }},
+		{"rea.refusal_owner", func(s *Set) { s.Rea.RefusalOwner = "copilot" }},
+		{"rea.labels or rea.title_prefixes", func(s *Set) { s.Rea.Labels, s.Rea.TitlePrefixes = nil, nil }},
 	} {
 		s := Defaults()
 		tc.mutate(&s)
@@ -197,7 +199,7 @@ func TestParseValueReadsTypedText(t *testing.T) {
 
 func TestKeysAndDescribeCoverEverySetting(t *testing.T) {
 	ks := Keys()
-	testkit.Equal(t, "len(Keys)", len(ks), 30)
+	testkit.Equal(t, "len(Keys)", len(ks), 34)
 	testkit.Equal(t, "Keys[0]", ks[0], "complexity.exclude")
 	text := Describe()
 	for _, k := range ks {
@@ -328,6 +330,7 @@ func TestInterpretReturnsTheStoredValueOfEveryKey(t *testing.T) {
 		"lint.strictness": `"standard"`, "security.fail_on": `"medium"`, "security.secrets": "false",
 		"done.auto_done": "false", "done.human_review_labels": `["x"]`, "languages.preference": `["go"]`,
 		"git.integration_branch": `"main"`, "git.feature_prefix": `"feat/"`,
+		"rea.labels": `["reverse"]`, "rea.title_prefixes": `["[RE]"]`, "rea.refusal_owner": `"none"`, "rea.refusal_model": `"gemini-3.8-flash-high"`,
 	}
 	for _, key := range Keys() {
 		answer := `[{"key":"` + key + `","value":` + sample[key] + `}]`
@@ -568,4 +571,27 @@ func TestBranchSettingsNeedText(t *testing.T) {
 	if err := s.Apply("git.integration_branch", 5); err == nil || !strings.Contains(err.Error(), "want text") {
 		t.Errorf("a number for a branch: %v", err)
 	}
+}
+
+func TestReaDirectiveDefaultsRoundTripAndMayBeSwitchedOff(t *testing.T) {
+	d := Defaults().Rea
+	testkit.Equal(t, "owner", d.RefusalOwner, RefusalOwnerAGY)
+	testkit.Equal(t, "labels", strings.Join(d.Labels, ","), "rea")
+	testkit.Equal(t, "prefixes", strings.Join(d.TitlePrefixes, ","), "[REA]")
+
+	s := Defaults()
+	if err := s.ApplyAll([]Change{{Key: "rea.refusal_owner", Value: "none"}, {Key: "rea.labels", Value: []string{}}, {Key: "rea.title_prefixes", Value: []string{}}}); err != nil {
+		t.Fatalf("switching the rule off: %v", err)
+	}
+	got, err := Decode(Encode(s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	testkit.Equal(t, "round trip owner", got.Rea.RefusalOwner, RefusalOwnerNone)
+
+	old, err := Decode([]byte("schema = 1\n"))
+	if err != nil {
+		t.Fatalf("a file with no [rea] section: %v", err)
+	}
+	testkit.Equal(t, "missing section keeps the default", old.Rea.RefusalOwner, RefusalOwnerAGY)
 }

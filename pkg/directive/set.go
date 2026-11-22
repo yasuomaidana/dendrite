@@ -34,6 +34,7 @@ type Set struct {
 	Done        Done        `toml:"done"`
 	Languages   Languages   `toml:"languages"`
 	Git         Git         `toml:"git"`
+	Rea         Rea         `toml:"rea"`
 }
 
 // Loc limits the production lines of a file (tests, comments and blank lines do not count).
@@ -163,6 +164,7 @@ func Defaults() Set {
 		Done:        Done{AutoDone: true, HumanReviewLabels: []string{"needs-human-review"}},
 		Languages:   Languages{Preference: []string{"rust", "python", "typescript", "go", "kotlin", "c", "cpp"}},
 		Git:         Git{FeaturePrefix: branchpolicy.DefaultFeaturePrefix},
+		Rea:         defaultRea(),
 	}
 }
 
@@ -198,6 +200,7 @@ func (s Set) Validate() error {
 		check(oneOf(s.Security.FailOn, "low", "medium", "high", "critical"), "security.fail_on must be low, medium, high or critical"),
 		check(len(s.Languages.Preference) > 0, "languages.preference needs at least one language"),
 		s.Git.validate(),
+		s.Rea.validate(),
 	}
 	for _, err := range rules {
 		if err != nil {
