@@ -81,6 +81,10 @@ func TestInspectFailures(t *testing.T) {
 	if _, err := testClient(t).Inspect(ctx, target(t, "a.exe", "MZ")); !errors.Is(err, ErrInspectUnsupported) {
 		t.Errorf("an old sidecar: %v", err)
 	}
+	t.Setenv("TESTSIDECAR_MODE", "rpcfail")
+	if _, err := testClient(t).Inspect(ctx, target(t, "a.exe", "MZ")); err == nil || errors.Is(err, ErrInspectUnsupported) || errors.Is(err, ErrNotRecognised) {
+		t.Errorf("another sidecar failure passes through: %v", err)
+	}
 	t.Setenv("TESTSIDECAR_MODE", "exit")
 	if _, err := testClient(t).Inspect(ctx, target(t, "a.exe", "MZ")); err == nil || errors.Is(err, ErrInspectUnsupported) || errors.Is(err, ErrNotRecognised) {
 		t.Errorf("a sidecar that exits: %v", err)

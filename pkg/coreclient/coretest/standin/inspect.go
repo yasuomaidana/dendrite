@@ -24,10 +24,13 @@ var signatures = []signature{
 
 // binInspect answers bin.inspect: a directory is a source tree, a file is recognised by its first bytes or its
 // extension, and anything else is an unknown file (not an error). Mode "noinspect" plays a dendrite-core that
-// predates the method.
+// predates the method and "rpcfail" one that fails for another reason.
 func binInspect(params json.RawMessage, o options) (any, map[string]interface{}) {
-	if o.mode == "noinspect" {
+	switch o.mode {
+	case "noinspect":
 		return nil, rpcError(-32601, "method not found: bin.inspect")
+	case "rpcfail":
+		return nil, rpcError(-32000, "inspection failed")
 	}
 	var p struct {
 		Path string `json:"path"`
