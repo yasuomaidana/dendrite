@@ -21,6 +21,8 @@ type Observation struct {
 	Title     string `json:"title"`
 	Content   string `json:"content"`
 	CreatedAt string `json:"created_at"`
+	// DeletedAt is set on a memory that was (soft) deleted; Export leaves those out.
+	DeletedAt string `json:"deleted_at"`
 }
 
 // Created is when the observation was stored; the zero time when Engram's stamp cannot be read.
@@ -29,7 +31,7 @@ func (o Observation) Created() time.Time {
 	return t
 }
 
-// Export returns every memory of the project that dir belongs to (Engram resolves the project from the
+// Export returns every live (not deleted) memory of the project that dir belongs to (Engram resolves the project from the
 // directory), through `engram export` into a temporary file.
 func Export(ctx context.Context, bin, dir string) ([]Observation, error) {
 	ctx, cancel := context.WithTimeout(ctx, readTimeout)
@@ -51,7 +53,13 @@ func Export(ctx context.Context, bin, dir string) ([]Observation, error) {
 	if err := json.Unmarshal(data, &dump); err != nil {
 		return nil, fmt.Errorf("engram export: unreadable file: %w", err)
 	}
-	return dump.Observations, nil
+	live := dump.Observations[:0]
+	for _, o := range dump.Observations {
+		if o.DeletedAt == "" {
+			live = append(live, o)
+		}
+	}
+	return live, nil
 }
 
 // hitLine is a result line of `engram search`: "[1] #7 (feedback) — title".

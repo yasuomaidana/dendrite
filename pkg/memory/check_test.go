@@ -169,10 +169,10 @@ func TestAMemoryWithoutADescriptionIsSearchedByItsName(t *testing.T) {
 func TestEngramStoreReadsThroughTheBinary(t *testing.T) {
 	testkit.StubEngram(t, `case "$1" in
   doctor) echo '{"status":"ok","summary":{"total":10,"ok":10,"warnings":0,"blocked":0,"errors":0}}' ;;
-  export) printf '{"observations":[{"title":"x","content":"c","created_at":"2026-11-22 10:00:00"}]}' > "$2" ;;
   search) echo "[1] #1 (note) — fact-a" ;;
   context) echo "## Memory"; echo "- thing" ;;
 esac`)
+	t.Setenv("ENGRAM_EXPORT", `{"observations":[{"title":"x","content":"c","created_at":"2026-11-22 10:00:00"}]}`)
 	bin, err := engram.Locate()
 	testkit.Check(t, err)
 	s := memory.EngramStore{Bin: bin, Dir: t.TempDir()}

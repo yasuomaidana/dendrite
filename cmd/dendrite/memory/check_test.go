@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const healthyEngram = `case "$1" in
   doctor) echo '{"status":"ok","summary":{"total":10,"ok":10,"warnings":0,"blocked":0,"errors":0}}' ;;
-  export) printf '{"observations":[]}' > "$2" ;;
   context) echo "## Memory" ;;
   save) echo saved ;;
 esac`
@@ -39,10 +39,13 @@ func TestCheckScoresBothStoresRecordsItAndPrintsTheMode(t *testing.T) {
 	out, err := run(t, "check", "--dir", dir)
 	testkit.Check(t, err)
 	testkit.Contains(t, out, "Memory check", "Claude", "Engram", "The scores point to:", "Mode in force: both")
-	if _, ok := memory.LastCheck(home); !ok {
+	if _, ok := memory.LastCheckBefore(home, time.Now().Add(time.Hour)); !ok {
 		t.Fatal("the check must be recorded")
 	}
 
+	if state := memory.LoadState(home); state.Computed != "" {
+		t.Fatalf("one check, or two on the same day, must not switch the mode: %+v", state)
+	}
 	out, err = run(t, "check", "--dir", dir, "--quiet")
 	testkit.Check(t, err)
 	testkit.Equal(t, "quiet", out, "")
@@ -201,4 +204,17 @@ func TestScheduleFallsBackToThePlainCommandNameWhenTheBinaryPathIsUnknown(t *tes
 	testkit.Check(t, err)
 	plist, _ := os.ReadFile(filepath.Join(dir, "dev.dendrite.memory.plist"))
 	testkit.Contains(t, string(plist), "<string>dendrite</string>")
+}
+
+func TestTwoAgreeingChecksAWeekApartSwitchTheMode(t *testing.T) {
+	home := rig(t)
+	testkit.StubEngram(t, healthyEngram) // Engram recalls nothing, so the scores point to claude
+	testkit.Check(t, memory.AppendCheck(home, memory.Report{Time: time.Now().Add(-8 * 24 * time.Hour), Candidate: memory.ClaudeOnly, EngramHealthy: true}))
+
+	out, err := run(t, "check", "--dir", claudeFolderOf(t))
+	testkit.Check(t, err)
+	testkit.Contains(t, out, "The scores point to: claude", "Mode in force: claude")
+	state := memory.LoadState(home)
+	testkit.Equal(t, "computed", state.Computed, memory.ClaudeOnly)
+	testkit.Contains(t, memory.ModeNotice(state, time.Now()), "Memory mode is claude")
 }

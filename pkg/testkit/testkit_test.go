@@ -174,3 +174,21 @@ func TestStubEngramRunsTheScriptFirstOnPathAndLogsToLOG(t *testing.T) {
 		t.Fatal("the override must be cleared and Engram's data isolated")
 	}
 }
+
+func TestStubEngramAnswersExportItselfWithTheMemoriesATestSets(t *testing.T) {
+	StubEngram(t, `exit 1`)
+	file := filepath.Join(t.TempDir(), "e.json")
+	if out, err := exec.Command("engram", "export", file).CombinedOutput(); err != nil {
+		t.Fatalf("export: %v\n%s", err, out)
+	}
+	if got, _ := os.ReadFile(file); string(got) != `{"observations":[]}` {
+		t.Fatalf("default export = %q", got)
+	}
+	t.Setenv("ENGRAM_EXPORT", `{"observations":[{"title":"x"}]}`)
+	if out, err := exec.Command("engram", "export", file).CombinedOutput(); err != nil {
+		t.Fatalf("export: %v\n%s", err, out)
+	}
+	if got, _ := os.ReadFile(file); !strings.Contains(string(got), `"title":"x"`) {
+		t.Fatalf("export = %q", got)
+	}
+}

@@ -47,20 +47,26 @@ func TestAnUnhealthyLastCheckDoesNotCountTowardsASwitch(t *testing.T) {
 	testkit.Equal(t, "still claude", s.Computed, memory.ClaudeOnly)
 }
 
-func TestChecksAreRecordedAndTheLastOneIsRead(t *testing.T) {
+func TestChecksAreRecordedAndTheNewestOlderOneIsRead(t *testing.T) {
 	home := t.TempDir()
-	if _, ok := memory.LastCheck(home); ok {
+	if _, ok := memory.LastCheckBefore(home, now); ok {
 		t.Fatal("no checks yet")
 	}
-	testkit.Check(t, memory.AppendCheck(home, report(memory.Both, true)))
-	testkit.Check(t, memory.AppendCheck(home, report(memory.EngramOnly, true)))
+	old, newer := report(memory.Both, true), report(memory.EngramOnly, true)
+	old.Time, newer.Time = now.Add(-10*24*time.Hour), now.Add(-8*24*time.Hour)
+	testkit.Check(t, memory.AppendCheck(home, old))
+	testkit.Check(t, memory.AppendCheck(home, newer))
+	testkit.Check(t, memory.AppendCheck(home, report(memory.ClaudeOnly, true))) // today
 	f, _ := os.OpenFile(memory.ChecksPath(home), os.O_APPEND|os.O_WRONLY, 0o644)
 	_, _ = f.WriteString("garbage\n")
 	_ = f.Close()
 
-	last, ok := memory.LastCheck(home)
-	if !ok || last.Candidate != memory.EngramOnly {
-		t.Fatalf("last = %+v, %v (a garbled line is skipped)", last, ok)
+	got, ok := memory.LastCheckBefore(home, now.Add(-memory.MinGap))
+	if !ok || got.Candidate != memory.EngramOnly {
+		t.Fatalf("got = %+v, %v (today's check and the garbled line are skipped)", got, ok)
+	}
+	if _, ok := memory.LastCheckBefore(home, now.Add(-30*24*time.Hour)); ok {
+		t.Fatal("nothing is older than 30 days")
 	}
 }
 
@@ -68,7 +74,7 @@ func TestAJournalOfOnlyGarbageHasNoLastCheck(t *testing.T) {
 	home := t.TempDir()
 	testkit.Check(t, os.MkdirAll(filepath.Dir(memory.ChecksPath(home)), 0o755))
 	testkit.Check(t, os.WriteFile(memory.ChecksPath(home), []byte("garbage\n{}\n"), 0o644))
-	if _, ok := memory.LastCheck(home); ok {
+	if _, ok := memory.LastCheckBefore(home, now.Add(time.Hour)); ok {
 		t.Fatal("garbage and reports without a time are not checks")
 	}
 }

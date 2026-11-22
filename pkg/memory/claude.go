@@ -89,7 +89,9 @@ func MirrorClaude(ctx context.Context, home, dir string) (int, error) {
 }
 
 // Mirror is MirrorClaude whatever the mode is: the weekly check mirrors so that Engram is measured on the same
-// facts even while it is switched off, which is how it can switch back on.
+// facts even while it is switched off, which is how it can switch back on. It returns how many memories it
+// saved: those Engram already holds with the same title and content are skipped (Engram's own duplicate guard
+// only covers a short window, so a weekly mirror would otherwise add every memory again).
 func Mirror(ctx context.Context, dir string) (int, error) {
 	bin, err := engram.Locate()
 	if err != nil {
@@ -99,11 +101,24 @@ func Mirror(ctx context.Context, dir string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	for i, m := range memories {
-		body := strings.TrimSpace(m.Description + "\n\n" + m.Body)
-		if err := engram.Save(ctx, bin, "", m.Type, m.Name, Clip(body, maxMirrorBody)); err != nil {
-			return i, err
-		}
+	existing, err := engram.Export(ctx, bin, "")
+	if err != nil {
+		return 0, err
 	}
-	return len(memories), nil
+	have := map[string]bool{}
+	for _, o := range existing {
+		have[o.Title+"\x00"+o.Content] = true
+	}
+	saved := 0
+	for _, m := range memories {
+		body := Clip(strings.TrimSpace(m.Description+"\n\n"+m.Body), maxMirrorBody)
+		if have[m.Name+"\x00"+body] {
+			continue
+		}
+		if err := engram.Save(ctx, bin, "", m.Type, m.Name, body); err != nil {
+			return saved, err
+		}
+		saved++
+	}
+	return saved, nil
 }

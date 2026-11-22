@@ -99,3 +99,28 @@ func TestMirrorClaudeStopsAtTheFirstEngramFailure(t *testing.T) {
 		t.Fatal("a missing Claude memory folder must be reported")
 	}
 }
+
+func TestMirrorClaudeSkipsWhatEngramAlreadyHoldsAndSavesEditedMemories(t *testing.T) {
+	log := testkit.StubEngram(t, `echo "$*" >> "$LOG"`)
+	dir := claudeDir(t)
+	// Engram holds user-prefers-short-answers exactly as it would be mirrored, and an older version of "plain".
+	t.Setenv("ENGRAM_EXPORT", `{"observations":[`+
+		`{"title":"user-prefers-short-answers","content":"terse replies, no recap\n\nKeep replies short."},`+
+		`{"title":"plain","content":"an older text"}]}`)
+
+	n, err := memory.Mirror(context.Background(), dir)
+	testkit.Check(t, err)
+	testkit.Equal(t, "only the edited memory is saved", n, 1)
+	data, _ := os.ReadFile(log)
+	if strings.Contains(string(data), "save user-prefers-short-answers") || !strings.Contains(string(data), "save plain") {
+		t.Fatalf("engram calls = %s", data)
+	}
+}
+
+func TestMirrorReportsAnUnreadableExport(t *testing.T) {
+	testkit.StubEngram(t, "exit 0")
+	t.Setenv("ENGRAM_EXPORT", "{nope")
+	if _, err := memory.Mirror(context.Background(), claudeDir(t)); err == nil {
+		t.Fatal("an unreadable export must be reported, not mirrored over")
+	}
+}

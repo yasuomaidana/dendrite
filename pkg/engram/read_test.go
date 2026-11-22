@@ -10,14 +10,14 @@ import (
 	"Dendrite/pkg/testkit"
 )
 
-const exportJSON = `{"observations":[{"type":"note","title":"a","content":"alpha","created_at":"2026-11-22 19:32:15"},{"type":"decision","title":"b","content":"beta","created_at":"garbage"}]}`
+const exportJSON = `{"observations":[{"type":"note","title":"a","content":"alpha","created_at":"2026-11-22 19:32:15"},{"type":"decision","title":"b","content":"beta","created_at":"garbage"},{"type":"note","title":"gone","content":"x","created_at":"2026-11-22 19:32:15","deleted_at":"2026-11-22 20:00:00"}]}`
 
 func TestExportReadsTheProjectsObservationsInTheGivenDirectory(t *testing.T) {
 	dir, log := tools(t, map[string]string{"engram": `echo "$(pwd) $*" >> "$LOG"; printf '%s' '` + exportJSON + `' > "$2"`})
 	work := t.TempDir()
 	got, err := engram.Export(context.Background(), dir+"/engram", work)
 	testkit.Check(t, err)
-	if len(got) != 2 || got[0].Title != "a" || got[1].Content != "beta" {
+	if len(got) != 2 || got[0].Title != "a" || got[1].Content != "beta" { // "gone" is deleted: left out
 		t.Fatalf("observations = %+v", got)
 	}
 	testkit.Equal(t, "created", got[0].Created(), time.Date(2026, 11, 22, 19, 32, 15, 0, time.UTC))

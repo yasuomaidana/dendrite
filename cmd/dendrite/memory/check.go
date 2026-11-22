@@ -53,7 +53,7 @@ func runCheck(ctx context.Context, dir string, quiet bool, out io.Writer) error 
 	if err != nil {
 		return err
 	}
-	last, hasLast := memory.LastCheck(home)
+	last, hasLast := memory.LastCheckBefore(home, in.Now.Add(-memory.MinGap))
 	var previous *memory.Report
 	if hasLast {
 		previous = &last

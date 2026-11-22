@@ -131,11 +131,14 @@ type EnvT interface {
 
 // StubEngram puts a stand-in `engram` executable that runs body first on PATH, isolates Engram's data and the
 // variable that overrides where Dendrite finds it, and returns the file the script logs to ($LOG).
+// A test that wants `engram export` to return memories sets ENGRAM_EXPORT to the JSON.
 func StubEngram(t EnvT, body string) (log string) {
 	t.Helper()
 	dir := t.TempDir()
 	log = filepath.Join(t.TempDir(), "calls.log")
-	WriteFile(t, filepath.Join(dir, "engram"), "#!/bin/sh\n"+body+"\n", 0o755)
+	// `engram export <file>` answers with $ENGRAM_EXPORT (an empty export when unset) before body runs.
+	exportAnswer := `if [ "$1" = export ]; then if [ -n "$ENGRAM_EXPORT" ]; then printf '%s' "$ENGRAM_EXPORT" > "$2"; else printf '{"observations":[]}' > "$2"; fi; exit 0; fi` + "\n"
+	WriteFile(t, filepath.Join(dir, "engram"), "#!/bin/sh\n"+exportAnswer+body+"\n", 0o755)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("DENDRITE_ENGRAM_BIN", "")
 	t.Setenv("ENGRAM_DATA_DIR", t.TempDir())

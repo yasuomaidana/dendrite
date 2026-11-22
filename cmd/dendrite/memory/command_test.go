@@ -119,7 +119,7 @@ func TestSyncMirrorsAGivenFolderAndTheDefaultOne(t *testing.T) {
 
 	out, err := run(t, "sync", "--dir", dir)
 	testkit.Check(t, err)
-	if !strings.Contains(out, "1 Claude memory file(s) mirrored") {
+	if !strings.Contains(out, "1 new Claude memory file(s) mirrored") {
 		t.Fatalf("sync = %q", out)
 	}
 	if data, _ := os.ReadFile(log); !strings.Contains(string(data), "save fact-a") {
@@ -134,7 +134,7 @@ func TestSyncMirrorsAGivenFolderAndTheDefaultOne(t *testing.T) {
 	testkit.Check(t, os.MkdirAll(memory.ClaudeDir(userHome, repo), 0o755))
 	out, err = run(t, "sync")
 	testkit.Check(t, err)
-	if !strings.Contains(out, "0 Claude memory file(s) mirrored") {
+	if !strings.Contains(out, "0 new Claude memory file(s) mirrored") {
 		t.Fatalf("default folder = %q", out)
 	}
 	if _, err = run(t, "sync", "--dir", filepath.Join(t.TempDir(), "absent")); err == nil {

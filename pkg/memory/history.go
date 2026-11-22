@@ -23,8 +23,12 @@ func AppendCheck(home string, r Report) error {
 	return fsutil.AppendLine(ChecksPath(home), line)
 }
 
-// LastCheck is the newest report on record.
-func LastCheck(home string) (Report, bool) {
+// MinGap is how much older than a check the report it is compared with must be: a mode change needs the same
+// result in two weekly checks, so a check run again the same day agrees with nothing.
+const MinGap = 6 * 24 * time.Hour
+
+// LastCheckBefore is the newest report on record made before the given time.
+func LastCheckBefore(home string, before time.Time) (Report, bool) {
 	data, err := os.ReadFile(ChecksPath(home))
 	if err != nil {
 		return Report{}, false
@@ -32,15 +36,15 @@ func LastCheck(home string) (Report, bool) {
 	lines := bytes.Split(bytes.TrimSpace(data), []byte("\n"))
 	for i := len(lines) - 1; i >= 0; i-- {
 		var r Report
-		if json.Unmarshal(lines[i], &r) == nil && !r.Time.IsZero() {
+		if json.Unmarshal(lines[i], &r) == nil && !r.Time.IsZero() && r.Time.Before(before) {
 			return r, true
 		}
 	}
 	return Report{}, false
 }
 
-// Decide is the computed mode after a check. A mode change needs the same candidate in two checks running, so
-// one odd week moves nothing; an Engram that is missing or unhealthy switches it off at once. A hand-set
+// Decide is the computed mode after a check, given the report from at least MinGap earlier (nil when there is
+// none). A mode change needs the same candidate in two checks a week apart, so one odd week moves nothing; an Engram that is missing or unhealthy switches it off at once. A hand-set
 // override is never touched (it wins when the mode is resolved).
 func Decide(s State, last *Report, r Report, now time.Time) State {
 	next, reason := s.Computed, s.Reason

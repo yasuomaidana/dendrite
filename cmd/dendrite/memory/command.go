@@ -161,7 +161,7 @@ func runSync(ctx context.Context, dir string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "[✓] %d Claude memory file(s) mirrored into Engram from %s\n", n, dir)
+	fmt.Fprintf(out, "[✓] %d new Claude memory file(s) mirrored into Engram from %s (the rest were already there)\n", n, dir)
 	return nil
 }
 
