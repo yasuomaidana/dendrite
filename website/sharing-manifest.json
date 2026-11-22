@@ -10,7 +10,7 @@
   "exported_at": "2026-10-16T15:24:54.807895Z",
   "generator": "Dendrite Docusaurus Engine v1.0.0",
   "sharing_tier": "federated",
-  "total_documents": 83,
+  "total_documents": 82,
   "categories": [
     "guides",
     "overview",
@@ -26,7 +26,6 @@
     "architecture/02-token-governance-litellm.md": "e2259d411363b3cbe6a4b19c5c92865b31586ce37e5446cc130d6ad1dd7e59f7",
     "architecture/03-context-intelligence-re.md": "f3083b04fc87374f48d45a6b591df5a2d60610b5f102756a3fc8b78a39e316f9",
     "architecture/ADR-0001-adopt-nalgebra-for-matrix.md": "f0df085e56ba78c07a77aaa2b7167588030d6b752042efe9ebe121cc582e47bb",
-    "architecture/ADR-0002-adopt-carla-sensor-rs-for-kinematics.md": "defa0ee32b8cecd5a3dfc77be31051d82ea11cee24179d1f113b8e2678aee202",
     "architecture/ADR-0003-adopt-ent-for-ent.md": "915fb41855c506637a9d51bc29908e529a48b9b99db87b3a66f4eea4fea17a76",
     "architecture/_category_.json": "e8613337de97116cfbb71753258b11e9040c33b2c1910e307f23d4d40c18e145",
     "cli/_category_.json": "3bba7485d0c3792b678f9a0cce17f5bf5c5a101b065a972348e0cf82783db67e",
