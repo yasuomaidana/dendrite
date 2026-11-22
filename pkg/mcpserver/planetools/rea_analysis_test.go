@@ -191,6 +191,16 @@ func TestReaADRToolDraftsAProposedRecord(t *testing.T) {
 	}
 }
 
+func TestReaExportToolWritesAModuleInEachLanguage(t *testing.T) {
+	tools := analyzedTools(t)
+	for language, file := range map[string]string{"": "pe-ins.rs", "go": "pe-ins.go", "python": "pe-ins.py", "typescript": "pe-ins.ts"} {
+		out, err := callRea(t, tools, "dendrite_rea_export", map[string]any{"id": "pe-ins", "language": language, "output": t.TempDir()})
+		if err != nil || !strings.Contains(out, file) {
+			t.Errorf("export %q: %v\n%s", language, err, out)
+		}
+	}
+}
+
 func TestReaInsightToolsReportWhatTheyCannotDo(t *testing.T) {
 	s, _ := reaTools(t, nil)
 	for name, tc := range map[string]struct {
@@ -198,12 +208,15 @@ func TestReaInsightToolsReportWhatTheyCannotDo(t *testing.T) {
 		args map[string]any
 		want string
 	}{
-		"reuse needs an id":      {"dendrite_rea_reuse", map[string]any{}, "id is required"},
-		"rank needs an id":       {"dendrite_rea_rank", map[string]any{}, "id is required"},
-		"adr needs an id":        {"dendrite_rea_adr", map[string]any{}, "id is required"},
-		"reuse of an unknown id": {"dendrite_rea_reuse", map[string]any{"id": "pe-none"}, "no such analysis"},
-		"rank of an unknown id":  {"dendrite_rea_rank", map[string]any{"id": "pe-none"}, "no such analysis"},
-		"adr of an unknown id":   {"dendrite_rea_adr", map[string]any{"id": "pe-none"}, "no such analysis"},
+		"reuse needs an id":             {"dendrite_rea_reuse", map[string]any{}, "id is required"},
+		"rank needs an id":              {"dendrite_rea_rank", map[string]any{}, "id is required"},
+		"adr needs an id":               {"dendrite_rea_adr", map[string]any{}, "id is required"},
+		"reuse of an unknown id":        {"dendrite_rea_reuse", map[string]any{"id": "pe-none"}, "no such analysis"},
+		"rank of an unknown id":         {"dendrite_rea_rank", map[string]any{"id": "pe-none"}, "no such analysis"},
+		"adr of an unknown id":          {"dendrite_rea_adr", map[string]any{"id": "pe-none"}, "no such analysis"},
+		"export needs an output":        {"dendrite_rea_export", map[string]any{"id": "pe-none", "output": ""}, "output is required"},
+		"export of an unknown id":       {"dendrite_rea_export", map[string]any{"id": "pe-none", "output": "/tmp/x"}, "no such analysis"},
+		"export in an unknown language": {"dendrite_rea_export", map[string]any{"id": "pe-none", "language": "cobol", "output": "/tmp/x"}, "unsupported target language"},
 	} {
 		expectToolError(t, s, name, tc.tool, tc.args, tc.want)
 	}

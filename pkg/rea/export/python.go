@@ -5,22 +5,6 @@ import (
 	"strings"
 )
 
-func pyType(f fieldDef) string {
-	switch f.kind {
-	case kindString:
-		return "str"
-	case kindFlag:
-		return "bool"
-	case kindList:
-		elem := f.elem
-		if elem == "string" {
-			elem = "str"
-		}
-		return "tuple[" + elem + ", ...]"
-	}
-	return "int"
-}
-
 var pySyntax = syntax{
 	str:  jsonString,
 	num:  func(n uint64) string { return fmt.Sprint(n) },
@@ -47,16 +31,11 @@ var pySyntax = syntax{
 	},
 }
 
-func renderPython(m Model, t value) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "\"\"\"Structure of %s (analysis %s), written by `dendrite retro export`. Data only: no code, no dependencies.\"\"\"\n\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\n\n\n", commentSafe(m.Target), commentSafe(m.ID))
-	for _, td := range schema {
-		fmt.Fprintf(&sb, "@dataclass(frozen=True)\nclass %s:\n", td.name)
-		for _, f := range td.fields {
-			fmt.Fprintf(&sb, "    %s: %s\n", f.name, pyType(f))
-		}
-		sb.WriteString("\n\n")
-	}
-	sb.WriteString("IMAGE = " + pySyntax.literal(t, "") + "\n")
-	return strings.ReplaceAll(sb.String(), "\t", "    ")
+var pyLang = language{
+	ext: "py", sx: pySyntax, tab: "    ",
+	header:   "\"\"\"Structure of %s (analysis %s), written by `dendrite retro export`. Data only: no code, no dependencies.\"\"\"\n\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\n\n\n",
+	typeOpen: "@dataclass(frozen=True)\nclass %s:\n", typeField: "\t%s: %s\n", close: "\n\n",
+	tStr: "str", tNum: "int", tAddr: "int", tFlag: "bool",
+	tList: func(elem string) string { return "tuple[" + elem + ", ...]" },
+	tail:  "IMAGE = %s\n",
 }

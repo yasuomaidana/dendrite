@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"Dendrite/pkg/coreclient/coretest"
-	"Dendrite/pkg/planesvc/planetest"
 	"Dendrite/pkg/rag/ragtest"
 	"Dendrite/pkg/testmain"
 )
@@ -17,17 +16,11 @@ func TestMain(m *testing.M) {
 		if err != nil {
 			return nil, err
 		}
-		ragStandin, err := ragtest.Install()
+		rg, err := ragtest.Install()
 		if err != nil {
 			core()
 			return nil, err
 		}
-		plane, err := planetest.Install()
-		if err != nil {
-			ragStandin()
-			core()
-			return nil, err
-		}
-		return func() { plane(); ragStandin(); core() }, nil
+		return func() { rg(); core() }, nil
 	})
 }

@@ -6,18 +6,6 @@ import (
 	"strings"
 )
 
-func goType(f fieldDef) string {
-	switch f.kind {
-	case kindString:
-		return "string"
-	case kindFlag:
-		return "bool"
-	case kindList:
-		return "[]" + f.elem
-	}
-	return "uint64"
-}
-
 var goSyntax = syntax{
 	str:  strconv.Quote,
 	num:  func(n uint64) string { return fmt.Sprint(n) },
@@ -39,16 +27,11 @@ var goSyntax = syntax{
 	},
 }
 
-func renderGo(m Model, t value) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "// Structure of %s (analysis %s), written by `dendrite retro export`. Data only: no code, no dependencies.\npackage analysis\n\n", commentSafe(m.Target), commentSafe(m.ID))
-	for _, td := range schema {
-		fmt.Fprintf(&sb, "type %s struct {\n", td.name)
-		for _, f := range td.fields {
-			fmt.Fprintf(&sb, "\t%s %s\n", camel(f.name), goType(f))
-		}
-		sb.WriteString("}\n\n")
-	}
-	sb.WriteString("var Analysis = " + goSyntax.literal(t, "") + "\n")
-	return sb.String()
+var goLang = language{
+	ext: "go", sx: goSyntax, tab: "\t",
+	header:   "// Structure of %s (analysis %s), written by `dendrite retro export`. Data only: no code, no dependencies.\npackage analysis\n\n",
+	typeOpen: "type %s struct {\n", typeField: "\t%s %s\n", close: "}\n\n", fieldName: camel,
+	tStr: "string", tNum: "uint64", tAddr: "uint64", tFlag: "bool",
+	tList: func(elem string) string { return "[]" + elem },
+	tail:  "var Analysis = %s\n",
 }

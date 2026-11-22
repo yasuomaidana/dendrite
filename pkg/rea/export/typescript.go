@@ -5,20 +5,6 @@ import (
 	"strings"
 )
 
-func tsType(f fieldDef) string {
-	switch f.kind {
-	case kindString:
-		return "string"
-	case kindFlag:
-		return "boolean"
-	case kindAddress:
-		return "bigint"
-	case kindList:
-		return "readonly " + f.elem + "[]"
-	}
-	return "number"
-}
-
 var tsSyntax = syntax{
 	str:  jsonString,
 	num:  func(n uint64) string { return fmt.Sprint(n) },
@@ -40,16 +26,11 @@ var tsSyntax = syntax{
 	},
 }
 
-func renderTypeScript(m Model, t value) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "// Structure of %s (analysis %s), written by `dendrite retro export`. Data only: no code, no dependencies.\n\n", commentSafe(m.Target), commentSafe(m.ID))
-	for _, td := range schema {
-		fmt.Fprintf(&sb, "export interface %s {\n", td.name)
-		for _, f := range td.fields {
-			fmt.Fprintf(&sb, "  readonly %s: %s;\n", f.name, tsType(f))
-		}
-		sb.WriteString("}\n\n")
-	}
-	sb.WriteString("export const IMAGE: Image = " + tsSyntax.literal(t, "") + ";\n")
-	return strings.ReplaceAll(sb.String(), "\t", "  ")
+var tsLang = language{
+	ext: "ts", sx: tsSyntax, tab: "  ",
+	header:   "// Structure of %s (analysis %s), written by `dendrite retro export`. Data only: no code, no dependencies.\n\n",
+	typeOpen: "export interface %s {\n", typeField: "\treadonly %s: %s;\n", close: "}\n\n",
+	tStr: "string", tNum: "number", tAddr: "bigint", tFlag: "boolean",
+	tList: func(elem string) string { return "readonly " + elem + "[]" },
+	tail:  "export const IMAGE: Image = %s;\n",
 }

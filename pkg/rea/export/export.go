@@ -17,16 +17,8 @@ var ErrNeedsOutput = errors.New("an output directory is required: pass --output"
 // ErrUnknownLanguage means the language asked for has no renderer; the message lists the ones that have.
 var ErrUnknownLanguage = errors.New("unsupported target language")
 
-// languages maps each supported language to its file extension and renderer.
-var languages = map[string]struct {
-	ext    string
-	render func(Model, value) string
-}{
-	"rust":       {"rs", renderRust},
-	"go":         {"go", renderGo},
-	"python":     {"py", renderPython},
-	"typescript": {"ts", renderTypeScript},
-}
+// languages maps each supported language to how it is written.
+var languages = map[string]language{"rust": rustLang, "go": goLang, "python": pyLang, "typescript": tsLang}
 
 // Languages lists the supported target languages, sorted.
 func Languages() []string {
@@ -84,5 +76,5 @@ func Write(svc *analysis.Service, id, language, output string) (string, error) {
 	}
 	l := languages[lang]
 	path := filepath.Join(output, id+"."+l.ext) // id is a validated file name, so the file stays under output
-	return path, fsutil.WriteFileAtomic(path, []byte(l.render(m, tree)))
+	return path, fsutil.WriteFileAtomic(path, []byte(l.module(m, tree)))
 }

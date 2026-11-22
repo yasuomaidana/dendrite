@@ -2,6 +2,7 @@ package export
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -88,4 +89,57 @@ func camel(s string) string {
 		sb.WriteString(strings.ToUpper(part[:1]) + part[1:])
 	}
 	return sb.String()
+}
+
+// language is one target language: its file extension, how values are written and how the types are declared.
+type language struct {
+	ext                        string
+	sx                         syntax
+	tab                        string // replaces the tabs the layout is built with
+	header                     string // format: target name, analysis id
+	prologue                   string
+	typeOpen, typeField, close string // formats: type name; field name and type
+	fieldName                  func(string) string
+	tStr, tNum, tAddr, tFlag   string
+	tList                      func(elem string) string
+	tail                       string // format: the literal of the image
+}
+
+// typeOf is the declared type of a field in the language.
+func (l language) typeOf(f fieldDef) string {
+	elem := f.elem
+	if elem == "string" {
+		elem = l.tStr
+	}
+	switch f.kind {
+	case kindString:
+		return l.tStr
+	case kindFlag:
+		return l.tFlag
+	case kindAddress:
+		return l.tAddr
+	case kindList:
+		return l.tList(elem)
+	}
+	return l.tNum
+}
+
+// module writes the whole file: header, type declarations and the image.
+func (l language) module(m Model, t value) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, l.header, commentSafe(m.Target), commentSafe(m.ID))
+	sb.WriteString(l.prologue)
+	for _, td := range schema {
+		fmt.Fprintf(&sb, l.typeOpen, td.name)
+		for _, f := range td.fields {
+			name := f.name
+			if l.fieldName != nil {
+				name = l.fieldName(name)
+			}
+			fmt.Fprintf(&sb, l.typeField, name, l.typeOf(f))
+		}
+		sb.WriteString(l.close)
+	}
+	fmt.Fprintf(&sb, l.tail, l.sx.literal(t, ""))
+	return strings.ReplaceAll(sb.String(), "\t", l.tab)
 }

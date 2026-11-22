@@ -107,7 +107,7 @@ func TestAHostileTargetNameCannotEndTheComment(t *testing.T) {
 		t.Fatal(err)
 	}
 	for lang, l := range languages {
-		body := l.render(m, tree)
+		body := l.module(m, tree)
 		first := strings.SplitN(body, "\n", 3)[0]
 		if strings.Contains(first, "\n") || strings.Count(first, `"""`) > 2 || strings.Contains(first, "*/") || strings.Contains(first, "'''") {
 			t.Errorf("%s: %q", lang, first)
