@@ -1,7 +1,7 @@
 package export
 
 var pySyntax = syntax{
-	str: jsonString, num: decimal, addr: hexAddr(""), flag: boolLit("True", "False"),
+	str: jsonString, suffix: "", yes: "True", no: "False",
 	list: listFn(fixed("("), ")"),
 	rec:  recFn(func(typ string) string { return typ + "(" }, func(n string) string { return n + "=" }, ")"),
 }

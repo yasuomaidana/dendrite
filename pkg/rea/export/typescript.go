@@ -1,7 +1,7 @@
 package export
 
 var tsSyntax = syntax{
-	str: jsonString, num: decimal, addr: hexAddr("n"), flag: boolLit("true", "false"),
+	str: jsonString, suffix: "n", yes: "true", no: "false",
 	list: listFn(fixed("["), "]"),
 	rec:  recFn(fixed("{"), func(n string) string { return n + ": " }, "}"),
 }

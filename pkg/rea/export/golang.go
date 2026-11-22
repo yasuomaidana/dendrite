@@ -3,7 +3,7 @@ package export
 import "strconv"
 
 var goSyntax = syntax{
-	str: strconv.Quote, num: decimal, addr: hexAddr(""), flag: boolLit("true", "false"),
+	str: strconv.Quote, suffix: "", yes: "true", no: "false",
 	list: listFn(func(elem string) string { return "[]" + elem + "{" }, "}"),
 	rec:  recFn(func(typ string) string { return typ + "{" }, func(n string) string { return camel(n) + ": " }, "}"),
 }

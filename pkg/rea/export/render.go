@@ -39,12 +39,11 @@ var schema = []typeDef{
 // syntax is what differs between languages when a value is written: the literal of each scalar, and how a list and a
 // record are laid out from their already written parts.
 type syntax struct {
-	str  func(string) string
-	num  func(uint64) string
-	addr func(uint64) string
-	flag func(bool) string
-	list func(elem string, items []string, indent string) string
-	rec  func(typ string, names, vals []string, indent string) string
+	str     func(string) string
+	suffix  string // follows an address (n for a TypeScript bigint)
+	yes, no string // the words for true and false
+	list    func(elem string, items []string, indent string) string
+	rec     func(typ string, names, vals []string, indent string) string
 }
 
 // literal writes v with the syntax of a language; indent is the indentation of the line the value starts on.
@@ -54,11 +53,14 @@ func (sx syntax) literal(v value, indent string) string {
 	case kindString:
 		return sx.str(v.s)
 	case kindNumber:
-		return sx.num(v.n)
+		return fmt.Sprint(v.n)
 	case kindAddress:
-		return sx.addr(v.n)
+		return fmt.Sprintf("0x%x%s", v.n, sx.suffix)
 	case kindFlag:
-		return sx.flag(v.b)
+		if v.b {
+			return sx.yes
+		}
+		return sx.no
 	case kindList:
 		items := make([]string, len(v.items))
 		for i, it := range v.items {
@@ -142,23 +144,6 @@ func (l language) module(m Model, t value) string {
 	}
 	fmt.Fprintf(&sb, l.tail, l.sx.literal(t, ""))
 	return strings.ReplaceAll(sb.String(), "\t", l.tab)
-}
-
-func decimal(n uint64) string { return fmt.Sprint(n) }
-
-// hexAddr writes an address as a hex literal followed by suffix (n for a TypeScript bigint).
-func hexAddr(suffix string) func(uint64) string {
-	return func(n uint64) string { return fmt.Sprintf("0x%x%s", n, suffix) }
-}
-
-// boolLit writes a flag as the language's true and false words.
-func boolLit(yes, no string) func(bool) string {
-	return func(b bool) string {
-		if b {
-			return yes
-		}
-		return no
-	}
 }
 
 // listFn lays a list out one item per line between open(elem) and closer; an empty one is open and closer together.

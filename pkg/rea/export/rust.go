@@ -25,7 +25,7 @@ func rustString(s string) string {
 }
 
 var rustSyntax = syntax{
-	str: rustString, num: decimal, addr: hexAddr(""), flag: boolLit("true", "false"),
+	str: rustString, suffix: "", yes: "true", no: "false",
 	list: listFn(fixed("&["), "]"),
 	rec:  recFn(func(typ string) string { return typ + " {" }, func(n string) string { return n + ": " }, "}"),
 }
