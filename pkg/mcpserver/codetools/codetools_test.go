@@ -703,6 +703,11 @@ func TestQualityAndQueryToolsReportFailures(t *testing.T) {
 	refs := ownRefs(t)
 	srv := mcptest.ToolsWith(t, nil, "")
 	missing := filepath.Join(t.TempDir(), "missing")
+	// No reference is built in: register one so that adding it again fails.
+	dup := `{"id":"ref-test-dup","repository":"https://example.com/r.git"}`
+	if text, isErr := mcptest.CallTool(t, srv, "dendrite_ref_add", dup); isErr {
+		t.Fatalf("first ref add: %s", text)
+	}
 	mcptest.RunToolFailures(t, srv, []mcptest.ToolFailure{
 		{Name: "quality audit without a package", Tool: "dendrite_quality_audit", Args: `{}`, Env: nil, Want: "missing pkg"},
 		{Name: "slice", Tool: "dendrite_query_slice", Args: `{"sources_path":"` + missing + `","entrypoint_symbol":"Main"}`, Env: nil, Want: "Slicing failed"},
@@ -711,7 +716,7 @@ func TestQualityAndQueryToolsReportFailures(t *testing.T) {
 		{Name: "fuse with fewer than two sources", Tool: "dendrite_query_fuse", Args: `{"sources":["a"],"fused_member_name":"m","target_directory":"t"}`, Env: nil, Want: "at least two"},
 		{Name: "fuse without a target", Tool: "dendrite_query_fuse", Args: `{"sources":["a","b"],"fused_member_name":"m","target_directory":""}`, Env: nil, Want: "Architecture fusion failed"},
 		{Name: "reuse audit without a capability", Tool: "dendrite_query_reuse_audit", Args: `{"capability":""}`, Env: nil, Want: "reuse audit failed"},
-		{Name: "ref add twice", Tool: "dendrite_ref_add", Args: `{"id":"ref-oxipix","repository":"https://example.com/r.git"}`, Env: nil, Want: "Failed to register ref"},
+		{Name: "ref add twice", Tool: "dendrite_ref_add", Args: dup, Env: nil, Want: "Failed to register ref"},
 	})
 	if err := os.WriteFile(refs, []byte("{broken"), 0o644); err != nil {
 		t.Fatal(err)
