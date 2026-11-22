@@ -19,6 +19,7 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 ### Removed
 
 - **The canned `spike serve` server (DEN-426):** `pkg/inference/oxillama_server.go` answered chat requests with fixed text (`synthesizeResponse`) instead of a model. It is deleted; Ctrl+C on `spike serve` now releases the session's hold, and the server stops after the idle grace or with `dendrite spike stop`.
+- **Built-in Tier-1 source references (DEN-889):** `pkg/query/reuse` shipped carla-sensor-rs, oxipix and docula (at their old `cool-japan` URLs) as default references. The registry now starts empty and holds only what the user registers with `AddRef`, and a corrupt `refs.json` is reported instead of overwritten with defaults. ADR-0002 (adopt carla-sensor-rs for kinematics) is deleted.
 
 ### Fixed
 
