@@ -11,6 +11,7 @@ import (
 
 	"Dendrite/pkg/coreclient"
 	"Dendrite/pkg/fsutil"
+	"Dendrite/pkg/rea/engine"
 )
 
 // CyclomaticLimit is the highest cyclomatic complexity the local model is trusted with: a function above it is
@@ -38,6 +39,10 @@ type Triage struct {
 	Local     int  `json:"local"`
 	Paid      int  `json:"paid"`
 	Truncated bool `json:"truncated,omitempty"`
+	// Source says who listed the functions: "core" (the dendrite-core sidecar) or "engine" (rizin, radare2 or Ghidra,
+	// for formats the sidecar cannot list). Skipped counts engine functions with no complexity, which are not routed.
+	Source  string `json:"source,omitempty"`
+	Skipped int    `json:"skipped,omitempty"`
 }
 
 // Routed is one function and the tier chosen for it.
@@ -78,15 +83,34 @@ func (s *Service) Routing(id string) ([]Routed, error) {
 // left for a paid one and stops the analysis at the pause gate unless the analysis already runs on the paid tier.
 // A target whose functions cannot be listed (another format, an older dendrite-core) is not triaged.
 func (s *Service) triage(ctx context.Context, st *State) error {
-	list, err := s.Functions.Functions(ctx, st.Binary)
-	switch {
-	case errors.Is(err, coreclient.ErrFunctionsUnsupported), errors.Is(err, coreclient.ErrNoFunctions):
-		st.Stage = StageTriaged
-		return nil
-	case err != nil:
+	if s.Functions != nil {
+		list, err := s.Functions.Functions(ctx, st.Binary)
+		switch {
+		case err == nil:
+			return s.routeAndSave(st, routeAll(list))
+		case !errors.Is(err, coreclient.ErrFunctionsUnsupported) && !errors.Is(err, coreclient.ErrNoFunctions):
+			return err
+		}
+	}
+	return s.triageEngine(st) // the sidecar cannot list this target: use the functions an engine found, if any
+}
+
+// triageEngine routes the functions an engine found, when the sidecar could not list the target's. Without any, the
+// target is not triaged.
+func (s *Service) triageEngine(st *State) error {
+	fns, err := s.EngineFunctions(st.ID)
+	if err != nil {
 		return err
 	}
-	doc := routeAll(list)
+	if len(fns) == 0 {
+		st.Stage = StageTriaged
+		return nil
+	}
+	return s.routeAndSave(st, routeEngine(fns))
+}
+
+// routeAndSave saves the routing and raises the pause gate when functions need a paid model the analysis may not use.
+func (s *Service) routeAndSave(st *State, doc triageDoc) error {
 	if err := s.saveTriage(st.ID, doc); err != nil {
 		return err
 	}
@@ -97,9 +121,32 @@ func (s *Service) triage(ctx context.Context, st *State) error {
 	return nil
 }
 
+// routeEngine chooses the tier of every function an engine found by its cyclomatic complexity. A function with no
+// complexity (objdump gives none) cannot be routed and is counted as skipped.
+func routeEngine(fns []engine.Function) triageDoc {
+	doc := triageDoc{Triage: Triage{Limit: CyclomaticLimit, Source: "engine"}}
+	for _, f := range fns {
+		if f.Cyclomatic <= 0 {
+			doc.Skipped++
+			continue
+		}
+		r := Routed{Start: f.Address, Name: f.Name, Cyclomatic: f.Cyclomatic, Tier: TierLocal}
+		if f.Cyclomatic > CyclomaticLimit {
+			r.Tier = TierPaid
+		}
+		if r.Tier == TierLocal {
+			doc.Local++
+		} else {
+			doc.Paid++
+		}
+		doc.Functions = append(doc.Functions, r)
+	}
+	return doc
+}
+
 // routeAll chooses the tier of every function of the list.
 func routeAll(list *coreclient.FunctionList) triageDoc {
-	doc := triageDoc{Triage: Triage{Limit: CyclomaticLimit, Truncated: list.Truncated}}
+	doc := triageDoc{Triage: Triage{Limit: CyclomaticLimit, Truncated: list.Truncated, Source: "core"}}
 	for _, f := range list.Functions {
 		r := Routed{Start: f.Start, Cyclomatic: f.Cyclomatic, Tier: routeTier(f)}
 		if f.Name != nil {
@@ -136,6 +183,12 @@ func gateReason(t Triage) string {
 func triageText(d triageDoc) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# Triage\n\n- Local model (cyclomatic <= %d): %d functions\n- Paid model (above): %d functions\n", d.Limit, d.Local, d.Paid)
+	if d.Source != "" {
+		fmt.Fprintf(&sb, "- Functions listed by: %s\n", d.Source)
+	}
+	if d.Skipped > 0 {
+		fmt.Fprintf(&sb, "- %d functions have no complexity and were not routed\n", d.Skipped)
+	}
 	if d.Truncated {
 		sb.WriteString("- The sidecar spent its analysis budget: the list may be incomplete and some complexity undercounted.\n")
 	}

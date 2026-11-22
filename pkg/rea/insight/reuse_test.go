@@ -2,12 +2,16 @@ package insight
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"Dendrite/pkg/coreclient"
 	"Dendrite/pkg/projectid"
 	"Dendrite/pkg/rea/analysis"
+	"Dendrite/pkg/rea/engine"
+	"Dendrite/pkg/rea/engine/enginetest"
 	"Dendrite/pkg/synapse"
 )
 
@@ -210,4 +214,42 @@ func TestAccumulateScoresHigherRanksAndRepeatedFindsMore(t *testing.T) {
 	if got := ranked(merged, 5); got[0].File != "b.go" {
 		t.Errorf("the file found twice ranks first: %+v", got)
 	}
+}
+
+func TestQueriesAddTheNamesOfEngineFunctionsButNotGeneratedOnes(t *testing.T) {
+	img := &analysis.Image{Exports: []string{"Export"}}
+	got := Queries(img, "main", "sub_401000", "FUN_00401060", "fcn.00401080", "sym.imp.puts", "loc_1", "nullsub_1", "thunk_FUN_1", "0x401000", "entry0", "_start", "parse_header", "main", "check_flag", "decode", "extra")
+	want := []string{"Export", "main", "parse_header", "check_flag", "decode"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("queries\n got %v\nwant %v", got, want)
+	}
+	if only := Queries(img); len(only) != 1 {
+		t.Errorf("without functions the queries are as before: %v", only)
+	}
+}
+
+func TestReuseAsksForTheFunctionsAnEngineFound(t *testing.T) {
+	enginetest.UsePath(t, "dendrite-rea/rizin:1")
+	svc, id := analysisWith(t, "sample", "\x7fELF", engine.NewService())
+	project := t.TempDir()
+	writeFile(t, project, "helpers.go", "package main\n\nfunc helper() {}\n")
+	hits, err := Reuse(ctx(), svc, id, ReuseOptions{Project: project})
+	if err != nil || len(hits) == 0 || !strings.HasSuffix(hits[0].File, "helpers.go") || !containsString(hits[0].Queries, "helper") {
+		t.Errorf("a function name finds code: %+v, %v", hits, err)
+	}
+	if err := os.WriteFile(filepath.Join(svc.Store.Dir(id), "engine.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Reuse(ctx(), svc, id, ReuseOptions{Project: project}); err == nil {
+		t.Error("an engine result that cannot be read is an error")
+	}
+}
+
+func containsString(list []string, want string) bool {
+	for _, item := range list {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }

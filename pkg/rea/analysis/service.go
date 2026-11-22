@@ -276,9 +276,7 @@ func (s *Service) step(ctx context.Context, st *State) error {
 			return s.triage(ctx, st)
 		}
 	case StageEngine:
-		if s.Functions != nil {
-			return s.triage(ctx, st)
-		}
+		return s.triage(ctx, st)
 	}
 	return s.indexDocs(ctx, st)
 }

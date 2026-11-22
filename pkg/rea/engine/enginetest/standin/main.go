@@ -1,7 +1,7 @@
 // Command standin plays docker, rizin, radare2, objdump and Ghidra (analyzeHeadless) for the engine tests, chosen by the name it is run as.
 // The docker it plays refuses a run that is not hardened and runs the command of the container on this machine, with
 // /target/input replaced by the mounted file. Environment: STANDIN_DOCKER=down, STANDIN_IMAGES=<comma list>,
-// STANDIN_MODE=r2broken|many|empty|detailfail|objfail|buildfail|ghidranomarkers|ghidrabroken, STANDIN_LOG=<file> (one line per call).
+// STANDIN_MODE=r2broken|many|empty|r2hard|detailfail|objfail|buildfail|ghidranomarkers|ghidrabroken, STANDIN_LOG=<file> (one line per call).
 package main
 
 import (
@@ -155,6 +155,8 @@ func functions() {
 		fmt.Println("this is not json")
 	case "empty":
 		fmt.Println("[]")
+	case "r2hard":
+		fmt.Println(`[{"offset":4198400,"name":"main","size":64,"cc":20,"callrefs":[]},{"offset":4198464,"name":"helper","size":16,"cc":2}]`)
 	case "many":
 		fmt.Print("[")
 		for n := 0; n < 600; n++ {

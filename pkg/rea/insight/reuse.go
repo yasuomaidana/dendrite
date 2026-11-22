@@ -43,11 +43,28 @@ type ReuseOptions struct {
 	K       int
 }
 
-// Queries are the questions an analysis asks the project: its exports, its readable strings and the dependencies
-// that are not ubiquitous system libraries, at most twelve, without repeats.
-func Queries(img *analysis.Image) []string {
+// generatedName matches the names a disassembler invents for functions it could not name, which say nothing about
+// what a function does.
+var generatedName = regexp.MustCompile(`(?i)^(sub_|fun_|fcn\.|sym\.imp\.|loc_|nullsub_|thunk_|entry\d*$|_start$|0x)`)
+
+// functionQueries are the names of the largest functions an engine found, without the generated ones, at most four.
+func functionQueries(names []string) []string {
+	var named []string
+	for _, n := range names {
+		if !generatedName.MatchString(n) {
+			named = append(named, n)
+		}
+	}
+	return firstN(distinct(named), 4)
+}
+
+// Queries are the questions an analysis asks the project: its exports, the names of the functions an engine found,
+// its readable strings and the dependencies that are not ubiquitous system libraries, at most twelve, without
+// repeats.
+func Queries(img *analysis.Image, functions ...string) []string {
 	var candidates []string
 	candidates = append(candidates, firstN(distinct(img.Exports), 6)...)
+	candidates = append(candidates, functionQueries(functions)...)
 	for _, s := range img.Strings {
 		if n := len(strings.TrimSpace(s)); n >= 6 && n <= 80 {
 			candidates = append(candidates, strings.TrimSpace(s))
@@ -100,6 +117,14 @@ func Reuse(ctx context.Context, svc *analysis.Service, id string, o ReuseOptions
 	if err != nil {
 		return nil, err
 	}
+	fns, err := svc.EngineFunctions(id)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(fns))
+	for _, f := range fns {
+		names = append(names, f.Name)
+	}
 	project := orDefault(o.Project, ".")
 	syn, err := synapseFor(project, o.Synapse)
 	if err != nil {
@@ -110,7 +135,7 @@ func Reuse(ctx context.Context, svc *analysis.Service, id string, o ReuseOptions
 		find = synapseFinder(syn)
 	}
 	merged := map[string]*ReuseHit{}
-	for _, q := range Queries(img) {
+	for _, q := range Queries(img, names...) {
 		hits, err := find(ctx, q)
 		if err != nil {
 			return nil, fmt.Errorf("search for %q: %w", q, err)

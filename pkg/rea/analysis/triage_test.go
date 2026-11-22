@@ -220,3 +220,104 @@ type listerFunc func(context.Context, string) (*coreclient.FunctionList, error)
 func (f listerFunc) Functions(ctx context.Context, path string) (*coreclient.FunctionList, error) {
 	return f(ctx, path)
 }
+
+// elfTriageRig is a rig whose core sidecar cannot list the functions of the target (an ELF), with a rizin stand-in
+// that can.
+func elfTriageRig(t *testing.T, images ...string) *rig {
+	t.Helper()
+	r := engineRig(t, "\x7fELF", images...)
+	r.Functions = listerFunc(func(context.Context, string) (*coreclient.FunctionList, error) {
+		return nil, coreclient.ErrFunctionsUnsupported
+	})
+	return r
+}
+
+func TestEngineFunctionsAreRoutedWhenTheSidecarCannotListThem(t *testing.T) {
+	r := elfTriageRig(t, "dendrite-rea/rizin:1")
+	res, err := r.Analyze(ctx(), r.binary, Options{ID: "tri-eng"})
+	if err != nil || res.State.Stage != StageDone || res.State.Triage == nil || res.State.Gate != "" {
+		t.Fatalf("%+v, %v", res, err)
+	}
+	if tr := res.State.Triage; tr.Source != "engine" || tr.Local != 3 || tr.Paid != 0 || tr.Skipped != 0 || tr.Limit != CyclomaticLimit {
+		t.Errorf("%+v", tr)
+	}
+	if got := tiersOf(t, r, "tri-eng"); got["main"] != TierLocal || got["helper"] != TierLocal {
+		t.Errorf("routing: %v", got)
+	}
+}
+
+func TestAHardEngineFunctionStopsAtTheGateUntilThePaidTier(t *testing.T) {
+	r := elfTriageRig(t, "dendrite-rea/rizin:1")
+	t.Setenv("STANDIN_MODE", "r2hard")
+	res, err := r.Analyze(ctx(), r.binary, Options{ID: "tri-hard"})
+	if !errors.Is(err, ErrPaused) || res.State.Triage.Paid != 1 || !strings.Contains(res.State.Gate, "need a paid model") {
+		t.Fatalf("%+v, %v", res, err)
+	}
+	if got := tiersOf(t, r, "tri-hard"); got["main"] != TierPaid || got["helper"] != TierLocal {
+		t.Errorf("routing: %v", got)
+	}
+	done, err := r.Resume(ctx(), "tri-hard", Options{Tier: "paid"})
+	if err != nil || done.State.Stage != StageDone || done.State.Gate != "" {
+		t.Errorf("the paid tier clears the gate: %+v, %v", done.State, err)
+	}
+}
+
+func TestEngineFunctionsWithoutComplexityAreCountedNotRouted(t *testing.T) {
+	r := elfTriageRig(t, "dendrite-rea/objdump:1")
+	res, err := r.Analyze(ctx(), r.binary, Options{ID: "tri-skip", Engine: "objdump"})
+	if err != nil || res.State.Triage == nil || res.State.Gate != "" {
+		t.Fatalf("%+v, %v", res, err)
+	}
+	if tr := res.State.Triage; tr.Source != "engine" || tr.Skipped != 2 || tr.Local != 0 || tr.Paid != 0 {
+		t.Errorf("%+v", tr)
+	}
+	if got := tiersOf(t, r, "tri-skip"); len(got) != 0 {
+		t.Errorf("nothing is routed: %v", got)
+	}
+	text, _ := os.ReadFile(filepath.Join(r.Store.WorkspaceDir("tri-skip"), "triage.md"))
+	if !strings.Contains(string(text), "2 functions have no complexity") || !strings.Contains(string(text), "Functions listed by: engine") {
+		t.Errorf("triage.md:\n%s", text)
+	}
+}
+
+func TestEngineOnlyTriageNeedsNoCoreLister(t *testing.T) {
+	r := engineRig(t, "\x7fELF", "dendrite-rea/rizin:1") // Functions stays nil
+	res, err := r.Analyze(ctx(), r.binary, Options{ID: "tri-only"})
+	if err != nil || res.State.Triage == nil || res.State.Triage.Source != "engine" {
+		t.Errorf("%+v, %v", res.State, err)
+	}
+}
+
+func TestATargetWithNeitherCoreNorEngineFunctionsIsNotTriaged(t *testing.T) {
+	r := elfTriageRig(t) // no image: no engine runs
+	res, err := r.Analyze(ctx(), r.binary, Options{ID: "tri-nofn"})
+	if err != nil || res.State.Stage != StageDone || res.State.Triage != nil {
+		t.Errorf("%+v, %v", res.State, err)
+	}
+}
+
+func TestTheCoreListIsStillTheSourceOfAPETarget(t *testing.T) {
+	r := triageRig(t, "MZ\x90\x00 easy image")
+	res, err := r.Analyze(ctx(), r.binary, Options{ID: "tri-core"})
+	if err != nil || res.State.Triage == nil || res.State.Triage.Source != "core" {
+		t.Errorf("%+v, %v", res.State, err)
+	}
+}
+
+func TestAnEngineResultThatCannotBeReadStopsTheTriage(t *testing.T) {
+	r := elfTriageRig(t, "dendrite-rea/rizin:1")
+	if _, err := r.Analyze(ctx(), r.binary, Options{ID: "tri-bad"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(r.enginePath("tri-bad"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := r.Store.Load("tri-bad")
+	st.Stage = StageEngine // back to the stage triage follows
+	if err := r.Store.Save(&st); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Resume(ctx(), "tri-bad", Options{}); err == nil {
+		t.Error("a corrupt engine.json is an error")
+	}
+}

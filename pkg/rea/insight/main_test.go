@@ -42,10 +42,16 @@ func TestMain(m *testing.M) {
 // finishedAnalysis runs a real analysis of a file named file with the content and returns the service and its id.
 func finishedAnalysis(t *testing.T, file, content string) (*analysis.Service, string) {
 	t.Helper()
+	return analysisWith(t, file, content, nil)
+}
+
+// analysisWith is finishedAnalysis with an engine runner when engines is not nil.
+func analysisWith(t *testing.T, file, content string, engines analysis.EngineRunner) (*analysis.Service, string) {
+	t.Helper()
 	t.Setenv("DENDRITE_HOME", t.TempDir())
 	core := coreclient.New(sidecar.DefaultLocator())
 	t.Cleanup(func() { _ = core.Close(); rag.CloseSidecars() })
-	svc := &analysis.Service{Store: &analysis.Store{Root: filepath.Join(t.TempDir(), "rea")}, Inspector: &analysis.CoreInspector{Client: core}, Index: analysis.NewRagIndex()}
+	svc := &analysis.Service{Store: &analysis.Store{Root: filepath.Join(t.TempDir(), "rea")}, Inspector: &analysis.CoreInspector{Client: core}, Index: analysis.NewRagIndex(), Engines: engines}
 	path := filepath.Join(t.TempDir(), file)
 	testkit.WriteFile(t, path, content, 0o600)
 	if _, err := svc.Analyze(ctx(), path, analysis.Options{ID: "an-1"}); err != nil {
