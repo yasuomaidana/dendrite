@@ -27,5 +27,5 @@ func TestSessionResumePrintsTheEngramSnapshot(t *testing.T) {
 	t.Setenv(engram.BinaryEnv, empty)
 	buf.Reset()
 	testkit.Check(t, RunSessionCommand(context.Background(), []string{"resume"}, &buf))
-	testkit.NotContains(t, buf.String(), "Memory (Engram)")
+	testkit.Contains(t, buf.String(), "(no memories yet)", "dendrite memory save")
 }

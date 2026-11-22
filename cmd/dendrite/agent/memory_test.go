@@ -31,8 +31,15 @@ func TestWithMemoryPutsTheSnapshotBeforeThePrompt(t *testing.T) {
 	}
 }
 
-func TestWithMemoryLeavesThePromptAloneWithoutMemory(t *testing.T) {
+func TestWithMemoryTellsTheJobHowToSaveEvenWhenThereAreNoMemoriesYet(t *testing.T) {
 	engramThatSays(t, "No previous session memories found.")
+	spec := agentjobs.SubmitSpec{Prompt: "task"}
+	testkit.Check(t, withMemory(context.Background(), &spec))
+	testkit.Contains(t, spec.Prompt, "(no memories yet)", "dendrite memory save", "task")
+}
+
+func TestWithMemoryLeavesThePromptAloneWithoutEngram(t *testing.T) {
+	t.Setenv(engram.BinaryEnv, filepath.Join(t.TempDir(), "absent"))
 	spec := agentjobs.SubmitSpec{Prompt: "task", PromptFile: "kept"}
 	testkit.Check(t, withMemory(context.Background(), &spec))
 	testkit.Equal(t, "prompt", spec.Prompt, "task")
