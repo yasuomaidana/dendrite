@@ -46,6 +46,15 @@ jobs:
           ref: ${{ vars.DENDRITE_RAG_REF || 'v0.1.0' }}
           path: .ci/dendrite-rag-rs
 
+      # The UI parsers read component props through dendrite-core's ast.component_props. The v0.1.0 tag predates that
+      # method, so this sidecar defaults to main (allowed by check-release-refs.sh) until core ships a tag with it.
+      - name: Check out the dendrite-core sidecar
+        uses: actions/checkout@v4
+        with:
+          repository: yasuomaidana/dendrite-core-rs
+          ref: ${{ vars.DENDRITE_CORE_REF || 'main' }}
+          path: .ci/dendrite-core-rs
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -55,15 +64,18 @@ jobs:
           workspaces: |
             .ci/dendrite-plane-rs
             .ci/dendrite-rag-rs
+            .ci/dendrite-core-rs
 
       - name: Build the sidecars
         run: |
           cargo build --release --manifest-path .ci/dendrite-plane-rs/Cargo.toml
           cargo build --release --manifest-path .ci/dendrite-rag-rs/Cargo.toml -p dendrite-rag
+          cargo build --release --manifest-path .ci/dendrite-core-rs/Cargo.toml
           {
             echo "DENDRITE_PLANE_TEST_BIN=$GITHUB_WORKSPACE/.ci/dendrite-plane-rs/target/release/dendrite-plane"
             echo "DENDRITE_DENDRITE_PLANE_BIN=$GITHUB_WORKSPACE/.ci/dendrite-plane-rs/target/release/dendrite-plane"
             echo "DENDRITE_DENDRITE_RAG_BIN=$GITHUB_WORKSPACE/.ci/dendrite-rag-rs/target/release/dendrite-rag"
+            echo "DENDRITE_DENDRITE_CORE_BIN=$GITHUB_WORKSPACE/.ci/dendrite-core-rs/target/release/dendrite-core"
           } >> "$GITHUB_ENV"
 
       - name: Run Tests (race detector)

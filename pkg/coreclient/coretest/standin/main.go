@@ -31,6 +31,7 @@ var handlers = map[string]handler{
 	"ast.complexity":         astComplexity,
 	"ast.complexity_batch":   astComplexityBatch,
 	"ast.fold_signatures":    astFold,
+	"ast.component_props":    astComponentProps,
 	"ast.last_complete_node": astLastNode,
 	"ast.changed_symbols":    astChanged,
 	"tokens.count":           tokensCount,
@@ -267,4 +268,23 @@ func complexityOf(source string) (functions []map[string]interface{}, failed boo
 		return fn("TestFunc", 10, 3, 2), false
 	}
 	return fn("DefaultFunc", 5, 1, 0), false
+}
+
+// astComponentProps answers one prop per `prop:NAME` word in the source; the source FAIL is a failure.
+func astComponentProps(params json.RawMessage, _ options) (any, map[string]interface{}) {
+	var p struct {
+		Lang   string `json:"lang"`
+		Source string `json:"source"`
+	}
+	_ = json.Unmarshal(params, &p)
+	if p.Source == "FAIL" {
+		return nil, rpcError(-32602, "unknown language `"+p.Lang+"`")
+	}
+	props := []map[string]interface{}{}
+	for i, word := range strings.Fields(p.Source) {
+		if name, ok := strings.CutPrefix(word, "prop:"); ok {
+			props = append(props, map[string]interface{}{"name": name, "optional": false, "rest": strings.HasPrefix(name, "..."), "line": i + 1})
+		}
+	}
+	return map[string]interface{}{"props": props}, nil
 }
