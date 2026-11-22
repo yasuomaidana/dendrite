@@ -2,6 +2,7 @@ package inference
 
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/pkg/inference"
 	"Dendrite/pkg/inference/bench"
 	"Dendrite/pkg/ollama"
 	"Dendrite/pkg/projectid"
@@ -43,6 +44,7 @@ func newSpikeBenchCmd() *cobra.Command {
 		out                       string
 		budget                    time.Duration
 		maxSwap                   float64
+		save                      bool
 	)
 	cmd := &cobra.Command{
 		Use:   "bench",
@@ -78,20 +80,7 @@ func newSpikeBenchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			rule := bench.Rule{Budget: budget, MaxSwapGrowthMB: maxSwap}
-			sums := bench.Summarize(results)
-			fmt.Fprintln(w)
-			fmt.Fprint(w, bench.Table(sums, rule))
-			if best, ok := bench.Select(sums, rule); ok {
-				fmt.Fprintf(w, "\n[✓] Selected: %s (median %.1fs, %.1f tok/s, score %.1f)\n", best.Model, float64(best.MedianTotalMS)/1000, best.MedianTokPerS, best.MeanScore)
-			} else {
-				fmt.Fprintf(w, "\n[!] No model met the rule (median within %s, no swap growth over %.0f MB, no failures)\n", budget, maxSwap)
-			}
-			path, werr := saveBench(out, results, sums)
-			if werr == nil {
-				fmt.Fprintf(w, "    Raw runs (answers included): %s\n", path)
-			}
-			return werr
+			return reportBench(w, results, bench.Rule{Budget: budget, MaxSwapGrowthMB: maxSwap}, out, save)
 		},
 	}
 	f := cmd.Flags()
@@ -103,6 +92,7 @@ func newSpikeBenchCmd() *cobra.Command {
 	f.StringVar(&project, "project", ".", "Project whose code supplies the context packs")
 	f.StringVar(&ollamaURL, "ollama", ollama.DefaultBaseURL, "Ollama base URL")
 	f.StringVar(&out, "out", "", "Where to write the raw runs as JSON (default: $DENDRITE_HOME/bench/)")
+	f.BoolVar(&save, "save", false, "Record each model's measured tokens/s in the capability catalog (.dendrite/models.toml or models.json)")
 	f.DurationVar(&budget, "budget", 60*time.Second, "Longest acceptable median answer time")
 	f.Float64Var(&maxSwap, "max-swap-growth", 200, "Most swap (MB) a run may add before the model is judged to swap")
 	return cmd
@@ -182,6 +172,53 @@ func benchUserMessage(question string, chunks []rag.Chunk) string {
 	}
 	fmt.Fprintf(&b, "\nQuestion: %s", question)
 	return b.String()
+}
+
+// reportBench prints the comparison and the selected model, writes the raw runs to out and, with
+// save, records the measured throughput in the capability catalog.
+func reportBench(w io.Writer, results []bench.Run, rule bench.Rule, out string, save bool) error {
+	sums := bench.Summarize(results)
+	fmt.Fprintln(w)
+	fmt.Fprint(w, bench.Table(sums, rule))
+	if best, ok := bench.Select(sums, rule); ok {
+		fmt.Fprintf(w, "\n[✓] Selected: %s (median %.1fs, %.1f tok/s, score %.1f)\n", best.Model, float64(best.MedianTotalMS)/1000, best.MedianTokPerS, best.MeanScore)
+	} else {
+		fmt.Fprintf(w, "\n[!] No model met the rule (median within %s, no swap growth over %.0f MB, no failures)\n", rule.Budget, rule.MaxSwapGrowthMB)
+	}
+	path, err := saveBench(out, results, sums)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "    Raw runs (answers included): %s\n", path)
+	if !save {
+		return nil
+	}
+	n, err := recordThroughput(sums)
+	if err == nil {
+		fmt.Fprintf(w, "    Capability catalog: tokens_per_sec recorded for %d model(s)\n", n)
+	}
+	return err
+}
+
+// recordThroughput writes the median tokens/s of every model that produced a measurement into
+// the capability catalog (the one at catalogPath when given) and returns how many it recorded.
+// A model the catalog does not know yet is added as an Ollama model.
+func recordThroughput(sums []bench.Summary, catalogPath ...string) (int, error) {
+	cat, err := inference.LoadCatalog(catalogPath...)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, s := range sums {
+		if s.MedianTokPerS > 0 {
+			cat.UpdateThroughput(s.Model, s.MedianTokPerS)
+			n++
+		}
+	}
+	if n == 0 {
+		return 0, nil
+	}
+	return n, inference.SaveCatalog(cat, catalogPath...)
 }
 
 func saveBench(out string, runs []bench.Run, sums []bench.Summary) (string, error) {

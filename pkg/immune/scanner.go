@@ -29,6 +29,9 @@ type Scanner struct {
 	Thresholds Thresholds
 	// LLM turns on the scanner's model pass (it needs a provider configured in the environment).
 	LLM bool
+	// Local is the local OpenAI-compatible endpoint the model pass uses when the environment
+	// configures no provider (SKILLSPECTOR_PROVIDER); nil leaves the environment as it is.
+	Local *LocalLLM
 	// Pin is the scanner version the project requires; a scanner of another version is refused.
 	// Empty accepts any.
 	Pin string
@@ -149,6 +152,7 @@ func (s Scanner) run(ctx context.Context, bin, abs string) ([]byte, error) {
 	}
 	var stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Env = s.env()
 	cmd.Stderr = &stderr
 	runErr := cmd.Run()
 	data, err := os.ReadFile(reportPath)
@@ -156,6 +160,26 @@ func (s Scanner) run(ctx context.Context, bin, abs string) ([]byte, error) {
 		return nil, fmt.Errorf("skillspector wrote no report (%v): %s", runErr, strings.TrimSpace(stderr.String()))
 	}
 	return data, nil
+}
+
+// LocalLLM is a local OpenAI-compatible endpoint and the model it serves ("" lets the endpoint choose).
+type LocalLLM struct{ BaseURL, Model string }
+
+// ProviderEnv is the variable that names the scanner's model provider.
+const ProviderEnv = "SKILLSPECTOR_PROVIDER"
+
+// env is the scanner's environment: the caller's, plus the local endpoint for the model pass when
+// that pass is on and the caller configured no provider.
+func (s Scanner) env() []string {
+	env := os.Environ()
+	if !s.LLM || s.Local == nil || os.Getenv(ProviderEnv) != "" {
+		return env
+	}
+	env = append(env, ProviderEnv+"=openai_compatible", "SKILLSPECTOR_COMPAT_BASE_URL="+s.Local.BaseURL, "SKILLSPECTOR_COMPAT_API_KEY=local")
+	if s.Local.Model != "" {
+		env = append(env, "SKILLSPECTOR_MODEL="+s.Local.Model)
+	}
+	return env
 }
 
 // version asks the scanner for its version; an unanswered question yields "unknown", not a failure.

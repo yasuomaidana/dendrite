@@ -128,6 +128,42 @@ func newSpikeStatusCmd() *cobra.Command {
 	return cmd
 }
 
+// holdOptions say how a lease on the OxiLLaMa server is taken and kept.
+type holdOptions struct {
+	Holder string        // who asks, for `spike status`
+	Model  string        // installed model id to start; empty picks the largest that fits
+	For    time.Duration // how long to hold; 0 holds until the context ends
+}
+
+// holdServer takes a lease on the OxiLLaMa server like a session does, starting the real server
+// when none runs, calls announce once it answers and keeps the lease alive until ctx ends or o.For
+// has passed.
+func holdServer(ctx context.Context, m *oxilease.Manager, o holdOptions, announce func()) error {
+	lease, _, err := m.Hold(ctx, o.Holder, o.Model)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lease.Release() }()
+	announce()
+
+	var done <-chan time.Time
+	if o.For > 0 {
+		done = time.After(o.For)
+	}
+	beat := time.NewTicker(m.TTL() / 3)
+	defer beat.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-done:
+			return nil
+		case <-beat.C:
+			_ = lease.Heartbeat()
+		}
+	}
+}
+
 // newSpikeHoldCmd takes a lease like a session does, so scripts and long agent jobs can keep the
 // server alive exactly as long as they run.
 func newSpikeHoldCmd() *cobra.Command {
@@ -140,37 +176,9 @@ func newSpikeHoldCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			m := oxilease.NewManager(port, "")
-			req := oxilease.Request{Holder: "hold"}
-			if !m.Running() {
-				best, err := oxilease.BestFitting(ctx)
-				if err != nil {
-					return err
-				}
-				req.ModelPath, req.ModelID = best.Path, best.ID
-			}
-			lease, err := m.Acquire(ctx, req)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = lease.Release() }()
-			fmt.Fprintf(cmd.OutOrStdout(), "[✓] Holding OxiLLaMa on port %d\n", port)
-			var done <-chan time.Time
-			if dur > 0 {
-				done = time.After(dur)
-			}
-			beat := time.NewTicker(m.TTL() / 3)
-			defer beat.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return nil
-				case <-done:
-					return nil
-				case <-beat.C:
-					_ = lease.Heartbeat()
-				}
-			}
+			return holdServer(ctx, oxilease.NewManager(port, ""), holdOptions{Holder: "hold", For: dur}, func() {
+				fmt.Fprintf(cmd.OutOrStdout(), "[✓] Holding OxiLLaMa on port %d\n", port)
+			})
 		},
 	}
 	addPortFlag(cmd, &port)

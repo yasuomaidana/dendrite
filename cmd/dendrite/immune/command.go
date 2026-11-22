@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 
 	"Dendrite/pkg/directive"
 	"Dendrite/pkg/immune"
+	"Dendrite/pkg/oxilease"
 )
 
 // NewImmuneCmd builds `dendrite immune`: the gate that decides whether an agent skill may be installed.
@@ -61,6 +63,26 @@ func immuneSettings(cmd *cobra.Command, o immuneScanOptions) (immuneScanOptions,
 	return o, nil
 }
 
+// immuneServer is the lease manager of the local model server (a seam for tests).
+var immuneServer = oxilease.Default
+
+// localModelPass prepares the model pass of a scan. With a provider in the environment there is
+// nothing to do. Otherwise it holds the local OxiLLaMa server (starting it on the largest installed
+// model that fits) and returns its endpoint; release ends the hold.
+func localModelPass(ctx context.Context) (local *immune.LocalLLM, release func(), err error) {
+	if os.Getenv(immune.ProviderEnv) != "" {
+		return nil, func() {}, nil
+	}
+	m := immuneServer()
+	lease, model, err := m.Hold(ctx, "immune", "")
+	if err != nil {
+		return nil, nil, fmt.Errorf("the model pass needs a provider (%s) or a local OxiLLaMa model: %w", immune.ProviderEnv, err)
+	}
+	stop := lease.KeepAlive()
+	return &immune.LocalLLM{BaseURL: fmt.Sprintf("http://127.0.0.1:%d/v1", m.Port()), Model: model},
+		func() { stop(); _ = lease.Release() }, nil
+}
+
 func newImmuneScanCmd() *cobra.Command {
 	o := immuneScanOptions{Thresholds: immune.DefaultThresholds}
 	cmd := &cobra.Command{
@@ -69,7 +91,8 @@ func newImmuneScanCmd() *cobra.Command {
 		Long: "Runs SkillSpector over a skill directory and maps its risk score to a verdict: up to immune.approve_max\n" +
 			"(20) approve (exit 0), up to immune.hold_max (50) hold (exit 3, a human decision is needed), above that\n" +
 			"quarantine (exit 4). The bands come from .github/dendrite/directives.toml; a flag overrides one. The scanner is static by\n" +
-			"default; --llm adds its model pass, which needs a provider in the environment (SKILLSPECTOR_PROVIDER).\n" +
+			"default; --llm adds its model pass: with a provider in the environment (SKILLSPECTOR_PROVIDER) it uses that\n" +
+			"one, otherwise it holds the local OxiLLaMa server for the scan and uses its OpenAI-compatible endpoint.\n" +
 			"When the directives pin a scanner version (immune.scanner_version), a scanner of another version is refused:\n" +
 			"run `dendrite immune update`. Every result is appended to the scan ledger of the repository that holds the\n" +
 			"skill (.dendrite/immune/scans.jsonl); the pre-edit and pre-commit hooks read it to decide whether a skill under\n" +
@@ -94,7 +117,16 @@ func runImmuneScan(ctx context.Context, out io.Writer, path string, o immuneScan
 		return cli.UsageErrorf("%v", err)
 	}
 	ledger := immune.LedgerFor(path)
-	r, err := immune.Scanner{Thresholds: o.Thresholds, LLM: o.LLM, Pin: o.Pin, Ledger: &ledger}.Scan(ctx, path)
+	scanner := immune.Scanner{Thresholds: o.Thresholds, LLM: o.LLM, Pin: o.Pin, Ledger: &ledger}
+	if o.LLM {
+		local, release, err := localModelPass(ctx)
+		if err != nil {
+			return err
+		}
+		defer release()
+		scanner.Local = local
+	}
+	r, err := scanner.Scan(ctx, path)
 	if err != nil {
 		return err
 	}
