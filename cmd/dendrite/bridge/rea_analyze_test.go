@@ -2,12 +2,11 @@ package bridge
 
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
-	"Dendrite/pkg/coreclient"
 	"Dendrite/pkg/coreclient/coretest"
 	"Dendrite/pkg/rag"
 	"Dendrite/pkg/rag/ragtest"
 	"Dendrite/pkg/rea/analysis"
-	"context"
+	"Dendrite/pkg/testkit"
 	"errors"
 	"os"
 	"path/filepath"
@@ -28,13 +27,11 @@ func useReaSidecars(t *testing.T) string {
 func writePE(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "sample.exe")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	testkit.WriteFile(t, path, content, 0o600)
 	return path
 }
 
-func TestRetroAnalyzeThenSearchThenPurge(t *testing.T) {
+func TestRetroAnalyzeThenSearch(t *testing.T) {
 	pe := useReaSidecars(t)
 	out, code := cliOutput(t, "retro", "analyze", pe, "--id", "pe-cli", "--tier", "local")
 	if code != cli.ExitOK || !strings.Contains(out, "Analysis pe-cli: done") || !strings.Contains(out, "KERNEL32.dll") || !strings.Contains(out, "retro search pe-cli") {
@@ -47,13 +44,20 @@ func TestRetroAnalyzeThenSearchThenPurge(t *testing.T) {
 	if out, code = cliOutput(t, "rea", "search", "pe-cli", "CreateFileW", "--json"); code != cli.ExitOK || !strings.Contains(out, `"file": "imports/kernel32.dll.md"`) {
 		t.Errorf("search --json: exit %d\n%s", code, out)
 	}
-	if _, code = cliOutput(t, "retro", "purge", "pe-cli"); code != cli.ExitError {
+}
+
+func TestRetroPurgeNeedsForceAndDeletesTheAnalysis(t *testing.T) {
+	pe := useReaSidecars(t)
+	if _, code := cliOutput(t, "retro", "analyze", pe, "--id", "pe-del"); code != cli.ExitOK {
+		t.Fatalf("analyze: exit %d", code)
+	}
+	if _, code := cliOutput(t, "retro", "purge", "pe-del"); code != cli.ExitError {
 		t.Errorf("purge without --force: exit %d", code)
 	}
-	if out, code = cliOutput(t, "retro", "purge", "pe-cli", "--force"); code != cli.ExitOK || !strings.Contains(out, "deleted") {
+	if out, code := cliOutput(t, "retro", "purge", "pe-del", "--force"); code != cli.ExitOK || !strings.Contains(out, "deleted") {
 		t.Errorf("purge --force: exit %d\n%s", code, out)
 	}
-	if _, code = cliOutput(t, "retro", "search", "pe-cli", "x"); code != cli.ExitError {
+	if _, code := cliOutput(t, "retro", "search", "pe-del", "x"); code != cli.ExitError {
 		t.Errorf("search a purged analysis: exit %d", code)
 	}
 }
@@ -89,34 +93,11 @@ func TestRetroResumeAfterAFailedParseAndPause(t *testing.T) {
 	}
 }
 
-// pauseDuringParse pauses its analysis while the image is parsed, as another process could.
-type pauseDuringParse struct {
-	inner analysis.Parser
-	svc   *analysis.Service
-}
-
-func (p pauseDuringParse) PEParse(c context.Context, path string) (*coreclient.PEInfo, error) {
-	info, err := p.inner.PEParse(c, path)
-	if err == nil {
-		_, err = p.svc.Pause("pe-pz")
-	}
-	return info, err
-}
-
-func TestRetroReportsAPauseAsAnOutcome(t *testing.T) {
-	pe := useReaSidecars(t)
-	real, err := analysis.NewService()
-	if err != nil {
-		t.Fatal(err)
-	}
-	real.Parser = pauseDuringParse{inner: real.Parser, svc: real}
-	old := newReaService
-	newReaService = func() (*analysis.Service, error) { return real, nil }
-	t.Cleanup(func() { newReaService = old })
-
-	out, code := cliOutput(t, "retro", "analyze", pe, "--id", "pe-pz")
-	if code != cli.ExitOK || !strings.Contains(out, "is paused after stage parsed") || !strings.Contains(out, "retro resume pe-pz") {
-		t.Errorf("a pause is not a failure: exit %d\n%s", code, out)
+func TestReportRunTreatsAPauseAsAnOutcome(t *testing.T) {
+	res := &analysis.Result{State: analysis.State{ID: "pe-pz", Stage: analysis.StageParsed, Paused: true}}
+	var out strings.Builder
+	if err := reportRun(&out, res, analysis.ErrPaused); err != nil || !strings.Contains(out.String(), "is paused after stage parsed") || !strings.Contains(out.String(), "retro resume pe-pz") {
+		t.Errorf("a pause is not a failure: %v\n%s", err, out.String())
 	}
 }
 

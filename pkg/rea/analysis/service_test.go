@@ -22,17 +22,31 @@ func TestAnalyzeRunsEveryStageAndWritesTheWorkspace(t *testing.T) {
 	if st.Stage != StageDone || st.Format != "pe64" || st.Tier != "local" || st.Paused || st.Binary != r.binary {
 		t.Errorf("state %+v", st)
 	}
+	checkWorkspace(t, r.Store.WorkspaceDir("pe-test"))
+	checkBundle(t, res.Bundle)
+	if got, err := r.Status("pe-test"); err != nil || got.Stage != StageDone {
+		t.Errorf("status %+v, %v", got, err)
+	}
+}
+
+// checkWorkspace checks the documents an analysis of the stand-in image writes.
+func checkWorkspace(t *testing.T, dir string) {
+	t.Helper()
 	for _, doc := range []string{"overview.md", "sections.md", "exports.md", "imports/kernel32.dll.md", "imports/advapi32.dll.md"} {
-		if _, err := os.Stat(filepath.Join(r.Store.WorkspaceDir("pe-test"), filepath.FromSlash(doc))); err != nil {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(doc))); err != nil {
 			t.Errorf("workspace document %s: %v", doc, err)
 		}
 	}
-	b := res.Bundle
-	if b == nil || b.TokenEstimate <= 0 || b.TokenEstimate > rea.MaxEvidenceTokens || b.Truncated || len(b.CrossReferences) != 2 || b.StringConstants[0] != "ComputeChecksum" {
-		t.Errorf("bundle %+v", b)
+}
+
+// checkBundle checks the evidence bundle is bounded and carries the imports and exports.
+func checkBundle(t *testing.T, b *rea.EvidenceBundle) {
+	t.Helper()
+	if b == nil || b.TokenEstimate <= 0 || b.TokenEstimate > rea.MaxEvidenceTokens || b.Truncated {
+		t.Fatalf("bundle %+v", b)
 	}
-	if got, err := r.Status("pe-test"); err != nil || got.Stage != StageDone {
-		t.Errorf("status %+v, %v", got, err)
+	if len(b.CrossReferences) != 2 || b.StringConstants[0] != "ComputeChecksum" {
+		t.Errorf("bundle contents %+v", b)
 	}
 }
 
@@ -53,11 +67,9 @@ func (p *pausingParser) PEParse(c context.Context, path string) (*coreclient.PEI
 	return info, err
 }
 
-func TestPauseStopsAtTheStageBoundaryAndResumeContinuesWithoutParsingAgain(t *testing.T) {
+func TestPauseStopsAtTheStageBoundary(t *testing.T) {
 	r := newRig(t)
-	p := &pausingParser{inner: r.Parser, svc: r.Service, id: "pe-pause"}
-	r.Parser = p
-
+	r.Parser = &pausingParser{inner: r.Parser, svc: r.Service, id: "pe-pause"}
 	res, err := r.Analyze(ctx(), r.binary, Options{ID: "pe-pause"})
 	if !errors.Is(err, ErrPaused) || res.State.Stage != StageParsed || !res.State.Paused {
 		t.Fatalf("a paused analysis: %+v, %v", res, err)
@@ -65,17 +77,22 @@ func TestPauseStopsAtTheStageBoundaryAndResumeContinuesWithoutParsingAgain(t *te
 	if _, err := os.Stat(r.Store.WorkspaceDir("pe-pause")); !os.IsNotExist(err) {
 		t.Errorf("nothing is written after the pause: %v", err)
 	}
+}
 
-	done, err := r.Resume(ctx(), "pe-pause", Options{Tier: "paid", Model: "cloud-pro"})
+func TestResumeContinuesWithoutParsingAgain(t *testing.T) {
+	r := pausedAtParsed(t, "pe-resume")
+	p := &pausingParser{inner: r.Parser, svc: r.Service, id: "pe-resume"}
+	r.Parser = p
+
+	done, err := r.Resume(ctx(), "pe-resume", Options{Tier: "paid", Model: "cloud-pro"})
 	if err != nil || done.State.Stage != StageDone || done.State.Paused || done.Bundle == nil {
 		t.Fatalf("resume: %+v, %v", done, err)
 	}
-	if p.calls != 1 || done.State.Tier != "paid" || done.State.Model != "cloud-pro" {
+	if p.calls != 0 || done.State.Tier != "paid" || done.State.Model != "cloud-pro" {
 		t.Errorf("parses %d, tier %s, model %s", p.calls, done.State.Tier, done.State.Model)
 	}
-
-	again, err := r.Resume(ctx(), "pe-pause", Options{})
-	if err != nil || again.State.Model != "cloud-pro" || p.calls != 1 {
+	again, err := r.Resume(ctx(), "pe-resume", Options{})
+	if err != nil || again.State.Model != "cloud-pro" || p.calls != 0 {
 		t.Errorf("resuming a finished analysis changes nothing: %+v, %v", again.State, err)
 	}
 }

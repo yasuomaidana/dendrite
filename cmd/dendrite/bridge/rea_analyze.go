@@ -3,6 +3,7 @@ package bridge
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/rea/analysis"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -27,12 +28,9 @@ func reaCommands() []*cobra.Command {
 			"model tier if you like.",
 		Example: "dendrite retro analyze sample.exe --format pe64 --tier local\ndendrite retro search pe-1a2b3c4d \"CreateFileW\"",
 		Args:    cli.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return withReaService(func(s *analysis.Service) error {
-				res, err := s.Analyze(cmd.Context(), args[0], o)
-				return reportRun(cmd.OutOrStdout(), res, err)
-			})
-		},
+		RunE: runStages(func(ctx context.Context, s *analysis.Service, args []string) (*analysis.Result, error) {
+			return s.Analyze(ctx, args[0], o)
+		}),
 	}
 	f := analyze.Flags()
 	f.StringVar(&o.Format, "format", "pe64", "Image format: pe32 or pe64")
@@ -61,12 +59,9 @@ func reaCommands() []*cobra.Command {
 		Short:   "Continue an analysis from its last checkpoint, optionally on another model tier or model",
 		Example: "dendrite retro resume pe-1a2b3c4d --tier paid --model cloud-pro",
 		Args:    cli.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return withReaService(func(s *analysis.Service) error {
-				res, err := s.Resume(cmd.Context(), args[0], ro)
-				return reportRun(cmd.OutOrStdout(), res, err)
-			})
-		},
+		RunE: runStages(func(ctx context.Context, s *analysis.Service, args []string) (*analysis.Result, error) {
+			return s.Resume(ctx, args[0], ro)
+		}),
 	}
 	resume.Flags().StringVar(&ro.Tier, "tier", "", "Switch to this model tier: local or paid")
 	resume.Flags().StringVar(&ro.Model, "model", "", "Switch to this model")
@@ -106,6 +101,16 @@ func reaCommands() []*cobra.Command {
 	}
 	search.Flags().IntVarP(&k, "top", "k", 5, "How many passages to return (at most 20)")
 	return []*cobra.Command{analyze, pause, resume, purge, search}
+}
+
+// runStages is the RunE of the commands that run an analysis (analyze, resume): run it, then report how far it got.
+func runStages(run func(context.Context, *analysis.Service, []string) (*analysis.Result, error)) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		return withReaService(func(s *analysis.Service) error {
+			res, err := run(cmd.Context(), s, args)
+			return reportRun(cmd.OutOrStdout(), res, err)
+		})
+	}
 }
 
 // withReaService runs fn with the analysis service.

@@ -49,7 +49,7 @@ func callRea(t *testing.T, s *Server, tool string, args map[string]any) (string,
 	return res.Content[0].Text, nil
 }
 
-func TestReaToolsRunAnAnalysisFromStartToPurge(t *testing.T) {
+func TestReaToolsRunAnAnalysisSearchAndResume(t *testing.T) {
 	s, pe := reaTools(t, nil)
 	out, err := callRea(t, s, "dendrite_rea_analyze", map[string]any{"binary": pe, "id": "pe-mcp"})
 	if err != nil || !strings.Contains(out, `"stage": "done"`) || !strings.Contains(out, "KERNEL32.dll") {
@@ -61,10 +61,17 @@ func TestReaToolsRunAnAnalysisFromStartToPurge(t *testing.T) {
 	if out, err = callRea(t, s, "dendrite_rea_resume", map[string]any{"id": "pe-mcp", "tier": "paid"}); err != nil || !strings.Contains(out, `"tier": "paid"`) {
 		t.Errorf("resume: %v\n%s", err, out)
 	}
-	if _, err = callRea(t, s, "dendrite_rea_purge", map[string]any{"id": "pe-mcp", "force": false}); !errors.Is(err, analysis.ErrNeedsForce) {
+}
+
+func TestReaPurgeToolNeedsForce(t *testing.T) {
+	s, pe := reaTools(t, nil)
+	if _, err := callRea(t, s, "dendrite_rea_analyze", map[string]any{"binary": pe, "id": "pe-purge"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := callRea(t, s, "dendrite_rea_purge", map[string]any{"id": "pe-purge", "force": false}); !errors.Is(err, analysis.ErrNeedsForce) {
 		t.Errorf("purge without force: %v", err)
 	}
-	if out, err = callRea(t, s, "dendrite_rea_purge", map[string]any{"id": "pe-mcp", "force": true}); err != nil || !strings.Contains(out, `"purged": "pe-mcp"`) {
+	if out, err := callRea(t, s, "dendrite_rea_purge", map[string]any{"id": "pe-purge", "force": true}); err != nil || !strings.Contains(out, `"purged": "pe-purge"`) {
 		t.Errorf("purge: %v\n%s", err, out)
 	}
 }

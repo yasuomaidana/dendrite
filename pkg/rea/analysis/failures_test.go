@@ -133,13 +133,13 @@ func TestACheckpointThatCannotBeSavedStopsTheRun(t *testing.T) {
 }
 
 func TestRelativeToLeavesAPathOutsideTheWorkspaceAlone(t *testing.T) {
-	if got := relativeTo("/a/work", "/a/work/imports/x.md"); got != "imports/x.md" {
-		t.Errorf("inside: %q", got)
-	}
-	if got := relativeTo("/a/work", "/elsewhere/x.md"); got != "/elsewhere/x.md" {
-		t.Errorf("outside: %q", got)
-	}
-	if got := relativeTo("relative", "/abs/x.md"); got != "/abs/x.md" {
-		t.Errorf("unrelatable: %q", got)
+	for _, tc := range []struct{ dir, path, want string }{
+		{"/a/work", "/a/work/imports/x.md", "imports/x.md"},
+		{"/a/work", "/elsewhere/x.md", "/elsewhere/x.md"},
+		{"relative", "/abs/x.md", "/abs/x.md"},
+	} {
+		if got := relativeTo(tc.dir, tc.path); got != tc.want {
+			t.Errorf("relativeTo(%q, %q) = %q, want %q", tc.dir, tc.path, got, tc.want)
+		}
 	}
 }

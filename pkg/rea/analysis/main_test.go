@@ -11,6 +11,7 @@ import (
 	"Dendrite/pkg/rag"
 	"Dendrite/pkg/rag/ragtest"
 	"Dendrite/pkg/sidecar"
+	"Dendrite/pkg/testkit"
 	"Dendrite/pkg/testmain"
 )
 
@@ -54,9 +55,7 @@ func newRig(t *testing.T) *rig {
 func writeBinary(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "sample.exe")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	testkit.WriteFile(t, path, content, 0o600)
 	return path
 }
 

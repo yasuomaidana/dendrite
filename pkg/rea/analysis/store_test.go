@@ -45,7 +45,7 @@ func TestDefaultStoreLivesUnderTheDendriteHome(t *testing.T) {
 	}
 }
 
-func TestStoreLoadAndDeleteRefuseWhatTheyCannotRead(t *testing.T) {
+func TestStoreRefusesUnsafeIDs(t *testing.T) {
 	s := &Store{Root: t.TempDir()}
 	if err := s.Create(State{ID: "../x"}); !errors.Is(err, ErrBadID) {
 		t.Errorf("create with an unsafe id: %v", err)
@@ -56,7 +56,10 @@ func TestStoreLoadAndDeleteRefuseWhatTheyCannotRead(t *testing.T) {
 	if err := s.Delete("../x"); !errors.Is(err, ErrBadID) {
 		t.Errorf("delete with an unsafe id: %v", err)
 	}
+}
 
+func TestStoreLoadReportsCheckpointsItCannotRead(t *testing.T) {
+	s := &Store{Root: t.TempDir()}
 	if err := os.MkdirAll(s.Dir("corrupt"), 0o755); err != nil {
 		t.Fatal(err)
 	}
