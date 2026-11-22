@@ -195,3 +195,43 @@ func TestAProjectThatIntegratesOnMainFinishesByPullRequest(t *testing.T) {
 	}
 	testkit.Contains(t, skill, "dendrite chronos finish DEN-123", "git push origin HEAD:<parent trunk>")
 }
+
+func TestWorkflowViolationsNameEveryStaleBranchModel(t *testing.T) {
+	for _, c := range []struct {
+		name, text, integration, want string
+	}{
+		{"agent ticket branch", "on branch `agent/<ticket>`", "main", "stale branch name agent/<"},
+		{"agent branch of a ticket", "on branch agent/den-123", "develop", "stale branch name agent/d"},
+		{"feature trunk", "the feature branch `feature/<PARENT>-<slug>`", "main", "stale branch name feature/<"},
+		{"a branch listed twice", "never directly on `main`, `main` or `master`", "main", "branch listed twice: `main`"},
+		{"develop on a main project", "git merge origin/develop", "main", "develop is not the integration branch of this project (main)"},
+		{"develop on a master project", "push to develop", "master", "develop is not the integration branch of this project (master)"},
+		{"develop on a develop project", "push to develop", "develop", ""},
+		{"clean text", "never directly on `main` or `master`; branch <TICKET>-<slug>/main", "main", ""},
+	} {
+		got := strings.Join(workflowViolations(c.text, c.integration), "; ")
+		testkit.Equal(t, c.name, got, c.want)
+	}
+}
+
+func TestEveryIntegrationBranchRendersRulesThatPassTheBranchModelCheck(t *testing.T) {
+	for _, integration := range []string{"", "trunk", "main", "master"} {
+		dir := projectOn(t, integration)
+		if integration == "main" || integration == "master" {
+			dir = t.TempDir()
+			testkit.GitInit(t, dir, integration)
+			testkit.Git(t, dir, "commit", "-q", "--allow-empty", "-m", "init")
+		}
+		testkit.Check(t, verifyWorkflowText(dir))
+	}
+}
+
+func TestTheProtectedBranchesAreListedOnce(t *testing.T) {
+	for integration, want := range map[string]string{
+		"develop": "`develop`, `main` or `master`",
+		"main":    "`main` or `master`",
+		"master":  "`master` or `main`",
+	} {
+		testkit.Equal(t, integration, workflowBranches{Integration: integration}.protected(), want)
+	}
+}

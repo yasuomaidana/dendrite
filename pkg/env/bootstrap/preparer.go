@@ -116,6 +116,12 @@ func (p *Preparer) Prepare(ctx context.Context, opts PrepareOptions) (*PrepareRe
 		return nil, err
 	}
 
+	// The rules are the contract agents follow: refuse to write ones that teach a branch model the project
+	// does not use (agent/<ticket>, a doubled branch, develop on a project that integrates on main).
+	if err := verifyWorkflowText(opts.ProjectPath); err != nil {
+		return nil, err
+	}
+
 	report := &PrepareReport{
 		ProjectPath:  opts.ProjectPath,
 		Stack:        fp,
