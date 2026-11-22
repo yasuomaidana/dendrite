@@ -143,3 +143,44 @@ func (l language) module(m Model, t value) string {
 	fmt.Fprintf(&sb, l.tail, l.sx.literal(t, ""))
 	return strings.ReplaceAll(sb.String(), "\t", l.tab)
 }
+
+func decimal(n uint64) string { return fmt.Sprint(n) }
+
+// hexAddr writes an address as a hex literal followed by suffix (n for a TypeScript bigint).
+func hexAddr(suffix string) func(uint64) string {
+	return func(n uint64) string { return fmt.Sprintf("0x%x%s", n, suffix) }
+}
+
+// boolLit writes a flag as the language's true and false words.
+func boolLit(yes, no string) func(bool) string {
+	return func(b bool) string {
+		if b {
+			return yes
+		}
+		return no
+	}
+}
+
+// listFn lays a list out one item per line between open(elem) and closer; an empty one is open and closer together.
+func listFn(open func(elem string) string, closer string) func(string, []string, string) string {
+	return func(elem string, items []string, indent string) string {
+		if len(items) == 0 {
+			return open(elem) + closer
+		}
+		return open(elem) + "\n" + indent + "\t" + strings.Join(items, ",\n"+indent+"\t") + ",\n" + indent + closer
+	}
+}
+
+// recFn lays a record out one field per line; open writes what precedes the fields, field what precedes a value.
+func recFn(open func(typ string) string, field func(name string) string, closer string) func(string, []string, []string, string) string {
+	return func(typ string, names, vals []string, indent string) string {
+		var sb strings.Builder
+		sb.WriteString(open(typ) + "\n")
+		for i := range names {
+			sb.WriteString(indent + "\t" + field(names[i]) + vals[i] + ",\n")
+		}
+		return sb.String() + indent + closer
+	}
+}
+
+func fixed(s string) func(string) string { return func(string) string { return s } }

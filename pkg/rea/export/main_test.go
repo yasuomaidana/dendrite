@@ -12,15 +12,20 @@ import (
 // dendrite-plane sidecar over a test board, so an installed sidecar is never used.
 func TestMain(m *testing.M) {
 	testmain.Run(m, func() (func(), error) {
-		core, err := coretest.Install()
-		if err != nil {
-			return nil, err
+		var cleanups []func()
+		undo := func() {
+			for i := len(cleanups) - 1; i >= 0; i-- {
+				cleanups[i]()
+			}
 		}
-		rg, err := ragtest.Install()
-		if err != nil {
-			core()
-			return nil, err
+		for _, install := range []func() (func(), error){coretest.Install, ragtest.Install} {
+			cleanup, err := install()
+			if err != nil {
+				undo()
+				return nil, err
+			}
+			cleanups = append(cleanups, cleanup)
 		}
-		return func() { rg(); core() }, nil
+		return undo, nil
 	})
 }
