@@ -27,7 +27,17 @@ func TestAuditor_Tier1SourceReference(t *testing.T) {
 	refMgr := NewRefManager(filepath.Join(tempDir, "refs.json"))
 	auditor := NewAuditor(s, refMgr, "")
 
-	// "kinematics" matches carla-sensor-rs in default references
+	// No reference is built in: the user registers the one the audit should match.
+	if err := refMgr.AddRef(SourceReference{
+		ID:           "ref-test-kin",
+		Name:         "test-kinematics",
+		Repository:   "https://example.invalid/test-kinematics",
+		Language:     "rust",
+		Capabilities: []string{"kinematics"},
+		License:      "MIT",
+	}); err != nil {
+		t.Fatalf("AddRef failed: %v", err)
+	}
 	req := AuditRequest{
 		Capability: "kinematics",
 		Language:   "rust",
@@ -43,8 +53,8 @@ func TestAuditor_Tier1SourceReference(t *testing.T) {
 	if res.TierSelected != Tier1SourceRef {
 		t.Fatalf("expected %s, got %s", Tier1SourceRef, res.TierSelected)
 	}
-	if res.CandidateName != "carla-sensor-rs" {
-		t.Fatalf("expected carla-sensor-rs, got %s", res.CandidateName)
+	if res.CandidateName != "test-kinematics" {
+		t.Fatalf("expected test-kinematics, got %s", res.CandidateName)
 	}
 	if res.Action != "slice_and_import" {
 		t.Fatalf("expected slice_and_import, got %s", res.Action)
@@ -188,8 +198,8 @@ func TestRefManager_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListRefs failed: %v", err)
 	}
-	if len(refs) < 3 {
-		t.Fatalf("expected at least 3 default refs, got %d", len(refs))
+	if len(refs) != 0 {
+		t.Fatalf("expected no built-in refs, got %d", len(refs))
 	}
 
 	// Add new ref
@@ -218,5 +228,21 @@ func TestRefManager_CRUD(t *testing.T) {
 	// Remove non-existent
 	if err := refMgr.RemoveRef("ref-nonexistent"); err != ErrReferenceNotFound {
 		t.Fatalf("expected ErrReferenceNotFound, got %v", err)
+	}
+}
+
+func TestRefManager_AddRefKeepsCorruptFile(t *testing.T) {
+	refsPath := filepath.Join(t.TempDir(), "refs.json")
+	if err := os.WriteFile(refsPath, []byte("{not json"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	refMgr := NewRefManager(refsPath)
+
+	if err := refMgr.AddRef(SourceReference{ID: "ref-new", Name: "new"}); err == nil {
+		t.Fatal("expected AddRef to fail on a corrupt refs file")
+	}
+	data, err := os.ReadFile(refsPath)
+	if err != nil || string(data) != "{not json" {
+		t.Fatalf("corrupt refs file must stay untouched, got %q (%v)", data, err)
 	}
 }
