@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"Dendrite/pkg/fsutil"
 )
@@ -43,6 +44,8 @@ type State struct {
 	Override Mode   `json:"override,omitempty"`
 	Computed Mode   `json:"computed,omitempty"`
 	Reason   string `json:"reason,omitempty"`
+	// Since is when the computed mode last changed.
+	Since time.Time `json:"since,omitempty"`
 }
 
 // Resolve is the mode in force: the override, else the computed mode, else Both.

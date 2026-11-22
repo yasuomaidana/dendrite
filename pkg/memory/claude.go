@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"Dendrite/pkg/engram"
 )
@@ -13,6 +14,9 @@ import (
 // ClaudeMemory is one file of Claude Code's own file memory.
 type ClaudeMemory struct {
 	Name, Description, Type, Body string
+	// File is the memory's file name (as MEMORY.md links it) and Modified when it last changed.
+	File     string
+	Modified time.Time
 }
 
 // maxMirrorBody is the longest body mirrored into Engram.
@@ -40,7 +44,12 @@ func ReadClaude(dir string) ([]ClaudeMemory, error) {
 		if !strings.HasSuffix(name, ".md") || name == "MEMORY.md" || err != nil {
 			continue
 		}
-		out = append(out, parseClaude(strings.TrimSuffix(name, ".md"), string(data)))
+		m := parseClaude(strings.TrimSuffix(name, ".md"), string(data))
+		m.File = name
+		if info, err := e.Info(); err == nil {
+			m.Modified = info.ModTime()
+		}
+		out = append(out, m)
 	}
 	return out, nil
 }
