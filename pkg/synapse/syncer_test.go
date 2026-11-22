@@ -456,3 +456,101 @@ func TestDefaultRootsWithoutHome(t *testing.T) {
 		t.Fatalf("relOrAbs fallback = %q", got)
 	}
 }
+
+// refreshWorld stores two synapses over the same pair of in-sync checkouts: "stale", left
+// drifted by an earlier status, and "kept", archived. It returns the store and the hub checkout.
+func refreshWorld(t *testing.T) (*syncWorld, *Store, string) {
+	t.Helper()
+	w := newSyncWorld(t)
+	t.Setenv("DENDRITE_HOME", filepath.Join(w.root, "home"))
+	hub, _, hubID := w.repo("hub", map[string]string{"README": "x"})
+	control, _, controlID := w.repo("control", map[string]string{"README": "x"})
+	st := NewStore(filepath.Join(w.root, "store"))
+	members := []Member{
+		{ProjectID: controlID, Alias: "control", Role: RoleConsumer, PathHint: control},
+		{ProjectID: hubID, Alias: "hub", Role: RoleProducer, PathHint: hub},
+	}
+	for id, state := range map[string]State{"stale": StateDrifted, "kept": StateArchived} {
+		if err := st.Save(&Synapse{ID: id, State: state, Channel: ChannelDev, Members: members}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return w, st, hub
+}
+
+// refreshed runs RefreshStates and returns the synapse id as the store now holds it.
+func refreshed(t *testing.T, st *Store, id string) *Synapse {
+	t.Helper()
+	if _, err := RefreshStates(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	s, err := st.Load(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// A state stored by an earlier status or sync must not outlive its cause: RefreshStates
+// re-derives it from the checkouts as they are now, without fetching, and saves what changed.
+func TestRefreshStates_ClearsStaleDrift(t *testing.T) {
+	_, st, hub := refreshWorld(t)
+	s := refreshed(t, st, "stale")
+	if s.State != StateActive {
+		t.Fatalf("in-sync synapse stored as drifted = %s, want active", s.State)
+	}
+	if m, _ := s.Member("hub"); m.LockedSHA != gitIn(t, hub, "rev-parse", "HEAD") {
+		t.Fatalf("hub lock = %q, want its HEAD", m.LockedSHA)
+	}
+	if kept := refreshed(t, st, "kept"); kept.State != StateArchived {
+		t.Fatalf("archived synapse = %s, want it left alone", kept.State)
+	}
+}
+
+// A commit the checkout already fetched but did not take is drift.
+func TestRefreshStates_SeesFetchedCommits(t *testing.T) {
+	w, st, hub := refreshWorld(t)
+	w.publish("hub", "next.txt")
+	gitIn(t, hub, "fetch", "-q", "origin")
+	if s := refreshed(t, st, "stale"); s.State != StateDrifted {
+		t.Fatalf("behind member = %s, want drifted", s.State)
+	}
+}
+
+// A store that cannot be written reports the failure instead of hiding it.
+func TestRefreshStates_ReportsSaveFailure(t *testing.T) {
+	_, st, _ := refreshWorld(t)
+	if err := os.Chmod(st.Dir(), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(st.Dir(), 0o700) })
+	_, err := RefreshStates(context.Background(), st)
+	if err == nil {
+		t.Fatal("read-only store: no error")
+	}
+	if !strings.Contains(err.Error(), "saving synapse stale") {
+		t.Fatalf("read-only store: err = %v", err)
+	}
+}
+
+// The drift text for a tracked ref that does not exist names the command that changes it.
+func TestSyncSynapse_MissingRefNamesTheFix(t *testing.T) {
+	w := newSyncWorld(t)
+	t.Setenv("DENDRITE_HOME", filepath.Join(w.root, "home"))
+	hub, _, hubID := w.repo("hub", map[string]string{"README": "x"})
+	control, _, controlID := w.repo("control", map[string]string{"README": "x"})
+	s := &Synapse{ID: "eco", State: StateActive, Channel: ChannelStable, Members: []Member{
+		{ProjectID: controlID, Alias: "control", Role: RolePeer, PathHint: control},
+		{ProjectID: hubID, Alias: "hub", Role: RolePeer, PathHint: hub, Ref: "release"},
+	}}
+	rep := SyncSynapse(context.Background(), s, SyncOptions{NoFetch: true})
+	want := map[string]string{
+		"control": `tracked ref "main" not found (the synapse channel sets it: dendrite synapse channel eco stable|dev)`,
+		"hub":     `tracked ref "release" not found (the member sets it: dendrite synapse set-source eco hub local --ref <branch>)`,
+	}
+	for _, m := range rep.Members {
+		if len(m.Drift) != 1 || m.Drift[0] != want[m.Alias] {
+			t.Errorf("%s drift = %q, want %q", m.Alias, m.Drift, want[m.Alias])
+		}
+	}
+}

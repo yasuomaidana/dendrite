@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,6 +26,10 @@ const (
 	DecisionAllowedRetry = "allowed-retry"
 	DecisionBypass       = "bypass"
 	DecisionUsed         = "used"
+	// DecisionDenied is a retry with no Dendrite lookup since the search was stopped.
+	DecisionDenied = "denied-retry"
+	// DecisionScoped is a search whose targets are all single files: not a repository search.
+	DecisionScoped = "scoped"
 )
 
 // HookInput is what an agent's pre-tool hook receives on stdin.
@@ -70,24 +75,23 @@ func (g *Guard) LogPath() string { return filepath.Join(g.Dir, "tool-usage.jsonl
 
 func (g *Guard) statePath() string { return filepath.Join(g.Dir, "search-guard.json") }
 
-// Check judges one tool call. Raw searches are blocked the first time a session attempts the exact
-// command and allowed when it is repeated within RetryWindow; calls to Dendrite are only logged.
+// Check judges one tool call. A raw recursive search is blocked the first time a session attempts the
+// exact command. The same command is allowed again within RetryWindow only after the session made a
+// Dendrite lookup (rag, ask, brief, graph) since it was stopped; without one it is denied again.
+// Searches that name only single files are never blocked. Calls to Dendrite are logged.
 func (g *Guard) Check(in HookInput) Decision {
-	searches, usesDendrite := Classify(in.ToolName, in.ToolInput)
+	sc := scan(in.ToolName, in.ToolInput)
 	now := g.Now()
 	ev := Event{Time: now, Session: in.SessionID, Project: in.Cwd}
 
-	if len(searches) == 0 {
-		if usesDendrite {
-			ev.Kind = KindDendrite
-			if strings.HasPrefix(in.ToolName, "mcp__") {
-				ev.Kind = KindDendriteMCP
-				ev.Command = in.ToolName
-			} else {
-				ev.Command = truncate(in.ToolInput.Command)
-			}
-			ev.Decision = DecisionUsed
-			g.log(ev)
+	if sc.retrieval {
+		st := g.loadState(now)
+		st.Retrieval[in.SessionID] = now.UnixNano()
+		g.saveState(st)
+	}
+	if len(sc.searches) == 0 {
+		if sc.usesDendrite {
+			g.logDendrite(ev, in)
 		}
 		return Decision{}
 	}
@@ -99,29 +103,76 @@ func (g *Guard) Check(in HookInput) Decision {
 	ev.Command = truncate(strings.ReplaceAll(text, "\x00", " "))
 
 	if g.Getenv(AllowEnv) == "1" || strings.Contains(in.ToolInput.Command, AllowEnv+"=1") {
-		for _, kind := range searches {
-			ev.Kind, ev.Decision = kind, DecisionBypass
-			g.log(ev)
-		}
+		g.logAll(ev, sc.searches, DecisionBypass)
+		return Decision{}
+	}
+	if onlyFiles(in.Cwd, sc.targets) {
+		g.logAll(ev, sc.searches, DecisionScoped)
 		return Decision{}
 	}
 
 	key := fmt.Sprintf("%x", sha256.Sum256([]byte(in.SessionID+"\x00"+strings.Join(strings.Fields(text), " "))))[:16]
-	state := g.loadState(now)
-	if _, repeated := state[key]; repeated {
-		for _, kind := range searches {
-			ev.Kind, ev.Decision = kind, DecisionAllowedRetry
-			g.log(ev)
-		}
-		return Decision{}
+	st := g.loadState(now)
+	decision, d := judgeSearch(st, key, in.SessionID)
+	if decision == DecisionBlocked {
+		st.Blocked[key] = now.UnixNano()
+		g.saveState(st)
 	}
-	state[key] = now.Unix()
-	g.saveState(state)
-	for _, kind := range searches {
-		ev.Kind, ev.Decision = kind, DecisionBlocked
+	g.logAll(ev, sc.searches, decision)
+	return d
+}
+
+// judgeSearch decides on a raw search given what the session did before: the first attempt is
+// blocked, a repeat goes through only when a lookup came after the block.
+func judgeSearch(st state, key, session string) (string, Decision) {
+	blockedAt, repeated := st.Blocked[key]
+	switch {
+	case !repeated:
+		return DecisionBlocked, Decision{Block: true, Message: Hint}
+	case st.Retrieval[session] > blockedAt:
+		return DecisionAllowedRetry, Decision{}
+	}
+	return DecisionDenied, Decision{Block: true, Message: DeniedHint}
+}
+
+func (g *Guard) logDendrite(ev Event, in HookInput) {
+	ev.Kind = KindDendrite
+	ev.Command = truncate(in.ToolInput.Command)
+	if strings.HasPrefix(in.ToolName, "mcp__") {
+		ev.Kind = KindDendriteMCP
+		ev.Command = in.ToolName
+	}
+	ev.Decision = DecisionUsed
+	g.log(ev)
+}
+
+func (g *Guard) logAll(ev Event, kinds []string, decision string) {
+	for _, kind := range kinds {
+		ev.Kind, ev.Decision = kind, decision
 		g.log(ev)
 	}
-	return Decision{Block: true, Message: Hint}
+}
+
+// onlyFiles reports whether every search names at least one path and all of them are regular files
+// (relative paths resolve against cwd): reading named files is not exploring the repository.
+func onlyFiles(cwd string, targets [][]string) bool {
+	if len(targets) == 0 {
+		return false
+	}
+	for _, paths := range targets {
+		if len(paths) == 0 {
+			return false
+		}
+		for _, p := range paths {
+			if !filepath.IsAbs(p) {
+				p = filepath.Join(cwd, p)
+			}
+			if fi, err := os.Stat(p); err != nil || !fi.Mode().IsRegular() {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // Hint is what a blocked agent is told.
@@ -132,7 +183,13 @@ const Hint = "dendrite-first: a raw recursive search (rg, grep -r, the Grep tool
 	"  dendrite graph explain <symbol-or-file>                   callers, callees, structure (MCP: dendrite_graph_explain)\n" +
 	"  dendrite rag history \"<query>\"                            past changes and their reasons\n" +
 	"  dendrite rag grep '<regex>'                               exact pattern, indexed and capped\n" +
-	"If those found nothing, run this same command again and it will go through; scope it to a path and cap its output."
+	"Searching named files (rg Foo path/to/file.go) is never stopped. " +
+	"After one of the lookups above, run this same command again and it will go through; scope it to a path and cap its output."
+
+// DeniedHint is what an agent is told when it repeats a stopped search without a lookup in between.
+const DeniedHint = "dendrite-first: this search was stopped and no Dendrite lookup has run since. " +
+	"Run one first (dendrite rag search \"<question>\" -k 8, dendrite rag symbols <Name>, dendrite graph explain <x>, or an MCP dendrite_rag_* tool), " +
+	"then repeat this command and it will go through. " + AllowEnv + "=1 overrides."
 
 func truncate(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
@@ -142,22 +199,57 @@ func truncate(s string) string {
 	return s
 }
 
-// loadState returns the commands seen within RetryWindow, keyed by hash.
-func (g *Guard) loadState(now time.Time) map[string]int64 {
-	state := map[string]int64{}
-	if data, err := os.ReadFile(g.statePath()); err == nil {
-		_ = json.Unmarshal(data, &state)
-	}
-	for k, at := range state {
-		if now.Sub(time.Unix(at, 0)) > RetryWindow {
-			delete(state, k)
-		}
-	}
-	return state
+// state is what the guard remembers: when each command was stopped and when each session last made
+// a Dendrite lookup, both in Unix nanoseconds.
+type state struct {
+	Blocked   map[string]int64 `json:"blocked"`
+	Retrieval map[string]int64 `json:"retrieval"`
 }
 
-func (g *Guard) saveState(state map[string]int64) {
-	data, err := json.Marshal(state)
+// stamp reads a stored time: files written before lookups were tracked hold Unix seconds.
+func stamp(v int64) time.Time {
+	if v < 1e12 {
+		return time.Unix(v, 0)
+	}
+	return time.Unix(0, v)
+}
+
+// loadState returns the entries seen within RetryWindow.
+func (g *Guard) loadState(now time.Time) state {
+	st := state{Blocked: map[string]int64{}, Retrieval: map[string]int64{}}
+	if data, err := os.ReadFile(g.statePath()); err == nil {
+		st = parseState(data)
+	}
+	st.prune(now)
+	return st
+}
+
+// parseState reads either format of the state file.
+func parseState(data []byte) state {
+	st := state{Blocked: map[string]int64{}, Retrieval: map[string]int64{}}
+	var cur state
+	if json.Unmarshal(data, &cur) == nil && (cur.Blocked != nil || cur.Retrieval != nil) {
+		maps.Copy(st.Blocked, cur.Blocked)
+		maps.Copy(st.Retrieval, cur.Retrieval)
+		return st
+	}
+	// The earlier format: a flat map of command hash to Unix seconds.
+	_ = json.Unmarshal(data, &st.Blocked)
+	return st
+}
+
+func (st state) prune(now time.Time) {
+	for _, m := range []map[string]int64{st.Blocked, st.Retrieval} {
+		for k, at := range m {
+			if now.Sub(stamp(at)) > RetryWindow {
+				delete(m, k)
+			}
+		}
+	}
+}
+
+func (g *Guard) saveState(st state) {
+	data, err := json.Marshal(st)
 	if err != nil {
 		return
 	}
@@ -198,6 +290,10 @@ type Summary struct {
 	RawSearches map[string]int `json:"raw_searches"`
 	// Blocked counts first attempts the guard stopped, by kind.
 	Blocked map[string]int `json:"blocked"`
+	// Denied counts retries refused because no Dendrite lookup came in between.
+	Denied int `json:"denied"`
+	// Scoped counts searches over named files, which are never stopped.
+	Scoped int `json:"scoped"`
 	// Share is Dendrite calls / (Dendrite calls + raw searches that ran); 1 when there are none.
 	Share float64 `json:"share"`
 }
@@ -212,14 +308,7 @@ func Summarize(r io.Reader, since time.Time) Summary {
 		if json.Unmarshal(sc.Bytes(), &ev) != nil || ev.Time.Before(since) {
 			continue
 		}
-		switch {
-		case ev.Decision == DecisionUsed:
-			s.Dendrite++
-		case ev.Decision == DecisionBlocked:
-			s.Blocked[ev.Kind]++
-		case IsRawSearch(ev.Kind):
-			s.RawSearches[ev.Kind]++
-		}
+		s.count(ev)
 	}
 	raw := 0
 	for _, n := range s.RawSearches {
@@ -230,6 +319,21 @@ func Summarize(r io.Reader, since time.Time) Summary {
 		s.Share = float64(s.Dendrite) / float64(total)
 	}
 	return s
+}
+
+func (s *Summary) count(ev Event) {
+	switch {
+	case ev.Decision == DecisionUsed:
+		s.Dendrite++
+	case ev.Decision == DecisionBlocked:
+		s.Blocked[ev.Kind]++
+	case ev.Decision == DecisionDenied:
+		s.Denied++
+	case ev.Decision == DecisionScoped:
+		s.Scoped++
+	case IsRawSearch(ev.Kind):
+		s.RawSearches[ev.Kind]++
+	}
 }
 
 // Kinds lists the kinds present in counts, sorted.

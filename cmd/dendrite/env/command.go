@@ -6,6 +6,7 @@ import (
 	"Dendrite/pkg/coreclient"
 	"Dendrite/pkg/devtool"
 	"Dendrite/pkg/dotenv"
+	"Dendrite/pkg/engram"
 	"Dendrite/pkg/env"
 	"Dendrite/pkg/env/bootstrap"
 	"Dendrite/pkg/ollama"
@@ -371,6 +372,9 @@ func newSomaInstallCmd() *cobra.Command {
 }
 
 func runSomaInstall(ctx context.Context, name string, mode env.InstallMode, in io.Reader, out io.Writer) error {
+	if strings.EqualFold(name, engram.BinaryName) {
+		return engram.Install(ctx, in, out, cli.Globals.Yes)
+	}
 	if aType := agent.AgentType(strings.ToLower(name)); aType.IsValid() {
 		if err := agent.PromptAndInstallAgent(ctx, aType, cli.Globals.Yes, in, out); err != nil {
 			return fmt.Errorf("install %s: %w", aType, err)
@@ -455,6 +459,7 @@ func runSomaDiagnose(ctx context.Context, ollamaURL string, out io.Writer) error
 	}
 	diagnosePlane(ctx, out)
 	diagnoseSidecars(out)
+	diagnoseEngram(ctx, out)
 	DiagnoseAGY(out)
 	if _, err := os.Stat("DEV_STATUS.md"); err == nil {
 		fmt.Fprintln(out, "  [✓] Project Status: DEV_STATUS.md present")

@@ -25,15 +25,22 @@ func withStore(fn func(*segmented.SegmentedStore) error) error {
 // shortHash returns the first 12 characters of a content hash (all of it when shorter).
 func shortHash(h string) string { return h[:min(12, len(h))] }
 
-// newEngramCmd builds `dendrite engram` (alias store): the persistent segmented analysis store.
-func NewEngramCmd() *cobra.Command {
-	cmd := cli.NewGroupCmd("engram", "Persistent segmented store, memory checkpointer, and chunk query", "soma",
-		"store", "engram-store", "gram")
-	cmd.Example = "dendrite engram status\n" +
-		"dendrite engram inspect dendrite --json\n" +
-		"dendrite engram commit --project dendrite --chunk ast-1 --file graph.json --final\n" +
-		"dendrite engram rm old-project --force"
+// NewStoreCmd builds `dendrite store`: the persistent segmented analysis store. It no longer answers to
+// `engram`, the name of the Engram agent-memory binary (DEN-898).
+func NewStoreCmd() *cobra.Command {
+	cmd := cli.NewGroupCmd("store", "Persistent segmented store, checkpointer, and chunk query", "soma",
+		"segstore", "gram")
+	cmd.Example = "dendrite store status\n" +
+		"dendrite store inspect dendrite --json\n" +
+		"dendrite store commit --project dendrite --chunk ast-1 --file graph.json --final\n" +
+		"dendrite store rm old-project --force"
 
+	cmd.AddCommand(newStoreStatusCmd(), newStoreInspectCmd(), newStoreRmCmd(), newStoreChunksCmd(), newStoreQueryCmd(), newStorePurgeCmd(), newEngramCommitCmd())
+	return cmd
+}
+
+// newStoreStatusCmd builds `dendrite store status`
+func newStoreStatusCmd() *cobra.Command {
 	var project string
 	statusCmd := &cobra.Command{
 		Use:   "status",
@@ -46,7 +53,11 @@ func NewEngramCmd() *cobra.Command {
 		},
 	}
 	cli.AddProjectFlag(statusCmd, &project, "", "Only this project")
+	return statusCmd
+}
 
+// newStoreInspectCmd builds `dendrite store inspect`
+func newStoreInspectCmd() *cobra.Command {
 	inspect := &cobra.Command{
 		Use:   "inspect <id>",
 		Short: "Show one store's checkpoints and sample segments",
@@ -57,7 +68,11 @@ func NewEngramCmd() *cobra.Command {
 			})
 		},
 	}
+	return inspect
+}
 
+// newStoreRmCmd builds `dendrite store rm`
+func newStoreRmCmd() *cobra.Command {
 	var force bool
 	rm := &cobra.Command{
 		Use:     "rm <id>",
@@ -80,7 +95,11 @@ func NewEngramCmd() *cobra.Command {
 		},
 	}
 	rm.Flags().BoolVarP(&force, "force", "f", false, "Confirm the deletion")
+	return rm
+}
 
+// newStoreChunksCmd builds `dendrite store chunks`
+func newStoreChunksCmd() *cobra.Command {
 	var chunksProject string
 	chunks := &cobra.Command{
 		Use:     "chunks",
@@ -107,7 +126,11 @@ func NewEngramCmd() *cobra.Command {
 		},
 	}
 	cli.AddProjectFlag(chunks, &chunksProject, "", "Only this project")
+	return chunks
+}
 
+// newStoreQueryCmd builds `dendrite store query`
+func newStoreQueryCmd() *cobra.Command {
 	var queryProject string
 	query := &cobra.Command{
 		Use:   "query",
@@ -133,7 +156,11 @@ func NewEngramCmd() *cobra.Command {
 	}
 	cli.AddProjectFlag(query, &queryProject, "", "Project to query")
 	cli.RequireFlags(query, "project")
+	return query
+}
 
+// newStorePurgeCmd builds `dendrite store purge`
+func newStorePurgeCmd() *cobra.Command {
 	var purgeProject string
 	purge := &cobra.Command{
 		Use:   "purge",
@@ -151,9 +178,7 @@ func NewEngramCmd() *cobra.Command {
 	}
 	cli.AddProjectFlag(purge, &purgeProject, "", "Project to purge")
 	cli.RequireFlags(purge, "project")
-
-	cmd.AddCommand(statusCmd, inspect, rm, chunks, query, purge, newEngramCommitCmd())
-	return cmd
+	return purge
 }
 
 func runEngramStatus(ctx context.Context, st *segmented.SegmentedStore, project string, out io.Writer) error {
