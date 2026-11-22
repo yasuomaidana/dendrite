@@ -3,6 +3,8 @@ package analysis
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/cmd/dendrite/internal/clitest"
+	"Dendrite/pkg/store/segmented"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -58,3 +60,16 @@ func TestParseOnOff(t *testing.T) {
 var cliOutput = clitest.Output(NewCognitionCmd, NewPruneCmd, NewDirectiveCmd, NewSagaCmd, NewReflexCmd)
 
 func TestMain(m *testing.M) { clitest.Main(m) }
+
+// A governor that cannot open its store stops the command that needs it, instead of running without quotas.
+func TestCognitionReportsAStoreItCannotOpen(t *testing.T) {
+	prev := cli.OpenSegmentedStore
+	cli.OpenSegmentedStore = func() (*segmented.SegmentedStore, error) { return nil, errors.New("disk is gone") }
+	t.Cleanup(func() { cli.OpenSegmentedStore = prev })
+	t.Setenv("DENDRITE_STATE_DIR", t.TempDir())
+	for _, args := range [][]string{{"cognition", "pause"}, {"cognition", "status"}, {"cognition", "run", "--simulate-night"}} {
+		if out, code := cliOutput(t, args...); code != cli.ExitError || !strings.Contains(out, "disk is gone") {
+			t.Errorf("%v: exit %d\n%s", args, code, out)
+		}
+	}
+}
