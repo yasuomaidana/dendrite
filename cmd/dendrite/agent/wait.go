@@ -3,6 +3,7 @@ package agent
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/agentjobs"
+	"Dendrite/pkg/modelcatalog"
 	"context"
 	"errors"
 	"fmt"
@@ -150,9 +151,7 @@ func runJobsDaemon(ctx context.Context, w *agentjobs.Watcher, interval, idleExit
 	}
 	idleSince := time.Now()
 	tick := func() bool {
-		if err := w.Tick(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			fmt.Fprintf(errOut, "[-] daemon tick error: %v\n", err)
-		}
+		daemonPass(ctx, w, errOut)
 		if w.Busy() {
 			idleSince = time.Now()
 		}
@@ -173,5 +172,28 @@ func runJobsDaemon(ctx context.Context, w *agentjobs.Watcher, interval, idleExit
 				return nil
 			}
 		}
+	}
+}
+
+// daemonPass is one daemon cycle: the watcher's pass, then the weekly model catalog check.
+func daemonPass(ctx context.Context, w *agentjobs.Watcher, errOut io.Writer) {
+	if err := w.Tick(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		fmt.Fprintf(errOut, "[-] daemon tick error: %v\n", err)
+	}
+	refreshCatalog(ctx, errOut)
+}
+
+// refreshCatalog keeps the model catalog within its weekly TTL; the daemon already runs, so it is free.
+var refreshCatalog = func(ctx context.Context, errOut io.Writer) {
+	m, err := modelcatalog.Default()
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	if refreshed, err := m.RefreshIfStale(ctx); err != nil {
+		fmt.Fprintf(errOut, "[-] model catalog refresh: %v\n", err)
+	} else if refreshed {
+		fmt.Fprintln(errOut, "[i] model catalog refreshed")
 	}
 }
