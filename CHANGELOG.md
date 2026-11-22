@@ -6,7 +6,9 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 
 ### Added
 
+- **Engram agent memory (DEN-427):** `dendrite soma install engram` installs the Engram binary (Homebrew, after a prompt) and registers its MCP server for Claude Code (`--mcp-only`) and Antigravity; `soma diagnose` reports its version and doctor status. Engram's own Claude plugin is not installed: SkillSpector scores it 71, which the immune gate quarantines. Instead `session resume` and `bouton jobs submit` put a bounded snapshot of `engram context` (5,200 bytes) in front of the session or job prompt, and run without it when Engram is missing or fails.
 - **Penpot readiness (DEN-835):** the Penpot stack runs with `enable-access-tokens`, a `penpot-exporter` service (:9002) and a backend healthcheck, in both `stacks/compose.penpot.yaml` and `GeneratePenpotCompose` (a test keeps their services, flags and healthchecks equal). `dendrite motor health penpot` probes the frontend, the backend and the exporter and lists each as UP or DOWN; before, it probed the frontend only. `PENPOT_ACCESS_TOKEN=` is an empty slot in the env template (Penpot issues the token, so `secrets ensure --generate` leaves it alone). New `pkg/ui/penpot/rpc` is a token-authenticated client of Penpot's RPC API (`get-profile`, `get-teams`, `get-projects`, `get-file`, `update-file`). See [`docs/guides/penpot-access-token.md`](docs/guides/penpot-access-token.md).
+
 ### Changed
 
 - **`dendrite store` no longer answers to `engram` (DEN-898):** the segmented-store command was named `engram`, which now clashes with the Engram agent-memory binary. `store` is the command name; `segstore` and `gram` are its aliases. Scripts that ran `dendrite engram …` use `dendrite store …`.
