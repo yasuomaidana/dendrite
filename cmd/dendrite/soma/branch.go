@@ -46,17 +46,26 @@ func NewBranchCmd() *cobra.Command {
 		},
 	}
 	show.Flags().StringVar(&ticket, "ticket", "", "Explain the target for this ticket (asks Plane for its parent)")
+	var clearParent bool
 	parent := &cobra.Command{
-		Use:     "parent <ticket> <parent>",
-		Short:   "Make <parent> the parent of <ticket> in Plane, so their work shares the parent's feature branch",
-		Args:    cli.ExactArgs(2),
-		Example: "dendrite branch parent DEN-841 DEN-840",
+		Use:   "parent <ticket> <parent> | parent <ticket> --clear",
+		Short: "Make <parent> the parent of <ticket> in Plane, so their work shares the parent's feature branch; --clear removes the parent",
+		Args:  cobra.RangeArgs(1, 2),
+		Example: "dendrite branch parent DEN-841 DEN-840\n" +
+			"dendrite branch parent DEN-841 --clear",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if clearParent != (len(args) == 1) {
+				return cli.UsageErrorf("give either <ticket> <parent> or <ticket> --clear")
+			}
 			return planecli.PlaneRun(func(c *plane.Client) error {
+				if clearParent {
+					return runBranchClearParent(cmd.Context(), c, args[0], cmd.OutOrStdout())
+				}
 				return runBranchParent(cmd.Context(), c, args[0], args[1], cmd.OutOrStdout())
 			})
 		},
 	}
+	parent.Flags().BoolVar(&clearParent, "clear", false, "Remove the parent of <ticket> instead of setting one")
 	cmd.AddCommand(show, parent, newBranchRetireCmd())
 	return cmd
 }
@@ -107,5 +116,25 @@ func runBranchParent(ctx context.Context, client *plane.Client, child, parent st
 		return fmt.Errorf("set the parent of %s: %w", child, err)
 	}
 	fmt.Fprintf(out, "[✓] %s is now a sub-ticket of %s\n", child, parent)
+	return nil
+}
+
+// runBranchClearParent removes the Plane parent of child; a ticket with no parent is reported and left alone.
+func runBranchClearParent(ctx context.Context, client *plane.Client, child string, out io.Writer) error {
+	child = strings.ToUpper(strings.TrimSpace(child))
+	board := ticketlock.Board{Svc: planesvc.Default(), Client: client}
+	old, ok, err := board.Parent(ctx, child)
+	if err != nil {
+		return fmt.Errorf("read the parent of %s: %w", child, err)
+	}
+	if !ok {
+		fmt.Fprintf(out, "[i] %s has no parent\n", child)
+		return nil
+	}
+	none := ""
+	if _, err := planesvc.Default().UpdateIssue(ctx, client, child, plane.UpdateIssueRequest{Parent: &none}); err != nil {
+		return fmt.Errorf("clear the parent of %s: %w", child, err)
+	}
+	fmt.Fprintf(out, "[✓] %s is no longer a sub-ticket of %s\n", child, old.ID)
 	return nil
 }

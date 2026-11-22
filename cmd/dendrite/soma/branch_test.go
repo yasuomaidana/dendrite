@@ -85,3 +85,37 @@ func TestBranchParentRefusesLoopsAndUnknownTickets(t *testing.T) {
 		t.Errorf("the loop is explained: %v", err)
 	}
 }
+
+func TestBranchParentClearRemovesTheParent(t *testing.T) {
+	r := newTargetRig(t)
+	out, err := runBranch(t, "parent", "DEN-841", "--clear")
+	testkit.Check(t, err)
+	testkit.Contains(t, out, "DEN-841 is no longer a sub-ticket of DEN-840")
+	testkit.Equal(t, "parent cleared", r.board.ParentOf("DEN-841"), "")
+}
+
+func TestBranchParentClearWithoutAParentChangesNothing(t *testing.T) {
+	newTargetRig(t)
+	out, err := runBranch(t, "parent", "DEN-900", "--clear")
+	testkit.Check(t, err)
+	testkit.Contains(t, out, "DEN-900 has no parent")
+}
+
+func TestBranchParentClearNeedsExactlyOneForm(t *testing.T) {
+	newTargetRig(t)
+	for name, args := range map[string][]string{
+		"clear with a parent": {"parent", "DEN-841", "DEN-840", "--clear"},
+		"neither":             {"parent", "DEN-841"},
+	} {
+		if _, err := runBranch(t, args...); err == nil {
+			t.Errorf("%s: expected a usage error", name)
+		}
+	}
+}
+
+func TestBranchParentClearOfAnUnknownTicketIsAnError(t *testing.T) {
+	newTargetRig(t)
+	if _, err := runBranch(t, "parent", "DEN-404", "--clear"); err == nil {
+		t.Fatal("an unknown ticket is an error")
+	}
+}

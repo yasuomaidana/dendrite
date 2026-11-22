@@ -298,8 +298,8 @@ func (i *boardIssue) patch(body map[string]any) {
 	if v, ok := body["description_html"].(string); ok {
 		i.Description = v
 	}
-	if v, ok := body["parent"].(string); ok {
-		i.Parent = v
+	if v, ok := body["parent"]; ok {
+		i.Parent, _ = v.(string) // null clears the parent, as in Plane
 	}
 	if _, ok := body["labels"]; ok {
 		i.Labels = ids(body["labels"])
