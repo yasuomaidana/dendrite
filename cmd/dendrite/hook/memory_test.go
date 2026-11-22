@@ -106,9 +106,3 @@ func TestSessionEndReportsAnEngramFailureAndKeepsTheJournal(t *testing.T) {
 	}
 	testkit.Equal(t, "journal kept", len(pendingMemory(t)), 1)
 }
-
-func TestClipCutsOnACharacterBoundary(t *testing.T) {
-	testkit.Equal(t, "short", clip("abc", 5), "abc")
-	testkit.Equal(t, "cut", clip("abcdef", 3), "abc...")
-	testkit.Equal(t, "multi-byte", clip("aé", 2), "a...") // é is 2 bytes: cutting at 2 would split it
-}

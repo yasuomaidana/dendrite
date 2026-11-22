@@ -59,8 +59,8 @@ func decisionEntries(in ticketlock.HookInput) []memory.Entry {
 	for _, d := range ticketlock.DecisionsFromEvent(in) {
 		out = append(out, memory.Entry{
 			Type:  "decision",
-			Title: "Decision: " + clip(d.Question, maxTitle),
-			Body:  clip("Q: "+d.Question+"\nA: "+d.Answer, maxBody),
+			Title: "Decision: " + memory.Clip(d.Question, maxTitle),
+			Body:  memory.Clip("Q: "+d.Question+"\nA: "+d.Answer, maxBody),
 		})
 	}
 	return out
@@ -73,16 +73,5 @@ func planEntries(in ticketlock.HookInput) []memory.Entry {
 		return nil
 	}
 	first, _, _ := strings.Cut(strings.TrimLeft(plan, "# \n"), "\n")
-	return []memory.Entry{{Type: "plan", Title: "Plan: " + clip(first, maxTitle), Body: clip(plan, maxBody)}}
-}
-
-// clip cuts s to at most n bytes on a character boundary.
-func clip(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	for n > 0 && s[n]&0xC0 == 0x80 {
-		n--
-	}
-	return s[:n] + "..."
+	return []memory.Entry{{Type: "plan", Title: "Plan: " + memory.Clip(first, maxTitle), Body: memory.Clip(plan, maxBody)}}
 }
