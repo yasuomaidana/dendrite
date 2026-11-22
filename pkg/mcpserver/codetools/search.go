@@ -28,7 +28,7 @@ func registerAgentSearchTools(s *Server, deps Dependencies) {
 					"items":       map[string]interface{}{"type": "string"},
 					"description": "Optional list of target AST symbols",
 				},
-				"require_local": TypedProp("boolean", "Constrain selection to zero-cost local inference engines (Ollama Metal, OxiLLaMa)"),
+				"require_local": TypedProp("boolean", "Constrain selection to zero-cost local inference engines (Ollama Metal, llama.cpp)"),
 				"max_cost":      TypedProp("number", "Optional maximum cost ceiling in USD"),
 				"max_results":   TypedProp("integer", "Maximum number of candidate agents to return (default: 5)"),
 				"route":         TypedProp("boolean", "If true, auto-selects top agent and returns execution routing decision"),

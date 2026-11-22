@@ -45,8 +45,8 @@ func TestPickBestPrefersScoreThenOllamaThenSize(t *testing.T) {
 		want  string
 	}{
 		{"a higher score wins", []Choice{{Model: "a", Score: 1}, {Model: "b", Score: 3}, {Model: "c", Score: 2}}, "b"},
-		{"on equal scores Ollama beats OxiLLaMa", []Choice{{Model: "oxi", Engine: "oxillama", Score: 2}, {Model: "oll", Engine: "ollama", Score: 2}}, "oll"},
-		{"an engine other than Ollama does not displace the first", []Choice{{Model: "first", Engine: "ollama", Score: 2}, {Model: "oxi", Engine: "oxillama", Score: 2}}, "first"},
+		{"on equal scores Ollama beats llama.cpp", []Choice{{Model: "lcpp", Engine: "llamacpp", Score: 2}, {Model: "oll", Engine: "ollama", Score: 2}}, "oll"},
+		{"an engine other than Ollama does not displace the first", []Choice{{Model: "first", Engine: "ollama", Score: 2}, {Model: "lcpp", Engine: "llamacpp", Score: 2}}, "first"},
 		{"on the same engine the larger model wins", []Choice{{Model: "small", Engine: "ollama", Score: 2, SizeBytes: 1}, {Model: "large", Engine: "ollama", Score: 2, SizeBytes: 9}}, "large"},
 	}
 	for _, c := range cases {
@@ -172,7 +172,6 @@ func TestStreamsEndWithoutAFinalMarkerAndSkipJunkLines(t *testing.T) {
 		{"vllm", openAI, func(u string) InferenceEngine {
 			return NewVLLMEngine(EngineConfig{ID: "v", Endpoint: u, APIKey: "k"}, nil)
 		}},
-		{"oxillama", openAI, func(u string) InferenceEngine { return NewOxiLLaMaEngine(EngineConfig{ID: "o", Endpoint: u}, nil) }},
 		{"tgi", tgi, func(u string) InferenceEngine {
 			return NewHuggingFaceTGIEngine(EngineConfig{ID: "t", Endpoint: u}, nil)
 		}},

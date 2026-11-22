@@ -46,7 +46,7 @@ func TestPreFlightCascadeToFallbackWithZeroPromptLoss(t *testing.T) {
 		RunID:             "run-cascade-048",
 		Mode:              ModeInference,
 		TargetEndpoint:    offlineEndpoint,
-		EngineID:          "oxillama-offline",
+		EngineID:          "llamacpp-offline",
 		Model:             "qwen2.5-coder-7b",
 		VirtualUsers:      2,
 		Duration:          200 * time.Millisecond,
@@ -75,8 +75,8 @@ func TestPreFlightCascadeToFallbackWithZeroPromptLoss(t *testing.T) {
 	if !summary.FailoverMetrics.PreFlightSwitched {
 		t.Errorf("expected PreFlightSwitched to be true")
 	}
-	if summary.FailoverMetrics.PrimaryEngineID != "oxillama-offline" {
-		t.Errorf("expected PrimaryEngineID 'oxillama-offline', got %s", summary.FailoverMetrics.PrimaryEngineID)
+	if summary.FailoverMetrics.PrimaryEngineID != "llamacpp-offline" {
+		t.Errorf("expected PrimaryEngineID 'llamacpp-offline', got %s", summary.FailoverMetrics.PrimaryEngineID)
 	}
 	if summary.FailoverMetrics.CascadedEngineID != "ollama-metal" {
 		t.Errorf("expected CascadedEngineID 'ollama-metal', got %s", summary.FailoverMetrics.CascadedEngineID)
@@ -84,7 +84,7 @@ func TestPreFlightCascadeToFallbackWithZeroPromptLoss(t *testing.T) {
 	if len(summary.FailoverMetrics.SwitchEvents) != 1 {
 		t.Fatalf("expected 1 switch event, got %d", len(summary.FailoverMetrics.SwitchEvents))
 	}
-	if summary.FailoverMetrics.SwitchEvents[0].FromEngine != "oxillama-offline" {
+	if summary.FailoverMetrics.SwitchEvents[0].FromEngine != "llamacpp-offline" {
 		t.Errorf("unexpected switch event from: %s", summary.FailoverMetrics.SwitchEvents[0].FromEngine)
 	}
 

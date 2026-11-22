@@ -18,7 +18,7 @@ func TestUpdateThroughput_PackageLevel(t *testing.T) {
 	initial := &Catalog{
 		Path: catalogPath,
 		Models: []ModelCapability{
-			{ID: "bench-model", Engine: EngineOxiLLaMa, TokensPerSec: 0},
+			{ID: "bench-model", Engine: EngineLlamaCpp, TokensPerSec: 0},
 		},
 	}
 	if err := SaveCatalog(initial, catalogPath); err != nil {
@@ -76,7 +76,7 @@ func TestLoadCatalog_TOMLPriorityOverJSON(t *testing.T) {
 	jsonPath := filepath.Join(stateDir, "models.json")
 
 	// Write both TOML and JSON
-	tomlCat := &Catalog{Models: []ModelCapability{{ID: "toml-model", Engine: EngineOxiLLaMa}}}
+	tomlCat := &Catalog{Models: []ModelCapability{{ID: "toml-model", Engine: EngineLlamaCpp}}}
 	jsonCat := &Catalog{Models: []ModelCapability{{ID: "json-model", Engine: EngineOllama}}}
 
 	if err := SaveCatalog(tomlCat, tomlPath); err != nil {
@@ -109,7 +109,7 @@ func TestLoadCatalog_TOMLPriorityOverJSON(t *testing.T) {
 func TestCatalog_JSONFormatVariations(t *testing.T) {
 	// Test 1: Direct JSON array format
 	rawArray := `[
-		{"id": "array-model", "engine": "oxillama", "reasoning_tier": 4, "tokens_per_sec": 30.0}
+		{"id": "array-model", "engine": "llamacpp", "reasoning_tier": 4, "tokens_per_sec": 30.0}
 	]`
 	var catArray Catalog
 	if err := catArray.UnmarshalJSON([]byte(rawArray)); err != nil {
@@ -187,7 +187,7 @@ func TestCatalog_ErrorHandlingAndEdgeCases(t *testing.T) {
 
 	// Nested dir auto-creation on SaveCatalog
 	nestedToml := filepath.Join(tempDir, "a", "b", "c", "models.toml")
-	catNested := &Catalog{Models: []ModelCapability{{ID: "nested-model", Engine: EngineOxiLLaMa}}}
+	catNested := &Catalog{Models: []ModelCapability{{ID: "nested-model", Engine: EngineLlamaCpp}}}
 	if err := SaveCatalog(catNested, nestedToml); err != nil {
 		t.Errorf("failed to save in nested dir: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestCatalog_ErrorHandlingAndEdgeCases(t *testing.T) {
 	}
 
 	// SaveCatalog with empty path falls back to DefaultCatalogPath
-	catFallback := &Catalog{Models: []ModelCapability{{ID: "fallback-model", Engine: EngineOxiLLaMa}}}
+	catFallback := &Catalog{Models: []ModelCapability{{ID: "fallback-model", Engine: EngineLlamaCpp}}}
 	fallbackStateDir := t.TempDir()
 	t.Setenv("DENDRITE_STATE_DIR", fallbackStateDir)
 	if err := SaveCatalog(catFallback); err != nil {
@@ -209,7 +209,7 @@ func TestCatalog_ErrorHandlingAndEdgeCases(t *testing.T) {
 	// TOML with plural [[models]], quotes with # symbol, and FormatTOML
 	tomlWithPluralAndHash := `
 [[models]]
-id = "model#with#hash"; engine = 'oxillama' # trailing comment
+id = "model#with#hash"; engine = 'llamacpp' # trailing comment
 reasoning_tier = 4
 coding_benchmark = 0.75
 context_window = 65536
@@ -247,14 +247,14 @@ func TestCatalog_ConcurrencyRaceFree(t *testing.T) {
 				// Concurrent reads
 				_ = cat.List()
 				_, _ = cat.Get("qwen2.5-coder:14b")
-				_, _ = cat.GetByEngine("qwen3.8:27b", EngineOxiLLaMa)
+				_, _ = cat.GetByEngine("qwen3.8:27b", EngineLlamaCpp)
 
 				// Concurrent writes / updates
 				cat.UpdateThroughput("qwen2.5-coder:14b", float64(workerID*10+i))
 				if i%10 == 0 {
 					cat.Set(ModelCapability{
 						ID:            "dynamic-worker-model",
-						Engine:        EngineOxiLLaMa,
+						Engine:        EngineLlamaCpp,
 						ReasoningTier: 3,
 						TokensPerSec:  float64(i),
 					})

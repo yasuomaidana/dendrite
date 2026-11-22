@@ -196,12 +196,6 @@ func localModelEntry(aliasName, modelID, engType, normEP string, tokens int) Mod
 	var upstreamModel, apiBase, apiKey, provider string
 
 	switch engType {
-	case string(inference.EngineOxiLLaMa):
-		upstreamModel = "openai/" + modelID
-		apiBase = normEP + "/v1"
-		apiKey = "EMPTY"
-		provider = "openai"
-
 	case string(inference.EngineOllama):
 		upstreamModel = "ollama/" + modelID
 		apiBase = normEP

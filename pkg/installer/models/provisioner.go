@@ -45,18 +45,18 @@ type ProvisionReport struct {
 	Timestamp time.Time                       `json:"timestamp"`
 }
 
-// OxiLLaMaState reflects the lifecycle status of the pure-Rust OxiLLaMa runtime.
-type OxiLLaMaState string
+// LlamaCppState reflects the lifecycle status of the llama.cpp llama-server runtime.
+type LlamaCppState string
 
 const (
-	OxiLLaMaActive      OxiLLaMaState = "ACTIVE"
-	OxiLLaMaBinaryFound OxiLLaMaState = "BINARY_FOUND"
-	OxiLLaMaStandby     OxiLLaMaState = "STANDBY"
+	LlamaCppActive      LlamaCppState = "ACTIVE"
+	LlamaCppBinaryFound LlamaCppState = "BINARY_FOUND"
+	LlamaCppStandby     LlamaCppState = "STANDBY"
 )
 
-// OxiLLaMaStatus details the state of the OxiLLaMa pure-Rust inference engine.
-type OxiLLaMaStatus struct {
-	State        OxiLLaMaState `json:"state"`
+// LlamaCppStatus details the state of the llama.cpp inference engine.
+type LlamaCppStatus struct {
+	State        LlamaCppState `json:"state"`
 	Host         string        `json:"host"`
 	BinaryPath   string        `json:"binary_path,omitempty"`
 	LoadedModels []string      `json:"loaded_models,omitempty"`
@@ -76,19 +76,19 @@ type GatewayRoutingReport struct {
 // Provisioner orchestrates local model pulling and gateway routing checks.
 type Provisioner struct {
 	OllamaHost     string
-	OxiLLaMaHost   string
+	LlamaCppHost   string
 	LiteLLMHost    string
 	HTTPClient     *http.Client
 	BinaryLookupFn func(file string) (string, error)
 }
 
 // NewProvisioner constructs a Provisioner with sensible production defaults.
-func NewProvisioner(ollamaHost, oxillamaHost, litellmHost string) *Provisioner {
+func NewProvisioner(ollamaHost, llamaCppHost, litellmHost string) *Provisioner {
 	if ollamaHost == "" {
 		ollamaHost = "http://127.0.0.1:11434"
 	}
-	if oxillamaHost == "" {
-		oxillamaHost = "http://127.0.0.1:8080"
+	if llamaCppHost == "" {
+		llamaCppHost = "http://127.0.0.1:8080"
 	}
 	if litellmHost == "" {
 		litellmHost = "http://127.0.0.1:4000"
@@ -96,7 +96,7 @@ func NewProvisioner(ollamaHost, oxillamaHost, litellmHost string) *Provisioner {
 
 	return &Provisioner{
 		OllamaHost:     strings.TrimRight(ollamaHost, "/"),
-		OxiLLaMaHost:   strings.TrimRight(oxillamaHost, "/"),
+		LlamaCppHost:   strings.TrimRight(llamaCppHost, "/"),
 		LiteLLMHost:    strings.TrimRight(litellmHost, "/"),
 		HTTPClient:     &http.Client{Timeout: 30 * time.Second},
 		BinaryLookupFn: exec.LookPath,
@@ -211,10 +211,10 @@ func (p *Provisioner) pullModel(ctx context.Context, modelName string) error {
 	return nil
 }
 
-// ProbeOxiLLaMa checks the pure-Rust zero-FFI daemon and discovers local binaries.
-func (p *Provisioner) ProbeOxiLLaMa(ctx context.Context) (*OxiLLaMaStatus, error) {
+// ProbeLlamaCpp checks the llama-server daemon and discovers the local binary.
+func (p *Provisioner) ProbeLlamaCpp(ctx context.Context) (*LlamaCppStatus, error) {
 	// 1. Probe /v1/models endpoint
-	modelsURL := fmt.Sprintf("%s/v1/models", p.OxiLLaMaHost)
+	modelsURL := fmt.Sprintf("%s/v1/models", p.LlamaCppHost)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelsURL, nil)
 	if err == nil {
 		resp, err := p.HTTPClient.Do(req)
@@ -231,11 +231,11 @@ func (p *Provisioner) ProbeOxiLLaMa(ctx context.Context) (*OxiLLaMaStatus, error
 					for _, item := range data.Data {
 						names = append(names, item.ID)
 					}
-					return &OxiLLaMaStatus{
-						State:        OxiLLaMaActive,
-						Host:         p.OxiLLaMaHost,
+					return &LlamaCppStatus{
+						State:        LlamaCppActive,
+						Host:         p.LlamaCppHost,
 						LoadedModels: names,
-						Message:      fmt.Sprintf("OxiLLaMa zero-FFI daemon is active on %s (%d models)", p.OxiLLaMaHost, len(names)),
+						Message:      fmt.Sprintf("llama-server is active on %s (%d models)", p.LlamaCppHost, len(names)),
 					}, nil
 				}
 			}
@@ -243,19 +243,19 @@ func (p *Provisioner) ProbeOxiLLaMa(ctx context.Context) (*OxiLLaMaStatus, error
 	}
 
 	// 2. If daemon not running, check for binary in PATH
-	if path, err := p.BinaryLookupFn("oxillama"); err == nil && path != "" {
-		return &OxiLLaMaStatus{
-			State:      OxiLLaMaBinaryFound,
-			Host:       p.OxiLLaMaHost,
+	if path, err := p.BinaryLookupFn("llama-server"); err == nil && path != "" {
+		return &LlamaCppStatus{
+			State:      LlamaCppBinaryFound,
+			Host:       p.LlamaCppHost,
 			BinaryPath: path,
-			Message:    fmt.Sprintf("OxiLLaMa binary discovered at %s (standby mode)", path),
+			Message:    fmt.Sprintf("llama-server binary discovered at %s (standby mode)", path),
 		}, nil
 	}
 
-	return &OxiLLaMaStatus{
-		State:   OxiLLaMaStandby,
-		Host:    p.OxiLLaMaHost,
-		Message: "OxiLLaMa daemon not running on port 8080 and binary not discovered in PATH. Ready for on-demand launch.",
+	return &LlamaCppStatus{
+		State:   LlamaCppStandby,
+		Host:    p.LlamaCppHost,
+		Message: "llama-server not running on port 8080 and binary not discovered in PATH. Install llama.cpp (brew install llama.cpp) to launch it on demand.",
 	}, nil
 }
 

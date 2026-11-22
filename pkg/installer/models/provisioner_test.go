@@ -16,8 +16,8 @@ func TestNewProvisioner(t *testing.T) {
 		if p.OllamaHost != "http://127.0.0.1:11434" {
 			t.Errorf("unexpected default ollama host: %s", p.OllamaHost)
 		}
-		if p.OxiLLaMaHost != "http://127.0.0.1:8080" {
-			t.Errorf("unexpected default oxillama host: %s", p.OxiLLaMaHost)
+		if p.LlamaCppHost != "http://127.0.0.1:8080" {
+			t.Errorf("unexpected default llama.cpp host: %s", p.LlamaCppHost)
 		}
 		if p.LiteLLMHost != "http://127.0.0.1:4000" {
 			t.Errorf("unexpected default litellm host: %s", p.LiteLLMHost)
@@ -168,7 +168,7 @@ func TestProvisioner_ProvisionOllamaModels(t *testing.T) {
 	})
 }
 
-func TestProvisioner_ProbeOxiLLaMa(t *testing.T) {
+func TestProvisioner_ProbeLlamaCpp(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("active daemon with models", func(t *testing.T) {
@@ -183,12 +183,12 @@ func TestProvisioner_ProbeOxiLLaMa(t *testing.T) {
 		defer ts.Close()
 
 		p := NewProvisioner("", ts.URL, "")
-		st, err := p.ProbeOxiLLaMa(ctx)
+		st, err := p.ProbeLlamaCpp(ctx)
 		if err != nil {
 			t.Fatalf("unexpected probe error: %v", err)
 		}
-		if st.State != OxiLLaMaActive {
-			t.Errorf("expected OxiLLaMaActive, got %s", st.State)
+		if st.State != LlamaCppActive {
+			t.Errorf("expected LlamaCppActive, got %s", st.State)
 		}
 		if len(st.LoadedModels) != 2 {
 			t.Errorf("expected 2 loaded models, got %d", len(st.LoadedModels))
@@ -198,20 +198,20 @@ func TestProvisioner_ProbeOxiLLaMa(t *testing.T) {
 	t.Run("daemon offline, binary found in PATH", func(t *testing.T) {
 		p := NewProvisioner("", "http://127.0.0.1:59998", "")
 		p.BinaryLookupFn = func(file string) (string, error) {
-			if file == "oxillama" {
-				return "/opt/homebrew/bin/oxillama", nil
+			if file == "llama-server" {
+				return "/opt/homebrew/bin/llama-server", nil
 			}
 			return "", exec.ErrNotFound
 		}
 
-		st, err := p.ProbeOxiLLaMa(ctx)
+		st, err := p.ProbeLlamaCpp(ctx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if st.State != OxiLLaMaBinaryFound {
-			t.Errorf("expected OxiLLaMaBinaryFound, got %s", st.State)
+		if st.State != LlamaCppBinaryFound {
+			t.Errorf("expected LlamaCppBinaryFound, got %s", st.State)
 		}
-		if st.BinaryPath != "/opt/homebrew/bin/oxillama" {
+		if st.BinaryPath != "/opt/homebrew/bin/llama-server" {
 			t.Errorf("unexpected binary path: %s", st.BinaryPath)
 		}
 	})
@@ -222,14 +222,14 @@ func TestProvisioner_ProbeOxiLLaMa(t *testing.T) {
 			return "", exec.ErrNotFound
 		}
 
-		st, err := p.ProbeOxiLLaMa(ctx)
+		st, err := p.ProbeLlamaCpp(ctx)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if st.State != OxiLLaMaStandby {
-			t.Errorf("expected OxiLLaMaStandby, got %s", st.State)
+		if st.State != LlamaCppStandby {
+			t.Errorf("expected LlamaCppStandby, got %s", st.State)
 		}
-		if !strings.Contains(st.Message, "Ready for on-demand launch") {
+		if !strings.Contains(st.Message, "brew install llama.cpp") {
 			t.Errorf("expected standby message, got: %s", st.Message)
 		}
 	})

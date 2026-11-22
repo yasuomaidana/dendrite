@@ -25,7 +25,6 @@ var (
 		"local-qwen-coder",
 		"local-qwen3-27b",
 		"local-qwen3-9b",
-		"oxillama-rust",
 		"vllm-cluster",
 		"hf-tgi-remote",
 		"llamacpp-local",
@@ -33,7 +32,6 @@ var (
 
 	DefaultZeroCostPrefixes = []string{
 		"ollama/",
-		"oxillama/",
 		"vllm/",
 		"llamacpp/",
 		"huggingface-tei/",

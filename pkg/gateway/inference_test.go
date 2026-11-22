@@ -20,7 +20,7 @@ func TestMultiEngineLiteLLMConfig_Rendering(t *testing.T) {
 	modelNames := make(map[string]bool)
 	for _, m := range cfg.ModelList {
 		modelNames[m.ModelName] = true
-		if m.ModelName == "oxillama-rust" || m.ModelName == "local-coder" || m.ModelName == "llamacpp-local" {
+		if m.ModelName == "local-coder" || m.ModelName == "llamacpp-local" {
 			if !m.ModelInfo.SkipBudgetChecks {
 				t.Errorf("expected %s to have SkipBudgetChecks=true", m.ModelName)
 			}
@@ -30,7 +30,7 @@ func TestMultiEngineLiteLLMConfig_Rendering(t *testing.T) {
 		}
 	}
 
-	expected := []string{"local-coder", "oxillama-rust", "vllm-cluster", "hf-deepseek", "llamacpp-local"}
+	expected := []string{"local-coder", "vllm-cluster", "hf-deepseek", "llamacpp-local"}
 	for _, exp := range expected {
 		if !modelNames[exp] {
 			t.Errorf("expected model %s to be registered in model list", exp)
@@ -44,8 +44,8 @@ func TestMultiEngineLiteLLMConfig_Rendering(t *testing.T) {
 	}
 	yamlStr := string(yamlBytes)
 
-	if !strings.Contains(yamlStr, "oxillama-rust") {
-		t.Errorf("expected YAML to contain oxillama-rust")
+	if !strings.Contains(yamlStr, "llamacpp-local") {
+		t.Errorf("expected YAML to contain llamacpp-local")
 	}
 	if !strings.Contains(yamlStr, "skip_budget_checks: true") {
 		t.Errorf("expected YAML to contain skip_budget_checks: true")
@@ -64,12 +64,12 @@ func TestIsZeroCostSelfHostedModel(t *testing.T) {
 		zeroCost bool
 	}{
 		{"local-qwen-coder", true},
-		{"oxillama-rust", true},
+		{"llamacpp-local", true},
 		{"vllm-cluster", true},
 		{"hf-tgi-remote", true},
 		{"llamacpp-local", true},
 		{"ollama/qwen2.5-coder", true},
-		{"oxillama/custom", true},
+		{"llamacpp/custom", true},
 		{"vllm/qwen", true},
 		{"llamacpp/mistral", true},
 		{"huggingface-tei/bge", true},
@@ -109,7 +109,7 @@ func TestBudgetLimiter_ExemptSelfHostedEngines(t *testing.T) {
 	}
 
 	// Self-hosted models should ALWAYS be allowed
-	selfHostedModels := []string{"local-qwen-coder", "oxillama-rust", "vllm-cluster", "llamacpp-local"}
+	selfHostedModels := []string{"local-qwen-coder", "vllm-cluster", "llamacpp-local"}
 	for _, m := range selfHostedModels {
 		allowed, selected, err := limiter.CheckBudget("agent-key", m)
 		if err != nil || !allowed || selected != m {

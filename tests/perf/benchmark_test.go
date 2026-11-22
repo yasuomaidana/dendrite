@@ -49,7 +49,7 @@ func TestEndToEndInferenceBenchmark(t *testing.T) {
 
 	cfg := perf.BenchmarkConfig{
 		TargetEndpoint:    server.URL,
-		EngineID:          "oxillama",
+		EngineID:          "llamacpp",
 		Model:             "qwen2.5-coder-7b",
 		VirtualUsers:      5,
 		Duration:          300 * time.Millisecond,

@@ -67,7 +67,7 @@ func TestSpike_ProbeEndpoint(t *testing.T) {
 
 func TestSpike_SwitchAndRender(t *testing.T) {
 	clitest.IsolateEngines(t)
-	if out, code := cliOutput(t, "spike", "switch", "oxillama-rust"); code != cli.ExitOK || !strings.Contains(out, "New cascade: oxillama-rust ->") {
+	if out, code := cliOutput(t, "spike", "switch", "llamacpp-local"); code != cli.ExitOK || !strings.Contains(out, "New cascade: llamacpp-local ->") {
 		t.Fatalf("switch: exit %d\n%s", code, out)
 	}
 	if out, code := cliOutput(t, "spike", "render"); code != cli.ExitOK || !strings.Contains(out, "Rendered LiteLLM Configuration") {
@@ -153,11 +153,11 @@ func TestSpike_ModelsFlagsWhatDoesNotFit(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	out, code := cliOutput(t, "spike", "models", "--ollama", srv.URL, "--oxillama", "http://127.0.0.1:1")
+	out, code := cliOutput(t, "spike", "models", "--ollama", srv.URL, "--llamacpp", "http://127.0.0.1:1")
 	if code != cli.ExitOK {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
-	for _, want := range []string{"12.0 GB budget", "huge:30b", "TOO LARGE", "small:4b", "Best available now: small:4b on ollama", "OxiLLaMa is not reachable"} {
+	for _, want := range []string{"12.0 GB budget", "huge:30b", "TOO LARGE", "small:4b", "Best available now: small:4b on ollama", "llama-server is not reachable"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}

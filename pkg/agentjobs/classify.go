@@ -28,7 +28,7 @@ var (
 // ensuring internal quota manager log lines like "quota_manager.go ... doRefreshQuota"
 // are excluded unless an actual quota exhaustion error is present.
 func matchQuota(o Outcome) bool {
-	// HTTP agents (oxillama, LiteLLM) report the response status as the exit code.
+	// HTTP agents (llamacpp, LiteLLM) report the response status as the exit code.
 	if o.ExitCode == 429 {
 		return true
 	}

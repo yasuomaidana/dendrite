@@ -77,23 +77,24 @@ func TestAssessFallsBackToTheDefaultEndpoints(t *testing.T) {
 	}
 }
 
-func TestOxiServedNeedsAModelAndAnswer(t *testing.T) {
+func TestLlamaServedNeedsAModelAndAnswer(t *testing.T) {
 	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"data":[]}`))
 	}))
 	defer empty.Close()
-	if _, _, err := oxiServed(context.Background(), http.DefaultClient, empty.URL); err == nil {
+	if _, _, err := llamaServed(context.Background(), http.DefaultClient, empty.URL); err == nil {
 		t.Fatal("a server with no model must be an error")
 	}
-	if _, _, err := oxiServed(context.Background(), http.DefaultClient, "http://127.0.0.1:1"); err == nil {
+	if _, _, err := llamaServed(context.Background(), http.DefaultClient, "http://127.0.0.1:1"); err == nil {
 		t.Fatal("an unreachable server must be an error")
 	}
 }
 
 func TestGGUFSizeSkipsFilesItCannotStat(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	dir := filepath.Join(home, ".oxillama", "models", "broken")
+	t.Setenv("DENDRITE_HOME", home)
+	t.Setenv("DENDRITE_GGUF_MODELS_DIR", "")
+	dir := filepath.Join(home, "models", "broken")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

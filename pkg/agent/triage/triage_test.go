@@ -23,17 +23,17 @@ func TestMain(m *testing.M) {
 		w.Write([]byte(`{"status":"ok"}`))
 	}))
 
-	tsOxillama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	tsLlamaCpp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/v1/models" {
-			w.Write([]byte(`{"data":[{"id":"oxillama-rust-qwen7b"}]}`))
+			w.Write([]byte(`{"data":[{"id":"llamacpp-qwen7b"}]}`))
 			return
 		}
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	}))
 
-	os.Setenv("DENDRITE_OXILLAMA_ENDPOINT", tsOxillama.URL)
+	os.Setenv("DENDRITE_LLAMACPP_ENDPOINT", tsLlamaCpp.URL)
 	os.Setenv("DENDRITE_OLLAMA_ENDPOINT", tsOllama.URL)
 	cleanupRag, err := ragtest.Install()
 	if err != nil {
@@ -44,7 +44,7 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	cleanupRag()
 	tsOllama.Close()
-	tsOxillama.Close()
+	tsLlamaCpp.Close()
 	os.Exit(code)
 }
 

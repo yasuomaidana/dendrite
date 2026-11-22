@@ -1,4 +1,4 @@
-// Package oxilease starts the OxiLLaMa server when a session needs it and stops it when the last
+// Package llamalease starts the llama.cpp server (llama-server) when a session needs it and stops it when the last
 // session is done. Sessions hold leases; one supervisor process owns the server and stops it once no
 // live lease has existed for the idle grace. Everything that decides is serialized by one file lock.
 //
@@ -9,7 +9,7 @@
 //     lease exists, re-checked under the lock.
 //   - A server Dendrite did not start (no owner record) is never stopped here.
 //   - A model that does not fit the memory budget is never started.
-package oxilease
+package llamalease
 
 import (
 	"context"
@@ -38,7 +38,7 @@ const (
 )
 
 // ErrNotFit means the model would starve the machine, so the server was not started.
-var ErrNotFit = errors.New("oxillama model does not fit the memory budget")
+var ErrNotFit = errors.New("llama-server model does not fit the memory budget")
 
 // Request names the server a session needs.
 type Request struct {
@@ -49,7 +49,7 @@ type Request struct {
 
 // Options configures a Manager; every field has a working default.
 type Options struct {
-	Dir       string        // lease directory, default $DENDRITE_HOME/run/oxillama
+	Dir       string        // lease directory, default $DENDRITE_HOME/run/llama-server
 	TTL       time.Duration // how long a heartbeat keeps a lease live
 	IdleGrace time.Duration // how long the server outlives its last lease
 	Poll      time.Duration // supervisor check interval
@@ -82,16 +82,16 @@ type Manager struct{ o Options }
 // New fills in the defaults.
 func New(o Options) *Manager {
 	if o.IdleGrace <= 0 {
-		o.IdleGrace = envDuration("DENDRITE_OXILLAMA_IDLE_GRACE")
+		o.IdleGrace = envDuration("DENDRITE_LLAMA_IDLE_GRACE")
 	}
 	if o.TTL <= 0 {
-		o.TTL = envDuration("DENDRITE_OXILLAMA_LEASE_TTL")
+		o.TTL = envDuration("DENDRITE_LLAMA_LEASE_TTL")
 	}
 	if o.Dir == "" {
 		if home, err := projectid.HomeDir(); err == nil {
-			o.Dir = filepath.Join(home, "run", "oxillama")
+			o.Dir = filepath.Join(home, "run", "llama-server")
 		} else {
-			o.Dir = filepath.Join(os.TempDir(), "dendrite-oxillama")
+			o.Dir = filepath.Join(os.TempDir(), "dendrite-llama-server")
 		}
 	}
 	if o.TTL <= 0 {
@@ -239,7 +239,7 @@ func (m *Manager) Acquire(ctx context.Context, req Request) (*Lease, error) {
 			if err != nil {
 				_ = os.Remove(filepath.Join(m.leasesDir(), id+".json"))
 				unlock()
-				return nil, fmt.Errorf("start oxillama supervisor: %w", err)
+				return nil, fmt.Errorf("start llama-server supervisor: %w", err)
 			}
 			// Recorded under the lock so a second Acquire waits instead of starting another.
 			_ = m.writeOwner(owner{SupervisorPID: pid, Model: req.ModelID, StartedMS: m.o.Now().UnixMilli()})
@@ -258,7 +258,7 @@ func (m *Manager) waitHealthy(ctx context.Context) error {
 	deadline := time.Now().Add(120 * time.Second)
 	for !m.o.Healthy() {
 		if time.Now().After(deadline) {
-			return errors.New("oxillama did not become healthy in 120s")
+			return errors.New("llama-server did not become healthy in 120s")
 		}
 		select {
 		case <-ctx.Done():
@@ -336,7 +336,7 @@ func (m *Manager) Holders() ([]Holder, error) {
 // grace. It runs in the detached supervisor process and returns when the server is gone.
 func (m *Manager) Supervise(ctx context.Context, req Request) error {
 	if m.o.ChildCmd == nil {
-		return errors.New("oxilease: no ChildCmd")
+		return errors.New("llamalease: no ChildCmd")
 	}
 	unlock, err := m.lock()
 	if err != nil {
@@ -354,7 +354,7 @@ func (m *Manager) Supervise(ctx context.Context, req Request) error {
 	if err != nil {
 		_ = os.Remove(m.ownerPath())
 		unlock()
-		return fmt.Errorf("start oxillama: %w", err)
+		return fmt.Errorf("start llama-server: %w", err)
 	}
 	_ = m.writeOwner(owner{SupervisorPID: os.Getpid(), ChildPID: cmd.Process.Pid, Model: req.ModelID, StartedMS: m.o.Now().UnixMilli()})
 	unlock()

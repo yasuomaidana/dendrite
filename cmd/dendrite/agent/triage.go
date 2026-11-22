@@ -25,7 +25,7 @@ var triageEngines = map[string]triage.SupportedEngine{
 	"huggingface":      triage.EngineHuggingFace,
 	"hf":               triage.EngineHuggingFace,
 	"candle":           triage.EngineCandle,
-	"oxillama":         triage.EngineOxiLLaMa,
+	"llamacpp":         triage.EngineLlamaCpp,
 }
 
 type triageOptions struct {
@@ -66,7 +66,7 @@ func NewTriageCmd() *cobra.Command {
 			if o.Engine != "" {
 				e, ok := triageEngines[strings.ToLower(o.Engine)]
 				if !ok {
-					return cli.UsageErrorf("invalid --engine %q: use ollama, ollama-validated, huggingface, candle or oxillama", o.Engine)
+					return cli.UsageErrorf("invalid --engine %q: use ollama, ollama-validated, huggingface, candle or llamacpp", o.Engine)
 				}
 				req.TargetEngine = e
 			}
@@ -82,7 +82,7 @@ func NewTriageCmd() *cobra.Command {
 	}
 	cli.AddFileFlag(cmd, &o.File, "", "Active file whose content is triaged with the prompt")
 	cmd.Flags().StringVar(&o.Tier, "tier", "", "Force a tier: local, hybrid or cloud")
-	cmd.Flags().StringVarP(&o.Engine, "engine", "e", "", "Local engine: ollama, ollama-validated, huggingface, candle or oxillama")
+	cmd.Flags().StringVarP(&o.Engine, "engine", "e", "", "Local engine: ollama, ollama-validated, huggingface, candle or llamacpp")
 	cmd.Flags().BoolVarP(&o.Local, "local", "l", false, "Execute on the local engine when the tier allows it")
 	cmd.Flags().BoolVarP(&o.RAG, "rag", "r", false, "Retrieve workspace context (RAG)")
 	return cmd

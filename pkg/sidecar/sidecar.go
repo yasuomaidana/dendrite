@@ -49,7 +49,7 @@ type Locator struct {
 }
 
 // EnvVar is the variable that overrides the location of sidecar name:
-// "dendrite-core" -> DENDRITE_DENDRITE_CORE_BIN, "oxillama" -> DENDRITE_OXILLAMA_BIN.
+// "dendrite-core" -> DENDRITE_DENDRITE_CORE_BIN, "llama-server" -> DENDRITE_LLAMA_SERVER_BIN.
 func EnvVar(name string) string {
 	return "DENDRITE_" + strings.ToUpper(strings.NewReplacer("-", "_", ".", "_").Replace(name)) + "_BIN"
 }

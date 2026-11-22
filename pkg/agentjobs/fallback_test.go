@@ -18,7 +18,7 @@ func TestProviderKey(t *testing.T) {
 		expected     string
 	}{
 		{"aider copilot", "aider", copilotModel, providerCopilot},
-		{"oxillama local", "oxillama", oxillamaModel, providerOxillama},
+		{"llamacpp local", "llamacpp", llamaCppModel, providerLlamaCpp},
 		{"local model", "local", localModel, providerLocal},
 		{"agy gemini flash", "agy", "gemini-3.8-flash-high", "agy:gemini-3.8"},
 		{"agy gemini argon", "agy", "gemini-4-argon-medium", "agy:gemini-4-argon"},
@@ -59,7 +59,7 @@ func TestLadder(t *testing.T) {
 		t.Fatalf("expected 3 tiers for complexity 8, got %d: %+v", len(l8), l8)
 	}
 	for _, tr := range l8 {
-		if tr.Agent == "local" || tr.Agent == "oxillama" {
+		if tr.Agent == "local" || tr.Agent == "llamacpp" {
 			t.Errorf("complexity 8 must skip local models, got %+v", l8)
 		}
 	}
@@ -138,12 +138,12 @@ func TestNextTier_AndProviderMemory(t *testing.T) {
 		t.Errorf("argon with gemini-3.8 cooling want aider, got: %+v", next)
 	}
 
-	// 8. Last tier reached -> false; an explicitly requested oxillama job is its own last tier
+	// 8. Last tier reached -> false; an explicitly requested llamacpp job is its own last tier
 	if _, ok := d.nextTier(&Job{Agent: "local", Model: localModel, Complexity: 3}, nil); ok {
 		t.Error("expected ok=false when at last tier")
 	}
-	if _, ok := d.nextTier(&Job{Agent: "oxillama", Model: oxillamaModel, Complexity: 3}, nil); ok {
-		t.Error("expected ok=false for an explicit oxillama job")
+	if _, ok := d.nextTier(&Job{Agent: "llamacpp", Model: llamaCppModel, Complexity: 3}, nil); ok {
+		t.Error("expected ok=false for an explicit llamacpp job")
 	}
 
 	// 9. A non-AGY custom agent has no AGY tiers and goes to copilot
@@ -227,7 +227,7 @@ func TestProviderMemory_LoadMarkAndReset(t *testing.T) {
 	// Mark multiple providers: earlier and later
 	tEarlier := fakeNow.Add(30 * time.Minute)
 	tLater := fakeNow.Add(5 * time.Hour)
-	_ = d.markProviderExhausted("oxillama", tEarlier)
+	_ = d.markProviderExhausted("llamacpp", tEarlier)
 	_ = d.markProviderExhausted("agy", tLater)
 
 	erMulti := d.earliestReset()
@@ -379,8 +379,8 @@ func TestHandleQuotaFallback(t *testing.T) {
 	// 4. No tier left -> parks job
 	jPark, _ := tempLedger.Create(&Job{
 		Ticket:     "DEN-990",
-		Agent:      "oxillama",
-		Model:      oxillamaModel,
+		Agent:      "llamacpp",
+		Model:      llamaCppModel,
 		Complexity: 3,
 	})
 	okPark, promptPark, errPark := d.handleQuotaFallback(ctx, jPark, "Prompt", "quota exhausted", false)

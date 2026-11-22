@@ -109,8 +109,8 @@ func (d *Dispatcher) RunJob(ctx context.Context, id string) error {
 		switch job.Agent {
 		case "local":
 			exitCode, logTail, usage, execErr = d.runLocal(attemptCtx, job, promptText)
-		case "oxillama":
-			exitCode, logTail, usage, execErr = d.runOxillama(attemptCtx, job, promptText)
+		case "llamacpp":
+			exitCode, logTail, usage, execErr = d.runLlamaCpp(attemptCtx, job, promptText)
 		case "aider":
 			exitCode, logTail, execErr = d.runAider(attemptCtx, job, promptText)
 		default:
@@ -124,7 +124,7 @@ func (d *Dispatcher) RunJob(ctx context.Context, id string) error {
 		timedOut := errors.Is(attemptCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil
 		cancelAttempt()
 
-		// Text-generation agents (local, oxillama) deliver output.md in the job dir; the
+		// Text-generation agents (local, llamacpp) deliver output.md in the job dir; the
 		// file-scope check applies only to agents that edit the worktree.
 		var changedInScope bool
 		var offendingPaths []string
@@ -350,11 +350,11 @@ func (d *Dispatcher) runAgy(ctx context.Context, job *Job, promptText string, la
 
 // textAgent reports whether an agent answers in output.md instead of editing the worktree.
 func textAgent(agent string) bool {
-	return agent == "local" || agent == "oxillama"
+	return agent == "local" || agent == "llamacpp"
 }
 
 // runLocal runs the local tier: a chat completion through the LiteLLM gateway, whose local
-// aliases are served by GPU engines (Ollama first; OxiLLaMa only on request).
+// aliases are served by Ollama first, llama-server only on request.
 func (d *Dispatcher) runLocal(ctx context.Context, job *Job, promptText string) (int, string, map[string]any, error) {
 	base := d.LiteLLMURL
 	if base == "" {
@@ -367,12 +367,11 @@ func (d *Dispatcher) runLocal(ctx context.Context, job *Job, promptText string) 
 	return d.runChat(ctx, job, promptText, strings.TrimRight(base, "/")+"/chat/completions", key, "LiteLLM gateway")
 }
 
-// runOxillama sends the job to an OxiLLaMa server. Only explicitly requested: OxiLLaMa
-// prefills on the CPU.
-func (d *Dispatcher) runOxillama(ctx context.Context, job *Job, promptText string) (int, string, map[string]any, error) {
-	endpoint := d.OxillamaEndpoint
+// runLlamaCpp sends the job to a llama-server. Only explicitly requested.
+func (d *Dispatcher) runLlamaCpp(ctx context.Context, job *Job, promptText string) (int, string, map[string]any, error) {
+	endpoint := d.LlamaCppEndpoint
 	if endpoint == "" {
-		endpoint = defaultOxillamaEndpoint()
+		endpoint = defaultLlamaCppEndpoint()
 	}
-	return d.runChat(ctx, job, promptText, strings.TrimRight(endpoint, "/")+"/v1/chat/completions", "", "oxillama")
+	return d.runChat(ctx, job, promptText, strings.TrimRight(endpoint, "/")+"/v1/chat/completions", "", "llamacpp")
 }

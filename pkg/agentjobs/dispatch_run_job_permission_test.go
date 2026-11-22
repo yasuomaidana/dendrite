@@ -146,7 +146,7 @@ exit 0
 	}
 }
 
-func TestRunJob_Oxillama_Success(t *testing.T) {
+func TestRunJob_LlamaCpp_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
 			http.NotFound(w, r)
@@ -156,7 +156,7 @@ func TestRunJob_Oxillama_Success(t *testing.T) {
 			"choices": []map[string]any{
 				{
 					"message": map[string]string{
-						"content": "func OxillamaGenerated() string { return \"ok\" }",
+						"content": "func LlamaCppGenerated() string { return \"ok\" }",
 					},
 				},
 			},
@@ -171,11 +171,11 @@ func TestRunJob_Oxillama_Success(t *testing.T) {
 	tempLedger := NewLedger(t.TempDir())
 	d := NewDispatcher(tempLedger)
 	d.Executable = installExecutableScript(t, t.TempDir(), "dummy_runner", "exit 0\n") // RunJob is driven synchronously below
-	d.OxillamaEndpoint = server.URL
+	d.LlamaCppEndpoint = server.URL
 
 	id, err := d.Submit(SubmitSpec{
 		Ticket: "DEN-989",
-		Agent:  "oxillama",
+		Agent:  "llamacpp",
 		Prompt: "Generate Go code",
 	})
 	if err != nil {
@@ -200,12 +200,12 @@ func TestRunJob_Oxillama_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read output.md: %v", err)
 	}
-	if !strings.Contains(string(content), "OxillamaGenerated") {
-		t.Errorf("output.md content = %q, expected OxillamaGenerated", string(content))
+	if !strings.Contains(string(content), "LlamaCppGenerated") {
+		t.Errorf("output.md content = %q, expected LlamaCppGenerated", string(content))
 	}
 }
 
-func TestRunJob_Oxillama_EmptyResponseAndErrors(t *testing.T) {
+func TestRunJob_LlamaCpp_EmptyResponseAndErrors(t *testing.T) {
 	t.Run("Empty response classified as EARLY_EXIT", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			resp := map[string]any{
@@ -220,11 +220,11 @@ func TestRunJob_Oxillama_EmptyResponseAndErrors(t *testing.T) {
 		tempLedger := NewLedger(t.TempDir())
 		d := NewDispatcher(tempLedger)
 		d.Executable = installExecutableScript(t, t.TempDir(), "dummy_runner", "exit 0\n") // RunJob is driven synchronously below
-		d.OxillamaEndpoint = server.URL
+		d.LlamaCppEndpoint = server.URL
 
 		id, _ := d.Submit(SubmitSpec{
 			Ticket: "DEN-989",
-			Agent:  "oxillama",
+			Agent:  "llamacpp",
 			Prompt: "Generate empty",
 		})
 
@@ -244,17 +244,17 @@ func TestRunJob_Oxillama_EmptyResponseAndErrors(t *testing.T) {
 		tempLedger := NewLedger(t.TempDir())
 		d := NewDispatcher(tempLedger)
 		d.Executable = installExecutableScript(t, t.TempDir(), "dummy_runner", "exit 0\n") // RunJob is driven synchronously below
-		d.OxillamaEndpoint = server.URL
+		d.LlamaCppEndpoint = server.URL
 
 		id, _ := d.Submit(SubmitSpec{
 			Ticket: "DEN-989",
-			Agent:  "oxillama",
+			Agent:  "llamacpp",
 			Prompt: "Rate limit",
 		})
 
 		_ = d.RunJob(context.Background(), id)
 		job, _ := tempLedger.Load(id)
-		// oxillama is the last rung of the ladder, so a 429 parks the job until the provider resets.
+		// llamacpp is the last rung of the ladder, so a 429 parks the job until the provider resets.
 		if job.Status != StatusParked {
 			t.Errorf("job.Status = %q, want %q", job.Status, StatusParked)
 		}

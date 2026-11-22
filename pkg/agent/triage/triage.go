@@ -17,8 +17,8 @@ import (
 type Engine struct {
 	OllamaClient         *ollama.Client
 	OllamaEndpoint       string
-	OxiLLaMaEngine       inference.InferenceEngine
-	OxiLLaMaEndpoint     string
+	LlamaCppEngine       inference.InferenceEngine
+	LlamaCppEndpoint     string
 	RAGRetriever         *rag.Retriever
 	SkillMatchers        []SkillMatcher
 	LocalModelName       string
@@ -41,7 +41,7 @@ func NewEngine(ollamaClient *ollama.Client) *Engine {
 	return &Engine{
 		OllamaClient:      ollamaClient,
 		OllamaEndpoint:    ollamaEndpoint,
-		OxiLLaMaEndpoint:  os.Getenv("DENDRITE_OXILLAMA_ENDPOINT"),
+		LlamaCppEndpoint:  os.Getenv("DENDRITE_LLAMACPP_ENDPOINT"),
 		RAGRetriever:      rag.NewRetriever(),
 		SkillMatchers:     DefaultSkillMatchers(),
 		LocalModelName:    "local-qwen-coder",
@@ -72,43 +72,43 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 	localAvailable := false
 	localEngineName := "Ollama Metal GPU"
 
-	oxEng := e.OxiLLaMaEngine
+	oxEng := e.LlamaCppEngine
 	if oxEng == nil {
-		oxEndpoint := e.OxiLLaMaEndpoint
+		oxEndpoint := e.LlamaCppEndpoint
 		if oxEndpoint == "" {
-			oxEndpoint = os.Getenv("DENDRITE_OXILLAMA_ENDPOINT")
+			oxEndpoint = os.Getenv("DENDRITE_LLAMACPP_ENDPOINT")
 		}
 		if oxEndpoint == "" {
 			oxEndpoint = "http://127.0.0.1:8080"
 		}
-		oxEng = inference.NewOxiLLaMaEngine(inference.EngineConfig{
-			ID:       "oxillama-rust",
-			Type:     inference.EngineOxiLLaMa,
+		oxEng = inference.NewLlamaCppEngine(inference.EngineConfig{
+			ID:       "llamacpp-local",
+			Type:     inference.EngineLlamaCpp,
 			Endpoint: oxEndpoint,
 		}, nil)
 	}
 
-	var bestOxillamaModel string
-	maxOxillamaScore := 0
+	var bestLlamaCppModel string
+	maxLlamaCppScore := 0
 
 	var bestOllamaModel string
 	maxOllamaScore := 0
 
-	// Probe OxiLLaMa live via oxillama.SupportedModels()
+	// Probe llama.cpp live via llamacpp.SupportedModels()
 	probeCtxOx, cancelOx := context.WithTimeout(ctx, 1500*time.Millisecond)
 	oxModels, oxErr := oxEng.SupportedModels(probeCtxOx)
 	cancelOx()
 	if oxErr == nil && len(oxModels) > 0 {
 		for _, m := range oxModels {
 			sc := inference.ModelIntelligenceScore(m)
-			if sc > maxOxillamaScore {
-				maxOxillamaScore = sc
-				bestOxillamaModel = m
+			if sc > maxLlamaCppScore {
+				maxLlamaCppScore = sc
+				bestLlamaCppModel = m
 			}
 		}
 	} else {
-		bestOxillamaModel = "oxillama-rust-qwen7b"
-		maxOxillamaScore = inference.ModelIntelligenceScore(bestOxillamaModel)
+		bestLlamaCppModel = "llamacpp-qwen7b"
+		maxLlamaCppScore = inference.ModelIntelligenceScore(bestLlamaCppModel)
 	}
 
 	// Probe Ollama live
@@ -137,20 +137,20 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 		}
 	}
 
-	// Auto-routing prefers Ollama (GPU). OxiLLaMa prefills on the CPU, so it is chosen only
+	// Auto-routing prefers Ollama (GPU). llama.cpp is chosen only
 	// when it is explicitly targeted or Ollama has no model.
-	oxillamaLive := oxErr == nil && len(oxModels) > 0
+	llamaCppLive := oxErr == nil && len(oxModels) > 0
 	if req.TargetEngine == "" {
 		if maxOllamaScore > 0 {
 			assignedEngine = EngineOllama
 			localEngineName = fmt.Sprintf("Ollama Metal GPU (%s)", bestOllamaModel)
 			localAvailable = true
-		} else if oxillamaLive {
-			assignedEngine = EngineOxiLLaMa
-			localEngineName = fmt.Sprintf("OxiLLaMa Pure-Rust Engine, CPU (%s)", bestOxillamaModel)
+		} else if llamaCppLive {
+			assignedEngine = EngineLlamaCpp
+			localEngineName = fmt.Sprintf("llama.cpp llama-server (%s)", bestLlamaCppModel)
 			localAvailable = true
 			if tier == TierLocal {
-				reason = fmt.Sprintf("%s Ollama has no model; using OxiLLaMa (Score %d), which runs prompts on the CPU.", reason, maxOxillamaScore)
+				reason = fmt.Sprintf("%s Ollama has no model; using llama.cpp (Score %d).", reason, maxLlamaCppScore)
 			}
 		}
 	}
@@ -185,8 +185,8 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 			localAvailable = true
 		}
 
-	case EngineOxiLLaMa:
-		localEngineName = "OxiLLaMa Pure-Rust Sovereign Engine (cool-japan/oxillama)"
+	case EngineLlamaCpp:
+		localEngineName = "llama.cpp llama-server Engine"
 		if e.MockComputeAvailable != nil {
 			localAvailable = *e.MockComputeAvailable
 		} else if oxErr == nil && len(oxModels) > 0 {
@@ -342,11 +342,11 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 			assignedModel = "qwen2.5-coder:14b"
 		case EngineHuggingFace:
 			assignedModel = "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"
-		case EngineOxiLLaMa:
-			if bestOxillamaModel != "" {
-				assignedModel = bestOxillamaModel
+		case EngineLlamaCpp:
+			if bestLlamaCppModel != "" {
+				assignedModel = bestLlamaCppModel
 			} else {
-				assignedModel = "oxillama-rust-qwen7b"
+				assignedModel = "llamacpp-qwen7b"
 			}
 		case EngineCandle:
 			assignedModel = "candle-quant-llama"
@@ -404,8 +404,8 @@ func (e *Engine) Triage(ctx context.Context, req TriageRequest) (*TriageResult, 
 			workerModel = "qwen2.5-coder:14b"
 		case EngineHuggingFace:
 			workerModel = "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"
-		case EngineOxiLLaMa:
-			workerModel = "oxillama-rust-qwen7b"
+		case EngineLlamaCpp:
+			workerModel = "llamacpp-qwen7b"
 		case EngineCandle:
 			workerModel = "candle-quant-llama"
 		default:

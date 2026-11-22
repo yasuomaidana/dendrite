@@ -38,8 +38,6 @@ func NewEngineFromConfig(cfg EngineConfig, client *http.Client) (InferenceEngine
 	switch cfg.Type {
 	case EngineOllama:
 		return NewOllamaEngine(cfg, client), nil
-	case EngineOxiLLaMa:
-		return NewOxiLLaMaEngine(cfg, client), nil
 	case EngineCandle:
 		return NewCandleEngine(cfg, client), nil
 	case EngineHuggingFaceTGI:
@@ -220,7 +218,7 @@ func (m *Manager) ExecuteWithCascade(ctx context.Context, req CompletionRequest)
 }
 
 // ExecuteWithSmartPrecedence dispatches a prompt honoring model intelligence rules:
-// - Smarter local models (whether on OxiLLaMa or Ollama) have precedence over smaller models.
+// - Smarter local models (whether on llama.cpp or Ollama) have precedence over smaller models.
 // - Failed attempts on smaller/less-smart models are NOT counted against the failure threshold.
 // - Failures are ONLY counted when executing on the smartest available local model(s).
 // - If smartest local models fail twice or three times (cfg.MaxSmartFailures), it leverages to paid models.
@@ -283,7 +281,6 @@ func DefaultManager() *Manager {
 	mgr := NewManager()
 
 	ollamaEndpoint := endpointFor(EngineOllama)
-	oxillamaEndpoint := endpointFor(EngineOxiLLaMa)
 	vllmEndpoint := endpointFor(EngineVLLM)
 	hfTGIEndpoint := endpointFor(EngineHuggingFaceTGI)
 	hfTEIEndpoint := endpointFor(EngineHuggingFaceTEI)
@@ -291,12 +288,11 @@ func DefaultManager() *Manager {
 	llamaCppEndpoint := endpointFor(EngineLlamaCpp)
 
 	ollamaModels := getInferenceEnvSliceOrDefault("DENDRITE_OLLAMA_MODELS", []string{"qwen3.8:27b", "qwen3.5:9b", "qwen2.5-coder:14b", "deepseek-coder:6.7b", "llama3.2:3b"})
-	oxillamaModels := getInferenceEnvSliceOrDefault("DENDRITE_OXILLAMA_MODELS", []string{"qwen3.8:27b", "qwen3.5:9b", "qwen2.5-coder-7b", "mistral-7b-instruct"})
 	vllmModels := getInferenceEnvSliceOrDefault("DENDRITE_VLLM_MODELS", []string{"Qwen/Qwen2.5-Coder-32B-Instruct"})
 	hfTGIModels := getInferenceEnvSliceOrDefault("DENDRITE_HF_TGI_MODELS", []string{"deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"})
 	hfTEIModels := getInferenceEnvSliceOrDefault("DENDRITE_HF_TEI_MODELS", []string{"BAAI/bge-large-en-v1.5"})
 	candleModels := getInferenceEnvSliceOrDefault("DENDRITE_CANDLE_MODELS", []string{"candle-quant-llama", "candle-mistral"})
-	llamaCppModels := getInferenceEnvSliceOrDefault("DENDRITE_LLAMACPP_MODELS", []string{"mistral-7b-instruct-q4"})
+	llamaCppModels := getInferenceEnvSliceOrDefault("DENDRITE_LLAMACPP_MODELS", []string{"qwen3.8:27b", "qwen3.5:9b", "qwen2.5-coder-7b", "mistral-7b-instruct", "mistral-7b-instruct-q4"})
 
 	// 1. Ollama (Metal local primary)
 	_ = mgr.RegisterEngine(NewOllamaEngine(EngineConfig{
@@ -306,15 +302,7 @@ func DefaultManager() *Manager {
 		Models:   ollamaModels,
 	}, nil))
 
-	// 2. OxiLLaMa (Pure-Rust GGUF zero-FFI runner; CPU prefill, ordered last in the cascade)
-	_ = mgr.RegisterEngine(NewOxiLLaMaEngine(EngineConfig{
-		ID:       "oxillama-rust",
-		Type:     EngineOxiLLaMa,
-		Endpoint: oxillamaEndpoint,
-		Models:   oxillamaModels,
-	}, nil))
-
-	// 3. vLLM (High-throughput PagedAttention cluster)
+	// 2. vLLM (High-throughput PagedAttention cluster)
 	_ = mgr.RegisterEngine(NewVLLMEngine(EngineConfig{
 		ID:         "vllm-cluster",
 		Type:       EngineVLLM,
@@ -323,7 +311,7 @@ func DefaultManager() *Manager {
 		SelfHosted: true,
 	}, nil))
 
-	// 4. Hugging Face TGI (Remote GPU)
+	// 3. Hugging Face TGI (Remote GPU)
 	_ = mgr.RegisterEngine(NewHuggingFaceTGIEngine(EngineConfig{
 		ID:         "hf-tgi-remote",
 		Type:       EngineHuggingFaceTGI,
@@ -332,7 +320,7 @@ func DefaultManager() *Manager {
 		SelfHosted: true,
 	}, nil))
 
-	// 5. Hugging Face TEI (Text Embeddings)
+	// 4. Hugging Face TEI (Text Embeddings)
 	_ = mgr.RegisterEngine(NewHuggingFaceTEIEngine(EngineConfig{
 		ID:         "hf-tei-embed",
 		Type:       EngineHuggingFaceTEI,
@@ -359,14 +347,13 @@ func DefaultManager() *Manager {
 
 	// Set baseline default cascade order
 	// Baseline cascade: GPU-capable Rust engines, then Ollama and the other GPU servers,
-	// OxiLLaMa last (CPU prefill; see EnginePreference).
+	// llama.cpp last.
 	_ = mgr.SetCascadeOrder([]string{
 		"candle-rust",
 		"hf-tgi-remote",
 		"ollama-metal",
 		"vllm-cluster",
 		"llamacpp-local",
-		"oxillama-rust",
 	})
 
 	// Dynamic Cascade Initialization: run live probing and intelligence ordering

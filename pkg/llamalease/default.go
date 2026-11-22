@@ -1,6 +1,6 @@
 //go:build !windows
 
-package oxilease
+package llamalease
 
 import (
 	"context"
@@ -17,23 +17,36 @@ import (
 	"syscall"
 
 	"Dendrite/pkg/memfit"
+	"Dendrite/pkg/projectid"
 )
 
-// Model is one GGUF installed under ~/.oxillama/models.
+// Model is one GGUF installed under ModelsDir().
 type Model struct {
 	ID        string // the id the server serves it under
 	Path      string
 	SizeBytes int64
 }
 
+// ModelsDir is where managed GGUF models live: DENDRITE_GGUF_MODELS_DIR, else $DENDRITE_HOME/models.
+func ModelsDir() string {
+	if d := os.Getenv("DENDRITE_GGUF_MODELS_DIR"); d != "" {
+		return d
+	}
+	home, err := projectid.HomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, "models")
+}
+
 // Installed lists the installed models, largest first. A model's id is the first line of an `id`
 // file next to it when present, otherwise its directory name.
 func Installed() []Model {
-	home, err := os.UserHomeDir()
-	if err != nil {
+	dir := ModelsDir()
+	if dir == "" {
 		return nil
 	}
-	files, _ := filepath.Glob(filepath.Join(home, ".oxillama", "models", "*", "*.gguf"))
+	files, _ := filepath.Glob(filepath.Join(dir, "*", "*.gguf"))
 	var out []Model
 	for _, f := range files {
 		info, err := os.Stat(f)
@@ -57,11 +70,11 @@ func Installed() []Model {
 func BestFitting(ctx context.Context) (Model, error) {
 	models := Installed()
 	if len(models) == 0 {
-		return Model{}, errors.New("no OxiLLaMa model installed under ~/.oxillama/models")
+		return Model{}, fmt.Errorf("no GGUF model installed under %s", ModelsDir())
 	}
 	var last error
 	for _, m := range models {
-		if err := memfit.CheckStart(ctx, "oxillama", m.SizeBytes); err != nil {
+		if err := memfit.CheckStart(ctx, "llamacpp", m.SizeBytes); err != nil {
 			last = err
 			continue
 		}
@@ -70,18 +83,12 @@ func BestFitting(ctx context.Context) (Model, error) {
 	return Model{}, last
 }
 
-// BinaryPath finds the oxillama executable: DENDRITE_OXILLAMA_BIN, ~/.cargo/bin, then PATH.
+// BinaryPath finds the llama-server executable: DENDRITE_LLAMA_SERVER_BIN, then PATH.
 func BinaryPath() (string, error) {
-	if p := os.Getenv("DENDRITE_OXILLAMA_BIN"); p != "" {
+	if p := os.Getenv("DENDRITE_LLAMA_SERVER_BIN"); p != "" {
 		return p, nil
 	}
-	if home, err := os.UserHomeDir(); err == nil {
-		p := filepath.Join(home, ".cargo", "bin", "oxillama")
-		if info, err := os.Stat(p); err == nil && !info.IsDir() {
-			return p, nil
-		}
-	}
-	return exec.LookPath("oxillama")
+	return exec.LookPath("llama-server")
 }
 
 var (
@@ -99,7 +106,7 @@ func Default() *Manager {
 				if err != nil {
 					return err
 				}
-				return memfit.CheckStart(context.Background(), "oxillama", info.Size())
+				return memfit.CheckStart(context.Background(), "llamacpp", info.Size())
 			},
 			ChildCmd: func(r Request) (*exec.Cmd, error) { return serveCmd(r, m.o.Port, m.o.Dir) },
 			Spawn:    func(r Request) (int, error) { return spawnSupervisor(r, m.o.Port, m.o.Dir) },
@@ -120,7 +127,7 @@ func NewManager(port int, dir string) *Manager {
 			if err != nil {
 				return err
 			}
-			return memfit.CheckStart(context.Background(), "oxillama", info.Size())
+			return memfit.CheckStart(context.Background(), "llamacpp", info.Size())
 		},
 		ChildCmd: func(r Request) (*exec.Cmd, error) { return serveCmd(r, m.o.Port, m.o.Dir) },
 		Spawn:    func(r Request) (int, error) { return spawnSupervisor(r, m.o.Port, m.o.Dir) },
@@ -131,11 +138,11 @@ func NewManager(port int, dir string) *Manager {
 func serveCmd(r Request, port int, dir string) (*exec.Cmd, error) {
 	bin, err := BinaryPath()
 	if err != nil {
-		return nil, fmt.Errorf("oxillama binary not found (set DENDRITE_OXILLAMA_BIN): %w", err)
+		return nil, fmt.Errorf("llama-server binary not found (set DENDRITE_LLAMA_SERVER_BIN or install llama.cpp): %w", err)
 	}
-	cmd := exec.Command(bin, "serve", "--model", r.ModelPath, "--model-id", r.ModelID,
-		"--port", strconv.Itoa(port), "--ctx-size", "8192", "--kv-dtype", "f16",
-		"--threads", strconv.Itoa(min(runtime.NumCPU(), 8)), "--request-timeout-secs", "1800")
+	cmd := exec.Command(bin, "-m", r.ModelPath, "--alias", r.ModelID,
+		"--host", "127.0.0.1", "--port", strconv.Itoa(port), "-c", "8192",
+		"-t", strconv.Itoa(min(runtime.NumCPU(), 8)), "--timeout", "1800")
 	logf, err := os.OpenFile(filepath.Join(dir, "server.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err == nil {
 		cmd.Stdout, cmd.Stderr = logf, logf

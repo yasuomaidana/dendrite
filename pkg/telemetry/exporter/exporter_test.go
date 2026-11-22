@@ -64,8 +64,8 @@ func TestPrometheusExporter_FormatAndServe(t *testing.T) {
 	exp.SetActiveSessions(3)
 	exp.RecordGatewayRequest("ollama", "200")
 	exp.RecordGatewayRequest("ollama", "200")
-	exp.RecordGatewayRequest("oxillama", "429")
-	exp.RecordFallbackEvent("oxillama", "ollama")
+	exp.RecordGatewayRequest("llamacpp", "429")
+	exp.RecordFallbackEvent("llamacpp", "ollama")
 	exp.SetCustomGauge("cache_hit_ratio", 0.94)
 
 	// Verify WriteMetrics directly
@@ -98,8 +98,8 @@ func TestPrometheusExporter_FormatAndServe(t *testing.T) {
 		`dendrite_node_reachable{node="cloud-node",status="offline"} 0`,
 		`dendrite_node_reachable{node="macbook-m3",status="online"} 1`,
 		`dendrite_gateway_requests_total{engine="ollama",status="200"} 2`,
-		`dendrite_gateway_requests_total{engine="oxillama",status="429"} 1`,
-		`dendrite_gateway_fallback_events_total{from="oxillama",to="ollama"} 1`,
+		`dendrite_gateway_requests_total{engine="llamacpp",status="429"} 1`,
+		`dendrite_gateway_fallback_events_total{from="llamacpp",to="ollama"} 1`,
 		`dendrite_custom_metric{name="cache_hit_ratio"} 0.9400`,
 		"dendrite_exporter_scrape_duration_seconds",
 	}

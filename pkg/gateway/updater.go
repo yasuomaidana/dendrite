@@ -47,7 +47,7 @@ type UpdaterOptions struct {
 	DryRun            bool               // Return generated config without writing to disk
 	Manager           *inference.Manager // Source inference manager
 	OllamaEndpoint    string             // Custom Ollama endpoint override
-	OxillamaEndpoint  string             // Custom OxiLLaMa endpoint override
+	LlamaCppEndpoint  string             // Custom llama-server endpoint override
 	PrimaryCloudModel string             // Primary commercial model (default: gemini-4-argon-medium)
 	BackupCloudModel  string             // Secondary commercial model (default: copilot-sonnet)
 	FastCloudModel    string             // Fast commercial model (default: gemini-3.8-flash-medium)
@@ -86,10 +86,7 @@ func DefaultUpdaterOptions() UpdaterOptions {
 		ollamaEP = os.Getenv("OLLAMA_HOST")
 	}
 
-	oxillamaEP := os.Getenv("DENDRITE_OXILLAMA_ENDPOINT")
-	if oxillamaEP == "" {
-		oxillamaEP = os.Getenv("OXILLAMA_HOST")
-	}
+	llamaCppEP := os.Getenv("DENDRITE_LLAMACPP_ENDPOINT")
 
 	return UpdaterOptions{
 		ConfigPath:        cfgPath,
@@ -97,7 +94,7 @@ func DefaultUpdaterOptions() UpdaterOptions {
 		UseContainerHost:  useContainerHost,
 		DryRun:            false,
 		OllamaEndpoint:    ollamaEP,
-		OxillamaEndpoint:  oxillamaEP,
+		LlamaCppEndpoint:  llamaCppEP,
 		PrimaryCloudModel: "gemini-4-argon-medium",
 		BackupCloudModel:  "copilot-sonnet",
 		FastCloudModel:    "gemini-3.8-flash-medium",
@@ -251,16 +248,16 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 	wg.Wait()
 	close(resCh)
 
-	var ollamaEP, oxiEP string
+	var ollamaEP, llamaEP string
 	for _, e := range engines {
 		switch e.Type() {
 		case inference.EngineOllama:
 			ollamaEP = e.Config().Endpoint
-		case inference.EngineOxiLLaMa:
-			oxiEP = e.Config().Endpoint
+		case inference.EngineLlamaCpp:
+			llamaEP = e.Config().Endpoint
 		}
 	}
-	fit := memfit.Assess(ctx, ollamaEP, oxiEP)
+	fit := memfit.Assess(ctx, ollamaEP, llamaEP)
 	report.MemoryBudgetBytes = fit.BudgetBytes
 
 	for r := range resCh {
@@ -300,7 +297,7 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 	sort.Strings(report.OfflineEngines)
 
 	// Smartest first: slower is acceptable, starving the machine is not (models that do not fit are
-	// already excluded above). A GPU engine wins a tie, since it answers faster.
+	// already excluded above).
 	sort.SliceStable(report.DiscoveredModels, func(i, j int) bool {
 		a, b := report.DiscoveredModels[i], report.DiscoveredModels[j]
 		if a.Fits != b.Fits { // models that fit come first
@@ -311,10 +308,6 @@ func (u *RoutingTableUpdater) UpdateNow(ctx context.Context) (*UpdateReport, err
 		}
 		if a.IntelligenceScore != b.IntelligenceScore {
 			return a.IntelligenceScore > b.IntelligenceScore
-		}
-		ga, gb := inference.GPUAccelerated(inference.EngineType(a.EngineType)), inference.GPUAccelerated(inference.EngineType(b.EngineType))
-		if ga != gb {
-			return ga
 		}
 		return a.ModelName < b.ModelName
 	})
