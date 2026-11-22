@@ -63,7 +63,7 @@ func TestReadClaudeReportsAMissingFolder(t *testing.T) {
 }
 
 func TestMirrorClaudeSavesEachMemoryIntoEngram(t *testing.T) {
-	log := stubEngram(t, `echo "$*" >> "$LOG"`)
+	log := testkit.StubEngram(t, `echo "$*" >> "$LOG"`)
 	n, err := memory.MirrorClaude(context.Background(), t.TempDir(), claudeDir(t))
 	testkit.Check(t, err)
 	testkit.Equal(t, "mirrored", n, 2)
@@ -78,7 +78,7 @@ func TestMirrorClaudeSavesEachMemoryIntoEngram(t *testing.T) {
 
 func TestMirrorClaudeDoesNothingWhenEngramIsOffOrMissing(t *testing.T) {
 	home := t.TempDir()
-	stubEngram(t, "exit 0")
+	testkit.StubEngram(t, "exit 0")
 	testkit.Check(t, memory.SetOverride(home, memory.ClaudeOnly))
 	n, err := memory.MirrorClaude(context.Background(), home, claudeDir(t))
 	testkit.Check(t, err)
@@ -91,7 +91,7 @@ func TestMirrorClaudeDoesNothingWhenEngramIsOffOrMissing(t *testing.T) {
 }
 
 func TestMirrorClaudeStopsAtTheFirstEngramFailure(t *testing.T) {
-	stubEngram(t, "exit 1")
+	testkit.StubEngram(t, "exit 1")
 	if _, err := memory.MirrorClaude(context.Background(), t.TempDir(), claudeDir(t)); err == nil {
 		t.Fatal("a failing engram must be reported")
 	}

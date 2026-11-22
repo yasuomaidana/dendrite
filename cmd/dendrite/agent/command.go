@@ -41,7 +41,7 @@ func newBoutonJobsCmd() *cobra.Command {
 	tail.Flags().IntP("lines", "n", 50, "Number of lines")
 
 	run := idCmd("run", "Run a job in the foreground (used by the dispatcher)", func(cmd *cobra.Command, id string) error {
-		return agentjobs.RunJob(cmd.Context(), id)
+		return runJobAndRemember(cmd.Context(), id)
 	})
 	run.Hidden = true
 

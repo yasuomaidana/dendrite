@@ -13,9 +13,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"Dendrite/pkg/memory"
-	"Dendrite/pkg/projectid"
 )
 
 // RunJob executes the job, inspects outcome signatures, enforces scope boundaries, and handles retries.
@@ -27,7 +24,6 @@ func (d *Dispatcher) RunJob(ctx context.Context, id string) error {
 
 	defer func() {
 		_ = d.Ledger.MarkDone(id)
-		rememberOutcome(job)
 	}()
 
 	job.Status = StatusRunning
@@ -379,30 +375,4 @@ func (d *Dispatcher) runOxillama(ctx context.Context, job *Job, promptText strin
 		endpoint = defaultOxillamaEndpoint()
 	}
 	return d.runChat(ctx, job, promptText, strings.TrimRight(endpoint, "/")+"/v1/chat/completions", "", "oxillama")
-}
-
-// rememberOutcome journals how a job ended, so the next session knows what the agent did and how it went.
-// Only a final status is worth remembering (a job that will be retried is not over); journaling is
-// best-effort and never changes the job.
-func rememberOutcome(job *Job) {
-	switch job.Status {
-	case StatusSucceeded, StatusEarlyExit, StatusNeedsReview, StatusFailed:
-	default:
-		return
-	}
-	home, err := projectid.HomeDir()
-	if err != nil {
-		return
-	}
-	attempts := 0
-	for _, n := range job.Attempts {
-		attempts += n
-	}
-	_ = memory.Record(home, memory.DefaultJournal(), memory.Entry{
-		Type:   "outcome",
-		Ticket: job.Ticket,
-		Source: "job " + job.ID,
-		Title:  fmt.Sprintf("Job %s %s", job.ID, job.Status),
-		Body:   fmt.Sprintf("Agent %s (model %q) ended job %s for ticket %q as %s after %d attempt(s).", job.Agent, job.Model, job.ID, job.Ticket, job.Status, attempts),
-	})
 }

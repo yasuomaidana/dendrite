@@ -12,8 +12,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"Dendrite/pkg/memory"
 )
 
 func createGitRepo(t *testing.T) string {
@@ -173,8 +171,6 @@ func TestSubmit_ValidationErrors(t *testing.T) {
 }
 
 func TestRunJob_DONE_Success(t *testing.T) {
-	t.Setenv("DENDRITE_HOME", t.TempDir())
-	t.Setenv("DENDRITE_STATE_DIR", t.TempDir())
 	worktree := createGitRepo(t)
 	targetDir := filepath.Join(worktree, "pkg", "foo")
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
@@ -246,39 +242,6 @@ exit 0
 	}
 	if !foundExited {
 		t.Errorf("exited event not found in event log")
-	}
-
-	remembered, _, _ := memory.DefaultJournal().Pending()
-	if len(remembered) != 1 || remembered[0].Type != "outcome" || remembered[0].Ticket != "DEN-989" || !strings.Contains(remembered[0].Title, string(StatusSucceeded)) {
-		t.Errorf("the job's outcome must be journaled once: %+v", remembered)
-	}
-}
-
-func TestRememberOutcomeJournalsOnlyFinalStatuses(t *testing.T) {
-	t.Setenv("DENDRITE_HOME", t.TempDir())
-	t.Setenv("DENDRITE_STATE_DIR", t.TempDir())
-	for _, st := range []Status{StatusRunning, StatusFailedRetryable, StatusQuotaExhausted, StatusQueued} {
-		rememberOutcome(&Job{ID: "j", Status: st})
-	}
-	if got, _, _ := memory.DefaultJournal().Pending(); len(got) != 0 {
-		t.Fatalf("a job that is not over is not remembered: %+v", got)
-	}
-	for _, st := range []Status{StatusSucceeded, StatusEarlyExit, StatusNeedsReview, StatusFailed} {
-		rememberOutcome(&Job{ID: "j-" + string(st), Status: st, Agent: "agy", Attempts: map[string]int{"a": 1, "b": 2}})
-	}
-	got, _, _ := memory.DefaultJournal().Pending()
-	if len(got) != 4 || !strings.Contains(got[0].Body, "after 3 attempt(s)") {
-		t.Fatalf("every final status is remembered: %+v", got)
-	}
-}
-
-func TestRememberOutcomeIsSkippedWithoutAHome(t *testing.T) {
-	t.Setenv("DENDRITE_HOME", "")
-	t.Setenv("HOME", "")
-	t.Setenv("DENDRITE_STATE_DIR", t.TempDir())
-	rememberOutcome(&Job{ID: "j", Status: StatusFailed})
-	if got, _, _ := memory.DefaultJournal().Pending(); len(got) != 0 {
-		t.Fatalf("no home, no journal: %+v", got)
 	}
 }
 

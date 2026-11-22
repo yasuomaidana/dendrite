@@ -44,6 +44,7 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 | [`codex`](codex.md) | `doc`, `docs`, `engram-codex` | Docs-as-Code reflection, Docusaurus synthesis and portal |
 | [`cortex`](cortex.md) | `ui`, `cortex-cockpit` | Embedded Web Control Cockpit and telemetry server |
 | [`install`](install.md) | `bootstrap` | Install dendrite and its sub-projects from git: main (stable) or develop (--dev), per-member --ref overrides |
+| [`memory`](memory.md) |  | Agent memory: journal what is worth remembering and flush it into Engram |
 | [`rag`](rag.md) | `retrieval`, `retriever` | Code & documentation retrieval sidecar orchestration (dendrite-rag) |
 | [`sensory`](sensory.md) | `telemetry`, `afferent-telemetry`, `tel` | Hardware thermal, token spend, and Prometheus telemetry |
 | [`update`](update.md) | `upgrade`, `self-update` | Update dendrite from a release, or rebuild it and its synapse siblings from local sources (--dev) |

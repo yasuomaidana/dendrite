@@ -9,16 +9,17 @@ import (
 	"Dendrite/pkg/testkit"
 )
 
-func TestSaveRunsEngramSaveWithTypeAndProject(t *testing.T) {
-	dir, log := tools(t, map[string]string{"engram": engramScript})
-	testkit.Check(t, engram.Save(context.Background(), dir+"/engram", "dendrite", "decision", "use X", "because Y"))
-	testkit.Equal(t, "arguments", strings.TrimSpace(calls(t, log)), "save use X because Y --type decision --project dendrite")
-}
-
-func TestSaveOmitsTypeAndProjectWhenEmpty(t *testing.T) {
-	dir, log := tools(t, map[string]string{"engram": engramScript})
-	testkit.Check(t, engram.Save(context.Background(), dir+"/engram", "", "", "t", "b"))
-	testkit.Equal(t, "arguments", strings.TrimSpace(calls(t, log)), "save t b")
+func TestSaveRunsEngramSaveWithTheFlagsThatAreSet(t *testing.T) {
+	for name, c := range map[string]struct{ project, typ, want string }{
+		"type and project": {"dendrite", "decision", "save use X because Y --type decision --project dendrite"},
+		"neither":          {"", "", "save use X because Y"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir, log := tools(t, map[string]string{"engram": engramScript})
+			testkit.Check(t, engram.Save(context.Background(), dir+"/engram", c.project, c.typ, "use X", "because Y"))
+			testkit.Equal(t, "arguments", strings.TrimSpace(calls(t, log)), c.want)
+		})
+	}
 }
 
 func TestSaveReportsEngramsFailure(t *testing.T) {

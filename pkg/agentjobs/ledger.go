@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"Dendrite/pkg/fsutil"
 	"Dendrite/pkg/statedir"
 )
 
@@ -215,10 +214,17 @@ func (l *Ledger) Append(id string, event Event) error {
 		_ = os.Truncate(eventsPath, validOffset)
 	}
 
-	line, _ := json.Marshal(event)
-	if err := fsutil.AppendLine(eventsPath, line); err != nil {
-		return fmt.Errorf("agentjobs: failed to append to events log: %w", err)
+	f, err := os.OpenFile(eventsPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("agentjobs: failed to open events log: %w", err)
 	}
+	defer f.Close()
+
+	line, _ := json.Marshal(event)
+	line = append(line, '\n')
+
+	_, _ = f.Write(line)
+	_ = f.Sync()
 	return nil
 }
 

@@ -3,7 +3,6 @@ package memory
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/cmd/dendrite/internal/clitest"
-	"Dendrite/pkg/engram"
 	"Dendrite/pkg/memory"
 	"Dendrite/pkg/testkit"
 	"bytes"
@@ -28,18 +27,6 @@ func rig(t *testing.T) (home string) {
 	return home
 }
 
-// stubEngram puts a stand-in engram first on PATH and returns the file it logs its calls to.
-func stubEngram(t *testing.T, body string) string {
-	t.Helper()
-	dir, log := t.TempDir(), filepath.Join(t.TempDir(), "calls.log")
-	testkit.WriteFile(t, filepath.Join(dir, "engram"), "#!/bin/sh\n"+body+"\n", 0o755)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv(engram.BinaryEnv, "")
-	t.Setenv("ENGRAM_DATA_DIR", t.TempDir())
-	t.Setenv("LOG", log)
-	return log
-}
-
 func run(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	var out bytes.Buffer
@@ -49,7 +36,7 @@ func run(t *testing.T, args ...string) (string, error) {
 
 func TestSaveJournalsAndFlushSendsItToEngram(t *testing.T) {
 	rig(t)
-	log := stubEngram(t, `echo "$*" >> "$LOG"`)
+	log := testkit.StubEngram(t, `echo "$*" >> "$LOG"`)
 
 	out, err := run(t, "save", "--type", "decision", "--ticket", "DEN-9", "Use X", "because Y")
 	testkit.Check(t, err)
@@ -126,7 +113,7 @@ func TestModeReportsAComputedModeAndPrintsJSON(t *testing.T) {
 
 func TestSyncMirrorsAGivenFolderAndTheDefaultOne(t *testing.T) {
 	rig(t)
-	log := stubEngram(t, `echo "$*" >> "$LOG"`)
+	log := testkit.StubEngram(t, `echo "$*" >> "$LOG"`)
 	dir := t.TempDir()
 	testkit.WriteFile(t, filepath.Join(dir, "a.md"), "---\nname: fact-a\ndescription: d\nmetadata:\n  type: project\n---\nbody\n", 0o644)
 
@@ -184,7 +171,7 @@ func TestCommandsReportAnUnknownHome(t *testing.T) {
 
 func TestFlushReportsEngramFailureAndModeSetReportsAnUnwritableHome(t *testing.T) {
 	rig(t)
-	stubEngram(t, "exit 1")
+	testkit.StubEngram(t, "exit 1")
 	_, err := memory.DefaultJournal().Append(memory.Entry{Title: "t", Body: "b"})
 	testkit.Check(t, err)
 	if _, err := run(t, "flush"); err == nil {

@@ -9,7 +9,6 @@ import (
 	"Dendrite/pkg/projectid"
 	"Dendrite/pkg/statedir"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -137,9 +136,7 @@ func printMode(out io.Writer, s memory.State) error {
 		source = "computed: " + s.Reason
 	}
 	if cli.Globals.JSON {
-		data, _ := json.MarshalIndent(map[string]any{"mode": s.Resolve(), "source": source, "override": s.Override, "computed": s.Computed}, "", "  ")
-		fmt.Fprintln(out, string(data))
-		return nil
+		return cli.WriteJSON(out, map[string]any{"mode": s.Resolve(), "source": source, "override": s.Override, "computed": s.Computed})
 	}
 	fmt.Fprintf(out, "[✓] Memory mode: %s (%s)\n", s.Resolve(), source)
 	return nil

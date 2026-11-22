@@ -1,29 +1,15 @@
 package hook
 
 import (
-	"Dendrite/pkg/engram"
 	"Dendrite/pkg/memory"
 	"Dendrite/pkg/testkit"
 	"bytes"
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
-
-// stubEngram puts a stand-in engram first on PATH (isolating its data) and returns the file it logs to.
-func stubEngram(t *testing.T, body string) string {
-	t.Helper()
-	dir, log := t.TempDir(), filepath.Join(t.TempDir(), "calls.log")
-	testkit.WriteFile(t, filepath.Join(dir, "engram"), "#!/bin/sh\n"+body+"\n", 0o755)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("ENGRAM_DATA_DIR", t.TempDir())
-	t.Setenv(engram.BinaryEnv, "")
-	t.Setenv("LOG", log)
-	return log
-}
 
 func pendingMemory(t *testing.T) []memory.Entry {
 	t.Helper()
@@ -74,7 +60,7 @@ func TestNothingIsJournaledWhenTheModeIsClaudeOnlyOrHomeIsUnknown(t *testing.T) 
 
 func TestSessionEndFlushesTheJournalIntoEngramOnce(t *testing.T) {
 	r := newHookRig(t, "To Do")
-	log := stubEngram(t, `echo "$*" >> "$LOG"`)
+	log := testkit.StubEngram(t, `echo "$*" >> "$LOG"`)
 	var out bytes.Buffer
 	testkit.Check(t, runDecision(context.Background(), r.askEvent(), &out))
 
@@ -95,7 +81,7 @@ func TestSessionEndFlushesTheJournalIntoEngramOnce(t *testing.T) {
 
 func TestSessionEndReportsAnEngramFailureAndKeepsTheJournal(t *testing.T) {
 	r := newHookRig(t, "To Do")
-	stubEngram(t, "echo busy >&2; exit 1")
+	testkit.StubEngram(t, "echo busy >&2; exit 1")
 	var out bytes.Buffer
 	testkit.Check(t, runDecision(context.Background(), r.askEvent(), &out))
 

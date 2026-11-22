@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -75,19 +74,6 @@ func TestFlushReportsAnUnwritableOffset(t *testing.T) {
 	}
 }
 
-// stubEngram puts a stand-in engram on a PATH that holds nothing else and returns its call log.
-func stubEngram(t *testing.T, body string) string {
-	t.Helper()
-	dir, log := t.TempDir(), filepath.Join(t.TempDir(), "calls.log")
-	testkit.WriteFile(t, filepath.Join(dir, "engram"), "#!/bin/sh\n"+body+"\n", 0o755)
-	t.Setenv("PATH", dir+":/bin:/usr/bin")
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("ENGRAM_DATA_DIR", t.TempDir())
-	t.Setenv(engram.BinaryEnv, "")
-	t.Setenv("LOG", log)
-	return log
-}
-
 func TestRecordJournalsOnlyWhenTheModeWritesToEngram(t *testing.T) {
 	home, j := t.TempDir(), journalIn(t)
 	testkit.Check(t, memory.Record(home, j, memory.Entry{Title: "a", Body: "b"}))
@@ -99,7 +85,7 @@ func TestRecordJournalsOnlyWhenTheModeWritesToEngram(t *testing.T) {
 }
 
 func TestFlushPendingSavesThroughEngramAndSecondRunAddsNothing(t *testing.T) {
-	log := stubEngram(t, `echo "$*" >> "$LOG"`)
+	log := testkit.StubEngram(t, `echo "$*" >> "$LOG"`)
 	home, j := t.TempDir(), journalIn(t)
 	fill(t, j, "one")
 
@@ -122,7 +108,7 @@ func TestFlushPendingKeepsTheJournalWhenEngramIsMissingOrOff(t *testing.T) {
 	testkit.Check(t, err)
 	testkit.Equal(t, "missing engram flushes nothing", n, 0)
 
-	stubEngram(t, "exit 0")
+	testkit.StubEngram(t, "exit 0")
 	testkit.Check(t, memory.SetOverride(home, memory.Off))
 	n, err = memory.FlushPending(context.Background(), home, j)
 	testkit.Check(t, err)
@@ -131,7 +117,7 @@ func TestFlushPendingKeepsTheJournalWhenEngramIsMissingOrOff(t *testing.T) {
 }
 
 func TestFlushPendingReportsEngramFailure(t *testing.T) {
-	stubEngram(t, "exit 1")
+	testkit.StubEngram(t, "exit 1")
 	j := journalIn(t)
 	fill(t, j, "one")
 	if _, err := memory.FlushPending(context.Background(), t.TempDir(), j); err == nil {
