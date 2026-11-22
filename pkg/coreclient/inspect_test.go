@@ -76,22 +76,22 @@ func TestInspectFailures(t *testing.T) {
 	if _, err := testClient(t).Inspect(ctx, filepath.Join(t.TempDir(), "missing")); !errors.Is(err, ErrNotRecognised) {
 		t.Errorf("a path that does not exist: %v", err)
 	}
-
-	t.Setenv("TESTSIDECAR_MODE", "noinspect")
-	if _, err := testClient(t).Inspect(ctx, target(t, "a.exe", "MZ")); !errors.Is(err, ErrInspectUnsupported) {
-		t.Errorf("an old sidecar: %v", err)
-	}
-	t.Setenv("TESTSIDECAR_MODE", "rpcfail")
-	if _, err := testClient(t).Inspect(ctx, target(t, "a.exe", "MZ")); err == nil || errors.Is(err, ErrInspectUnsupported) || errors.Is(err, ErrNotRecognised) {
-		t.Errorf("another sidecar failure passes through: %v", err)
-	}
-	t.Setenv("TESTSIDECAR_MODE", "exit")
-	if _, err := testClient(t).Inspect(ctx, target(t, "a.exe", "MZ")); err == nil || errors.Is(err, ErrInspectUnsupported) || errors.Is(err, ErrNotRecognised) {
-		t.Errorf("a sidecar that exits: %v", err)
-	}
 	var nilClient *Client
 	if _, err := nilClient.Inspect(ctx, target(t, "a.exe", "MZ")); !errors.Is(err, ErrBinaryMissing) {
 		t.Errorf("a nil client must report ErrBinaryMissing, got %v", err)
+	}
+}
+
+func TestInspectReportsASidecarThatCannotAnswer(t *testing.T) {
+	for mode, want := range map[string]func(error) bool{
+		"noinspect": func(err error) bool { return errors.Is(err, ErrInspectUnsupported) },
+		"rpcfail":   func(err error) bool { return err != nil && !errors.Is(err, ErrInspectUnsupported) && !errors.Is(err, ErrNotRecognised) },
+		"exit":      func(err error) bool { return err != nil && !errors.Is(err, ErrInspectUnsupported) && !errors.Is(err, ErrNotRecognised) },
+	} {
+		t.Setenv("TESTSIDECAR_MODE", mode)
+		if _, err := testClient(t).Inspect(context.Background(), target(t, "a.exe", "MZ")); !want(err) {
+			t.Errorf("mode %s: %v", mode, err)
+		}
 	}
 }
 

@@ -85,31 +85,29 @@ type Image struct {
 // own. A sidecar that predates the method answers ErrInspectUnsupported; use FromPE with PEParse for a PE image
 // meanwhile.
 func (c *Client) Inspect(ctx context.Context, path string) (*Image, error) {
-	var img Image
-	if err := c.callPath(ctx, "bin.inspect", path, &img, ErrInspectUnsupported, ErrNotRecognised); err != nil {
-		return nil, err
-	}
-	return &img, nil
+	return callPath[Image](ctx, c, "bin.inspect", path, ErrInspectUnsupported, ErrNotRecognised)
 }
 
-// callPath asks a sidecar method that takes one path. -32601 (the method is missing) answers unsupported and
-// -32602 (the target is refused) answers rejected with the sidecar's message.
-func (c *Client) callPath(ctx context.Context, method, path string, result any, unsupported, rejected error) error {
+// callPath asks a sidecar method that takes one path and answers a T. -32601 (the method is missing) answers
+// unsupported and -32602 (the target is refused) answers rejected with the sidecar's message.
+func callPath[T any](ctx context.Context, c *Client, method, path string, unsupported, rejected error) (*T, error) {
 	if strings.TrimSpace(path) == "" {
-		return errors.New("a path is required")
+		return nil, errors.New("a path is required")
 	}
-	err := c.call(ctx, method, map[string]string{"path": path}, result)
+	var result T
+	err := c.call(ctx, method, map[string]string{"path": path}, &result)
 	var rpcErr *sidecar.RPCError
-	if err == nil || !errors.As(err, &rpcErr) {
-		return err
+	switch {
+	case err == nil:
+		return &result, nil
+	case !errors.As(err, &rpcErr):
+		return nil, err
+	case rpcErr.Code == -32601:
+		return nil, unsupported
+	case rpcErr.Code == -32602:
+		return nil, fmt.Errorf("%w: %s", rejected, rpcErr.Message)
 	}
-	switch rpcErr.Code {
-	case -32601:
-		return unsupported
-	case -32602:
-		return fmt.Errorf("%w: %s", rejected, rpcErr.Message)
-	}
-	return err
+	return nil, err
 }
 
 // FromPE maps what pe.parse answers to an Image, for a dendrite-core that has pe.parse but not bin.inspect.

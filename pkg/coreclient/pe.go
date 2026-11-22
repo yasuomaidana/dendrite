@@ -43,9 +43,5 @@ type PEInfo struct {
 
 // PEParse reads the PE image at path in the dendrite-core sidecar, so Go keeps no PE parser of its own.
 func (c *Client) PEParse(ctx context.Context, path string) (*PEInfo, error) {
-	var info PEInfo
-	if err := c.callPath(ctx, "pe.parse", path, &info, ErrPEUnsupported, ErrNotPE); err != nil {
-		return nil, err
-	}
-	return &info, nil
+	return callPath[PEInfo](ctx, c, "pe.parse", path, ErrPEUnsupported, ErrNotPE)
 }
