@@ -91,7 +91,7 @@ func TestARefusedPolicyStopsTheAnalysisAtTheEngineStage(t *testing.T) {
 	if _, err := r.Resume(ctx(), "eng-host", Options{Trusted: true}); err != nil {
 		t.Errorf("--trusted lets the host run it: %v", err)
 	}
-	if st, _ := r.Store.Load("eng-host"); !st.Trusted || st.EngineMode != "host" || st.EngineRan != "rizin" {
+	if st, _ := r.Store.Load("eng-host"); !st.Trusted || st.EngineMode != "host" || st.EngineRan != "ghidra" {
 		t.Errorf("trust is recorded: %+v", st)
 	}
 }
