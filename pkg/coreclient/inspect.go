@@ -94,8 +94,13 @@ func callPath[T any](ctx context.Context, c *Client, method, path string, unsupp
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("a path is required")
 	}
+	return callParams[T](ctx, c, method, map[string]any{"path": path}, unsupported, rejected)
+}
+
+// callParams asks a sidecar method with params and answers a T, mapping the two refusals as callPath does.
+func callParams[T any](ctx context.Context, c *Client, method string, params map[string]any, unsupported, rejected error) (*T, error) {
 	var result T
-	err := c.call(ctx, method, map[string]string{"path": path}, &result)
+	err := c.call(ctx, method, params, &result)
 	var rpcErr *sidecar.RPCError
 	switch {
 	case err == nil:

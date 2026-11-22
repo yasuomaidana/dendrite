@@ -125,6 +125,9 @@ func withReaService(fn func(*analysis.Service) error) error {
 
 // reportRun prints what an analyze or resume did. A pause is an outcome the user asked for, not a failure.
 func reportRun(out io.Writer, res *analysis.Result, err error) error {
+	if errors.Is(err, analysis.ErrPaused) && res.State.Gate != "" {
+		return writeState(out, res.State, "[i] Analysis %s stopped at the pause gate: %s\n    Continue on the local tier with `dendrite retro resume %s`, or allow the paid model with `dendrite retro resume %s --tier paid`\n", res.State.ID, res.State.Gate, res.State.ID, res.State.ID)
+	}
 	if errors.Is(err, analysis.ErrPaused) {
 		return writeState(out, res.State, "[i] Analysis %s is paused after stage %s: resume it with `dendrite retro resume %s`\n", res.State.ID, res.State.Stage, res.State.ID)
 	}

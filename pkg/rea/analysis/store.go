@@ -26,6 +26,7 @@ const (
 	StageNew     Stage = "new"     // created, nothing parsed yet
 	StageParsed  Stage = "parsed"  // the inspected structure is saved in image.json
 	StageWritten Stage = "written" // the workspace documents are written
+	StageTriaged Stage = "triaged" // the functions are routed to a model tier (triage.json), when the target has any
 	StageDone    Stage = "done"    // the workspace is indexed and searchable
 )
 
@@ -49,6 +50,8 @@ type State struct {
 	Model     string    `json:"model,omitempty"`
 	Stage     Stage     `json:"stage"`
 	Paused    bool      `json:"paused"`
+	Gate      string    `json:"gate,omitempty"`
+	Triage    *Triage   `json:"triage,omitempty"`
 	Error     string    `json:"error,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

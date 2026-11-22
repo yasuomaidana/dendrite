@@ -38,6 +38,7 @@ var handlers = map[string]handler{
 	"hash.chunk_id":          hashChunkID,
 	"pe.parse":               peParse,
 	"bin.inspect":            binInspect,
+	"bin.functions":          binFunctions,
 }
 
 func main() {

@@ -53,6 +53,7 @@ const (
 type Service struct {
 	Store     *Store
 	Inspector Inspector
+	Functions FunctionLister // nil: the functions are not triaged
 	Index     Indexer
 	Now       func() time.Time
 }
@@ -64,7 +65,8 @@ func NewService() (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{Store: store, Inspector: &CoreInspector{Client: coreclient.Default()}, Index: NewRagIndex()}, nil
+	return &Service{Store: store, Inspector: &CoreInspector{Client: coreclient.Default()},
+		Functions: coreclient.Default(), Index: NewRagIndex()}, nil
 }
 
 func (s *Service) now() time.Time {
@@ -140,8 +142,11 @@ func (s *Service) Resume(ctx context.Context, id string, o Options) (*Result, er
 		}
 		st.Tier = o.Tier
 	}
+	if st.Tier == TierPaid {
+		st.Gate = "" // the paid tier is what the gate asks for
+	}
 	st.Model = orDefault(o.Model, st.Model)
-	st.Paused, st.UpdatedAt = false, s.now()
+	st.Paused, st.UpdatedAt = st.Gate != "", s.now() // a gate still standing keeps the analysis paused
 	if err := s.Store.Save(&st); err != nil {
 		return nil, err
 	}
@@ -233,7 +238,7 @@ func (s *Service) checkpoint(st *State) error {
 	if err != nil {
 		return err
 	}
-	st.Paused, st.Error, st.UpdatedAt = fresh.Paused, "", s.now()
+	st.Paused, st.Error, st.UpdatedAt = fresh.Paused || st.Gate != "", "", s.now() // the pause gate holds until the paid tier is allowed
 	return s.Store.Save(st)
 }
 
@@ -244,6 +249,10 @@ func (s *Service) step(ctx context.Context, st *State) error {
 		return s.parse(ctx, st)
 	case StageParsed:
 		return s.writeDocs(st)
+	case StageWritten:
+		if s.Functions != nil {
+			return s.triage(ctx, st)
+		}
 	}
 	return s.indexDocs(ctx, st)
 }

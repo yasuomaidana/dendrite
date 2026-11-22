@@ -169,3 +169,18 @@ func TestRetroAnalyzeIsNotLimitedToWindows(t *testing.T) {
 		t.Errorf("search an ELF analysis: exit %d\n%s", code, out)
 	}
 }
+
+func TestRetroAnalyzeStopsAtThePauseGateForHardFunctions(t *testing.T) {
+	useReaSidecars(t)
+	pe := writePE(t, "MZ\x90\x00 HARD image")
+	out, code := cliOutput(t, "retro", "analyze", pe, "--id", "pe-gate")
+	if code != cli.ExitOK || !strings.Contains(out, "pause gate") || !strings.Contains(out, "retro resume pe-gate --tier paid") {
+		t.Fatalf("analyze: exit %d\n%s", code, out)
+	}
+	if out, code = cliOutput(t, "retro", "resume", "pe-gate"); code != cli.ExitOK || !strings.Contains(out, "pause gate") {
+		t.Errorf("resume on the local tier does not pass the gate: exit %d\n%s", code, out)
+	}
+	if out, code = cliOutput(t, "retro", "resume", "pe-gate", "--tier", "paid"); code != cli.ExitOK || !strings.Contains(out, "Analysis pe-gate: done") {
+		t.Errorf("resume on the paid tier: exit %d\n%s", code, out)
+	}
+}
