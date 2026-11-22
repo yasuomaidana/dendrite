@@ -50,6 +50,6 @@ func dbAccessContent(dir string, _ directive.Set) []byte {
 // writeDBAccessJob adds the Diesel-only job of a Rust project.
 func writeDBAccessJob(b *strings.Builder) {
 	b.WriteString("  db-access:\n    name: " + scalar(dbAccessJobName) + "\n    runs-on: ubuntu-latest\n    steps:\n" +
-		"      - name: Checkout\n        uses: actions/checkout@v4\n" +
+		checkoutStep +
 		"      - name: Rust reaches databases only through Diesel\n        run: bash " + DBAccessScriptPath + "\n")
 }

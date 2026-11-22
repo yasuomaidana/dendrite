@@ -72,7 +72,7 @@ func marshal(v any) string {
 
 func writeJob(b *strings.Builder, id, name string, steps []Step) {
 	b.WriteString("  " + id + ":\n    name: " + scalar(name) + "\n    runs-on: ubuntu-latest\n    steps:\n")
-	b.WriteString("      - name: Checkout\n        uses: actions/checkout@v4\n")
+	b.WriteString(checkoutStep)
 	for _, s := range steps {
 		writeStep(b, s, ".")
 	}
@@ -90,7 +90,7 @@ func gateSteps(comps []Component, ext Extension) []Step {
 	} else {
 		steps = append(steps,
 			Step{Name: "Set up Rust", Uses: "dtolnay/rust-toolchain@stable"},
-			Step{Name: "Cache loom-gate", Uses: "actions/cache@v4", With: [][2]string{
+			Step{Name: "Cache loom-gate", Uses: actionCache, With: [][2]string{
 				{"path", "~/.cargo/bin/loom-gate"},
 				{"key", "loom-gate-${{ runner.os }}-${{ vars.LOOM_GATE_REF || 'v0.1.0' }}"}}},
 			run("Install loom-gate", `command -v loom-gate >/dev/null || cargo install --locked --git `+loomGateRepo+` --tag "${{ vars.LOOM_GATE_REF || 'v0.1.0' }}" loom-gate`))
@@ -126,7 +126,7 @@ func jobTitle(c Component) string {
 func writeComponentJob(b *strings.Builder, c Component, o Options, ext Extension) {
 	s := stacks[c.Kind]
 	b.WriteString("  " + c.ID() + ":\n    name: " + scalar(jobTitle(c)) + "\n    runs-on: ubuntu-latest\n    steps:\n")
-	b.WriteString("      - name: Checkout\n        uses: actions/checkout@v4\n")
+	b.WriteString(checkoutStep)
 	for _, st := range append(s.setup(c), s.lint(c, o)...) {
 		writeStep(b, st, c.Dir)
 	}

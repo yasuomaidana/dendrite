@@ -6,6 +6,7 @@ import (
 	"Dendrite/cmd/dendrite/internal/planecli"
 	"Dendrite/cmd/dendrite/soma"
 	"Dendrite/pkg/agentjobs"
+	"Dendrite/pkg/engram"
 	"Dendrite/pkg/repair"
 	"Dendrite/pkg/statedir"
 	"Dendrite/pkg/ticketlock"
@@ -210,6 +211,9 @@ func runSessionResume(ctx context.Context, targetPath string, asJSON bool, out i
 	soma.OfferDisposal(ctx, out)
 	planecli.WarnStaleIndex(out)
 	WarnWatcherDown(ledger, time.Now(), out)
+	if memory := engram.JobMemory(ctx, "."); memory != "" {
+		fmt.Fprintf(out, "\n%s\n", memory)
+	}
 	printSynapsePeers(".", out)
 	return nil
 }

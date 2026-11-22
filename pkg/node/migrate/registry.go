@@ -83,21 +83,16 @@ func DefaultServiceCatalog() map[string]ServiceProfile {
 		"penpot": {
 			Name:           "penpot",
 			DisplayName:    "Penpot Open-Source Design Stack",
-			Description:    "Design and prototyping frontend, backend, database and redis (:9000, :9001)",
+			Description:    "Design and prototyping frontend, backend, exporter, database and redis (:9000, :9001, :9002)",
 			ComposeFile:    stacks.Path("compose.penpot.yaml"),
 			Port:           9001,
 			HealthEndpoint: "/api/health",
 			MinRAMMB:       1536,
 			MinDiskGB:      20,
 			RequiresGPU:    false,
-			Containers: []string{
-				"dendrite-penpot-frontend",
-				"dendrite-penpot-backend",
-				"dendrite-penpot-db",
-				"dendrite-penpot-redis",
-			},
-			EnvKey:      "PENPOT_PUBLIC_URI",
-			SupportedOS: []string{"linux", "debian", "ubuntu", "darwin"},
+			Containers:     containerNames("penpot", "frontend", "backend", "exporter", "db", "redis"),
+			EnvKey:         "PENPOT_PUBLIC_URI",
+			SupportedOS:    []string{"linux", "debian", "ubuntu", "darwin"},
 		},
 		"grafana": {
 			Name:           "grafana",
@@ -254,4 +249,13 @@ func EvaluateDebianServer(totalRAMMB uint64, totalDiskGB uint64) DebianCapacityP
 		ExcludedServices:  excluded,
 		RecommendedAction: recommendedCmd,
 	}
+}
+
+// containerNames expands a stack's short container names to their dendrite-<stack>-<name> form.
+func containerNames(stack string, names ...string) []string {
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = "dendrite-" + stack + "-" + n
+	}
+	return out
 }
