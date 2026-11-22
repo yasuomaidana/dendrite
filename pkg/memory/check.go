@@ -108,29 +108,42 @@ func scoreEngram(ctx context.Context, in CheckInput, claude []ClaudeMemory) (Sco
 	if err != nil {
 		return Score{}, false, "engram cannot be read: " + err.Error()
 	}
-	s := Score{Memories: len(observations)}
-	mirrored := map[string]bool{}
-	for _, m := range claude {
-		mirrored[m.Name] = true
+	s := Score{Memories: len(observations), New7d: newWork(observations, claude, in.Now)}
+	bodies := make([]string, len(observations))
+	for i, o := range observations {
+		bodies[i] = o.Content
 	}
-	var bodies []string
-	for _, o := range observations {
-		bodies = append(bodies, o.Content)
-		if !mirrored[o.Title] && in.Now.Sub(o.Created()) < week {
-			s.New7d++
-		}
-	}
-	found := 0
-	for _, m := range claude {
-		if titles, err := in.Store.Search(ctx, recallQuery(m)); err == nil && contains(titles, m.Name) {
-			found++
-		}
-	}
-	s.Recall = ratio(found, len(claude))
+	s.Recall = engramRecall(ctx, in.Store, claude)
 	s.Stale = stale(bodies, in.Repo)
 	s.StartBytes, _ = in.Store.StartBytes(ctx)
 	s.Score = weigh(s)
 	return s, true, ""
+}
+
+// newWork counts the memories Engram got in the last week that did not come from mirroring Claude's.
+func newWork(observations []engram.Observation, claude []ClaudeMemory, now time.Time) int {
+	mirrored := map[string]bool{}
+	for _, m := range claude {
+		mirrored[m.Name] = true
+	}
+	n := 0
+	for _, o := range observations {
+		if !mirrored[o.Title] && now.Sub(o.Created()) < week {
+			n++
+		}
+	}
+	return n
+}
+
+// engramRecall is the share of Claude's memories a search for their description finds in Engram.
+func engramRecall(ctx context.Context, store Store, claude []ClaudeMemory) float64 {
+	found := 0
+	for _, m := range claude {
+		if titles, err := store.Search(ctx, recallQuery(m)); err == nil && contains(titles, m.Name) {
+			found++
+		}
+	}
+	return ratio(found, len(claude))
 }
 
 // recallQuery is the words of a memory's description (its name when it has none) that identify it.

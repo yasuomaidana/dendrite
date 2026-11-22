@@ -141,16 +141,24 @@ func runSchedule(out io.Writer, agentsDir string, remove, load bool) error {
 	job := memoryJob
 	job.Binary = exe
 	if remove {
-		path := job.Path(dir)
-		if load {
-			launchd.Unload(launchctl, path)
-		}
-		if _, err := job.Remove(dir); err != nil {
-			return err
-		}
-		fmt.Fprintf(out, "[✓] Weekly memory check removed (%s)\n", path)
-		return nil
+		return removeJob(out, job, dir, load)
 	}
+	return installJob(out, job, dir, load)
+}
+
+func removeJob(out io.Writer, job launchd.Job, dir string, load bool) error {
+	path := job.Path(dir)
+	if load {
+		launchd.Unload(launchctl, path)
+	}
+	if _, err := job.Remove(dir); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "[✓] Weekly memory check removed (%s)\n", path)
+	return nil
+}
+
+func installJob(out io.Writer, job launchd.Job, dir string, load bool) error {
 	path, err := job.Install(dir, launchd.LogDir(projectid.HomeDir))
 	if err != nil {
 		return err
