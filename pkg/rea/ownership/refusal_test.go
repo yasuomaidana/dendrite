@@ -7,24 +7,29 @@ import (
 	"testing"
 )
 
-func TestDetectRefusalReadsTheLastAssistantReply(t *testing.T) {
+func TestDetectRefusalJudgesTheLastTurn(t *testing.T) {
 	for name, tc := range map[string]struct {
-		file   string
-		reason string
-		found  bool
+		file       string
+		reason     string
+		confidence string
+		found      bool
 	}{
-		"api refusal":            {"refusal_stop_reason.jsonl", "stop_reason", true},
-		"declined in words":      {"refusal_declined.jsonl", "declined", true},
-		"plain string content":   {"refusal_plain_content.jsonl", "stop_reason", true},
-		"normal answer":          {"normal.jsonl", "", false},
-		"declines but uses tool": {"working_with_tool.jsonl", "", false},
-		"odd shapes":             {"odd_shapes.jsonl", "", false},
-		"empty transcript":       {"empty.jsonl", "", false},
-		"missing transcript":     {"does-not-exist.jsonl", "", false},
+		"api refusal":                   {"refusal_stop_reason.jsonl", "stop_reason", ConfidenceExact, true},
+		"declined in words":             {"refusal_declined.jsonl", "declined", ConfidenceSuspected, true},
+		"plain string content":          {"refusal_plain_content.jsonl", "stop_reason", ConfidenceExact, true},
+		"declines in a new turn":        {"decline_in_new_turn_after_tools.jsonl", "declined", ConfidenceSuspected, true},
+		"normal answer":                 {"normal.jsonl", "", "", false},
+		"declines but uses tool":        {"working_with_tool.jsonl", "", "", false},
+		"tool earlier in the same turn": {"decline_after_tool_in_same_turn.jsonl", "", "", false},
+		"declines and offers":           {"decline_with_offer.jsonl", "", "", false},
+		"declines and asks":             {"decline_with_question.jsonl", "", "", false},
+		"odd shapes":                    {"odd_shapes.jsonl", "", "", false},
+		"empty transcript":              {"empty.jsonl", "", "", false},
+		"missing transcript":            {"does-not-exist.jsonl", "", "", false},
 	} {
 		got, ok := DetectRefusal(filepath.Join("testdata", tc.file))
-		if ok != tc.found || got.Reason != tc.reason {
-			t.Errorf("%s: got %+v, %t; want reason %q, found %t", name, got, ok, tc.reason, tc.found)
+		if ok != tc.found || got.Reason != tc.reason || got.Confidence != tc.confidence {
+			t.Errorf("%s: got %+v, %t; want %s/%s, found %t", name, got, ok, tc.reason, tc.confidence, tc.found)
 		}
 	}
 }
