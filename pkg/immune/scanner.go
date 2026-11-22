@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // BinaryName is the SkillSpector executable; BinaryEnv overrides where it is found.
@@ -28,6 +29,13 @@ type Scanner struct {
 	Thresholds Thresholds
 	// LLM turns on the scanner's model pass (it needs a provider configured in the environment).
 	LLM bool
+	// Pin is the scanner version the project requires; a scanner of another version is refused.
+	// Empty accepts any.
+	Pin string
+	// Ledger, when set, receives every scan result.
+	Ledger *Ledger
+	// Now stamps ledger entries (time.Now when nil).
+	Now func() time.Time
 }
 
 // Locate returns the SkillSpector executable: $DENDRITE_SKILLSPECTOR_BIN (which must work if set), then
@@ -67,6 +75,14 @@ func (s Scanner) Scan(ctx context.Context, path string) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
+	version := s.version(ctx, bin)
+	if err := checkPin(s.Pin, version); err != nil {
+		return Report{}, err
+	}
+	digest, err := Digest(abs)
+	if err != nil {
+		return Report{}, fmt.Errorf("scan target: %w", err)
+	}
 	data, err := s.run(ctx, bin, abs)
 	if err != nil {
 		return Report{}, err
@@ -75,9 +91,27 @@ func (s Scanner) Scan(ctx context.Context, path string) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	r.Path = abs
-	r.ScannerVersion = s.version(ctx, bin)
-	return r, nil
+	r.Path, r.ScannerVersion, r.Digest = abs, version, digest
+	return r, s.record(r)
+}
+
+// record writes the result to the ledger, when there is one.
+func (s Scanner) record(r Report) error {
+	if s.Ledger == nil {
+		return nil
+	}
+	now := s.Now
+	if now == nil {
+		now = time.Now
+	}
+	_, err := s.Ledger.Record(Entry{
+		Time: now().UTC().Truncate(time.Second), Path: r.Path, Skill: r.Skill, Digest: r.Digest,
+		Score: r.Score, Verdict: r.Verdict, ScannerVersion: r.ScannerVersion, LLM: s.LLM,
+	})
+	if err != nil {
+		return fmt.Errorf("recording the scan in the ledger: %w", err)
+	}
+	return nil
 }
 
 // prepare checks everything that can be wrong before the scanner starts: the target, the bands and the binary.

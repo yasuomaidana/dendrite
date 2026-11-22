@@ -21,6 +21,7 @@ None
 | Subcommand | Description |
 | :--- | :--- |
 | `scan` | Scan a skill and print approve / hold / quarantine |
+| `update` | Install the pinned SkillSpector version, or the latest when none is pinned |
 
 ## Flags
 
@@ -42,9 +43,23 @@ dendrite immune scan <skill-path> [flags]
 | `--hold-max` | highest score that is held; above it is quarantined (default: immune.hold_max of the directives) (default: 50) |
 | `--llm` | also run the scanner's model pass |
 
+### `dendrite immune update`
+
+Install the pinned SkillSpector version, or the latest when none is pinned
+
+```bash
+dendrite immune update
+```
+
+```bash
+dendrite immune update
+dendrite immune update --json
+```
+
 ## Examples
 
 ```bash
 dendrite immune scan .claude/skills/my-skill
 dendrite immune scan ./skills --json
+dendrite immune update
 ```
