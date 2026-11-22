@@ -213,6 +213,7 @@ func runSessionResume(ctx context.Context, targetPath string, asJSON bool, out i
 	soma.OfferDisposal(ctx, out)
 	planecli.WarnStaleIndex(out)
 	WarnWatcherDown(ledger, time.Now(), out)
+	printMemoryMode(out)
 	if memory := engram.JobMemory(ctx, "."); memory != "" {
 		fmt.Fprintf(out, "\n%s\n", memory)
 	}

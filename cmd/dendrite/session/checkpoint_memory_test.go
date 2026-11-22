@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // isolate points the journal and the memory mode of one test at their own directories.
@@ -60,4 +61,22 @@ func TestCheckpointMemoryIsSkippedWhenTheHomeIsUnknown(t *testing.T) {
 	if p, _, _ := memory.DefaultJournal().Pending(); len(p) != 0 {
 		t.Errorf("nothing may be journaled without a home: %+v", p)
 	}
+}
+
+func TestResumeReportsAModeTheWeeklyCheckSwitched(t *testing.T) {
+	home := t.TempDir()
+	isolate(t, home)
+	var out bytes.Buffer
+	printMemoryMode(&out)
+	testkit.Equal(t, "nothing switched", out.Len(), 0)
+
+	testkit.Check(t, memory.SaveState(home, memory.State{Computed: memory.ClaudeOnly, Reason: "engram unhealthy", Since: time.Now()}))
+	printMemoryMode(&out)
+	testkit.Contains(t, out.String(), "Memory mode is claude", "engram unhealthy")
+
+	out.Reset()
+	t.Setenv("DENDRITE_HOME", "")
+	t.Setenv("HOME", "")
+	printMemoryMode(&out)
+	testkit.Equal(t, "no home", out.Len(), 0)
 }

@@ -28,8 +28,10 @@ func (f cannedStore) Healthy(context.Context) error { return f.healthErr }
 func (f cannedStore) Observations(context.Context) ([]engram.Observation, error) {
 	return f.observations, f.obsErr
 }
-func (f cannedStore) Search(_ context.Context, q string) ([]string, error) { return f.hits[q], f.searchErr }
-func (f cannedStore) StartBytes(context.Context) (int, error)              { return f.start, f.startErr }
+func (f cannedStore) Search(_ context.Context, q string) ([]string, error) {
+	return f.hits[q], f.searchErr
+}
+func (f cannedStore) StartBytes(context.Context) (int, error) { return f.start, f.startErr }
 
 // memoryFolder writes Claude memories into a temp folder: name -> frontmatter description + body, all linked
 // from MEMORY.md except those in unlisted. It returns the folder and a repo with the paths in repoFiles.

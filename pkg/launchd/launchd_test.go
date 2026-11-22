@@ -96,3 +96,17 @@ func TestExecAndDomainAreTheRealLaunchctlAndTheUsersDomain(t *testing.T) {
 		t.Fatal("Exec must run launchctl from PATH (and fail when it is absent)")
 	}
 }
+
+func TestLogDirIsUnderTheDendriteHomeOrTheTempDir(t *testing.T) {
+	home := t.TempDir()
+	got := LogDir(func() (string, error) { return home, nil })
+	if got != filepath.Join(home, "logs") {
+		t.Fatalf("LogDir = %q", got)
+	}
+	if _, err := os.Stat(got); err != nil {
+		t.Fatalf("the log directory must exist: %v", err)
+	}
+	if got := LogDir(func() (string, error) { return "", errors.New("no home") }); got != os.TempDir() {
+		t.Fatalf("without a home LogDir = %q, want the temp dir", got)
+	}
+}

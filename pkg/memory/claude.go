@@ -85,6 +85,12 @@ func MirrorClaude(ctx context.Context, home, dir string) (int, error) {
 	if !LoadState(home).Resolve().Engram() {
 		return 0, nil
 	}
+	return Mirror(ctx, dir)
+}
+
+// Mirror is MirrorClaude whatever the mode is: the weekly check mirrors so that Engram is measured on the same
+// facts even while it is switched off, which is how it can switch back on.
+func Mirror(ctx context.Context, dir string) (int, error) {
 	bin, err := engram.Locate()
 	if err != nil {
 		return 0, nil

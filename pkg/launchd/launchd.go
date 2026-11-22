@@ -106,3 +106,15 @@ func Load(run Runner, path string) error {
 
 // Unload boots the plist at path out of launchd; a job that is not loaded is fine.
 func Unload(run Runner, path string) { _, _ = run("bootout", Domain(), path) }
+
+// LogDir is where a job's logs go: <dendriteHome>/logs (created), or the temp directory when the Dendrite home
+// is unknown.
+func LogDir(dendriteHome func() (string, error)) string {
+	home, err := dendriteHome()
+	if err != nil {
+		return os.TempDir()
+	}
+	dir := filepath.Join(home, "logs")
+	_ = os.MkdirAll(dir, 0o755)
+	return dir
+}

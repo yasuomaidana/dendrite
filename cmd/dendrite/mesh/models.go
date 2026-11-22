@@ -12,7 +12,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"text/tabwriter"
@@ -211,11 +210,7 @@ func removeSchedule(out io.Writer, agentsDir string, load bool) error {
 }
 
 func installSchedule(out io.Writer, agentsDir, exe string, load bool) error {
-	logDir := os.TempDir()
-	if home, err := projectid.HomeDir(); err == nil {
-		logDir = filepath.Join(home, "logs")
-		_ = os.MkdirAll(logDir, 0o755)
-	}
+	logDir := launchd.LogDir(projectid.HomeDir)
 	path, err := modelcatalog.InstallSchedule(agentsDir, exe, logDir)
 	if err != nil {
 		return err

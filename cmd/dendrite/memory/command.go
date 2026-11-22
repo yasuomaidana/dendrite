@@ -25,8 +25,10 @@ func NewMemoryCmd() *cobra.Command {
 		"dendrite memory flush\n" +
 		"dendrite memory mode\n" +
 		"dendrite memory mode set engram\n" +
-		"dendrite memory sync"
-	cmd.AddCommand(newSaveCmd(), newFlushCmd(), newModeCmd(), newSyncCmd())
+		"dendrite memory sync\n" +
+		"dendrite memory check\n" +
+		"dendrite memory schedule"
+	cmd.AddCommand(newSaveCmd(), newFlushCmd(), newModeCmd(), newSyncCmd(), newCheckCmd(), newScheduleCmd())
 	return cmd
 }
 
@@ -151,12 +153,9 @@ func runSync(ctx context.Context, dir string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if dir == "" {
-		userHome, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
-		dir = memory.ClaudeDir(userHome, claudeRepo())
+	dir, err = claudeFolder(dir)
+	if err != nil {
+		return err
 	}
 	n, err := memory.MirrorClaude(ctx, home, dir)
 	if err != nil {
@@ -164,4 +163,16 @@ func runSync(ctx context.Context, dir string, out io.Writer) error {
 	}
 	fmt.Fprintf(out, "[✓] %d Claude memory file(s) mirrored into Engram from %s\n", n, dir)
 	return nil
+}
+
+// claudeFolder is dir, or the Claude Code memory folder of this repository.
+func claudeFolder(dir string) (string, error) {
+	if dir != "" {
+		return dir, nil
+	}
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return memory.ClaudeDir(userHome, claudeRepo()), nil
 }

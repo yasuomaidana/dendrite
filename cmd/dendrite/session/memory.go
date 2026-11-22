@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 )
 
 // rememberCheckpoint journals the decisions and notes of a checkpoint and flushes the journal into Engram,
@@ -32,5 +33,16 @@ func rememberCheckpoint(ctx context.Context, o SessionCheckpointOptions, ticket 
 		fmt.Fprintf(say, "[!] memory not flushed to Engram: %v\n", err)
 	case n > 0:
 		fmt.Fprintf(say, "[✓] %d memory item(s) flushed to Engram\n", n)
+	}
+}
+
+// printMemoryMode tells a session when the weekly memory check switched the mode, and why.
+func printMemoryMode(out io.Writer) {
+	home, err := projectid.HomeDir()
+	if err != nil {
+		return
+	}
+	if notice := memory.ModeNotice(memory.LoadState(home), time.Now()); notice != "" {
+		fmt.Fprintln(out, notice)
 	}
 }
