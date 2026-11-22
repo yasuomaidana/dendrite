@@ -25,45 +25,51 @@ func pe64Fixture(t *testing.T) string {
 	return path
 }
 
-// TestAnalyzeRealPE64 is the proof of AC-1 of DEN-1062: a real PE64 image is parsed by the dendrite-core sidecar of
-// DCORE-31 and ends as a bundle under the 4,000-token boundary. It needs a dendrite-core built with pe.parse:
-//
-//	DENDRITE_CORE_REAL_BIN=$HOME/.dendrite/bin/dendrite-core go test -tags e2e ./pkg/rea/analysis -run RealPE64
-func TestAnalyzeRealPE64(t *testing.T) {
+// realCore returns a client of the dendrite-core named by DENDRITE_CORE_REAL_BIN.
+func realCore(t *testing.T) *coreclient.Client {
+	t.Helper()
 	bin := os.Getenv("DENDRITE_CORE_REAL_BIN")
 	if bin == "" {
 		t.Fatal("set DENDRITE_CORE_REAL_BIN to a dendrite-core binary with pe.parse")
 	}
 	t.Setenv(sidecar.EnvVar(coretest.BinaryName), bin)
 	t.Setenv("DENDRITE_HOME", t.TempDir())
-
 	core := coreclient.New(sidecar.DefaultLocator())
 	t.Cleanup(func() { _ = core.Close(); rag.CloseSidecars() })
-	info, err := core.PEParse(ctx(), pe64Fixture(t))
-	if err != nil {
-		t.Fatal(err)
-	}
+	return core
+}
+
+// checkPE64 reports what a MinGW-w64 executable must show in a parse.
+func checkPE64(t *testing.T, info *coreclient.PEInfo) {
+	t.Helper()
 	if info.Machine == "" || !info.PE32Plus || !strings.HasPrefix(info.ImageBase, "0x") {
 		t.Errorf("not read as a PE64 image: %+v", info)
 	}
 	if !hasSection(info, ".text") || len(info.Imports) == 0 {
-		t.Errorf("a MinGW executable has a .text section and imports, got %d sections and %d imports", len(info.Sections), len(info.Imports))
+		t.Errorf("want a .text section and imports, got %d sections and %d imports", len(info.Sections), len(info.Imports))
 	}
+}
+
+// TestAnalyzeRealPE64 is the proof of AC-1 of DEN-1062: a real PE64 image is parsed by the dendrite-core sidecar of
+// DCORE-31 and ends as a bundle under the 4,000-token boundary. It needs a dendrite-core built with pe.parse:
+//
+//	DENDRITE_CORE_REAL_BIN=$HOME/.dendrite/bin/dendrite-core go test -tags e2e ./pkg/rea/analysis -run RealPE64
+func TestAnalyzeRealPE64(t *testing.T) {
+	core := realCore(t)
+	info, err := core.PEParse(ctx(), pe64Fixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkPE64(t, info)
 
 	svc := newRig(t)
 	svc.Parser = core
 	got, err := svc.Analyze(ctx(), pe64Fixture(t), Options{ID: "pe64-real"})
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || got.Bundle == nil || got.State.Stage != StageDone {
+		t.Fatalf("analysis did not finish: %v %+v", err, got)
 	}
-	if got.State.Stage != StageDone || got.Bundle == nil {
-		t.Fatalf("analysis did not finish: %+v", got.State)
-	}
-	if got.Bundle.TokenEstimate >= 4000 {
-		t.Errorf("bundle is %d tokens, want under 4,000", got.Bundle.TokenEstimate)
-	}
-	if len(got.Bundle.CrossReferences) == 0 {
-		t.Error("the imported DLLs are missing from the bundle")
+	if got.Bundle.TokenEstimate >= 4000 || len(got.Bundle.CrossReferences) == 0 {
+		t.Errorf("bundle of %d tokens with %d imported DLLs, want under 4,000 and some DLLs", got.Bundle.TokenEstimate, len(got.Bundle.CrossReferences))
 	}
 }
 
