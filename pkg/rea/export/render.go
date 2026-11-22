@@ -36,43 +36,39 @@ var schema = []typeDef{
 		l_("functions", "Function"), l_("notes", "Note"), b_("truncated")}},
 }
 
-// syntax is what differs between languages when a value is written: the literal of each scalar, and how a list and a
-// record are laid out from their already written parts.
-type syntax struct {
-	str     func(string) string
-	suffix  string // follows an address (n for a TypeScript bigint)
-	yes, no string // the words for true and false
-	list    func(elem string, items []string, indent string) string
-	rec     func(typ string, names, vals []string, indent string) string
-}
-
-// literal writes v with the syntax of a language; indent is the indentation of the line the value starts on.
-func (sx syntax) literal(v value, indent string) string {
+// literal writes v in the language; indent is the indentation of the line the value starts on. Lists and records go one
+// item per line; "$" in listOpen, recOpen and field stands for the element type, the record type and the field name.
+func (l language) literal(v value, indent string) string {
 	inner := indent + "\t"
 	switch v.kind {
 	case kindString:
-		return sx.str(v.s)
+		return l.str(v.s)
 	case kindNumber:
 		return fmt.Sprint(v.n)
 	case kindAddress:
-		return fmt.Sprintf("0x%x%s", v.n, sx.suffix)
+		return fmt.Sprintf("0x%x%s", v.n, l.suffix)
 	case kindFlag:
 		if v.b {
-			return sx.yes
+			return l.yes
 		}
-		return sx.no
+		return l.no
 	case kindList:
+		open := strings.ReplaceAll(l.listOpen, "$", v.typ)
+		if len(v.items) == 0 {
+			return open + l.listClose
+		}
 		items := make([]string, len(v.items))
 		for i, it := range v.items {
-			items[i] = sx.literal(it, inner)
+			items[i] = l.literal(it, inner)
 		}
-		return sx.list(v.typ, items, indent)
+		return open + "\n" + inner + strings.Join(items, ",\n"+inner) + ",\n" + indent + l.listClose
 	}
-	names, vals := make([]string, len(v.fields)), make([]string, len(v.fields))
-	for i, fl := range v.fields {
-		names[i], vals[i] = fl.name, sx.literal(fl.v, inner)
+	var sb strings.Builder
+	sb.WriteString(strings.ReplaceAll(l.recOpen, "$", v.typ) + "\n")
+	for _, fl := range v.fields {
+		sb.WriteString(inner + strings.ReplaceAll(l.field, "$", l.name(fl.name)) + l.literal(fl.v, inner) + ",\n")
 	}
-	return sx.rec(v.typ, names, vals, indent)
+	return sb.String() + indent + l.recClose
 }
 
 // jsonString quotes s as a JSON string, which is also a valid string literal in Python and TypeScript.
@@ -95,16 +91,25 @@ func camel(s string) string {
 
 // language is one target language: its file extension, how values are written and how the types are declared.
 type language struct {
-	ext                        string
-	sx                         syntax
-	tab                        string // replaces the tabs the layout is built with
-	header                     string // format: target name, analysis id
-	prologue                   string
+	ext, tab                   string // file extension; what replaces the tabs the layout is built with
+	str                        func(string) string
+	suffix, yes, no            string // after an address; the words for true and false
+	listOpen, listClose        string
+	recOpen, field, recClose   string
+	header, prologue           string // header's formats: target name, analysis id
 	typeOpen, typeField, close string // formats: type name; field name and type
 	fieldName                  func(string) string
 	tStr, tNum, tAddr, tFlag   string
 	tList                      func(elem string) string
 	tail                       string // format: the literal of the image
+}
+
+// name is a field name as the language writes it.
+func (l language) name(n string) string {
+	if l.fieldName != nil {
+		return l.fieldName(n)
+	}
+	return n
 }
 
 // typeOf is the declared type of a field in the language.
@@ -134,38 +139,10 @@ func (l language) module(m Model, t value) string {
 	for _, td := range schema {
 		fmt.Fprintf(&sb, l.typeOpen, td.name)
 		for _, f := range td.fields {
-			name := f.name
-			if l.fieldName != nil {
-				name = l.fieldName(name)
-			}
-			fmt.Fprintf(&sb, l.typeField, name, l.typeOf(f))
+			fmt.Fprintf(&sb, l.typeField, l.name(f.name), l.typeOf(f))
 		}
 		sb.WriteString(l.close)
 	}
-	fmt.Fprintf(&sb, l.tail, l.sx.literal(t, ""))
+	fmt.Fprintf(&sb, l.tail, l.literal(t, ""))
 	return strings.ReplaceAll(sb.String(), "\t", l.tab)
 }
-
-// listFn lays a list out one item per line between open(elem) and closer; an empty one is open and closer together.
-func listFn(open func(elem string) string, closer string) func(string, []string, string) string {
-	return func(elem string, items []string, indent string) string {
-		if len(items) == 0 {
-			return open(elem) + closer
-		}
-		return open(elem) + "\n" + indent + "\t" + strings.Join(items, ",\n"+indent+"\t") + ",\n" + indent + closer
-	}
-}
-
-// recFn lays a record out one field per line; open writes what precedes the fields, field what precedes a value.
-func recFn(open func(typ string) string, field func(name string) string, closer string) func(string, []string, []string, string) string {
-	return func(typ string, names, vals []string, indent string) string {
-		var sb strings.Builder
-		sb.WriteString(open(typ) + "\n")
-		for i := range names {
-			sb.WriteString(indent + "\t" + field(names[i]) + vals[i] + ",\n")
-		}
-		return sb.String() + indent + closer
-	}
-}
-
-func fixed(s string) func(string) string { return func(string) string { return s } }

@@ -24,14 +24,8 @@ func rustString(s string) string {
 	return sb.String()
 }
 
-var rustSyntax = syntax{
-	str: rustString, suffix: "", yes: "true", no: "false",
-	list: listFn(fixed("&["), "]"),
-	rec:  recFn(func(typ string) string { return typ + " {" }, func(n string) string { return n + ": " }, "}"),
-}
-
 var rustLang = language{
-	ext: "rs", sx: rustSyntax, tab: "    ",
+	ext: "rs", suffix: "", yes: "true", no: "false", str: rustString, listOpen: "&[", listClose: "]", recOpen: "$ {", field: "$: ", recClose: "}", tab: "    ",
 	header:   "//! Structure of %s (analysis %s), written by `dendrite retro export`. Data only: no code, no dependencies.\n\n",
 	prologue: "#![allow(dead_code)]\n\n",
 	typeOpen: "#[derive(Debug, Clone, Copy, PartialEq)]\npub struct %s {\n", typeField: "\tpub %s: %s,\n", close: "}\n\n",

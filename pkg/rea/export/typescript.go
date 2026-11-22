@@ -1,13 +1,7 @@
 package export
 
-var tsSyntax = syntax{
-	str: jsonString, suffix: "n", yes: "true", no: "false",
-	list: listFn(fixed("["), "]"),
-	rec:  recFn(fixed("{"), func(n string) string { return n + ": " }, "}"),
-}
-
 var tsLang = language{
-	ext: "ts", sx: tsSyntax, tab: "  ",
+	ext: "ts", suffix: "n", yes: "true", no: "false", str: jsonString, listOpen: "[", listClose: "]", recOpen: "{", field: "$: ", recClose: "}", tab: "  ",
 	header:   "// Structure of %s (analysis %s), written by `dendrite retro export`. Data only: no code, no dependencies.\n\n",
 	typeOpen: "export interface %s {\n", typeField: "\treadonly %s: %s;\n", close: "}\n\n",
 	tStr: "string", tNum: "number", tAddr: "bigint", tFlag: "boolean",
