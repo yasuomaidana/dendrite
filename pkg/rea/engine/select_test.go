@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"Dendrite/pkg/rea"
+	"Dendrite/pkg/testkit"
 )
 
 // machine is a description of what a computer offers: whether Docker is up, which images are built and which binaries
@@ -50,15 +51,10 @@ func choose(t *testing.T, m machine, p Policy, format string) Decision {
 
 func TestCatalogSeparatesOpenSourceFromProprietaryTools(t *testing.T) {
 	for _, s := range Catalog() {
-		switch {
-		case s.Proprietary:
-			if s.OpenSource || s.Implemented || s.Family != FamilyProprietary || s.License == "" || len(s.HostBins) == 0 {
-				t.Errorf("a proprietary tool is documented, not run: %+v", s)
-			}
-		default:
-			if !s.OpenSource || !s.Implemented || s.License == "" || s.Image == "" || len(s.HostBins) == 0 {
-				t.Errorf("an open-source engine is runnable: %+v", s)
-			}
+		if s.Proprietary {
+			checkProprietary(t, s)
+		} else {
+			checkOpenSource(t, s)
 		}
 	}
 	if s, ok := Lookup("radare2"); !ok || s.Family != FamilyR2 {
@@ -68,6 +64,28 @@ func TestCatalogSeparatesOpenSourceFromProprietaryTools(t *testing.T) {
 		if s, ok := Lookup(name); !ok || !s.Proprietary {
 			t.Errorf("%s: %+v %t", name, s, ok)
 		}
+	}
+}
+
+// checkProprietary checks a proprietary entry is documented, not run.
+func checkProprietary(t *testing.T, s Spec) {
+	t.Helper()
+	if s.OpenSource || s.Implemented || s.Family != FamilyProprietary || s.Note == "" {
+		t.Errorf("a proprietary tool is documented, not run: %+v", s)
+	}
+	if s.License == "" || len(s.HostBins) == 0 {
+		t.Errorf("a proprietary tool names its license and binaries: %+v", s)
+	}
+}
+
+// checkOpenSource checks an open-source entry is runnable.
+func checkOpenSource(t *testing.T, s Spec) {
+	t.Helper()
+	if !s.OpenSource || !s.Implemented {
+		t.Errorf("an open-source engine is runnable: %+v", s)
+	}
+	if s.License == "" || s.Image == "" || len(s.HostBins) == 0 {
+		t.Errorf("an open-source engine names its license, image and binaries: %+v", s)
 	}
 }
 
@@ -141,17 +159,24 @@ func TestAutoPrefersTheBestUsableOpenSourceEngine(t *testing.T) {
 }
 
 func TestAutoWithNothingUsableSaysWhyForEachEngine(t *testing.T) {
+	for name, tc := range map[string]struct {
+		m    machine
+		p    Policy
+		want []string
+	}{
+		"Docker down": {machine{}, Policy{}, []string{"Docker does not answer", "rizin", "objdump", "ghidra"}},
+		"no images":   {machine{docker: true}, Policy{}, []string{"dendrite retro engines build rizin"}},
+		"no binaries": {machine{}, Policy{Sandbox: ModeHost, Trusted: true}, []string{"none of rizin is on PATH"}},
+	} {
+		d := choose(t, tc.m, tc.p, "elf")
+		if d.Choice != nil {
+			t.Errorf("%s: %+v", name, d)
+		}
+		testkit.Contains(t, d.Note, tc.want...)
+	}
 	down := choose(t, machine{}, Policy{}, "elf")
-	if down.Choice != nil || !strings.Contains(down.Note, "Docker does not answer") || !strings.Contains(down.Note, "rizin") || !strings.Contains(down.Note, "objdump") || !strings.Contains(down.Note, "ghidra") || strings.Contains(down.Note, "hopper") || strings.Contains(down.Note, "ida:") {
-		t.Errorf("Docker down: %+v", down)
-	}
-	noImages := choose(t, machine{docker: true}, Policy{}, "elf")
-	if noImages.Choice != nil || !strings.Contains(noImages.Note, "dendrite retro engines build rizin") {
-		t.Errorf("no images: %+v", noImages)
-	}
-	noBins := choose(t, machine{}, Policy{Sandbox: ModeHost, Trusted: true}, "elf")
-	if noBins.Choice != nil || !strings.Contains(noBins.Note, "none of rizin is on PATH") {
-		t.Errorf("no binaries: %+v", noBins)
+	if strings.Contains(down.Note, "hopper") || strings.Contains(down.Note, "ida:") {
+		t.Errorf("proprietary tools are not tried: %s", down.Note)
 	}
 }
 
@@ -159,18 +184,23 @@ func TestAnExplicitEngineMustBeUsableAndNeverFallsBack(t *testing.T) {
 	m := machine{docker: true, images: []string{"dendrite-rea/objdump:1"}}
 	_, err := Select(context.Background(), Policy{Engine: "rizin"}, "elf", m.env())
 	var unusable *UnusableError
-	if !errors.As(err, &unusable) || !errors.Is(err, ErrUnavailable) || unusable.Fix != "dendrite retro engines build rizin" ||
-		!strings.Contains(err.Error(), "rizin is not usable in container mode") {
-		t.Errorf("an engine without an image: %v", err)
+	if !errors.As(err, &unusable) || !errors.Is(err, ErrUnavailable) || unusable.Fix != "dendrite retro engines build rizin" {
+		t.Fatalf("an engine without an image: %v", err)
 	}
-	for _, name := range []string{"hopper", "ida", "binaryninja"} {
-		_, err := Select(context.Background(), Policy{Engine: name}, "elf", m.env())
-		if err == nil || !strings.Contains(err.Error(), "proprietary tool") || !strings.Contains(err.Error(), DocsPath) || !strings.Contains(err.Error(), "rizin, radare2, objdump, ghidra") {
-			t.Errorf("%s: %v", name, err)
-		}
-	}
+	testkit.Contains(t, err.Error(), "rizin is not usable in container mode")
 	if d := choose(t, m, Policy{Engine: "objdump"}, "elf"); d.Choice == nil || d.Choice.Spec.Name != "objdump" {
 		t.Errorf("an explicit engine that is usable: %+v", d)
+	}
+}
+
+func TestAProprietaryToolNamedExplicitlyIsRefusedWithAPointerToTheDocs(t *testing.T) {
+	m := machine{docker: true, images: []string{"dendrite-rea/objdump:1"}}
+	for _, name := range []string{"hopper", "ida", "binaryninja"} {
+		_, err := Select(context.Background(), Policy{Engine: name}, "elf", m.env())
+		if err == nil {
+			t.Fatalf("%s must be refused", name)
+		}
+		testkit.Contains(t, err.Error(), "proprietary tool", DocsPath, "rizin, radare2, objdump, ghidra")
 	}
 }
 

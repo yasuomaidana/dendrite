@@ -212,10 +212,8 @@ func dockerBuild(args []string) {
 	}
 }
 
-// ghidra answers analyzeHeadless: it checks the import and the script it was given, then prints Ghidra-style log lines
-// around the JSON the export script prints between its markers.
-func ghidra(args []string) {
-	var imported, scriptPath, script string
+// ghidraArgs reads the import, script path and script name of an analyzeHeadless line.
+func ghidraArgs(args []string) (imported, scriptPath, script string) {
 	for i, a := range args {
 		switch a {
 		case "-import":
@@ -226,6 +224,11 @@ func ghidra(args []string) {
 			script = args[i+1]
 		}
 	}
+	return imported, scriptPath, script
+}
+
+// ghidraChecks exits like Ghidra does when the import or the script cannot be found.
+func ghidraChecks(imported, scriptPath, script string) {
 	if _, err := os.Stat(imported); err != nil || script != "ExportFunctions.java" {
 		fmt.Println("ERROR REPORT: nothing to import or no script")
 		os.Exit(1)
@@ -236,8 +239,10 @@ func ghidra(args []string) {
 			os.Exit(1)
 		}
 	}
-	fmt.Println("INFO  HEADLESS Script Paths: " + scriptPath + " (HeadlessAnalyzer)")
-	fmt.Println("INFO  ANALYZING all memory and code: " + imported + " (HeadlessAnalyzer)")
+}
+
+// ghidraResult prints what the export script prints, between its markers, or breaks it as the mode asks.
+func ghidraResult() {
 	switch os.Getenv("STANDIN_MODE") {
 	case "ghidranomarkers":
 	case "ghidrabroken":
@@ -248,5 +253,15 @@ func ghidra(args []string) {
 			`{"name":"helper","address":"0x401040","size":16,"cyclomatic":1,"calls":[]},{"name":"FUN_00401060","address":"0x401060","size":6,"cyclomatic":1,"calls":[]}]
 ---DENDRITE-JSON-END---`)
 	}
+}
+
+// ghidra answers analyzeHeadless: it checks the import and the script it was given, then prints Ghidra-style log lines
+// around the JSON the export script prints between its markers.
+func ghidra(args []string) {
+	imported, scriptPath, script := ghidraArgs(args)
+	ghidraChecks(imported, scriptPath, script)
+	fmt.Println("INFO  HEADLESS Script Paths: " + scriptPath + " (HeadlessAnalyzer)")
+	fmt.Println("INFO  ANALYZING all memory and code: " + imported + " (HeadlessAnalyzer)")
+	ghidraResult()
 	fmt.Println("INFO  REPORT: Analysis succeeded for file: " + imported + " (HeadlessAnalyzer)")
 }

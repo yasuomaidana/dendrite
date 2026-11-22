@@ -60,11 +60,7 @@ func TestTheContainerRunsWithEveryHardeningFlagAndTheTargetReadOnly(t *testing.T
 		t.Fatal(err)
 	}
 	log := calls()
-	for _, want := range []string{"docker run", "--network none", "--cap-drop ALL", "--read-only", "no-new-privileges", ":/target/input:ro", "dendrite-rea/rizin:1 sh -c", "aaa;aflj"} {
-		if !strings.Contains(log, want) {
-			t.Errorf("the container command line lacks %q:\n%s", want, log)
-		}
-	}
+	testkit.Contains(t, log, "docker run", "--network none", "--cap-drop ALL", "--read-only", "no-new-privileges", ":/target/input:ro", "dendrite-rea/rizin:1 sh -c", "aaa;aflj")
 	if strings.Index(log, "rizin -q") < strings.Index(log, "docker run") {
 		t.Errorf("rizin runs only inside the container, after docker run:\n%s", log)
 	}

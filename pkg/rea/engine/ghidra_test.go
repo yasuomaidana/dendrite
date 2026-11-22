@@ -8,6 +8,7 @@ import (
 
 	"Dendrite/pkg/coreclient"
 	"Dendrite/pkg/rea/engine/enginetest"
+	"Dendrite/pkg/testkit"
 )
 
 func TestGhidraInTheContainerListsFunctionsWithPseudocode(t *testing.T) {
@@ -18,16 +19,19 @@ func TestGhidraInTheContainerListsFunctionsWithPseudocode(t *testing.T) {
 		t.Fatalf("%+v, %v", res, err)
 	}
 	main := res.Functions[0]
-	if main.Name != "main" || main.Cyclomatic != 3 || !strings.Contains(main.Pseudocode, "return helper();") || !strings.Contains(main.Disassembly, "PUSH RBP") || len(main.Calls) != 1 {
+	if main.Name != "main" || main.Cyclomatic != 3 || len(main.Calls) != 1 {
 		t.Errorf("main: %+v", main)
 	}
-	log := calls()
-	for _, want := range []string{"-m 4096m", "-e HOME=/tmp", "-e JAVA_TOOL_OPTIONS=-Duser.home=/tmp", "--network none", "--cap-drop ALL", ":/target/input:ro",
-		"'analyzeHeadless' '/tmp' 'dendrite' '-import' '/target/input' '-scriptPath' '/scripts' '-postScript' 'ExportFunctions.java' '-deleteProject'"} {
-		if !strings.Contains(log, want) {
-			t.Errorf("the container command line lacks %q:\n%s", want, log)
-		}
-	}
+	testkit.Contains(t, main.Pseudocode, "return helper();")
+	testkit.Contains(t, main.Disassembly, "PUSH RBP")
+	checkGhidraCommandLine(t, calls())
+}
+
+// checkGhidraCommandLine checks the container limits, environment and headless command of a Ghidra run.
+func checkGhidraCommandLine(t *testing.T, log string) {
+	t.Helper()
+	testkit.Contains(t, log, "-m 4096m", "-e HOME=/tmp", "-e JAVA_TOOL_OPTIONS=-Duser.home=/tmp", "--network none", "--cap-drop ALL", ":/target/input:ro")
+	testkit.Contains(t, log, "'analyzeHeadless' '/tmp' 'dendrite' '-import' '/target/input' '-scriptPath' '/scripts' '-postScript' 'ExportFunctions.java' '-deleteProject'")
 }
 
 func TestAutoTakesGhidraWhenItsImageIsBuiltBeforeRizin(t *testing.T) {
@@ -75,30 +79,38 @@ func TestGhidraFailuresOfTheEngineItselfAreErrors(t *testing.T) {
 	}
 }
 
-func TestGhidraBuildNeedsAPinnedReleaseAndPassesItAsBuildArguments(t *testing.T) {
+func TestGhidraBuildRefusesAReleaseThatIsNotPinned(t *testing.T) {
 	enginetest.UsePath(t)
 	_, calls := logOf(t)
-	good := BuildOptions{URL: "https://example.org/ghidra_11_PUBLIC.zip", SHA256: strings.Repeat("ab", 32)}
+	url := "https://example.org/ghidra_11_PUBLIC.zip"
 	for name, o := range map[string]BuildOptions{
 		"nothing":        {},
-		"no checksum":    {URL: good.URL},
-		"plain http":     {URL: "http://example.org/g.zip", SHA256: good.SHA256},
-		"a short digest": {URL: good.URL, SHA256: "abc"},
+		"no checksum":    {URL: url},
+		"plain http":     {URL: "http://example.org/g.zip", SHA256: strings.Repeat("ab", 32)},
+		"a short digest": {URL: url, SHA256: "abc"},
 	} {
-		if _, err := NewService().Build(context.Background(), "ghidra", o); err == nil || !strings.Contains(err.Error(), "--url") || !strings.Contains(err.Error(), "--sha256") {
-			t.Errorf("%s: %v", name, err)
+		_, err := NewService().Build(context.Background(), "ghidra", o)
+		if err == nil {
+			t.Errorf("%s: must be refused", name)
+			continue
 		}
+		testkit.Contains(t, err.Error(), "--url", "--sha256")
 	}
 	if calls() != "" {
 		t.Errorf("nothing is built before the options are checked:\n%s", calls())
 	}
+}
+
+func TestGhidraBuildPassesTheReleaseAsBuildArguments(t *testing.T) {
+	enginetest.UsePath(t)
+	_, calls := logOf(t)
+	good := BuildOptions{URL: "https://example.org/ghidra_11_PUBLIC.zip", SHA256: strings.Repeat("ab", 32)}
 	out, err := NewService().Build(context.Background(), "ghidra", good)
-	if err != nil || !strings.Contains(out, "context holds ExportFunctions.java") {
-		t.Fatalf("%q, %v", out, err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if log := calls(); !strings.Contains(log, "--build-arg GHIDRA_URL="+good.URL) || !strings.Contains(log, "--build-arg GHIDRA_SHA256="+good.SHA256) || !strings.Contains(log, "-t dendrite-rea/ghidra:1") {
-		t.Errorf("the release reaches docker as build arguments:\n%s", log)
-	}
+	testkit.Contains(t, out, "context holds ExportFunctions.java")
+	testkit.Contains(t, calls(), "--build-arg GHIDRA_URL="+good.URL, "--build-arg GHIDRA_SHA256="+good.SHA256, "-t dendrite-rea/ghidra:1")
 }
 
 func TestTheGhidraImageVerifiesTheDownloadAndRunsAsNobody(t *testing.T) {
