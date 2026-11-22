@@ -2,8 +2,8 @@ package analysis
 
 import (
 	"fmt"
-	"path/filepath"
 	"maps"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -108,22 +108,64 @@ func libraryDoc(label string, lib coreclient.ImageLibrary) string {
 	return listDoc(fmt.Sprintf("%s: %s", label, lib.Name), "No symbols are recorded for it.", lib.Symbols)
 }
 
-// writeWorkspace writes the documents of an analysis under dir, replacing earlier ones of the same name.
-func writeWorkspace(dir string, st State, img *Image) error {
-	docs := map[string]string{
-		"overview.md": overview(st, img),
-		"sections.md": sectionsDoc(img),
-		"exports.md":  listDoc("Exports", "The target exports nothing.", img.Exports),
-		"files.md":    filesDoc(img),
-		"strings.md":  listDoc("Strings", "No strings were extracted.", img.Strings),
+// Document is one file of an analysis workspace. Edges counts the things it lists (symbols, files, sections,
+// strings), which is how `retro rank` orders what to read first.
+type Document struct {
+	Path  string `json:"path"`
+	Text  string `json:"-"`
+	Edges int    `json:"edges"`
+	Why   string `json:"why"`
+}
+
+// Documents are the files an analysis of img writes into its workspace, in the order they are written.
+func Documents(st State, img *Image) []Document {
+	docs := []Document{
+		{"overview.md", overview(st, img), 0, "what the target is and where the rest is"},
+		{"sections.md", sectionsDoc(img), len(img.Sections), fmt.Sprintf("%d sections", len(img.Sections))},
+		{"exports.md", listDoc("Exports", "The target exports nothing.", img.Exports), len(img.Exports), fmt.Sprintf("%d exports", len(img.Exports))},
+		{"files.md", filesDoc(img), len(img.Files), fmt.Sprintf("%d files", len(img.Files))},
+		{"strings.md", listDoc("Strings", "No strings were extracted.", img.Strings), len(img.Strings), fmt.Sprintf("%d strings", len(img.Strings))},
+		{"graph.md", graphDoc(st, img), graphEdges(img), "how the target, its dependencies and their symbols connect"},
 	}
 	used := map[string]int{}
 	label := libraryLabel(img.Format)
 	for _, lib := range img.Libraries {
-		docs[filepath.Join("libraries", docName(lib.Name, used))] = libraryDoc(label, lib)
+		docs = append(docs, Document{filepath.Join("libraries", docName(lib.Name, used)), libraryDoc(label, lib), len(lib.Symbols),
+			fmt.Sprintf("%d symbols taken from %s", len(lib.Symbols), lib.Name)})
 	}
-	for name, text := range docs {
-		if err := fsutil.WriteFileAtomic(filepath.Join(dir, name), []byte(text)); err != nil {
+	return docs
+}
+
+// graphEdges counts the edges of graphDoc: target to library, library to symbol.
+func graphEdges(img *Image) int {
+	n := len(img.Libraries)
+	for _, lib := range img.Libraries {
+		n += len(lib.Symbols)
+	}
+	return n
+}
+
+// graphDoc lists the edges between the target, what it depends on and the symbols it takes, one per line.
+func graphDoc(st State, img *Image) string {
+	var sb strings.Builder
+	sb.WriteString("# Graph\n\nEdges are `from -> to`.\n\n")
+	target := filepath.Base(st.Binary)
+	for _, lib := range img.Libraries {
+		fmt.Fprintf(&sb, "- %s -> %s\n", target, lib.Name)
+		for _, sym := range lib.Symbols {
+			fmt.Fprintf(&sb, "- %s -> %s\n", lib.Name, sym)
+		}
+	}
+	if graphEdges(img) == 0 {
+		sb.WriteString("The target has no recorded dependencies.\n")
+	}
+	return sb.String()
+}
+
+// writeWorkspace writes the documents of an analysis under dir, replacing earlier ones of the same name.
+func writeWorkspace(dir string, st State, img *Image) error {
+	for _, d := range Documents(st, img) {
+		if err := fsutil.WriteFileAtomic(filepath.Join(dir, d.Path), []byte(d.Text)); err != nil {
 			return err
 		}
 	}

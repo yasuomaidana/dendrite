@@ -21,13 +21,16 @@ Dendritic Arbor
 
 | Subcommand | Description |
 | :--- | :--- |
+| `adr` | Draft a proposed Architecture Decision Record from a finished analysis |
 | `analyze` | Analyze any target (PE, ELF, Mach-O, package, bundle, source directory): inspect it, write its structure as documents and index them for search |
 | `export` | Write the structure of a finished analysis as safe Rust structs under --output |
 | `handoff` | Hand an REA ticket this session refuses to AGY (rule: the [rea] directive) |
 | `list` | List the open-source showcase targets |
 | `pause` | Pause an analysis at its next stage boundary; its checkpoint is kept |
 | `purge` | Delete an analysis: its documents, its index and its checkpoint |
+| `rank` | Say which documents of an analysis to read first (most connected first) |
 | `resume` | Continue an analysis from its last checkpoint, optionally on another model tier or model |
+| `reuse` | Find code in this project and its synapse that already does what the analysis found |
 | `search` | Search the documents of a finished analysis; only the best passages are returned |
 | `showcase` | Run cleanroom analysis and parity verification for one target or all (all, aegis, dxball, ctf, th04, mattermost) |
 
@@ -36,6 +39,23 @@ Dendritic Arbor
 None
 
 ## Subcommand Reference
+
+### `dendrite retro adr`
+
+Draft a proposed Architecture Decision Record from a finished analysis
+
+```bash
+dendrite retro adr <id> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--output, -o` | Directory of the project's decision records (default: docs/architecture/decisions) |
+| `--title` | Title of the record (default: Cleanroom recreation of <target>) |
+
+```bash
+dendrite retro adr pe-1a2b3c4d --title "Recreate the checksum routine"
+```
 
 ### `dendrite retro analyze`
 
@@ -50,6 +70,7 @@ dendrite retro analyze <target> [flags]
 | `--format` | Format the target must have (default: detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree or unknown |
 | `--id` | Name of the analysis (default: generated from the binary) |
 | `--model` | Model to use on that tier |
+| `--ticket` | Leave a note with the summary and the analysis id on this ticket |
 | `--tier` | Model tier: local or paid (default: local) |
 
 ```bash
@@ -131,6 +152,25 @@ dendrite retro resume <id> [flags]
 
 ```bash
 dendrite retro resume pe-1a2b3c4d --tier paid --model cloud-pro
+```
+
+### `dendrite retro reuse`
+
+Find code in this project and its synapse that already does what the analysis found
+
+```bash
+dendrite retro reuse <id> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--project` | Project directory to search (default: .) |
+| `--synapse` | Synapse to search (default: the one the project belongs to) |
+| `--top, -k` | How many passages to return (default: 10) |
+
+```bash
+dendrite retro reuse pe-1a2b3c4d
+dendrite retro reuse pe-1a2b3c4d --synapse dendrite-ecosystem -k 5
 ```
 
 ### `dendrite retro search`

@@ -20,7 +20,7 @@ func TestSearchReturnsThePassagesOfAFinishedAnalysis(t *testing.T) {
 	r := newRig(t)
 	finished(t, r, "pe-s")
 	hits, err := r.Search(ctx(), "pe-s", "CreateFileW", 0)
-	if err != nil || len(hits) == 0 || hits[0].File != "libraries/kernel32.dll.md" || !strings.Contains(hits[0].Text, "CreateFileW") {
+	if err != nil || !hasHit(hits, "libraries/kernel32.dll.md", "CreateFileW") {
 		t.Errorf("hits %+v, %v", hits, err)
 	}
 	if hits, err := r.Search(ctx(), "pe-s", "CreateFileW", 1000); err != nil || len(hits) > maxHits {
@@ -108,5 +108,33 @@ func TestPurgeReportsADirectoryThatCannotBeDeleted(t *testing.T) {
 	stops := readOnly(t, r.Store.Root) // permission bits do not stop root
 	if err := r.Purge(ctx(), "pe-r", true); (err != nil) != stops {
 		t.Errorf("permissions stop deleting = %t but err = %v", stops, err)
+	}
+}
+
+// hasHit reports whether a hit names file and holds text.
+func hasHit(hits []Hit, file, text string) bool {
+	for _, h := range hits {
+		if h.File == file && strings.Contains(h.Text, text) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestInspectedReturnsTheCheckpointAndWhatTheInspectionFound(t *testing.T) {
+	r := newRig(t)
+	finished(t, r, "pe-i")
+	st, img, err := r.Inspected("pe-i")
+	if err != nil || st.ID != "pe-i" || img.Format != "pe" || len(img.Libraries) != 2 {
+		t.Errorf("%+v %+v, %v", st, img, err)
+	}
+	if _, _, err := r.Inspected("pe-none"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("an unknown analysis: %v", err)
+	}
+	if err := os.Remove(r.imagePath("pe-i")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.Inspected("pe-i"); err == nil {
+		t.Error("an analysis whose structure is gone is an error")
 	}
 }

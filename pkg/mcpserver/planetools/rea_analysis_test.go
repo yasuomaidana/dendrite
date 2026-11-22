@@ -20,6 +20,12 @@ import (
 // reaTools is a server with the analysis tools over the stand-in sidecars and a temporary Dendrite home.
 func reaTools(t *testing.T, service func() (*analysis.Service, error)) (*Server, string) {
 	t.Helper()
+	return reaToolsWith(t, Dependencies{}, service)
+}
+
+// reaToolsWith is reaTools with the dependencies the tools use for tickets.
+func reaToolsWith(t *testing.T, deps Dependencies, service func() (*analysis.Service, error)) (*Server, string) {
+	t.Helper()
 	t.Setenv("DENDRITE_HOME", t.TempDir())
 	coretest.UseStandin(t)
 	ragtest.UseStandin(t, "1.11.0")
@@ -32,7 +38,8 @@ func reaTools(t *testing.T, service func() (*analysis.Service, error)) (*Server,
 		service = analysis.NewService
 	}
 	s := NewServer(ServerConfig{})
-	planetools.RegisterReaAnalysisTools(s, service)
+	planetools.RegisterReaAnalysisTools(s, deps, service)
+	planetools.RegisterReaInsightTools(s, service)
 	return s, pe
 }
 

@@ -2,6 +2,7 @@ package planetools
 
 import (
 	"Dendrite/pkg/rea/analysis"
+	"Dendrite/pkg/rea/insight"
 	"context"
 	"errors"
 
@@ -10,7 +11,7 @@ import (
 
 // RegisterReaAnalysisTools registers the REA analysis tools, the MCP side of `dendrite retro analyze|pause|resume|
 // purge|search`, so AGY and any other agent can run an analysis directly. service builds the analysis service.
-func RegisterReaAnalysisTools(s *Server, service func() (*analysis.Service, error)) {
+func RegisterReaAnalysisTools(s *Server, deps Dependencies, service func() (*analysis.Service, error)) {
 	idProp := TypedProp("string", "Analysis id, as printed by dendrite_rea_analyze")
 	tierProp := TypedProp("string", "Model tier: local or paid")
 	modelProp := TypedProp("string", "Model to use on that tier")
@@ -22,7 +23,8 @@ func RegisterReaAnalysisTools(s *Server, service func() (*analysis.Service, erro
 	}{
 		{"dendrite_rea_analyze", "Analyze any target (PE, ELF, Mach-O, ASAR/ZIP package, JS bundle, unknown file or a directory of source): inspect it, write its structure as documents and index them. Returns an evidence bundle under 4,000 tokens and an analysis id; read more with dendrite_rea_search instead of dumping the target again. A paused analysis is returned with paused=true.",
 			[]string{"binary"}, map[string]interface{}{"binary": TypedProp("string", "Path of the file or directory to analyze"), "format": TypedProp("string", "Format the target must have (default: detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree, unknown"),
-				"id": TypedProp("string", "Name of the analysis (default: generated)"), "tier": tierProp, "model": modelProp}, reaAnalyze},
+				"id": TypedProp("string", "Name of the analysis (default: generated)"), "tier": tierProp, "model": modelProp,
+				"ticket": TypedProp("string", "Leave a note with the summary and the analysis id on this ticket")}, reaAnalyze(deps)},
 		{"dendrite_rea_pause", "Pause an analysis at its next stage boundary; its checkpoint is kept.", []string{"id"}, map[string]interface{}{"id": idProp}, reaPause},
 		{"dendrite_rea_resume", "Continue an analysis from its last checkpoint, optionally on another model tier or model.", []string{"id"},
 			map[string]interface{}{"id": idProp, "tier": tierProp, "model": modelProp}, reaResume},
@@ -72,9 +74,35 @@ func reaOutcome(res *analysis.Result, err error) (interface{}, error) {
 	return res, nil
 }
 
-func reaAnalyze(ctx context.Context, svc *analysis.Service, args map[string]interface{}) (interface{}, error) {
-	res, err := svc.Analyze(ctx, stringArg(args, "binary"), reaOptions(args))
-	return reaOutcome(res, err)
+// analyzed is an analysis result with what happened to the ticket note, when one was asked for.
+type analyzed struct {
+	*analysis.Result
+	TicketNote string `json:"ticket_note"`
+}
+
+// reaAnalyze runs an analysis and, for a finished one with a ticket argument, leaves a note on the ticket. A note
+// that cannot be posted is reported in the result and never fails the analysis.
+func reaAnalyze(deps Dependencies) func(context.Context, *analysis.Service, map[string]interface{}) (interface{}, error) {
+	return func(ctx context.Context, svc *analysis.Service, args map[string]interface{}) (interface{}, error) {
+		res, err := svc.Analyze(ctx, stringArg(args, "binary"), reaOptions(args))
+		out, err := reaOutcome(res, err)
+		ticket := stringArg(args, "ticket")
+		if err != nil || ticket == "" || res.State.Stage != analysis.StageDone {
+			return out, err
+		}
+		return analyzed{Result: res, TicketNote: postTicketNote(ctx, deps, args, ticket, res)}, nil
+	}
+}
+
+func postTicketNote(ctx context.Context, deps Dependencies, args map[string]interface{}, ticket string, res *analysis.Result) string {
+	l, err := lifecycleFor(deps, args)
+	if err == nil {
+		err = insight.PostNote(ctx, l, ticket, res)
+	}
+	if err != nil {
+		return "not posted: " + err.Error()
+	}
+	return "posted"
 }
 
 func reaPause(_ context.Context, svc *analysis.Service, args map[string]interface{}) (interface{}, error) {

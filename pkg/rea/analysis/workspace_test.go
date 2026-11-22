@@ -110,3 +110,23 @@ func TestBundleCarriesDependenciesAndExports(t *testing.T) {
 		t.Errorf("bundle %+v", b)
 	}
 }
+
+func TestDocumentsListEveryFileWithItsEdges(t *testing.T) {
+	st := State{ID: "d", Binary: "/x/app.exe"}
+	img := &Image{Format: "pe", Libraries: []coreclient.ImageLibrary{{Name: "A.dll", Symbols: []string{"F", "G"}}, {Name: "B.dll"}}, Exports: []string{"E"}}
+	byPath := map[string]Document{}
+	for _, d := range Documents(st, img) {
+		byPath[d.Path] = d
+	}
+	for path, edges := range map[string]int{"libraries/a.dll.md": 2, "libraries/b.dll.md": 0, "exports.md": 1, "graph.md": 4, "overview.md": 0} {
+		if d, ok := byPath[path]; !ok || d.Edges != edges || d.Why == "" || d.Text == "" {
+			t.Errorf("%s: %+v (present %t), want %d edges", path, d, ok, edges)
+		}
+	}
+	if text := byPath["graph.md"].Text; !strings.Contains(text, "- app.exe -> A.dll") || !strings.Contains(text, "- A.dll -> G") {
+		t.Errorf("graph:\n%s", text)
+	}
+	if text := graphDoc(st, &Image{}); !strings.Contains(text, "no recorded dependencies") {
+		t.Errorf("an empty graph says so:\n%s", text)
+	}
+}

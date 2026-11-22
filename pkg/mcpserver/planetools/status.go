@@ -290,6 +290,7 @@ func Register(s *Server, deps Dependencies) {
 	RegisterPlaneTicketSetTool(s, deps)
 	RegisterTicketLifecycleTools(s, deps)
 	RegisterReaTools(s, deps, ownership.BoardPorts)
-	RegisterReaAnalysisTools(s, analysis.NewService)
+	RegisterReaAnalysisTools(s, deps, analysis.NewService)
+	RegisterReaInsightTools(s, analysis.NewService)
 	registerCommitTool(s, deps)
 }

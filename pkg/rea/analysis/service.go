@@ -114,6 +114,16 @@ func (s *Service) Analyze(ctx context.Context, target string, o Options) (*Resul
 	return s.run(ctx, &st)
 }
 
+// Inspected returns the checkpoint of analysis id and what its inspection found.
+func (s *Service) Inspected(id string) (State, *Image, error) {
+	st, err := s.Store.Load(id)
+	if err != nil {
+		return State{}, nil, err
+	}
+	img, err := s.loadImage(id)
+	return st, img, err
+}
+
 // Status reads the checkpoint of analysis id.
 func (s *Service) Status(id string) (State, error) { return s.Store.Load(id) }
 

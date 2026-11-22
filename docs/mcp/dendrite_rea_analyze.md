@@ -29,6 +29,10 @@ Analyze any target (PE, ELF, Mach-O, ASAR/ZIP package, JS bundle, unknown file o
       "description": "Model to use on that tier",
       "type": "string"
     },
+    "ticket": {
+      "description": "Leave a note with the summary and the analysis id on this ticket",
+      "type": "string"
+    },
     "tier": {
       "description": "Model tier: local or paid",
       "type": "string"
@@ -56,6 +60,7 @@ Analyze any target (PE, ELF, Mach-O, ASAR/ZIP package, JS bundle, unknown file o
       "format": "detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree, unknown",
       "id": "generated",
       "model": "sample",
+      "ticket": "DEN-985",
       "tier": "sample"
     },
     "name": "dendrite_rea_analyze"
@@ -66,5 +71,5 @@ Analyze any target (PE, ELF, Mach-O, ASAR/ZIP package, JS bundle, unknown file o
 ### CLI
 
 ```bash
-dendrite mcp call dendrite_rea_analyze '{"binary":"sample","format":"detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree, unknown","id":"generated","model":"sample","tier":"sample"}'
+dendrite mcp call dendrite_rea_analyze '{"binary":"sample","format":"detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree, unknown","id":"generated","model":"sample","ticket":"DEN-985","tier":"sample"}'
 ```

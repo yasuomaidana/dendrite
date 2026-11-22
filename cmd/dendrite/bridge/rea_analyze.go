@@ -2,14 +2,16 @@ package bridge
 
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
+	"Dendrite/cmd/dendrite/internal/planecli"
 	"Dendrite/pkg/rea/analysis"
+	"Dendrite/pkg/rea/insight"
+	"Dendrite/pkg/tracker/plane"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/spf13/cobra"
 	"io"
 	"strings"
-
-	"github.com/spf13/cobra"
 )
 
 // newReaService builds the analysis service (a seam for tests that need another one).
@@ -18,6 +20,7 @@ var newReaService = analysis.NewService
 // reaCommands are the analysis commands of `dendrite retro`: analyze, pause, resume, purge and search.
 func reaCommands() []*cobra.Command {
 	var o analysis.Options
+	var ticket string
 	analyze := &cobra.Command{
 		Use:   "analyze <target>",
 		Short: "Analyze any target (PE, ELF, Mach-O, package, bundle, source directory): inspect it, write its structure as documents and index them for search",
@@ -31,9 +34,14 @@ func reaCommands() []*cobra.Command {
 		Args:    cli.ExactArgs(1),
 		RunE: runStages(func(ctx context.Context, s *analysis.Service, args []string) (*analysis.Result, error) {
 			return s.Analyze(ctx, args[0], o)
+		}, func(cmd *cobra.Command, res *analysis.Result) {
+			if ticket != "" {
+				postTicketNote(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), ticket, res)
+			}
 		}),
 	}
 	f := analyze.Flags()
+	f.StringVar(&ticket, "ticket", "", "Leave a note with the summary and the analysis id on this ticket")
 	f.StringVar(&o.Format, "format", "", "Format the target must have (default: detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree or unknown")
 	f.StringVar(&o.ID, "id", "", "Name of the analysis (default: generated from the binary)")
 	f.StringVar(&o.Tier, "tier", "local", "Model tier: local or paid")
@@ -62,7 +70,7 @@ func reaCommands() []*cobra.Command {
 		Args:    cli.ExactArgs(1),
 		RunE: runStages(func(ctx context.Context, s *analysis.Service, args []string) (*analysis.Result, error) {
 			return s.Resume(ctx, args[0], ro)
-		}),
+		}, nil),
 	}
 	resume.Flags().StringVar(&ro.Tier, "tier", "", "Switch to this model tier: local or paid")
 	resume.Flags().StringVar(&ro.Model, "model", "", "Switch to this model")
@@ -105,11 +113,15 @@ func reaCommands() []*cobra.Command {
 }
 
 // runStages is the RunE of the commands that run an analysis (analyze, resume): run it, then report how far it got.
-func runStages(run func(context.Context, *analysis.Service, []string) (*analysis.Result, error)) func(*cobra.Command, []string) error {
+func runStages(run func(context.Context, *analysis.Service, []string) (*analysis.Result, error), after func(*cobra.Command, *analysis.Result)) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		return withReaService(func(s *analysis.Service) error {
 			res, err := run(cmd.Context(), s, args)
-			return reportRun(cmd.OutOrStdout(), res, err)
+			if rerr := reportRun(cmd.OutOrStdout(), res, err); rerr != nil || err != nil || after == nil {
+				return rerr
+			}
+			after(cmd, res)
+			return nil
 		})
 	}
 }
@@ -194,4 +206,105 @@ func reaExportCommand() *cobra.Command {
 	cmd.Flags().StringVar(&lang, "target-language", "rust", "Language of the generated code (rust)")
 	cmd.Flags().StringVar(&output, "output", "", "Directory to write the generated file into")
 	return cmd
+}
+
+// insightCommands are the commands that put a finished analysis to use: reuse, rank and adr.
+func insightCommands() []*cobra.Command {
+	var ro insight.ReuseOptions
+	reuse := &cobra.Command{
+		Use:   "reuse <id>",
+		Short: "Find code in this project and its synapse that already does what the analysis found",
+		Long: "Asks the project (and the synapse it belongs to, or the one named with --synapse) about the exports, readable\n" +
+			"strings and non-system dependencies of an analysis, and returns the best matching passages, ranked and under\n" +
+			"4,000 tokens, so a cleanroom recreation starts from what the ecosystem already has.",
+		Example: "dendrite retro reuse pe-1a2b3c4d\ndendrite retro reuse pe-1a2b3c4d --synapse dendrite-ecosystem -k 5",
+		Args:    cli.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withReaService(func(s *analysis.Service) error {
+				hits, err := insight.Reuse(cmd.Context(), s, args[0], ro)
+				if err != nil {
+					return err
+				}
+				return writeReuse(cmd.OutOrStdout(), hits)
+			})
+		},
+	}
+	reuse.Flags().StringVar(&ro.Project, "project", ".", "Project directory to search")
+	reuse.Flags().StringVar(&ro.Synapse, "synapse", "", "Synapse to search (default: the one the project belongs to)")
+	reuse.Flags().IntVarP(&ro.K, "top", "k", 10, "How many passages to return")
+
+	rank := &cobra.Command{
+		Use:   "rank <id>",
+		Short: "Say which documents of an analysis to read first (most connected first)",
+		Args:  cli.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withReaService(func(s *analysis.Service) error {
+				st, img, err := s.Inspected(args[0])
+				if err != nil {
+					return err
+				}
+				return writeRank(cmd.OutOrStdout(), insight.Rank(st, img))
+			})
+		},
+	}
+
+	var title, output string
+	adr := &cobra.Command{
+		Use:   "adr <id>",
+		Short: "Draft a proposed Architecture Decision Record from a finished analysis",
+		Long: "Writes docs/architecture/decisions/ADR-NNN.md (the next free number, status proposed) with the evidence bundle as\n" +
+			"its context. The decision and the consequences are left for a person: agents may not implement before the record\n" +
+			"is signed off (FEAT-003).",
+		Example: "dendrite retro adr pe-1a2b3c4d --title \"Recreate the checksum routine\"",
+		Args:    cli.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withReaService(func(s *analysis.Service) error {
+				path, err := insight.DraftADR(s, args[0], output, title)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "[✓] Drafted %s (status proposed): a person completes the decision and consequences\n", path)
+				return nil
+			})
+		},
+	}
+	adr.Flags().StringVar(&title, "title", "", "Title of the record (default: Cleanroom recreation of <target>)")
+	adr.Flags().StringVarP(&output, "output", "o", insight.DefaultADRDir, "Directory of the project's decision records")
+	return []*cobra.Command{reuse, rank, adr}
+}
+
+func writeReuse(out io.Writer, hits []insight.ReuseHit) error {
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, hits)
+	}
+	if len(hits) == 0 {
+		fmt.Fprintln(out, "[i] Nothing in the project or its synapse matches what this analysis found.")
+	}
+	for _, h := range hits {
+		fmt.Fprintf(out, "--- [%s] %s (score %.2f, found by %s)\n%s\n", h.Source, h.File, h.Score, strings.Join(h.Queries, ", "), strings.TrimSpace(h.Text))
+	}
+	return nil
+}
+
+func writeRank(out io.Writer, ranked []insight.Ranked) error {
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, ranked)
+	}
+	for i, r := range ranked {
+		fmt.Fprintf(out, "%2d. %s: %s\n", i+1, r.Doc, r.Why)
+	}
+	return nil
+}
+
+// postTicketNote leaves the summary of a finished analysis on the ticket. A failure is reported and goes no further:
+// the analysis itself succeeded.
+func postTicketNote(ctx context.Context, out, warn io.Writer, ticket string, res *analysis.Result) {
+	err := planecli.PlaneRun(func(c *plane.Client) error {
+		return insight.PostNote(ctx, planecli.LifecycleIn(c, "."), ticket, res)
+	})
+	if err != nil {
+		fmt.Fprintf(warn, "[!] The analysis finished but its note was not posted on %s: %v\n", ticket, err)
+		return
+	}
+	fmt.Fprintf(out, "    Note posted on %s\n", ticket)
 }

@@ -26,15 +26,19 @@ dendrite retro search <id> "CreateFileW" [-k 5]       # read only the best passa
 dendrite retro pause <id>                             # stop at the next stage; the checkpoint is kept
 dendrite retro resume <id> [--tier paid --model M]    # continue, optionally on another tier or model
 dendrite retro purge <id> --force                     # delete documents, index and checkpoint
+dendrite retro reuse <id> [--synapse S] [-k 10]          # code in this project and its synapse that already does what the analysis found
+dendrite retro rank <id>                              # which documents of the analysis to read first
+dendrite retro adr <id> [--title T]                    # draft a proposed ADR (a person completes decision and consequences)
+dendrite retro analyze <target> --ticket DEN-123       # also leave a note with the summary and the id on the ticket
 ```
 
-MCP: `dendrite_rea_analyze`, `dendrite_rea_search`, `dendrite_rea_pause`, `dendrite_rea_resume`, `dendrite_rea_purge` and `dendrite_rea_handoff`. The target is inspected by the dendrite-core sidecar (`bin.inspect`; an older one still reads PE images, and `dendrite update --dev` adds the other formats) and searched through the RAG sidecar. Register the server with AGY by running `dendrite soma prepare`; `dendrite soma diagnose` says whether AGY lists it.
+MCP: `dendrite_rea_analyze`, `dendrite_rea_search`, `dendrite_rea_pause`, `dendrite_rea_resume`, `dendrite_rea_purge`, `dendrite_rea_reuse`, `dendrite_rea_rank`, `dendrite_rea_adr` and `dendrite_rea_handoff`. The target is inspected by the dendrite-core sidecar (`bin.inspect`; an older one still reads PE images, and `dendrite update --dev` adds the other formats) and searched through the RAG sidecar. Register the server with AGY by running `dendrite soma prepare`; `dendrite soma diagnose` says whether AGY lists it.
 
 ## Working an REA ticket (any agent)
 
 1. `dendrite chronos claim <ticket>` (or `dendrite work new <ticket>`), then `dendrite_query_context` for its criteria and plan.
 2. Explore with Dendrite before reading raw output: `dendrite rag search`, `dendrite rag symbols`, `dendrite graph`. Search the evidence you already extracted (`dendrite retro search <id> "..."`) instead of dumping it again.
 3. Keep every evidence bundle under 4,000 tokens: one function or one table at a time, with its cross-references and string constants.
-4. Write an Architecture Decision Record (`docs/architecture/decisions/ADR-XXX.md`) before any implementation: decompile, understand, then recreate. Recreate cleanroom code with unit test vectors; never copy bytes or proprietary text into the repository.
+4. Run `dendrite retro reuse <id>` before writing code, then write an Architecture Decision Record (`dendrite retro adr <id>` drafts it, `docs/architecture/decisions/ADR-XXX.md`) before any implementation: decompile, understand, then recreate. Recreate cleanroom code with unit test vectors; never copy bytes or proprietary text into the repository.
 5. Untrusted ELF and PE binaries run only in the sandboxed container, never on the host.
 6. Commit with `dendrite quantal`, finish with `dendrite chronos finish`.
