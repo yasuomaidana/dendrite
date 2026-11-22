@@ -71,39 +71,34 @@ func newSaveCmd() *cobra.Command {
 	return cmd
 }
 
+// noArgsCmd is a command without arguments that runs run.
+func noArgsCmd(use, short string, run func(cmd *cobra.Command) error) *cobra.Command {
+	return &cobra.Command{Use: use, Short: short, Args: cli.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return run(cmd) }}
+}
+
 func newFlushCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "flush",
-		Short: "Send the journaled memories to Engram now",
-		Args:  cli.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			home, err := projectid.HomeDir()
-			if err != nil {
-				return err
-			}
-			n, err := memory.FlushPending(cmd.Context(), home, memory.DefaultJournal())
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "[✓] %d memory item(s) flushed to Engram (journal %s)\n", n, statedir.Resolve(".dendrite/session/memory-journal.jsonl"))
-			return nil
-		},
-	}
+	return noArgsCmd("flush", "Send the journaled memories to Engram now", func(cmd *cobra.Command) error {
+		home, err := projectid.HomeDir()
+		if err != nil {
+			return err
+		}
+		n, err := memory.FlushPending(cmd.Context(), home, memory.DefaultJournal())
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "[✓] %d memory item(s) flushed to Engram (journal %s)\n", n, statedir.Resolve(".dendrite/session/memory-journal.jsonl"))
+		return nil
+	})
 }
 
 func newModeCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "mode",
-		Short: "Show which memory stores are in use, and why",
-		Args:  cli.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			home, err := projectid.HomeDir()
-			if err != nil {
-				return err
-			}
-			return printMode(cmd.OutOrStdout(), memory.LoadState(home))
-		},
-	}
+	cmd := noArgsCmd("mode", "Show which memory stores are in use, and why", func(cmd *cobra.Command) error {
+		home, err := projectid.HomeDir()
+		if err != nil {
+			return err
+		}
+		return printMode(cmd.OutOrStdout(), memory.LoadState(home))
+	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "set <both|engram|claude|off|auto>",
 		Short: "Force a memory mode by hand (auto removes the override)",
@@ -144,14 +139,9 @@ func printMode(out io.Writer, s memory.State) error {
 
 func newSyncCmd() *cobra.Command {
 	var dir string
-	cmd := &cobra.Command{
-		Use:   "sync",
-		Short: "Copy Claude Code's file memories into Engram (one way, idempotent, never changes the files)",
-		Args:  cli.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSync(cmd.Context(), dir, cmd.OutOrStdout())
-		},
-	}
+	cmd := noArgsCmd("sync", "Copy Claude Code's file memories into Engram (one way, idempotent, never changes the files)", func(cmd *cobra.Command) error {
+		return runSync(cmd.Context(), dir, cmd.OutOrStdout())
+	})
 	cmd.Flags().StringVar(&dir, "dir", "", "Claude memory folder (default ~/.claude/projects/<repo>/memory)")
 	return cmd
 }
