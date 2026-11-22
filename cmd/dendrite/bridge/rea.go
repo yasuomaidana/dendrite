@@ -20,7 +20,9 @@ func NewRetroCmd() *cobra.Command {
 		"dendrite retro showcase\n" +
 		"dendrite retro showcase aegis --format markdown --output aegis.md\n" +
 		"dendrite retro showcase ctf --json\n" +
-		"dendrite retro handoff DEN-1062 --refused"
+		"dendrite retro handoff DEN-1062 --refused\n" +
+		"dendrite retro analyze sample.exe\n" +
+		"dendrite retro search <id> \"CreateFileW\""
 
 	list := &cobra.Command{
 		Use:     "list",
@@ -60,6 +62,7 @@ func NewRetroCmd() *cobra.Command {
 	showcaseCmd.Flags().StringVarP(&output, "output", "o", "", "Write the report to this file instead of stdout")
 
 	cmd.AddCommand(list, showcaseCmd, newRetroHandoffCmd())
+	cmd.AddCommand(reaCommands()...)
 	return cmd
 }
 

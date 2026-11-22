@@ -5,6 +5,7 @@ import (
 	"Dendrite/pkg/env"
 	"Dendrite/pkg/gateway"
 	"Dendrite/pkg/planesvc"
+	"Dendrite/pkg/rea/analysis"
 	"Dendrite/pkg/rea/ownership"
 	"Dendrite/pkg/topology"
 	"Dendrite/pkg/topology/advisor"
@@ -289,5 +290,6 @@ func Register(s *Server, deps Dependencies) {
 	RegisterPlaneTicketSetTool(s, deps)
 	RegisterTicketLifecycleTools(s, deps)
 	RegisterReaTools(s, deps, ownership.BoardPorts)
+	RegisterReaAnalysisTools(s, analysis.NewService)
 	registerCommitTool(s, deps)
 }

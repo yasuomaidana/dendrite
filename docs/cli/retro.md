@@ -21,8 +21,13 @@ Dendritic Arbor
 
 | Subcommand | Description |
 | :--- | :--- |
+| `analyze` | Analyze a Windows PE image: parse it, write its structure as documents and index them for search |
 | `handoff` | Hand an REA ticket this session refuses to AGY (rule: the [rea] directive) |
 | `list` | List the open-source showcase targets |
+| `pause` | Pause an analysis at its next stage boundary; its checkpoint is kept |
+| `purge` | Delete an analysis: its documents, its index and its checkpoint |
+| `resume` | Continue an analysis from its last checkpoint, optionally on another model tier or model |
+| `search` | Search the documents of a finished analysis; only the best passages are returned |
 | `showcase` | Run cleanroom analysis and parity verification for one target or all (all, aegis, dxball, ctf, th04, mattermost) |
 
 ## Flags
@@ -30,6 +35,26 @@ Dendritic Arbor
 None
 
 ## Subcommand Reference
+
+### `dendrite retro analyze`
+
+Analyze a Windows PE image: parse it, write its structure as documents and index them for search
+
+```bash
+dendrite retro analyze <binary> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--format` | Image format: pe32 or pe64 (default: pe64) |
+| `--id` | Name of the analysis (default: generated from the binary) |
+| `--model` | Model to use on that tier |
+| `--tier` | Model tier: local or paid (default: local) |
+
+```bash
+dendrite retro analyze sample.exe --format pe64 --tier local
+dendrite retro search pe-1a2b3c4d "CreateFileW"
+```
 
 ### `dendrite retro handoff`
 
@@ -59,6 +84,51 @@ dendrite retro list
 
 Aliases: `targets`, `ls`
 
+### `dendrite retro purge`
+
+Delete an analysis: its documents, its index and its checkpoint
+
+```bash
+dendrite retro purge <id> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--force` | Confirm the deletion |
+
+### `dendrite retro resume`
+
+Continue an analysis from its last checkpoint, optionally on another model tier or model
+
+```bash
+dendrite retro resume <id> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--model` | Switch to this model |
+| `--tier` | Switch to this model tier: local or paid |
+
+```bash
+dendrite retro resume pe-1a2b3c4d --tier paid --model cloud-pro
+```
+
+### `dendrite retro search`
+
+Search the documents of a finished analysis; only the best passages are returned
+
+```bash
+dendrite retro search <id> <query> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--top, -k` | How many passages to return (at most 20) (default: 5) |
+
+```bash
+dendrite retro search pe-1a2b3c4d "CreateFileW" -k 3
+```
+
 ### `dendrite retro showcase`
 
 Run cleanroom analysis and parity verification for one target or all (all, aegis, dxball, ctf, th04, mattermost)
@@ -80,4 +150,6 @@ dendrite retro showcase
 dendrite retro showcase aegis --format markdown --output aegis.md
 dendrite retro showcase ctf --json
 dendrite retro handoff DEN-1062 --refused
+dendrite retro analyze sample.exe
+dendrite retro search <id> "CreateFileW"
 ```
