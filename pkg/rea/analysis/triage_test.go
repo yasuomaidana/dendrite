@@ -49,9 +49,8 @@ func TestFunctionsUpToTheLimitGoToTheLocalModel(t *testing.T) {
 	}
 }
 
-// AC-2: harder functions stop at a pause gate, and the paid model is only allowed by a resume on the paid tier.
-// AC-3: the tier chosen for each function is recorded in the checkpoint.
-func TestHardFunctionsStopAtThePauseGateUntilThePaidTierIsAllowed(t *testing.T) {
+// AC-2: harder functions stop at a pause gate. AC-3: the tier chosen for each function is recorded in the checkpoint.
+func TestHardFunctionsStopAtThePauseGate(t *testing.T) {
 	r := triageRig(t, "MZ\x90\x00 HARD image")
 	res, err := r.Analyze(ctx(), r.binary, Options{ID: "tri-hard"})
 	if !errors.Is(err, ErrPaused) || res.State.Stage != StageTriaged || !res.State.Paused || !strings.Contains(res.State.Gate, "1 function(s)") {
@@ -63,18 +62,37 @@ func TestHardFunctionsStopAtThePauseGateUntilThePaidTierIsAllowed(t *testing.T) 
 	if st, _ := r.Status("tri-hard"); st.Gate == "" || st.Triage == nil || st.Triage.Paid != 1 {
 		t.Errorf("the checkpoint on disk keeps the gate and the summary: %+v", st)
 	}
-
 	again, err := r.Resume(ctx(), "tri-hard", Options{})
 	if !errors.Is(err, ErrPaused) || again.State.Gate == "" {
 		t.Errorf("resuming on the local tier does not pass the gate: %+v, %v", again, err)
 	}
-	done, err := r.Resume(ctx(), "tri-hard", Options{Tier: "paid"})
+}
+
+// The paid model is only allowed by a resume on the paid tier.
+func TestResumingOnThePaidTierPassesTheGate(t *testing.T) {
+	r := triageRig(t, "MZ\x90\x00 HARD image")
+	if _, err := r.Analyze(ctx(), r.binary, Options{ID: "tri-go"}); !errors.Is(err, ErrPaused) {
+		t.Fatal(err)
+	}
+	done, err := r.Resume(ctx(), "tri-go", Options{Tier: "paid"})
 	if err != nil || done.State.Stage != StageDone || done.State.Gate != "" || done.State.Tier != "paid" {
 		t.Fatalf("resume on the paid tier: %+v, %v", done, err)
 	}
-	doc, err := os.ReadFile(filepath.Join(r.Store.WorkspaceDir("tri-hard"), "triage.md"))
+	doc, err := os.ReadFile(filepath.Join(r.Store.WorkspaceDir("tri-go"), "triage.md"))
 	if err != nil || !strings.Contains(string(doc), "crypt_loop: cyclomatic 22") {
 		t.Errorf("the triage document is part of the searchable workspace: %v\n%s", err, doc)
+	}
+}
+
+// A count the sidecar could not finish is a lower bound: the function goes to the paid tier whatever its value.
+func TestAPartialCountIsNeverTrustedToTheLocalModel(t *testing.T) {
+	r := triageRig(t, "MZ\x90\x00 PARTIAL image")
+	res, err := r.Analyze(ctx(), r.binary, Options{ID: "tri-part"})
+	if !errors.Is(err, ErrPaused) || res.State.Triage.Paid != 1 {
+		t.Fatalf("one partial function: %+v, %v", res, err)
+	}
+	if got := tiersOf(t, r, "tri-part"); got["walked_out"] != TierPaid || got["main"] != TierLocal {
+		t.Errorf("routing: %v", got)
 	}
 }
 
@@ -130,6 +148,20 @@ func TestAFailedFunctionListIsRecordedAndResumeRetriesIt(t *testing.T) {
 	}
 }
 
+// blockWithDirectory puts a directory with a file in it where a file of the analysis goes, so writing it fails.
+func blockWithDirectory(t *testing.T, path string) {
+	t.Helper()
+	if err := os.RemoveAll(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "x"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTriageReportsWhatItCannotWrite(t *testing.T) {
 	r := triageRig(t, "MZ\x90\x00 easy image")
 	if _, err := r.Analyze(ctx(), r.binary, Options{ID: "tri-io", Tier: "paid"}); err != nil {
@@ -139,33 +171,27 @@ func TestTriageReportsWhatItCannotWrite(t *testing.T) {
 	st.Stage = StageWritten
 	for _, name := range []string{"triage.json", "workspace/triage.md"} {
 		path := filepath.Join(r.Store.Dir("tri-io"), name)
-		if err := os.RemoveAll(path); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.MkdirAll(path, 0o755); err != nil { // a directory where the file goes
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(path, "x"), nil, 0o600); err != nil {
-			t.Fatal(err)
-		}
+		blockWithDirectory(t, path)
 		if err := r.triage(ctx(), &st); err == nil {
 			t.Errorf("%s cannot be written over a directory", name)
 		}
 		_ = os.RemoveAll(path)
 	}
-	if err := os.WriteFile(r.triagePath("tri-io"), []byte("{"), 0o600); err != nil {
+}
+
+func TestRoutingReportsADamagedTriageFile(t *testing.T) {
+	r := triageRig(t, "MZ\x90\x00 easy image")
+	if _, err := r.Analyze(ctx(), r.binary, Options{ID: "tri-bad"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.Routing("tri-io"); err == nil {
+	if err := os.WriteFile(r.triagePath("tri-bad"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Routing("tri-bad"); err == nil {
 		t.Error("a damaged triage.json is an error")
 	}
-	if err := os.Remove(r.triagePath("tri-io")); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(r.triagePath("tri-io"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := r.Routing("tri-io"); err == nil {
+	blockWithDirectory(t, r.triagePath("tri-bad"))
+	if _, err := r.Routing("tri-bad"); err == nil {
 		t.Error("an unreadable triage.json is an error")
 	}
 }
@@ -186,4 +212,3 @@ type listerFunc func(context.Context, string) (*coreclient.FunctionList, error)
 func (f listerFunc) Functions(ctx context.Context, path string) (*coreclient.FunctionList, error) {
 	return f(ctx, path)
 }
-

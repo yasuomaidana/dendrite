@@ -25,6 +25,8 @@ type Function struct {
 	RVA          string  `json:"rva,omitempty"`
 	Blocks       int     `json:"blocks,omitempty"`
 	Instructions int     `json:"instructions,omitempty"`
+	// Partial says the walk of this function spent its budget, so Cyclomatic is a lower bound.
+	Partial bool `json:"partial,omitempty"`
 }
 
 // FunctionPage is one page of bin.functions: at most 48 functions ordered by RVA, and where the next page starts.

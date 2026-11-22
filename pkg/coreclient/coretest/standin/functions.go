@@ -11,7 +11,7 @@ import (
 const functionPage = 48
 
 // binFunctions answers bin.functions for a file that starts with "MZ". Its functions depend on the file's text, so
-// a test chooses them: always main (5) and helper (15); "HARD" adds crypt_loop (22); "MANY" adds 100 small ones
+// a test chooses them: always main (5) and helper (15); "HARD" adds crypt_loop (22); "PARTIAL" adds walked_out (4, partial: its budget ran out); "MANY" adds 100 small ones
 // (cyclomatic 3) so a list needs three pages; "BUDGET" sets truncated. Mode "nofunctions" plays a dendrite-core
 // that predates the method, "funcfail" one that fails for another reason.
 func binFunctions(params json.RawMessage, o options) (any, map[string]interface{}) {
@@ -63,6 +63,11 @@ func standinFunctions(text string) []map[string]interface{} {
 	out := []map[string]interface{}{fn(0x1000, "main", 5), fn(0x1100, "helper", 15)}
 	if strings.Contains(text, "HARD") {
 		out = append(out, fn(0x1200, "crypt_loop", 22))
+	}
+	if strings.Contains(text, "PARTIAL") {
+		walked := fn(0x1300, "walked_out", 4)
+		walked["partial"] = true
+		out = append(out, walked)
 	}
 	if strings.Contains(text, "MANY") {
 		for i := 0; i < 100; i++ {

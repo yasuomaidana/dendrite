@@ -54,12 +54,13 @@ type triageDoc struct {
 	Functions []Routed `json:"functions"`
 }
 
-// routeTier chooses the tier of a function by its cyclomatic complexity.
-func routeTier(cyclomatic int) string {
-	if cyclomatic <= CyclomaticLimit {
-		return TierLocal
+// routeTier chooses the tier of a function by its cyclomatic complexity. A partial count is a lower bound, so a
+// function the sidecar could not walk to the end is never trusted to the local model.
+func routeTier(f coreclient.Function) string {
+	if f.Partial || f.Cyclomatic > CyclomaticLimit {
+		return TierPaid
 	}
-	return TierPaid
+	return TierLocal
 }
 
 func (s *Service) triagePath(id string) string { return filepath.Join(s.Store.Dir(id), "triage.json") }
@@ -85,9 +86,22 @@ func (s *Service) triage(ctx context.Context, st *State) error {
 	case err != nil:
 		return err
 	}
+	doc := routeAll(list)
+	if err := s.saveTriage(st.ID, doc); err != nil {
+		return err
+	}
+	st.Triage, st.Stage = &doc.Triage, StageTriaged
+	if st.Tier != TierPaid && (doc.Paid > 0 || doc.Truncated) {
+		st.Gate = gateReason(doc.Triage)
+	}
+	return nil
+}
+
+// routeAll chooses the tier of every function of the list.
+func routeAll(list *coreclient.FunctionList) triageDoc {
 	doc := triageDoc{Triage: Triage{Limit: CyclomaticLimit, Truncated: list.Truncated}}
 	for _, f := range list.Functions {
-		r := Routed{Start: f.Start, Cyclomatic: f.Cyclomatic, Tier: routeTier(f.Cyclomatic)}
+		r := Routed{Start: f.Start, Cyclomatic: f.Cyclomatic, Tier: routeTier(f)}
 		if f.Name != nil {
 			r.Name = *f.Name
 		}
@@ -98,17 +112,15 @@ func (s *Service) triage(ctx context.Context, st *State) error {
 		}
 		doc.Functions = append(doc.Functions, r)
 	}
-	if err := writeJSON(s.triagePath(st.ID), doc); err != nil {
+	return doc
+}
+
+// saveTriage writes triage.json and the triage document of the workspace.
+func (s *Service) saveTriage(id string, doc triageDoc) error {
+	if err := writeJSON(s.triagePath(id), doc); err != nil {
 		return err
 	}
-	if err := fsutil.WriteFileAtomic(filepath.Join(s.Store.WorkspaceDir(st.ID), "triage.md"), []byte(triageText(doc))); err != nil {
-		return err
-	}
-	st.Triage, st.Stage = &doc.Triage, StageTriaged
-	if st.Tier != TierPaid && (doc.Paid > 0 || doc.Truncated) {
-		st.Gate = gateReason(doc.Triage)
-	}
-	return nil
+	return fsutil.WriteFileAtomic(filepath.Join(s.Store.WorkspaceDir(id), "triage.md"), []byte(triageText(doc)))
 }
 
 // gateReason says why the analysis waits, and how to go on.
