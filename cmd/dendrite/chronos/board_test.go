@@ -93,6 +93,27 @@ func TestChronos_LinkAndRelate(t *testing.T) {
 	}
 }
 
+func TestChronos_Unlink(t *testing.T) {
+	b := clitest.ServeBoard(t)
+	out, err := chronosOutput(t, "unlink", "DEN-101", "blocked_by", "DEN-100")
+	if err != nil || !strings.Contains(out, "Removed the blocked_by relation from DEN-101 to DEN-100") {
+		t.Fatalf("unlink: %v\n%s", err, out)
+	}
+	b.Mu.Lock()
+	removed := strings.Join(b.Removed, ",")
+	b.FailRemove = true
+	b.Mu.Unlock()
+	if removed != "blocked_by uuid-100" {
+		t.Errorf("relations removed: %q", removed)
+	}
+
+	expectChronos(t, cli.ExitUsage, "unlink", "DEN-101", "bogus", "DEN-100")
+	expectChronos(t, cli.ExitUsage, "unlink", "DEN-101", "relates_to")
+	expectChronos(t, cli.ExitError, "unlink", "DEN-999", "relates_to", "DEN-100")
+	expectChronos(t, cli.ExitError, "unlink", "DEN-101", "relates_to", "DEN-999")
+	expectChronos(t, cli.ExitError, "unlink", "DEN-101", "blocked_by", "DEN-100") // Plane refuses the removal
+}
+
 func TestChronos_TicketListAndSet(t *testing.T) {
 	clitest.ServeBoard(t)
 	dir := t.TempDir()

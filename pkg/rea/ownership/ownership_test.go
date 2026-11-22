@@ -179,3 +179,18 @@ func TestDecisionNoteWorksWithoutASignal(t *testing.T) {
 		t.Errorf("note %q", n)
 	}
 }
+
+func TestDecisionNoteSaysHowSureTheRefusalWas(t *testing.T) {
+	for _, tc := range []struct {
+		why  Refusal
+		want string
+	}{
+		{Refusal{Reason: "stop_reason", Confidence: ConfidenceExact}, "(exact)"},
+		{Refusal{Reason: "declined", Confidence: ConfidenceSuspected}, "(suspected)"},
+		{Refusal{Reason: "explicit"}, "(explicit)"},
+	} {
+		if n := decisionNote(tc.why); !strings.Contains(n, tc.want) {
+			t.Errorf("%+v: %q lacks %q", tc.why, n, tc.want)
+		}
+	}
+}

@@ -1,0 +1,70 @@
+---
+id: dendrite_rea_analyze
+title: "dendrite_rea_analyze"
+sidebar_label: "dendrite_rea_analyze"
+---
+
+# dendrite_rea_analyze
+
+Analyze any target (PE, ELF, Mach-O, ASAR/ZIP package, JS bundle, unknown file or a directory of source): inspect it, write its structure as documents and index them. Returns an evidence bundle under 4,000 tokens and an analysis id; read more with dendrite_rea_search instead of dumping the target again. A paused analysis is returned with paused=true.
+
+## Input Schema
+
+```json
+{
+  "properties": {
+    "binary": {
+      "description": "Path of the file or directory to analyze",
+      "type": "string"
+    },
+    "format": {
+      "description": "Format the target must have (default: detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree, unknown",
+      "type": "string"
+    },
+    "id": {
+      "description": "Name of the analysis (default: generated)",
+      "type": "string"
+    },
+    "model": {
+      "description": "Model to use on that tier",
+      "type": "string"
+    },
+    "tier": {
+      "description": "Model tier: local or paid",
+      "type": "string"
+    }
+  },
+  "required": [
+    "binary"
+  ],
+  "type": "object"
+}
+```
+
+## Example Call
+
+### JSON-RPC
+
+```json
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "arguments": {
+      "binary": "sample",
+      "format": "detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree, unknown",
+      "id": "generated",
+      "model": "sample",
+      "tier": "sample"
+    },
+    "name": "dendrite_rea_analyze"
+  }
+}
+```
+
+### CLI
+
+```bash
+dendrite mcp call dendrite_rea_analyze '{"binary":"sample","format":"detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree, unknown","id":"generated","model":"sample","tier":"sample"}'
+```

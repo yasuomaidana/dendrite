@@ -118,7 +118,7 @@ func Transfer(ctx context.Context, p Ports, rule directive.Rea, ref string, why 
 func decisionNote(why Refusal) string {
 	note := "A Claude session refused this REA ticket; per the [rea] directive AGY takes ownership."
 	if why.Reason != "" {
-		note += "\nSignal: " + why.Reason + "."
+		note += "\nSignal: " + why.Reason + " (" + firstNonEmpty(why.Confidence, "explicit") + ")."
 	}
 	if why.Excerpt != "" {
 		note += "\nWhat Claude said: " + why.Excerpt
@@ -143,4 +143,11 @@ func jobSpec(issue Issue, rule directive.Rea, why Refusal) agentjobs.SubmitSpec 
 		Ticket: issue.Ticket, Agent: "agy", Model: rule.RefusalModel,
 		Prompt: b.String(), Complexity: complexity, Isolate: true,
 	}
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }

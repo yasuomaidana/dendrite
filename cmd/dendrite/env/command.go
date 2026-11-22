@@ -496,10 +496,24 @@ func DiagnoseAGY(out io.Writer) {
 		fmt.Fprintln(out, "  [i] AGY: not installed, nothing to register")
 	case bootstrap.AGYRegistered:
 		fmt.Fprintln(out, "  [✓] AGY: the dendrite MCP server is registered")
+		diagnoseAGYReaTools(out)
 	case bootstrap.AGYNotRegistered:
 		fmt.Fprintln(out, "  [-] AGY: the dendrite MCP server is not registered; run `dendrite soma prepare`")
 	default:
 		fmt.Fprintf(out, "  [-] AGY: cannot read its MCP registry (%v)\n", err)
+	}
+}
+
+// diagnoseAGYReaTools reports whether the server AGY starts serves the dendrite_rea_ tools its skill sends it to.
+func diagnoseAGYReaTools(out io.Writer) {
+	tools, err := cli.AgyReaTools(".")
+	switch {
+	case err != nil:
+		fmt.Fprintf(out, "  [-] AGY: cannot list the tools of the dendrite server (%v)\n", err)
+	case len(tools) == 0:
+		fmt.Fprintln(out, "  [-] AGY: the dendrite server serves no dendrite_rea_ tools; run `dendrite update` and `dendrite soma prepare`")
+	default:
+		fmt.Fprintf(out, "  [✓] AGY: %d dendrite_rea_ tools reachable (%s)\n", len(tools), strings.Join(tools, ", "))
 	}
 }
 

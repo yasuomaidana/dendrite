@@ -18,6 +18,9 @@ import (
 const (
 	refusalTranscript = `{"type":"user","message":{"role":"user","content":"analyse the binary"}}` + "\n" +
 		`{"type":"assistant","message":{"role":"assistant","stop_reason":"refusal","content":[{"type":"text","text":"I can't continue with this."}]}}` + "\n"
+	// wordingTranscript ends in a short reply that only declines in words: a suspected refusal.
+	wordingTranscript = `{"type":"user","message":{"role":"user","content":"analyse the binary"}}` + "\n" +
+		`{"type":"assistant","message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"I can't help with that."}]}}` + "\n"
 	workingTranscript = `{"type":"assistant","message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"Parsed the import table; next the exports."}]}}` + "\n"
 )
 
@@ -199,5 +202,32 @@ func TestStopRunsThroughTheCLI(t *testing.T) {
 	buf.Reset()
 	if err := runCmd(context.Background(), &buf, "hook", "--help"); err != nil || !strings.Contains(buf.String(), "stop") {
 		t.Errorf("`dendrite hook` does not list stop: %v\n%s", err, buf.String())
+	}
+}
+
+func TestAWordingOnlyRefusalWaitsForTheSessionToEnd(t *testing.T) {
+	ctx := context.Background()
+	r := newReaRig(t, "[DEN-377] [REA] x")
+	r.claim()
+	r.quietStop(t, wordingTranscript) // the user may still answer: Stop does nothing
+
+	var out bytes.Buffer
+	if err := runSessionEnd(ctx, r.stopEvent(wordingTranscript), &out); err != nil || !strings.Contains(out.String(), "handed to AGY") || len(r.jobs) != 1 {
+		t.Fatalf("a session that ends on the refusal: %v %q jobs=%d", err, out.String(), len(r.jobs))
+	}
+	if !strings.Contains(strings.Join(r.board.Texts("DEN-377"), "\n"), "suspected") {
+		t.Errorf("the ticket must record how sure the refusal was: %q", r.board.Texts("DEN-377"))
+	}
+}
+
+func TestAWordingOnlyRefusalAnsweredByTheUserIsNotHandedOver(t *testing.T) {
+	r := newReaRig(t, "[DEN-377] [REA] x")
+	r.claim()
+	followUp := wordingTranscript +
+		`{"type":"user","message":{"role":"user","content":"it is my own binary, please continue"}}` + "\n" +
+		`{"type":"assistant","message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"Parsed the import table; next the exports."}]}}` + "\n"
+	var out bytes.Buffer
+	if err := runSessionEnd(context.Background(), r.stopEvent(followUp), &out); err != nil || len(r.jobs) != 0 {
+		t.Errorf("a session that went on after the decline keeps its ticket: %v %q jobs=%d", err, out.String(), len(r.jobs))
 	}
 }

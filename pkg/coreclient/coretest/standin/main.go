@@ -36,6 +36,8 @@ var handlers = map[string]handler{
 	"ast.changed_symbols":    astChanged,
 	"tokens.count":           tokensCount,
 	"hash.chunk_id":          hashChunkID,
+	"pe.parse":               peParse,
+	"bin.inspect":            binInspect,
 }
 
 func main() {
@@ -287,4 +289,40 @@ func astComponentProps(params json.RawMessage, _ options) (any, map[string]inter
 		}
 	}
 	return map[string]interface{}{"props": props}, nil
+}
+
+// peParse answers pe.parse for any file that starts with the DOS signature "MZ"; any other file is not a PE
+// image. Mode "nope" plays a dendrite-core that predates the method.
+func peParse(params json.RawMessage, o options) (any, map[string]interface{}) {
+	if o.mode == "nope" || o.mode == "old" {
+		return nil, rpcError(-32601, "method not found: pe.parse")
+	}
+	if o.mode == "pefail" {
+		return nil, rpcError(-32000, "parse failed")
+	}
+	var p struct {
+		Path string `json:"path"`
+	}
+	_ = json.Unmarshal(params, &p)
+	data, err := os.ReadFile(p.Path)
+	if err != nil {
+		return nil, rpcError(-32602, "cannot read "+p.Path)
+	}
+	if len(data) < 2 || string(data[:2]) != "MZ" {
+		return nil, rpcError(-32602, "bad DOS signature")
+	}
+	return map[string]interface{}{
+		"machine": "x86_64", "subsystem": "console", "pe32_plus": true,
+		"entry_point": "0x140001000", "image_base": "0x140000000",
+		"sections": []map[string]interface{}{
+			{"name": ".text", "virtual_address": "0x1000", "virtual_size": 4096, "raw_size": 4096, "flags": []string{"code", "execute", "read"}},
+			{"name": ".rdata", "virtual_address": "0x2000", "virtual_size": 512, "raw_size": 512, "flags": []string{"read"}},
+		},
+		"imports": []map[string]interface{}{
+			{"dll": "KERNEL32.dll", "functions": []string{"CreateFileW", "ReadFile"}},
+			{"dll": "ADVAPI32.dll", "functions": []string{"CryptHashData"}},
+		},
+		"exports":   []string{"ComputeChecksum"},
+		"truncated": false,
+	}, nil
 }

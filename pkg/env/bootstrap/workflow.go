@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"Dendrite/pkg/branchpolicy"
+	"Dendrite/pkg/directive"
 )
 
 // DendriteWorkflowSkill is the managed skill every agent family (Claude, Antigravity/AGY,
@@ -40,7 +41,7 @@ var dendriteWorkflowRules = []string{
 	"Explore with Dendrite before any raw text search, cheapest first: `dendrite rag search`/`dendrite_rag_retrieve` (detail `map`, then `dendrite rag show`/`dendrite_rag_show` for the bodies you need), `dendrite rag symbols` for definitions and references, `dendrite graph` (`dendrite_graph_explain`, `dendrite_graph_path`) for callers and structure, `dendrite rag history` for past changes, and `dendrite ask` for questions. `dendrite rag grep` is the exact-pattern fallback (index-aware, capped). Use `rg`/`grep`/`find` only when those return nothing, and then scoped to a path with a result cap, because unscoped `rg` output costs far more tokens than a retrieval map.",
 	"Questions about tickets (status, blockers, what a ticket is for) go to Plane through Dendrite: `dendrite ask --corpus tickets \"...\"` or `dendrite rag search --corpus tickets \"...\"` (MCP: `dendrite_rag_retrieve` with corpus `tickets`) for open questions, and `dendrite chronos`, `dendrite_plane_issues` or `dendrite_ticket_smart_select` for exact lookups. Never use `DEV_STATUS.md` or a search of the repository for this.",
 	"Route every LLM call through Dendrite: the LiteLLM gateway (`http://localhost:4000`) for model access and `dendrite bouton jobs submit --isolate` (alias `agent jobs`) to delegate to Antigravity (AGY) or other models. Do not call provider APIs or spawn other agent CLIs directly.",
-	"Reverse-engineering (REA) tickets are the ones the `[rea]` directive names (label `rea` or a `[REA]` title prefix). If you are a Claude session and refuse an REA ticket, do not leave it half done: run `dendrite retro handoff <ticket> --refused --reason \"...\"` (MCP `dendrite_rea_handoff`). AGY takes ownership: the refusal is recorded on the ticket, an AGY job starts in an isolated copy, the ticket is labelled `owner:agy` and a Claude session cannot claim it again without `--steal`. The Stop hook does the same when a session ends on a refusal. Change the rule with `dendrite directive set rea.refusal_owner=agy|none`.",
+	"Reverse-engineering (REA) tickets are the ones the `[rea]` directive names (label `rea` or a `[REA]` title prefix). If you are a Claude session and refuse an REA ticket, do not leave it half done: run `dendrite retro handoff <ticket> --refused --reason \"...\"` (MCP `dendrite_rea_handoff`). AGY takes ownership: the refusal is recorded on the ticket, an AGY job starts in an isolated copy, the ticket is labelled `owner:agy` and a Claude session cannot claim it again without `--steal`. The Stop hook does the same when a session ends on a refusal. Change the rule with `dendrite directive set rea.refusal_owner=agy|none`; the `dendrite-rea` skill has the commands and how AGY works an REA ticket directly.",
 	"Run `dendrite session checkpoint` after each finished ticket and before long waits.",
 	"When a copy is finished and merged, `dendrite work gc` (or the next resume/checkpoint) deletes it; `dendrite work done <name>` removes one explicitly.",
 }
@@ -215,4 +216,77 @@ func verifyWorkflowText(root string) error {
 		}
 	}
 	return nil
+}
+
+// DendriteREASkill is the managed skill that tells every agent family (Claude, Antigravity/AGY, Gemini, Copilot)
+// how reverse-engineering (REA) work is done and who owns it.
+const DendriteREASkill = "dendrite-rea"
+
+// renderDendriteREASkill renders the managed dendrite-rea SKILL.md for the project at root, naming the labels and
+// title prefixes its `[rea]` directive uses.
+func renderDendriteREASkill(root string) string {
+	rule := directive.Defaults().Rea
+	if set, err := directive.Load(root); err == nil {
+		rule = set.Rea
+	}
+	var sb strings.Builder
+	sb.WriteString("---\n")
+	sb.WriteString("name: " + DendriteREASkill + "\n")
+	sb.WriteString("description: Reverse-engineering (REA) work with Dendrite: who owns an REA ticket (Claude refuses, AGY owns), the retro commands and MCP tools, and how to keep evidence small. Use before starting, continuing or handing over an REA ticket, from any agent.\n")
+	sb.WriteString("---\n\n")
+	sb.WriteString("# Dendrite REA (reverse engineering)\n\n")
+	sb.WriteString("> Managed by `dendrite soma prepare`; edits here are overwritten. Change `pkg/env/bootstrap/workflow.go` instead.\n\n")
+	sb.WriteString("REA tickets are the ones this project's `[rea]` directive names: ")
+	sb.WriteString(reaMarkers(rule) + ". `dendrite retro` (aliases `rea`, `retrograde-analysis`) is the command group; the same tools are MCP tools, so Claude, AGY and any other agent can use them directly.\n\n")
+
+	sb.WriteString("## Who owns an REA ticket\n\n")
+	sb.WriteString(reaOwnership(rule))
+
+	sb.WriteString("\n## Commands and tools\n\n")
+	sb.WriteString("```bash\n")
+	sb.WriteString("dendrite retro list                                   # the open-source showcase targets\n")
+	sb.WriteString("dendrite retro showcase [target] [--format markdown]  # cleanroom analysis and parity check\n")
+	sb.WriteString("dendrite retro handoff DEN-123 --refused --reason \"...\" # hand a ticket you refuse to AGY\n")
+	sb.WriteString("dendrite retro analyze <target> [--format F] [--tier local|paid] [--model M]  # any file or directory (PE, ELF, Mach-O, ASAR/ZIP, JS bundle, source): inspect, write documents, index; prints a bounded evidence bundle and an id\n")
+	sb.WriteString("dendrite retro search <id> \"CreateFileW\" [-k 5]       # read only the best passages of the analysis\n")
+	sb.WriteString("dendrite retro pause <id>                             # stop at the next stage; the checkpoint is kept\n")
+	sb.WriteString("dendrite retro resume <id> [--tier paid --model M]    # continue, optionally on another tier or model\n")
+	sb.WriteString("dendrite retro purge <id> --force                     # delete documents, index and checkpoint\n")
+	sb.WriteString("```\n\n")
+	sb.WriteString("MCP: `dendrite_rea_analyze`, `dendrite_rea_search`, `dendrite_rea_pause`, `dendrite_rea_resume`, `dendrite_rea_purge` and `dendrite_rea_handoff`. The target is inspected by the dendrite-core sidecar (`bin.inspect`; an older one still reads PE images, and `dendrite update --dev` adds the other formats) and searched through the RAG sidecar. Register the server with AGY by running `dendrite soma prepare`; `dendrite soma diagnose` says whether AGY lists it.\n\n")
+
+	sb.WriteString("## Working an REA ticket (any agent)\n\n")
+	sb.WriteString("1. `dendrite chronos claim <ticket>` (or `dendrite work new <ticket>`), then `dendrite_query_context` for its criteria and plan.\n")
+	sb.WriteString("2. Explore with Dendrite before reading raw output: `dendrite rag search`, `dendrite rag symbols`, `dendrite graph`. Search the evidence you already extracted (`dendrite retro search <id> \"...\"`) instead of dumping it again.\n")
+	sb.WriteString("3. Keep every evidence bundle under 4,000 tokens: one function or one table at a time, with its cross-references and string constants.\n")
+	sb.WriteString("4. Write an Architecture Decision Record (`docs/architecture/decisions/ADR-XXX.md`) before any implementation: decompile, understand, then recreate. Recreate cleanroom code with unit test vectors; never copy bytes or proprietary text into the repository.\n")
+	sb.WriteString("5. Untrusted ELF and PE binaries run only in the sandboxed container, never on the host.\n")
+	sb.WriteString("6. Commit with `dendrite quantal`, finish with `dendrite chronos finish`.\n")
+	return sb.String()
+}
+
+// reaMarkers says what makes a ticket REA work.
+func reaMarkers(r directive.Rea) string {
+	var parts []string
+	for _, l := range r.Labels {
+		parts = append(parts, fmt.Sprintf("the label `%s`", l))
+	}
+	for _, p := range r.TitlePrefixes {
+		parts = append(parts, fmt.Sprintf("a title starting `%s`", p))
+	}
+	if len(parts) == 0 {
+		return "none (no label or title prefix is configured)"
+	}
+	return strings.Join(parts, " or ")
+}
+
+// reaOwnership is the skill's ownership section: what happens when Claude refuses, or that nothing does.
+func reaOwnership(r directive.Rea) string {
+	if !strings.EqualFold(r.RefusalOwner, directive.RefusalOwnerAGY) {
+		return "A refused REA ticket stays with the session that claimed it (`rea.refusal_owner = none`).\n"
+	}
+	var sb strings.Builder
+	sb.WriteString("A Claude session that refuses an REA ticket must not leave it half done: run `dendrite retro handoff <ticket> --refused --reason \"...\"` (MCP `dendrite_rea_handoff`). AGY takes ownership: the refusal is recorded as a decision on the ticket, an AGY job starts in an isolated working copy, the ticket is labelled `" + directive.ReaOwnerLabel + "` and the Claude claim is released. A Claude session cannot claim it again without `--steal`.\n\n")
+	sb.WriteString("The Stop hook does this by itself when the API ends a turn with a refusal, and the session-end hook also when a session ends on a short, tool-free reply that only declines. **AGY sessions** have no such hooks: an AGY session that owns an REA ticket (the `" + directive.ReaOwnerLabel + "` label, or a job started by the handoff) simply works it as above, and may start any other REA ticket itself with `dendrite chronos claim <ticket> --agent agy`.\n")
+	return sb.String()
 }

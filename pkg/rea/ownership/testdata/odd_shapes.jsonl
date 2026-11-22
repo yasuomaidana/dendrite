@@ -1,3 +1,4 @@
-{"type":"assistant","message":{"role":"assistant","stop_reason":"end_turn","content":42}}
+{"type":"user","message":{"role":"user","content":7}}
 not json at all
 {"type":"user","message":{"role":"user","content":"ok"}}
+{"type":"assistant","message":{"role":"assistant","stop_reason":"end_turn","content":42}}

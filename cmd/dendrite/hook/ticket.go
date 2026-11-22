@@ -55,9 +55,10 @@ func ticketHookCmds() []*cobra.Command {
 	sessionEnd := afterHookCmd("session-end", "Session-end hook: a refused REA ticket goes to AGY; a ticket still In Progress gets an automatic handoff and is blocked (needs-input)", runSessionEnd)
 	stop := afterHookCmd("stop", "Stop hook: an REA ticket the Claude session refused goes to AGY (the [rea] directive)", runStop)
 	stop.Long = "Reads a Claude Code Stop event on stdin. When the session has claimed a ticket that is REA work (the label or\n" +
-		"title prefix of the [rea] directive) and the end of its transcript is a refusal (an API refusal, or a short\n" +
-		"reply that declines), it records the refusal on the ticket, starts an AGY job in an isolated working copy,\n" +
-		"labels the ticket owner:agy and releases the Claude claim. Anything else changes nothing."
+		"title prefix of the [rea] directive) and its last turn ended in an API refusal, it records the refusal on the\n" +
+		"ticket, starts an AGY job in an isolated working copy, labels the ticket owner:agy and releases the Claude\n" +
+		"claim. A reply that only declines in words (short, tool-free, no question or offer) is not acted on here,\n" +
+		"because the user may still answer; the session-end hook hands it over if the session ends on it."
 	decision := afterHookCmd("decision", "Post-AskUserQuestion hook: record the questions and the user's answers on the claimed ticket (kept locally until a claim)", runDecision)
 	return []*cobra.Command{preEdit, preCommit, planSaved, sessionEnd, stop, decision}
 }

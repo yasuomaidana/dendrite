@@ -235,6 +235,22 @@ func TestChronosNext_SynapseFilterKeepsOnlyRequestsFromThatSynapse(t *testing.T)
 	}
 }
 
+func TestPlaneRequest_RelatesToDoesNotBlockTheSourceTicket(t *testing.T) {
+	fx := newRequestFixture(t)
+	fx.api.mu.Lock()
+	fx.api.issues["p-doc"] = []map[string]any{{"id": "doc-1", "name": "[DEN-1] needs thumbnails", "sequence_id": 1, "state": "s-todo"}}
+	fx.api.mu.Unlock()
+
+	var out bytes.Buffer
+	o := planeRequestOptions{Target: "oxipix", Name: "Batch resize", Desc: "nice to have for DEN-1", From: "DEN-1", RelatesTo: true}
+	if err := planeRequest(context.Background(), fx.client, planesvc.Default(), fx.self, o, &out); err != nil {
+		t.Fatalf("request: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "DEN-1 is now related to OXI-1") || strings.Contains(out.String(), "blocked") {
+		t.Errorf("--relates-to must only relate the source ticket:\n%s", out.String())
+	}
+}
+
 func TestPlaneRequest_FromLinksTheSourceTicketAndLinkResolvesPeerTickets(t *testing.T) {
 	fx := newRequestFixture(t)
 	fx.api.mu.Lock()
