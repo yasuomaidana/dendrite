@@ -106,75 +106,106 @@ func canonical(issue *plane.PlaneIssue, ref string) string {
 // session, and it ends In Progress, assigned to the API key's user and labelled agent:/tier:. The claim is
 // recorded for the branch checked out in Dir, which is what unlocks edits there.
 func (l *Lifecycle) Claim(ctx context.Context, ref string, o ClaimOptions) (ClaimResult, error) {
-	if strings.TrimSpace(ref) == "" {
-		return ClaimResult{}, errors.New("a ticket is required")
-	}
-	st, issue, err := l.Board.Status(ctx, ref)
+	t, err := l.claimable(ctx, ref, o)
 	if err != nil {
 		return ClaimResult{}, err
 	}
-	ticket := canonical(issue, ref)
-	if _, hint := Allowed(st, ModeStart, ticket); hint != "" {
-		return ClaimResult{}, fmt.Errorf("cannot claim %s, it is %s: %s", ticket, tracker.StatusDisplayName(st), hint)
-	}
-	branch := l.Branch(l.Dir)
-	if branch == "" {
-		return ClaimResult{}, fmt.Errorf("%s is not a git working copy, so there is no branch to claim for", l.Dir)
-	}
-	if want, ok := TicketOfBranch(branch); ok && !strings.EqualFold(want, ticket) {
-		return ClaimResult{}, fmt.Errorf("branch %s belongs to %s, not %s: work on %s in its own copy (`dendrite work new %s`)", branch, want, ticket, ticket, ticket)
-	}
-	now := l.Now()
-	if err := l.refuseOtherSession(ticket, branch, now, o.Steal); err != nil {
-		return ClaimResult{}, err
-	}
-
-	tok, ok := l.Store.LatestToken(now)
+	tok, ok := l.Store.LatestToken(t.now)
 	if !ok {
-		if tok, err = l.Store.MintToken(TokenOptions{Agent: o.Agent, ModelTier: o.Tier, Worktree: l.Dir}, now); err != nil {
+		if tok, err = l.Store.MintToken(TokenOptions{Agent: o.Agent, ModelTier: o.Tier, Worktree: l.Dir}, t.now); err != nil {
 			return ClaimResult{}, err
 		}
 	}
 	agent, tier := firstNonEmpty(o.Agent, tok.Agent), firstNonEmpty(o.Tier, tok.ModelTier)
+	if err := l.takeTicket(ctx, t, agent, tier, o); err != nil {
+		return ClaimResult{}, err
+	}
+	claim := Claim{Ticket: t.ticket, SessionID: tok.SessionID, Agent: agent, ModelTier: tier, Branch: t.branch, Worktree: l.Dir,
+		ClaimedAt: t.now, PlaneState: tracker.StatusInProgress, CheckedAt: t.now}
+	if err := l.Store.WriteClaim(claim); err != nil {
+		return ClaimResult{}, err
+	}
+	if err := l.post(ctx, t.ticket, "claim", fmt.Sprintf("Claimed by %s (session %s, tier %s) on branch %s.", agent, tok.SessionID, firstNonEmpty(tier, "-"), t.branch), claim); err != nil {
+		return ClaimResult{}, err
+	}
+	return l.claimResult(ctx, claim), nil
+}
 
-	if st != tracker.StatusInProgress {
-		if err := l.Board.set(ctx, ticket, tracker.StatusInProgress); err != nil {
-			return ClaimResult{}, fmt.Errorf("start %s: %w", ticket, err)
+// claimTarget is a ticket that passed the checks of a claim.
+type claimTarget struct {
+	ticket, branch string
+	state          tracker.Status
+	now            time.Time
+}
+
+// claimable checks that ref can be claimed from Dir: a state that allows work, not owned by AGY against a Claude
+// claim, a git branch that belongs to it and no other live session holding it.
+func (l *Lifecycle) claimable(ctx context.Context, ref string, o ClaimOptions) (claimTarget, error) {
+	if strings.TrimSpace(ref) == "" {
+		return claimTarget{}, errors.New("a ticket is required")
+	}
+	st, issue, err := l.Board.Status(ctx, ref)
+	if err != nil {
+		return claimTarget{}, err
+	}
+	ticket := canonical(issue, ref)
+	if _, hint := Allowed(st, ModeStart, ticket); hint != "" {
+		return claimTarget{}, fmt.Errorf("cannot claim %s, it is %s: %s", ticket, tracker.StatusDisplayName(st), hint)
+	}
+	if err := l.refuseAGYOwned(ctx, ticket, o); err != nil {
+		return claimTarget{}, err
+	}
+	branch := l.Branch(l.Dir)
+	if branch == "" {
+		return claimTarget{}, fmt.Errorf("%s is not a git working copy, so there is no branch to claim for", l.Dir)
+	}
+	if want, ok := TicketOfBranch(branch); ok && !strings.EqualFold(want, ticket) {
+		return claimTarget{}, fmt.Errorf("branch %s belongs to %s, not %s: work on %s in its own copy (`dendrite work new %s`)", branch, want, ticket, ticket, ticket)
+	}
+	now := l.Now()
+	if err := l.refuseOtherSession(ticket, branch, now, o.Steal); err != nil {
+		return claimTarget{}, err
+	}
+	return claimTarget{ticket: ticket, branch: branch, state: st, now: now}, nil
+}
+
+// takeTicket moves the ticket to In Progress, assigns it to the API key's user and labels it agent:/tier:.
+func (l *Lifecycle) takeTicket(ctx context.Context, t claimTarget, agent, tier string, o ClaimOptions) error {
+	if t.state != tracker.StatusInProgress {
+		if err := l.Board.set(ctx, t.ticket, tracker.StatusInProgress); err != nil {
+			return fmt.Errorf("start %s: %w", t.ticket, err)
 		}
 	}
 	me, err := l.Board.Svc.Me(ctx, l.Board.Client)
 	if err != nil {
-		return ClaimResult{}, fmt.Errorf("find the Plane user to assign: %w", err)
+		return fmt.Errorf("find the Plane user to assign: %w", err)
 	}
-	if _, err := l.Board.Svc.UpdateIssue(ctx, l.Board.Client, ticket, plane.UpdateIssueRequest{Assignees: []string{me.ID}}); err != nil {
-		return ClaimResult{}, fmt.Errorf("assign %s: %w", ticket, err)
+	if _, err := l.Board.Svc.UpdateIssue(ctx, l.Board.Client, t.ticket, plane.UpdateIssueRequest{Assignees: []string{me.ID}}); err != nil {
+		return fmt.Errorf("assign %s: %w", t.ticket, err)
 	}
 	labels := []string{"agent:" + agent}
 	if tier != "" {
 		labels = append(labels, "tier:"+tier)
 	}
-	if _, _, err := l.Board.Svc.PatchLabels(ctx, l.Board.Client, ticket, labels, []string{"agent:", "tier:", NeedsInputLabel}); err != nil {
-		return ClaimResult{}, fmt.Errorf("label %s: %w", ticket, err)
+	if _, _, err := l.Board.Svc.PatchLabels(ctx, l.Board.Client, t.ticket, labels, claimRemovals(o)); err != nil {
+		return fmt.Errorf("label %s: %w", t.ticket, err)
 	}
-	claim := Claim{Ticket: ticket, SessionID: tok.SessionID, Agent: agent, ModelTier: tier, Branch: branch, Worktree: l.Dir,
-		ClaimedAt: now, PlaneState: tracker.StatusInProgress, CheckedAt: now}
-	if err := l.Store.WriteClaim(claim); err != nil {
-		return ClaimResult{}, err
-	}
-	if err := l.post(ctx, ticket, "claim", fmt.Sprintf("Claimed by %s (session %s, tier %s) on branch %s.", agent, tok.SessionID, firstNonEmpty(tier, "-"), branch), claim); err != nil {
-		return ClaimResult{}, err
-	}
+	return nil
+}
 
-	res := ClaimResult{Ticket: ticket, State: tracker.StatusDisplayName(tracker.StatusInProgress), Branch: branch, SessionID: tok.SessionID}
-	p, err := l.GetPlan(ctx, ticket)
+// claimResult is what a recorded claim returns: the ticket In Progress and its plan, when one exists. Decisions
+// answered before the claim are adopted onto the ticket.
+func (l *Lifecycle) claimResult(ctx context.Context, c Claim) ClaimResult {
+	res := ClaimResult{Ticket: c.Ticket, State: tracker.StatusDisplayName(tracker.StatusInProgress), Branch: c.Branch, SessionID: c.SessionID}
+	p, err := l.GetPlan(ctx, c.Ticket)
 	if err != nil {
-		p, err = l.adoptUnclaimedPlan(ctx, ticket, now)
+		p, err = l.adoptUnclaimedPlan(ctx, c.Ticket, c.ClaimedAt)
 	}
 	if err == nil {
 		res.Plan = &p
 	}
-	l.adoptPendingDecisions(ctx, ticket, now)
-	return res, nil
+	l.adoptPendingDecisions(ctx, c.Ticket, c.ClaimedAt)
+	return res
 }
 
 // NeedsInputLabel marks a ticket the session-end hook blocked; a new claim clears it.

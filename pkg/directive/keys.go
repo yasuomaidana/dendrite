@@ -49,6 +49,12 @@ var keys = map[string]keyDef{
 	"git.integration_branch":             {"branch", "branch finished work merges into; empty detects it (remote default branch, then develop, then main)", func(s *Set, v any) { s.Git.IntegrationBranch = v.(string) }, func(s Set) any { return s.Git.IntegrationBranch }},
 	"git.feature_prefix":                 {"branch", "prefix of the branch that groups the sub-tickets of a parent ticket, ending in /", func(s *Set, v any) { s.Git.FeaturePrefix = v.(string) }, func(s Set) any { return s.Git.FeaturePrefix }},
 	"languages.preference":               {"strings", "languages in the order Dendrite proposes them for new code", func(s *Set, v any) { s.Languages.Preference = v.([]string) }, func(s Set) any { return s.Languages.Preference }},
+	"rea.labels":                         {"strings", "ticket labels that mark reverse-engineering (REA) work", func(s *Set, v any) { s.Rea.Labels = v.([]string) }, func(s Set) any { return s.Rea.Labels }},
+	"rea.title_prefixes":                 {"strings", "ticket title prefixes that mark REA work, e.g. [REA]", func(s *Set, v any) { s.Rea.TitlePrefixes = v.([]string) }, func(s Set) any { return s.Rea.TitlePrefixes }},
+	"rea.refusal_owner":                  {"string", "who owns an REA ticket a Claude session refused: agy or none", func(s *Set, v any) { s.Rea.RefusalOwner = v.(string) }, func(s Set) any { return s.Rea.RefusalOwner }},
+	"rea.engine":                         {"string", "reverse-engineering tool to run over a target: auto (best usable open-source one), none, rizin, radare2, objdump", func(s *Set, v any) { s.Rea.Engine = v.(string) }, func(s Set) any { return s.Rea.Engine }},
+	"rea.sandbox":                        {"string", "where the engine runs: container (default) or host; binaries run on the host only when trusted", func(s *Set, v any) { s.Rea.Sandbox = v.(string) }, func(s Set) any { return s.Rea.Sandbox }},
+	"rea.refusal_model":                  {"branch", "AGY model for a refused REA ticket; empty picks by complexity", func(s *Set, v any) { s.Rea.RefusalModel = v.(string) }, func(s Set) any { return s.Rea.RefusalModel }},
 }
 
 // Keys lists every setting name, sorted.

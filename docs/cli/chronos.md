@@ -54,6 +54,7 @@ Terminal Boutons & Vesicles
 | `ticket` | Read or set ticket status in DEV_STATUS.md and Plane |
 | `ticket list` | List tickets from DEV_STATUS.md (falls back to Plane) |
 | `ticket set` | Set a ticket's status in Plane and DEV_STATUS.md (backlog, todo, in progress, to verify, done) |
+| `unlink` | Remove one relation between two tickets (blocking, blocked_by, relates_to, duplicate, start_before, start_after, finish_before, finish_after) |
 | `update` | Rename a ticket or replace its description |
 
 ## Flags
@@ -421,6 +422,7 @@ dendrite chronos request <peer-alias|IDENT> [flags]
 | `--desc` | What is needed and why (goal and acceptance criteria) |
 | `--from` | Ticket in this project that depends on the request |
 | `--name` | Title of the request |
+| `--relates-to` | Link --from as related to the request instead of blocked by it |
 | `--synapse` | The synapse the request belongs to (required when several are shared) |
 
 ```bash
@@ -470,6 +472,19 @@ dendrite chronos ticket set <ticket> <status>
 ```bash
 dendrite chronos ticket set DEN-123 done
 dendrite chronos ticket set DEN-123 "to verify"
+```
+
+### `dendrite chronos unlink`
+
+Remove one relation between two tickets (blocking, blocked_by, relates_to, duplicate, start_before, start_after, finish_before, finish_after)
+
+```bash
+dendrite chronos unlink <ticket-a> <relation> <ticket-b>
+```
+
+```bash
+dendrite chronos unlink DEN-123 blocked_by DEN-100
+dendrite chronos unlink DEN-123 relates_to DEN-950
 ```
 
 ### `dendrite chronos update`

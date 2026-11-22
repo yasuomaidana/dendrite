@@ -201,6 +201,7 @@ func TestClaimStopsAtEachPlaneFailure(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			s := newSession(t, map[string]string{"DEN-377": "To Do"})
+			t.Setenv(AgentEnv, "agy") // a Claude claim first reads the labels (a PATCH), which would shift the failure counts
 			s.board.Fail(c.match, c.after)
 			if _, err := s.Claim(context.Background(), "DEN-377", ClaimOptions{}); err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("err = %v, want it to contain %q", err, c.want)
