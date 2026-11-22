@@ -91,3 +91,23 @@ func TestRustLiteralsEscapeWhatRustWouldRead(t *testing.T) {
 		t.Error("a bad entry point must be refused")
 	}
 }
+
+func TestExportRustReportsADamagedAnalysis(t *testing.T) {
+	r := newRig(t)
+	if _, err := r.Analyze(ctx(), r.binary, Options{ID: "pe-bad"}); err != nil {
+		t.Fatal(err)
+	}
+	info := filepath.Join(r.Store.Dir("pe-bad"), "pe.json")
+	if err := os.WriteFile(info, []byte(`{"entry_point":"nope","image_base":"0x1"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.ExportRust("pe-bad", t.TempDir()); err == nil || !strings.Contains(err.Error(), "pe-bad") {
+		t.Errorf("an unreadable address must name the analysis: %v", err)
+	}
+	if err := os.Remove(info); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.ExportRust("pe-bad", t.TempDir()); err == nil {
+		t.Error("a missing structure must be refused")
+	}
+}
