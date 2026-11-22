@@ -435,6 +435,14 @@ func TestDefaultProbeSpecsOnlyReadOnlyRegisteredTools(t *testing.T) {
 	}
 }
 
+func TestTheCoreProfileKeepsTheReaTools(t *testing.T) {
+	for _, tool := range []string{"dendrite_rea_analyze", "dendrite_rea_handoff", "dendrite_rea_resume"} {
+		if !ProfileCore.InProfile(tool) {
+			t.Errorf("%s must be in the core profile: AGY registers the core server and its skill names these tools", tool)
+		}
+	}
+}
+
 func TestProfilesOtherThanCoreExposeEverything(t *testing.T) {
 	if !ProfileFull.InProfile("any_tool_at_all") {
 		t.Error("the full profile exposes every tool")

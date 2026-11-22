@@ -16,6 +16,8 @@ import (
 var (
 	AgyRegister  = bootstrap.RegisterAGY
 	AgyMCPStatus = bootstrap.AGYMCPStatus
+	// AgyReaTools lists the dendrite_rea_ tools the registered server serves: it starts the server, so tests replace it.
+	AgyReaTools = bootstrap.AGYReaTools
 )
 
 // dockerCmd runs the docker CLI and returns its output. It is a variable so tests never touch the
