@@ -32,10 +32,14 @@ func TestAnalyzeRunsEveryStageAndWritesTheWorkspace(t *testing.T) {
 // checkWorkspace checks the documents an analysis of the stand-in image writes.
 func checkWorkspace(t *testing.T, dir string) {
 	t.Helper()
+	var missing []string
 	for _, doc := range []string{"overview.md", "sections.md", "exports.md", "imports/kernel32.dll.md", "imports/advapi32.dll.md"} {
 		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(doc))); err != nil {
-			t.Errorf("workspace document %s: %v", doc, err)
+			missing = append(missing, doc)
 		}
+	}
+	if len(missing) > 0 {
+		t.Errorf("missing workspace documents: %v", missing)
 	}
 }
 
@@ -91,9 +95,16 @@ func TestResumeContinuesWithoutParsingAgain(t *testing.T) {
 	if p.calls != 0 || done.State.Tier != "paid" || done.State.Model != "cloud-pro" {
 		t.Errorf("parses %d, tier %s, model %s", p.calls, done.State.Tier, done.State.Model)
 	}
-	again, err := r.Resume(ctx(), "pe-resume", Options{})
-	if err != nil || again.State.Model != "cloud-pro" || p.calls != 0 {
-		t.Errorf("resuming a finished analysis changes nothing: %+v, %v", again.State, err)
+}
+
+func TestResumingAFinishedAnalysisChangesNothing(t *testing.T) {
+	r := pausedAtParsed(t, "pe-twice")
+	if _, err := r.Resume(ctx(), "pe-twice", Options{Model: "cloud-pro"}); err != nil {
+		t.Fatal(err)
+	}
+	again, err := r.Resume(ctx(), "pe-twice", Options{})
+	if err != nil || again.State.Model != "cloud-pro" || again.State.Stage != StageDone {
+		t.Errorf("%+v, %v", again.State, err)
 	}
 }
 
