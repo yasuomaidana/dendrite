@@ -63,6 +63,7 @@ func NewRetroCmd() *cobra.Command {
 
 	cmd.AddCommand(list, showcaseCmd, newRetroHandoffCmd())
 	cmd.AddCommand(reaCommands()...)
+	cmd.AddCommand(reaExportCommand())
 	return cmd
 }
 

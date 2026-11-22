@@ -126,3 +126,30 @@ func TestRetroAnalysisCommandsReportUsageAndServiceErrors(t *testing.T) {
 		t.Errorf("a service that cannot be built: exit %d", code)
 	}
 }
+
+func TestRetroExportWritesRustUnderOutput(t *testing.T) {
+	pe := useReaSidecars(t)
+	if _, code := cliOutput(t, "retro", "analyze", pe, "--id", "pe-exp"); code != cli.ExitOK {
+		t.Fatalf("analyze: exit %d", code)
+	}
+	out := t.TempDir()
+	text, code := cliOutput(t, "retro", "export", "pe-exp", "--target-language", "rust", "--output", out)
+	if code != cli.ExitOK || !strings.Contains(text, filepath.Join(out, "pe-exp.rs")) {
+		t.Fatalf("export: exit %d\n%s", code, text)
+	}
+	if _, err := os.Stat(filepath.Join(out, "pe-exp.rs")); err != nil {
+		t.Error(err)
+	}
+	if _, code = cliOutput(t, "retro", "export", "pe-exp", "--output", out, "--json"); code != cli.ExitOK {
+		t.Errorf("export --json: exit %d", code)
+	}
+	for _, args := range [][]string{
+		{"retro", "export", "pe-exp", "--target-language", "go", "--output", out},
+		{"retro", "export", "pe-exp"},
+		{"retro", "export", "pe-none", "--output", out},
+	} {
+		if _, code = cliOutput(t, args...); code != cli.ExitError {
+			t.Errorf("%v: exit %d, want an error", args, code)
+		}
+	}
+}
