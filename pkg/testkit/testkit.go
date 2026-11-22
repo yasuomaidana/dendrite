@@ -122,3 +122,23 @@ func NotContains(t T, s string, unwanted ...string) {
 		}
 	}
 }
+
+// EnvT is T plus the environment control of *testing.T.
+type EnvT interface {
+	T
+	Setenv(key, value string)
+}
+
+// StubEngram puts a stand-in `engram` executable that runs body first on PATH, isolates Engram's data and the
+// variable that overrides where Dendrite finds it, and returns the file the script logs to ($LOG).
+func StubEngram(t EnvT, body string) (log string) {
+	t.Helper()
+	dir := t.TempDir()
+	log = filepath.Join(t.TempDir(), "calls.log")
+	WriteFile(t, filepath.Join(dir, "engram"), "#!/bin/sh\n"+body+"\n", 0o755)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("DENDRITE_ENGRAM_BIN", "")
+	t.Setenv("ENGRAM_DATA_DIR", t.TempDir())
+	t.Setenv("LOG", log)
+	return log
+}

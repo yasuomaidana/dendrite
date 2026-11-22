@@ -41,6 +41,7 @@ var dendriteWorkflowRules = []string{
 	"Questions about tickets (status, blockers, what a ticket is for) go to Plane through Dendrite: `dendrite ask --corpus tickets \"...\"` or `dendrite rag search --corpus tickets \"...\"` (MCP: `dendrite_rag_retrieve` with corpus `tickets`) for open questions, and `dendrite chronos`, `dendrite_plane_issues` or `dendrite_ticket_smart_select` for exact lookups. Never use `DEV_STATUS.md` or a search of the repository for this.",
 	"Route every LLM call through Dendrite: the LiteLLM gateway (`http://localhost:4000`) for model access and `dendrite bouton jobs submit --isolate` (alias `agent jobs`) to delegate to Antigravity (AGY) or other models. Do not call provider APIs or spawn other agent CLIs directly.",
 	"Run `dendrite session checkpoint` after each finished ticket and before long waits.",
+	"Save what the next session must know (decisions with their reason, verified findings, ticket outcomes) with `dendrite memory save --type decision|note|outcome \"<title>\" \"<body>\"` or Engram's own `mem_save`: it is journaled at once and flushed into Engram when the session ends (`dendrite memory flush` sends it now); `dendrite memory mode` says which memory stores are in use.",
 	"When a copy is finished and merged, `dendrite work gc` (or the next resume/checkpoint) deletes it; `dendrite work done <name>` removes one explicitly.",
 }
 

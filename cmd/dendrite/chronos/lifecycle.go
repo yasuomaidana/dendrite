@@ -4,6 +4,8 @@ import (
 	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/cmd/dendrite/internal/planecli"
 	"Dendrite/pkg/directive"
+	"Dendrite/pkg/memory"
+	"Dendrite/pkg/projectid"
 	"Dendrite/pkg/ticketlock"
 	"Dendrite/pkg/tracker/plane"
 	"context"
@@ -256,6 +258,7 @@ func RunChronosFinish(ctx context.Context, l *ticketlock.Lifecycle, ticket strin
 	if err != nil {
 		return err
 	}
+	rememberFinish(res)
 	if cli.Globals.JSON {
 		if err := cli.WriteJSON(out, res); err != nil {
 			return err
@@ -270,6 +273,22 @@ func RunChronosFinish(ctx context.Context, l *ticketlock.Lifecycle, ticket strin
 		return cli.UsageErrorf("%s was blocked: the handoff on the ticket says what failed", res.Ticket)
 	}
 	return nil
+}
+
+// rememberFinish journals how a ticket ended, so the next session knows without asking Plane. It is
+// best-effort: finishing never fails because a memory could not be written.
+func rememberFinish(res ticketlock.FinishResult) {
+	home, err := projectid.HomeDir()
+	if err != nil {
+		return
+	}
+	_ = memory.Record(home, memory.DefaultJournal(), memory.Entry{
+		Type:   "outcome",
+		Ticket: res.Ticket,
+		Source: "chronos finish",
+		Title:  fmt.Sprintf("%s finished: %s", res.Ticket, res.State),
+		Body:   memory.Clip(fmt.Sprintf("%s is now %s.\n%s", res.Ticket, res.State, strings.Join(res.Notes, "\n")), 2000),
+	})
 }
 
 func NewChronosDecisionCmd() *cobra.Command {

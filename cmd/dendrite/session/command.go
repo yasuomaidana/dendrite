@@ -100,6 +100,7 @@ func RunSessionCheckpoint(ctx context.Context, o SessionCheckpointOptions, out i
 	}
 
 	if cli.Globals.JSON {
+		rememberCheckpoint(ctx, o, cp.Ticket, io.Discard)
 		data, _ := json.MarshalIndent(cp, "", "  ")
 		fmt.Fprintln(out, string(data))
 		soma.AutoCleanWorkCopies(ctx, io.Discard)
@@ -127,6 +128,7 @@ func RunSessionCheckpoint(ctx context.Context, o SessionCheckpointOptions, out i
 	if cp.Ticket != "" {
 		commit.PostTicketComment(ctx, out, o.Worktree, "milestone", CheckpointSummary(cp))
 	}
+	rememberCheckpoint(ctx, o, cp.Ticket, out)
 	soma.AutoCleanWorkCopies(ctx, out)
 	repair.AdvanceQuietly(ctx, out)
 	soma.OfferDisposal(ctx, out)
