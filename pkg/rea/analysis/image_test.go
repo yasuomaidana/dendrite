@@ -169,14 +169,3 @@ func TestADamagedInspectedStructureIsReported(t *testing.T) {
 		}
 	}
 }
-
-func TestExportRefusesAFormatItCannotWriteYet(t *testing.T) {
-	r := newRig(t)
-	elf := writeBinary(t, "\x7fELF")
-	if _, err := r.Analyze(ctx(), elf, Options{ID: "elf-x"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := r.ExportRust("elf-x", t.TempDir()); !errors.Is(err, ErrExportUnsupported) {
-		t.Errorf("err = %v", err)
-	}
-}

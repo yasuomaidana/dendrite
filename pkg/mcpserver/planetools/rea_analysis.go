@@ -5,6 +5,7 @@ import (
 	. "Dendrite/pkg/mcpserver"
 	"Dendrite/pkg/rea/analysis"
 	"Dendrite/pkg/rea/engine"
+	"Dendrite/pkg/rea/export"
 	"Dendrite/pkg/rea/insight"
 	"Dendrite/pkg/rea/ownership"
 	"context"
@@ -177,7 +178,25 @@ func RegisterReaInsightTools(s *Server, service func() (*analysis.Service, error
 		{"dendrite_rea_rank", "Say which documents of an analysis to read first: the overview, then the most connected ones.", []string{"id"}, map[string]interface{}{"id": idProp}, reaRank},
 		{"dendrite_rea_adr", "Draft a proposed Architecture Decision Record from a finished analysis (next free ADR number; the decision and consequences are left for a person).",
 			[]string{"id"}, map[string]interface{}{"id": idProp, "title": TypedProp("string", "Title of the record"), "output": TypedProp("string", "Directory of decision records (default docs/architecture/decisions)")}, reaADR},
+		{"dendrite_rea_export", "Write a finished analysis of any format (PE, ELF, Mach-O, package, source tree, ...) as a data module in rust, go, python or typescript under output: sections, libraries, exports, files, notes and the functions an engine found.",
+			[]string{"id", "output"}, map[string]interface{}{"id": idProp, "language": TypedProp("string", "rust (default), go, python or typescript"), "output": TypedProp("string", "Directory to write <id>.<ext> into")}, reaExport},
 	})
+}
+
+func reaExport(_ context.Context, svc *analysis.Service, args map[string]interface{}) (interface{}, error) {
+	language := orDefaultArg(stringArg(args, "language"), "rust")
+	path, err := export.Write(svc, stringArg(args, "id"), language, stringArg(args, "output"))
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{"id": stringArg(args, "id"), "language": language, "file": path}, nil
+}
+
+func orDefaultArg(v, def string) string {
+	if v == "" {
+		return def
+	}
+	return v
 }
 
 func reaReuse(ctx context.Context, svc *analysis.Service, args map[string]interface{}) (interface{}, error) {

@@ -4,6 +4,7 @@ import (
 	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/cmd/dendrite/internal/planecli"
 	"Dendrite/pkg/rea/analysis"
+	"Dendrite/pkg/rea/export"
 	"Dendrite/pkg/rea/insight"
 	"Dendrite/pkg/tracker/plane"
 	"context"
@@ -186,27 +187,28 @@ func reaExportCommand() *cobra.Command {
 	var lang, output string
 	cmd := &cobra.Command{
 		Use:     "export <id>",
-		Short:   "Write the structure of a finished analysis as safe Rust structs under --output",
+		Short:   "Write a finished analysis (any format) as a data module in Rust, Go, Python or TypeScript under --output",
 		Example: "dendrite retro export pe-1a2b3c4d --target-language rust --output ./generated",
 		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if lang != "rust" {
-				return fmt.Errorf("unsupported --target-language %q: only rust is available", lang)
+			language, err := export.Normalize(lang)
+			if err != nil {
+				return err
 			}
 			return withReaService(func(s *analysis.Service) error {
-				path, err := s.ExportRust(args[0], output)
+				path, err := export.Write(s, args[0], language, output)
 				if err != nil {
 					return err
 				}
 				if cli.Globals.JSON {
-					return cli.WriteJSON(cmd.OutOrStdout(), map[string]string{"id": args[0], "language": lang, "file": path})
+					return cli.WriteJSON(cmd.OutOrStdout(), map[string]string{"id": args[0], "language": language, "file": path})
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "[✓] Analysis %s exported as Rust: %s\n", args[0], path)
+				fmt.Fprintf(cmd.OutOrStdout(), "[✓] Analysis %s exported as %s: %s\n", args[0], language, path)
 				return nil
 			})
 		},
 	}
-	cmd.Flags().StringVar(&lang, "target-language", "rust", "Language of the generated code (rust)")
+	cmd.Flags().StringVar(&lang, "target-language", "rust", "Language of the generated code ("+strings.Join(export.Languages(), ", ")+")")
 	cmd.Flags().StringVar(&output, "output", "", "Directory to write the generated file into")
 	return cmd
 }

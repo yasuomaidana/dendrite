@@ -253,7 +253,7 @@ func TestREASkillDescribesTheDefaultOwnershipRule(t *testing.T) {
 	for _, want := range []string{
 		"name: dendrite-rea", "the label `rea`", "a title starting `[REA]`",
 		"dendrite retro handoff <ticket> --refused", "dendrite_rea_handoff", "owner:agy",
-		"AGY sessions", "dendrite chronos claim <ticket> --agent agy", "dendrite retro analyze <target>", "dendrite_rea_search", "dendrite retro purge <id> --force", "dendrite retro reuse <id>", "dendrite retro engines", "docs/features/rea-engines.md", "--sandbox host --trusted", "dendrite_rea_engines", "dendrite_rea_adr", "--ticket DEN-123", "under 4,000 tokens", "dendrite soma diagnose",
+		"AGY sessions", "dendrite chronos claim <ticket> --agent agy", "dendrite retro analyze <target>", "dendrite_rea_search", "dendrite retro purge <id> --force", "dendrite retro reuse <id>", "dendrite retro engines", "docs/features/rea-engines.md", "dendrite retro export", "--sandbox host --trusted", "dendrite_rea_engines", "dendrite_rea_adr", "--ticket DEN-123", "under 4,000 tokens", "dendrite soma diagnose",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the REA skill lacks %q:\n%s", want, text)

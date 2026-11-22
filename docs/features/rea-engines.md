@@ -93,3 +93,10 @@ section says what is in place and how it would be used.
 `engine.json` holds the functions; `functions/<address>-<name>.md` holds one document per large function (disassembly,
 calls, decompiled C when available), indexed with the rest of the analysis, so `dendrite retro search`,
 `retro reuse` and `retro rank` find them. When core-rs cannot list the functions of a target (anything but PE for now), the functions an engine found are routed by cyclomatic complexity like core-rs's (limit 15, the same pause gate; `triage.json` says `"source": "engine"`); functions with no complexity (objdump) are counted as skipped. `retro reuse` also asks about the names of the largest functions an engine found, leaving out names a disassembler generated (`sub_*`, `FUN_*`, `fcn.*`, `sym.imp.*`).
+
+## Exporting an analysis
+
+`dendrite retro export <id> --target-language rust|go|python|typescript --output DIR` (MCP `dendrite_rea_export`) writes
+`DIR/<id>.<ext>`: a data module with the sections, libraries and symbols, exports, files, format notes and the functions
+an engine found. It works for **any** analyzed format (PE, ELF, Mach-O, package, source tree, JS bundle), not only PE, and
+holds data only: no code to run, no dependencies, no `unsafe`. The analysis must be finished (`done`).

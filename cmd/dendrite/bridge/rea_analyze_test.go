@@ -130,7 +130,7 @@ func TestRetroAnalysisCommandsReportUsageAndServiceErrors(t *testing.T) {
 	}
 }
 
-func TestRetroExportWritesRustUnderOutput(t *testing.T) {
+func TestRetroExportWritesAModuleUnderOutput(t *testing.T) {
 	pe := useReaSidecars(t)
 	if _, code := cliOutput(t, "retro", "analyze", pe, "--id", "pe-exp"); code != cli.ExitOK {
 		t.Fatalf("analyze: exit %d", code)
@@ -146,8 +146,11 @@ func TestRetroExportWritesRustUnderOutput(t *testing.T) {
 	if _, code = cliOutput(t, "retro", "export", "pe-exp", "--output", out, "--json"); code != cli.ExitOK {
 		t.Errorf("export --json: exit %d", code)
 	}
+	if text, code = cliOutput(t, "retro", "export", "pe-exp", "--target-language", "python", "--output", out); code != cli.ExitOK || !strings.Contains(text, "pe-exp.py") {
+		t.Errorf("python: exit %d\n%s", code, text)
+	}
 	for _, args := range [][]string{
-		{"retro", "export", "pe-exp", "--target-language", "go", "--output", out},
+		{"retro", "export", "pe-exp", "--target-language", "klingon", "--output", out},
 		{"retro", "export", "pe-exp"},
 		{"retro", "export", "pe-none", "--output", out},
 	} {

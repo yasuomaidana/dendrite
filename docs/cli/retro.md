@@ -25,7 +25,7 @@ Dendritic Arbor
 | `analyze` | Analyze any target (PE, ELF, Mach-O, package, bundle, source directory): inspect it, write its structure as documents and index them for search |
 | `engines` | List the reverse-engineering engines and where each can run on this machine |
 | `engines build` | Build the container image of an engine from its Dockerfile (never done implicitly) |
-| `export` | Write the structure of a finished analysis as safe Rust structs under --output |
+| `export` | Write a finished analysis (any format) as a data module in Rust, Go, Python or TypeScript under --output |
 | `handoff` | Hand an REA ticket this session refuses to AGY (rule: the [rea] directive) |
 | `list` | List the open-source showcase targets |
 | `pause` | Pause an analysis at its next stage boundary; its checkpoint is kept |
@@ -118,7 +118,7 @@ dendrite retro engines build ghidra --url https://github.com/NationalSecurityAge
 
 ### `dendrite retro export`
 
-Write the structure of a finished analysis as safe Rust structs under --output
+Write a finished analysis (any format) as a data module in Rust, Go, Python or TypeScript under --output
 
 ```bash
 dendrite retro export <id> [flags]
@@ -127,7 +127,7 @@ dendrite retro export <id> [flags]
 | Flag | Description |
 | :--- | :--- |
 | `--output` | Directory to write the generated file into |
-| `--target-language` | Language of the generated code (rust) (default: rust) |
+| `--target-language` | Language of the generated code (go, python, rust, typescript) (default: rust) |
 
 ```bash
 dendrite retro export pe-1a2b3c4d --target-language rust --output ./generated
