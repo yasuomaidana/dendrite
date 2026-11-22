@@ -3,6 +3,7 @@ package planetools
 import (
 	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/ticketlock"
+	"Dendrite/pkg/ticketparent"
 	"Dendrite/pkg/tracker/plane"
 	"context"
 	"fmt"
@@ -78,6 +79,8 @@ func RegisterTicketLifecycleTools(s *Server, deps Dependencies) {
 			"steal":      TypedProp("boolean", "Take the ticket over from another live session"),
 		}),
 		ticketClaimRun)
+
+	register("dendrite_ticket_parent", ticketParentDescription, ticketParentSchema(), ticketParentRun)
 
 	register("dendrite_ticket_comment",
 		"Post a structured progress, milestone, note or handoff comment on a ticket (marker, text, and a footer naming session, agent, tier, branch and commit).",
@@ -216,4 +219,33 @@ func ticketFinishRun(ctx context.Context, l *ticketlock.Lifecycle, a map[string]
 // queryContextRun runs the dendrite_query_context tool.
 func queryContextRun(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
 	return l.QueryContext(ctx, stringArg(a, "ticket"))
+}
+
+const ticketParentDescription = "Make a ticket a sub-ticket of another in Plane (parent), or remove its parent (clear). Give exactly one of them. A parent that would make a loop is refused; clearing needs dendrite-plane protocol 1.5 or newer."
+
+func ticketParentSchema() map[string]interface{} {
+	return ObjectSchema([]string{"ticket"}, map[string]interface{}{
+		"ticket": ticketProp, "worktree": worktreeProp,
+		"parent": TypedProp("string", "The ticket that becomes the parent"),
+		"clear":  TypedProp("boolean", "Remove the parent of the ticket instead"),
+	})
+}
+
+// ticketParentRun runs the dendrite_ticket_parent tool.
+func ticketParentRun(ctx context.Context, l *ticketlock.Lifecycle, a map[string]interface{}) (interface{}, error) {
+	ticket, parent := stringArg(a, "ticket"), stringArg(a, "parent")
+	if clear, _ := a["clear"].(bool); clear == (parent != "") {
+		return nil, fmt.Errorf("give either parent or clear")
+	}
+	if parent != "" {
+		if err := ticketparent.Set(ctx, l.Board, ticket, parent); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{"ticket": ticket, "parent": parent}, nil
+	}
+	old, had, err := ticketparent.Clear(ctx, l.Board, ticket)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"ticket": ticket, "cleared_from": old.ID, "had_parent": had}, nil
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/testkit"
 
 	"github.com/spf13/cobra"
@@ -86,9 +87,13 @@ func TestBranchParentRefusesLoopsAndUnknownTickets(t *testing.T) {
 	}
 }
 
+// A sidecar older than protocol 1.5 refuses to clear a parent and leaves it; a newer one clears it.
 func TestBranchParentClearRemovesTheParent(t *testing.T) {
 	r := newTargetRig(t)
 	out, err := runBranch(t, "parent", "DEN-841", "--clear")
+	if !r.board.ClearSupported(t, "DEN-841", err, planesvc.Default().CanClearParent(context.Background()) == nil) {
+		return
+	}
 	testkit.Check(t, err)
 	testkit.Contains(t, out, "DEN-841 is no longer a sub-ticket of DEN-840")
 	testkit.Equal(t, "parent cleared", r.board.ParentOf("DEN-841"), "")

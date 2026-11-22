@@ -20,7 +20,7 @@ None
 
 | Subcommand | Description |
 | :--- | :--- |
-| `parent` | Make <parent> the parent of <ticket> in Plane, so their work shares the parent's feature branch |
+| `parent` | Make <parent> the parent of <ticket> in Plane, so their work shares the parent's feature branch; --clear removes the parent |
 | `retire` | Open the last pull request of a branch (e.g. develop) into the integration branch and list what still targets it |
 | `show` | Explain the branch a ticket is worked on, the branch it merges into, and where that came from |
 
@@ -32,14 +32,19 @@ None
 
 ### `dendrite branch parent`
 
-Make <parent> the parent of <ticket> in Plane, so their work shares the parent's feature branch
+Make <parent> the parent of <ticket> in Plane, so their work shares the parent's feature branch; --clear removes the parent
 
 ```bash
-dendrite branch parent <ticket> <parent>
+dendrite branch parent <ticket> <parent> | parent <ticket> --clear [flags]
 ```
+
+| Flag | Description |
+| :--- | :--- |
+| `--clear` | Remove the parent of <ticket> instead of setting one |
 
 ```bash
 dendrite branch parent DEN-841 DEN-840
+dendrite branch parent DEN-841 --clear
 ```
 
 ### `dendrite branch retire`
