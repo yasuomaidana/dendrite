@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"Dendrite/pkg/coreclient"
+	"Dendrite/pkg/testkit"
 )
 
 // triageRig is a rig whose service also routes the functions of the image, which the stand-in sidecar builds from
@@ -238,9 +239,7 @@ func TestEngineFunctionsAreRoutedWhenTheSidecarCannotListThem(t *testing.T) {
 	if err != nil || res.State.Stage != StageDone || res.State.Triage == nil || res.State.Gate != "" {
 		t.Fatalf("%+v, %v", res, err)
 	}
-	if tr := res.State.Triage; tr.Source != "engine" || tr.Local != 3 || tr.Paid != 0 || tr.Skipped != 0 || tr.Limit != CyclomaticLimit {
-		t.Errorf("%+v", tr)
-	}
+	wantTriage(t, res.State.Triage, "engine", 3, 0, 0)
 	if got := tiersOf(t, r, "tri-eng"); got["main"] != TierLocal || got["helper"] != TierLocal {
 		t.Errorf("routing: %v", got)
 	}
@@ -268,16 +267,12 @@ func TestEngineFunctionsWithoutComplexityAreCountedNotRouted(t *testing.T) {
 	if err != nil || res.State.Triage == nil || res.State.Gate != "" {
 		t.Fatalf("%+v, %v", res, err)
 	}
-	if tr := res.State.Triage; tr.Source != "engine" || tr.Skipped != 2 || tr.Local != 0 || tr.Paid != 0 {
-		t.Errorf("%+v", tr)
-	}
+	wantTriage(t, res.State.Triage, "engine", 0, 0, 2)
 	if got := tiersOf(t, r, "tri-skip"); len(got) != 0 {
 		t.Errorf("nothing is routed: %v", got)
 	}
 	text, _ := os.ReadFile(filepath.Join(r.Store.WorkspaceDir("tri-skip"), "triage.md"))
-	if !strings.Contains(string(text), "2 functions have no complexity") || !strings.Contains(string(text), "Functions listed by: engine") {
-		t.Errorf("triage.md:\n%s", text)
-	}
+	testkit.Contains(t, string(text), "2 functions have no complexity", "Functions listed by: engine")
 }
 
 func TestEngineOnlyTriageNeedsNoCoreLister(t *testing.T) {
@@ -319,5 +314,13 @@ func TestAnEngineResultThatCannotBeReadStopsTheTriage(t *testing.T) {
 	}
 	if _, err := r.Resume(ctx(), "tri-bad", Options{}); err == nil {
 		t.Error("a corrupt engine.json is an error")
+	}
+}
+
+// wantTriage checks the summary of a routing: who listed the functions, how many went to each tier and how many were skipped.
+func wantTriage(t *testing.T, tr *Triage, source string, local, paid, skipped int) {
+	t.Helper()
+	if tr.Source != source || tr.Local != local || tr.Paid != paid || tr.Skipped != skipped || tr.Limit != CyclomaticLimit {
+		t.Errorf("triage %+v, want %s %d local %d paid %d skipped", tr, source, local, paid, skipped)
 	}
 }
