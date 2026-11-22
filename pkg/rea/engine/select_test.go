@@ -48,12 +48,21 @@ func choose(t *testing.T, m machine, p Policy, format string) Decision {
 	return d
 }
 
-func TestCatalogListsOnlyOpenSourceToolsBestFirst(t *testing.T) {
+func TestCatalogListsOnlyOpenSourceTools(t *testing.T) {
 	for _, s := range Catalog() {
 		if !s.OpenSource || s.License == "" || s.Image == "" || len(s.HostBins) == 0 {
 			t.Errorf("%+v", s)
 		}
 	}
+	if s, ok := Lookup("radare2"); !ok || s.Family != FamilyR2 {
+		t.Errorf("%+v %t", s, ok)
+	}
+	if _, ok := Lookup("ida"); ok {
+		t.Error("proprietary tools are not in the catalog")
+	}
+}
+
+func TestEnginesAreRankedByCapability(t *testing.T) {
 	var implemented []string
 	for _, s := range ranked() {
 		if s.Implemented {
@@ -62,12 +71,6 @@ func TestCatalogListsOnlyOpenSourceToolsBestFirst(t *testing.T) {
 	}
 	if strings.Join(implemented, ",") != "rizin,radare2,objdump" {
 		t.Errorf("the best engine first, got %v", implemented)
-	}
-	if s, ok := Lookup("radare2"); !ok || s.Family != FamilyR2 {
-		t.Errorf("%+v %t", s, ok)
-	}
-	if _, ok := Lookup("ida"); ok {
-		t.Error("proprietary tools are not in the catalog")
 	}
 	if (Caps{}).Score() != 0 || (Caps{Decompile: true, CallGraph: true, Functions: true, Disassembly: true}).Score() != 9 {
 		t.Error("capability scores add up")

@@ -29,7 +29,6 @@ func logOf(t *testing.T) (string, func() string) {
 
 func TestRizinInTheHardenedContainerListsFunctionsAndReadsTheLargest(t *testing.T) {
 	enginetest.UsePath(t, "dendrite-rea/rizin:1")
-	_, calls := logOf(t)
 	res, err := NewService().Run(context.Background(), target(t), coreclient.FormatELF, Policy{})
 	if err != nil {
 		t.Fatal(err)
@@ -37,13 +36,28 @@ func TestRizinInTheHardenedContainerListsFunctionsAndReadsTheLargest(t *testing.
 	if res.Engine != "rizin" || res.Mode != ModeContainer || len(res.Functions) != 3 {
 		t.Fatalf("%+v", res)
 	}
-	main := res.Functions[0]
-	if main.Name != "main" || main.Address != "0x401000" || main.Size != 64 || main.Cyclomatic != 3 ||
-		len(main.Calls) != 1 || main.Calls[0] != "0x401040" || !strings.Contains(main.Disassembly, "0x401000  push rbp") {
-		t.Errorf("main: %+v", main)
-	}
+	checkMain(t, res.Functions[0])
 	if res.Functions[1].Name != "helper" || res.Functions[2].Name != "tiny" {
 		t.Errorf("functions are ordered by size: %+v", res.Functions)
+	}
+}
+
+// checkMain checks the function the rizin stand-in lists first, with its calls and disassembly.
+func checkMain(t *testing.T, main Function) {
+	t.Helper()
+	if main.Name != "main" || main.Address != "0x401000" || main.Size != 64 || main.Cyclomatic != 3 {
+		t.Errorf("main: %+v", main)
+	}
+	if len(main.Calls) != 1 || main.Calls[0] != "0x401040" || !strings.Contains(main.Disassembly, "0x401000  push rbp") {
+		t.Errorf("main calls and disassembly: %+v", main)
+	}
+}
+
+func TestTheContainerRunsWithEveryHardeningFlagAndTheTargetReadOnly(t *testing.T) {
+	enginetest.UsePath(t, "dendrite-rea/rizin:1")
+	_, calls := logOf(t)
+	if _, err := NewService().Run(context.Background(), target(t), coreclient.FormatELF, Policy{}); err != nil {
+		t.Fatal(err)
 	}
 	log := calls()
 	for _, want := range []string{"docker run", "--network none", "--cap-drop ALL", "--read-only", "no-new-privileges", ":/target/input:ro", "dendrite-rea/rizin:1 sh -c", "aaa;aflj"} {
@@ -208,25 +222,22 @@ func TestParsersKeepWhatTheyCanRead(t *testing.T) {
 
 func TestStatusesSayWhereEachEngineCanRun(t *testing.T) {
 	enginetest.UsePath(t, "dendrite-rea/rizin:1")
-	var rizin, radare, ghidra Status
+	by := map[string]Status{}
 	for _, s := range Statuses(context.Background(), NewService().Env) {
-		switch s.Spec.Name {
-		case "rizin":
-			rizin = s
-		case "radare2":
-			radare = s
-		case "ghidra":
-			ghidra = s
+		by[s.Spec.Name] = s
+	}
+	for name, want := range map[string]struct {
+		container, host bool
+		fix, reason     string
+	}{
+		"rizin":   {true, true, "", ""},
+		"radare2": {false, true, "dendrite retro engines build radare2", ""},
+		"ghidra":  {false, false, "", "planned"},
+	} {
+		got := by[name]
+		if got.Container.Usable != want.container || got.Host.Usable != want.host || got.Container.Fix != want.fix || !strings.Contains(got.Container.Reason, want.reason) {
+			t.Errorf("%s: %+v", name, got)
 		}
-	}
-	if !rizin.Container.Usable || !rizin.Host.Usable {
-		t.Errorf("rizin: %+v", rizin)
-	}
-	if radare.Container.Usable || radare.Container.Fix != "dendrite retro engines build radare2" || !radare.Host.Usable {
-		t.Errorf("radare2: %+v", radare)
-	}
-	if ghidra.Container.Usable || !strings.Contains(ghidra.Container.Reason, "planned") || ghidra.Host.Usable {
-		t.Errorf("ghidra: %+v", ghidra)
 	}
 }
 

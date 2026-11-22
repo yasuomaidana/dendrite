@@ -64,33 +64,47 @@ func docker(args []string) {
 // valueFlags take a value in a `docker run` line.
 var valueFlags = map[string]bool{"--name": true, "--cap-drop": true, "--security-opt": true, "--network": true, "--tmpfs": true, "-m": true, "--cpus": true, "-v": true, "-w": true, "-e": true}
 
-// dockerRun refuses a container that is not hardened, then runs its command here with the mounted file in place.
-func dockerRun(args []string) {
-	flags := map[string]string{}
-	var mounts []string
-	i := 0
-	for ; i < len(args) && strings.HasPrefix(args[i], "-"); i++ {
-		if valueFlags[args[i]] {
-			if args[i] == "-v" {
-				mounts = append(mounts, args[i+1])
-			}
-			flags[args[i]] = args[i+1]
-			i++
-		} else {
-			flags[args[i]] = ""
+// parseRun reads the flags of a `docker run` line: the flag values, the -v mounts and the index of the image.
+func parseRun(args []string) (flags map[string]string, mounts []string, image int) {
+	flags = map[string]string{}
+	for ; image < len(args) && strings.HasPrefix(args[image], "-"); image++ {
+		if !valueFlags[args[image]] {
+			flags[args[image]] = ""
+			continue
+		}
+		if args[image] == "-v" {
+			mounts = append(mounts, args[image+1])
+		}
+		flags[args[image]] = args[image+1]
+		image++
+	}
+	return flags, mounts, image
+}
+
+// hardened reports whether the flags are the ones a safe container run has.
+func hardened(flags map[string]string) bool {
+	_, readOnly := flags["--read-only"]
+	return flags["--network"] == "none" && flags["--cap-drop"] == "ALL" && readOnly && flags["--security-opt"] == "no-new-privileges:true"
+}
+
+// targetMount is the host path mounted read-only at /target/input, or "".
+func targetMount(mounts []string) string {
+	for _, m := range mounts {
+		if parts := strings.Split(m, ":"); len(parts) == 3 && parts[1] == "/target/input" && parts[2] == "ro" {
+			return parts[0]
 		}
 	}
-	_, readOnly := flags["--read-only"]
-	if flags["--network"] != "none" || flags["--cap-drop"] != "ALL" || !readOnly || flags["--security-opt"] != "no-new-privileges:true" {
+	return ""
+}
+
+// dockerRun refuses a container that is not hardened, then runs its command here with the mounted file in place.
+func dockerRun(args []string) {
+	flags, mounts, i := parseRun(args)
+	if !hardened(flags) {
 		fmt.Fprintln(os.Stderr, "standin docker: the container is not hardened")
 		os.Exit(3)
 	}
-	host := ""
-	for _, m := range mounts {
-		if parts := strings.Split(m, ":"); len(parts) == 3 && parts[1] == "/target/input" && parts[2] == "ro" {
-			host = parts[0]
-		}
-	}
+	host := targetMount(mounts)
 	if host == "" || len(args[i:]) < 4 {
 		fmt.Fprintln(os.Stderr, "standin docker: the target is not mounted read-only at /target/input")
 		os.Exit(3)

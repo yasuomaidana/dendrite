@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"Dendrite/pkg/directive"
 	"Dendrite/pkg/rea"
 	"Dendrite/pkg/rea/engine"
 	"Dendrite/pkg/rea/engine/enginetest"
@@ -36,11 +37,18 @@ func TestTheEngineStageListsFunctionsAndWritesTheirDocuments(t *testing.T) {
 			t.Errorf("%s: %v", doc, err)
 		}
 	}
-	fns, err := r.EngineFunctions("eng-1")
+}
+
+func TestTheEngineFunctionsAreSavedAndTheirDisassemblyIsSearchable(t *testing.T) {
+	r := engineRig(t, "\x7fELF", "dendrite-rea/rizin:1")
+	if _, err := r.Analyze(ctx(), r.binary, Options{ID: "eng-2"}); err != nil {
+		t.Fatal(err)
+	}
+	fns, err := r.EngineFunctions("eng-2")
 	if err != nil || len(fns) != 3 || fns[0].Name != "main" || !strings.Contains(fns[0].Disassembly, "push rbp") {
 		t.Errorf("%+v, %v", fns, err)
 	}
-	hits, err := r.Search(ctx(), "eng-1", "push rbp", 3)
+	hits, err := r.Search(ctx(), "eng-2", "push rbp", 3)
 	if err != nil || !hasHit(hits, "functions/0x401000-main.md", "push rbp") {
 		t.Errorf("the disassembly is searchable: %+v, %v", hits, err)
 	}
@@ -103,11 +111,34 @@ func TestResumeWithAnotherEngineRunsTheEngineStageAgain(t *testing.T) {
 	if again, err := r.Resume(ctx(), "eng-sw", Options{}); err != nil || again.State.EngineRan != "objdump" {
 		t.Errorf("resuming without a change keeps the engine: %+v, %v", again.State, err)
 	}
-	// an analysis that never got past parsing keeps its stage when the engine is chosen
+}
+
+func TestRetargetKeepsTheStageOfAnAnalysisThatNeverGotPastParsing(t *testing.T) {
+	r := newRig(t)
 	st := State{Stage: StageParsed}
 	r.retarget(&st, Options{Engine: "rizin"})
 	if st.Stage != StageParsed || st.Engine != "rizin" {
 		t.Errorf("%+v", st)
+	}
+	back := State{Stage: StageDone, Gate: "waiting"}
+	r.retarget(&back, Options{Sandbox: "host"})
+	if back.Stage != StageWritten || back.Gate != "" || back.Sandbox != "host" {
+		t.Errorf("an analysis past the written stage goes back to it: %+v", back)
+	}
+}
+
+func TestEngineDefaultsComeFromTheEnvironmentThenTheDirective(t *testing.T) {
+	rule := directive.Defaults().Rea
+	rule.Engine = "radare2"
+	if got := (Options{}).WithEngineDefaults(rule); got.Engine != "radare2" || got.Sandbox != "container" {
+		t.Errorf("%+v", got)
+	}
+	t.Setenv(engine.EnvEngine, "none")
+	if got := (Options{}).WithEngineDefaults(rule); got.Engine != "none" {
+		t.Errorf("%+v", got)
+	}
+	if got := (Options{Engine: "objdump", Sandbox: "host"}).WithEngineDefaults(rule); got.Engine != "objdump" || got.Sandbox != "host" {
+		t.Errorf("what was asked for stays: %+v", got)
 	}
 }
 
