@@ -20,7 +20,6 @@ This project uses these toolchains; all tooling and dependency operations go thr
 - **Primary Stack**: GO
 - **Go Toolchain**: 1.25
 - **Active Toolchains**: go
-- **Enforced Linters**: golangci-lint
 - **Complexity Limits**: cyclomatic complexity <= 10 and cognitive complexity <= 15 per function, at most 500 production lines per file (`.github/dendrite/directives.toml`).
 
 ## 5. Model Precedence & Zero-Cost Delegation

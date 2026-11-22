@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"Dendrite/pkg/directive"
 	"Dendrite/pkg/featurebranch"
 	"Dendrite/pkg/fsutil"
 	"Dendrite/pkg/tracker"
@@ -111,7 +112,7 @@ func TicketOfBranch(branch string) (string, bool) {
 
 // OwnerAGYLabel marks a ticket AGY took over from a Claude session that refused it (the `[rea]` directive).
 // Claude may not claim it again unless the claim steals it.
-const OwnerAGYLabel = "owner:agy"
+const OwnerAGYLabel = directive.ReaOwnerLabel
 
 // ownerPrefix is the label family a steal clears, so a later handoff can run again.
 const ownerPrefix = "owner:"

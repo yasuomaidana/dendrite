@@ -8,6 +8,9 @@ const (
 	RefusalOwnerNone = "none"
 )
 
+// ReaOwnerLabel marks a ticket AGY took over from a Claude session that refused it.
+const ReaOwnerLabel = "owner:agy"
+
 // Rea says which tickets are reverse-engineering (REA) work and who owns one a Claude session refused.
 // A ticket is REA work when it carries one of Labels or its title starts with one of TitlePrefixes.
 type Rea struct {

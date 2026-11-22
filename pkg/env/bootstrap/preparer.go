@@ -442,16 +442,19 @@ func seedDefaultSkills(root string, dryRun bool) (created []string, err error) {
 	return created, nil
 }
 
+// syncWorkflowSkill writes the managed skills (dendrite-workflow and dendrite-rea) into every skills directory.
 func syncWorkflowSkill(root string, dryRun bool) (created, updated []string, err error) {
-	workflowSkill := renderDendriteWorkflowSkill(root)
-	for _, dir := range skillDirs {
-		target := filepath.Join(root, filepath.FromSlash(dir), DendriteWorkflowSkill, "SKILL.md")
-		c, u, err := writeOrUpdateFile(target, workflowSkill, dryRun)
-		if err != nil {
-			return nil, nil, err
+	managed := map[string]string{DendriteWorkflowSkill: renderDendriteWorkflowSkill(root), DendriteREASkill: renderDendriteREASkill(root)}
+	for _, name := range []string{DendriteWorkflowSkill, DendriteREASkill} {
+		for _, dir := range skillDirs {
+			target := filepath.Join(root, filepath.FromSlash(dir), name, "SKILL.md")
+			c, u, err := writeOrUpdateFile(target, managed[name], dryRun)
+			if err != nil {
+				return nil, nil, err
+			}
+			rel, _ := filepath.Rel(root, target)
+			appendFileChange(&created, &updated, rel, c, u)
 		}
-		rel, _ := filepath.Rel(root, target)
-		appendFileChange(&created, &updated, rel, c, u)
 	}
 	return created, updated, nil
 }
