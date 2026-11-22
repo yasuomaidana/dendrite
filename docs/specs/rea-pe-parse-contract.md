@@ -2,6 +2,8 @@
 
 `dendrite retro analyze` (DEN-1062, DEND-501) reads a Windows PE image through the `dendrite-core` Rust sidecar, so Dendrite keeps no PE parser of its own. The request to the core-rs project is DCORE-31. Implemented in dendrite-core 1.3.0 (DCORE-31, protocol 1.3.0). This is the contract the Go client (`pkg/coreclient/pe.go`) and the sidecar stand-in (`pkg/coreclient/coretest/standin`) already follow.
 
+> `pe.parse` stays valid. New clients use the format-neutral `bin.inspect` (docs/specs/rea-bin-inspect-contract.md, DCORE-34), which covers PE and every other format.
+
 ## Request
 
 JSON-RPC 2.0 over the sidecar's stdio, method `pe.parse`:
