@@ -3,10 +3,6 @@ package coreclient
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
-
-	"Dendrite/pkg/sidecar"
 )
 
 // ErrPEUnsupported means the dendrite-core binary predates pe.parse.
@@ -47,20 +43,8 @@ type PEInfo struct {
 
 // PEParse reads the PE image at path in the dendrite-core sidecar, so Go keeps no PE parser of its own.
 func (c *Client) PEParse(ctx context.Context, path string) (*PEInfo, error) {
-	if strings.TrimSpace(path) == "" {
-		return nil, errors.New("a PE path is required")
-	}
 	var info PEInfo
-	if err := c.call(ctx, "pe.parse", map[string]string{"path": path}, &info); err != nil {
-		var rpcErr *sidecar.RPCError
-		if errors.As(err, &rpcErr) {
-			switch rpcErr.Code {
-			case -32601:
-				return nil, ErrPEUnsupported
-			case -32602:
-				return nil, fmt.Errorf("%w: %s", ErrNotPE, rpcErr.Message)
-			}
-		}
+	if err := c.callPath(ctx, "pe.parse", path, &info, ErrPEUnsupported, ErrNotPE); err != nil {
 		return nil, err
 	}
 	return &info, nil
