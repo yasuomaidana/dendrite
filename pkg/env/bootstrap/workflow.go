@@ -2,6 +2,8 @@ package bootstrap
 
 import (
 	"fmt"
+	"regexp"
+	"slices"
 	"strings"
 
 	"Dendrite/pkg/branchpolicy"
@@ -32,7 +34,7 @@ var dendriteWorkflowRules = []string{
 	"Pick work from Plane with `dendrite chronos next` (alias `plane next`, or the `dendrite_ticket_smart_select` MCP tool), never from `DEV_STATUS.md`.",
 	"Every change follows one ticket through its lifecycle, and a write lock enforces it: `dendrite hook pre-edit` refuses file changes in a working copy that has no claim. Pull the ticket (`dendrite chronos next`) or create it (`dendrite chronos create --name \"...\" --desc \"goal and acceptance criteria\"`), design the plan, then start it with `dendrite work new <ticket>`, which moves it to In Progress and claims it for the new copy (a claim by hand: `dendrite chronos claim <ticket>` or the `dendrite_ticket_claim` MCP tool; `dendrite_query_context` returns the ticket, its criteria and any saved plan). Each `dendrite quantal` commit and each `dendrite session checkpoint` leaves a comment on the ticket, and a plan you did not finish is stored on it (`dendrite chronos plan push`) so the next session resumes from it. When the work is finished run `dendrite chronos finish <ticket>` (MCP `dendrite_ticket_finish`): it runs the quality gate and checks the diff against each `[AC-n]`, then sets `done` when the project allows it (directive `[done] auto_done`) and the ticket has no `needs-human-review` label, `to verify` otherwise, and `blocked` with a handoff (completed, challenges, missing) when a check fails. To stop for another reason use `dendrite chronos handoff <ticket>` (blocked: write what it waits on and what is missing), `dendrite chronos ticket set <ticket> cancelled` when it is dropped or `backlog` when it is parked. Record every question you asked and the answer you got on the ticket: Claude Code's `AskUserQuestion` is stored by a hook, any other agent runs `dendrite chronos decision <ticket> --question \"...\" --answer \"...\"` (MCP `dendrite_ticket_decision`), and `dendrite chronos comments <ticket>` reads them and any handoff back. The limits every change is held to (production lines per file, coverage, duplication, whether agents may set `done`) are the project's directives in `.github/dendrite/directives.toml`; repeated code is removed with a helper function, or with a macro where a function cannot express it, and Rust tests use the `rstest` crate (`rstest = \"0.28.0\"`: `#[case]`, `#[values]`, `#[fixture]`) rather than hand-written copies or imitating helpers (directive `[duplication] strategies`); change them with `dendrite directive \"<rule>\"`, never by hand-editing CI, and check a change against them with `dendrite allostasis gate` (`--since origin/{integration}` judges only what you changed). A challenge found mid-plan is a new ticket linked with `dendrite chronos link`. Bypass the guards only deliberately, with `--no-ticket-guard`.",
 	"Every repository we can modify is a Plane project: run `dendrite chronos project ensure` in it (it writes the local `.dendrite/plane.json` that `dendrite chronos`, `sync` and agents read; never commit anything under `.dendrite/`, and in a fresh clone this command recovers the project's identity). Repositories that depend on each other belong to the same synapse (`dendrite synapse create`). `dendrite chronos project audit` lists any repository that breaks this rule.",
-	"Work on your own branch, never directly on `{integration}`, `main` or `master` (nor on the trunk of another ticket): run `dendrite work new <ticket>` for each ticket. It creates a git worktree in `dendrite-work/` next to the main checkout, on a branch named after the ticket: its own trunk `<TICKET>-<slug>/main`, which merges into `{integration}`, or, for a sub-ticket of a Plane parent, `<ROOT>-<slug>/<TICKET>-<slug>`, which merges into the trunk `<ROOT>-<slug>/main` of its top-most parent (`dendrite branch show --ticket <ticket>` says which; `dendrite branch parent <ticket> <parent>` links tickets; `--target <branch>` overrides). Never hand-make `git clone` or `git worktree add ../<dir>` copies: those mix with human projects and are never cleaned up.",
+	"Work on your own branch, never directly on {protected} (nor on the trunk of another ticket): run `dendrite work new <ticket>` for each ticket. It creates a git worktree in `dendrite-work/` next to the main checkout, on a branch named after the ticket: its own trunk `<TICKET>-<slug>/main`, which merges into `{integration}`, or, for a sub-ticket of a Plane parent, `<ROOT>-<slug>/<TICKET>-<slug>`, which merges into the trunk `<ROOT>-<slug>/main` of its top-most parent (`dendrite branch show --ticket <ticket>` says which; `dendrite branch parent <ticket> <parent>` links tickets; `--target <branch>` overrides). Never hand-make `git clone` or `git worktree add ../<dir>` copies: those mix with human projects and are never cleaned up.",
 	"Commit with `dendrite quantal` (alias `commit`; it references the ticket and pushes your branch to origin, never to main/master).",
 	"{finish}",
 	"Explore with Dendrite before any raw text search, cheapest first: `dendrite rag search`/`dendrite_rag_retrieve` (detail `map`, then `dendrite rag show`/`dendrite_rag_show` for the bodies you need), `dendrite rag symbols` for definitions and references, `dendrite graph` (`dendrite_graph_explain`, `dendrite_graph_path`) for callers and structure, `dendrite rag history` for past changes, and `dendrite ask` for questions. `dendrite rag grep` is the exact-pattern fallback (index-aware, capped). Use `rg`/`grep`/`find` only when those return nothing, and then scoped to a path with a result cap, because unscoped `rg` output costs far more tokens than a retrieval map.",
@@ -59,7 +61,21 @@ func branchesOf(root string) workflowBranches {
 // fill puts the project's branch names into text written with {integration}, and the rule for finishing a
 // ticket where the text says {finish}.
 func (b workflowBranches) fill(text string) string {
-	return strings.NewReplacer("{finish}", b.finishRule(), "{integration}", b.Integration).Replace(text)
+	return strings.NewReplacer("{finish}", b.finishRule(), "{protected}", b.protected(), "{integration}", b.Integration).Replace(text)
+}
+
+// protected lists the branches nobody works on directly: the integration branch, main and master, each once.
+func (b workflowBranches) protected() string {
+	var names []string
+	for _, n := range []string{b.Integration, "main", "master"} {
+		if n != "" && !slices.Contains(names, n) {
+			names = append(names, n)
+		}
+	}
+	for i := range names {
+		names[i] = "`" + names[i] + "`"
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " or " + names[len(names)-1]
 }
 
 // finishRule says how finished work reaches the integration branch: by a push when agents may push it, by pull
@@ -156,4 +172,47 @@ func renderDendriteWorkflowSkill(root string) string {
 	sb.WriteString("## Ending the plan\n\n")
 	sb.WriteString("When the plan ends, record where the ticket stands before moving on: `dendrite chronos ticket set DEN-123 \"to verify\"` when it is finished, `blocked` when it waits on something (say what in the ticket), `cancelled` when it is dropped, `backlog` when it is parked. Agents never set `done`; a human signs off from To Verify.\n")
 	return sb.String()
+}
+
+var (
+	// staleBranchNames are branch names the generated text must never teach: the old agent/<ticket> working
+	// branches and the feature/<PARENT> trunks.
+	staleBranchNames = regexp.MustCompile(`\bagent/[<a-z0-9]|\bfeature/<`)
+	// repeatedBranch is a branch listed twice in a row, as in "`main`, `main` or `master`".
+	repeatedBranch = regexp.MustCompile("`([^`]+)`, `([^`]+)`")
+	// developBranch is the retired integration branch.
+	developBranch = regexp.MustCompile(`\bdevelop\b`)
+)
+
+// workflowViolations lists what is wrong with generated rule or skill text for a project that integrates on
+// integration: an agent/<ticket> or feature/<PARENT> branch, a branch listed twice, and, once the project
+// integrates on main or master, any mention of develop as a place to merge or push.
+func workflowViolations(text, integration string) []string {
+	var found []string
+	for _, m := range staleBranchNames.FindAllString(text, -1) {
+		found = append(found, "stale branch name "+strings.TrimSpace(m))
+	}
+	for _, m := range repeatedBranch.FindAllStringSubmatch(text, -1) {
+		if m[1] == m[2] {
+			found = append(found, "branch listed twice: `"+m[1]+"`")
+		}
+	}
+	if (integration == "main" || integration == "master") && developBranch.MatchString(text) {
+		found = append(found, "develop is not the integration branch of this project ("+integration+")")
+	}
+	return found
+}
+
+// verifyWorkflowText fails when the rules or the skill that Prepare is about to write would teach a branch
+// model the project does not use. Every generated agent file is built from these two renderings.
+func verifyWorkflowText(root string) error {
+	var rules strings.Builder
+	writeNumberedRules(&rules, root)
+	integration := branchesOf(root).Integration
+	for name, text := range map[string]string{"rules": rules.String(), "dendrite-workflow skill": renderDendriteWorkflowSkill(root)} {
+		if v := workflowViolations(text, integration); len(v) > 0 {
+			return fmt.Errorf("generated %s are inconsistent with the branch model: %s", name, strings.Join(v, "; "))
+		}
+	}
+	return nil
 }

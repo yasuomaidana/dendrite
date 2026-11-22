@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"Dendrite/pkg/coreclient"
 	"Dendrite/pkg/env"
 	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/tracker/plane"
@@ -65,13 +66,108 @@ func NewParser() *Parser {
 	return &Parser{}
 }
 
+// tokenRegex and stateRegex classify Tailwind class names in the markup. That is a scan of text inside
+// class strings, not syntax, so it stays a regex; the props are read from the syntax tree by dendrite-core.
 var (
-	sveltePropRegex   = regexp.MustCompile(`export\s+let\s+([a-zA-Z0-9_]+)`)
-	sveltePropsRegex2 = regexp.MustCompile(`let\s*\{\s*([^}]+)\s*\}\s*=\s*\$props\(\)`)
-	reactPropRegex    = regexp.MustCompile(`interface\s+[a-zA-Z0-9_]*Props\s*\{([^}]+)\}`)
-	tokenRegex        = regexp.MustCompile(`\b(bg-[a-z0-9-]+|text-[a-z0-9-]+|p-[0-9]+|px-[0-9]+|py-[0-9]+|rounded-[a-z0-9-]+|border-[a-z0-9-]+|shadow-[a-z0-9-]+|gap-[0-9]+|flex|grid)\b`)
-	stateRegex        = regexp.MustCompile(`\b(hover|focus|active|disabled|dark):`)
+	tokenRegex = regexp.MustCompile(`\b(bg-[a-z0-9-]+|text-[a-z0-9-]+|p-[0-9]+|px-[0-9]+|py-[0-9]+|rounded-[a-z0-9-]+|border-[a-z0-9-]+|shadow-[a-z0-9-]+|gap-[0-9]+|flex|grid)\b`)
+	stateRegex = regexp.MustCompile(`\b(hover|focus|active|disabled|dark):`)
 )
+
+// propsTimeout bounds one props request to the sidecar.
+const propsTimeout = 10 * time.Second
+
+// coreLang is the language dendrite-core parses a component file as; "" means its props are not read.
+func coreLang(ext string) string {
+	switch ext {
+	case ".svelte":
+		return "svelte"
+	case ".tsx", ".jsx":
+		// The tsx grammar parses JSX and plain JavaScript alike, and every dendrite-core that has
+		// ast.component_props accepts it (the `jsx` alias came later).
+		return "tsx"
+	}
+	return ""
+}
+
+// propNames reads the props of a component with dendrite-core: sorted, unique, without `...rest` collectors.
+// Frameworks without a grammar (vue, html, css) have none.
+func propNames(ext, source string) ([]string, error) {
+	lang := coreLang(ext)
+	if lang == "" {
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), propsTimeout)
+	defer cancel()
+	props, err := coreclient.ComponentProps(ctx, lang, source)
+	if err != nil {
+		return nil, fmt.Errorf("reading the props with dendrite-core: %w", err)
+	}
+	seen := map[string]bool{}
+	var names []string
+	for _, p := range props {
+		if !p.Rest && !seen[p.Name] {
+			seen[p.Name] = true
+			names = append(names, p.Name)
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// frameworkOf names the UI framework of a file by its extension; unknown extensions are plain html.
+func frameworkOf(ext string) string {
+	switch ext {
+	case ".svelte":
+		return "svelte"
+	case ".tsx", ".jsx":
+		return "react"
+	case ".vue":
+		return "vue"
+	case ".css":
+		return "css"
+	}
+	return "html"
+}
+
+// tokenCategories maps a Tailwind class prefix to its design-token category, most specific first.
+var tokenCategories = []struct{ prefix, category string }{
+	{"bg-", "background"}, {"text-", "typography"},
+	{"p-", "spacing"}, {"px-", "spacing"}, {"py-", "spacing"}, {"gap-", "spacing"},
+	{"rounded-", "border-radius"}, {"border-", "border"}, {"shadow-", "shadow"},
+}
+
+// tokenCategory is the design-token category of one Tailwind class; classes like flex and grid are layout.
+func tokenCategory(tok string) string {
+	for _, c := range tokenCategories {
+		if strings.HasPrefix(tok, c.prefix) {
+			return c.category
+		}
+	}
+	return "layout"
+}
+
+// designTokens finds the Tailwind classes of the markup and the category of each.
+func designTokens(content string) map[string]string {
+	tokens := make(map[string]string)
+	for _, tok := range tokenRegex.FindAllString(content, -1) {
+		tokens[tok] = tokenCategory(tok)
+	}
+	return tokens
+}
+
+// stateVariants lists the state prefixes (hover:, focus:, ...) the markup uses, sorted.
+func stateVariants(content string) []string {
+	seen := make(map[string]bool)
+	var states []string
+	for _, m := range stateRegex.FindAllStringSubmatch(content, -1) {
+		if !seen[m[1]] {
+			seen[m[1]] = true
+			states = append(states, m[1])
+		}
+	}
+	sort.Strings(states)
+	return states
+}
 
 // ParseFile inspects a UI file and builds its ComponentSpec.
 func (p *Parser) ParseFile(filePath string) (*ComponentSpec, error) {
@@ -80,100 +176,19 @@ func (p *Parser) ParseFile(filePath string) (*ComponentSpec, error) {
 		return nil, fmt.Errorf("failed to read UI file %s: %w", filePath, err)
 	}
 	content := string(data)
-
 	ext := strings.ToLower(filepath.Ext(filePath))
-	base := filepath.Base(filePath)
-	name := strings.TrimSuffix(base, ext)
-
-	framework := "html"
-	switch ext {
-	case ".svelte":
-		framework = "svelte"
-	case ".tsx", ".jsx":
-		framework = "react"
-	case ".vue":
-		framework = "vue"
-	case ".css":
-		framework = "css"
+	props, err := propNames(ext, content)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", filePath, err)
 	}
-
-	spec := &ComponentSpec{
-		Name:      name,
+	return &ComponentSpec{
+		Name:      strings.TrimSuffix(filepath.Base(filePath), ext),
 		FilePath:  filePath,
-		Framework: framework,
-		Tokens:    make(map[string]string),
-	}
-
-	// 1. Extract props
-	propMap := make(map[string]bool)
-	switch framework {
-	case "svelte":
-		matches := sveltePropRegex.FindAllStringSubmatch(content, -1)
-		for _, m := range matches {
-			if len(m) > 1 {
-				propMap[m[1]] = true
-			}
-		}
-		if m2 := sveltePropsRegex2.FindStringSubmatch(content); len(m2) > 1 {
-			for _, item := range strings.Split(m2[1], ",") {
-				clean := strings.TrimSpace(strings.Split(item, ":")[0])
-				if clean != "" {
-					propMap[clean] = true
-				}
-			}
-		}
-	case "react":
-		if m := reactPropRegex.FindStringSubmatch(content); len(m) > 1 {
-			lines := strings.Split(m[1], "\n")
-			for _, l := range lines {
-				l = strings.TrimSpace(l)
-				if l != "" && strings.Contains(l, ":") {
-					fieldName := strings.TrimSpace(strings.Split(l, ":")[0])
-					fieldName = strings.TrimSuffix(fieldName, "?")
-					propMap[fieldName] = true
-				}
-			}
-		}
-	}
-	for prop := range propMap {
-		spec.Props = append(spec.Props, prop)
-	}
-	sort.Strings(spec.Props)
-
-	// 2. Extract design tokens
-	tokenMatches := tokenRegex.FindAllString(content, -1)
-	for _, tok := range tokenMatches {
-		category := "layout"
-		if strings.HasPrefix(tok, "bg-") {
-			category = "background"
-		} else if strings.HasPrefix(tok, "text-") {
-			category = "typography"
-		} else if strings.HasPrefix(tok, "p-") || strings.HasPrefix(tok, "px-") || strings.HasPrefix(tok, "py-") || strings.HasPrefix(tok, "gap-") {
-			category = "spacing"
-		} else if strings.HasPrefix(tok, "rounded-") {
-			category = "border-radius"
-		} else if strings.HasPrefix(tok, "border-") {
-			category = "border"
-		} else if strings.HasPrefix(tok, "shadow-") {
-			category = "shadow"
-		}
-		spec.Tokens[tok] = category
-	}
-
-	// 3. Extract state variants
-	stateMap := make(map[string]bool)
-	stateMatches := stateRegex.FindAllStringSubmatch(content, -1)
-	for _, m := range stateMatches {
-		if len(m) > 1 {
-			stateMap[m[1]] = true
-		}
-	}
-	for st := range stateMap {
-		spec.States = append(spec.States, st)
-	}
-	sort.Strings(spec.States)
-
-	return spec, nil
+		Framework: frameworkOf(ext),
+		Props:     props,
+		Tokens:    designTokens(content),
+		States:    stateVariants(content),
+	}, nil
 }
 
 // Diff compares previous tokens with new tokens.

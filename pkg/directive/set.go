@@ -6,6 +6,7 @@ package directive
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"Dendrite/pkg/branchpolicy"
@@ -105,7 +106,18 @@ type Structure struct {
 type Immune struct {
 	ApproveMax int `toml:"approve_max"`
 	HoldMax    int `toml:"hold_max"`
+	// ScannerVersion pins the SkillSpector version `immune scan` judges with and `immune update`
+	// installs; empty means no pin.
+	ScannerVersion string `toml:"scanner_version"`
 }
+
+// pinIsAVersion reports whether the scanner pin is empty (no pin) or shaped like a version.
+func (i Immune) pinIsAVersion() bool {
+	return i.ScannerVersion == "" || scannerVersionRE.MatchString(i.ScannerVersion)
+}
+
+// scannerVersionRE is what a pinned scanner version may look like (it becomes a package specifier).
+var scannerVersionRE = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+-]*$`)
 
 // Lint picks how strict the generated lint configurations are.
 type Lint struct {
@@ -196,6 +208,7 @@ func (s Set) Validate() error {
 		check(s.Structure.MaxPrefixGroup >= 2, "structure.max_prefix_group must be at least 2"),
 		check(!s.Structure.RequireDocs || len(s.Structure.DocsFiles) > 0, "structure.docs_files needs at least one file name when structure.require_docs is on"),
 		check(s.Immune.ApproveMax >= 0 && s.Immune.ApproveMax < s.Immune.HoldMax && s.Immune.HoldMax < 100, "immune.approve_max (%d) must be below immune.hold_max (%d), which must be below 100", s.Immune.ApproveMax, s.Immune.HoldMax),
+		check(s.Immune.pinIsAVersion(), "immune.scanner_version must be a version such as 2.12.0, or empty for no pin"),
 		check(oneOf(s.Lint.Strictness, "relaxed", "standard", "strict"), "lint.strictness must be relaxed, standard or strict"),
 		check(oneOf(s.Security.FailOn, "low", "medium", "high", "critical"), "security.fail_on must be low, medium, high or critical"),
 		check(len(s.Languages.Preference) > 0, "languages.preference needs at least one language"),

@@ -125,6 +125,7 @@ func Encode(s Set) []byte {
 	line("[immune]")
 	line("approve_max = %d", s.Immune.ApproveMax)
 	line("hold_max = %d", s.Immune.HoldMax)
+	line("scanner_version = %s", strconv.Quote(s.Immune.ScannerVersion))
 	line("")
 	line("[lint]")
 	line("strictness = %s", strconv.Quote(s.Lint.Strictness))

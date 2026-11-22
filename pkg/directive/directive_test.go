@@ -199,7 +199,7 @@ func TestParseValueReadsTypedText(t *testing.T) {
 
 func TestKeysAndDescribeCoverEverySetting(t *testing.T) {
 	ks := Keys()
-	testkit.Equal(t, "len(Keys)", len(ks), 34)
+	testkit.Equal(t, "len(Keys)", len(ks), 35)
 	testkit.Equal(t, "Keys[0]", ks[0], "complexity.exclude")
 	text := Describe()
 	for _, k := range ks {
@@ -326,7 +326,7 @@ func TestInterpretReturnsTheStoredValueOfEveryKey(t *testing.T) {
 		"duplication.max_percent": "5", "duplication.min_tokens": "20", "duplication.min_lines": "3", "duplication.include_tests": "false", "duplication.strategies": `["macro"]`,
 		"complexity.max_cyclomatic": "8", "complexity.max_cognitive": "12", "complexity.exclude": `["c"]`,
 		"structure.max_files_per_dir": "9", "structure.max_dir_production_lines": "2000", "structure.max_prefix_group": "3", "structure.require_docs": "false", "structure.docs_files": `["README.md"]`, "structure.exclude": `["d"]`,
-		"immune.approve_max": "10", "immune.hold_max": "40",
+		"immune.approve_max": "10", "immune.hold_max": "40", "immune.scanner_version": `"2.12.0"`,
 		"lint.strictness": `"standard"`, "security.fail_on": `"medium"`, "security.secrets": "false",
 		"done.auto_done": "false", "done.human_review_labels": `["x"]`, "languages.preference": `["go"]`,
 		"git.integration_branch": `"main"`, "git.feature_prefix": `"feat/"`,
@@ -594,4 +594,21 @@ func TestReaDirectiveDefaultsRoundTripAndMayBeSwitchedOff(t *testing.T) {
 		t.Fatalf("a file with no [rea] section: %v", err)
 	}
 	testkit.Equal(t, "missing section keeps the default", old.Rea.RefusalOwner, RefusalOwnerAGY)
+}
+
+// The scanner pin becomes a package specifier, so only something shaped like a version is accepted;
+// empty means no pin. It survives a save and a load.
+func TestImmuneScannerVersion(t *testing.T) {
+	for version, ok := range map[string]bool{"": true, "2.12.0": true, "3.0.0rc1": true, "2.12.0 --index-url=x": false, "-U": false} {
+		s := Defaults()
+		s.Immune.ScannerVersion = version
+		if got := s.Validate() == nil; got != ok {
+			t.Errorf("scanner_version %q: valid = %v, want %v", version, got, ok)
+		}
+	}
+	s := Defaults()
+	s.Immune.ScannerVersion = "2.12.0"
+	back, err := Decode(Encode(s))
+	testkit.Check(t, err)
+	testkit.Equal(t, "scanner_version", back.Immune.ScannerVersion, "2.12.0")
 }

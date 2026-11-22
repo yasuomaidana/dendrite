@@ -78,6 +78,24 @@ func TestPreFlightAuditor_ProbeHardware(t *testing.T) {
 		}
 	})
 
+	for _, c := range []struct{ name, out, want string }{
+		{"reads the CPU brand", "Apple M3 Pro\n", "Apple M3 Pro"},
+		{"keeps the default brand when sysctl prints nothing", "  \n", "Apple Silicon M-series"},
+	} {
+		t.Run("simulated darwin sysctl that "+c.name, func(t *testing.T) {
+			custom := &PreFlightAuditor{
+				TargetOS:   "darwin",
+				TargetArch: "arm64",
+				CommandRunnerFn: func(name string, args ...string) ([]byte, error) {
+					return []byte(c.out), nil
+				},
+			}
+			if accel, brand := custom.ProbeHardware(); accel != AcceleratorMetal || brand != c.want {
+				t.Errorf("got %s / %s, want %s", accel, brand, c.want)
+			}
+		})
+	}
+
 	t.Run("simulated darwin without sysctl brand output", func(t *testing.T) {
 		custom := &PreFlightAuditor{
 			TargetOS:   "darwin",

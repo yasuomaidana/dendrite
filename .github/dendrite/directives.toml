@@ -18,6 +18,11 @@ min_tokens = 50
 min_lines = 5
 include_tests = true
 
+[complexity]
+max_cyclomatic = 10
+max_cognitive = 15
+exclude = []
+
 [lint]
 strictness = "strict"
 

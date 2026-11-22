@@ -2,7 +2,10 @@ package inference
 
 import (
 	"Dendrite/cmd/dendrite/internal/clitest"
+	"Dendrite/pkg/inference"
+	"Dendrite/pkg/inference/bench"
 	"Dendrite/pkg/rag"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -41,3 +44,44 @@ func TestBenchUserMessageMirrorsTheAskPromptShape(t *testing.T) {
 var cliOutput = clitest.Output(NewSpikeCmd)
 
 func TestMain(m *testing.M) { clitest.Main(m) }
+
+// --save writes each measured model's tokens/s into the capability catalog: a known model is
+// updated, an unknown one is added, a model without a measurement is left out.
+func TestRecordThroughputWritesTheCatalog(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "models.json")
+	if err := inference.SaveCatalog(&inference.Catalog{Models: []inference.ModelCapability{inference.DefaultCapability("known:8b", inference.EngineOllama)}}, path); err != nil {
+		t.Fatal(err)
+	}
+	sums := []bench.Summary{{Model: "known:8b", MedianTokPerS: 31.5}, {Model: "new:4b", MedianTokPerS: 55}, {Model: "failed:1b"}}
+	n, err := recordThroughput(sums, path)
+	if err != nil || n != 2 {
+		t.Fatalf("recordThroughput = %d, %v", n, err)
+	}
+	cat, err := inference.LoadCatalog(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]float64{}
+	for _, m := range cat.Models {
+		got[m.ID] = m.TokensPerSec
+	}
+	if len(got) != 2 || got["known:8b"] != 31.5 || got["new:4b"] != 55 {
+		t.Fatalf("catalog = %v", got)
+	}
+
+}
+
+// Nothing measured writes nothing; a catalog that cannot be read is an error.
+func TestRecordThroughputWithoutMeasurementsOrCatalog(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "models.json")
+	if err := inference.SaveCatalog(&inference.Catalog{}, path); err != nil {
+		t.Fatal(err)
+	}
+	sums := []bench.Summary{{Model: "new:4b", MedianTokPerS: 55}}
+	if n, err := recordThroughput([]bench.Summary{{Model: "failed:1b"}}, path); err != nil || n != 0 {
+		t.Fatalf("nothing measured: %d, %v", n, err)
+	}
+	if _, err := recordThroughput(sums, filepath.Join(t.TempDir(), "absent.json")); err == nil {
+		t.Fatal("a catalog that cannot be read must fail")
+	}
+}

@@ -10,7 +10,8 @@ import (
 	"sync"
 )
 
-// RefManager manages registered source references (Tier 1).
+// RefManager manages the source references (Tier 1) that the user registered with AddRef.
+// None are built in: the registry is empty until the user adds references where they are needed.
 type RefManager struct {
 	filePath string
 	mu       sync.RWMutex
@@ -30,7 +31,7 @@ func (m *RefManager) ListRefs() ([]SourceReference, error) {
 	defer m.mu.RUnlock()
 
 	if _, err := os.Stat(m.filePath); os.IsNotExist(err) {
-		return m.defaultReferences(), nil
+		return []SourceReference{}, nil
 	}
 
 	data, err := os.ReadFile(m.filePath)
@@ -52,7 +53,7 @@ func (m *RefManager) AddRef(ref SourceReference) error {
 
 	refs, err := m.loadRefsLocked()
 	if err != nil {
-		refs = m.defaultReferences()
+		return err
 	}
 
 	for _, r := range refs {
@@ -93,7 +94,7 @@ func (m *RefManager) RemoveRef(id string) error {
 
 func (m *RefManager) loadRefsLocked() ([]SourceReference, error) {
 	if _, err := os.Stat(m.filePath); os.IsNotExist(err) {
-		return m.defaultReferences(), nil
+		return []SourceReference{}, nil
 	}
 	data, err := os.ReadFile(m.filePath)
 	if err != nil {
@@ -116,33 +117,4 @@ func (m *RefManager) saveRefsLocked(refs []SourceReference) error {
 		return err
 	}
 	return os.WriteFile(m.filePath, data, 0644)
-}
-
-func (m *RefManager) defaultReferences() []SourceReference {
-	return []SourceReference{
-		{
-			ID:           "ref-carla-sensor",
-			Name:         "carla-sensor-rs",
-			Repository:   "https://github.com/cool-japan/carla-sensor-rs",
-			Language:     "rust",
-			Capabilities: []string{"kinematics", "sensor_processing", "spatial_math"},
-			License:      "Apache-2.0",
-		},
-		{
-			ID:           "ref-oxipix",
-			Name:         "oxipix",
-			Repository:   "https://github.com/cool-japan/oxipix",
-			Language:     "rust",
-			Capabilities: []string{"simd_blending", "color_spaces", "image_processing"},
-			License:      "MIT",
-		},
-		{
-			ID:           "ref-docula",
-			Name:         "docula",
-			Repository:   "https://github.com/cool-japan/docula",
-			Language:     "typescript",
-			Capabilities: []string{"ast_reflection", "docusaurus_portal", "markdown_render"},
-			License:      "MIT",
-		},
-	}
 }
