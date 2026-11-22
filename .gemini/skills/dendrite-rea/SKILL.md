@@ -35,7 +35,7 @@ dendrite retro adr <id> [--title T]                    # draft a proposed ADR (a
 dendrite retro analyze <target> --ticket DEN-123       # also leave a note with the summary and the id on the ticket
 ```
 
-MCP: `dendrite_rea_analyze`, `dendrite_rea_search`, `dendrite_rea_pause`, `dendrite_rea_resume`, `dendrite_rea_purge`, `dendrite_rea_reuse`, `dendrite_rea_rank`, `dendrite_rea_adr`, `dendrite_rea_engines` and `dendrite_rea_handoff`. The target is inspected by the dendrite-core sidecar (`bin.inspect`; an older one still reads PE images, and `dendrite update --dev` adds the other formats) and searched through the RAG sidecar. Register the server with AGY by running `dendrite soma prepare`; `dendrite soma diagnose` says whether AGY lists it.
+Engines, their licenses, the container-first policy and the proprietary tools (documented only) are described in `docs/features/rea-engines.md`. MCP: `dendrite_rea_analyze`, `dendrite_rea_search`, `dendrite_rea_pause`, `dendrite_rea_resume`, `dendrite_rea_purge`, `dendrite_rea_reuse`, `dendrite_rea_rank`, `dendrite_rea_adr`, `dendrite_rea_engines` and `dendrite_rea_handoff`. The target is inspected by the dendrite-core sidecar (`bin.inspect`; an older one still reads PE images, and `dendrite update --dev` adds the other formats) and searched through the RAG sidecar. Register the server with AGY by running `dendrite soma prepare`; `dendrite soma diagnose` says whether AGY lists it.
 
 ## Working an REA ticket (any agent)
 

@@ -1,7 +1,7 @@
-// Command standin plays docker, rizin, radare2 and objdump for the engine tests, chosen by the name it is run as.
+// Command standin plays docker, rizin, radare2, objdump and Ghidra (analyzeHeadless) for the engine tests, chosen by the name it is run as.
 // The docker it plays refuses a run that is not hardened and runs the command of the container on this machine, with
 // /target/input replaced by the mounted file. Environment: STANDIN_DOCKER=down, STANDIN_IMAGES=<comma list>,
-// STANDIN_MODE=r2broken|many|empty|detailfail|objfail|buildfail, STANDIN_LOG=<file> (one line per call).
+// STANDIN_MODE=r2broken|many|empty|detailfail|objfail|buildfail|ghidranomarkers|ghidrabroken, STANDIN_LOG=<file> (one line per call).
 package main
 
 import (
@@ -22,6 +22,8 @@ func main() {
 		r2(args)
 	case "objdump", "llvm-objdump":
 		objdump(args)
+	case "analyzeHeadless":
+		ghidra(args)
 	default:
 		fmt.Fprintln(os.Stderr, "standin: run me as docker, rizin, radare2 or objdump")
 		os.Exit(2)
@@ -205,4 +207,46 @@ func dockerBuild(args []string) {
 			fmt.Println("built from", strings.TrimPrefix(line, "FROM "), "as", args[1])
 		}
 	}
+	if _, err := os.Stat(filepath.Join(args[len(args)-1], "ExportFunctions.java")); err == nil {
+		fmt.Println("context holds ExportFunctions.java")
+	}
+}
+
+// ghidra answers analyzeHeadless: it checks the import and the script it was given, then prints Ghidra-style log lines
+// around the JSON the export script prints between its markers.
+func ghidra(args []string) {
+	var imported, scriptPath, script string
+	for i, a := range args {
+		switch a {
+		case "-import":
+			imported = args[i+1]
+		case "-scriptPath":
+			scriptPath = args[i+1]
+		case "-postScript":
+			script = args[i+1]
+		}
+	}
+	if _, err := os.Stat(imported); err != nil || script != "ExportFunctions.java" {
+		fmt.Println("ERROR REPORT: nothing to import or no script")
+		os.Exit(1)
+	}
+	if info, err := os.Stat(scriptPath); err == nil && info.IsDir() {
+		if _, err := os.Stat(filepath.Join(scriptPath, script)); err != nil {
+			fmt.Println("ERROR GhidraScriptLoadException: script not found")
+			os.Exit(1)
+		}
+	}
+	fmt.Println("INFO  HEADLESS Script Paths: " + scriptPath + " (HeadlessAnalyzer)")
+	fmt.Println("INFO  ANALYZING all memory and code: " + imported + " (HeadlessAnalyzer)")
+	switch os.Getenv("STANDIN_MODE") {
+	case "ghidranomarkers":
+	case "ghidrabroken":
+		fmt.Println("---DENDRITE-JSON-BEGIN---\nthis is not json\n---DENDRITE-JSON-END---")
+	default:
+		fmt.Println(`---DENDRITE-JSON-BEGIN---
+[{"name":"main","address":"0x401000","size":64,"cyclomatic":3,"calls":["0x401040"],"disassembly":"0x401000  PUSH RBP\n","pseudocode":"int main(void)\n{\n  return helper();\n}\n"},` +
+			`{"name":"helper","address":"0x401040","size":16,"cyclomatic":1,"calls":[]},{"name":"FUN_00401060","address":"0x401060","size":6,"cyclomatic":1,"calls":[]}]
+---DENDRITE-JSON-END---`)
+	}
+	fmt.Println("INFO  REPORT: Analysis succeeded for file: " + imported + " (HeadlessAnalyzer)")
 }

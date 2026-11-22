@@ -27,7 +27,7 @@ func RegisterReaAnalysisTools(s *Server, deps Dependencies, service func() (*ana
 			[]string{"binary"}, withProps(engineProps, map[string]interface{}{"binary": TypedProp("string", "Path of the file or directory to analyze"), "format": TypedProp("string", "Format the target must have (default: detect it): pe, elf, macho, fat-macho, asar, zip, js-bundle, source-tree, unknown"),
 				"id": TypedProp("string", "Name of the analysis (default: generated)"), "tier": tierProp, "model": modelProp,
 				"ticket": TypedProp("string", "Leave a note with the summary and the analysis id on this ticket")}), reaAnalyze(deps)},
-		{"dendrite_rea_engines", "List the open-source reverse-engineering engines (rizin, radare2, objdump; Ghidra planned) with their license, capabilities and whether each is usable in the container or on the host here.",
+		{"dendrite_rea_engines", "List the reverse-engineering engines (open-source: rizin, radare2, objdump, Ghidra; proprietary and documented only: Hopper, IDA, Binary Ninja) with their license, capabilities and whether each is usable in the container or on the host here.",
 			nil, map[string]interface{}{}, reaEngines},
 		{"dendrite_rea_pause", "Pause an analysis at its next stage boundary; its checkpoint is kept.", []string{"id"}, map[string]interface{}{"id": idProp}, reaPause},
 		{"dendrite_rea_resume", "Continue an analysis from its last checkpoint, optionally on another model tier or model.", []string{"id"},

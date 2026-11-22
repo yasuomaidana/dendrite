@@ -7,6 +7,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Sandbox modes.
@@ -24,7 +25,14 @@ const (
 	FamilyR2      = "r2"
 	FamilyObjdump = "objdump"
 	FamilyGhidra  = "ghidra"
+	// FamilyProprietary marks licensed tools Dendrite documents but does not run (see docs/features/rea-engines.md).
+	FamilyProprietary = "proprietary"
 )
+
+const proprietaryNote = "proprietary tool, documented only (docs/features/rea-engines.md)"
+
+// DocsPath is where the engines, the selection policy and the proprietary tools are documented.
+const DocsPath = "docs/features/rea-engines.md"
 
 // Function is one function an engine found. Pseudocode stays empty until a decompiler backend exists.
 type Function struct {
@@ -59,20 +67,30 @@ func (c Caps) Score() int {
 	return score
 }
 
-// Spec describes one known engine. Implemented is false for an engine the catalog lists but Dendrite cannot run yet.
+// Spec describes one known engine. Implemented is false for an engine the catalog lists but Dendrite cannot run (a
+// planned one, or a proprietary tool that is documented only).
 type Spec struct {
-	Name        string   `json:"name"`
-	License     string   `json:"license"`
-	OpenSource  bool     `json:"open_source"`
-	Implemented bool     `json:"implemented"`
-	Caps        Caps     `json:"caps"`
-	Family      string   `json:"family"`
-	Image       string   `json:"image"`
-	HostBins    []string `json:"host_bins"`
+	Name        string `json:"name"`
+	License     string `json:"license"`
+	OpenSource  bool   `json:"open_source"`
+	Proprietary bool   `json:"proprietary,omitempty"`
+	Implemented bool   `json:"implemented"`
+	// Note says why an engine that is not implemented cannot be run, and where to read more.
+	Note   string `json:"note,omitempty"`
+	Caps   Caps   `json:"caps"`
+	Family string `json:"family"`
+	Image  string `json:"image"`
+	// HostBins are the binaries host mode looks for, first match wins.
+	HostBins []string `json:"host_bins"`
+	// MemoryMB and Timeout override the sandbox defaults for an engine that needs more (zero keeps the defaults).
+	MemoryMB int           `json:"memory_mb,omitempty"`
+	Timeout  time.Duration `json:"timeout,omitempty"`
+	// Env is set inside the container, for a tool that needs a writable home on a read-only root.
+	Env map[string]string `json:"env,omitempty"`
 }
 
-// Catalog lists the known engines in preference order: open-source first, then by capability. Proprietary tools
-// (Hopper, IDA, Binary Ninja) are deliberately absent: they are never selected automatically.
+// Catalog lists the known engines in preference order: open-source first, then by capability. Proprietary tools are
+// listed so they can be configured and documented, but are never selected automatically.
 func Catalog() []Spec {
 	return []Spec{
 		{Name: "rizin", License: "LGPL-3.0", OpenSource: true, Implemented: true, Family: FamilyR2, Image: "dendrite-rea/rizin:1", HostBins: []string{"rizin"},
@@ -81,7 +99,14 @@ func Catalog() []Spec {
 			Caps: Caps{Functions: true, Disassembly: true, CallGraph: true}},
 		{Name: "objdump", License: "GPL-3.0-or-later", OpenSource: true, Implemented: true, Family: FamilyObjdump, Image: "dendrite-rea/objdump:1", HostBins: []string{"objdump", "llvm-objdump"},
 			Caps: Caps{Functions: true, Disassembly: true}},
-		{Name: "ghidra", License: "Apache-2.0", OpenSource: true, Implemented: false, Family: FamilyGhidra, Image: "dendrite-rea/ghidra:1", HostBins: []string{"analyzeHeadless"},
+		{Name: "ghidra", License: "Apache-2.0", OpenSource: true, Implemented: true, Family: FamilyGhidra, Image: "dendrite-rea/ghidra:1", HostBins: []string{"analyzeHeadless"},
+			Caps: Caps{Functions: true, Disassembly: true, Decompile: true, CallGraph: true}, MemoryMB: 4096, Timeout: 20 * time.Minute,
+			Env: map[string]string{"HOME": "/tmp", "JAVA_TOOL_OPTIONS": "-Duser.home=/tmp"}},
+		{Name: "hopper", Note: proprietaryNote, License: "proprietary (Cryptic Apps)", Proprietary: true, Family: FamilyProprietary, HostBins: []string{"hopper", "Hopper"},
+			Caps: Caps{Functions: true, Disassembly: true, Decompile: true, CallGraph: true}},
+		{Name: "ida", Note: proprietaryNote, License: "proprietary (Hex-Rays)", Proprietary: true, Family: FamilyProprietary, HostBins: []string{"idat64", "idat"},
+			Caps: Caps{Functions: true, Disassembly: true, Decompile: true, CallGraph: true}},
+		{Name: "binaryninja", Note: proprietaryNote, License: "proprietary (Vector 35)", Proprietary: true, Family: FamilyProprietary, HostBins: []string{"binaryninja"},
 			Caps: Caps{Functions: true, Disassembly: true, Decompile: true, CallGraph: true}},
 	}
 }

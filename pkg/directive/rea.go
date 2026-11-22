@@ -40,8 +40,8 @@ func (r Rea) validate() error {
 	if !oneOf(r.RefusalOwner, RefusalOwnerAGY, RefusalOwnerNone) {
 		return fmt.Errorf("rea.refusal_owner must be %s or %s", RefusalOwnerAGY, RefusalOwnerNone)
 	}
-	if !oneOf(r.Engine, "auto", "none", "rizin", "radare2", "objdump", "ghidra") { // the names of pkg/rea/engine's catalog
-		return fmt.Errorf("rea.engine must be auto, none, rizin, radare2, objdump or ghidra")
+	if !oneOf(r.Engine, "auto", "none", "rizin", "radare2", "objdump", "ghidra", "hopper", "ida", "binaryninja") { // the names of pkg/rea/engine's catalog
+		return fmt.Errorf("rea.engine must be auto, none, rizin, radare2, objdump, ghidra, hopper, ida or binaryninja")
 	}
 	if !oneOf(r.Sandbox, "container", "host") {
 		return fmt.Errorf("rea.sandbox must be container or host")

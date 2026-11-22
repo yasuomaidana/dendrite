@@ -17,8 +17,8 @@ var (
 	err  error
 )
 
-// Install builds the stand-in once and returns the directory holding it as docker, rizin, radare2, r2, objdump and
-// llvm-objdump.
+// Install builds the stand-in once and returns the directory holding it as docker, rizin, radare2, r2, objdump,
+// llvm-objdump and analyzeHeadless.
 func Install(t testing.TB) string {
 	t.Helper()
 	once.Do(func() {
@@ -31,7 +31,7 @@ func Install(t testing.TB) string {
 			return
 		}
 		data, _ := os.ReadFile(src)
-		for _, name := range []string{"docker", "rizin", "radare2", "r2", "objdump", "llvm-objdump"} {
+		for _, name := range []string{"docker", "rizin", "radare2", "r2", "objdump", "llvm-objdump", "analyzeHeadless"} {
 			if err = os.WriteFile(filepath.Join(dir, name), data, 0o755); err != nil {
 				return
 			}

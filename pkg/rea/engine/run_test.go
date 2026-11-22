@@ -81,10 +81,10 @@ func TestObjdumpInTheContainerReadsFunctionsOffItsLabels(t *testing.T) {
 	}
 }
 
-func TestATrustedBinaryMayRunOnTheHostAndAutoFindsTheEngine(t *testing.T) {
+func TestATrustedBinaryMayRunOnTheHost(t *testing.T) {
 	enginetest.UsePath(t)
 	_, calls := logOf(t)
-	res, err := NewService().Run(context.Background(), target(t), coreclient.FormatELF, Policy{Sandbox: ModeHost, Trusted: true})
+	res, err := NewService().Run(context.Background(), target(t), coreclient.FormatELF, Policy{Engine: "rizin", Sandbox: ModeHost, Trusted: true})
 	if err != nil || res.Engine != "rizin" || res.Mode != ModeHost || len(res.Functions) != 3 {
 		t.Fatalf("%+v, %v", res, err)
 	}
@@ -232,7 +232,8 @@ func TestStatusesSayWhereEachEngineCanRun(t *testing.T) {
 	}{
 		"rizin":   {true, true, "", ""},
 		"radare2": {false, true, "dendrite retro engines build radare2", ""},
-		"ghidra":  {false, false, "", "planned"},
+		"ghidra":  {false, true, "dendrite retro engines build ghidra", ""},
+		"ida":     {false, false, "", "proprietary tool, documented only"},
 	} {
 		got := by[name]
 		if got.Container.Usable != want.container || got.Host.Usable != want.host || got.Container.Fix != want.fix || !strings.Contains(got.Container.Reason, want.reason) {
@@ -244,21 +245,21 @@ func TestStatusesSayWhereEachEngineCanRun(t *testing.T) {
 func TestBuildMakesTheImageFromTheEmbeddedDockerfile(t *testing.T) {
 	enginetest.UsePath(t)
 	_, calls := logOf(t)
-	out, err := NewService().Build(context.Background(), "rizin")
+	out, err := NewService().Build(context.Background(), "rizin", BuildOptions{})
 	if err != nil || !strings.Contains(out, "built from debian:trixie-slim as dendrite-rea/rizin:1") || !strings.Contains(calls(), "docker build -t dendrite-rea/rizin:1 ") {
 		t.Errorf("%q, %v\n%s", out, err, calls())
 	}
 	for _, name := range []string{"radare2", "objdump"} {
-		if _, err := NewService().Build(context.Background(), name); err != nil {
+		if _, err := NewService().Build(context.Background(), name, BuildOptions{}); err != nil {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
 	t.Setenv("STANDIN_MODE", "buildfail")
-	if out, err = NewService().Build(context.Background(), "rizin"); err == nil || !strings.Contains(out, "package not found") {
+	if out, err = NewService().Build(context.Background(), "rizin", BuildOptions{}); err == nil || !strings.Contains(out, "package not found") {
 		t.Errorf("a failing build reports what docker printed: %q, %v", out, err)
 	}
 	for _, name := range []string{"ghidra", "ida"} {
-		if _, err := NewService().Build(context.Background(), name); err == nil {
+		if _, err := NewService().Build(context.Background(), name, BuildOptions{}); err == nil {
 			t.Errorf("%s has no image to build", name)
 		}
 	}
@@ -266,12 +267,12 @@ func TestBuildMakesTheImageFromTheEmbeddedDockerfile(t *testing.T) {
 
 func TestBuildUsesTheRunnerItIsGivenAndReportsAnUnwritableTemporaryDirectory(t *testing.T) {
 	runner := &sandboxtest.RecordingRunner{Output: []byte("ok")}
-	out, err := (&Service{Exec: runner}).Build(context.Background(), "objdump")
+	out, err := (&Service{Exec: runner}).Build(context.Background(), "objdump", BuildOptions{})
 	if err != nil || out != "ok" || !runner.HasCall(func(c []string) bool { return len(c) == 5 && c[1] == "build" && c[3] == "dendrite-rea/objdump:1" }) {
 		t.Errorf("%q, %v", out, err)
 	}
 	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
-	if _, err := (&Service{Exec: runner}).Build(context.Background(), "objdump"); err == nil {
+	if _, err := (&Service{Exec: runner}).Build(context.Background(), "objdump", BuildOptions{}); err == nil {
 		t.Error("no temporary directory is an error")
 	}
 }
@@ -282,5 +283,13 @@ func TestEveryImplementedEngineHasADockerfileForItsImage(t *testing.T) {
 		if s.Implemented && (err != nil || !strings.Contains(string(data), "FROM ") || !strings.Contains(string(data), "USER 65534")) {
 			t.Errorf("%s: %v\n%s", s.Name, err, data)
 		}
+	}
+}
+
+func TestAutoOnTheHostTakesTheBestEngineOnPath(t *testing.T) {
+	enginetest.UsePath(t)
+	res, err := NewService().Run(context.Background(), target(t), coreclient.FormatELF, Policy{Sandbox: ModeHost, Trusted: true})
+	if err != nil || res.Engine != "ghidra" || res.Mode != ModeHost {
+		t.Errorf("%+v, %v", res, err)
 	}
 }

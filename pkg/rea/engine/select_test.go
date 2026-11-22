@@ -48,17 +48,26 @@ func choose(t *testing.T, m machine, p Policy, format string) Decision {
 	return d
 }
 
-func TestCatalogListsOnlyOpenSourceTools(t *testing.T) {
+func TestCatalogSeparatesOpenSourceFromProprietaryTools(t *testing.T) {
 	for _, s := range Catalog() {
-		if !s.OpenSource || s.License == "" || s.Image == "" || len(s.HostBins) == 0 {
-			t.Errorf("%+v", s)
+		switch {
+		case s.Proprietary:
+			if s.OpenSource || s.Implemented || s.Family != FamilyProprietary || s.License == "" || len(s.HostBins) == 0 {
+				t.Errorf("a proprietary tool is documented, not run: %+v", s)
+			}
+		default:
+			if !s.OpenSource || !s.Implemented || s.License == "" || s.Image == "" || len(s.HostBins) == 0 {
+				t.Errorf("an open-source engine is runnable: %+v", s)
+			}
 		}
 	}
 	if s, ok := Lookup("radare2"); !ok || s.Family != FamilyR2 {
 		t.Errorf("%+v %t", s, ok)
 	}
-	if _, ok := Lookup("ida"); ok {
-		t.Error("proprietary tools are not in the catalog")
+	for _, name := range []string{"hopper", "ida", "binaryninja"} {
+		if s, ok := Lookup(name); !ok || !s.Proprietary {
+			t.Errorf("%s: %+v %t", name, s, ok)
+		}
 	}
 }
 
@@ -69,7 +78,7 @@ func TestEnginesAreRankedByCapability(t *testing.T) {
 			implemented = append(implemented, s.Name)
 		}
 	}
-	if strings.Join(implemented, ",") != "rizin,radare2,objdump" {
+	if strings.Join(implemented, ",") != "ghidra,rizin,radare2,objdump" {
 		t.Errorf("the best engine first, got %v", implemented)
 	}
 	if (Caps{}).Score() != 0 || (Caps{Decompile: true, CallGraph: true, Functions: true, Disassembly: true}).Score() != 9 {
@@ -83,7 +92,7 @@ func TestPolicyDefaultsAndRefusals(t *testing.T) {
 	if d.Choice == nil || d.Choice.Spec.Name != "rizin" || d.Choice.Mode != ModeContainer {
 		t.Errorf("the defaults are auto and container: %+v", d)
 	}
-	for _, p := range []Policy{{Sandbox: "vm"}, {Engine: "ida"}} {
+	for _, p := range []Policy{{Sandbox: "vm"}, {Engine: "emacs"}, {Engine: "ida"}} {
 		if _, err := Select(context.Background(), p, "elf", m.env()); err == nil {
 			t.Errorf("%+v must be refused", p)
 		}
@@ -133,7 +142,7 @@ func TestAutoPrefersTheBestUsableOpenSourceEngine(t *testing.T) {
 
 func TestAutoWithNothingUsableSaysWhyForEachEngine(t *testing.T) {
 	down := choose(t, machine{}, Policy{}, "elf")
-	if down.Choice != nil || !strings.Contains(down.Note, "Docker does not answer") || !strings.Contains(down.Note, "rizin") || !strings.Contains(down.Note, "objdump") || strings.Contains(down.Note, "ghidra") {
+	if down.Choice != nil || !strings.Contains(down.Note, "Docker does not answer") || !strings.Contains(down.Note, "rizin") || !strings.Contains(down.Note, "objdump") || !strings.Contains(down.Note, "ghidra") || strings.Contains(down.Note, "hopper") || strings.Contains(down.Note, "ida:") {
 		t.Errorf("Docker down: %+v", down)
 	}
 	noImages := choose(t, machine{docker: true}, Policy{}, "elf")
@@ -154,8 +163,11 @@ func TestAnExplicitEngineMustBeUsableAndNeverFallsBack(t *testing.T) {
 		!strings.Contains(err.Error(), "rizin is not usable in container mode") {
 		t.Errorf("an engine without an image: %v", err)
 	}
-	if _, err := Select(context.Background(), Policy{Engine: "ghidra"}, "elf", m.env()); err == nil || !strings.Contains(err.Error(), "planned but not implemented") || !strings.Contains(err.Error(), "rizin, radare2, objdump") {
-		t.Errorf("a planned engine: %v", err)
+	for _, name := range []string{"hopper", "ida", "binaryninja"} {
+		_, err := Select(context.Background(), Policy{Engine: name}, "elf", m.env())
+		if err == nil || !strings.Contains(err.Error(), "proprietary tool") || !strings.Contains(err.Error(), DocsPath) || !strings.Contains(err.Error(), "rizin, radare2, objdump, ghidra") {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 	if d := choose(t, m, Policy{Engine: "objdump"}, "elf"); d.Choice == nil || d.Choice.Spec.Name != "objdump" {
 		t.Errorf("an explicit engine that is usable: %+v", d)
@@ -166,5 +178,16 @@ func TestUnusableErrorFormatsTheFix(t *testing.T) {
 	e := &UnusableError{Engine: "x", Mode: "host", Reason: "r", Fix: "f"}
 	if got := fmt.Sprint(e); got != "x is not usable in host mode: r (f)" {
 		t.Errorf("%q", got)
+	}
+}
+
+func TestAutoPrefersGhidraWhenItsImageIsBuiltAndNeverAProprietaryTool(t *testing.T) {
+	m := machine{docker: true, images: []string{"dendrite-rea/ghidra:1", "dendrite-rea/rizin:1"}, bins: []string{"hopper", "idat64", "binaryninja"}}
+	if d := choose(t, m, Policy{}, "elf"); d.Choice == nil || d.Choice.Spec.Name != "ghidra" || d.Choice.Mode != ModeContainer {
+		t.Errorf("the best usable engine: %+v", d)
+	}
+	host := machine{bins: []string{"hopper", "idat64", "binaryninja"}}
+	if d := choose(t, host, Policy{Sandbox: ModeHost, Trusted: true}, "elf"); d.Choice != nil {
+		t.Errorf("a proprietary tool on PATH is not used by auto: %+v", d.Choice)
 	}
 }

@@ -84,6 +84,8 @@ func (s *Service) Run(ctx context.Context, target, format string, p Policy) (*Re
 	switch d.Choice.Spec.Family {
 	case FamilyR2:
 		fns, err = s.runR2(ctx, d.Choice, abs)
+	case FamilyGhidra:
+		fns, err = s.runGhidra(ctx, d.Choice, abs)
 	default:
 		fns, err = s.runObjdump(ctx, d.Choice, abs)
 	}
@@ -99,7 +101,11 @@ func (s *Service) Run(ctx context.Context, target, format string, p Policy) (*Re
 
 // run executes argv (which refers to the target as TargetPath) in the chosen mode and returns its standard output.
 func (s *Service) run(ctx context.Context, c *Choice, target string, argv []string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, runTimeout)
+	timeout := runTimeout
+	if c.Spec.Timeout > 0 {
+		timeout = c.Spec.Timeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var out []byte
 	var err error
@@ -125,6 +131,15 @@ func capOutput(out []byte) []byte {
 func (s *Service) runContainer(ctx context.Context, spec Spec, target string, argv []string) ([]byte, error) {
 	cfg := sandbox.NewDefaultSandboxConfig(spec.Image, []string{"sh", "-c", shellLine(argv) + " 2>/dev/null"})
 	cfg.ReadOnlyMounts = []sandbox.Mount{{Host: target, Container: TargetPath}}
+	if spec.MemoryMB > 0 {
+		cfg.MemoryLimitMB = spec.MemoryMB
+	}
+	if spec.Timeout > 0 {
+		cfg.Timeout = spec.Timeout
+	}
+	for k, v := range spec.Env {
+		cfg.Environment[k] = v
+	}
 	sess := sandbox.NewSession(cfg, s.Exec)
 	defer func() { _ = sess.Close() }()
 	res, err := sess.Execute(ctx)

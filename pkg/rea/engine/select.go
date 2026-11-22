@@ -138,7 +138,7 @@ func Select(ctx context.Context, p Policy, format string, env Env) (Decision, er
 func selectNamed(ctx context.Context, p Policy, env Env) (Decision, error) {
 	spec, _ := Lookup(p.Engine)
 	if !spec.Implemented {
-		return Decision{}, fmt.Errorf("engine %s is planned but not implemented yet: use %s", spec.Name, strings.Join(implementedNames(), ", "))
+		return Decision{}, fmt.Errorf("engine %s cannot be run: %s; use %s", spec.Name, spec.Note, strings.Join(implementedNames(), ", "))
 	}
 	bin, problem := usable(ctx, spec, p.Sandbox, env)
 	if problem != nil {

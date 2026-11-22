@@ -103,7 +103,7 @@ func TestValidateNamesTheBrokenRule(t *testing.T) {
 		{"security.fail_on", func(s *Set) { s.Security.FailOn = "never" }},
 		{"languages.preference", func(s *Set) { s.Languages.Preference = nil }},
 		{"rea.refusal_owner", func(s *Set) { s.Rea.RefusalOwner = "copilot" }},
-		{"rea.engine", func(s *Set) { s.Rea.Engine = "ida" }},
+		{"rea.engine", func(s *Set) { s.Rea.Engine = "emacs" }},
 		{"rea.sandbox", func(s *Set) { s.Rea.Sandbox = "vm" }},
 		{"rea.labels or rea.title_prefixes", func(s *Set) { s.Rea.Labels, s.Rea.TitlePrefixes = nil, nil }},
 	} {

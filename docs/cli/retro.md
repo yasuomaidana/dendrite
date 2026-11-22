@@ -98,6 +98,24 @@ dendrite retro engines
 dendrite retro engines build rizin
 ```
 
+### `dendrite retro engines build`
+
+Build the container image of an engine from its Dockerfile (never done implicitly)
+
+```bash
+dendrite retro engines build <engine> [flags]
+```
+
+| Flag | Description |
+| :--- | :--- |
+| `--sha256` | Ghidra only: the checksum the release zip must have |
+| `--url` | Ghidra only: https link of the Ghidra release zip to install |
+
+```bash
+dendrite retro engines build rizin
+dendrite retro engines build ghidra --url https://github.com/NationalSecurityAgency/ghidra/releases/download/<tag>/<zip> --sha256 <64 hex digits>
+```
+
 ### `dendrite retro export`
 
 Write the structure of a finished analysis as safe Rust structs under --output

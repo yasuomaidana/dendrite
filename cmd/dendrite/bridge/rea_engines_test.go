@@ -57,7 +57,7 @@ func TestRetroAnalyzeNeverOpensAnUntrustedBinaryOnTheHost(t *testing.T) {
 		t.Errorf("an untrusted binary on the host: exit %d\n%s", code, out)
 	}
 	out, code := cliOutput(t, "retro", "resume", "e-host", "--trusted")
-	if code != cli.ExitOK || !strings.Contains(out, "Engine: rizin (host)") {
+	if code != cli.ExitOK || !strings.Contains(out, "Engine: ghidra (host)") {
 		t.Errorf("--trusted: exit %d\n%s", code, out)
 	}
 }
@@ -78,7 +78,7 @@ func TestRetroEnginesListsWhereEachCanRun(t *testing.T) {
 	if code != cli.ExitOK {
 		t.Fatalf("exit %d\n%s", code, out)
 	}
-	for _, want := range []string{"ENGINE", "rizin", "LGPL-3.0", "functions,disassembly,graph", "container: image dendrite-rea/radare2:1 is not built (dendrite retro engines build radare2)", "ghidra"} {
+	for _, want := range []string{"ENGINE", "rizin", "LGPL-3.0", "functions,disassembly,graph", "container: image dendrite-rea/radare2:1 is not built (dendrite retro engines build radare2)", "ghidra", "hopper", "proprietary tool, documented only (docs/features/rea-engines.md)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the list lacks %q:\n%s", want, out)
 		}
@@ -93,8 +93,15 @@ func TestRetroEnginesBuildIsExplicitAndReportsFailures(t *testing.T) {
 	if out, code := cliOutput(t, "retro", "engines", "build", "rizin"); code != cli.ExitOK || !strings.Contains(out, "Built the image of rizin") {
 		t.Errorf("build: exit %d\n%s", code, out)
 	}
-	if out, code := cliOutput(t, "retro", "engines", "build", "ghidra"); code != cli.ExitError || !strings.Contains(out, "no engine image to build") {
-		t.Errorf("a planned engine: exit %d\n%s", code, out)
+	if out, code := cliOutput(t, "retro", "engines", "build", "ghidra"); code != cli.ExitError || !strings.Contains(out, "--sha256") {
+		t.Errorf("ghidra needs a pinned release: exit %d\n%s", code, out)
+	}
+	pinned := []string{"retro", "engines", "build", "ghidra", "--url", "https://example.org/ghidra.zip", "--sha256", strings.Repeat("cd", 32)}
+	if out, code := cliOutput(t, pinned...); code != cli.ExitOK || !strings.Contains(out, "Built the image of ghidra") {
+		t.Errorf("ghidra with a pinned release: exit %d\n%s", code, out)
+	}
+	if out, code := cliOutput(t, "retro", "engines", "build", "ida"); code != cli.ExitError || !strings.Contains(out, "no engine image to build") {
+		t.Errorf("a proprietary tool has no image: exit %d\n%s", code, out)
 	}
 	t.Setenv("STANDIN_MODE", "buildfail")
 	if out, code := cliOutput(t, "retro", "engines", "build", "rizin"); code != cli.ExitError || !strings.Contains(out, "package not found") {
