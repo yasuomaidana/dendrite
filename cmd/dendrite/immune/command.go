@@ -5,12 +5,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"Dendrite/pkg/directive"
 	"Dendrite/pkg/immune"
-	"Dendrite/pkg/statedir"
 )
 
 // NewImmuneCmd builds `dendrite immune`: the gate that decides whether an agent skill may be installed.
@@ -18,8 +20,9 @@ func NewImmuneCmd() *cobra.Command {
 	cmd := cli.NewGroupCmd("immune", "Scan agent skills with SkillSpector before they are installed", "glia")
 	cmd.Example = "dendrite immune scan .claude/skills/my-skill\n" +
 		"dendrite immune scan ./skills --json\n" +
-		"dendrite immune update"
-	cmd.AddCommand(newImmuneScanCmd(), newImmuneUpdateCmd())
+		"dendrite immune update\n" +
+		"dendrite immune allow .claude/skills/my-skill --reason \"reviewed: the URL is our own mirror\""
+	cmd.AddCommand(newImmuneScanCmd(), newImmuneUpdateCmd(), newImmuneAllowCmd())
 	return cmd
 }
 
@@ -68,7 +71,9 @@ func newImmuneScanCmd() *cobra.Command {
 			"quarantine (exit 4). The bands come from .github/dendrite/directives.toml; a flag overrides one. The scanner is static by\n" +
 			"default; --llm adds its model pass, which needs a provider in the environment (SKILLSPECTOR_PROVIDER).\n" +
 			"When the directives pin a scanner version (immune.scanner_version), a scanner of another version is refused:\n" +
-			"run `dendrite immune update`. Every result is appended to the scan ledger, .dendrite/immune/scans.jsonl.",
+			"run `dendrite immune update`. Every result is appended to the scan ledger of the repository that holds the\n" +
+			"skill (.dendrite/immune/scans.jsonl); the pre-edit and pre-commit hooks read it to decide whether a skill under\n" +
+			".claude/skills/ or .agents/skills/ may be changed or committed.",
 		Args: cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o, err := immuneSettings(cmd, o)
@@ -88,7 +93,7 @@ func runImmuneScan(ctx context.Context, out io.Writer, path string, o immuneScan
 	if err := o.Validate(); err != nil {
 		return cli.UsageErrorf("%v", err)
 	}
-	ledger := immune.Ledger{Path: statedir.Resolve(immune.LedgerFile)}
+	ledger := immune.LedgerFor(path)
 	r, err := immune.Scanner{Thresholds: o.Thresholds, LLM: o.LLM, Pin: o.Pin, Ledger: &ledger}.Scan(ctx, path)
 	if err != nil {
 		return err
@@ -159,4 +164,48 @@ func immuneUpdateLine(u immune.Update) string {
 		return fmt.Sprintf("[✓] SkillSpector %s is the pinned version; nothing to do", u.After)
 	}
 	return fmt.Sprintf("[✓] SkillSpector %s is the latest; pin it with `dendrite directive set immune.scanner_version=%s`", u.After, u.After)
+}
+
+func newImmuneAllowCmd() *cobra.Command {
+	var reason string
+	cmd := &cobra.Command{
+		Use:   "allow <skill-path>",
+		Short: "Record a person's decision to accept a held scan of a skill",
+		Long: "A scan that scores in the hold band needs a person. `immune allow` records that decision and its reason in\n" +
+			"the scan ledger for the skill's content as it is now, and the hooks then let the skill through. Changing the\n" +
+			"skill afterwards needs a new scan. Content that was not scanned or is quarantined cannot be allowed.",
+		Example: "dendrite immune allow .claude/skills/my-skill --reason \"reviewed: the URL is our own mirror\"",
+		Args:    cli.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runImmuneAllow(cmd.OutOrStdout(), args[0], reason)
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "", "why the held skill is safe to use (required)")
+	return cmd
+}
+
+func runImmuneAllow(out io.Writer, path, reason string) error {
+	if strings.TrimSpace(reason) == "" {
+		return cli.UsageErrorf("--reason is required: say why the held skill is safe to use")
+	}
+	abs := path
+	if a, err := filepath.Abs(path); err == nil {
+		abs = a
+	}
+	e, added, err := immune.Allow(abs, reason, time.Now())
+	if err != nil {
+		return err
+	}
+	if cli.Globals.JSON {
+		return cli.WriteJSON(out, e)
+	}
+	switch {
+	case e.Verdict == immune.Approve:
+		_, err = fmt.Fprintf(out, "[✓] %s is approved (score %d); no decision is needed\n", abs, e.Score)
+	case added:
+		_, err = fmt.Fprintf(out, "[+] %s: held scan (score %d) allowed: %s\n", abs, e.Score, e.Reason)
+	default:
+		_, err = fmt.Fprintf(out, "[✓] %s: that decision is already recorded\n", abs)
+	}
+	return err
 }

@@ -3,6 +3,8 @@ package hook
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/devtool"
+	"Dendrite/pkg/directive"
+	"Dendrite/pkg/immune"
 	"Dendrite/pkg/ticketlock"
 	"Dendrite/pkg/tracker/plane"
 	"context"
@@ -27,6 +29,9 @@ func ticketHookCmds() []*cobra.Command {
 			"covered by a cached claim under 24 hours old). Without them it exits 2 and says how to claim. Writes outside\n" +
 			"any repository, in repositories that are not Plane projects, under .dendrite/ and in ~/.claude/plans/ are\n" +
 			"allowed. Malformed input is allowed: only a judged write is ever refused.\n" +
+			"A write into a skill under .claude/skills/ or .agents/skills/ that is committed at HEAD is also refused\n" +
+			"while the skill's current content has no cleared scan in the ledger (`dendrite immune scan <skill>`); a new\n" +
+			"skill may be written and is judged when it is committed.\n" +
 			"Writes made through the shell (sed -i, redirects) are not seen here; the git pre-commit hook is the backstop.\n" +
 			"The bypass for both hooks is " + devtool.TicketGuardEnv + "=off (quantal --no-ticket-guard sets it for its commit).",
 		Args: cli.NoArgs,
@@ -37,7 +42,11 @@ func ticketHookCmds() []*cobra.Command {
 	preCommit := &cobra.Command{
 		Use:   "pre-commit",
 		Short: "Git pre-commit hook: the same guard for every staged path, so agents cannot bypass it through git",
-		Args:  cli.NoArgs,
+		Long: "Applies the ticket lock to the staged paths, and refuses a commit that stages files of a skill under\n" +
+			".claude/skills/ or .agents/skills/ whose current content has no cleared scan in the ledger: approved by\n" +
+			"`dendrite immune scan`, or held and accepted with `dendrite immune allow`. " + devtool.TicketGuardEnv + "=off bypasses\n" +
+			"the ticket lock only, never the skill gate.",
+		Args: cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runPreCommit(cmd.Context(), hookDeps(), ".")
 		},
@@ -69,7 +78,8 @@ func ticketHookCmds() []*cobra.Command {
 	return []*cobra.Command{preEdit, preCommit, planSaved, sessionEnd, decision}
 }
 
-// runPreEdit refuses a write the lock does not allow. Anything it cannot judge is allowed.
+// runPreEdit refuses a write the ticket lock or the immune gate does not allow. Anything it cannot
+// judge is allowed.
 func runPreEdit(ctx context.Context, stdin io.Reader, d ticketlock.Deps) error {
 	in, ok := ticketlock.ParseHookInput(stdin)
 	if !ok {
@@ -78,18 +88,40 @@ func runPreEdit(ctx context.Context, stdin io.Reader, d ticketlock.Deps) error {
 	if err := ticketlock.CheckEdit(ctx, d, in); err != nil {
 		return cli.UsageErrorf("%s", err.Error())
 	}
+	if target := in.Target(); target != "" {
+		return refusal(immuneGate(target).CheckEdit(target))
+	}
 	return nil
 }
 
-// runPreCommit refuses a commit whose staged paths the lock does not allow.
+// runPreCommit refuses a commit whose staged paths the ticket lock does not allow, or that stages
+// a skill the immune gate has not cleared. The ticket guard's bypass does not switch the immune
+// gate off.
 func runPreCommit(ctx context.Context, d ticketlock.Deps, dir string) error {
-	if !devtool.GuardEnabled() { // the deliberate bypass: --no-ticket-guard or DENDRITE_TICKET_GUARD=off
+	if devtool.GuardEnabled() { // off: the deliberate bypass, --no-ticket-guard or DENDRITE_TICKET_GUARD=off
+		if err := ticketlock.CheckStaged(ctx, d, dir); err != nil {
+			return cli.UsageErrorf("%s", err.Error())
+		}
+	}
+	return refusal(immuneGate(dir).CheckStaged(dir))
+}
+
+// immuneGate is the skill gate of the repository holding path, with the scanner version its
+// directives pin. Directives that cannot be read pin nothing.
+func immuneGate(path string) immune.Gate {
+	set, err := directive.Load(immune.RepoTop(path))
+	if err != nil {
+		return immune.Gate{}
+	}
+	return immune.Gate{Pin: set.Immune.ScannerVersion}
+}
+
+// refusal turns a gate's error into the exit code 2 an agent runtime treats as "stop".
+func refusal(err error) error {
+	if err == nil {
 		return nil
 	}
-	if err := ticketlock.CheckStaged(ctx, d, dir); err != nil {
-		return cli.UsageErrorf("%s", err.Error())
-	}
-	return nil
+	return cli.UsageErrorf("blocked: %s", err.Error())
 }
 
 // boardOfDir opens the Plane board of the repository containing dir, when a hook needs it.
