@@ -7,6 +7,6 @@ var goLang = language{
 	header:   "// Structure of %s (analysis %s), written by `dendrite retro export`. Data only: no code, no dependencies.\npackage analysis\n\n",
 	typeOpen: "type %s struct {\n", typeField: "\t%s %s\n", close: "}\n\n", fieldName: camel,
 	tStr: "string", tNum: "uint64", tAddr: "uint64", tFlag: "bool",
-	tList: func(elem string) string { return "[]" + elem },
+	tList: "[]$",
 	tail:  "var Analysis = %s\n",
 }

@@ -100,7 +100,7 @@ type language struct {
 	typeOpen, typeField, close string // formats: type name; field name and type
 	fieldName                  func(string) string
 	tStr, tNum, tAddr, tFlag   string
-	tList                      func(elem string) string
+	tList                      string // "$" is the element type
 	tail                       string // format: the literal of the image
 }
 
@@ -126,7 +126,7 @@ func (l language) typeOf(f fieldDef) string {
 	case kindAddress:
 		return l.tAddr
 	case kindList:
-		return l.tList(elem)
+		return strings.ReplaceAll(l.tList, "$", elem)
 	}
 	return l.tNum
 }

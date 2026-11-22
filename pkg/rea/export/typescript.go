@@ -5,6 +5,6 @@ var tsLang = language{
 	header:   "// Structure of %s (analysis %s), written by `dendrite retro export`. Data only: no code, no dependencies.\n\n",
 	typeOpen: "export interface %s {\n", typeField: "\treadonly %s: %s;\n", close: "}\n\n",
 	tStr: "string", tNum: "number", tAddr: "bigint", tFlag: "boolean",
-	tList: func(elem string) string { return "readonly " + elem + "[]" },
+	tList: "readonly $[]",
 	tail:  "export const IMAGE: Image = %s;\n",
 }

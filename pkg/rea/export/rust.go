@@ -30,6 +30,6 @@ var rustLang = language{
 	prologue: "#![allow(dead_code)]\n\n",
 	typeOpen: "#[derive(Debug, Clone, Copy, PartialEq)]\npub struct %s {\n", typeField: "\tpub %s: %s,\n", close: "}\n\n",
 	tStr: "&'static str", tNum: "u64", tAddr: "u64", tFlag: "bool",
-	tList: func(elem string) string { return "&'static [" + elem + "]" },
+	tList: "&'static [$]",
 	tail:  "pub const IMAGE: Image = %s;\n",
 }
