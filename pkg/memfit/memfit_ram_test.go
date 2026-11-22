@@ -48,6 +48,20 @@ func TestTotalRAMBytesPerOperatingSystem(t *testing.T) {
 	}
 }
 
+// The default sysctl reader runs the sysctl found on PATH; a script stands in for it so Linux runs it too.
+func TestDefaultSysctlReaderRunsSysctlFromThePath(t *testing.T) {
+	dir := t.TempDir()
+	script := "#!/bin/sh\necho 8589934592\n"
+	if err := os.WriteFile(filepath.Join(dir, "sysctl"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	out, err := readSysctl()
+	if err != nil || string(out) != "8589934592\n" {
+		t.Fatalf("readSysctl = %q, %v", out, err)
+	}
+}
+
 func TestBudgetIsAConservativeFloorWhenRAMIsUnknown(t *testing.T) {
 	withSystem(t, "plan9", failing, failing)
 	t.Setenv(EnvBudgetGB, "")
