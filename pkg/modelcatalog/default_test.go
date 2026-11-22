@@ -24,6 +24,7 @@ func configuredManager(t *testing.T) *Manager {
 	home := t.TempDir()
 	t.Setenv("DENDRITE_HOME", home)
 	t.Setenv("LITELLM_PROXY_URL", "http://gw:4000")
+	t.Setenv("LITELLM_MASTER_KEY", "") // a runner that exports the gateway key must not leak into the expectation
 	t.Setenv("DENDRITE_OLLAMA_ENDPOINT", "")
 	t.Setenv("OLLAMA_HOST", "ollama-box:11434")
 	t.Setenv("GEMINI_API_KEY", "g-key")
