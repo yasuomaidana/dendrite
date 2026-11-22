@@ -59,10 +59,18 @@ func TestHardFunctionsStopAtThePauseGate(t *testing.T) {
 	if got := tiersOf(t, r, "tri-hard"); got["crypt_loop"] != TierPaid || got["main"] != TierLocal {
 		t.Errorf("routing recorded at the gate: %v", got)
 	}
-	if st, _ := r.Status("tri-hard"); st.Gate == "" || st.Triage == nil || st.Triage.Paid != 1 {
+}
+
+// The gate is part of the checkpoint on disk, and resuming on the local tier does not pass it.
+func TestTheGateSurvivesInTheCheckpointAndALocalResume(t *testing.T) {
+	r := triageRig(t, "MZ\x90\x00 HARD image")
+	if _, err := r.Analyze(ctx(), r.binary, Options{ID: "tri-keep"}); !errors.Is(err, ErrPaused) {
+		t.Fatal(err)
+	}
+	if st, _ := r.Status("tri-keep"); st.Gate == "" || st.Triage == nil || st.Triage.Paid != 1 {
 		t.Errorf("the checkpoint on disk keeps the gate and the summary: %+v", st)
 	}
-	again, err := r.Resume(ctx(), "tri-hard", Options{})
+	again, err := r.Resume(ctx(), "tri-keep", Options{})
 	if !errors.Is(err, ErrPaused) || again.State.Gate == "" {
 		t.Errorf("resuming on the local tier does not pass the gate: %+v, %v", again, err)
 	}
