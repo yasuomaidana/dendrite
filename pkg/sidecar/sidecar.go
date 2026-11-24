@@ -111,6 +111,19 @@ type Health struct {
 	Features []string `json:"features,omitempty"`
 }
 
+// Minor is the minor version of the sidecar's protocol (0 when it is not a semver).
+func (h Health) Minor() int {
+	parts := strings.SplitN(h.Protocol, ".", 3)
+	if len(parts) < 2 {
+		return 0
+	}
+	n, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
 // RPCError is a JSON-RPC error object returned by a sidecar.
 type RPCError struct {
 	Code    int             `json:"code"`
