@@ -51,31 +51,29 @@ func ticketHookCmds() []*cobra.Command {
 			return runPreCommit(cmd.Context(), hookDeps(), ".")
 		},
 	}
-	planSaved := &cobra.Command{
-		Use:   "plan-saved",
-		Short: "Post-ExitPlanMode hook: store the plan on the claimed ticket (kept locally when there is none)",
+	planSaved := afterHookCmd("plan-saved", "Post-ExitPlanMode hook: store the plan on the claimed ticket (kept locally when there is none)", runPlanSaved)
+	sessionEnd := afterHookCmd("session-end", "Session-end hook: a refused REA ticket goes to AGY; a ticket still In Progress gets an automatic handoff and is blocked (needs-input)", runSessionEnd)
+	stop := afterHookCmd("stop", "Stop hook: an REA ticket the Claude session refused goes to AGY (the [rea] directive)", runStop)
+	stop.Long = "Reads a Claude Code Stop event on stdin. When the session has claimed a ticket that is REA work (the label or\n" +
+		"title prefix of the [rea] directive) and its last turn ended in an API refusal, it records the refusal on the\n" +
+		"ticket, starts an AGY job in an isolated working copy, labels the ticket owner:agy and releases the Claude\n" +
+		"claim. A reply that only declines in words (short, tool-free, no question or offer) is not acted on here,\n" +
+		"because the user may still answer; the session-end hook hands it over if the session ends on it."
+	decision := afterHookCmd("decision", "Post-AskUserQuestion hook: record the questions and the user's answers on the claimed ticket (kept locally until a claim)", runDecision)
+	return []*cobra.Command{preEdit, preCommit, planSaved, sessionEnd, stop, decision}
+}
+
+// afterHookCmd is a hook that reads one event from stdin and acts on the claimed ticket afterwards, never
+// failing the agent.
+func afterHookCmd(use, short string, run func(context.Context, io.Reader, io.Writer) error) *cobra.Command {
+	return &cobra.Command{
+		Use:   use,
+		Short: short,
 		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPlanSaved(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
+			return run(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
 		},
 	}
-	sessionEnd := &cobra.Command{
-		Use:   "session-end",
-		Short: "Session-end hook: a ticket still In Progress gets an automatic handoff and is blocked (needs-input)",
-		Args:  cli.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSessionEnd(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
-		},
-	}
-	decision := &cobra.Command{
-		Use:   "decision",
-		Short: "Post-AskUserQuestion hook: record the questions and the user's answers on the claimed ticket (kept locally until a claim)",
-		Args:  cli.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDecision(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
-		},
-	}
-	return []*cobra.Command{preEdit, preCommit, planSaved, sessionEnd, decision}
 }
 
 // runPreEdit refuses a write the ticket lock or the immune gate does not allow. Anything it cannot
@@ -163,7 +161,11 @@ func runPlanSaved(ctx context.Context, stdin io.Reader, out io.Writer) error {
 }
 
 func runSessionEnd(ctx context.Context, stdin io.Reader, out io.Writer) error {
-	return runAfterHook(ctx, stdin, out, flushing(ticketlock.AutoHandoff))
+	return runAfterHook(ctx, stdin, out, flushing(HandoffOnSessionEnd))
+}
+
+func runStop(ctx context.Context, stdin io.Reader, out io.Writer) error {
+	return runAfterHook(ctx, stdin, out, RefusalHandoff)
 }
 
 func runDecision(ctx context.Context, stdin io.Reader, out io.Writer) error {

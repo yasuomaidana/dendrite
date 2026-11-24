@@ -29,6 +29,9 @@ type planeRequestOptions struct {
 	Desc    string
 	Synapse string
 	From    string // ticket in this project that depends on the request
+	// RelatesTo links --from to the request as related instead of blocked by it, for an improvement that does
+	// not hold the ticket up.
+	RelatesTo bool
 }
 
 func newChronosRequestCmd() *cobra.Command {
@@ -41,7 +44,8 @@ func newChronosRequestCmd() *cobra.Command {
 			"synapses with this repository, --synapse says which one the request belongs to; the ticket records it\n" +
 			"(external source dendrite-synapse:<id>) so the peer can filter its board with `chronos next --synapse`.\n" +
 			"Asking twice with the same name returns the existing ticket. --from names the ticket here that\n" +
-			"depends on the request.",
+			"depends on the request and is blocked by it; with --relates-to it is only related, for an improvement that does\n" +
+			"not hold the ticket up.",
 		Args:    cli.ExactArgs(1),
 		Example: "dendrite chronos request oxipix --name \"Expose a batch resize API\" --desc \"docula needs ...\" --from DOC-12",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -56,6 +60,7 @@ func newChronosRequestCmd() *cobra.Command {
 	f.StringVar(&o.Desc, "desc", "", "What is needed and why (goal and acceptance criteria)")
 	f.StringVar(&o.Synapse, "synapse", "", "The synapse the request belongs to (required when several are shared)")
 	f.StringVar(&o.From, "from", "", "Ticket in this project that depends on the request")
+	f.BoolVar(&o.RelatesTo, "relates-to", false, "Link --from as related to the request instead of blocked by it")
 	cli.RequireFlags(cmd, "name", "desc")
 	return cmd
 }
@@ -131,7 +136,7 @@ func planeRequest(ctx context.Context, client *plane.Client, svc *planesvc.Servi
 	}
 
 	if o.From != "" {
-		linkRequestSource(ctx, client, o.From, issue.ID, ref, out)
+		linkRequestSource(ctx, client, o, issue.ID, ref, out)
 	}
 	return nil
 }
@@ -203,17 +208,21 @@ func requestBody(requester string, g synapse.PeerGroup, peer synapse.Peer, o pla
 	return sb.String()
 }
 
-// linkRequestSource blocks the requesting ticket on the new one. Plane may refuse relations that
-// cross projects; the request still stands (its description names the source ticket).
-func linkRequestSource(ctx context.Context, client *plane.Client, from, requestUUID, requestRef string, out io.Writer) {
-	src, err := resolvePlaneTicketUUID(ctx, client, from)
+// linkRequestSource links the requesting ticket to the new one: blocked by it, or only related with --relates-to.
+// Plane may refuse relations that cross projects; the request still stands (its description names the source ticket).
+func linkRequestSource(ctx context.Context, client *plane.Client, o planeRequestOptions, requestUUID, requestRef string, out io.Writer) {
+	rel, done := "blocked_by", "is now blocked by"
+	if o.RelatesTo {
+		rel, done = "relates_to", "is now related to"
+	}
+	src, err := resolvePlaneTicketUUID(ctx, client, o.From)
 	if err != nil {
-		fmt.Fprintf(out, "[-] could not find %s to link it: %v\n", from, err)
+		fmt.Fprintf(out, "[-] could not find %s to link it: %v\n", o.From, err)
 		return
 	}
-	if err := client.AddIssueRelation(ctx, src, "blocked_by", []string{requestUUID}); err != nil {
-		fmt.Fprintf(out, "[i] %s was not linked to %s (Plane refused the cross-project relation: %v); the request names it in its description\n", from, requestRef, err)
+	if err := client.AddIssueRelation(ctx, src, rel, []string{requestUUID}); err != nil {
+		fmt.Fprintf(out, "[i] %s was not linked to %s (Plane refused the cross-project relation: %v); the request names it in its description\n", o.From, requestRef, err)
 		return
 	}
-	fmt.Fprintf(out, "[✓] %s is now blocked by %s\n", from, requestRef)
+	fmt.Fprintf(out, "[✓] %s %s %s\n", o.From, done, requestRef)
 }

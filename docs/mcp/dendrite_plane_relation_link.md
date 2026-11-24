@@ -22,7 +22,7 @@ Create a dependency relationship between tickets in Plane (relation_type: 'block
       "type": "string"
     },
     "target_issue_id": {
-      "description": "Target ticket ID or UUID that is related/blocked",
+      "description": "Target ticket ID or UUID the relation points at",
       "type": "string"
     }
   },

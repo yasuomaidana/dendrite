@@ -6,6 +6,7 @@ import (
 	"Dendrite/pkg/mcpserver/mcptest"
 	"Dendrite/pkg/mcpserver/planetools"
 	"Dendrite/pkg/ollama"
+	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/planesvc/planetest"
 	"Dendrite/pkg/testkit"
 	"Dendrite/pkg/tracker/plane"
@@ -231,7 +232,7 @@ func (r *lifecycleRig) call(name string, args map[string]any) (map[string]any, e
 
 var lifecycleTools = []string{
 	"dendrite_ticket_claim", "dendrite_ticket_comment", "dendrite_ticket_upload_plan",
-	"dendrite_ticket_get_plan", "dendrite_ticket_transition", "dendrite_ticket_finish", "dendrite_ticket_decision", "dendrite_ticket_comments", "dendrite_query_context",
+	"dendrite_ticket_get_plan", "dendrite_ticket_transition", "dendrite_ticket_finish", "dendrite_ticket_decision", "dendrite_ticket_comments", "dendrite_ticket_parent", "dendrite_query_context",
 }
 
 func newLifecycleRig(t *testing.T, tickets map[string]string) *lifecycleRig {
@@ -417,13 +418,15 @@ func testMCP_PlaneDAGToolsStep6(t *testing.T, callTool func(toolName string, arg
 	}
 }
 
-// testMCP_PlaneDAGToolsStep7: 3. Test dendrite_plane_relation_link
+// testMCP_PlaneDAGToolsStep7: 3. Test dendrite_plane_relation_link, then dendrite_plane_relation_unlink
 func testMCP_PlaneDAGToolsStep7(t *testing.T, callTool func(toolName string, args map[string]interface{}) *CallToolResult) {
-	expectDAGText(t, callTool, "dendrite_plane_relation_link", map[string]interface{}{
-		"issue_id":        "DEN-011",
-		"relation_type":   "blocked_by",
-		"target_issue_id": "DEN-010",
-	}, "gantt_connected")
+	for tool, want := range map[string]string{"dendrite_plane_relation_link": "gantt_connected", "dendrite_plane_relation_unlink": `"removed": true`} {
+		expectDAGText(t, callTool, tool, map[string]interface{}{
+			"issue_id":        "DEN-011",
+			"relation_type":   "blocked_by",
+			"target_issue_id": "DEN-010",
+		}, want)
+	}
 }
 
 // expectDAGText calls a plane DAG tool and requires want in its first text.
@@ -575,6 +578,7 @@ func TestRelationLinkAndIssueCreateRejectBadInput(t *testing.T) {
 	mcptest.NoEnvPlane(t)
 	srv := mcptest.ToolsWith(t, nil, "DEV_STATUS.md")
 	mcptest.RunToolFailures(t, srv, []mcptest.ToolFailure{
+		{Name: "relation unlink without a type", Tool: "dendrite_plane_relation_unlink", Args: `{"issue_id":"DEN-1"}`, Env: nil, Want: "all required"},
 		{Name: "relation link without a type", Tool: "dendrite_plane_relation_link", Args: `{"issue_id":"DEN-1"}`, Env: nil, Want: "all required"},
 		{Name: "relation link without a client", Tool: "dendrite_plane_relation_link", Args: `{"issue_id":"DEN-1","relation_type":"blocked_by","target_issue_id":"DEN-2"}`, Env: nil, Want: "plane client error"},
 		{Name: "create without a name", Tool: "dendrite_plane_issue_create", Args: `{"name":"  "}`, Env: nil, Want: "missing required 'name'"},
@@ -1424,5 +1428,44 @@ func TestDendriteGatewayUpdate_Tool(t *testing.T) {
 
 	if totalModels, ok := report["total_models_configured"].(float64); !ok || totalModels == 0 {
 		t.Errorf("expected positive total_models_configured, got %v", report["total_models_configured"])
+	}
+}
+
+func TestParentToolSetsAParentAndRefusesBadCalls(t *testing.T) {
+	r := newLifecycleRig(t, map[string]string{"DEN-377": "To Do", "DEN-378": "To Do"})
+	out, err := r.call("dendrite_ticket_parent", map[string]any{"ticket": "DEN-378", "parent": "DEN-377"})
+	if err != nil || out["parent"] != "DEN-377" || r.board.ParentOf("DEN-378") != r.board.IDOf("DEN-377") {
+		t.Fatalf("set: %v, %v", out, err)
+	}
+	if _, err := r.call("dendrite_ticket_parent", map[string]any{"ticket": "DEN-377", "parent": "DEN-378"}); err == nil {
+		t.Error("a loop is refused")
+	}
+	if out, err := r.call("dendrite_ticket_parent", map[string]any{"ticket": "DEN-377", "clear": true}); err != nil || out["had_parent"] != false {
+		t.Errorf("clearing a ticket with no parent is a no-op: %v, %v", out, err)
+	}
+	for name, args := range map[string]map[string]any{
+		"both":                    {"ticket": "DEN-378", "parent": "DEN-377", "clear": true},
+		"neither":                 {"ticket": "DEN-378"},
+		"clear an unknown ticket": {"ticket": "DEN-999", "clear": true},
+	} {
+		if _, err := r.call("dendrite_ticket_parent", args); err == nil {
+			t.Errorf("%s: exactly one of parent and clear is needed", name)
+		}
+	}
+}
+
+// A sidecar older than protocol 1.5 refuses to clear a parent and leaves it; a newer one clears it.
+func TestParentToolClearsAParentOrNamesTheFix(t *testing.T) {
+	r := newLifecycleRig(t, map[string]string{"DEN-377": "To Do", "DEN-378": "To Do"})
+	r.board.SetParent("DEN-378", "DEN-377")
+	out, err := r.call("dendrite_ticket_parent", map[string]any{"ticket": "DEN-378", "clear": true})
+	if !r.board.ClearSupported(t, "DEN-378", err, planesvc.Default().CanClearParent(context.Background()) == nil) {
+		return
+	}
+	if err != nil || out["cleared_from"] != "DEN-377" || r.board.ParentOf("DEN-378") != "" {
+		t.Fatalf("clear: %v, %v, parent %q", out, err, r.board.ParentOf("DEN-378"))
+	}
+	if out, err = r.call("dendrite_ticket_parent", map[string]any{"ticket": "DEN-378", "clear": true}); err != nil || out["had_parent"] != false {
+		t.Errorf("clearing again is a no-op: %v, %v", out, err)
 	}
 }

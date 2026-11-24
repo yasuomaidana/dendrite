@@ -13,21 +13,30 @@ var (
 	ErrSessionClosed     = errors.New("sandbox session is closed")
 )
 
+// Mount makes a host path visible inside the container at Container, read-only.
+type Mount struct {
+	Host      string `json:"host"`
+	Container string `json:"container"`
+}
+
 // SandboxConfig encapsulates the security hardening options for an ephemeral container.
 type SandboxConfig struct {
-	ContainerName       string            `json:"container_name"`
-	Image               string            `json:"image"`
-	Command             []string          `json:"command"`
-	NetworkMode         string            `json:"network_mode"` // "none", "bridge", "mesh"
-	ReadOnlyRoot        bool              `json:"read_only_root"`
-	DropAllCapabilities bool              `json:"drop_all_capabilities"`
-	NoNewPrivileges     bool              `json:"no_new_privileges"`
-	MemoryLimitMB       int               `json:"memory_limit_mb"`
-	CPULimit            float64           `json:"cpu_limit"`
-	TmpfsSize           string            `json:"tmpfs_size"`
-	HostScratchDir      string            `json:"host_scratch_dir"`
-	Timeout             time.Duration     `json:"timeout"`
-	Environment         map[string]string `json:"environment"`
+	ContainerName       string   `json:"container_name"`
+	Image               string   `json:"image"`
+	Command             []string `json:"command"`
+	NetworkMode         string   `json:"network_mode"` // "none", "bridge", "mesh"
+	ReadOnlyRoot        bool     `json:"read_only_root"`
+	DropAllCapabilities bool     `json:"drop_all_capabilities"`
+	NoNewPrivileges     bool     `json:"no_new_privileges"`
+	MemoryLimitMB       int      `json:"memory_limit_mb"`
+	CPULimit            float64  `json:"cpu_limit"`
+	TmpfsSize           string   `json:"tmpfs_size"`
+	HostScratchDir      string   `json:"host_scratch_dir"`
+	// ReadOnlyMounts are host files or directories the container may read but never change, for example a binary
+	// under analysis.
+	ReadOnlyMounts []Mount           `json:"read_only_mounts,omitempty"`
+	Timeout        time.Duration     `json:"timeout"`
+	Environment    map[string]string `json:"environment"`
 }
 
 // ExecutionResult captures the output, exit status, and duration of sandboxed execution.

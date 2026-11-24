@@ -41,6 +41,7 @@ func NewChronosCmd() *cobra.Command {
 	cmd.AddCommand(
 		newChronosNextCmd(),
 		newChronosLinkCmd(),
+		newChronosUnlinkCmd(),
 		newChronosRelateCmd(),
 		newChronosGanttSyncCmd(),
 		newChronosCreateCmd(),
@@ -290,18 +291,27 @@ func runChronosNext(ctx context.Context, client *plane.Client, ticket, milestone
 }
 
 func newChronosLinkCmd() *cobra.Command {
+	return newRelationCmd("link", "Add one relation between two tickets", "dendrite chronos link DEN-123 blocked_by DEN-100\ndendrite chronos link DEN-123 relates_to DEN-950", runChronosLink)
+}
+
+func newChronosUnlinkCmd() *cobra.Command {
+	return newRelationCmd("unlink", "Remove one relation between two tickets", "dendrite chronos unlink DEN-123 blocked_by DEN-100\ndendrite chronos unlink DEN-123 relates_to DEN-950", runChronosUnlink)
+}
+
+// newRelationCmd builds `link` and `unlink`: one relation between two tickets, added or removed by run.
+func newRelationCmd(verb, short, example string, run func(context.Context, *plane.Client, string, string, string, io.Writer) error) *cobra.Command {
 	return &cobra.Command{
-		Use:       "link <ticket-a> <relation> <ticket-b>",
-		Short:     "Add one relation between two tickets (" + strings.Join(relationTypes, ", ") + ")",
+		Use:       verb + " <ticket-a> <relation> <ticket-b>",
+		Short:     short + " (" + strings.Join(relationTypes, ", ") + ")",
 		Args:      cli.ExactArgs(3),
 		ValidArgs: relationTypes,
-		Example:   "dendrite chronos link DEN-123 blocked_by DEN-100\ndendrite chronos link DEN-123 relates_to DEN-950",
+		Example:   example,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !slices.Contains(relationTypes, args[1]) {
 				return cli.UsageErrorf("unknown relation %q: use %s", args[1], strings.Join(relationTypes, ", "))
 			}
 			return planecli.PlaneRun(func(c *plane.Client) error {
-				return runChronosLink(cmd.Context(), c, args[0], args[1], args[2], cmd.OutOrStdout())
+				return run(cmd.Context(), c, args[0], args[1], args[2], cmd.OutOrStdout())
 			})
 		},
 	}
@@ -320,6 +330,23 @@ func runChronosLink(ctx context.Context, client *plane.Client, a, rel, b string,
 		return fmt.Errorf("link issues in Plane: %w", err)
 	}
 	fmt.Fprintf(out, "[✓] Successfully linked %s -> %s (%s) for Plane Gantt dependency view\n", a, b, rel)
+	return nil
+}
+
+// runChronosUnlink removes the relation rel between a and b (the reverse of runChronosLink).
+func runChronosUnlink(ctx context.Context, client *plane.Client, a, rel, b string, out io.Writer) error {
+	uA, err := resolvePlaneTicketUUID(ctx, client, a)
+	if err != nil {
+		return err
+	}
+	uB, err := resolvePlaneTicketUUID(ctx, client, b)
+	if err != nil {
+		return err
+	}
+	if err := client.RemoveIssueRelation(ctx, uA, rel, uB); err != nil {
+		return fmt.Errorf("unlink issues in Plane: %w", err)
+	}
+	fmt.Fprintf(out, "[✓] Removed the %s relation from %s to %s\n", rel, a, b)
 	return nil
 }
 

@@ -154,8 +154,10 @@ func stepsMatching(markdown string, done bool) string {
 type HookInput struct {
 	SessionID string `json:"session_id"`
 	Cwd       string `json:"cwd"`
-	ToolName  string `json:"tool_name"`
-	ToolInput struct {
+	// TranscriptPath is the session's JSONL transcript, sent with the Stop and SessionEnd events.
+	TranscriptPath string `json:"transcript_path"`
+	ToolName       string `json:"tool_name"`
+	ToolInput      struct {
 		FilePath     string `json:"file_path"`
 		NotebookPath string `json:"notebook_path"`
 		Plan         string `json:"plan"`

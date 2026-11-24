@@ -39,6 +39,35 @@ func TestDiagnoseAGYReportsEachState(t *testing.T) {
 	}
 }
 
+func TestDiagnoseAGYReportsWhetherTheReaToolsAreReachable(t *testing.T) {
+	cases := []struct {
+		name  string
+		tools []string
+		err   error
+		want  string
+	}{
+		{"served", []string{"dendrite_rea_analyze", "dendrite_rea_handoff"}, nil, "[✓] AGY: 2 dendrite_rea_ tools reachable (dendrite_rea_analyze, dendrite_rea_handoff)"},
+		{"none served", nil, nil, "serves no dendrite_rea_ tools"},
+		{"server cannot be listed", nil, errors.New("start dendrite: not found"), "cannot list the tools of the dendrite server (start dendrite: not found)"},
+	}
+	oldStatus, oldTools := cli.AgyMCPStatus, cli.AgyReaTools
+	t.Cleanup(func() { cli.AgyMCPStatus, cli.AgyReaTools = oldStatus, oldTools })
+	cli.AgyMCPStatus = func(string) (bootstrap.AGYMCPState, error) { return bootstrap.AGYRegistered, nil }
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cli.AgyReaTools = func(string) ([]string, error) { return c.tools, c.err }
+			var out bytes.Buffer
+			env.DiagnoseAGY(&out)
+			if !strings.Contains(out.String(), c.want) {
+				t.Errorf("%q, want %q", out.String(), c.want)
+			}
+		})
+	}
+	cli.AgyMCPStatus = func(string) (bootstrap.AGYMCPState, error) { return bootstrap.AGYNotRegistered, nil }
+	cli.AgyReaTools = func(string) ([]string, error) { t.Error("an unregistered server is not started"); return nil, nil }
+	env.DiagnoseAGY(&bytes.Buffer{})
+}
+
 func TestRegisterWithAGYLines(t *testing.T) {
 	old := cli.AgyRegister
 	t.Cleanup(func() { cli.AgyRegister = old })

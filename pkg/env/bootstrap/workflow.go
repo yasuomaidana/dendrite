@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"Dendrite/pkg/branchpolicy"
+	"Dendrite/pkg/directive"
 )
 
 // DendriteWorkflowSkill is the managed skill every agent family (Claude, Antigravity/AGY,
@@ -34,12 +35,13 @@ var dendriteWorkflowRules = []string{
 	"Pick work from Plane with `dendrite chronos next` (alias `plane next`, or the `dendrite_ticket_smart_select` MCP tool), never from `DEV_STATUS.md`.",
 	"Every change follows one ticket through its lifecycle, and a write lock enforces it: `dendrite hook pre-edit` refuses file changes in a working copy that has no claim. Pull the ticket (`dendrite chronos next`) or create it (`dendrite chronos create --name \"...\" --desc \"goal and acceptance criteria\"`), design the plan, then start it with `dendrite work new <ticket>`, which moves it to In Progress and claims it for the new copy (a claim by hand: `dendrite chronos claim <ticket>` or the `dendrite_ticket_claim` MCP tool; `dendrite_query_context` returns the ticket, its criteria and any saved plan). Each `dendrite quantal` commit and each `dendrite session checkpoint` leaves a comment on the ticket, and a plan you did not finish is stored on it (`dendrite chronos plan push`) so the next session resumes from it. When the work is finished run `dendrite chronos finish <ticket>` (MCP `dendrite_ticket_finish`): it runs the quality gate and checks the diff against each `[AC-n]`, then sets `done` when the project allows it (directive `[done] auto_done`) and the ticket has no `needs-human-review` label, `to verify` otherwise, and `blocked` with a handoff (completed, challenges, missing) when a check fails. To stop for another reason use `dendrite chronos handoff <ticket>` (blocked: write what it waits on and what is missing), `dendrite chronos ticket set <ticket> cancelled` when it is dropped or `backlog` when it is parked. Record every question you asked and the answer you got on the ticket: Claude Code's `AskUserQuestion` is stored by a hook, any other agent runs `dendrite chronos decision <ticket> --question \"...\" --answer \"...\"` (MCP `dendrite_ticket_decision`), and `dendrite chronos comments <ticket>` reads them and any handoff back. The limits every change is held to (production lines per file, coverage, duplication, whether agents may set `done`) are the project's directives in `.github/dendrite/directives.toml`; repeated code is removed with a helper function, or with a macro where a function cannot express it, and Rust tests use the `rstest` crate (`rstest = \"0.28.0\"`: `#[case]`, `#[values]`, `#[fixture]`) rather than hand-written copies or imitating helpers (directive `[duplication] strategies`); change them with `dendrite directive \"<rule>\"`, never by hand-editing CI, and check a change against them with `dendrite allostasis gate` (`--since origin/{integration}` judges only what you changed). A challenge found mid-plan is a new ticket linked with `dendrite chronos link`. Bypass the guards only deliberately, with `--no-ticket-guard`.",
 	"Every repository we can modify is a Plane project: run `dendrite chronos project ensure` in it (it writes the local `.dendrite/plane.json` that `dendrite chronos`, `sync` and agents read; never commit anything under `.dendrite/`, and in a fresh clone this command recovers the project's identity). Repositories that depend on each other belong to the same synapse (`dendrite synapse create`). `dendrite chronos project audit` lists any repository that breaks this rule.",
-	"Work on your own branch, never directly on {protected} (nor on the trunk of another ticket): run `dendrite work new <ticket>` for each ticket. It creates a git worktree in `dendrite-work/` next to the main checkout, on a branch named after the ticket: its own trunk `<TICKET>-<slug>/main`, which merges into `{integration}`, or, for a sub-ticket of a Plane parent, `<ROOT>-<slug>/<TICKET>-<slug>`, which merges into the trunk `<ROOT>-<slug>/main` of its top-most parent (`dendrite branch show --ticket <ticket>` says which; `dendrite branch parent <ticket> <parent>` links tickets; `--target <branch>` overrides). Never hand-make `git clone` or `git worktree add ../<dir>` copies: those mix with human projects and are never cleaned up.",
+	"Work on your own branch, never directly on {protected} (nor on the trunk of another ticket): run `dendrite work new <ticket>` for each ticket. It creates a git worktree in `dendrite-work/` next to the main checkout, on a branch named after the ticket: its own trunk `<TICKET>-<slug>/main`, which merges into `{integration}`, or, for a sub-ticket of a Plane parent, `<ROOT>-<slug>/<TICKET>-<slug>`, which merges into the trunk `<ROOT>-<slug>/main` of its top-most parent (`dendrite branch show --ticket <ticket>` says which; `dendrite branch parent <ticket> <parent>` links tickets, `dendrite branch parent <ticket> --clear` unlinks one; `--target <branch>` overrides). Never hand-make `git clone` or `git worktree add ../<dir>` copies: those mix with human projects and are never cleaned up.",
 	"Commit with `dendrite quantal` (alias `commit`; it references the ticket and pushes your branch to origin, never to main/master).",
 	"{finish}",
 	"Explore with Dendrite before any raw text search, cheapest first: `dendrite rag search`/`dendrite_rag_retrieve` (detail `map`, then `dendrite rag show`/`dendrite_rag_show` for the bodies you need), `dendrite rag symbols` for definitions and references, `dendrite graph` (`dendrite_graph_explain`, `dendrite_graph_path`) for callers and structure, `dendrite rag history` for past changes, and `dendrite ask` for questions. `dendrite rag grep` is the exact-pattern fallback (index-aware, capped). Use `rg`/`grep`/`find` only when those return nothing, and then scoped to a path with a result cap, because unscoped `rg` output costs far more tokens than a retrieval map.",
 	"Questions about tickets (status, blockers, what a ticket is for) go to Plane through Dendrite: `dendrite ask --corpus tickets \"...\"` or `dendrite rag search --corpus tickets \"...\"` (MCP: `dendrite_rag_retrieve` with corpus `tickets`) for open questions, and `dendrite chronos`, `dendrite_plane_issues` or `dendrite_ticket_smart_select` for exact lookups. Never use `DEV_STATUS.md` or a search of the repository for this.",
 	"Route every LLM call through Dendrite: the LiteLLM gateway (`http://localhost:4000`) for model access and `dendrite bouton jobs submit --isolate` (alias `agent jobs`) to delegate to Antigravity (AGY) or other models. Do not call provider APIs or spawn other agent CLIs directly.",
+	"Reverse-engineering (REA) tickets are the ones the `[rea]` directive names (label `rea` or a `[REA]` title prefix). If you are a Claude session and refuse an REA ticket, do not leave it half done: run `dendrite retro handoff <ticket> --refused --reason \"...\"` (MCP `dendrite_rea_handoff`). AGY takes ownership: the refusal is recorded on the ticket, an AGY job starts in an isolated copy, the ticket is labelled `owner:agy` and a Claude session cannot claim it again without `--steal`. The Stop hook does the same when a session ends on a refusal. Change the rule with `dendrite directive set rea.refusal_owner=agy|none`; the `dendrite-rea` skill has the commands and how AGY works an REA ticket directly.",
 	"Run `dendrite session checkpoint` after each finished ticket and before long waits.",
 	"Save what the next session must know (decisions with their reason, verified findings, ticket outcomes) with `dendrite memory save --type decision|note|outcome \"<title>\" \"<body>\"` or Engram's own `mem_save`: it is journaled at once and flushed into Engram when the session ends (`dendrite memory flush` sends it now); `dendrite memory mode` says which memory stores are in use.",
 	"When a copy is finished and merged, `dendrite work gc` (or the next resume/checkpoint) deletes it; `dendrite work done <name>` removes one explicitly.",
@@ -215,4 +217,84 @@ func verifyWorkflowText(root string) error {
 		}
 	}
 	return nil
+}
+
+// DendriteREASkill is the managed skill that tells every agent family (Claude, Antigravity/AGY, Gemini, Copilot)
+// how reverse-engineering (REA) work is done and who owns it.
+const DendriteREASkill = "dendrite-rea"
+
+// renderDendriteREASkill renders the managed dendrite-rea SKILL.md for the project at root, naming the labels and
+// title prefixes its `[rea]` directive uses.
+func renderDendriteREASkill(root string) string {
+	rule := directive.Defaults().Rea
+	if set, err := directive.Load(root); err == nil {
+		rule = set.Rea
+	}
+	var sb strings.Builder
+	sb.WriteString("---\n")
+	sb.WriteString("name: " + DendriteREASkill + "\n")
+	sb.WriteString("description: Reverse-engineering (REA) work with Dendrite: who owns an REA ticket (Claude refuses, AGY owns), the retro commands and MCP tools, and how to keep evidence small. Use before starting, continuing or handing over an REA ticket, from any agent.\n")
+	sb.WriteString("---\n\n")
+	sb.WriteString("# Dendrite REA (reverse engineering)\n\n")
+	sb.WriteString("> Managed by `dendrite soma prepare`; edits here are overwritten. Change `pkg/env/bootstrap/workflow.go` instead.\n\n")
+	sb.WriteString("REA tickets are the ones this project's `[rea]` directive names: ")
+	sb.WriteString(reaMarkers(rule) + ". `dendrite retro` (aliases `rea`, `retrograde-analysis`) is the command group; the same tools are MCP tools, so Claude, AGY and any other agent can use them directly.\n\n")
+
+	sb.WriteString("## Who owns an REA ticket\n\n")
+	sb.WriteString(reaOwnership(rule))
+
+	sb.WriteString("\n## Commands and tools\n\n")
+	sb.WriteString("```bash\n")
+	sb.WriteString("dendrite retro list                                   # the open-source showcase targets\n")
+	sb.WriteString("dendrite retro showcase [target] [--format markdown]  # cleanroom analysis and parity check\n")
+	sb.WriteString("dendrite retro handoff DEN-123 --refused --reason \"...\" # hand a ticket you refuse to AGY\n")
+	sb.WriteString("dendrite retro analyze <target> [--format F] [--tier local|paid] [--model M]  # any file or directory (PE, ELF, Mach-O, ASAR/ZIP, JS bundle, source): inspect, write documents, index; prints a bounded evidence bundle and an id\n")
+	sb.WriteString("dendrite retro engines                               # open-source engines (rizin, radare2, objdump), license, and where each can run here\n")
+	sb.WriteString("dendrite retro engines build rizin                    # build an engine's container image (explicit; nothing pulls or builds by itself)\n")
+	sb.WriteString("dendrite retro analyze <target> --engine auto|rizin|radare2|objdump|none [--sandbox container|host --trusted]  # functions and disassembly from an engine, in a hardened container by default\n")
+	sb.WriteString("dendrite retro search <id> \"CreateFileW\" [-k 5]       # read only the best passages of the analysis\n")
+	sb.WriteString("dendrite retro pause <id>                             # stop at the next stage; the checkpoint is kept\n")
+	sb.WriteString("dendrite retro resume <id> [--tier paid --model M]    # continue, optionally on another tier or model\n")
+	sb.WriteString("dendrite retro purge <id> --force                     # delete documents, index and checkpoint\n")
+	sb.WriteString("dendrite retro reuse <id> [--synapse S] [-k 10]          # code in this project and its synapse that already does what the analysis found\n")
+	sb.WriteString("dendrite retro rank <id>                              # which documents of the analysis to read first\n")
+	sb.WriteString("dendrite retro adr <id> [--title T]                    # draft a proposed ADR (a person completes decision and consequences)\n")
+	sb.WriteString("dendrite retro analyze <target> --ticket DEN-123       # also leave a note with the summary and the id on the ticket\n")
+	sb.WriteString("```\n\n")
+	sb.WriteString("`dendrite retro export <id> --target-language rust|go|python|typescript --output DIR` (MCP `dendrite_rea_export`) writes a finished analysis of any format as a data module. Engines, their licenses, the container-first policy and the proprietary tools (documented only) are described in `docs/features/rea-engines.md`. MCP: `dendrite_rea_analyze`, `dendrite_rea_search`, `dendrite_rea_pause`, `dendrite_rea_resume`, `dendrite_rea_purge`, `dendrite_rea_reuse`, `dendrite_rea_rank`, `dendrite_rea_adr`, `dendrite_rea_engines` and `dendrite_rea_handoff`. The target is inspected by the dendrite-core sidecar (`bin.inspect`; an older one still reads PE images, and `dendrite update --dev` adds the other formats) and searched through the RAG sidecar. Register the server with AGY by running `dendrite soma prepare`; `dendrite soma diagnose` says whether AGY lists it.\n\n")
+
+	sb.WriteString("## Working an REA ticket (any agent)\n\n")
+	sb.WriteString("1. `dendrite chronos claim <ticket>` (or `dendrite work new <ticket>`), then `dendrite_query_context` for its criteria and plan.\n")
+	sb.WriteString("2. Explore with Dendrite before reading raw output: `dendrite rag search`, `dendrite rag symbols`, `dendrite graph`. Search the evidence you already extracted (`dendrite retro search <id> \"...\"`) instead of dumping it again.\n")
+	sb.WriteString("3. Keep every evidence bundle under 4,000 tokens: one function or one table at a time, with its cross-references and string constants.\n")
+	sb.WriteString("4. Run `dendrite retro reuse <id>` before writing code, then write an Architecture Decision Record (`dendrite retro adr <id>` drafts it, `docs/architecture/decisions/ADR-XXX.md`) before any implementation: decompile, understand, then recreate. Recreate cleanroom code with unit test vectors; never copy bytes or proprietary text into the repository.\n")
+	sb.WriteString("5. Engines run in a hardened container (no network, no capabilities, read-only root, the target mounted read-only) by default, and `--engine auto` takes the best usable open-source one; an untrusted binary is opened on the host only with `--sandbox host --trusted`. Set the project default with `dendrite directive set rea.engine=... rea.sandbox=...`.\n")
+	sb.WriteString("6. Commit with `dendrite quantal`, finish with `dendrite chronos finish`.\n")
+	return sb.String()
+}
+
+// reaMarkers says what makes a ticket REA work.
+func reaMarkers(r directive.Rea) string {
+	var parts []string
+	for _, l := range r.Labels {
+		parts = append(parts, fmt.Sprintf("the label `%s`", l))
+	}
+	for _, p := range r.TitlePrefixes {
+		parts = append(parts, fmt.Sprintf("a title starting `%s`", p))
+	}
+	if len(parts) == 0 {
+		return "none (no label or title prefix is configured)"
+	}
+	return strings.Join(parts, " or ")
+}
+
+// reaOwnership is the skill's ownership section: what happens when Claude refuses, or that nothing does.
+func reaOwnership(r directive.Rea) string {
+	if !strings.EqualFold(r.RefusalOwner, directive.RefusalOwnerAGY) {
+		return "A refused REA ticket stays with the session that claimed it (`rea.refusal_owner = none`).\n"
+	}
+	var sb strings.Builder
+	sb.WriteString("A Claude session that refuses an REA ticket must not leave it half done: run `dendrite retro handoff <ticket> --refused --reason \"...\"` (MCP `dendrite_rea_handoff`). AGY takes ownership: the refusal is recorded as a decision on the ticket, an AGY job starts in an isolated working copy, the ticket is labelled `" + directive.ReaOwnerLabel + "` and the Claude claim is released. A Claude session cannot claim it again without `--steal`.\n\n")
+	sb.WriteString("The Stop hook does this by itself when the API ends a turn with a refusal, and the session-end hook also when a session ends on a short, tool-free reply that only declines. **AGY sessions** have no such hooks: an AGY session that owns an REA ticket (the `" + directive.ReaOwnerLabel + "` label, or a job started by the handoff) simply works it as above, and may start any other REA ticket itself with `dendrite chronos claim <ticket> --agent agy`.\n")
+	return sb.String()
 }

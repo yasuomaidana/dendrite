@@ -24,6 +24,20 @@ func preToolEntries(t *testing.T, doc []byte) []map[string]any {
 	return m.Hooks.PreToolUse
 }
 
+func TestMergeInstallsTheStopHookThatHandsRefusedREATicketsToAGY(t *testing.T) {
+	out, _, err := mergeClaudeHooks(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Hooks map[string][]map[string]any `json:"hooks"`
+	}
+	_ = json.Unmarshal(out, &doc)
+	if stop := doc.Hooks["Stop"]; len(stop) != 1 || stop[0]["matcher"] != nil || hookCommandOf(stop[0]) != stopCommand {
+		t.Errorf("Stop = %v", stop)
+	}
+}
+
 func TestMergeCreatesTheHookInAnEmptySettingsFile(t *testing.T) {
 	out, changed, err := mergeClaudeHooks(nil)
 	if err != nil || !changed {
@@ -196,7 +210,7 @@ func TestEditLockHookFailsClosed(t *testing.T) {
 }
 
 func TestPlanAndSessionEndHooksNeverFailTheAgent(t *testing.T) {
-	for name, command := range map[string]string{"plan-saved": planSavedCommand, "session-end": sessionEndCommand} {
+	for name, command := range map[string]string{"plan-saved": planSavedCommand, "session-end": sessionEndCommand, "stop": stopCommand} {
 		if exit, _ := runHookCommand(t, command, nil); exit != 0 {
 			t.Errorf("%s with no dendrite: exit %d", name, exit)
 		}
