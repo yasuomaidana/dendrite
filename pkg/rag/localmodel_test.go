@@ -98,3 +98,17 @@ func TestPreferLocalModelAsksTheGatewayOncePerMinute(t *testing.T) {
 		t.Errorf("asked = %d after a second key, want 2", asked)
 	}
 }
+
+func TestPickLocalSkipsUnknownEndpointsAndFailsWhenNothingAnswers(t *testing.T) {
+	clearEndpoints(t)
+	free := 0.0
+	unknown := gatewayModel{ModelName: "elsewhere"}
+	unknown.ModelInfo.InputCostPerToken = &free
+	unknown.LiteLLMParams.APIBase = "http://nowhere.invalid:9/v1"
+	if got, ok := pickLocal([]gatewayModel{unknown}, func(string) bool { return true }); ok {
+		t.Fatalf("a model on an unknown engine is not a choice: %+v", got)
+	}
+	if got, ok := pickLocal(gatewayModels(t), func(string) bool { return false }); ok {
+		t.Fatalf("with no engine answering there is no choice: %+v", got)
+	}
+}
