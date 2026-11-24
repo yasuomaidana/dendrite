@@ -46,9 +46,8 @@ func gatewayURL() string {
 	return strings.TrimSuffix(strings.TrimRight(base, "/"), "/v1")
 }
 
-// PreferLocalModel picks the gateway's local chat model on the most preferred engine that
-// runs on a GPU and is reachable: GPU-capable engines first, OxiLLaMa (CPU prefill) never
-// (inference.EnginePreference, inference.GPUAccelerated). Among equals it keeps the
+// PreferLocalModel picks the gateway's local chat model on the most preferred reachable
+// engine (inference.EnginePreference). Among equals it keeps the
 // sidecar's default alias, then coder models. ok is false when the gateway cannot be asked
 // or serves no such model; the sidecar's default applies then.
 func PreferLocalModel(ctx context.Context, key string) (LocalChoice, bool) {
@@ -125,7 +124,7 @@ func pickLocal(models []gatewayModel, up func(addr string) bool) (LocalChoice, b
 		if !ok && strings.HasPrefix(m.LiteLLMParams.Model, "ollama") {
 			engine, ok = inference.EngineOllama, true
 		}
-		if !ok || !inference.GPUAccelerated(engine) {
+		if !ok {
 			continue
 		}
 		cands = append(cands, candidate{LocalChoice{m.ModelName, engine}, inference.HostAddress(m.LiteLLMParams.APIBase)})

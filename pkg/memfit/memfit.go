@@ -32,7 +32,7 @@ const (
 	EnvGuard    = "DENDRITE_MODEL_GUARD" // "off" disables the call-time guard
 
 	DefaultOllamaEndpoint   = "http://127.0.0.1:11434"
-	DefaultOxiLLaMaEndpoint = "http://127.0.0.1:8080"
+	DefaultLlamaCppEndpoint = "http://127.0.0.1:8080"
 )
 
 // ErrTooLarge means a model would not fit in the memory budget.
@@ -110,7 +110,7 @@ func GB(b uint64) string { return fmt.Sprintf("%.1f GB", float64(b)/(1<<30)) }
 // Model is one installed model and whether it can run here.
 type Model struct {
 	Name      string `json:"name"`
-	Engine    string `json:"engine"` // "ollama" or "oxillama"
+	Engine    string `json:"engine"` // "ollama" or "llamacpp"
 	SizeBytes int64  `json:"size_bytes"`
 	Resident  bool   `json:"resident"` // currently loaded in memory
 	Fits      bool   `json:"fits"`
@@ -124,48 +124,48 @@ type Report struct {
 	ResidentBytes   uint64  `json:"resident_bytes"`
 	Models          []Model `json:"models"`
 	OllamaReachable bool    `json:"ollama_reachable"`
-	OxiReachable    bool    `json:"oxillama_reachable"`
+	LlamaReachable  bool    `json:"llamacpp_reachable"`
 }
 
-// Assess lists the models installed on the local Ollama and OxiLLaMa and marks which fit. An
+// Assess lists the models installed on the local Ollama and llama-server and marks which fit. An
 // engine that is not running contributes nothing. Models are sorted largest first within an engine.
-func Assess(ctx context.Context, ollamaEndpoint, oxiEndpoint string) Report {
+func Assess(ctx context.Context, ollamaEndpoint, llamaEndpoint string) Report {
 	hc := &http.Client{Timeout: 3 * time.Second}
 	if ollamaEndpoint == "" {
 		ollamaEndpoint = DefaultOllamaEndpoint
 	}
-	if oxiEndpoint == "" {
-		oxiEndpoint = DefaultOxiLLaMaEndpoint
+	if llamaEndpoint == "" {
+		llamaEndpoint = DefaultLlamaCppEndpoint
 	}
 	r := Report{TotalRAMBytes: TotalRAMBytes(), BudgetBytes: BudgetBytes()}
 
 	tags, tagsErr := ollamaTags(ctx, hc, ollamaEndpoint)
 	loaded, _ := ollamaLoaded(ctx, hc, ollamaEndpoint)
 	r.OllamaReachable = tagsErr == nil
-	oxiName, oxiSize, oxiErr := oxiServed(ctx, hc, oxiEndpoint)
-	r.OxiReachable = oxiErr == nil
+	llamaName, llamaSize, llamaErr := llamaServed(ctx, hc, llamaEndpoint)
+	r.LlamaReachable = llamaErr == nil
 
 	var ollamaResident uint64
 	for _, sz := range loaded {
 		ollamaResident += uint64(sz)
 	}
-	var oxiResident uint64
-	if r.OxiReachable && oxiSize > 0 {
-		oxiResident = uint64(oxiSize)
+	var llamaResident uint64
+	if r.LlamaReachable && llamaSize > 0 {
+		llamaResident = uint64(llamaSize)
 	}
-	r.ResidentBytes = ollamaResident + oxiResident
+	r.ResidentBytes = ollamaResident + llamaResident
 
 	for name, sz := range tags {
 		_, isLoaded := loaded[name]
 		// Ollama evicts its own loaded models to make room, so only the other engine's weights
 		// count against an Ollama model.
-		fits, why := Fits(sz, r.BudgetBytes, oxiResident)
+		fits, why := Fits(sz, r.BudgetBytes, llamaResident)
 		r.Models = append(r.Models, Model{Name: name, Engine: "ollama", SizeBytes: sz, Resident: isLoaded, Fits: fits, Reason: why})
 	}
-	if r.OxiReachable {
-		// OxiLLaMa already holds its model; it fits when Ollama's loaded models leave room for it.
-		fits, why := Fits(oxiSize, r.BudgetBytes, ollamaResident)
-		r.Models = append(r.Models, Model{Name: oxiName, Engine: "oxillama", SizeBytes: oxiSize, Resident: true, Fits: fits, Reason: why})
+	if r.LlamaReachable {
+		// llama-server already holds its model; it fits when Ollama's loaded models leave room for it.
+		fits, why := Fits(llamaSize, r.BudgetBytes, ollamaResident)
+		r.Models = append(r.Models, Model{Name: llamaName, Engine: "llamacpp", SizeBytes: llamaSize, Resident: true, Fits: fits, Reason: why})
 	}
 	sort.SliceStable(r.Models, func(i, j int) bool {
 		if r.Models[i].Engine != r.Models[j].Engine {
@@ -266,9 +266,9 @@ func ollamaModelSizes(ctx context.Context, hc *http.Client, endpoint, path strin
 	return out, nil
 }
 
-// oxiServed returns the model OxiLLaMa serves and the size of its GGUF file under
-// $HOME/.oxillama/models (0 when the file cannot be matched).
-func oxiServed(ctx context.Context, hc *http.Client, endpoint string) (string, int64, error) {
+// llamaServed returns the model llama-server serves and the size of its GGUF file under
+// the models directory (0 when the file cannot be matched).
+func llamaServed(ctx context.Context, hc *http.Client, endpoint string) (string, int64, error) {
 	var res struct {
 		Data []struct {
 			ID string `json:"id"`
@@ -278,20 +278,36 @@ func oxiServed(ctx context.Context, hc *http.Client, endpoint string) (string, i
 		return "", 0, err
 	}
 	if len(res.Data) == 0 {
-		return "", 0, errors.New("oxillama serves no model")
+		return "", 0, errors.New("llama-server serves no model")
 	}
 	id := res.Data[0].ID
 	return id, ggufSize(id), nil
 }
 
+// modelsDir is where managed GGUF models live: DENDRITE_GGUF_MODELS_DIR, else $DENDRITE_HOME/models
+// (default ~/.dendrite/models). It repeats llamalease.ModelsDir because this package imports nothing.
+func modelsDir() string {
+	if d := os.Getenv("DENDRITE_GGUF_MODELS_DIR"); d != "" {
+		return d
+	}
+	if h := os.Getenv("DENDRITE_HOME"); h != "" {
+		return filepath.Join(h, "models")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".dendrite", "models")
+}
+
 // ggufSize finds the GGUF whose directory name matches the model id (qwen3-8b-q4_k_m matches
 // qwen3_8b_q4km); with a single model installed that one is used.
 func ggufSize(id string) int64 {
-	home, err := os.UserHomeDir()
-	if err != nil {
+	dir := modelsDir()
+	if dir == "" {
 		return 0
 	}
-	files, _ := filepath.Glob(filepath.Join(home, ".oxillama", "models", "*", "*.gguf"))
+	files, _ := filepath.Glob(filepath.Join(dir, "*", "*.gguf"))
 	norm := func(s string) string {
 		return strings.NewReplacer("-", "", "_", "", ".", "", ":", "").Replace(strings.ToLower(s))
 	}

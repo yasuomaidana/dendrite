@@ -178,7 +178,7 @@ func TestDefaultTools_Execution(t *testing.T) {
 	}
 
 	// 5. dendrite_inference_probe
-	infProbeReq := `{"jsonrpc": "2.0", "id": 14, "method": "tools/call", "params": {"name": "dendrite_inference_probe", "arguments": {"engine_id": "oxillama-rust"}}}`
+	infProbeReq := `{"jsonrpc": "2.0", "id": 14, "method": "tools/call", "params": {"name": "dendrite_inference_probe", "arguments": {"engine_id": "llamacpp-local"}}}`
 	infProbeResp := srv.HandleRequest(context.Background(), []byte(infProbeReq))
 	if infProbeResp.Error != nil {
 		t.Fatalf("dendrite_inference_probe error: %v", infProbeResp.Error)
@@ -195,7 +195,7 @@ func TestDefaultTools_Execution(t *testing.T) {
 
 func TestTriageTierAndEngineNames(t *testing.T) {
 	srv := mcptest.ToolsWith(t, nil, "")
-	for _, engine := range []string{"ollama", "ollama-validated", "huggingface", "hf", "candle", "oxillama", ""} {
+	for _, engine := range []string{"ollama", "ollama-validated", "huggingface", "hf", "candle", "llamacpp", ""} {
 		for _, tier := range []string{"local", "hybrid", "cloud", ""} {
 			mcptest.CallTool(t, srv, "dendrite_local_agent_triage", `{"prompt":"fix a typo","target_engine":"`+engine+`","force_tier":"`+tier+`"}`)
 		}
@@ -289,7 +289,7 @@ func TestTools_Triage(t *testing.T) {
 
 	// 2. Valid triage across force_tier options and engines
 	tiers := []string{"local", "hybrid", "cloud"}
-	engines := []string{"ollama", "ollama-validated", "huggingface", "candle", "oxillama"}
+	engines := []string{"ollama", "ollama-validated", "huggingface", "candle", "llamacpp"}
 
 	for i, tier := range tiers {
 		eng := engines[i%len(engines)]
@@ -1176,7 +1176,7 @@ func TestTools_InferenceAndPenpot(t *testing.T) {
 	mcptest.ExpectToolError(t, srv, mReq1, "expected error for missing model")
 
 	// 2. dendrite_inference_migrate_model: valid
-	mReq2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_inference_migrate_model", "arguments": {"model": "qwen2.5:7b", "source_engine": "ollama", "target_engine": "oxillama", "delete_source": false, "dry_run": true}}}`
+	mReq2 := `{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "dendrite_inference_migrate_model", "arguments": {"model": "qwen2.5:7b", "source_engine": "ollama", "target_engine": "llamacpp", "delete_source": false, "dry_run": true}}}`
 	mcptest.RequireResponse(t, srv, mReq2, "expected response for migrate_model")
 
 	// 3. dendrite_ui_penpot_sync: missing file error
@@ -1946,7 +1946,7 @@ func testTools_DendriteTelemetryAndInferenceStep4(t *testing.T, srv *Server) {
 
 // testTools_DendriteTelemetryAndInferenceStep5: dendrite_inference_probe single engine
 func testTools_DendriteTelemetryAndInferenceStep5(t *testing.T, srv *Server) {
-	pReq2 := `{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_inference_probe", "arguments": {"engine_id": "oxillama-rust"}}}`
+	pReq2 := `{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "dendrite_inference_probe", "arguments": {"engine_id": "llamacpp-local"}}}`
 	mcptest.MustHandle(t, srv, pReq2, "inference probe single error")
 }
 

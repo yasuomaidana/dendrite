@@ -16,12 +16,11 @@ type defaultEndpoint struct {
 
 var defaultEndpoints = []defaultEndpoint{
 	{EngineOllama, "DENDRITE_OLLAMA_ENDPOINT", "http://127.0.0.1:11434"},
-	{EngineOxiLLaMa, "DENDRITE_OXILLAMA_ENDPOINT", "http://127.0.0.1:8080"},
 	{EngineVLLM, "DENDRITE_VLLM_ENDPOINT", "http://vllm-node:8000"},
 	{EngineHuggingFaceTGI, "DENDRITE_HF_TGI_ENDPOINT", "http://tgi-node:8080"},
 	{EngineHuggingFaceTEI, "DENDRITE_HF_TEI_ENDPOINT", "http://localhost:8082"},
 	{EngineCandle, "DENDRITE_CANDLE_ENDPOINT", "http://127.0.0.1:8083"},
-	{EngineLlamaCpp, "DENDRITE_LLAMACPP_ENDPOINT", "http://localhost:8081"},
+	{EngineLlamaCpp, "DENDRITE_LLAMACPP_ENDPOINT", "http://127.0.0.1:8080"},
 }
 
 // endpointFor returns the endpoint of an engine type (environment, then default).

@@ -2,7 +2,7 @@
 # ==============================================================================
 # Dendrite & Personal Context Subsystems: Automated Installer Helpers
 # Part of FEAT-101 (Personal Context, Topic Memory Zero State & Installer Helpers)
-# Governing Tickets: DEN-804 (Pre-Flight Audit), DEN-805 (Ollama & OxiLLaMa Provisioner)
+# Governing Tickets: DEN-804 (Pre-Flight Audit), DEN-805 (Ollama & llama.cpp Provisioner), DEN-933
 # ==============================================================================
 set -euo pipefail
 
@@ -15,7 +15,7 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 OLLAMA_HOST="${OLLAMA_HOST:-http://127.0.0.1:11434}"
-OXILLAMA_HOST="${OXILLAMA_HOST:-http://127.0.0.1:8080}"
+LLAMACPP_HOST="${LLAMACPP_HOST:-http://127.0.0.1:8080}"
 LITELLM_HOST="${LITELLM_HOST:-http://127.0.0.1:4000}"
 PLANE_HOST="${PLANE_HOST:-http://127.0.0.1:8090}"
 
@@ -38,7 +38,7 @@ log_error() {
 banner() {
     echo -e "${BOLD}${BLUE}"
     echo "======================================================================="
-    echo "  Dendrite Installer Helpers: Pre-Flight, OxiLLaMa & Provisioning (FEAT-101)"
+    echo "  Dendrite Installer Helpers: Pre-Flight, llama.cpp & Provisioning (FEAT-101)"
     echo "======================================================================="
     echo -e "${NC}"
 }
@@ -49,9 +49,9 @@ usage() {
     echo "Options:"
     echo "  --preflight     Run pre-flight environment, tool, and port audits"
     echo "  --models        Provision zero-cost Ollama models (llama3.2, nomic-embed)"
-    echo "  --oxillama      Probe and verify OxiLLaMa pure-Rust GGUF inference daemon (:8080)"
+    echo "  --llamacpp      Install llama.cpp (llama-server) when missing and probe it (:8080)"
     echo "  --plane         Verify Plane v2 connection and synchronize project DEN"
-    echo "  --full          Run end-to-end setup (preflight + models + oxillama + plane + gateway)"
+    echo "  --full          Run end-to-end setup (preflight + models + llamacpp + plane + gateway)"
     echo "  --help          Display this help message"
     echo ""
 }
@@ -76,13 +76,11 @@ check_prerequisites() {
         fi
     done
 
-    # Check for Rust toolchain for OxiLLaMa native compilation
-    if command -v cargo >/dev/null 2>&1; then
-        local rust_ver
-        rust_ver="$(cargo --version | head -n 1)"
-        log_success "Rust Toolchain: $rust_ver (OxiLLaMa compilation ready)"
+    # Check for the llama.cpp server binary
+    if command -v llama-server >/dev/null 2>&1; then
+        log_success "llama-server available: $(command -v llama-server)"
     else
-        log_warn "Cargo not found in PATH. Pre-built OxiLLaMa binary required."
+        log_warn "llama-server not found in PATH. Run: $0 --llamacpp"
     fi
 
     # Check for hardware acceleration (Apple Silicon Metal or NVIDIA CUDA)
@@ -102,7 +100,7 @@ check_prerequisites() {
 # Gate 2: Audit Essential Ports
 audit_ports() {
     log_info "Gate 2: Auditing port availability and service bindings..."
-    # 11434: Ollama, 8080: OxiLLaMa, 4000: LiteLLM, 8090: Plane, 5432: Postgres, 6379: Redis
+    # 11434: Ollama, 8080: llama-server, 4000: LiteLLM, 8090: Plane, 5432: Postgres, 6379: Redis
     local ports=(11434 8080 4000 8090 5432 6379)
     for port in "${ports[@]}"; do
         if lsof -i ":$port" >/dev/null 2>&1; then
@@ -138,19 +136,64 @@ provision_models() {
     done
 }
 
-# Gate 3B: Probe & Verify OxiLLaMa Pure-Rust GGUF Engine
-probe_oxillama() {
-    log_info "Gate 3B: Probing OxiLLaMa pure-Rust inference engine at $OXILLAMA_HOST..."
-    if curl -s --max-time 3 "$OXILLAMA_HOST/health" >/dev/null 2>&1 || curl -s --max-time 3 "$OXILLAMA_HOST/v1/models" >/dev/null 2>&1; then
-        log_success "OxiLLaMa zero-FFI daemon is active and responding on $OXILLAMA_HOST"
+# Gate 3B: Install llama.cpp (llama-server) when missing
+install_llamacpp() {
+    if command -v llama-server >/dev/null 2>&1; then
+        log_success "llama-server already installed: $(command -v llama-server)"
+        return 0
+    fi
+    local os arch
+    os="$(uname -s)"
+    arch="$(uname -m)"
+    if command -v brew >/dev/null 2>&1; then
+        log_info "Installing llama.cpp with Homebrew..."
+        brew install llama.cpp
+    elif [[ "$os" == "Linux" ]]; then
+        local suffix
+        case "$arch" in
+            x86_64) suffix="ubuntu-x64" ;;
+            aarch64|arm64) suffix="ubuntu-arm64" ;;
+            *) log_error "No official llama.cpp release for $arch; build it from https://github.com/ggml-org/llama.cpp"; return 1 ;;
+        esac
+        log_info "Downloading the latest official llama.cpp release ($suffix)..."
+        local url tmp share="${HOME}/.local/share/llama.cpp" bindir="${HOME}/.local/bin"
+        url="$(curl -fsSL https://api.github.com/repos/ggml-org/llama.cpp/releases/latest \
+            | grep -o "https://[^\"]*bin-${suffix}[^\"]*\.zip" | head -n 1)"
+        if [[ -z "$url" ]]; then
+            log_error "Could not find a llama.cpp release asset for $suffix"
+            return 1
+        fi
+        tmp="$(mktemp -d)"
+        curl -fsSL "$url" -o "$tmp/llama.zip"
+        mkdir -p "$share" "$bindir"
+        unzip -q -o "$tmp/llama.zip" -d "$share"
+        rm -rf "$tmp"
+        local bin
+        bin="$(find "$share" -name llama-server -type f | head -n 1)"
+        if [[ -z "$bin" ]]; then
+            log_error "llama-server not found in the downloaded release"
+            return 1
+        fi
+        chmod +x "$bin"
+        ln -sf "$bin" "$bindir/llama-server"
+        log_success "llama-server installed at $bindir/llama-server (add $bindir to PATH)"
     else
-        log_info "OxiLLaMa daemon not currently responding on :8080 (standby mode)"
-        if command -v oxillama >/dev/null 2>&1; then
-            log_success "OxiLLaMa binary discovered in system PATH: $(command -v oxillama)"
-        elif [[ -f "./bin/oxillama" ]]; then
-            log_success "OxiLLaMa binary discovered in ./bin/oxillama"
+        log_error "Install llama.cpp manually: https://github.com/ggml-org/llama.cpp/releases"
+        return 1
+    fi
+}
+
+# Gate 3C: Probe & Verify the llama.cpp llama-server
+probe_llamacpp() {
+    log_info "Gate 3C: Probing llama-server at $LLAMACPP_HOST..."
+    if curl -s --max-time 3 "$LLAMACPP_HOST/health" >/dev/null 2>&1; then
+        log_success "llama-server is active and responding on $LLAMACPP_HOST"
+    else
+        log_info "llama-server not currently responding on :8080 (Dendrite starts it on demand)"
+        if command -v llama-server >/dev/null 2>&1; then
+            log_success "llama-server binary discovered in system PATH: $(command -v llama-server)"
         else
-            log_info "OxiLLaMa can be spawned on demand via: ./bin/dendrite spike zero-cost list"
+            log_info "llama-server not installed; run: $0 --llamacpp"
         fi
     fi
 }
@@ -184,13 +227,14 @@ main() {
         --preflight)
             check_prerequisites
             audit_ports
-            probe_oxillama
+            probe_llamacpp
             ;;
         --models)
             provision_models
             ;;
-        --oxillama)
-            probe_oxillama
+        --llamacpp)
+            install_llamacpp
+            probe_llamacpp
             ;;
         --plane)
             verify_plane
@@ -199,7 +243,8 @@ main() {
             check_prerequisites
             audit_ports
             provision_models
-            probe_oxillama
+            install_llamacpp
+            probe_llamacpp
             bootstrap_gateway
             verify_plane
             echo ""

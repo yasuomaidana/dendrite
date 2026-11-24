@@ -1,12 +1,14 @@
 package inference
 
 import (
+	"Dendrite/pkg/llamalease"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -19,7 +21,7 @@ type LlamaCppEngine struct {
 
 // NewLlamaCppEngine creates a llama.cpp engine adapter.
 func NewLlamaCppEngine(cfg EngineConfig, client *http.Client) *LlamaCppEngine {
-	cfg, client = initSelfHostedEngine(cfg, client, EngineLlamaCpp, "http://localhost:8081")
+	cfg, client = initSelfHostedEngine(cfg, client, EngineLlamaCpp, "http://127.0.0.1:8080")
 	return &LlamaCppEngine{
 		cfg:        cfg,
 		httpClient: client,
@@ -36,13 +38,13 @@ func (e *LlamaCppEngine) Generate(ctx context.Context, req CompletionRequest) (*
 		return nil, ErrEmptyPrompt
 	}
 
-	model := req.Model
-	if model == "" && len(e.cfg.Models) > 0 {
-		model = e.cfg.Models[0]
+	release, err := e.acquireLocalServer(ctx)
+	if err != nil {
+		return nil, err
 	}
-	if model == "" {
-		model = "llamacpp-gguf"
-	}
+	defer release()
+
+	model := e.modelFor(req)
 
 	payload := map[string]interface{}{
 		"prompt":      req.Prompt,
@@ -101,6 +103,17 @@ func (e *LlamaCppEngine) Generate(ctx context.Context, req CompletionRequest) (*
 	}, nil
 }
 
+// modelFor is the model a request names, else the engine's first configured model.
+func (e *LlamaCppEngine) modelFor(req CompletionRequest) string {
+	switch {
+	case req.Model != "":
+		return req.Model
+	case len(e.cfg.Models) > 0:
+		return e.cfg.Models[0]
+	}
+	return "llamacpp-gguf"
+}
+
 // llamaChunk is one data line of a llama.cpp stream.
 type llamaChunk struct {
 	Content string `json:"content"`
@@ -131,4 +144,39 @@ func (e *LlamaCppEngine) Health(ctx context.Context) EngineHealth {
 
 func (e *LlamaCppEngine) SupportedModels(ctx context.Context) ([]string, error) {
 	return fetchV1Models(ctx, e.httpClient, e.cfg.Endpoint, e.cfg.Models)
+}
+
+// The lease manager and the model choice behind acquireLocalServer; tests replace them so no server starts.
+var (
+	llamaManager     = llamalease.Default
+	llamaBestFitting = llamalease.BestFitting
+)
+
+// acquireLocalServer holds a lease on the local llama-server for the duration of one call, so the
+// server is started for the call and stopped once no session needs it. It does nothing for a remote
+// or non-default endpoint, or when DENDRITE_LLAMA_AUTOSTART=off.
+func (e *LlamaCppEngine) acquireLocalServer(ctx context.Context) (func(), error) {
+	noop := func() {}
+	if strings.EqualFold(os.Getenv("DENDRITE_LLAMA_AUTOSTART"), "off") {
+		return noop, nil
+	}
+	want := fmt.Sprintf("127.0.0.1:%d", llamalease.DefaultPort)
+	ep := strings.TrimPrefix(strings.TrimPrefix(strings.TrimRight(e.cfg.Endpoint, "/"), "http://"), "https://")
+	if ep != want && ep != fmt.Sprintf("localhost:%d", llamalease.DefaultPort) {
+		return noop, nil
+	}
+	mgr := llamaManager()
+	req := llamalease.Request{Holder: "engine:" + e.cfg.ID}
+	if !mgr.Running() { // only choose a model when one has to be started
+		m, err := llamaBestFitting(ctx)
+		if err != nil {
+			return noop, err
+		}
+		req.ModelPath, req.ModelID = m.Path, m.ID
+	}
+	lease, err := mgr.Acquire(ctx, req)
+	if err != nil {
+		return noop, err
+	}
+	return func() { _ = lease.Release() }, nil
 }

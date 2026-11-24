@@ -203,7 +203,7 @@ func TestManager_CascadeAndFailover(t *testing.T) {
 
 	// Test NewEngineFromConfig for all valid types
 	types := []EngineType{
-		EngineOllama, EngineOxiLLaMa, EngineHuggingFaceTGI,
+		EngineOllama, EngineHuggingFaceTGI,
 		EngineHuggingFaceTEI, EngineHuggingFaceEndpoint, EngineVLLM, EngineLlamaCpp,
 	}
 	for _, tp := range types {
@@ -240,11 +240,6 @@ func TestEngines_ErrorHandlingAndDefaults(t *testing.T) {
 		t.Errorf("unexpected ollama default endpoint")
 	}
 
-	oxillama := NewOxiLLaMaEngine(EngineConfig{}, nil)
-	if oxillama.Config().Endpoint != "http://127.0.0.1:8080" {
-		t.Errorf("unexpected oxillama default endpoint")
-	}
-
 	tgi := NewHuggingFaceTGIEngine(EngineConfig{}, nil)
 	if tgi.Config().Endpoint != "http://localhost:8080" {
 		t.Errorf("unexpected tgi default endpoint")
@@ -266,7 +261,7 @@ func TestEngines_ErrorHandlingAndDefaults(t *testing.T) {
 	}
 
 	llamacpp := NewLlamaCppEngine(EngineConfig{}, nil)
-	if llamacpp.Config().Endpoint != "http://localhost:8081" {
+	if llamacpp.Config().Endpoint != "http://127.0.0.1:8080" {
 		t.Errorf("unexpected llamacpp default endpoint")
 	}
 
@@ -285,15 +280,6 @@ func TestEngines_ErrorHandlingAndDefaults(t *testing.T) {
 	}
 	if _, err := oErr.SupportedModels(ctx); err == nil {
 		t.Errorf("expected error on ollama tags 500")
-	}
-
-	// OxiLLaMa 500
-	oxErr := NewOxiLLaMaEngine(EngineConfig{Endpoint: errServer.URL}, errServer.Client())
-	if _, err := oxErr.Generate(ctx, CompletionRequest{Prompt: "hi"}); err == nil {
-		t.Errorf("expected error on oxillama 500")
-	}
-	if _, err := oxErr.SupportedModels(ctx); err == nil {
-		t.Errorf("expected error on oxillama models 500")
 	}
 
 	// TGI 500
@@ -331,9 +317,6 @@ func TestEngines_ErrorHandlingAndDefaults(t *testing.T) {
 
 	// Dead endpoints
 	deadCfg := EngineConfig{Endpoint: "http://127.0.0.1:54321"}
-	if h := NewOxiLLaMaEngine(deadCfg, nil).Health(ctx); h.Reachable {
-		t.Errorf("expected dead oxillama unreachable")
-	}
 	if h := NewHuggingFaceTGIEngine(deadCfg, nil).Health(ctx); h.Reachable {
 		t.Errorf("expected dead tgi unreachable")
 	}
@@ -364,15 +347,15 @@ func TestEngines_ErrorHandlingAndDefaults(t *testing.T) {
 	// All failing cascade
 	mgr := NewManager()
 	_ = mgr.RegisterEngine(oErr)
-	_ = mgr.RegisterEngine(oxErr)
-	_ = mgr.SetCascadeOrder([]string{oErr.ID(), oxErr.ID()})
+	_ = mgr.RegisterEngine(llamaErr)
+	_ = mgr.SetCascadeOrder([]string{oErr.ID(), llamaErr.ID()})
 	if _, err := mgr.ExecuteWithCascade(ctx, CompletionRequest{Prompt: "failing"}); err == nil {
 		t.Errorf("expected error when all engines fail in cascade")
 	}
 }
 
 func TestDefaultManager_DynamicCascadeAndEnvOverrides(t *testing.T) {
-	oxServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	lcServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/models" {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -382,23 +365,23 @@ func TestDefaultManager_DynamicCascadeAndEnvOverrides(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer oxServer.Close()
+	defer lcServer.Close()
 
 	t.Setenv("DENDRITE_OLLAMA_ENDPOINT", "http://127.0.0.1:19999")
-	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", oxServer.URL)
-	t.Setenv("DENDRITE_OXILLAMA_MODELS", "custom-qwen:32b,custom-qwen:14b")
+	t.Setenv("DENDRITE_LLAMACPP_ENDPOINT", lcServer.URL)
+	t.Setenv("DENDRITE_LLAMACPP_MODELS", "custom-qwen:32b,custom-qwen:14b")
 
 	mgr := DefaultManager()
 	if mgr == nil {
 		t.Fatalf("expected non-nil manager")
 	}
 
-	eng, err := mgr.GetEngine("oxillama-rust")
+	eng, err := mgr.GetEngine("llamacpp-local")
 	if err != nil {
-		t.Fatalf("expected oxillama-rust registered: %v", err)
+		t.Fatalf("expected llamacpp-local registered: %v", err)
 	}
-	if eng.Config().Endpoint != oxServer.URL {
-		t.Errorf("expected oxillama custom endpoint, got %s", eng.Config().Endpoint)
+	if eng.Config().Endpoint != lcServer.URL {
+		t.Errorf("expected llamacpp custom endpoint, got %s", eng.Config().Endpoint)
 	}
 	if len(eng.Config().Models) != 2 || eng.Config().Models[0] != "custom-qwen:32b" {
 		t.Errorf("expected custom models, got %v", eng.Config().Models)
@@ -413,7 +396,7 @@ func TestDefaultManager_DynamicCascadeAndEnvOverrides(t *testing.T) {
 	}
 
 	order := mgr.GetCascadeOrder()
-	if len(order) == 0 || order[0] != "oxillama-rust" {
-		t.Errorf("expected oxillama-rust to be at index 0, got %v", order)
+	if len(order) == 0 || order[0] != "llamacpp-local" {
+		t.Errorf("expected llamacpp-local to be at index 0, got %v", order)
 	}
 }

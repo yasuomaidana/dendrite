@@ -206,8 +206,8 @@ func TestGatewayValidationError(t *testing.T) {
 	}
 }
 
-func TestDefaultLiteLLMConfig_OxiLLaMaRoutingWhenPresent(t *testing.T) {
-	oxServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestDefaultLiteLLMConfig_LlamaCppRoutingWhenPresent(t *testing.T) {
+	lcServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/models" {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"data":[{"id":"qwen3.8:27b"},{"id":"qwen3.5:9b"}]}`))
@@ -215,10 +215,10 @@ func TestDefaultLiteLLMConfig_OxiLLaMaRoutingWhenPresent(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer oxServer.Close()
+	defer lcServer.Close()
 
-	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", oxServer.URL)
-	t.Setenv("DENDRITE_GATEWAY_OXILLAMA_ROUTING", "true")
+	t.Setenv("DENDRITE_LLAMACPP_ENDPOINT", lcServer.URL)
+	t.Setenv("DENDRITE_GATEWAY_LLAMACPP_ROUTING", "true")
 
 	cfg := gateway.DefaultLiteLLMConfig("http://127.0.0.1:11434")
 	if cfg == nil {
@@ -236,8 +236,8 @@ func TestDefaultLiteLLMConfig_OxiLLaMaRoutingWhenPresent(t *testing.T) {
 			if m.LitellmParams.Model != "openai/qwen3.8:27b" {
 				t.Errorf("expected openai/qwen3.8:27b, got %s", m.LitellmParams.Model)
 			}
-			if !strings.Contains(m.LitellmParams.APIBase, oxServer.URL) {
-				t.Errorf("expected APIBase to point to oxServer, got %s", m.LitellmParams.APIBase)
+			if !strings.Contains(m.LitellmParams.APIBase, lcServer.URL) {
+				t.Errorf("expected APIBase to point to lcServer, got %s", m.LitellmParams.APIBase)
 			}
 		}
 		if m.ModelName == "local-qwen3-9b" {

@@ -114,7 +114,7 @@ func TestSubmit_SuccessAndDefaults(t *testing.T) {
 	}
 }
 
-func TestSubmit_DirectPrompt_OxillamaDefaults(t *testing.T) {
+func TestSubmit_DirectPrompt_LlamaCppDefaults(t *testing.T) {
 	tempLedger := NewLedger(t.TempDir())
 	binDir := t.TempDir()
 	dummyRunner := installExecutableScript(t, binDir, "dummy_dendrite", "exit 0\n")
@@ -123,7 +123,7 @@ func TestSubmit_DirectPrompt_OxillamaDefaults(t *testing.T) {
 	d.Executable = dummyRunner
 
 	spec := SubmitSpec{
-		Agent:  "oxillama",
+		Agent:  "llamacpp",
 		Prompt: "Solve ticket directly",
 	}
 
@@ -141,7 +141,7 @@ func TestSubmit_DirectPrompt_OxillamaDefaults(t *testing.T) {
 		t.Errorf("expected default ticket 'JOB', got %q", job.Ticket)
 	}
 	if job.Model != "default" {
-		t.Errorf("expected default model 'default' for oxillama, got %q", job.Model)
+		t.Errorf("expected default model 'default' for llamacpp, got %q", job.Model)
 	}
 }
 
@@ -362,19 +362,19 @@ func TestRunJob_QUOTA_WalksLadderThenParks(t *testing.T) {
 
 	var sleeps int64
 	quotaScript := "echo \"HTTP 429: RESOURCE_EXHAUSTED quota exceeded\"\nexit 1\n"
-	oxillama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	llamacpp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
 		_, _ = w.Write([]byte(`{"error":"rate limit"}`))
 	}))
-	defer oxillama.Close()
+	defer llamacpp.Close()
 
 	tempLedger := NewLedger(t.TempDir())
 	d := NewDispatcher(tempLedger)
 	d.Executable = installExecutableScript(t, t.TempDir(), "dummy_runner", "exit 0\n") // RunJob is driven synchronously below
 	d.AgyPath = installExecutableScript(t, binDir, "agy", quotaScript)
 	d.AiderPath = installExecutableScript(t, binDir, "aider", quotaScript)
-	d.OxillamaEndpoint = oxillama.URL
-	d.LiteLLMURL, d.LiteLLMKey = oxillama.URL+"/v1", "test-key" // the local tier goes through the gateway
+	d.LlamaCppEndpoint = llamacpp.URL
+	d.LiteLLMURL, d.LiteLLMKey = llamacpp.URL+"/v1", "test-key" // the local tier goes through the gateway
 	d.Sleep = func(time.Duration) { atomic.AddInt64(&sleeps, 1) }
 
 	id, err := d.Submit(SubmitSpec{Ticket: "DEN-990", Worktree: worktree, Prompt: "Hit quota", Complexity: 3})

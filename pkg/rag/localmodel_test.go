@@ -29,12 +29,12 @@ func gatewayModels(t *testing.T) []gatewayModel {
 }
 
 func clearEndpoints(t *testing.T) {
-	for _, v := range []string{"DENDRITE_OLLAMA_ENDPOINT", "DENDRITE_OXILLAMA_ENDPOINT", "DENDRITE_HF_TGI_ENDPOINT", "DENDRITE_VLLM_ENDPOINT", "DENDRITE_LLAMACPP_ENDPOINT", "DENDRITE_CANDLE_ENDPOINT", "DENDRITE_HF_TEI_ENDPOINT"} {
+	for _, v := range []string{"DENDRITE_OLLAMA_ENDPOINT", "DENDRITE_HF_TGI_ENDPOINT", "DENDRITE_VLLM_ENDPOINT", "DENDRITE_LLAMACPP_ENDPOINT", "DENDRITE_CANDLE_ENDPOINT", "DENDRITE_HF_TEI_ENDPOINT"} {
 		t.Setenv(v, "")
 	}
 }
 
-func TestPickLocalPrefersReachableGPUEngines(t *testing.T) {
+func TestPickLocalPrefersTheMostPreferredReachableEngine(t *testing.T) {
 	clearEndpoints(t)
 	models := gatewayModels(t)
 	all := func(string) bool { return true }
@@ -44,10 +44,10 @@ func TestPickLocalPrefersReachableGPUEngines(t *testing.T) {
 	onlyLocal := func(addr string) bool { return addr == "127.0.0.1:11434" || addr == "127.0.0.1:8080" }
 	got, ok := pickLocal(models, onlyLocal)
 	if !ok || got.Model != "local-coder" || got.Engine != "ollama" {
-		t.Fatalf("an unreachable GPU server is skipped, Ollama wins, OxiLLaMa never: %+v %v", got, ok)
+		t.Fatalf("an unreachable GPU server is skipped, Ollama wins: %+v %v", got, ok)
 	}
-	if _, ok := pickLocal(models, func(addr string) bool { return addr == "127.0.0.1:8080" }); ok {
-		t.Fatal("OxiLLaMa (CPU prefill) alone is no GPU choice")
+	if got, ok := pickLocal(models, func(addr string) bool { return addr == "127.0.0.1:8080" }); !ok || got.Engine != "llamacpp" {
+		t.Fatalf("llama.cpp alone is still a choice: %+v %v", got, ok)
 	}
 }
 
@@ -96,5 +96,19 @@ func TestPreferLocalModelAsksTheGatewayOncePerMinute(t *testing.T) {
 	PreferLocalModel(context.Background(), "sk-other")
 	if asked != 2 {
 		t.Errorf("asked = %d after a second key, want 2", asked)
+	}
+}
+
+func TestPickLocalSkipsUnknownEndpointsAndFailsWhenNothingAnswers(t *testing.T) {
+	clearEndpoints(t)
+	free := 0.0
+	unknown := gatewayModel{ModelName: "elsewhere"}
+	unknown.ModelInfo.InputCostPerToken = &free
+	unknown.LiteLLMParams.APIBase = "http://nowhere.invalid:9/v1"
+	if got, ok := pickLocal([]gatewayModel{unknown}, func(string) bool { return true }); ok {
+		t.Fatalf("a model on an unknown engine is not a choice: %+v", got)
+	}
+	if got, ok := pickLocal(gatewayModels(t), func(string) bool { return false }); ok {
+		t.Fatalf("with no engine answering there is no choice: %+v", got)
 	}
 }

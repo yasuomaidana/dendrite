@@ -6,7 +6,7 @@ sidebar_label: "dendrite_inference_migrate_model"
 
 # dendrite_inference_migrate_model
 
-Migrate models from Ollama to OxiLLaMa pure-Rust inference engine and evict source blobs to reclaim memory
+Migrate models from Ollama to llama.cpp (llama-server) and evict source blobs to reclaim memory
 
 ## Input Schema
 
@@ -14,7 +14,7 @@ Migrate models from Ollama to OxiLLaMa pure-Rust inference engine and evict sour
 {
   "properties": {
     "delete_source": {
-      "description": "If true, evicts model from source engine upon successful verification (default: false; OxiLLaMa runs prompts on the CPU, so keep the Ollama copy for GPU inference)",
+      "description": "If true, evicts model from source engine upon successful verification (default: false; llama.cpp runs prompts on the CPU, so keep the Ollama copy for GPU inference)",
       "type": "boolean"
     },
     "dry_run": {
@@ -30,7 +30,7 @@ Migrate models from Ollama to OxiLLaMa pure-Rust inference engine and evict sour
       "type": "string"
     },
     "target_engine": {
-      "description": "Target engine identifier (default: 'oxillama')",
+      "description": "Target engine identifier (default: 'llamacpp')",
       "type": "string"
     }
   },
@@ -56,7 +56,7 @@ Migrate models from Ollama to OxiLLaMa pure-Rust inference engine and evict sour
       "dry_run": false,
       "model": "sample",
       "source_engine": "'ollama'",
-      "target_engine": "'oxillama'"
+      "target_engine": "'llamacpp'"
     },
     "name": "dendrite_inference_migrate_model"
   }
@@ -66,5 +66,5 @@ Migrate models from Ollama to OxiLLaMa pure-Rust inference engine and evict sour
 ### CLI
 
 ```bash
-dendrite mcp call dendrite_inference_migrate_model '{"delete_source":false,"dry_run":false,"model":"sample","source_engine":"'ollama'","target_engine":"'oxillama'"}'
+dendrite mcp call dendrite_inference_migrate_model '{"delete_source":false,"dry_run":false,"model":"sample","source_engine":"'ollama'","target_engine":"'llamacpp'"}'
 ```

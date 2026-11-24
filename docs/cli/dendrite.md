@@ -69,7 +69,7 @@ Commands use Neuro-Lore names; the plain names listed as aliases work too.
 | [`greeting`](greeting.md) | `greet`, `pcontext-greeting` | Generate dynamic 10-style greeting with cliché suppression |
 | [`inter`](inter.md) | `mcp`, `interneuron-mcp` | Model Context Protocol (MCP) server over stdio |
 | [`session`](session.md) | `handoff` | Session checkpoint and resume for multi-agent coordination |
-| [`spike`](spike.md) | `inference`, `action-potential`, `inf` | Unified multi-provider inference engine gateway (Ollama, OxiLLaMa, vLLM, TGI) |
+| [`spike`](spike.md) | `inference`, `action-potential`, `inf` | Unified multi-provider inference engine gateway (Ollama, llama.cpp, vLLM, TGI) |
 | [`synapse`](synapse.md) | `syn`, `synapses` | Typed cross-project links with scoped MCP servers and self-healing paths |
 
 ### Axon & Myelin Sheath

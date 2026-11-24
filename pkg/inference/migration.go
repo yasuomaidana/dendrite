@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"Dendrite/pkg/llamalease"
 	"Dendrite/pkg/statedir"
 )
 
@@ -25,10 +26,10 @@ var (
 type ModelMigrationOptions struct {
 	ModelName    string `json:"model_name"`
 	SourceEngine string `json:"source_engine"` // default "ollama"
-	TargetEngine string `json:"target_engine"` // default "oxillama"
+	TargetEngine string `json:"target_engine"` // default "llamacpp"
 	DeleteSource bool   `json:"delete_source"` // evict from source engine on success to reclaim memory
 	OllamaDir    string `json:"ollama_dir"`    // defaults to ~/.ollama
-	OxillamaDir  string `json:"oxillama_dir"`  // defaults to ~/.oxillama
+	ModelsDir    string `json:"models_dir"`    // defaults to the llama-server models directory
 	DryRun       bool   `json:"dry_run"`
 }
 
@@ -42,7 +43,7 @@ type ModelMigrationResult struct {
 	SourceEvicted      bool          `json:"source_evicted"`
 	BytesFreed         int64         `json:"bytes_freed"`
 	Duration           time.Duration `json:"duration"`
-	TargetManifest     string        `json:"target_manifest"`
+	TargetModel        string        `json:"target_model"`
 	Success            bool          `json:"success"`
 	Error              string        `json:"error,omitempty"`
 }
@@ -66,66 +67,36 @@ type OllamaManifest struct {
 	Format        string                `json:"format,omitempty"`
 }
 
-// OxiLLaMaManifest represents the target model descriptor for OxiLLaMa pure-Rust inference.
-type OxiLLaMaManifest struct {
-	Name         string                `json:"name"`
-	Engine       string                `json:"engine"`
-	Runner       string                `json:"runner"`
-	Format       string                `json:"format"`
-	ConfigDigest string                `json:"config_digest"`
-	TotalSize    int64                 `json:"total_size"`
-	LayersCount  int                   `json:"layers_count"`
-	MigratedAt   time.Time             `json:"migrated_at"`
-	SourceEngine string                `json:"source_engine"`
-	Layers       []OllamaManifestLayer `json:"layers"`
-}
-
-// ModelMigrator manages model transfer between Ollama Metal and OxiLLaMa Rust engines.
+// ModelMigrator moves model weights from Ollama to the llama-server models directory.
 type ModelMigrator struct {
-	httpClient       *http.Client
-	ollamaEndpoint   string
-	oxillamaEndpoint string
-	ollamaDir        string
-	oxillamaDir      string
+	httpClient     *http.Client
+	ollamaEndpoint string
+	ollamaDir      string
 }
 
 // NewModelMigrator creates an instance of ModelMigrator with default or custom endpoints.
-func NewModelMigrator(ollamaEndpoint, oxillamaEndpoint string, client *http.Client) *ModelMigrator {
+func NewModelMigrator(ollamaEndpoint string, client *http.Client) *ModelMigrator {
 	if client == nil {
 		client = &http.Client{Timeout: 60 * time.Second}
 	}
 	if ollamaEndpoint == "" {
 		ollamaEndpoint = "http://127.0.0.1:11434"
 	}
-	if oxillamaEndpoint == "" {
-		oxillamaEndpoint = "http://127.0.0.1:8080"
-	}
 
 	home, _ := os.UserHomeDir()
 	return &ModelMigrator{
-		httpClient:       client,
-		ollamaEndpoint:   strings.TrimRight(ollamaEndpoint, "/"),
-		oxillamaEndpoint: strings.TrimRight(oxillamaEndpoint, "/"),
-		ollamaDir:        filepath.Join(home, ".ollama"),
-		oxillamaDir:      filepath.Join(home, ".oxillama"),
+		httpClient:     client,
+		ollamaEndpoint: strings.TrimRight(ollamaEndpoint, "/"),
+		ollamaDir:      filepath.Join(home, ".ollama"),
 	}
 }
 
-// Migrate executes model transfer from Ollama to OxiLLaMa with verification and source eviction.
+// Migrate places a model's GGUF weights, which Ollama stores as a plain GGUF blob, where
+// llama-server finds them (<models dir>/<model>/model.gguf plus an `id` file), verifies the
+// result and evicts the source on request.
 func (m *ModelMigrator) Migrate(ctx context.Context, opts ModelMigrationOptions) (*ModelMigrationResult, error) {
 	start := time.Now()
-	res := &ModelMigrationResult{
-		ModelName:    opts.ModelName,
-		SourceEngine: "ollama",
-		TargetEngine: "oxillama",
-	}
-
-	if opts.SourceEngine != "" {
-		res.SourceEngine = opts.SourceEngine
-	}
-	if opts.TargetEngine != "" {
-		res.TargetEngine = opts.TargetEngine
-	}
+	res := newMigrationResult(opts)
 
 	if strings.TrimSpace(opts.ModelName) == "" {
 		res.Error = ErrEmptyModelName.Error()
@@ -136,119 +107,121 @@ func (m *ModelMigrator) Migrate(ctx context.Context, opts ModelMigrationOptions)
 	if opts.OllamaDir != "" {
 		ollamaBase = opts.OllamaDir
 	}
-	oxillamaBase := m.oxillamaDir
-	if opts.OxillamaDir != "" {
-		oxillamaBase = opts.OxillamaDir
+	modelsBase := opts.ModelsDir
+	if modelsBase == "" {
+		modelsBase = llamalease.ModelsDir()
 	}
 
-	// 1. Locate and parse Ollama model manifest
 	manifestPath, manifest, err := m.findOllamaManifest(ollamaBase, opts.ModelName)
 	if err != nil {
 		res.Error = fmt.Sprintf("failed to find Ollama manifest: %v", err)
 		return res, fmt.Errorf("%w: %v", ErrModelNotFound, err)
 	}
+	totalBytes := res.countBlobs(manifest)
 
-	// Calculate total bytes
-	var totalBytes int64 = manifest.Config.Size
-	for _, l := range manifest.Layers {
-		totalBytes += l.Size
-	}
-	res.TotalBytesMigrated = totalBytes
-	res.BlobsMigrated = len(manifest.Layers)
-	if manifest.Config.Digest != "" {
-		res.BlobsMigrated++
-	}
-
-	if opts.DryRun {
-		res.Success = true
-		res.Duration = time.Since(start)
-		return res, nil
-	}
-
-	// 2. Prepare destination OxiLLaMa directories
-	normalizedName := strings.ReplaceAll(opts.ModelName, ":", "_")
-	targetModelDir := filepath.Join(oxillamaBase, "models", normalizedName)
-	targetBlobsDir := filepath.Join(oxillamaBase, "blobs")
-
-	if err := os.MkdirAll(targetModelDir, 0755); err != nil {
-		res.Error = fmt.Sprintf("failed to create target model dir: %v", err)
-		return res, err
-	}
-	if err := os.MkdirAll(targetBlobsDir, 0755); err != nil {
-		res.Error = fmt.Sprintf("failed to create target blobs dir: %v", err)
-		return res, err
-	}
-
-	ollamaBlobsDir := filepath.Join(ollamaBase, "models", "blobs")
-
-	// 3. Migrate Config blob
-	if manifest.Config.Digest != "" {
-		if err := m.linkOrCopyBlob(ollamaBlobsDir, targetBlobsDir, manifest.Config.Digest); err != nil {
-			res.Error = fmt.Sprintf("failed to migrate config blob: %v", err)
+	if !opts.DryRun {
+		if err := m.install(res, opts, manifest, ollamaBase, modelsBase); err != nil {
 			return res, err
 		}
-	}
-
-	// 4. Migrate layer blobs and map named assets
-	for _, layer := range manifest.Layers {
-		if err := m.linkOrCopyBlob(ollamaBlobsDir, targetBlobsDir, layer.Digest); err != nil {
-			res.Error = fmt.Sprintf("failed to migrate layer blob %s: %v", layer.Digest, err)
-			return res, err
+		if opts.DeleteSource {
+			res.SourceEvicted, res.BytesFreed = m.evictFromOllama(ctx, manifestPath, opts.ModelName, totalBytes)
 		}
-
-		// If layer has an explicit filename, link to target model dir
-		if layer.Name != "" {
-			blobFilename := strings.Replace(layer.Digest, ":", "-", 1)
-			srcBlobPath := filepath.Join(targetBlobsDir, blobFilename)
-			dstNamedPath := filepath.Join(targetModelDir, layer.Name)
-			_ = os.MkdirAll(filepath.Dir(dstNamedPath), 0755)
-			_ = linkOrCopyFile(srcBlobPath, dstNamedPath)
-		}
-	}
-
-	// 5. Write target OxiLLaMa descriptor
-	targetManifest := OxiLLaMaManifest{
-		Name:         opts.ModelName,
-		Engine:       "oxillama",
-		Runner:       "pure-rust-gguf",
-		Format:       manifest.Format,
-		ConfigDigest: manifest.Config.Digest,
-		TotalSize:    totalBytes,
-		LayersCount:  len(manifest.Layers),
-		MigratedAt:   time.Now(),
-		SourceEngine: "ollama",
-		Layers:       manifest.Layers,
-	}
-
-	targetManifestBytes, _ := json.MarshalIndent(targetManifest, "", "  ") // plain fields always marshal
-
-	targetManifestPath := filepath.Join(targetModelDir, "oxillama-manifest.json")
-	if err := os.WriteFile(targetManifestPath, targetManifestBytes, 0644); err != nil {
-		res.Error = fmt.Sprintf("failed to write oxillama manifest: %v", err)
-		return res, err
-	}
-	res.TargetManifest = targetManifestPath
-
-	// 6. Register model in Zero-Cost Registry under oxillama
-	reg := GetZeroCostRegistry()
-	_, _ = reg.Add("oxillama/" + opts.ModelName)
-	_, _ = reg.Add(opts.ModelName)
-	_ = reg.SaveToFile(statedir.Resolve(DefaultZeroCostConfigFile))
-
-	// 7. Verify migrated model integrity
-	if err := m.verifyMigratedModel(oxillamaBase, targetManifest); err != nil {
-		res.Error = fmt.Sprintf("target verification failed: %v", err)
-		return res, err
-	}
-
-	// 8. Evict from Ollama if DeleteSource is set
-	if opts.DeleteSource {
-		res.SourceEvicted, res.BytesFreed = m.evictFromOllama(ctx, manifestPath, opts.ModelName, totalBytes)
 	}
 
 	res.Success = true
 	res.Duration = time.Since(start)
 	return res, nil
+}
+
+// newMigrationResult starts a result with the engines the caller named, or the defaults.
+func newMigrationResult(opts ModelMigrationOptions) *ModelMigrationResult {
+	res := &ModelMigrationResult{ModelName: opts.ModelName, SourceEngine: "ollama", TargetEngine: string(EngineLlamaCpp)}
+	if opts.SourceEngine != "" {
+		res.SourceEngine = opts.SourceEngine
+	}
+	if opts.TargetEngine != "" {
+		res.TargetEngine = opts.TargetEngine
+	}
+	return res
+}
+
+// countBlobs records how many blobs and bytes the model holds and returns the bytes.
+func (r *ModelMigrationResult) countBlobs(mf *OllamaManifest) int64 {
+	total := mf.Config.Size
+	for _, l := range mf.Layers {
+		total += l.Size
+	}
+	r.TotalBytesMigrated = total
+	r.BlobsMigrated = len(mf.Layers)
+	if mf.Config.Digest != "" {
+		r.BlobsMigrated++
+	}
+	return total
+}
+
+// install places the weights, registers the model as zero-cost and verifies the result; res.Error
+// says which step failed.
+func (m *ModelMigrator) install(res *ModelMigrationResult, opts ModelMigrationOptions, mf *OllamaManifest, ollamaBase, modelsBase string) error {
+	weights, ok := weightsLayer(mf)
+	if !ok {
+		res.Error = "the model has no weights layer"
+		return errors.New(res.Error)
+	}
+	targetDir := filepath.Join(modelsBase, strings.ReplaceAll(opts.ModelName, ":", "_"))
+	target, err := placeWeights(filepath.Join(ollamaBase, "models", "blobs"), targetDir, weights, opts.ModelName)
+	if err != nil {
+		res.Error = err.Error()
+		return err
+	}
+	res.TargetModel = target
+
+	reg := GetZeroCostRegistry()
+	_, _ = reg.Add("llamacpp/" + opts.ModelName)
+	_, _ = reg.Add(opts.ModelName)
+	_ = reg.SaveToFile(statedir.Resolve(DefaultZeroCostConfigFile))
+
+	if err := verifyMigratedModel(target, weights.Size); err != nil {
+		res.Error = fmt.Sprintf("target verification failed: %v", err)
+		return err
+	}
+	return nil
+}
+
+// placeWeights links the weights blob to <targetDir>/model.gguf and writes the id file.
+func placeWeights(blobsDir, targetDir string, weights OllamaManifestLayer, id string) (string, error) {
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create target model dir: %w", err)
+	}
+	srcBlob := filepath.Join(blobsDir, strings.Replace(weights.Digest, ":", "-", 1))
+	if _, err := os.Stat(srcBlob); err != nil {
+		return "", fmt.Errorf("failed to migrate weights blob %s: %w", weights.Digest, err)
+	}
+	target := filepath.Join(targetDir, "model.gguf")
+	if _, err := os.Stat(target); err != nil {
+		if err := linkOrCopyFile(srcBlob, target); err != nil {
+			return "", fmt.Errorf("failed to migrate weights blob %s: %w", weights.Digest, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(targetDir, "id"), []byte(id+"\n"), 0644); err != nil {
+		return "", fmt.Errorf("failed to write model id: %w", err)
+	}
+	return target, nil
+}
+
+// weightsLayer is the manifest layer holding the GGUF weights: the one Ollama types as the model
+// (application/vnd.ollama.image.model), otherwise the largest.
+func weightsLayer(mf *OllamaManifest) (OllamaManifestLayer, bool) {
+	var best OllamaManifestLayer
+	found := false
+	for _, l := range mf.Layers {
+		if strings.HasSuffix(l.MediaType, ".image.model") {
+			return l, true
+		}
+		if !found || l.Size > best.Size {
+			best, found = l, true
+		}
+	}
+	return best, found
 }
 
 // findOllamaManifest searches known Ollama manifest directories for model definition.
@@ -296,7 +269,6 @@ func (m *ModelMigrator) findOllamaManifest(ollamaDir, modelName string) (string,
 					mf := OllamaManifest{
 						SchemaVersion: 2,
 						Format:        "safetensors",
-						Runner:        "oxillama-runner",
 					}
 					return "ollama-api:" + modelName, &mf, nil
 				}
@@ -305,24 +277,6 @@ func (m *ModelMigrator) findOllamaManifest(ollamaDir, modelName string) (string,
 	}
 
 	return "", nil, fmt.Errorf("manifest for %s not found in %s", modelName, ollamaDir)
-}
-
-// linkOrCopyBlob moves a blob to the target blobs dir using zero-copy hardlinks if possible.
-func (m *ModelMigrator) linkOrCopyBlob(srcBlobsDir, dstBlobsDir, digest string) error {
-	filename := strings.Replace(digest, ":", "-", 1)
-	srcPath := filepath.Join(srcBlobsDir, filename)
-	dstPath := filepath.Join(dstBlobsDir, filename)
-
-	if _, err := os.Stat(dstPath); err == nil {
-		// Already exists at destination
-		return nil
-	}
-
-	if _, err := os.Stat(srcPath); err != nil {
-		return fmt.Errorf("source blob %s does not exist: %w", srcPath, err)
-	}
-
-	return linkOrCopyFile(srcPath, dstPath)
 }
 
 func linkOrCopyFile(src, dst string) error {
@@ -348,30 +302,16 @@ func linkOrCopyFile(src, dst string) error {
 	return err
 }
 
-// verifyMigratedModel confirms all layer blobs exist and size matches descriptor.
-func (m *ModelMigrator) verifyMigratedModel(oxillamaDir string, mf OxiLLaMaManifest) error {
-	blobsDir := filepath.Join(oxillamaDir, "blobs")
-
-	if mf.ConfigDigest != "" {
-		fn := strings.Replace(mf.ConfigDigest, ":", "-", 1)
-		p := filepath.Join(blobsDir, fn)
-		if _, err := os.Stat(p); err != nil {
-			return fmt.Errorf("missing config blob %s", fn)
-		}
+// verifyMigratedModel confirms the weights exist at the target and, when the manifest states a
+// size, that it matches.
+func verifyMigratedModel(path string, wantSize int64) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("missing weights %s: %w", path, err)
 	}
-
-	for _, l := range mf.Layers {
-		fn := strings.Replace(l.Digest, ":", "-", 1)
-		p := filepath.Join(blobsDir, fn)
-		info, err := os.Stat(p)
-		if err != nil {
-			return fmt.Errorf("missing layer blob %s: %w", fn, err)
-		}
-		if l.Size > 0 && info.Size() != l.Size {
-			return fmt.Errorf("blob size mismatch for %s: expected %d, got %d", fn, l.Size, info.Size())
-		}
+	if wantSize > 0 && info.Size() != wantSize {
+		return fmt.Errorf("weights size mismatch for %s: expected %d, got %d", path, wantSize, info.Size())
 	}
-
 	return nil
 }
 

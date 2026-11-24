@@ -21,7 +21,7 @@ const ollamaFailoverEndpoint = "http://127.0.0.1:11434/v1/chat/completions"
 func NewVelocityCmd() *cobra.Command {
 	cmd := cli.NewGroupCmd("velocity", "TTFT, TPS, and gateway resilience benchmarking suite", "axon",
 		"bench", "benchmark", "conduction-velocity", "bnch")
-	cmd.Example = "dendrite velocity inference --engine oxillama --vus 5 --duration 15s\n" +
+	cmd.Example = "dendrite velocity inference --engine llamacpp-local --vus 5 --duration 15s\n" +
 		"dendrite velocity gateway --fault 429 --output gateway.md\n" +
 		"dendrite velocity matrix\n" +
 		"dendrite velocity stress --vus 50 --spends 1000"
@@ -120,7 +120,7 @@ func newVelocityInferenceCmd() *cobra.Command {
 			return writeScorecard(load, perf.FormatMarkdownScorecard(summary), out)
 		},
 	}
-	cmd.Flags().StringVar(&engineID, "engine", "oxillama", "Inference engine ID")
+	cmd.Flags().StringVar(&engineID, "engine", "llamacpp-local", "Inference engine ID")
 	cli.AddModelFlag(cmd, &model, "qwen2.5-coder-7b")
 	cmd.Flags().StringVar(&endpoint, "endpoint", "", "Target API endpoint (default: the engine's endpoint)")
 	addBenchLoadFlags(cmd, &load, 5, 15*time.Second)

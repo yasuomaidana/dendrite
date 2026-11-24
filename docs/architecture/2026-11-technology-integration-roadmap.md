@@ -35,13 +35,13 @@ Three Gemini deep-research documents (`research_Architectural_Role_Classificatio
 | **Graphify** (`graphifyy` CLI, tree-sitter → knowledge graph) | **Provisional REJECT**; benchmark **DEN-837** decides ADOPT/ADAPT/REJECT | rag-rs claims the same ground natively (`dendrite_graph_*`, FEAT-045) **with** embeddings/BM25 on top, but that is asserted, not measured → head-to-head benchmark (structural accuracy, context efficiency, build cost, edge quality on Go/Rust/TS repos). Regardless of outcome, `graphify install` is never run: its PreToolUse hook fights the dendrite-first hook, its CLAUDE.md rule contradicts the workflow, `graphify-out/` pollutes the RAG index, its git hooks duplicate sidecar re-indexing. If Graphify wins a dimension → **ADAPT**: port the technique into rag-rs (Rust-first). Residual use: manual one-off graphs of non-code media outside indexed repos |
 | **Aider** | **EXCLUDE** (installed but banned: repo-map/auto-commit collide with leases) · **OpenCode**: DEFER to a later stage · **OpenClaw**: DEFER (optional notification relay only) · **gemini-4-carbon**: doesn't exist publicly — research tier = gemini-4-argon-high · **gbrain/Hindsight sidecar**: DEFER benchmark |
 
-**Verified corrections kept from the audit**: SkillSpector thresholds 0–20/21–50/51+; prefixes are DEN/DCORE/DRAG/DGIT/DMCP/DPLANE/EMBEDAG (never DN-CT-XXX); core-rs and git-rs are empty stubs — nothing on the critical path depends on them (leases key on rag-rs symbol hashes); `pkg/oxilease` already handles lifecycle (2-min grace) — no new lifecycle manager; known defect `pkg/inference/oxillama_server.go:274` `synthesizeResponse` returns canned text (zero-mock violation, must die early). agy exposes argon/3.8-flash/opus-5.5/sonnet-5.5/gpt-oss-120b. Live: Ollama :11434, LiteLLM :4000, Plane :8090, Penpot :9000; cortex dashboard owns :3456.
+**Verified corrections kept from the audit**: SkillSpector thresholds 0–20/21–50/51+; prefixes are DEN/DCORE/DRAG/DGIT/DMCP/DPLANE/EMBEDAG (never DN-CT-XXX); core-rs and git-rs are empty stubs — nothing on the critical path depends on them (leases key on rag-rs symbol hashes); `pkg/llamalease` (formerly the pure-Rust runner lease package) already handles lifecycle (2-min grace) — no new lifecycle manager; known defect `pkg/inference/the former runner's server file:274` `synthesizeResponse` returns canned text (zero-mock violation, must die early). agy exposes argon/3.8-flash/opus-5.5/sonnet-5.5/gpt-oss-120b. Live: Ollama :11434, LiteLLM :4000, Plane :8090, Penpot :9000; cortex dashboard owns :3456.
 
 ## Ground rules (every session)
 
 - Start `dendrite session resume` → `dendrite chronos next`/`create`; one ticket per change; `dendrite work new <ticket>`; `dendrite quantal`; gate (500 LOC / 100% coverage / 0% clones / rstest); `dendrite chronos finish`; end `dendrite session checkpoint`; unfinished plans `chronos plan push`.
 - Dogfood: after landing a Dendrite feature, `dendrite update --dev` (pre-approved); next session must use it.
-- New tickets carry a routing tag — `[chore-local]` OxiLLaMa/Ollama · `[fast-impl]` gemini-3.8-flash · `[standard-dev]` Sonnet · `[macro-context]` argon · `[research-sec]` argon-high · `[expert]` Opus/Fable — plus `[AC-n]` with exact test commands.
+- New tickets carry a routing tag — `[chore-local]` the former pure-Rust runner/Ollama · `[fast-impl]` gemini-3.8-flash · `[standard-dev]` Sonnet · `[macro-context]` argon · `[research-sec]` argon-high · `[expert]` Opus/Fable — plus `[AC-n]` with exact test commands.
 - Opus re-plans each session start (the board moves between sessions); reuse backlog tickets marked **(reuse)**.
 - **Execution conventions (user directive 2026-11-01)**: run in auto mode; prefer local models and agy for delegation per the routing tags (`dendrite ask`/`rag` before any raw search, `bouton jobs submit --isolate` for offload); **every ticket's Plane status is kept current at every step** (claim → In Progress → finish/handoff, decisions recorded via `chronos decision`, progress via `chronos comment`).
 
@@ -60,7 +60,7 @@ Ground truth that shaped the order: mapi is a single Svelte 5 + Vite + Bun app i
 | ✅ | DEN-423 (S0) | board reconciliation | — | — |
 | ✅ | DEN-424 (S1) | EGM/speq/superpowers, pre-scan | DEN-423 | — |
 | 1 | DEN-425 (S2) | `dendrite immune` SkillSpector gate | DEN-424 | agents may safely gain skills for UI work |
-| 2 | DEN-426 (S3) | real OxiLLaMa, kill spike mock | DEN-425 | 0-token local checks for high-churn loops |
+| 2 | DEN-426 (S3) | real the former pure-Rust runner, kill spike mock | DEN-425 | 0-token local checks for high-churn loops |
 | 3 | DEN-427 (S4) | Engram + frozen snapshot | DEN-426 | soak clock starts; MAPI co-dev traces count |
 | 4 | **DEN-833** | meiosis v1 + pool lockstep linking (Bun workspaces; split out of S13) | DEN-427 | MAPIFE can split `frontend/` into workspace packages |
 | 5 | **DEN-834** | pool polyglot: Rust crate ↔ TS packages + `--audit-library-reuse` | DEN-833 | print-layout Rust module scaffold (WASM/NAPI under Bun) |
@@ -123,10 +123,10 @@ AC for Session 0: tickets RAG answers reflect the reconciled board; no open tick
 - **Dogfood hook**: every later skill/patch addition passes `immune scan` first.
 
 ### Session 3 — Real local inference: kill the `spike serve` mock
-- `DEN-new spike-serve-real-oxillama` [standard-dev] — delete `synthesizeResponse` + canned paths; `spike serve` starts/proxies real OxiLLaMa 0.1.4 via existing `pkg/oxilease`. AC: `curl :8080/v1/chat/completions` returns model output; `grep synthesizeResponse` empty; zero-mock gate clean.
+- `DEN-new spike-serve-real-llamacpp` [standard-dev] — delete `synthesizeResponse` + canned paths; `spike serve` starts/proxies real the former pure-Rust runner 0.1.4 via existing `pkg/llamalease` (formerly the pure-Rust runner lease package). AC: `curl :8080/v1/chat/completions` returns model output; `grep synthesizeResponse` empty; zero-mock gate clean.
 - **DEN-920 (reuse, In Progress — merge, don't fork)** capability catalog [fast-impl] — `.dendrite/models.json` entries for agy tiers + local models; `spike bench --save` real throughput.
 - `DEN-new immune-llm-pass-local` [chore-local] — immune `--llm` → :8080.
-- **Dogfood hook**: later [chore-local] work and EGM goldfish fallbacks run on real OxiLLaMa.
+- **Dogfood hook**: later [chore-local] work and EGM goldfish fallbacks run on real the former pure-Rust runner.
 
 ## Stage B — Memory on Engram (Sessions 4–5) — ADOPT + thin glue only
 
@@ -138,7 +138,7 @@ AC for Session 0: tickets RAG answers reflect the reconciled board; no open tick
 - **Dogfood hook**: Session 5 opens with an injected snapshot of Sessions 1–4.
 
 ### Session 5 — Consolidation & curation (evaluate-before-build gate)
-- `DEN-new engram-consolidation-job` [fast-impl, WRAP] — `dendrite cognition dream`: a scheduled job invoking **Engram's native** salience/contradiction/merge features (+ summary on local OxiLLaMa); telemetry to sensory/cortex. AC: scheduled run recorded; `--dry-run` reports.
+- `DEN-new engram-consolidation-job` [fast-impl, WRAP] — `dendrite cognition dream`: a scheduled job invoking **Engram's native** salience/contradiction/merge features (+ summary on local the former pure-Rust runner); telemetry to sensory/cortex. AC: scheduled run recorded; `--dry-run` reports.
 - `DEN-new hrr-gap-evaluation` [research-sec, decision ticket] — run 2 weeks of real usage, then decide with evidence whether Engram's salience suffices or an HRR trust-decay port is warranted (**DEFER default**; record via `chronos decision`).
 - `DEN-new skill-curation-minimal` [standard-dev, thin] — minimal JSONL ledger of skill installs/patches/use + a 30d-staleness *report* (proposals only, never auto-archive); patches route through `immune scan`; read-only turns never mutate skills (hook check). Full Hermes-style curator lifecycle **deferred** unless the report shows churn. AC: read-only-turn patch rejected; stale report generated.
 - **Dogfood hook**: Session 6's skill/guidance edits flow through ledger + immune.
@@ -160,7 +160,7 @@ AC for Session 0: tickets RAG answers reflect the reconciled board; no open tick
 ## Stage D — Routing + Hermes executor (Sessions 8–9)
 
 ### Session 8 — Capability routing, tier tags, token attribution (existing backlog)
-- **DEN-921 (reuse)** capability scorer; **DEN-924 (reuse)** escalation ladder — **merge into existing `pkg/agentjobs/fallback.go`**, formal failure classes, capsules; keep QUOTA cooldown + oxilease grace; **DEN-925 (reuse)** all inference through router/lease.
+- **DEN-921 (reuse)** capability scorer; **DEN-924 (reuse)** escalation ladder — **merge into existing `pkg/agentjobs/fallback.go`**, formal failure classes, capsules; keep QUOTA cooldown + the lease idle grace; **DEN-925 (reuse)** all inference through router/lease.
 - `DEN-new routing-tier-ticket-tags` [fast-impl] — chronos lint for the six tags; tags map to ladder start tiers (speq-skill's `[expert]` convention adopted, not reinvented). AC: `chronos next` surfaces tags; untagged tickets flagged.
 - `DEN-new vesicle-routing-ledger` [standard-dev] — per-ticket token + escalation attribution; `vesicle status --ticket`. This is the evidence source for the deferred k=2 and HRR decisions. AC: routed job's tokens attributed within one session.
 - Aider stays excluded; OpenCode deferred.
@@ -205,7 +205,7 @@ AC for Session 0: tickets RAG answers reflect the reconciled board; no open tick
 k=2 propose-probe-compose (needs S8 cost data) · HRR trust-decay port (needs S5 gap evaluation) · full skill-curator lifecycle · OpenCode V2 executor · OpenClaw notification relay · gbrain/Hindsight archival tiers · git-rs semantic hunk compose (+ DEN-934 `--local-review`) · core-rs tree-sitter lease keys.
 
 ## Key files
-- `pkg/inference/oxillama_server.go:274` — mock defect gating Stage A
+- `pkg/inference/the former runner's server file:274` — mock defect gating Stage A
 - `pkg/agentjobs/fallback.go` — existing ladder S8 merges into
 - `docs/architecture/synapse-and-agent-mesh.md` — lease/blackboard contract (S11)
 - `docs/architecture/2026-10-quality-audit-execution-plan.md` — 13-pillar baseline this roadmap reuses

@@ -1,4 +1,4 @@
-package oxilease
+package llamalease
 
 import (
 	"context"
@@ -275,18 +275,19 @@ func TestOwnerRecordPointsAtTheRunningChild(t *testing.T) {
 	}
 }
 
-// Installed lists the models under ~/.oxillama/models, largest first; a model's id is the first
+// Installed lists the models under the models directory, largest first; a model's id is the first
 // line of its `id` file when there is one, its directory name otherwise.
 func TestInstalledListsModelsLargestFirst(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	t.Setenv("DENDRITE_HOME", home)
+	t.Setenv("DENDRITE_GGUF_MODELS_DIR", "")
 	if got := Installed(); len(got) != 0 {
 		t.Fatalf("no models directory: %+v", got)
 	}
 	for file, body := range map[string]string{
 		"small/small.gguf": "12", "big/big.gguf": "123456", "big/id": "qwen3:14b\nrest\n", "blank/blank.gguf": "1234", "blank/id": "\n",
 	} {
-		path := filepath.Join(home, ".oxillama", "models", file)
+		path := filepath.Join(home, "models", file)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -296,9 +297,9 @@ func TestInstalledListsModelsLargestFirst(t *testing.T) {
 	}
 	got := Installed()
 	want := []Model{
-		{ID: "qwen3:14b", Path: filepath.Join(home, ".oxillama", "models", "big", "big.gguf"), SizeBytes: 6},
-		{ID: "blank", Path: filepath.Join(home, ".oxillama", "models", "blank", "blank.gguf"), SizeBytes: 4},
-		{ID: "small", Path: filepath.Join(home, ".oxillama", "models", "small", "small.gguf"), SizeBytes: 2},
+		{ID: "qwen3:14b", Path: filepath.Join(home, "models", "big", "big.gguf"), SizeBytes: 6},
+		{ID: "blank", Path: filepath.Join(home, "models", "blank", "blank.gguf"), SizeBytes: 4},
+		{ID: "small", Path: filepath.Join(home, "models", "small", "small.gguf"), SizeBytes: 2},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("Installed = %+v", got)
@@ -316,5 +317,31 @@ func TestEnvDurationIgnoresWhatIsNotAPositiveDuration(t *testing.T) {
 		if got := envDuration("DENDRITE_TEST_DURATION"); got != want {
 			t.Errorf("%q = %s, want %s", value, got, want)
 		}
+	}
+}
+
+func TestModelsDirPrefersTheOverrideThenDendriteHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("DENDRITE_HOME", home)
+	t.Setenv("DENDRITE_GGUF_MODELS_DIR", "")
+	if got, want := ModelsDir(), filepath.Join(home, "models"); got != want {
+		t.Errorf("ModelsDir = %q, want %q", got, want)
+	}
+	override := t.TempDir()
+	t.Setenv("DENDRITE_GGUF_MODELS_DIR", override)
+	if got := ModelsDir(); got != override {
+		t.Errorf("ModelsDir = %q, want the override %q", got, override)
+	}
+}
+
+func TestBinaryPathPrefersTheEnvThenPATH(t *testing.T) {
+	t.Setenv("DENDRITE_LLAMA_SERVER_BIN", "/opt/llama/llama-server")
+	if got, err := BinaryPath(); err != nil || got != "/opt/llama/llama-server" {
+		t.Fatalf("BinaryPath = %q, %v", got, err)
+	}
+	t.Setenv("DENDRITE_LLAMA_SERVER_BIN", "")
+	t.Setenv("PATH", t.TempDir())
+	if _, err := BinaryPath(); err == nil {
+		t.Error("no llama-server on PATH should fail")
 	}
 }

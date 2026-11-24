@@ -10,7 +10,7 @@ import (
 type ExecutionTier string
 
 const (
-	// TierLocal executes entirely on zero-cost local inference (Ollama Metal / OxiLLaMa / Candle).
+	// TierLocal executes entirely on zero-cost local inference (Ollama Metal / llama.cpp / Candle).
 	TierLocal ExecutionTier = "local"
 	// TierHybrid performs local triage, context compaction, and skill enrichment before cloud escalation.
 	TierHybrid ExecutionTier = "hybrid"
@@ -26,7 +26,7 @@ const (
 	EngineOllamaValidated SupportedEngine = "ollama-validated"
 	EngineHuggingFace     SupportedEngine = "huggingface"
 	EngineCandle          SupportedEngine = "candle"
-	EngineOxiLLaMa        SupportedEngine = "oxillama"
+	EngineLlamaCpp        SupportedEngine = "llamacpp"
 )
 
 // DeclarativePlan encapsulates structured, high-level directives synthesized by a paid orchestrator

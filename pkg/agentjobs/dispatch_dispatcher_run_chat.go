@@ -322,9 +322,9 @@ func (d *Dispatcher) spawnRunner(id string) (int, error) {
 	return cmd.Process.Pid, nil
 }
 
-// defaultOxillamaEndpoint honours DENDRITE_OXILLAMA_ENDPOINT and falls back to the local server.
-func defaultOxillamaEndpoint() string {
-	if endpoint := os.Getenv("DENDRITE_OXILLAMA_ENDPOINT"); endpoint != "" {
+// defaultLlamaCppEndpoint honours DENDRITE_LLAMACPP_ENDPOINT and falls back to the local server.
+func defaultLlamaCppEndpoint() string {
+	if endpoint := os.Getenv("DENDRITE_LLAMACPP_ENDPOINT"); endpoint != "" {
 		return endpoint
 	}
 	return "http://127.0.0.1:8080"

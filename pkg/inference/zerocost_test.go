@@ -16,7 +16,6 @@ func TestZeroCostRegistry_Defaults(t *testing.T) {
 		"local-qwen-coder",
 		"local-qwen3-27b",
 		"local-qwen3-9b",
-		"oxillama-rust",
 		"vllm-cluster",
 		"hf-tgi-remote",
 		"llamacpp-local",
@@ -30,9 +29,8 @@ func TestZeroCostRegistry_Defaults(t *testing.T) {
 
 	expectedPrefixes := []string{
 		"ollama/qwen2.5-coder",
-		"oxillama/mistral-7b",
+		"llamacpp/mistral-7b",
 		"vllm/custom-model",
-		"llamacpp/llama-3",
 		"huggingface-tei/bge-large",
 	}
 

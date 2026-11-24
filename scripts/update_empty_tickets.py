@@ -18,7 +18,7 @@ PLANE_URL = PLANE_BASE_URL
 PLANE_WS = PLANE_WORKSPACE_SLUG
 PLANE_PROJ = PLANE_PROJECT_ID
 PLANE_KEY = PLANE_API_KEY
-OXILLAMA_URL = "http://127.0.0.1:8080/v1/chat/completions"
+LLAMACPP_URL = "http://127.0.0.1:8080/v1/chat/completions"
 
 TICKETS_METADATA = {
     "5e90a5ce-ef2f-4bd7-9fcd-ce3d995155d9": {
@@ -61,14 +61,14 @@ TICKETS_METADATA = {
         ]
     },
     "402121d5-7afb-47ed-97e8-d689d363f620": {
-        "title": "[DEN-809] Model Migration Engine: Migrate Models from Ollama to OxiLLaMa & Evict Local Blobs",
+        "title": "[DEN-809] Model Migration Engine: Migrate Models from Ollama to llama.cpp & Evict Local Blobs",
         "seq": 137,
         "packages": "pkg/inference",
         "specs": "FEAT-080",
-        "summary": "Delivers zero-copy hardlink migration of GGUF model layers from Ollama store (~/.ollama) into OxiLLaMa sovereign store (~/.oxillama), verifying layer digests and evicting source models to reclaim memory and disk space.",
+        "summary": "Delivers zero-copy hardlink migration of GGUF model layers from Ollama store (~/.ollama) into the llama-server models directory ($DENDRITE_HOME/models), verifying layer digests and evicting source models to reclaim memory and disk space.",
         "ac": [
             "AC-1 (Zero-Copy Hardlinking): Uses os.Link with streaming copy fallback to transfer GGUF layers without duplicating disk footprint.",
-            "AC-2 (OxiLLaMa Manifest & Integrity): Synthesizes oxillama-manifest.json and validates all layer SHA-256 digests.",
+            "AC-2 (Target Integrity): Places the GGUF weights as model.gguf with an id file and validates the blob size.",
             "AC-3 (Zero-Cost Registry Sync): Registers migrated models into .dendrite/zero_cost_models.json for LiteLLM budget exemption.",
             "AC-4 (Source Model Eviction): Safely invokes DELETE /api/delete on Ollama daemon to reclaim tens of gigabytes of disk/memory.",
             "AC-5 (DoD & Coverage): Statement test coverage >= 85% across pkg/inference/migration.go with zero mocks."
@@ -108,7 +108,7 @@ TICKETS_METADATA = {
         "specs": "FEAT-101",
         "summary": "Automated provisioner for local GGUF models (qwen3.5:9b, qwen3.8:27b, hermes3:8b) linking them to LiteLLM proxy configuration and registering zero-cost financial exemptions.",
         "ac": [
-            "AC-1 (Automated Model Pulling): Inspects and pulls required local models into Ollama or OxiLLaMa runtime stores.",
+            "AC-1 (Automated Model Pulling): Inspects and pulls required local models into Ollama or llama.cpp runtime stores.",
             "AC-2 (Gateway Routing Bridge): Updates LiteLLM proxy YAML configuration with local upstream model endpoints.",
             "AC-3 (Zero-Cost Accounting): Registers models in .dendrite/zero_cost_models.json to exempt local execution from commercial token limits.",
             "AC-4 (DoD & Coverage): Statement test coverage >= 85% across pkg/installer/models with zero mocks."

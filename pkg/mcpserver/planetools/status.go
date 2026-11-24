@@ -68,7 +68,7 @@ func registerOllamaAndGatewayTools(s *Server, deps Dependencies) {
 	}), gatewayRenderHandler())
 
 	// dendrite_gateway_update
-	AddTool(s, "dendrite_gateway_update", "Dynamically discover live inference engines (Ollama, OxiLLaMa, etc.), score loaded models by intelligence, and update LiteLLM routing table (default: ~/.dendrite/stacks/litellm_config.yaml)", PropsSchema(map[string]interface{}{
+	AddTool(s, "dendrite_gateway_update", "Dynamically discover live inference engines (Ollama, llama.cpp, etc.), score loaded models by intelligence, and update LiteLLM routing table (default: ~/.dendrite/stacks/litellm_config.yaml)", PropsSchema(map[string]interface{}{
 		"file":               TypedProp("string", "Target litellm_config.yaml path (default: ~/.dendrite/stacks/litellm_config.yaml)"),
 		"dry_run":            TypedProp("boolean", "Simulate update without modifying disk (default: false)"),
 		"use_container_host": TypedProp("boolean", "Use host.docker.internal for container networking (default: true for the stacks directory)"),

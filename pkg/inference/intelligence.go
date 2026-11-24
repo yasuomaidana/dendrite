@@ -24,7 +24,7 @@ func ModelIntelligenceScore(modelName string) int {
 
 	// Remove common prefixes
 	clean = strings.TrimPrefix(clean, "ollama/")
-	clean = strings.TrimPrefix(clean, "oxillama/")
+	clean = strings.TrimPrefix(clean, "llamacpp/")
 	clean = strings.TrimPrefix(clean, "openai/")
 	clean = strings.TrimPrefix(clean, "local-")
 
@@ -136,8 +136,7 @@ func EngineMaxIntelligence(ctx context.Context, eng InferenceEngine) (int, strin
 }
 
 // ReorderEnginesByIntelligence orders engines dynamically: live engines before offline ones,
-// GPU-accelerated engines before OxiLLaMa (CPU prefill, see GPUAccelerated), then the
-// highest ModelIntelligenceScore, then EnginePreference.
+// the highest ModelIntelligenceScore, then EnginePreference.
 func ReorderEnginesByIntelligence(ctx context.Context, engines []InferenceEngine) []InferenceEngine {
 	type scoredEngine struct {
 		eng       InferenceEngine
@@ -169,10 +168,6 @@ func ReorderEnginesByIntelligence(ctx context.Context, engines []InferenceEngine
 	sort.SliceStable(scored, func(i, j int) bool {
 		if scored[i].isLive != scored[j].isLive {
 			return scored[i].isLive
-		}
-		gi, gj := GPUAccelerated(scored[i].eng.Type()), GPUAccelerated(scored[j].eng.Type())
-		if gi != gj {
-			return gi
 		}
 		if scored[i].maxScore != scored[j].maxScore {
 			return scored[i].maxScore > scored[j].maxScore
@@ -217,7 +212,7 @@ type SmartCascadeReport struct {
 }
 
 // ExecuteSmartCascade dispatches completion requests honoring:
-// 1. GPU-accelerated engines run before OxiLLaMa; among them, smarter local models have precedence over smaller ones.
+// 1. Smarter local models have precedence over smaller ones.
 // 2. Failures on smaller / less-smart models do NOT count toward failure limit.
 // 3. Failures are ONLY counted when executing on the smartest available local model(s).
 // 4. Escalation to paid models occurs ONLY if the smartest models fail 2 or 3 times.
@@ -274,13 +269,8 @@ func ExecuteSmartCascade(
 		}
 	}
 
-	// GPU-accelerated engines first (OxiLLaMa prefills on the CPU), then smartest first,
-	// then the preferred engine.
+	// Smartest first, then the preferred engine.
 	sort.SliceStable(candidates, func(i, j int) bool {
-		gi, gj := GPUAccelerated(candidates[i].engine.Type()), GPUAccelerated(candidates[j].engine.Type())
-		if gi != gj {
-			return gi
-		}
 		if candidates[i].score != candidates[j].score {
 			return candidates[i].score > candidates[j].score
 		}

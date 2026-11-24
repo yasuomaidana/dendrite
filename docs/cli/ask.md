@@ -30,7 +30,7 @@ None
 | `--docs, -d` | Also search the documentation (default: code only); same as --corpus all |
 | `--docs-share` | Share of the context kept for documentation with --corpus all, 0 to 1 (default: [ask] docs_share in .dendrite/rag.toml or DENDRITE_RAG_ASK_DOCS_SHARE, else 0.2); implies --corpus all |
 | `--hybrid` | Draft locally, then refine and verify with the paid model |
-| `--local-model` | Local model on the LiteLLM gateway (default: [ask] local_model in .dendrite/rag.toml, else the gateway's local model on the most preferred reachable GPU engine; never OxiLLaMa, which prefills on the CPU) |
+| `--local-model` | Local model on the LiteLLM gateway (default: [ask] local_model in .dendrite/rag.toml, else the gateway's local model on the most preferred reachable engine) |
 | `--paid` | Skip the local model and ask the paid model with the RAG context |
 | `--paid-model` | Paid fallback model (default: gemini-4-argon-medium) |
 | `--project` | Project directory to index and search (default: .) |

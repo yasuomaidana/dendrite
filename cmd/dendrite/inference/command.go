@@ -6,7 +6,7 @@ import (
 	"Dendrite/pkg/dotenv"
 	"Dendrite/pkg/gateway"
 	"Dendrite/pkg/inference"
-	"Dendrite/pkg/oxilease"
+	"Dendrite/pkg/llamalease"
 	"Dendrite/pkg/statedir"
 	"context"
 	"fmt"
@@ -24,13 +24,13 @@ import (
 
 // newSpikeCmd builds `dendrite spike` (alias inference): the multi-provider inference engine manager.
 func NewSpikeCmd() *cobra.Command {
-	cmd := cli.NewGroupCmd("spike", "Unified multi-provider inference engine gateway (Ollama, OxiLLaMa, vLLM, TGI)", "cleft",
+	cmd := cli.NewGroupCmd("spike", "Unified multi-provider inference engine gateway (Ollama, llama.cpp, vLLM, TGI)", "cleft",
 		"inference", "action-potential", "inf")
 	cmd.Example = "dendrite spike list\n" +
 		"dendrite spike models\n" +
 		"dendrite spike probe ollama-metal\n" +
 		"dendrite spike probe --endpoint http://10.0.0.5:11434\n" +
-		"dendrite spike migrate qwen2.5-coder:7b --to oxillama --delete-source\n" +
+		"dendrite spike migrate qwen2.5-coder:7b --to llamacpp --delete-source\n" +
 		"dendrite spike zero-cost add my-model --env"
 	cmd.AddCommand(
 		newSpikeListCmd(),
@@ -216,11 +216,11 @@ func newSpikeRenderCmd() *cobra.Command {
 }
 
 func newSpikeMigrateCmd() *cobra.Command {
-	opts := inference.ModelMigrationOptions{SourceEngine: "ollama", TargetEngine: "oxillama"}
+	opts := inference.ModelMigrationOptions{SourceEngine: "ollama", TargetEngine: "llamacpp"}
 	cmd := &cobra.Command{
 		Use:     "migrate <model>",
 		Aliases: []string{"move"},
-		Short:   "Copy a model's blobs between engines (default Ollama to OxiLLaMa, which runs prompts on the CPU), optionally evicting the source",
+		Short:   "Move a model's GGUF weights from Ollama to the llama-server models directory, optionally evicting the source",
 		Args:    cli.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.ModelName = args[0]
@@ -237,14 +237,14 @@ func newSpikeMigrateCmd() *cobra.Command {
 
 func runSpikeMigrate(ctx context.Context, opts inference.ModelMigrationOptions, out io.Writer) error {
 	fmt.Fprintf(out, "[+] Initiating model migration for '%s' (%s -> %s)...\n", opts.ModelName, opts.SourceEngine, opts.TargetEngine)
-	res, err := inference.NewModelMigrator("", "", nil).Migrate(ctx, opts)
+	res, err := inference.NewModelMigrator("", nil).Migrate(ctx, opts)
 	if err != nil {
 		return fmt.Errorf("migration: %w", err)
 	}
 	fmt.Fprintf(out, "[✓] Successfully migrated model '%s' to %s in %v\n", res.ModelName, res.TargetEngine, res.Duration)
 	fmt.Fprintf(out, "    * Blobs Migrated:     %d\n", res.BlobsMigrated)
 	fmt.Fprintf(out, "    * Total Data Size:    %.2f GB (%d bytes)\n", float64(res.TotalBytesMigrated)/(1024*1024*1024), res.TotalBytesMigrated)
-	fmt.Fprintf(out, "    * Target Manifest:    %s\n", res.TargetManifest)
+	fmt.Fprintf(out, "    * Target Model:       %s\n", res.TargetModel)
 	switch {
 	case res.SourceEvicted:
 		fmt.Fprintf(out, "    * Source Evicted:     YES (Reclaimed %.2f GB memory/disk from %s)\n", float64(res.BytesFreed)/(1024*1024*1024), res.SourceEngine)
@@ -257,7 +257,7 @@ func runSpikeMigrate(ctx context.Context, opts inference.ModelMigrationOptions, 
 }
 
 func addPortFlag(cmd *cobra.Command, p *int) {
-	cmd.Flags().IntVar(p, "port", 8080, "OxiLLaMa server port")
+	cmd.Flags().IntVar(p, "port", 8080, "llama-server port")
 }
 
 func newSpikeServeCmd() *cobra.Command {
@@ -266,8 +266,8 @@ func newSpikeServeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "serve",
 		Aliases: []string{"start"},
-		Short:   "Run the real OxiLLaMa OpenAI-compatible server in the foreground (Ctrl+C releases it)",
-		Long: "Starts the OxiLLaMa binary on a local model through the lease manager (the largest installed model that\n" +
+		Short:   "Run the real llama-server OpenAI-compatible server in the foreground (Ctrl+C releases it)",
+		Long: "Starts the llama-server binary on a local model through the lease manager (the largest installed model that\n" +
 			"fits the memory budget, or --model) and holds it until Ctrl+C. A server that already runs is held, not\n" +
 			"restarted. Ctrl+C releases this session's hold; the server stops once no session has held it for the idle\n" +
 			"grace (`dendrite spike status` shows who holds it, `dendrite spike stop` stops it now).",
@@ -276,7 +276,7 @@ func newSpikeServeCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			return runSpikeServe(ctx, oxilease.NewManager(port, ""), port, model, cmd.OutOrStdout())
+			return runSpikeServe(ctx, llamalease.NewManager(port, ""), port, model, cmd.OutOrStdout())
 		},
 	}
 	addPortFlag(cmd, &port)
@@ -284,21 +284,21 @@ func newSpikeServeCmd() *cobra.Command {
 	return cmd
 }
 
-// runSpikeServe holds the real OxiLLaMa server on port until ctx ends and says where it answers.
-func runSpikeServe(ctx context.Context, m *oxilease.Manager, port int, model string, out io.Writer) error {
+// runSpikeServe holds the real llama-server on port until ctx ends and says where it answers.
+func runSpikeServe(ctx context.Context, m *llamalease.Manager, port int, model string, out io.Writer) error {
 	return holdServer(ctx, m, holdOptions{Holder: "serve", Model: model}, func() {
 		fmt.Fprint(out, serveBanner(m, port))
 	})
 }
 
 // serveBanner says which model answers where, and what Ctrl+C does to the server.
-func serveBanner(m *oxilease.Manager, port int) string {
+func serveBanner(m *llamalease.Manager, port int) string {
 	st, _ := m.Status()
 	served, after := st.Model, "it stops "+st.IdleGrace+" after the last session"
 	if !st.Managed {
 		served, after = "a model started by hand", "it was not started by Dendrite, so it keeps running"
 	}
-	return fmt.Sprintf("[✓] OxiLLaMa serves %s at http://127.0.0.1:%d\n", served, port) +
+	return fmt.Sprintf("[✓] llama-server serves %s at http://127.0.0.1:%d\n", served, port) +
 		fmt.Sprintf("    * Models Endpoint:     http://127.0.0.1:%d/v1/models\n", port) +
 		fmt.Sprintf("    * Chat Endpoint:       http://127.0.0.1:%d/v1/chat/completions\n", port) +
 		fmt.Sprintf("[+] Press Ctrl+C to release it; %s.\n", after)
@@ -309,7 +309,7 @@ func newSpikeStopCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "stop",
 		Aliases: []string{"kill"},
-		Short:   "Stop a running OxiLLaMa server and free its port",
+		Short:   "Stop a running llama-server and free its port",
 		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSpikeStop(cmd.Context(), port, cmd.OutOrStdout())

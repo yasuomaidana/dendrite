@@ -26,7 +26,7 @@ Rules you MUST strictly follow:
 // SubmitSpec specifies the attributes required to submit a new agent job.
 type SubmitSpec struct {
 	Ticket     string
-	Agent      string // "agy", "aider", "local" or "oxillama"
+	Agent      string // "agy", "aider", "local" or "llamacpp"
 	Model      string
 	Scope      []string
 	Worktree   string
@@ -50,7 +50,7 @@ type Dispatcher struct {
 	AiderPath        string
 	LiteLLMURL       string
 	LiteLLMKey       string
-	OxillamaEndpoint string
+	LlamaCppEndpoint string
 	HTTPClient       *http.Client
 	// RepoDir is the repository isolated working copies are created from (default ".").
 	RepoDir string
@@ -67,7 +67,7 @@ func NewDispatcher(l *Ledger) *Dispatcher {
 	if l == nil {
 		l = NewLedger("")
 	}
-	endpoint := defaultOxillamaEndpoint()
+	endpoint := defaultLlamaCppEndpoint()
 	exe, _ := os.Executable()
 	return &Dispatcher{
 		Ledger:           l,
@@ -78,7 +78,7 @@ func NewDispatcher(l *Ledger) *Dispatcher {
 		GitPath:          "git",
 		AgyPath:          "agy",
 		AiderPath:        "aider",
-		OxillamaEndpoint: endpoint,
+		LlamaCppEndpoint: endpoint,
 		HTTPClient:       &http.Client{Timeout: 60 * time.Second},
 		SharedDir:        defaultSharedDir(),
 	}

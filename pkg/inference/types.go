@@ -26,7 +26,6 @@ type EngineType string
 
 const (
 	EngineOllama              EngineType = "ollama"
-	EngineOxiLLaMa            EngineType = "oxillama"
 	EngineCandle              EngineType = "candle"
 	EngineHuggingFaceTGI      EngineType = "huggingface_tgi"
 	EngineHuggingFaceTEI      EngineType = "huggingface_tei"
@@ -38,7 +37,7 @@ const (
 // IsValid checks if the engine type is recognized.
 func (t EngineType) IsValid() bool {
 	switch t {
-	case EngineOllama, EngineOxiLLaMa, EngineCandle, EngineHuggingFaceTGI, EngineHuggingFaceTEI,
+	case EngineOllama, EngineCandle, EngineHuggingFaceTGI, EngineHuggingFaceTEI,
 		EngineHuggingFaceEndpoint, EngineVLLM, EngineLlamaCpp:
 		return true
 	default:

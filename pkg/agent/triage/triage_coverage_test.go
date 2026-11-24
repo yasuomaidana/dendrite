@@ -47,14 +47,14 @@ func TestTargetEngineRouting(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/v1/models" {
-			_, _ = w.Write([]byte(`{"data":[{"id":"oxillama-rust-qwen7b"}]}`))
+			_, _ = w.Write([]byte(`{"data":[{"id":"llamacpp-qwen7b"}]}`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	defer liveServer.Close()
 	t.Setenv("DENDRITE_OLLAMA_ENDPOINT", liveServer.URL)
-	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", liveServer.URL)
+	t.Setenv("DENDRITE_LLAMACPP_ENDPOINT", liveServer.URL)
 
 	cases := []struct {
 		name       string
@@ -65,7 +65,7 @@ func TestTargetEngineRouting(t *testing.T) {
 	}{
 		{"validated engine", EngineOllamaValidated, TierLocal, EngineOllamaValidated, "qwen2.5-coder:14b"},
 		{"huggingface engine", EngineHuggingFace, TierLocal, EngineHuggingFace, "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"},
-		{"oxillama engine", EngineOxiLLaMa, TierLocal, EngineOxiLLaMa, "oxillama-rust-qwen7b"},
+		{"llamacpp engine", EngineLlamaCpp, TierLocal, EngineLlamaCpp, "llamacpp-qwen7b"},
 		{"candle engine", EngineCandle, TierLocal, EngineCandle, "candle-quant-llama"},
 		{"ollama engine", EngineOllama, TierLocal, EngineOllama, "qwen2.5-coder:14b"},
 	}
@@ -91,36 +91,36 @@ func TestTargetEngineRouting(t *testing.T) {
 	}
 }
 
-func TestAutoRoutingOllamaOfflineOxiLive(t *testing.T) {
+func TestAutoRoutingOllamaOfflineLlamaCppLive(t *testing.T) {
 	offlineOllama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "offline", http.StatusInternalServerError)
 	}))
 	defer offlineOllama.Close()
 
-	onlineOxillama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	onlineLlamaCpp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/v1/models" {
-			_, _ = w.Write([]byte(`{"data":[{"id":"oxillama-rust-qwen7b"}]}`))
+			_, _ = w.Write([]byte(`{"data":[{"id":"llamacpp-qwen7b"}]}`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
-	defer onlineOxillama.Close()
+	defer onlineLlamaCpp.Close()
 
 	t.Setenv("DENDRITE_OLLAMA_ENDPOINT", offlineOllama.URL)
-	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", onlineOxillama.URL)
+	t.Setenv("DENDRITE_LLAMACPP_ENDPOINT", onlineLlamaCpp.URL)
 
 	eng := NewEngine(nil)
 
-	t.Run("chore routes to oxillama with reason update", func(t *testing.T) {
+	t.Run("chore routes to llamacpp with reason update", func(t *testing.T) {
 		res, err := eng.Triage(context.Background(), TriageRequest{
 			Prompt: "Fix formatting and typo in comments",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if res.AssignedEngine != EngineOxiLLaMa {
-			t.Errorf("expected EngineOxiLLaMa, got %v", res.AssignedEngine)
+		if res.AssignedEngine != EngineLlamaCpp {
+			t.Errorf("expected EngineLlamaCpp, got %v", res.AssignedEngine)
 		}
 		if !strings.Contains(res.Reason, "Ollama has no model") {
 			t.Errorf("expected reason to mention Ollama has no model, got %s", res.Reason)
@@ -130,15 +130,15 @@ func TestAutoRoutingOllamaOfflineOxiLive(t *testing.T) {
 		}
 	})
 
-	t.Run("hybrid prompt routes to oxillama without chore reason", func(t *testing.T) {
+	t.Run("hybrid prompt routes to llamacpp without chore reason", func(t *testing.T) {
 		res, err := eng.Triage(context.Background(), TriageRequest{
 			Prompt: "Implement database connection pool with redis",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if res.AssignedEngine != EngineOxiLLaMa {
-			t.Errorf("expected EngineOxiLLaMa, got %v", res.AssignedEngine)
+		if res.AssignedEngine != EngineLlamaCpp {
+			t.Errorf("expected EngineLlamaCpp, got %v", res.AssignedEngine)
 		}
 		if !res.LocalComputeAvailable {
 			t.Errorf("expected LocalComputeAvailable true")
@@ -151,7 +151,7 @@ func TestEngineProbingLive(t *testing.T) {
 		name          string
 		target        SupportedEngine
 		ollamaModels  string
-		oxillamaData  string
+		llamaCppData  string
 		ollamaStatus  int
 		oxStatus      int
 		wantAvailable bool
@@ -189,15 +189,15 @@ func TestEngineProbingLive(t *testing.T) {
 			wantAvailable: true,
 		},
 		{
-			name:          "oxillama health fallback reachable",
-			target:        EngineOxiLLaMa,
+			name:          "llamacpp health fallback reachable",
+			target:        EngineLlamaCpp,
 			oxStatus:      http.StatusOK,
-			oxillamaData:  `{"data":[]}`,
+			llamaCppData:  `{"data":[]}`,
 			wantAvailable: true,
 		},
 		{
-			name:          "oxillama health fallback unreachable",
-			target:        EngineOxiLLaMa,
+			name:          "llamacpp health fallback unreachable",
+			target:        EngineLlamaCpp,
 			oxStatus:      http.StatusInternalServerError,
 			wantAvailable: false,
 		},
@@ -225,8 +225,8 @@ func TestEngineProbingLive(t *testing.T) {
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")
-				if sc.oxillamaData != "" {
-					_, _ = w.Write([]byte(sc.oxillamaData))
+				if sc.llamaCppData != "" {
+					_, _ = w.Write([]byte(sc.llamaCppData))
 				} else {
 					_, _ = w.Write([]byte(`{"data":[]}`))
 				}
@@ -234,7 +234,7 @@ func TestEngineProbingLive(t *testing.T) {
 			defer oxSrv.Close()
 
 			t.Setenv("DENDRITE_OLLAMA_ENDPOINT", olSrv.URL)
-			t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", oxSrv.URL)
+			t.Setenv("DENDRITE_LLAMACPP_ENDPOINT", oxSrv.URL)
 
 			eng := NewEngine(nil)
 			res, err := eng.Triage(context.Background(), TriageRequest{
@@ -259,14 +259,14 @@ func TestDeclarativeOrchestratorExecution(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/v1/models" {
-			_, _ = w.Write([]byte(`{"data":[{"id":"oxillama-rust-qwen7b"}]}`))
+			_, _ = w.Write([]byte(`{"data":[{"id":"llamacpp-qwen7b"}]}`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	defer liveServer.Close()
 	t.Setenv("DENDRITE_OLLAMA_ENDPOINT", liveServer.URL)
-	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", liveServer.URL)
+	t.Setenv("DENDRITE_LLAMACPP_ENDPOINT", liveServer.URL)
 
 	eng := NewEngine(nil)
 
@@ -277,7 +277,7 @@ func TestDeclarativeOrchestratorExecution(t *testing.T) {
 	}{
 		{"validated worker", EngineOllamaValidated, "qwen2.5-coder:14b"},
 		{"huggingface worker", EngineHuggingFace, "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"},
-		{"oxillama worker", EngineOxiLLaMa, "oxillama-rust-qwen7b"},
+		{"llamacpp worker", EngineLlamaCpp, "llamacpp-qwen7b"},
 		{"candle worker", EngineCandle, "candle-quant-llama"},
 		{"default worker", EngineOllama, "local-qwen-coder"},
 	}
@@ -438,14 +438,14 @@ func TestEngineConfigEdges(t *testing.T) {
 	}))
 	defer liveServer.Close()
 
-	t.Run("preconfigured oxillama engine and endpoint", func(t *testing.T) {
+	t.Run("preconfigured llamacpp engine and endpoint", func(t *testing.T) {
 		eng := NewEngine(nil)
-		eng.OxiLLaMaEndpoint = liveServer.URL
+		eng.LlamaCppEndpoint = liveServer.URL
 		eng.OllamaEndpoint = liveServer.URL
 		eng.OllamaClient = nil
-		eng.OxiLLaMaEngine = inference.NewOxiLLaMaEngine(inference.EngineConfig{
+		eng.LlamaCppEngine = inference.NewLlamaCppEngine(inference.EngineConfig{
 			ID:       "ox-custom",
-			Type:     inference.EngineOxiLLaMa,
+			Type:     inference.EngineLlamaCpp,
 			Endpoint: liveServer.URL,
 		}, nil)
 
@@ -462,7 +462,7 @@ func TestEngineConfigEdges(t *testing.T) {
 
 	t.Run("engine with nil clients and empty endpoints", func(t *testing.T) {
 		t.Setenv("DENDRITE_OLLAMA_ENDPOINT", "")
-		t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", "")
+		t.Setenv("DENDRITE_LLAMACPP_ENDPOINT", "")
 
 		eng := &Engine{
 			LocalModelName:    "local-qwen-coder",
@@ -477,7 +477,7 @@ func TestEngineConfigEdges(t *testing.T) {
 		if err != nil {
 			t.Fatalf("triage failed: %v", err)
 		}
-		// The engine falls back to the default OxiLLaMa address (127.0.0.1:8080), so whether a local model answers
+		// The engine falls back to the default llama.cpp address (127.0.0.1:8080), so whether a local model answers
 		// depends on the machine: the branch is what this case covers, the outcome only has to be a valid tier.
 		switch res.Tier {
 		case TierLocal, TierHybrid, TierCloud:

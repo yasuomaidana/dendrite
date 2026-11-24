@@ -22,8 +22,8 @@ func isolateEnvironment(t *testing.T) {
 	t.Setenv("PLANE_API_KEY", "isolated-plane-key")
 	t.Setenv("PLANE_WORKSPACE_SLUG", "isolated-ws")
 	t.Setenv("PLANE_PROJECT_ID", "isolated-proj")
-	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", "http://127.0.0.1:59997")
-	t.Setenv("DENDRITE_COMMIT_PREFER_OXILLAMA", "false")
+	t.Setenv("DENDRITE_LLAMACPP_ENDPOINT", "http://127.0.0.1:59997")
+	t.Setenv("DENDRITE_COMMIT_PREFER_LOCAL", "false")
 	t.Setenv("DENDRITE_TICKET_GUARD", "off")
 }
 
@@ -199,12 +199,12 @@ func TestExecuteCommit_DryRunAndActual(t *testing.T) {
 	}
 }
 
-func TestGenerateLocalCommitMessage_OxiLLaMaHTTP(t *testing.T) {
+func TestGenerateLocalCommitMessage_LlamaCppHTTP(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/chat/completions" {
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"choices": []map[string]interface{}{
-					{"message": map[string]string{"content": "feat(commit): dynamic oxillama http synthesis"}},
+					{"message": map[string]string{"content": "feat(commit): dynamic llamacpp http synthesis"}},
 				},
 			})
 			return
@@ -213,15 +213,15 @@ func TestGenerateLocalCommitMessage_OxiLLaMaHTTP(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", ts.URL)
-	t.Setenv("DENDRITE_COMMIT_PREFER_OXILLAMA", "true")
+	t.Setenv("DENDRITE_LLAMACPP_ENDPOINT", ts.URL)
+	t.Setenv("DENDRITE_COMMIT_PREFER_LOCAL", "true")
 
 	msg, modelUsed, err := GenerateLocalCommitMessage(
 		context.Background(),
 		"1 file changed",
 		"+ test code",
 		"DEN-817",
-		"oxillama/qwen3.8:27b",
+		"llamacpp/qwen3.8:27b",
 		"",
 		"",
 		"",
@@ -229,11 +229,11 @@ func TestGenerateLocalCommitMessage_OxiLLaMaHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.HasPrefix(msg, "[DEN-817] feat(commit): dynamic oxillama http synthesis") {
+	if !strings.HasPrefix(msg, "[DEN-817] feat(commit): dynamic llamacpp http synthesis") {
 		t.Errorf("unexpected message: %s", msg)
 	}
-	if !strings.Contains(modelUsed, "OxiLLaMa HTTP") {
-		t.Errorf("expected OxiLLaMa HTTP model used, got %s", modelUsed)
+	if !strings.Contains(modelUsed, "llama.cpp HTTP") {
+		t.Errorf("expected llama.cpp HTTP model used, got %s", modelUsed)
 	}
 }
 
@@ -320,41 +320,6 @@ func TestExecuteCommit_UseLocalModel_And_SpecificFiles(t *testing.T) {
 	}
 }
 
-func TestGenerateLocalCommitMessage_OxiLLaMaCLI(t *testing.T) {
-	tempDir := t.TempDir()
-	modelsDir := filepath.Join(tempDir, "models")
-	modelDir := filepath.Join(modelsDir, "qwen_test")
-	_ = os.MkdirAll(modelDir, 0755)
-
-	scriptPath := filepath.Join(tempDir, "oxillama")
-	scriptContent := "#!/bin/sh\necho 'INFO loading model'\necho '✓ ready'\necho 'feat(cli): generated commit from oxillama cli'\n"
-	_ = os.WriteFile(scriptPath, []byte(scriptContent), 0755)
-
-	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", "http://127.0.0.1:59999") // dead HTTP so it falls back to CLI
-	t.Setenv("DENDRITE_OXILLAMA_BIN", scriptPath)
-	t.Setenv("DENDRITE_OXILLAMA_MODELS_DIR", modelsDir)
-
-	msg, modelUsed, err := GenerateLocalCommitMessage(
-		context.Background(),
-		"1 file changed",
-		"+ test code",
-		"DEN-817",
-		"oxillama/qwen:test",
-		"",
-		"",
-		"",
-	)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.HasPrefix(msg, "[DEN-817] feat(cli): generated commit from oxillama cli") {
-		t.Errorf("unexpected message: %s", msg)
-	}
-	if !strings.Contains(modelUsed, "OxiLLaMa Pure-Rust Zero-FFI") {
-		t.Errorf("expected OxiLLaMa CLI model used, got %s", modelUsed)
-	}
-}
-
 func TestDevTool_ErrorBranches(t *testing.T) {
 	isolateEnvironment(t)
 	ctx := context.Background()
@@ -397,7 +362,7 @@ func TestIsCannedOrInvalidCommitMessage(t *testing.T) {
 		message string
 		want    bool
 	}{
-		{"canned oxillama response", "OxiLLaMa (pure-Rust zero-FFI runner) responded via 'qwen3.8:27b': processed your request safely with zero cloud tokens consumed.", true},
+		{"canned llamacpp response", "llama.cpp (llama-server) responded via 'qwen3.8:27b': processed your request safely with zero cloud tokens consumed.", true},
 		{"canned quota response", "processed your request safely with zero cloud tokens consumed", true},
 		{"canned runner response", "pure-Rust zero-FFI runner responded via qwen", true},
 		{"canned ai intro", "As an AI, here is the commit message: feat(repo): update", true},
@@ -409,7 +374,7 @@ func TestIsCannedOrInvalidCommitMessage(t *testing.T) {
 		{"valid fix", "fix(gateway): handle timeout error", false},
 		{"valid docs", "docs: update installation instructions", false},
 		{"valid refactor", "refactor(tracker): extract common client logic", false},
-		{"valid ticket prefixed", "[DEN-817] feat(devtool): decouple git commit engine with oxillama http adapter", false},
+		{"valid ticket prefixed", "[DEN-817] feat(devtool): decouple git commit engine with llamacpp http adapter", false},
 		{"valid chore", "chore: update dependencies", false},
 		{"valid test", "test(mcpserver): add integration tests for plane tools", false},
 	}
@@ -444,7 +409,7 @@ func TestExecuteCommit_LocalModelFallback(t *testing.T) {
 		UseLocalModel:    true,
 		OllamaEndpoint:   tsFail.URL,
 		LiteLLMEndpoint:  tsFail.URL,
-		OxillamaEndpoint: tsFail.URL,
+		LlamaCppEndpoint: tsFail.URL,
 		NoPush:           true,
 		NoSmart:          true,
 	})
@@ -546,15 +511,15 @@ func TestGenerateLocalCommitMessage_CannedResponses(t *testing.T) {
 	isolateEnvironment(t)
 	ctx := context.Background()
 
-	// OxiLLaMa returns canned response
-	tsOx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// llama.cpp returns canned response
+	tsLlama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{
 				{"message": map[string]string{"content": "processed your request safely with zero cloud tokens consumed"}},
 			},
 		})
 	}))
-	defer tsOx.Close()
+	defer tsLlama.Close()
 
 	// Ollama returns canned response
 	tsOllama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -572,8 +537,8 @@ func TestGenerateLocalCommitMessage_CannedResponses(t *testing.T) {
 	}))
 	defer tsLite.Close()
 
-	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", tsOx.URL)
-	t.Setenv("DENDRITE_COMMIT_PREFER_OXILLAMA", "true")
+	t.Setenv("DENDRITE_LLAMACPP_ENDPOINT", tsLlama.URL)
+	t.Setenv("DENDRITE_COMMIT_PREFER_LOCAL", "true")
 
 	msg, modelUsed, err := GenerateLocalCommitMessageWithContext(
 		ctx,
@@ -581,7 +546,7 @@ func TestGenerateLocalCommitMessage_CannedResponses(t *testing.T) {
 		"",
 		"", // empty ticketID
 		nil,
-		"oxillama/qwen3.8:27b",
+		"llamacpp/qwen3.8:27b",
 		tsOllama.URL,
 		tsLite.URL,
 		"key",
@@ -991,7 +956,7 @@ func TestResolveSmartTicket_FileCorrelationAndFallbacks(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Write mock DEV_STATUS.md
-	devStatusContent := "# Development Status\n\n- [ ] **DEN-817**: Decouple Git Commit Synthesis Engine: OxiLLaMa HTTP Adapter (pkg/devtool/commit.go)\n- [ ] **DEN-814**: Dynamic LiteLLM Routing Table Updater (pkg/gateway/updater.go)\n"
+	devStatusContent := "# Development Status\n\n- [ ] **DEN-817**: Decouple Git Commit Synthesis Engine: llama.cpp HTTP Adapter (pkg/devtool/commit.go)\n- [ ] **DEN-814**: Dynamic LiteLLM Routing Table Updater (pkg/gateway/updater.go)\n"
 	_ = os.WriteFile(filepath.Join(tempDir, "DEV_STATUS.md"), []byte(devStatusContent), 0644)
 
 	// 1. Resolve based on staged file correlation
@@ -1347,8 +1312,8 @@ func TestGenerateLocalCommitMessage_EdgeCases(t *testing.T) {
 		t.Errorf("expected [DEN-001] prefix, got: %s", msg)
 	}
 
-	// 2. oxModel without "qwen" (e.g. oxillama/deepseek) -> defaults to qwen3.8:27b
-	tsOx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// 2. llamaModel without "qwen" (e.g. llamacpp/deepseek) -> defaults to qwen3.8:27b
+	tsLlama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/chat/completions" {
 			var body map[string]interface{}
 			_ = json.NewDecoder(r.Body).Decode(&body)
@@ -1363,10 +1328,10 @@ func TestGenerateLocalCommitMessage_EdgeCases(t *testing.T) {
 		}
 		http.NotFound(w, r)
 	}))
-	defer tsOx.Close()
+	defer tsLlama.Close()
 
-	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", tsOx.URL)
-	t.Setenv("DENDRITE_COMMIT_PREFER_OXILLAMA", "true")
+	t.Setenv("DENDRITE_LLAMACPP_ENDPOINT", tsLlama.URL)
+	t.Setenv("DENDRITE_COMMIT_PREFER_LOCAL", "true")
 
 	msg2, _, err2 := GenerateLocalCommitMessageWithContext(
 		ctx,
@@ -1374,7 +1339,7 @@ func TestGenerateLocalCommitMessage_EdgeCases(t *testing.T) {
 		"diff",
 		"DEN-002",
 		nil,
-		"oxillama/deepseek",
+		"llamacpp/deepseek",
 		"",
 		"",
 		"",
@@ -1387,25 +1352,13 @@ func TestGenerateLocalCommitMessage_EdgeCases(t *testing.T) {
 		t.Errorf("expected synthesized message, got: %s", msg2)
 	}
 
-	// 3. OxiLLaMa HTTP canned response and 500 error fall through
-	tsOxFail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// 3. llama.cpp HTTP canned response and 500 error fall through
+	tsLlamaFail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
-	defer tsOxFail.Close()
+	defer tsLlamaFail.Close()
 
-	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", tsOxFail.URL)
-
-	// OxiLLaMa CLI script exits with error 1
-	tempDir := t.TempDir()
-	modelsDir := filepath.Join(tempDir, "models")
-	modelDir := filepath.Join(modelsDir, "qwen_testfail")
-	_ = os.MkdirAll(modelDir, 0755)
-
-	scriptFail := filepath.Join(tempDir, "oxillama")
-	_ = os.WriteFile(scriptFail, []byte("#!/bin/sh\nexit 1\n"), 0755)
-
-	t.Setenv("DENDRITE_OXILLAMA_BIN", scriptFail)
-	t.Setenv("DENDRITE_OXILLAMA_MODELS_DIR", modelsDir)
+	t.Setenv("DENDRITE_LLAMACPP_ENDPOINT", tsLlamaFail.URL)
 
 	// Ollama server returns 500
 	tsOllamaFail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1425,7 +1378,7 @@ func TestGenerateLocalCommitMessage_EdgeCases(t *testing.T) {
 		"fulldiff",
 		"DEN-003",
 		nil,
-		"oxillama/qwen:testfail",
+		"llamacpp/qwen:testfail",
 		tsOllamaFail.URL,
 		tsLiteLLMFail.URL,
 		"",

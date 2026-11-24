@@ -30,7 +30,7 @@ The authoritative project state is tracked in **Plane v2** (`http://localhost:80
 | **To Be Verified by Human** | **97 / 102 Tickets** (**95.1% To Verify**) | DoD Passed ($\ge 85\%$ cov), pending HITL sign-off | Awaiting Human [?] |
 | **Core Statement Coverage** | **$\ge 88.4\%$ Average** across all packages | $\ge 85.0\%$ DoD Threshold | Exceeds Target |
 | **Registered MCP Tools** | **66+ Native Tools** (Stdio JSON-RPC 2.0) | JetBrains + Stacks | Operational |
-| **Supported Inference Backends** | 6 Engines (Ollama, OxiLLaMa, TGI, TEI, vLLM, llama.cpp)| Multi-Provider Gateway | Operational |
+| **Supported Inference Backends** | 6 Engines (Ollama, llama.cpp, TGI, TEI, vLLM, llama.cpp)| Multi-Provider Gateway | Operational |
 | **Last Synchronized** | 2026-10-16 | Real-time Plane Sync | Verified |
 
 ```mermaid
@@ -133,16 +133,16 @@ To prevent runaway commercial API token expenses while maintaining high architec
 | **Macro Orchestration** | **Google AGY / Antigravity** | Cloud API (Gemini 2.5 Pro) | Metered Commercial | Architecture design, cross-package API contracts, security reviews, ticket decomposition. |
 | **Micro Code Loop** | **Aider Agent Loop** | Local / Ephemeral Docker | Governed LiteLLM Virtual Keys | Interactive TDD implementation, compiler-driven syntax adjustments, precise diff application. |
 | **Commit Message Synthesis** | **Local Model (`local-qwen3-27b` / Ollama Metal)** | Apple Silicon Metal GPU / LiteLLM (:4000) | **Zero-Cost ($0.00)** Local | Conventional commit messages, diff summaries, and provenance formatting. |
-| **Sovereign Pure-Rust Inference** | **OxiLLaMa (`cool-japan/oxillama`)** | Pure-Rust Zero-FFI GGUF (:8080) | **Zero-Cost ($0.00)** Memory-Safe | Sandboxed AST translation, sovereign offline embedding and code completion. |
+| **Sovereign GGUF Inference** | **llama.cpp (`ggml-org/llama.cpp`)** | GGUF via `llama-server` (:8080) | **Zero-Cost ($0.00)** | Sandboxed AST translation, sovereign offline embedding and code completion. |
 | **Repetitive Verification**| **Local Ollama Metal** | Apple Silicon Metal (`qwen3.8:27b`, `qwen2.5-coder:14b`, `llama3.2:3b`) | **Zero-Cost ($0.00)** Local | Running `go test`, digesting compiler logs, summarizing test failures, generating boilerplate vectors. |
 | **Token Budget Governance**| **LiteLLM Gateway** | LiteLLM Proxy (:4000) | Sliding Window Limiter | Daily/weekly ceilings, automatic cascade failover to cloud API on local exhaustion. |
 
 #### Model Priority & Local Intelligence Precedence Rules
 
 1. **GPU Engines First, Then Smarter Models**:
-   - Engines that run prompts on the GPU come first: candle and Hugging Face TGI/TEI (Rust), then Ollama, vLLM and llama.cpp. OxiLLaMa comes last: oxillama-runtime 0.1.4 offloads only Q4_0 single-token decode to the GPU, so prompt prefill and embeddings run on the CPU (over 3 s per embedded chunk measured, against about 0.1 s on Ollama with Metal).
-   - Within the GPU engines, models are ranked by capability and parameter scale ($27\text{B}/32\text{B} > 14\text{B} > 9\text{B}/7\text{B} > 3\text{B}$); `inference.EnginePreference` breaks ties.
-   - OxiLLaMa serves when it is requested explicitly (`--engine oxillama`, `DENDRITE_GATEWAY_OXILLAMA_ROUTING=true`, an `oxillama` agent job) or when no GPU engine has a model.
+   - Engines are ordered by `inference.EnginePreference`: candle and Hugging Face TGI/TEI (Rust), then Ollama, vLLM and llama.cpp.
+   - Among the engines, models are ranked by capability and parameter scale ($27\text{B}/32\text{B} > 14\text{B} > 9\text{B}/7\text{B} > 3\text{B}$); `inference.EnginePreference` breaks ties.
+   - llama.cpp serves when it is requested explicitly (`--engine llamacpp`, `DENDRITE_GATEWAY_LLAMACPP_ROUTING=true`, a `llamacpp` agent job) or when Ollama has no model.
 2. **Trial Failures on Smaller Models Do NOT Count**:
    - Fast speculative attempts with smaller/lighter local models that fail are treated as zero-cost trials and are **NOT counted against the failure threshold**.
 3. **Smart Failure Counting**:
@@ -235,7 +235,7 @@ All 23 project milestones and their associated tickets:
 - [x] **DEN-034**: Terraform Azure Spot VM Module & Persistent Managed Disk Lifecycler (`infra/modules/azure-burst`, `pkg/orchestrator/azure`)
 
 ### Milestone 16: Pluggable Multi-Provider Inference Engines (FEAT-020)
-- [x] **DEN-035**: Unified Inference Engine Gateway: OxiLLaMa, Hugging Face TGI/TEI, vLLM, llama.cpp & Ollama Metal (`pkg/inference`, `pkg/gateway`)
+- [x] **DEN-035**: Unified Inference Engine Gateway: llama.cpp, Hugging Face TGI/TEI, vLLM, llama.cpp & Ollama Metal (`pkg/inference`, `pkg/gateway`)
 
 ### Milestone 17: Performance Testing, Inference Benchmarking & Gateway Load Harness (FEAT-021)
 - [x] **DEN-036**: k6 Performance Testing, TTFT/TPS Benchmarking & Cascade Failover Load Harness (`pkg/perf`, `cmd/dendrite`, `tests/perf`)

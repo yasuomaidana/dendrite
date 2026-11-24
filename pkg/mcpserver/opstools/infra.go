@@ -105,7 +105,7 @@ func registerPerfTools(s *Server, deps Dependencies) {
 	// 20. dendrite_bench_run
 	AddTool(s, "dendrite_bench_run", "Execute an automated k6 or synthetic performance benchmark measuring TTFT, TPS, gateway cascade failover latency, or sliding window budget concurrency", PropsSchema(map[string]interface{}{
 		"mode":              TypedProp("string", "Benchmark mode: 'inference', 'gateway', 'stress', 'matrix' (default: 'inference')"),
-		"engine_id":         TypedProp("string", "Inference engine identifier (e.g. 'oxillama', 'ollama-metal', 'vllm-cluster')"),
+		"engine_id":         TypedProp("string", "Inference engine identifier (e.g. 'llamacpp-local', 'ollama-metal', 'vllm-cluster')"),
 		"model":             TypedProp("string", "Model identifier (default: 'qwen2.5-coder-7b')"),
 		"endpoint":          TypedProp("string", "Target endpoint URL (default: auto-resolved from registered engine)"),
 		"failover_endpoint": TypedProp("string", "Secondary endpoint URL for failover testing"),
@@ -150,7 +150,7 @@ func benchFault(name string) perf.FaultInjectionType {
 func benchRunHandler() ToolHandler {
 	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		mode := perf.BenchmarkMode(strings.ToLower(StringArgOr(args, "mode", "inference")))
-		engineID := StringArgOr(args, "engine_id", "oxillama")
+		engineID := StringArgOr(args, "engine_id", "llamacpp-local")
 		vus := perf.VirtualUsers(PositiveIntArg(args, "virtual_users"))
 		if vus <= 0 {
 			vus = 5

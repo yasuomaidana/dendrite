@@ -100,24 +100,24 @@ exit 0
 	})
 }
 
-func TestCoverage_RunOxillama_Branches(t *testing.T) {
+func TestCoverage_RunLlamaCpp_Branches(t *testing.T) {
 	t.Run("default endpoint and default client when nil", func(t *testing.T) {
-		// Never reach the real local OxiLLaMa: the default endpoint comes from the environment.
-		t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", "http://127.0.0.1:1")
+		// Never reach the real local llama-server: the default endpoint comes from the environment.
+		t.Setenv("DENDRITE_LLAMACPP_ENDPOINT", "http://127.0.0.1:1")
 		tempLedger := NewLedger(t.TempDir())
 		d := NewDispatcher(tempLedger)
-		d.OxillamaEndpoint = ""
+		d.LlamaCppEndpoint = ""
 		d.HTTPClient = nil
 
 		job := &Job{
 			ID:       "DEN-OXI-1",
 			Ticket:   "DEN-OXI",
-			Agent:    "oxillama",
+			Agent:    "llamacpp",
 			Worktree: t.TempDir(),
 		}
 		_ = os.MkdirAll(tempLedger.JobDir(job.ID), 0755)
 
-		code, _, _, err := d.runOxillama(context.Background(), job, "prompt")
+		code, _, _, err := d.runLlamaCpp(context.Background(), job, "prompt")
 		if err == nil {
 			t.Fatal("expected network error")
 		}
@@ -129,17 +129,17 @@ func TestCoverage_RunOxillama_Branches(t *testing.T) {
 	t.Run("invalid url fails http.NewRequestWithContext", func(t *testing.T) {
 		tempLedger := NewLedger(t.TempDir())
 		d := NewDispatcher(tempLedger)
-		d.OxillamaEndpoint = "http://invalid-url\x7f"
+		d.LlamaCppEndpoint = "http://invalid-url\x7f"
 
 		job := &Job{
 			ID:       "DEN-OXI-2",
 			Ticket:   "DEN-OXI",
-			Agent:    "oxillama",
+			Agent:    "llamacpp",
 			Worktree: t.TempDir(),
 		}
 		_ = os.MkdirAll(tempLedger.JobDir(job.ID), 0755)
 
-		code, _, _, err := d.runOxillama(context.Background(), job, "prompt")
+		code, _, _, err := d.runLlamaCpp(context.Background(), job, "prompt")
 		if err == nil {
 			t.Fatal("expected error from invalid URL")
 		}
@@ -162,17 +162,17 @@ func TestCoverage_RunOxillama_Branches(t *testing.T) {
 
 		tempLedger := NewLedger(t.TempDir())
 		d := NewDispatcher(tempLedger)
-		d.OxillamaEndpoint = server.URL
+		d.LlamaCppEndpoint = server.URL
 
 		job := &Job{
 			ID:       "DEN-OXI-3",
 			Ticket:   "DEN-OXI",
-			Agent:    "oxillama",
+			Agent:    "llamacpp",
 			Worktree: t.TempDir(),
 		}
 		_ = os.MkdirAll(tempLedger.JobDir(job.ID), 0755)
 
-		code, _, _, err := d.runOxillama(context.Background(), job, "prompt")
+		code, _, _, err := d.runLlamaCpp(context.Background(), job, "prompt")
 		if err == nil {
 			t.Fatal("expected body read error")
 		}
@@ -193,17 +193,17 @@ func TestCoverage_RunOxillama_Branches(t *testing.T) {
 
 		tempLedger := NewLedger(t.TempDir())
 		d := NewDispatcher(tempLedger)
-		d.OxillamaEndpoint = server.URL
+		d.LlamaCppEndpoint = server.URL
 
 		job := &Job{
 			ID:       "DEN-OXI-4",
 			Ticket:   "DEN-OXI",
-			Agent:    "oxillama",
+			Agent:    "llamacpp",
 			Worktree: t.TempDir(),
 		}
 		_ = os.MkdirAll(tempLedger.JobDir(job.ID), 0755)
 
-		code, _, usage, err := d.runOxillama(context.Background(), job, "prompt")
+		code, _, usage, err := d.runLlamaCpp(context.Background(), job, "prompt")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

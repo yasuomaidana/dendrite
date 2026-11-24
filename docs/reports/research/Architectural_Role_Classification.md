@@ -142,7 +142,7 @@ Here is how each technology aligns with Dendrite's architecture:
     │ 1. Gateway & Budgets (Tier 2)                                 │
     │    Adopt: LiteLLM (:4000)                                     │[cite: 1, 4]
     │    • Enforces sliding-window spend caps per ticket (DEN-XXX)  │[cite: 1, 4]
-    │    • Routes requests to OxiLLaMa, Ollama, Claude, or Gemini   │[cite: 1, 4]
+    │    • Routes requests to the former pure-Rust runner, Ollama, Claude, or Gemini   │[cite: 1, 4]
     ├───────────────────────────────────────────────────────────────┤
     │ 2. Cognitive Memory & Process Discipline                      │
     │    Adopt: Gentle AI / Engram                                  │[cite: 3]

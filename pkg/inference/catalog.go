@@ -43,14 +43,14 @@ func DefaultCatalogPath() string {
 // derived from ModelIntelligenceScore as a cold-start prior.
 func DefaultCatalog() *Catalog {
 	models := []ModelCapability{
-		DefaultCapability("qwen2.5-coder:14b", EngineOxiLLaMa),
+		DefaultCapability("qwen2.5-coder:14b", EngineLlamaCpp),
 		DefaultCapability("qwen2.5-coder:14b", EngineOllama),
-		DefaultCapability("qwen2.5-coder-7b", EngineOxiLLaMa),
-		DefaultCapability("qwen3.8:27b", EngineOxiLLaMa),
+		DefaultCapability("qwen2.5-coder-7b", EngineLlamaCpp),
+		DefaultCapability("qwen3.8:27b", EngineLlamaCpp),
 		DefaultCapability("qwen3.8:27b", EngineOllama),
-		DefaultCapability("qwen3.5:9b", EngineOxiLLaMa),
+		DefaultCapability("qwen3.5:9b", EngineLlamaCpp),
 		DefaultCapability("qwen3.5:9b", EngineOllama),
-		DefaultCapability("mistral-7b-instruct", EngineOxiLLaMa),
+		DefaultCapability("mistral-7b-instruct", EngineLlamaCpp),
 		DefaultCapability("deepseek-coder:6.7b", EngineOllama),
 		DefaultCapability("llama3.2:3b", EngineOllama),
 		DefaultCapability("Qwen/Qwen2.5-Coder-32B-Instruct", EngineVLLM),
@@ -138,7 +138,7 @@ func (c *Catalog) List() []ModelCapability {
 }
 
 // Get finds a capability entry by model ID; when several engines serve the model, the
-// preferred engine (EnginePreference: GPU-capable first, OxiLLaMa last) wins.
+// preferred engine (EnginePreference: lower rank first) wins.
 func (c *Catalog) Get(id string) (ModelCapability, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

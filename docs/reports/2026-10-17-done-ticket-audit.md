@@ -64,7 +64,7 @@ Audit of every Plane ticket that was marked `Done` or `To Verify` in the Dendrit
 | DEN-702-COV-1 | 125 | partial | To Verify | In Progress | Statement coverage for pkg/tracker is 79.7%, failing the 100% statement coverage goal for routing.go |
 | DEN-704-COV-1 | 127 | partial | To Verify | In Progress | Additional branch and error condition test suites to elevate pkg/vcs statement coverage from 93.9% to 100% |
 | DEN-801 | 129 | partial | To Verify | In Progress | Package pkg/prompt does not exist; Multi-turn state machine transitions (Init -> TopicSelect -> Clarification -> ActiveSession) are not implemented; Intent classification routing inputs to optimal agent skills or commands is missing |
-| DEN-816 | 145 | partial | To Verify | In Progress | Hardcoded 'oxillama-rust-qwen7b' fallback remains at triage.go:98; Missing dynamic configuration file lookup before defaulting; Tests in pkg/agent/triage are failing |
+| DEN-816 | 145 | partial | To Verify | In Progress | Hardcoded 'llamacpp-qwen7b' fallback remains at triage.go:98; Missing dynamic configuration file lookup before defaulting; Tests in pkg/agent/triage are failing |
 
 ## All audited tickets
 
@@ -102,7 +102,7 @@ Audit of every Plane ticket that was marked `Done` or `To Verify` in the Dendrit
 | DEN-032 | 32 | yes | To Verify | `dendrite topology advisor`, `dendrite_topology_advisor` | Remote SSH hardware discovery and dynamic microservice placement router are fully implemented with 88.7% statement coverage. |
 | DEN-033 | 33 | yes | To Verify | `dendrite telemetry`, `dendrite run --telemetry` | Telemetry exporter for Prometheus and Grafana dashboards is fully implemented with 99.2% statement coverage. |
 | DEN-034 | 34 | yes | To Verify | `dendrite orchestrator azure` | Azure burst orchestration with managed disk lifecycle handling is fully implemented and tested. |
-| DEN-035 | 35 | yes | To Verify | `dendrite inference`, `dendrite_inference_list`, `dendrite_inference_probe` | Unified multi-provider inference engine gateway with dynamic cascade failover across Ollama, OxiLLaMa, vLLM, and TGI is fully implemented. |
+| DEN-035 | 35 | yes | To Verify | `dendrite inference`, `dendrite_inference_list`, `dendrite_inference_probe` | Unified multi-provider inference engine gateway with dynamic cascade failover across Ollama, the former pure-Rust runner, vLLM, and TGI is fully implemented. |
 | DEN-036 | 36 | yes | To Verify | `dendrite bench`, `dendrite_bench_run` | k6 performance testing, TTFT/TPS benchmarking, and gateway cascade failover harness are fully implemented in pkg/perf with 90.6% coverage. |
 | DEN-039 | 39 | yes | To Verify | `dendrite rea showcase`, `dendrite_rea_showcase` | REA showcase runner harness is fully implemented with CLI entrypoints and MCP tools. |
 | DEN-040 | 40 | yes | To Verify | `dendrite mcp serve` | Model Context Protocol (MCP) server is implemented with JSON-RPC over stdio, tool dispatching, and CLI daemon command. |
@@ -163,7 +163,7 @@ Audit of every Plane ticket that was marked `Done` or `To Verify` in the Dendrit
 | DEN-095 | 95 | no | To Do | — | Tailscale endpoint definitions exist in pkg/topology, but the ephemeral CI/CD routine package pkg/routines/cicd, Docker overlay tunneling, and one-time GitHub runner backend are not implemented. |
 | DEN-096 | 96 | no | To Do | — | CI/CD Pipeline Routine with recipes, live status streaming, and artifact management is not implemented; pkg/routines/cicd is missing. |
 | DEN-097 | 97 | yes | To Verify | `dendrite plane doc-sync`, `dendrite_plane_doc_sync` | Plane documentation synchronization syncing local markdown docs and Plane pages bidirectionally is fully implemented. |
-| DEN-098 | 98 | yes | To Verify | `dendrite commit`, `dendrite_commit` | Autonomous git commit engine with local model delegation (Ollama / OxiLLaMa) for conventional commit synthesis and ticket provenance is fully implemented. |
+| DEN-098 | 98 | yes | To Verify | `dendrite commit`, `dendrite_commit` | Autonomous git commit engine with local model delegation (Ollama / the former pure-Rust runner) for conventional commit synthesis and ticket provenance is fully implemented. |
 | DEN-101 | 99 | no | To Do | — | Architecture evaluation and adapter integrations for Anthropic Claude Code, OpenAI Operator, and Cursor do not exist in docs/ or pkg/agent. |
 | DEN-102 | 100 | yes | In Progress | `dendrite agent run --sandboxed`, `dendrite_agent_run` | Container-based sandboxed agent runner is implemented in pkg/agent/sandboxed_runner.go, but recommended state is In Progress due to test failures in pkg/agent. |
 | DEN-103 | 101 | partial | In Progress | `dendrite agent` | Agent execution coverage follow-up remains in progress due to failing tests and statement coverage below the 100% requirement. |
@@ -196,7 +196,7 @@ Audit of every Plane ticket that was marked `Done` or `To Verify` in the Dendrit
 | DEN-802 | 130 | yes | To Verify | `dendrite welcome`, `dendrite_welcome_message` | Personalized Developer Greeting synthesizing project preferences and session history is fully implemented with 100% test coverage in pkg/personalcontext/welcome. |
 | DEN-803 | 131 | yes | To Verify | `dendrite context memory` | Personal context memory store is fully implemented with 100% statement test coverage and zero mocks. |
 | DEN-804 | 132 | yes | To Verify | `dendrite doctor`, `dendrite env doctor` | Pre-flight system diagnostics auditing host compute resources, Apple Silicon Metal GPU, developer toolchains, and service port bindings are fully implemented with 100.0% coverage in pkg/installer. |
-| DEN-805 | 133 | yes | To Verify | — | Fully implemented with 100% test coverage in pkg/installer/models, verifying Ollama model pulling, OxiLLaMa probing, and LiteLLM gateway routing validation. |
+| DEN-805 | 133 | yes | To Verify | — | Fully implemented with 100% test coverage in pkg/installer/models, verifying Ollama model pulling, the former pure-Rust runner probing, and LiteLLM gateway routing validation. |
 | DEN-806 | 134 | yes | To Verify | `dendrite greeting`, `dendrite_get_greeting` | Multi-Style Greeting Engine featuring 10 styles and anti-cliché filters is fully implemented in pkg/personalcontext/greeting with 94.7% coverage. |
 | DEN-807 | 135 | yes | To Verify | `dendrite context canvas` | Personal context canvas for visualizing agent memories and conceptual graphs is implemented. |
 | DEN-810 | 138 | yes | To Verify | `dendrite ui sync`, `dendrite_ui_penpot_sync` | Penpot service synchronization, component token parsing (Svelte/React), and Plane ticket deep-linking are fully implemented with 100.0% coverage in pkg/ui/penpot. |
@@ -205,7 +205,7 @@ Audit of every Plane ticket that was marked `Done` or `To Verify` in the Dendrit
 | DEN-813 | 142 | yes | To Verify | `dendrite env prepare` | Environment preparation bootstrap automating toolchain verification and configuration sync is fully implemented. |
 | DEN-814 | 143 | yes | To Verify | `dendrite gateway update`, `dendrite gateway schedule`, `dendrite_gateway_update` | RoutingTableUpdater dynamically probes inference engines, ranks models using ModelIntelligenceScore, writes litellm_config.yaml, runs a 24h background daemon, and provides CLI and MCP triggers. |
 | DEN-815 | 144 | yes | To Verify | — | Inference endpoints, model lists, and cascade sequence are fully decoupled from hardcoded constants via environment variables with safe defaults in pkg/inference/manager.go. |
-| DEN-816 | 145 | partial | In Progress | `dendrite agent triage`, `dendrite_agent_triage` | Hardcoded model fallback in pkg/agent/triage is only partially addressed; oxillama-rust-qwen7b remains in triage.go and package tests fail. |
+| DEN-816 | 145 | partial | In Progress | `dendrite agent triage`, `dendrite_agent_triage` | Hardcoded model fallback in pkg/agent/triage is only partially addressed; llamacpp-qwen7b remains in triage.go and package tests fail. |
 | DEN-817 | 146 | yes | To Verify | `dendrite devtool commit-msg` | Commit message generation tool using local model HTTP adapter with fallback is fully implemented. |
-| DEN-820 | 149 | yes | To Verify | `dendrite dev gateway [scenario]`, `dendrite_gateway_render` | DefaultLiteLLMConfig and MultiEngineLiteLLMConfig dynamically route local-qwen models to healthy engines (OxiLLaMa/Ollama) and rank fallback routes by ModelIntelligenceScore. |
+| DEN-820 | 149 | yes | To Verify | `dendrite dev gateway [scenario]`, `dendrite_gateway_render` | DefaultLiteLLMConfig and MultiEngineLiteLLMConfig dynamically route local-qwen models to healthy engines (the former pure-Rust runner/Ollama) and rank fallback routes by ModelIntelligenceScore. |
 | DEN-822 | 151 | yes | To Verify | `dendrite --help`, `dendrite version`, `dendrite doctor` | Root CLI in cmd/dendrite/main.go has been modernized using declarative pkg/cli.Registry with categorized help, alias resolution, and 99.0% statement coverage. |

@@ -25,7 +25,7 @@ None
 
 | Flag | Description |
 | :--- | :--- |
-| `--engine, -e` | Local engine: ollama, ollama-validated, huggingface, candle or oxillama |
+| `--engine, -e` | Local engine: ollama, ollama-validated, huggingface, candle or llamacpp |
 | `--file, -f` | Active file whose content is triaged with the prompt |
 | `--local, -l` | Execute on the local engine when the tier allows it |
 | `--rag, -r` | Retrieve workspace context (RAG) |

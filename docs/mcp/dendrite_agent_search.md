@@ -26,7 +26,7 @@ Searches and routes tasks to optimal autonomous agents (Aider, OpenHands, OpenCo
       "type": "string"
     },
     "require_local": {
-      "description": "Constrain selection to zero-cost local inference engines (Ollama Metal, OxiLLaMa)",
+      "description": "Constrain selection to zero-cost local inference engines (Ollama Metal, llama.cpp)",
       "type": "boolean"
     },
     "route": {

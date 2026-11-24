@@ -2,7 +2,7 @@ package inference
 
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
-	"Dendrite/pkg/oxilease"
+	"Dendrite/pkg/llamalease"
 	"context"
 	"fmt"
 	"io"
@@ -17,27 +17,27 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newSpikeSuperviseCmd is the detached process that owns the OxiLLaMa server. Dendrite starts it
+// newSpikeSuperviseCmd is the detached process that owns the llama-server. Dendrite starts it
 // when a session needs the server; it stops the server once no session holds a lease.
 func newSpikeSuperviseCmd() *cobra.Command {
 	var model, modelID, dir string
 	var port int
 	cmd := &cobra.Command{
 		Use:    "supervise",
-		Short:  "Run the OxiLLaMa server and stop it when no session needs it (started by Dendrite, not by hand)",
+		Short:  "Run the llama-server and stop it when no session needs it (started by Dendrite, not by hand)",
 		Hidden: true,
 		Args:   cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			m := oxilease.NewManager(port, dir)
-			return m.Supervise(ctx, oxilease.Request{Holder: "supervisor", ModelPath: model, ModelID: modelID})
+			m := llamalease.NewManager(port, dir)
+			return m.Supervise(ctx, llamalease.Request{Holder: "supervisor", ModelPath: model, ModelID: modelID})
 		},
 	}
 	cmd.Flags().StringVar(&model, "model", "", "GGUF model file")
 	cmd.Flags().StringVar(&modelID, "model-id", "", "id the server serves the model under")
 	cmd.Flags().StringVar(&dir, "dir", "", "lease directory")
-	cmd.Flags().IntVar(&port, "port", oxilease.DefaultPort, "server port")
+	cmd.Flags().IntVar(&port, "port", llamalease.DefaultPort, "server port")
 	_ = cmd.MarkFlagRequired("model")
 	_ = cmd.MarkFlagRequired("dir")
 	return cmd
@@ -71,8 +71,8 @@ func terminate(pid int, grace time.Duration) bool {
 }
 
 func runSpikeStop(ctx context.Context, port int, out io.Writer) error {
-	fmt.Fprintf(out, "[+] Stopping the OxiLLaMa server on port %d...\n", port)
-	if holders, err := oxilease.NewManager(port, "").Holders(); err == nil && len(holders) > 0 {
+	fmt.Fprintf(out, "[+] Stopping the llama-server on port %d...\n", port)
+	if holders, err := llamalease.NewManager(port, "").Holders(); err == nil && len(holders) > 0 {
 		fmt.Fprintf(out, "[!] %d live session(s) hold a lease and will lose it:\n", len(holders))
 		for _, h := range holders {
 			fmt.Fprintf(out, "    - %s (pid %d)\n", h.Holder, h.PID)
@@ -85,9 +85,9 @@ func runSpikeStop(ctx context.Context, port int, out io.Writer) error {
 		}
 	}
 	if stopped > 0 {
-		fmt.Fprintf(out, "[✓] Successfully stopped OxiLLaMa server (terminated %d process(es) on port %d)\n", stopped, port)
+		fmt.Fprintf(out, "[✓] Successfully stopped llama-server (terminated %d process(es) on port %d)\n", stopped, port)
 	} else {
-		fmt.Fprintf(out, "[✓] OxiLLaMa server is not currently running on port %d.\n", port)
+		fmt.Fprintf(out, "[✓] llama-server is not currently running on port %d.\n", port)
 	}
 	return nil
 }
@@ -96,10 +96,10 @@ func newSpikeStatusCmd() *cobra.Command {
 	var port int
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Show whether the OxiLLaMa server runs, who started it and which sessions hold it",
+		Short: "Show whether the llama-server runs, who started it and which sessions hold it",
 		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			st, err := oxilease.NewManager(port, "").Status()
+			st, err := llamalease.NewManager(port, "").Status()
 			if err != nil {
 				return err
 			}
@@ -109,11 +109,11 @@ func newSpikeStatusCmd() *cobra.Command {
 			}
 			switch {
 			case !st.Running:
-				fmt.Fprintln(out, "[+] OxiLLaMa is not running (Dendrite starts it when a session needs it)")
+				fmt.Fprintln(out, "[+] llama-server is not running (Dendrite starts it when a session needs it)")
 			case st.Managed:
-				fmt.Fprintf(out, "[+] OxiLLaMa is running (model %s, pid %d), managed by Dendrite: stops %s after the last session\n", st.Model, st.ChildPID, st.IdleGrace)
+				fmt.Fprintf(out, "[+] llama-server is running (model %s, pid %d), managed by Dendrite: stops %s after the last session\n", st.Model, st.ChildPID, st.IdleGrace)
 			default:
-				fmt.Fprintln(out, "[+] OxiLLaMa is running but was started by hand: Dendrite will not stop it (use `dendrite spike stop`)")
+				fmt.Fprintln(out, "[+] llama-server is running but was started by hand: Dendrite will not stop it (use `dendrite spike stop`)")
 			}
 			for _, h := range st.Holders {
 				fmt.Fprintf(out, "    - held by %s (pid %d)\n", h.Holder, h.PID)
@@ -128,17 +128,17 @@ func newSpikeStatusCmd() *cobra.Command {
 	return cmd
 }
 
-// holdOptions say how a lease on the OxiLLaMa server is taken and kept.
+// holdOptions say how a lease on the llama-server is taken and kept.
 type holdOptions struct {
 	Holder string        // who asks, for `spike status`
 	Model  string        // installed model id to start; empty picks the largest that fits
 	For    time.Duration // how long to hold; 0 holds until the context ends
 }
 
-// holdServer takes a lease on the OxiLLaMa server like a session does, starting the real server
+// holdServer takes a lease on the llama-server like a session does, starting the real server
 // when none runs, calls announce once it answers and keeps the lease alive until ctx ends or o.For
 // has passed.
-func holdServer(ctx context.Context, m *oxilease.Manager, o holdOptions, announce func()) error {
+func holdServer(ctx context.Context, m *llamalease.Manager, o holdOptions, announce func()) error {
 	lease, _, err := m.Hold(ctx, o.Holder, o.Model)
 	if err != nil {
 		return err
@@ -171,13 +171,13 @@ func newSpikeHoldCmd() *cobra.Command {
 	var dur time.Duration
 	cmd := &cobra.Command{
 		Use:   "hold",
-		Short: "Start OxiLLaMa if needed and keep it alive while this command runs (--for, or until Ctrl+C)",
+		Short: "Start llama-server if needed and keep it alive while this command runs (--for, or until Ctrl+C)",
 		Args:  cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			return holdServer(ctx, oxilease.NewManager(port, ""), holdOptions{Holder: "hold", For: dur}, func() {
-				fmt.Fprintf(cmd.OutOrStdout(), "[✓] Holding OxiLLaMa on port %d\n", port)
+			return holdServer(ctx, llamalease.NewManager(port, ""), holdOptions{Holder: "hold", For: dur}, func() {
+				fmt.Fprintf(cmd.OutOrStdout(), "[✓] Holding llama-server on port %d\n", port)
 			})
 		},
 	}

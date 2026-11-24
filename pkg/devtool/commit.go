@@ -35,7 +35,7 @@ type CommitOptions struct {
 	NoSmart          bool             `json:"no_smart,omitempty"`
 	Smart            bool             `json:"smart"`
 	SmartTicket      *SmartTicketInfo `json:"smart_ticket,omitempty"`
-	OxillamaEndpoint string           `json:"oxillama_endpoint,omitempty"`
+	LlamaCppEndpoint string           `json:"llamacpp_endpoint,omitempty"`
 	OllamaEndpoint   string           `json:"ollama_endpoint,omitempty"`
 	LiteLLMEndpoint  string           `json:"litellm_endpoint,omitempty"`
 	LiteLLMKey       string           `json:"litellm_key,omitempty"`

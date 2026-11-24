@@ -6,7 +6,7 @@ sidebar_label: "spike"
 
 # dendrite spike
 
-Unified multi-provider inference engine gateway (Ollama, OxiLLaMa, vLLM, TGI)
+Unified multi-provider inference engine gateway (Ollama, llama.cpp, vLLM, TGI)
 
 ## Category
 
@@ -23,16 +23,16 @@ Synaptic Cleft & Gating
 | Subcommand | Description |
 | :--- | :--- |
 | `bench` | Benchmark local chat models on this machine (speed, first word, memory pressure, answer quality) |
-| `hold` | Start OxiLLaMa if needed and keep it alive while this command runs (--for, or until Ctrl+C) |
+| `hold` | Start llama-server if needed and keep it alive while this command runs (--for, or until Ctrl+C) |
 | `list` | List registered engines, their models and the failover cascade |
-| `migrate` | Copy a model's blobs between engines (default Ollama to OxiLLaMa, which runs prompts on the CPU), optionally evicting the source |
-| `models` | List the local models installed on Ollama and OxiLLaMa and whether each fits this machine's memory |
+| `migrate` | Move a model's GGUF weights from Ollama to the llama-server models directory, optionally evicting the source |
+| `models` | List the local models installed on Ollama and llama-server and whether each fits this machine's memory |
 | `probe` | Check engine reachability, latency and models (all engines, one engine, or a raw Ollama endpoint) |
 | `prune` | List the installed Ollama models nothing uses and remove them to reclaim disk |
 | `render` | Render the registered engines' model routes as LiteLLM config |
-| `serve` | Run the real OxiLLaMa OpenAI-compatible server in the foreground (Ctrl+C releases it) |
-| `status` | Show whether the OxiLLaMa server runs, who started it and which sessions hold it |
-| `stop` | Stop a running OxiLLaMa server and free its port |
+| `serve` | Run the real llama-server OpenAI-compatible server in the foreground (Ctrl+C releases it) |
+| `status` | Show whether the llama-server runs, who started it and which sessions hold it |
+| `stop` | Stop a running llama-server and free its port |
 | `switch` | Move an engine to the front of the failover cascade |
 | `zero-cost` | Manage the zero-cost (self-hosted) model and prefix rules |
 | `zero-cost add` | Register a zero-cost model or prefix rule |
@@ -75,7 +75,7 @@ dendrite spike bench --models hermes3:8b,gpt-oss:20b --judge gemini-3.8-flash-me
 
 ### `dendrite spike hold`
 
-Start OxiLLaMa if needed and keep it alive while this command runs (--for, or until Ctrl+C)
+Start llama-server if needed and keep it alive while this command runs (--for, or until Ctrl+C)
 
 ```bash
 dendrite spike hold [flags]
@@ -84,7 +84,7 @@ dendrite spike hold [flags]
 | Flag | Description |
 | :--- | :--- |
 | `--for` | hold for this long (default: until interrupted) |
-| `--port` | OxiLLaMa server port (default: 8080) |
+| `--port` | llama-server port (default: 8080) |
 
 ### `dendrite spike list`
 
@@ -98,7 +98,7 @@ Aliases: `ls`
 
 ### `dendrite spike migrate`
 
-Copy a model's blobs between engines (default Ollama to OxiLLaMa, which runs prompts on the CPU), optionally evicting the source
+Move a model's GGUF weights from Ollama to the llama-server models directory, optionally evicting the source
 
 ```bash
 dendrite spike migrate <model> [flags]
@@ -111,11 +111,11 @@ Aliases: `move`
 | `--delete-source` | Evict the model from the source after copying |
 | `--dry-run` | Show what would happen without changing anything |
 | `--from` | Source engine (default: ollama) |
-| `--to` | Target engine (default: oxillama) |
+| `--to` | Target engine (default: llamacpp) |
 
 ### `dendrite spike models`
 
-List the local models installed on Ollama and OxiLLaMa and whether each fits this machine's memory
+List the local models installed on Ollama and llama-server and whether each fits this machine's memory
 
 ```bash
 dendrite spike models [flags]
@@ -123,8 +123,8 @@ dendrite spike models [flags]
 
 | Flag | Description |
 | :--- | :--- |
+| `--llamacpp` | llama-server endpoint (default http://127.0.0.1:8080) |
 | `--ollama` | Ollama endpoint (default http://127.0.0.1:11434) |
-| `--oxillama` | OxiLLaMa endpoint (default http://127.0.0.1:8080) |
 
 ```bash
 dendrite spike models
@@ -163,7 +163,7 @@ dendrite spike prune --keep gpt-oss:20b -y
 
 ### `dendrite spike serve`
 
-Run the real OxiLLaMa OpenAI-compatible server in the foreground (Ctrl+C releases it)
+Run the real llama-server OpenAI-compatible server in the foreground (Ctrl+C releases it)
 
 ```bash
 dendrite spike serve [flags]
@@ -174,7 +174,7 @@ Aliases: `start`
 | Flag | Description |
 | :--- | :--- |
 | `--model` | installed model to serve (default: the largest that fits the memory budget) |
-| `--port` | OxiLLaMa server port (default: 8080) |
+| `--port` | llama-server port (default: 8080) |
 
 ```bash
 dendrite spike serve
@@ -184,7 +184,7 @@ curl http://127.0.0.1:8080/v1/chat/completions -d '{"model":"qwen3_8b_q4km","mes
 
 ### `dendrite spike status`
 
-Show whether the OxiLLaMa server runs, who started it and which sessions hold it
+Show whether the llama-server runs, who started it and which sessions hold it
 
 ```bash
 dendrite spike status [flags]
@@ -192,11 +192,11 @@ dendrite spike status [flags]
 
 | Flag | Description |
 | :--- | :--- |
-| `--port` | OxiLLaMa server port (default: 8080) |
+| `--port` | llama-server port (default: 8080) |
 
 ### `dendrite spike stop`
 
-Stop a running OxiLLaMa server and free its port
+Stop a running llama-server and free its port
 
 ```bash
 dendrite spike stop [flags]
@@ -206,7 +206,7 @@ Aliases: `kill`
 
 | Flag | Description |
 | :--- | :--- |
-| `--port` | OxiLLaMa server port (default: 8080) |
+| `--port` | llama-server port (default: 8080) |
 
 ### `dendrite spike zero-cost`
 
@@ -278,6 +278,6 @@ dendrite spike list
 dendrite spike models
 dendrite spike probe ollama-metal
 dendrite spike probe --endpoint http://10.0.0.5:11434
-dendrite spike migrate qwen2.5-coder:7b --to oxillama --delete-source
+dendrite spike migrate qwen2.5-coder:7b --to llamacpp --delete-source
 dendrite spike zero-cost add my-model --env
 ```

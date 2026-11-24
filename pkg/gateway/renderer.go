@@ -18,13 +18,12 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 		ollamaBaseURL = "http://127.0.0.1:11434"
 	}
 
-	oxillamaBaseURL := os.Getenv("DENDRITE_OXILLAMA_ENDPOINT")
-	if oxillamaBaseURL == "" {
-		oxillamaBaseURL = "http://127.0.0.1:8080"
+	llamaCppBaseURL := os.Getenv("DENDRITE_LLAMACPP_ENDPOINT")
+	if llamaCppBaseURL == "" {
+		llamaCppBaseURL = "http://127.0.0.1:8080"
 	}
-	// Local Qwen tiers run on Ollama (GPU). OxiLLaMa prefills on the CPU, so it serves them
-	// only on request.
-	oxillamaOnline := os.Getenv("DENDRITE_GATEWAY_OXILLAMA_ROUTING") == "true"
+	// Local Qwen tiers run on Ollama; llama-server serves them only on request.
+	llamaCppOnline := os.Getenv("DENDRITE_GATEWAY_LLAMACPP_ROUTING") == "true"
 
 	qwen27bModel := "ollama/qwen3.8:27b"
 	qwen27bAPIBase := ollamaBaseURL
@@ -36,14 +35,14 @@ func DefaultLiteLLMConfig(ollamaBaseURL string) *LiteLLMConfig {
 	qwen9bProvider := "ollama"
 	qwen9bAPIKey := ""
 
-	if oxillamaOnline {
+	if llamaCppOnline {
 		qwen27bModel = "openai/qwen3.8:27b"
-		qwen27bAPIBase = strings.TrimRight(oxillamaBaseURL, "/") + "/v1"
+		qwen27bAPIBase = strings.TrimRight(llamaCppBaseURL, "/") + "/v1"
 		qwen27bProvider = "openai"
 		qwen27bAPIKey = "EMPTY"
 
 		qwen9bModel = "openai/qwen3.5:9b"
-		qwen9bAPIBase = strings.TrimRight(oxillamaBaseURL, "/") + "/v1"
+		qwen9bAPIBase = strings.TrimRight(llamaCppBaseURL, "/") + "/v1"
 		qwen9bProvider = "openai"
 		qwen9bAPIKey = "EMPTY"
 	}
@@ -240,17 +239,6 @@ func MultiEngineLiteLLMConfig(engines []inference.InferenceEngine) *LiteLLMConfi
 			provider = "ollama"
 			skipBudget = true
 
-		case inference.EngineOxiLLaMa:
-			modelName = "oxillama-rust"
-			mID := "qwen2.5-coder-7b"
-			if len(ecfg.Models) > 0 {
-				mID = ecfg.Models[0]
-			}
-			upstreamModel = "openai/" + mID
-			apiBase = endpoint + "/v1"
-			apiKey = "EMPTY"
-			skipBudget = true
-
 		case inference.EngineHuggingFaceTGI:
 			modelName = "hf-deepseek"
 			mID := "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"
@@ -353,9 +341,9 @@ func MultiEngineLiteLLMConfig(engines []inference.InferenceEngine) *LiteLLMConfi
 		}
 	}
 
-	// Point local-qwen3 aliases to OxiLLaMa when present in registered engines
+	// Point local-qwen3 aliases to llama-server when present in registered engines
 	for _, eng := range engines {
-		if eng.Type() == inference.EngineOxiLLaMa {
+		if eng.Type() == inference.EngineLlamaCpp {
 			oxEP := strings.TrimRight(eng.Config().Endpoint, "/") + "/v1"
 			for i := range cfg.ModelList {
 				switch cfg.ModelList[i].ModelName {

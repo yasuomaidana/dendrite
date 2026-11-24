@@ -47,7 +47,7 @@ type PortStatus struct {
 // CanonicalPorts audited in Gate 2.
 var CanonicalPorts = map[int]string{
 	11434: "Ollama Metal GPU Engine",
-	8080:  "OxiLLaMa Pure-Rust GGUF Daemon",
+	8080:  "llama.cpp llama-server GGUF Daemon",
 	4000:  "LiteLLM Governance Gateway",
 	8090:  "Plane v2 Project Management",
 	5432:  "PostgreSQL 16 Control Storage",
@@ -139,7 +139,7 @@ func (a *PreFlightAuditor) AuditTools() map[string]ToolStatus {
 		{"curl", true},
 		{"git", true},
 		{"python3", true},
-		{"cargo", false}, // optional toolchain for OxiLLaMa native compilation
+		{"cargo", false}, // optional Rust toolchain for building sidecars
 		{"docker", false},
 	}
 
@@ -230,7 +230,7 @@ func (a *PreFlightAuditor) RunAudit(ctx context.Context, host string) (*PreFligh
 
 	// Warn if cargo is missing
 	if cargoSt, ok := tools["cargo"]; ok && !cargoSt.Installed {
-		warnings = append(warnings, "Cargo (Rust toolchain) not found. Pre-built OxiLLaMa binary will be required.")
+		warnings = append(warnings, "Cargo (Rust toolchain) not found. Rust sidecars must be installed as pre-built binaries.")
 	}
 
 	// Warn if running on CPU

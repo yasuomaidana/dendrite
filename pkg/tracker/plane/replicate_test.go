@@ -29,7 +29,7 @@ const sampleDevStatusMD = `# Dendrite Project Development Status & Roadmap
 
 ### Milestone 16: Pluggable Multi-Provider Inference Engines (FEAT-020)
 
-- [x] **DEN-035**: Unified Inference Engine Gateway: OxiLLaMa, Hugging Face TGI/TEI, vLLM, llama.cpp & Ollama Metal (pkg/inference, pkg/gateway)
+- [x] **DEN-035**: Unified Inference Engine Gateway: llama.cpp, Hugging Face TGI/TEI, vLLM, llama.cpp & Ollama Metal (pkg/inference, pkg/gateway)
 
 ### Milestone 1: Core Foundation, Developer Tools & Ollama Engine
 
