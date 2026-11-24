@@ -340,3 +340,11 @@ func TestRagEnvPassesUnsetDendriteRagVariables(t *testing.T) {
 		t.Fatal("a missing file adds nothing")
 	}
 }
+
+func TestHealthMinor(t *testing.T) {
+	for in, want := range map[string]int{"1.4.2": 4, "1.12.0": 12, "1": 0, "": 0, "1.x.0": 0} {
+		if got := (Health{Protocol: in}).Minor(); got != want {
+			t.Errorf("Minor(%q) = %d, want %d", in, got, want)
+		}
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/testkit"
 
 	"github.com/spf13/cobra"
@@ -83,5 +84,43 @@ func TestBranchParentRefusesLoopsAndUnknownTickets(t *testing.T) {
 	_, err := runBranch(t, "parent", "DEN-840", "DEN-841")
 	if err == nil || !strings.Contains(err.Error(), "loop") {
 		t.Errorf("the loop is explained: %v", err)
+	}
+}
+
+// A sidecar older than protocol 1.5 refuses to clear a parent and leaves it; a newer one clears it.
+func TestBranchParentClearRemovesTheParent(t *testing.T) {
+	r := newTargetRig(t)
+	out, err := runBranch(t, "parent", "DEN-841", "--clear")
+	if !r.board.ClearSupported(t, "DEN-841", err, planesvc.Default().CanClearParent(context.Background()) == nil) {
+		return
+	}
+	testkit.Check(t, err)
+	testkit.Contains(t, out, "DEN-841 is no longer a sub-ticket of DEN-840")
+	testkit.Equal(t, "parent cleared", r.board.ParentOf("DEN-841"), "")
+}
+
+func TestBranchParentClearWithoutAParentChangesNothing(t *testing.T) {
+	newTargetRig(t)
+	out, err := runBranch(t, "parent", "DEN-900", "--clear")
+	testkit.Check(t, err)
+	testkit.Contains(t, out, "DEN-900 has no parent")
+}
+
+func TestBranchParentClearNeedsExactlyOneForm(t *testing.T) {
+	newTargetRig(t)
+	for name, args := range map[string][]string{
+		"clear with a parent": {"parent", "DEN-841", "DEN-840", "--clear"},
+		"neither":             {"parent", "DEN-841"},
+	} {
+		if _, err := runBranch(t, args...); err == nil {
+			t.Errorf("%s: expected a usage error", name)
+		}
+	}
+}
+
+func TestBranchParentClearOfAnUnknownTicketIsAnError(t *testing.T) {
+	newTargetRig(t)
+	if _, err := runBranch(t, "parent", "DEN-404", "--clear"); err == nil {
+		t.Fatal("an unknown ticket is an error")
 	}
 }

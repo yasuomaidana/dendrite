@@ -4,6 +4,7 @@ import (
 	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/cmd/dendrite/internal/planecli"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"Dendrite/pkg/featurebranch"
 	"Dendrite/pkg/planesvc"
 	"Dendrite/pkg/ticketlock"
+	"Dendrite/pkg/ticketparent"
 	"Dendrite/pkg/tracker/plane"
 )
 
@@ -46,17 +48,26 @@ func NewBranchCmd() *cobra.Command {
 		},
 	}
 	show.Flags().StringVar(&ticket, "ticket", "", "Explain the target for this ticket (asks Plane for its parent)")
+	var clearParent bool
 	parent := &cobra.Command{
-		Use:     "parent <ticket> <parent>",
-		Short:   "Make <parent> the parent of <ticket> in Plane, so their work shares the parent's feature branch",
-		Args:    cli.ExactArgs(2),
-		Example: "dendrite branch parent DEN-841 DEN-840",
+		Use:   "parent <ticket> <parent> | parent <ticket> --clear",
+		Short: "Make <parent> the parent of <ticket> in Plane, so their work shares the parent's feature branch; --clear removes the parent",
+		Args:  cobra.RangeArgs(1, 2),
+		Example: "dendrite branch parent DEN-841 DEN-840\n" +
+			"dendrite branch parent DEN-841 --clear",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if clearParent != (len(args) == 1) {
+				return cli.UsageErrorf("give either <ticket> <parent> or <ticket> --clear")
+			}
 			return planecli.PlaneRun(func(c *plane.Client) error {
+				if clearParent {
+					return runBranchClearParent(cmd.Context(), c, args[0], cmd.OutOrStdout())
+				}
 				return runBranchParent(cmd.Context(), c, args[0], args[1], cmd.OutOrStdout())
 			})
 		},
 	}
+	parent.Flags().BoolVar(&clearParent, "clear", false, "Remove the parent of <ticket> instead of setting one")
 	cmd.AddCommand(show, parent, newBranchRetireCmd())
 	return cmd
 }
@@ -81,31 +92,30 @@ func writeBranchTarget(out io.Writer, t branchpolicy.Target, plan featurebranch.
 	return nil
 }
 
-// runBranchParent sets the Plane parent of child. A parent that is the child itself or one of its descendants
-// would make a loop, so it is refused.
+// runBranchParent sets the Plane parent of child; a loop is a usage error.
 func runBranchParent(ctx context.Context, client *plane.Client, child, parent string, out io.Writer) error {
-	child, parent = strings.ToUpper(strings.TrimSpace(child)), strings.ToUpper(strings.TrimSpace(parent))
-	if child == parent {
-		return cli.UsageErrorf("a ticket cannot be its own parent")
-	}
 	board := ticketlock.Board{Svc: planesvc.Default(), Client: client}
-	for at, depth := parent, 0; depth < 8; depth++ {
-		up, ok, err := board.Parent(ctx, at)
-		if err != nil || !ok {
-			break
+	if err := ticketparent.Set(ctx, board, child, parent); err != nil {
+		if errors.Is(err, ticketparent.ErrLoop) {
+			return cli.UsageErrorf("%v", err)
 		}
-		if up.ID == child {
-			return cli.UsageErrorf("%s is below %s already; making it the parent would make a loop", parent, child)
-		}
-		at = up.ID
+		return err
 	}
-	p, err := planesvc.Default().GetIssue(ctx, client, parent)
+	fmt.Fprintf(out, "[✓] %s is now a sub-ticket of %s\n", strings.ToUpper(strings.TrimSpace(child)), strings.ToUpper(strings.TrimSpace(parent)))
+	return nil
+}
+
+// runBranchClearParent removes the Plane parent of child; a ticket with no parent is reported and left alone.
+func runBranchClearParent(ctx context.Context, client *plane.Client, child string, out io.Writer) error {
+	child = strings.ToUpper(strings.TrimSpace(child))
+	old, had, err := ticketparent.Clear(ctx, ticketlock.Board{Svc: planesvc.Default(), Client: client}, child)
 	if err != nil {
-		return fmt.Errorf("parent %s: %w", parent, err)
+		return err
 	}
-	if _, err := planesvc.Default().UpdateIssue(ctx, client, child, plane.UpdateIssueRequest{Parent: &p.ID}); err != nil {
-		return fmt.Errorf("set the parent of %s: %w", child, err)
+	if !had {
+		fmt.Fprintf(out, "[i] %s has no parent\n", child)
+		return nil
 	}
-	fmt.Fprintf(out, "[✓] %s is now a sub-ticket of %s\n", child, parent)
+	fmt.Fprintf(out, "[✓] %s is no longer a sub-ticket of %s\n", child, old.ID)
 	return nil
 }
