@@ -166,7 +166,8 @@ func TestJobMemory(t *testing.T) {
 	tools(t, map[string]string{"engram": "exit 1"})
 	testkit.Equal(t, "failing engram", engram.JobMemory(context.Background(), t.TempDir()), "")
 	tools(t, map[string]string{"engram": "echo 'No previous session memories found.'"})
-	testkit.Equal(t, "empty memory", engram.JobMemory(context.Background(), t.TempDir()), "")
+	empty := engram.JobMemory(context.Background(), t.TempDir())
+	testkit.Contains(t, empty, "(no memories yet)", "dendrite memory save")
 }
 
 // brewScript installs a stand-in engram into the PATH directory, the way `brew install` puts the real one in.

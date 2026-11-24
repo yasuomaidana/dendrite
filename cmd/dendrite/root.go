@@ -14,6 +14,7 @@ import (
 	"Dendrite/cmd/dendrite/install"
 	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/cmd/dendrite/knowledge"
+	"Dendrite/cmd/dendrite/memory"
 	"Dendrite/cmd/dendrite/mesh"
 	"Dendrite/cmd/dendrite/quality"
 	"Dendrite/cmd/dendrite/session"
@@ -40,7 +41,7 @@ func newRootCmd() *cobra.Command {
 		// Dendritic Arbor
 		knowledge.NewArborCmd(), knowledge.NewAfferentCmd(), bridge.NewRetroCmd(),
 		// Glial Regulation & Pruning
-		analysis.NewCognitionCmd(), analysis.NewPruneCmd(), quality.NewAllostasisCmd(), analysis.NewDirectiveCmd(), immune.NewImmuneCmd(),
+		analysis.NewCognitionCmd(), analysis.NewPruneCmd(), quality.NewAllostasisCmd(), analysis.NewDirectiveCmd(), immune.NewImmuneCmd(), memory.NewMemoryCmd(),
 		// Terminal Boutons & Vesicles
 		chronos.NewChronosCmd(), knowledge.NewVesicleCmd(), commit.NewQuantalCmd(), mesh.NewSyncCmd(),
 	)

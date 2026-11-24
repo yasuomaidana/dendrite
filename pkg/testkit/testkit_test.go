@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -158,5 +159,36 @@ func TestContainsAndNotContainsReportEachMiss(t *testing.T) {
 	NotContains(r, "alpha", "alpha")
 	if !strings.Contains(r.msg, `unexpected "alpha"`) {
 		t.Fatalf("unwanted text reported %q", r.msg)
+	}
+}
+
+func TestStubEngramRunsTheScriptFirstOnPathAndLogsToLOG(t *testing.T) {
+	log := StubEngram(t, `echo "$*" >> "$LOG"`)
+	if out, err := exec.Command("engram", "save", "a", "b").CombinedOutput(); err != nil {
+		t.Fatalf("engram: %v\n%s", err, out)
+	}
+	if got, _ := os.ReadFile(log); strings.TrimSpace(string(got)) != "save a b" {
+		t.Fatalf("log = %q", got)
+	}
+	if os.Getenv("DENDRITE_ENGRAM_BIN") != "" || os.Getenv("ENGRAM_DATA_DIR") == "" {
+		t.Fatal("the override must be cleared and Engram's data isolated")
+	}
+}
+
+func TestStubEngramAnswersExportItselfWithTheMemoriesATestSets(t *testing.T) {
+	StubEngram(t, `exit 1`)
+	file := filepath.Join(t.TempDir(), "e.json")
+	if out, err := exec.Command("engram", "export", file).CombinedOutput(); err != nil {
+		t.Fatalf("export: %v\n%s", err, out)
+	}
+	if got, _ := os.ReadFile(file); string(got) != `{"observations":[]}` {
+		t.Fatalf("default export = %q", got)
+	}
+	t.Setenv("ENGRAM_EXPORT", `{"observations":[{"title":"x"}]}`)
+	if out, err := exec.Command("engram", "export", file).CombinedOutput(); err != nil {
+		t.Fatalf("export: %v\n%s", err, out)
+	}
+	if got, _ := os.ReadFile(file); !strings.Contains(string(got), `"title":"x"`) {
+		t.Fatalf("export = %q", got)
 	}
 }

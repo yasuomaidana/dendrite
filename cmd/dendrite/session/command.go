@@ -100,6 +100,7 @@ func RunSessionCheckpoint(ctx context.Context, o SessionCheckpointOptions, out i
 	}
 
 	if cli.Globals.JSON {
+		rememberCheckpoint(ctx, o, cp.Ticket, io.Discard)
 		data, _ := json.MarshalIndent(cp, "", "  ")
 		fmt.Fprintln(out, string(data))
 		soma.AutoCleanWorkCopies(ctx, io.Discard)
@@ -127,6 +128,7 @@ func RunSessionCheckpoint(ctx context.Context, o SessionCheckpointOptions, out i
 	if cp.Ticket != "" {
 		commit.PostTicketComment(ctx, out, o.Worktree, "milestone", CheckpointSummary(cp))
 	}
+	rememberCheckpoint(ctx, o, cp.Ticket, out)
 	soma.AutoCleanWorkCopies(ctx, out)
 	repair.AdvanceQuietly(ctx, out)
 	soma.OfferDisposal(ctx, out)
@@ -211,6 +213,7 @@ func runSessionResume(ctx context.Context, targetPath string, asJSON bool, out i
 	soma.OfferDisposal(ctx, out)
 	planecli.WarnStaleIndex(out)
 	WarnWatcherDown(ledger, time.Now(), out)
+	printMemoryMode(out)
 	if memory := engram.JobMemory(ctx, "."); memory != "" {
 		fmt.Fprintf(out, "\n%s\n", memory)
 	}

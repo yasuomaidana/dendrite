@@ -3,6 +3,7 @@ package mesh
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/dotenv"
+	"Dendrite/pkg/launchd"
 	"Dendrite/pkg/modelcatalog"
 	"Dendrite/pkg/projectid"
 	"Dendrite/pkg/rag"
@@ -11,11 +12,8 @@ import (
 	"io"
 	"math"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -202,7 +200,7 @@ func removeSchedule(out io.Writer, agentsDir string, load bool) error {
 		return err
 	}
 	if load {
-		_, _ = launchctl("bootout", launchDomain(), path)
+		launchd.Unload(launchctl, path)
 	}
 	if _, err := modelcatalog.RemoveSchedule(agentsDir); err != nil {
 		return err
@@ -212,11 +210,7 @@ func removeSchedule(out io.Writer, agentsDir string, load bool) error {
 }
 
 func installSchedule(out io.Writer, agentsDir, exe string, load bool) error {
-	logDir := os.TempDir()
-	if home, err := projectid.HomeDir(); err == nil {
-		logDir = filepath.Join(home, "logs")
-		_ = os.MkdirAll(logDir, 0o755)
-	}
+	logDir := launchd.LogDir(projectid.HomeDir)
 	path, err := modelcatalog.InstallSchedule(agentsDir, exe, logDir)
 	if err != nil {
 		return err
@@ -225,20 +219,17 @@ func installSchedule(out io.Writer, agentsDir, exe string, load bool) error {
 	if !load {
 		return nil
 	}
-	_, _ = launchctl("bootout", launchDomain(), path)
-	if msg, err := launchctl("bootstrap", launchDomain(), path); err != nil {
-		return fmt.Errorf("launchctl bootstrap: %s", strings.TrimSpace(string(msg)))
+	if err := launchd.Load(launchctl, path); err != nil {
+		return err
 	}
 	fmt.Fprintln(out, "[✓] Loaded into launchd")
 	return nil
 }
 
-func launchDomain() string { return fmt.Sprintf("gui/%d", os.Getuid()) }
-
 // launchctl and goos are variables so tests never talk to the real launchd.
 var (
-	launchctl = func(args ...string) ([]byte, error) { return exec.Command("launchctl", args...).CombinedOutput() }
-	goos      = runtime.GOOS
+	launchctl launchd.Runner = launchd.Exec
+	goos                     = runtime.GOOS
 )
 
 // refreshCatalogIfStale keeps the catalog within its weekly TTL from a daemon tick.

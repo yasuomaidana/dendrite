@@ -3,6 +3,7 @@ package clitest
 import (
 	"Dendrite/cmd/dendrite/internal/cli"
 	"Dendrite/pkg/dotenv"
+	"Dendrite/pkg/engram"
 	"Dendrite/pkg/env/bootstrap"
 	"Dendrite/pkg/planesvc/planetest"
 	"Dendrite/pkg/workcopy"
@@ -23,6 +24,9 @@ func Main(m *testing.M) {
 	}
 	// Commands must not pick up the developer's real keys from .env files.
 	_ = os.Setenv(dotenv.EnvDisable, "off")
+	// A memory flush must never reach the developer's real ~/.engram: point Engram at a binary that does not
+	// exist, so a test that wants Engram puts a stand-in on PATH and clears this variable.
+	_ = os.Setenv(engram.BinaryEnv, "/nonexistent/engram-disabled-in-tests")
 	// Nothing here may reach the developer's real Docker or write into the real ~/.dendrite/stacks:
 	// an unstubbed `docker compose down` once removed the live Plane containers.
 	cli.RunCompose = func(context.Context, io.Writer, string, ...string) error { return nil }

@@ -21,7 +21,8 @@ Every agent session in this repository runs through Dendrite. Commands use Neuro
 10. Route every LLM call through Dendrite: the LiteLLM gateway (`http://localhost:4000`) for model access and `dendrite bouton jobs submit --isolate` (alias `agent jobs`) to delegate to Antigravity (AGY) or other models. Do not call provider APIs or spawn other agent CLIs directly.
 11. Reverse-engineering (REA) tickets are the ones the `[rea]` directive names (label `rea` or a `[REA]` title prefix). If you are a Claude session and refuse an REA ticket, do not leave it half done: run `dendrite retro handoff <ticket> --refused --reason "..."` (MCP `dendrite_rea_handoff`). AGY takes ownership: the refusal is recorded on the ticket, an AGY job starts in an isolated copy, the ticket is labelled `owner:agy` and a Claude session cannot claim it again without `--steal`. The Stop hook does the same when a session ends on a refusal. Change the rule with `dendrite directive set rea.refusal_owner=agy|none`; the `dendrite-rea` skill has the commands and how AGY works an REA ticket directly.
 12. Run `dendrite session checkpoint` after each finished ticket and before long waits.
-13. When a copy is finished and merged, `dendrite work gc` (or the next resume/checkpoint) deletes it; `dendrite work done <name>` removes one explicitly.
+13. Save what the next session must know (decisions with their reason, verified findings, ticket outcomes) with `dendrite memory save --type decision|note|outcome "<title>" "<body>"` or Engram's own `mem_save`: it is journaled at once and flushed into Engram when the session ends (`dendrite memory flush` sends it now); `dendrite memory mode` says which memory stores are in use.
+14. When a copy is finished and merged, `dendrite work gc` (or the next resume/checkpoint) deletes it; `dendrite work done <name>` removes one explicitly.
 
 ## Projects and synapses
 
