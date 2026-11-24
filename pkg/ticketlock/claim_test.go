@@ -1,13 +1,17 @@
 package ticketlock
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"Dendrite/pkg/tracker"
+	"Dendrite/pkg/tracker/plane"
 )
 
 func sampleClaim(branch string) Claim {
@@ -109,5 +113,60 @@ func TestTicketOfBranch(t *testing.T) {
 		if got != c.want || ok != (c.want != "") {
 			t.Errorf("TicketOfBranch(%q) = %q, %v", c.branch, got, ok)
 		}
+	}
+}
+
+// handOverToAGY labels the ticket the way the REA ownership transfer does.
+func handOverToAGY(t *testing.T, s *session, ticket string) {
+	t.Helper()
+	if _, _, err := s.Board.Svc.PatchLabels(context.Background(), s.Board.Client, ticket, []string{OwnerAGYLabel}, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestClaudeCannotClaimATicketAGYOwnsUnlessItSteals(t *testing.T) {
+	s := newSession(t, map[string]string{"DEN-377": "In Progress"})
+	handOverToAGY(t, s, "DEN-377")
+
+	// the agent comes from DENDRITE_AGENT (claude, set by newSession) when the claim names none
+	_, err := s.Claim(context.Background(), "DEN-377", ClaimOptions{})
+	if err == nil || !strings.Contains(err.Error(), "owned by AGY") || !strings.Contains(err.Error(), "--steal") {
+		t.Fatalf("a Claude claim on an AGY-owned ticket: %v", err)
+	}
+	if _, err := s.Store.ClaimFor(s.branch); err != ErrNoClaim {
+		t.Errorf("a refused claim must leave no claim: %v", err)
+	}
+
+	if _, err := s.Claim(context.Background(), "DEN-377", ClaimOptions{Agent: "agy"}); err != nil {
+		t.Errorf("AGY owns it and may claim it: %v", err)
+	}
+	if got := s.board.LabelNames("DEN-377"); !reflect.DeepEqual(got, []string{OwnerAGYLabel, "agent:agy", "tier:7"}) {
+		t.Errorf("AGY keeps the owner label: %v", got)
+	}
+
+	if _, err := s.Claim(context.Background(), "DEN-377", ClaimOptions{Agent: "claude", Steal: true}); err != nil {
+		t.Fatalf("a steal takes it back: %v", err)
+	}
+	if got := s.board.LabelNames("DEN-377"); !reflect.DeepEqual(got, []string{"agent:claude", "tier:7"}) {
+		t.Errorf("stealing it back clears the owner label so a later handoff can run: %v", got)
+	}
+}
+
+func TestOwnerGuardLetsThroughWhatItCannotRead(t *testing.T) {
+	s := newSession(t, map[string]string{"DEN-377": "To Do"})
+	s.board.Fail("PATCH", 0)
+	// the label lookup (a PATCH) fails, then the claim's own start fails: the guard itself must not be what stops it
+	_, err := s.Claim(context.Background(), "DEN-377", ClaimOptions{Agent: "claude"})
+	if err == nil || strings.Contains(err.Error(), "owned by AGY") {
+		t.Errorf("an unreadable label list must not read as ownership: %v", err)
+	}
+}
+
+func TestCanonicalTicketComesFromTheTitleOrTheReference(t *testing.T) {
+	if got := CanonicalTicket(&plane.PlaneIssue{Name: "[den-12] x"}, "ref"); got != "DEN-12" {
+		t.Errorf("from the title: %q", got)
+	}
+	if got := CanonicalTicket(&plane.PlaneIssue{Name: "no id"}, " den-7 "); got != "DEN-7" {
+		t.Errorf("from the reference: %q", got)
 	}
 }

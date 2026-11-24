@@ -31,6 +31,8 @@ func Main(m *testing.M) {
 	// Nor may a test change the developer's real Antigravity MCP registry.
 	cli.AgyRegister = func(string) ([]string, string) { return nil, "" }
 	cli.AgyMCPStatus = func(string) (bootstrap.AGYMCPState, error) { return bootstrap.AGYAbsent, nil }
+	// Nor may one start the real dendrite server to list its tools.
+	cli.AgyReaTools = func(string) ([]string, error) { return nil, nil }
 	stacksDir, stacksErr := os.MkdirTemp("", "dendrite-stacks-test-")
 	if stacksErr == nil {
 		_ = os.Setenv("DENDRITE_STACKS_DIR", stacksDir)

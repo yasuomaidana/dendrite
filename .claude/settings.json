@@ -49,6 +49,16 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "command -v dendrite >/dev/null 2>&1 || exit 0; dendrite hook stop; exit 0",
+            "type": "command"
+          }
+        ]
+      }
     ]
   }
 }

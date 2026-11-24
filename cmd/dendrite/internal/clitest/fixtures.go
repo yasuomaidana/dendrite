@@ -54,7 +54,10 @@ type boardServer struct {
 	Mu        sync.Mutex
 	Fail      bool
 	Relations []string
-	Patches   int
+	// Removed are the relations removed (remove-relation posts); FailRemove makes those posts fail.
+	Removed    []string
+	FailRemove bool
+	Patches    int
 }
 
 func (b *boardServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -74,6 +77,8 @@ func (b *boardServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	switch {
+	case strings.HasSuffix(p, "/remove-relation/"):
+		b.serveRemove(w, r, write)
 	case strings.HasSuffix(p, "/issue-relation/"):
 		b.serveRelation(w, r, p, write)
 	case strings.HasSuffix(p, "/issues/") && r.Method == http.MethodGet:
@@ -84,6 +89,18 @@ func (b *boardServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		write(map[string]any{})
 	}
+}
+
+// serveRemove records the relation removed, or fails when FailRemove is set.
+func (b *boardServer) serveRemove(w http.ResponseWriter, r *http.Request, write func(any)) {
+	if b.FailRemove {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	var body map[string]any
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	b.Removed = append(b.Removed, body["relation_type"].(string)+" "+body["related_issue"].(string))
+	write(map[string]any{})
 }
 
 // serveRelation records the relations posted and answers the one DEN-101 holds.

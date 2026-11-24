@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"Dendrite/pkg/directive"
 	"Dendrite/pkg/testkit"
 	"context"
 	"os"
@@ -233,5 +234,66 @@ func TestTheProtectedBranchesAreListedOnce(t *testing.T) {
 		"master":  "`master` or `main`",
 	} {
 		testkit.Equal(t, integration, workflowBranches{Integration: integration}.protected(), want)
+	}
+}
+
+func writeReaDirectives(t *testing.T, root, toml string) {
+	t.Helper()
+	file := filepath.Join(root, filepath.FromSlash(directive.Path))
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestREASkillDescribesTheDefaultOwnershipRule(t *testing.T) {
+	text := renderDendriteREASkill(t.TempDir())
+	for _, want := range []string{
+		"name: dendrite-rea", "the label `rea`", "a title starting `[REA]`",
+		"dendrite retro handoff <ticket> --refused", "dendrite_rea_handoff", "owner:agy",
+		"AGY sessions", "dendrite chronos claim <ticket> --agent agy", "dendrite retro analyze <target>", "dendrite_rea_search", "dendrite retro purge <id> --force", "dendrite retro reuse <id>", "dendrite retro engines", "docs/features/rea-engines.md", "dendrite retro export", "--sandbox host --trusted", "dendrite_rea_engines", "dendrite_rea_adr", "--ticket DEN-123", "under 4,000 tokens", "dendrite soma diagnose",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the REA skill lacks %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestREASkillFollowsTheProjectsDirective(t *testing.T) {
+	root := t.TempDir()
+	writeReaDirectives(t, root, "schema = 1\n[rea]\nlabels = [\"reverse\"]\ntitle_prefixes = []\nrefusal_owner = \"none\"\n")
+	text := renderDendriteREASkill(root)
+	if !strings.Contains(text, "the label `reverse`") || strings.Contains(text, "[REA]") ||
+		!strings.Contains(text, "stays with the session that claimed it") || strings.Contains(text, "owner:agy") {
+		t.Errorf("the skill must follow rea.* of the directives:\n%s", text)
+	}
+
+	writeReaDirectives(t, root, "schema = 1\n[rea]\nlabels = []\ntitle_prefixes = []\nrefusal_owner = \"none\"\n")
+	if text := renderDendriteREASkill(root); !strings.Contains(text, "none (no label or title prefix is configured)") {
+		t.Errorf("no markers configured:\n%s", text)
+	}
+
+	writeReaDirectives(t, root, "not = [valid")
+	if text := renderDendriteREASkill(root); !strings.Contains(text, "the label `rea`") {
+		t.Errorf("unreadable directives fall back to the defaults:\n%s", text)
+	}
+}
+
+func TestPrepareWritesTheREASkillForEveryAgent(t *testing.T) {
+	root := t.TempDir()
+	created, _, err := syncWorkflowSkill(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range skillDirs {
+		path := filepath.Join(root, filepath.FromSlash(dir), DendriteREASkill, "SKILL.md")
+		if data, err := os.ReadFile(path); err != nil || !strings.Contains(string(data), "# Dendrite REA") {
+			t.Errorf("%s: %v", path, err)
+		}
+	}
+	if len(created) != 2*len(skillDirs) {
+		t.Errorf("created %v: want the workflow and REA skill in each of %v", created, skillDirs)
 	}
 }

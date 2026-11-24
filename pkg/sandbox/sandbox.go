@@ -48,61 +48,73 @@ func (c *SandboxConfig) BuildDockerRunArgs() ([]string, error) {
 		name = GenerateContainerName()
 	}
 
-	args := []string{
-		"run",
-		"--name", name,
-		"--rm",
-	}
+	args := []string{"run", "--name", name, "--rm"}
+	args = append(args, c.securityArgs()...)
+	args = append(args, c.resourceArgs()...)
+	args = append(args, c.mountArgs()...)
+	args = append(args, c.environmentArgs()...)
+	args = append(args, c.Image)
+	return append(args, c.Command...), nil
+}
 
+// securityArgs are the hardening flags: no capabilities, no privilege escalation, a read-only root and a network
+// mode that defaults to none.
+func (c *SandboxConfig) securityArgs() []string {
+	var args []string
 	if c.DropAllCapabilities {
 		args = append(args, "--cap-drop", "ALL")
 	}
-
 	if c.NoNewPrivileges {
 		args = append(args, "--security-opt", "no-new-privileges:true")
 	}
-
 	if c.ReadOnlyRoot {
 		args = append(args, "--read-only")
 	}
-
 	netMode := c.NetworkMode
 	if netMode == "" {
 		netMode = "none"
 	}
-	args = append(args, "--network", netMode)
+	return append(args, "--network", netMode)
+}
 
+// resourceArgs are the scratch space and the memory and CPU limits.
+func (c *SandboxConfig) resourceArgs() []string {
 	tmpfs := c.TmpfsSize
 	if tmpfs == "" {
 		tmpfs = "1G"
 	}
-	args = append(args, "--tmpfs", fmt.Sprintf("/tmp:rw,noexec,nosuid,size=%s", tmpfs))
-
+	args := []string{"--tmpfs", fmt.Sprintf("/tmp:rw,noexec,nosuid,size=%s", tmpfs)}
 	if c.MemoryLimitMB > 0 {
 		args = append(args, "-m", fmt.Sprintf("%dm", c.MemoryLimitMB))
 	}
-
 	if c.CPULimit > 0 {
 		args = append(args, "--cpus", fmt.Sprintf("%.1f", c.CPULimit))
 	}
+	return args
+}
 
+// mountArgs are the writable scratch directory and the read-only mounts.
+func (c *SandboxConfig) mountArgs() []string {
+	var args []string
 	if c.HostScratchDir != "" {
-		args = append(args, "-v", fmt.Sprintf("%s:/workspace:rw", c.HostScratchDir))
-		args = append(args, "-w", "/workspace")
+		args = append(args, "-v", fmt.Sprintf("%s:/workspace:rw", c.HostScratchDir), "-w", "/workspace")
 	}
+	for _, m := range c.ReadOnlyMounts {
+		args = append(args, "-v", fmt.Sprintf("%s:%s:ro", m.Host, m.Container))
+	}
+	return args
+}
 
-	// Environment variables sorted for determinism
+// environmentArgs are the environment variables, sorted for determinism.
+func (c *SandboxConfig) environmentArgs() []string {
 	keys := make([]string, 0, len(c.Environment))
 	for k := range c.Environment {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	var args []string
 	for _, k := range keys {
 		args = append(args, "-e", fmt.Sprintf("%s=%s", k, c.Environment[k]))
 	}
-
-	args = append(args, c.Image)
-	args = append(args, c.Command...)
-
-	return args, nil
+	return args
 }

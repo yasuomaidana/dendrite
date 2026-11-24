@@ -417,13 +417,15 @@ func testMCP_PlaneDAGToolsStep6(t *testing.T, callTool func(toolName string, arg
 	}
 }
 
-// testMCP_PlaneDAGToolsStep7: 3. Test dendrite_plane_relation_link
+// testMCP_PlaneDAGToolsStep7: 3. Test dendrite_plane_relation_link, then dendrite_plane_relation_unlink
 func testMCP_PlaneDAGToolsStep7(t *testing.T, callTool func(toolName string, args map[string]interface{}) *CallToolResult) {
-	expectDAGText(t, callTool, "dendrite_plane_relation_link", map[string]interface{}{
-		"issue_id":        "DEN-011",
-		"relation_type":   "blocked_by",
-		"target_issue_id": "DEN-010",
-	}, "gantt_connected")
+	for tool, want := range map[string]string{"dendrite_plane_relation_link": "gantt_connected", "dendrite_plane_relation_unlink": `"removed": true`} {
+		expectDAGText(t, callTool, tool, map[string]interface{}{
+			"issue_id":        "DEN-011",
+			"relation_type":   "blocked_by",
+			"target_issue_id": "DEN-010",
+		}, want)
+	}
 }
 
 // expectDAGText calls a plane DAG tool and requires want in its first text.
@@ -575,6 +577,7 @@ func TestRelationLinkAndIssueCreateRejectBadInput(t *testing.T) {
 	mcptest.NoEnvPlane(t)
 	srv := mcptest.ToolsWith(t, nil, "DEV_STATUS.md")
 	mcptest.RunToolFailures(t, srv, []mcptest.ToolFailure{
+		{Name: "relation unlink without a type", Tool: "dendrite_plane_relation_unlink", Args: `{"issue_id":"DEN-1"}`, Env: nil, Want: "all required"},
 		{Name: "relation link without a type", Tool: "dendrite_plane_relation_link", Args: `{"issue_id":"DEN-1"}`, Env: nil, Want: "all required"},
 		{Name: "relation link without a client", Tool: "dendrite_plane_relation_link", Args: `{"issue_id":"DEN-1","relation_type":"blocked_by","target_issue_id":"DEN-2"}`, Env: nil, Want: "plane client error"},
 		{Name: "create without a name", Tool: "dendrite_plane_issue_create", Args: `{"name":"  "}`, Env: nil, Want: "missing required 'name'"},

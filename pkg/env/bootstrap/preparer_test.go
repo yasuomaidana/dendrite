@@ -451,6 +451,7 @@ func TestPrepare_EveryAgentFamilyGetsTheSameSearchAndLifecycleRules(t *testing.T
 		"`blocked` with a handoff",                      // a failed finish leaves the diagnosis
 		"`dendrite hook pre-edit` refuses file changes", // the write lock
 		"--no-ticket-guard",                             // the deliberate bypass
+		"`dendrite retro handoff <ticket> --refused",    // a refused REA ticket goes to AGY
 	}
 	files := []string{
 		"AGENTS.md",

@@ -34,20 +34,13 @@ func registerPlaneDAGTools(s *Server, deps Dependencies) {
 		"milestone": TypedProp("string", "Optional milestone filter"),
 	}), handleSmartSelect)
 
-	// 3. dendrite_plane_relation_link
-	s.RegisterTool(Tool{
-		Name:        "dendrite_plane_relation_link",
-		Description: "Create a dependency relationship between tickets in Plane (relation_type: 'blocking', 'blocked_by', 'relates_to', 'duplicate') for Gantt diagrams and DAG scheduling",
-		InputSchema: map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"issue_id":        TypedProp("string", "Source ticket ID or UUID (e.g. 'DEN-036' or issue UUID)"),
-				"relation_type":   TypedProp("string", "Relation type: 'blocking', 'blocked_by', 'relates_to', or 'duplicate'"),
-				"target_issue_id": TypedProp("string", "Target ticket ID or UUID that is related/blocked"),
-			},
-			"required": []interface{}{"issue_id", "relation_type", "target_issue_id"},
-		},
-	}, planeRelationLinkHandler(deps))
+	// 3. dendrite_plane_relation_link and dendrite_plane_relation_unlink
+	registerRelationTool(s, "dendrite_plane_relation_link",
+		"Create a dependency relationship between tickets in Plane (relation_type: 'blocking', 'blocked_by', 'relates_to', 'duplicate') for Gantt diagrams and DAG scheduling",
+		"Relation type: 'blocking', 'blocked_by', 'relates_to', or 'duplicate'", planeRelationLinkHandler(deps))
+	registerRelationTool(s, "dendrite_plane_relation_unlink",
+		"Remove one dependency relationship between tickets in Plane (relation_type: 'blocking', 'blocked_by', 'relates_to', 'duplicate'); the reverse of dendrite_plane_relation_link",
+		"Relation type to remove: 'blocking', 'blocked_by', 'relates_to', or 'duplicate'", planeRelationUnlinkHandler(deps))
 
 	// 4. dendrite_plane_issue_create
 	s.RegisterTool(Tool{
@@ -92,8 +85,41 @@ func resolveIssueUUID(ctx context.Context, client *plane.Client, raw string) (st
 	return "", fmt.Errorf("ticket '%s' not found in Plane", raw)
 }
 
+// registerRelationTool registers a tool that changes one relation between two tickets.
+func registerRelationTool(s *Server, name, description, typeHelp string, h ToolHandler) {
+	s.RegisterTool(Tool{
+		Name:        name,
+		Description: description,
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"issue_id":        TypedProp("string", "Source ticket ID or UUID (e.g. 'DEN-036' or issue UUID)"),
+				"relation_type":   TypedProp("string", typeHelp),
+				"target_issue_id": TypedProp("string", "Target ticket ID or UUID the relation points at"),
+			},
+			"required": []interface{}{"issue_id", "relation_type", "target_issue_id"},
+		},
+	}, h)
+}
+
 // planeRelationLinkHandler handles the dendrite_plane_relation_link tool.
 func planeRelationLinkHandler(deps Dependencies) ToolHandler {
+	return planeRelationHandler(deps, "create relation in Plane", map[string]interface{}{"gantt_connected": true},
+		func(ctx context.Context, c *plane.Client, src, rel, tgt string) error {
+			return c.AddIssueRelation(ctx, src, rel, []string{tgt})
+		})
+}
+
+// planeRelationUnlinkHandler handles the dendrite_plane_relation_unlink tool.
+func planeRelationUnlinkHandler(deps Dependencies) ToolHandler {
+	return planeRelationHandler(deps, "remove relation in Plane", map[string]interface{}{"removed": true},
+		func(ctx context.Context, c *plane.Client, src, rel, tgt string) error {
+			return c.RemoveIssueRelation(ctx, src, rel, tgt)
+		})
+}
+
+// planeRelationHandler resolves both tickets and applies one relation change; extra is added to the answer.
+func planeRelationHandler(deps Dependencies, failure string, extra map[string]interface{}, apply func(ctx context.Context, c *plane.Client, src, rel, tgt string) error) ToolHandler {
 	return func(ctx context.Context, args map[string]interface{}) (*CallToolResult, error) {
 		issueID, _ := args["issue_id"].(string)
 		relationType, _ := args["relation_type"].(string)
@@ -117,18 +143,20 @@ func planeRelationLinkHandler(deps Dependencies) ToolHandler {
 			return nil, err
 		}
 
-		if err := client.AddIssueRelation(ctx, sourceUUID, relationType, []string{targetUUID}); err != nil {
-			return nil, fmt.Errorf("failed to create relation in Plane: %w", err)
+		if err := apply(ctx, client, sourceUUID, relationType, targetUUID); err != nil {
+			return nil, fmt.Errorf("failed to %s: %w", failure, err)
 		}
 
 		res := map[string]interface{}{
-			"status":          "success",
-			"relation_type":   relationType,
-			"source_ticket":   issueID,
-			"source_uuid":     sourceUUID,
-			"target_ticket":   targetIssueID,
-			"target_uuid":     targetUUID,
-			"gantt_connected": true,
+			"status":        "success",
+			"relation_type": relationType,
+			"source_ticket": issueID,
+			"source_uuid":   sourceUUID,
+			"target_ticket": targetIssueID,
+			"target_uuid":   targetUUID,
+		}
+		for k, v := range extra {
+			res[k] = v
 		}
 
 		data := IndentJSON(res)
