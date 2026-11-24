@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"Dendrite/pkg/sidecar"
@@ -48,3 +49,25 @@ func Install() (func(), error) {
 
 // Main installs the stand-in, runs the tests and exits.
 func Main(m *testing.M) { testmain.Run(m, Install) }
+
+var (
+	builtOnce sync.Once
+	builtBin  string
+	builtErr  error
+)
+
+// UseStandin points the dendrite-core locator at the stand-in sidecar for the duration of a test, for packages
+// whose TestMain does not install it. The stand-in is built once per test binary.
+func UseStandin(t testing.TB) {
+	t.Helper()
+	builtOnce.Do(func() {
+		var dir string
+		if dir, builtErr = os.MkdirTemp("", "coretest"); builtErr == nil {
+			builtBin, builtErr = Build(dir)
+		}
+	})
+	if builtErr != nil {
+		t.Fatal(builtErr)
+	}
+	t.Setenv(sidecar.EnvVar(BinaryName), builtBin)
+}

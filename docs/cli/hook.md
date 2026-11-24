@@ -25,7 +25,8 @@ None
 | `pre-commit` | Git pre-commit hook: the same guard for every staged path, so agents cannot bypass it through git |
 | `pre-edit` | Pre-edit hook: refuse a file change unless this working copy has a claimed, In Progress ticket |
 | `pre-tool` | Pre-tool hook: stop a raw recursive search once, point at the Dendrite equivalent, and log tool use |
-| `session-end` | Session-end hook: a ticket still In Progress gets an automatic handoff and is blocked (needs-input) |
+| `session-end` | Session-end hook: a refused REA ticket goes to AGY; a ticket still In Progress gets an automatic handoff and is blocked (needs-input) |
+| `stop` | Stop hook: an REA ticket the Claude session refused goes to AGY (the [rea] directive) |
 
 ## Flags
 

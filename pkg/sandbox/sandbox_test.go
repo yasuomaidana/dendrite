@@ -71,6 +71,24 @@ func TestSandboxConfig_BuildDockerRunArgs(t *testing.T) {
 	}
 }
 
+func TestSandboxConfig_ReadOnlyMounts(t *testing.T) {
+	cfg := sandbox.NewDefaultSandboxConfig("img", []string{"cmd"})
+	cfg.ReadOnlyMounts = []sandbox.Mount{{Host: "/h/sample.exe", Container: "/target/input"}, {Host: "/h/lib", Container: "/lib2"}}
+	args, err := cfg.BuildDockerRunArgs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(args, " ")
+	for _, want := range []string{"-v /h/sample.exe:/target/input:ro", "-v /h/lib:/lib2:ro"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("args lack %q: %s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "/target/input:rw") || strings.Contains(joined, "/lib2:rw") {
+		t.Errorf("a read-only mount must not be writable: %s", joined)
+	}
+}
+
 func TestSandboxSession_RAIIDropCleanup(t *testing.T) {
 	runner := &sandboxtest.RecordingRunner{Output: []byte("success"), Err: nil}
 	cfg := sandbox.NewDefaultSandboxConfig("golang:1.24", []string{"go", "version"})

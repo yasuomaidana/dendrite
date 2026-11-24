@@ -21,20 +21,32 @@ func rig(t *testing.T) (*planetest.Board, ticketlock.Board) {
 	t.Setenv("PLANE_API_KEY", "k")
 	board := planetest.NewBoard(t, map[string]string{"DEN-840": "To Do", "DEN-841": "To Do", "DEN-900": "To Do"})
 	board.SetParent("DEN-841", "DEN-840")
-	client, err := plane.NewClient(plane.Config{BaseURL: board.URL, WorkspaceSlug: planetest.BoardWorkspace, ProjectID: planetest.BoardProject, DirectToken: "k"}, board.Client())
+	return board, boardAt(t, board.URL, board.Client())
+}
+
+// boardAt is a ticket board on the Plane served at baseURL.
+func boardAt(t *testing.T, baseURL string, httpClient *http.Client) ticketlock.Board {
+	t.Helper()
+	client, err := plane.NewClient(plane.Config{BaseURL: baseURL, WorkspaceSlug: planetest.BoardWorkspace, ProjectID: planetest.BoardProject, DirectToken: "k"}, httpClient)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return board, ticketlock.Board{Svc: planesvc.Default(), Client: client}
+	return ticketlock.Board{Svc: planesvc.Default(), Client: client}
 }
 
-func TestSetMakesTheParentAndNormalizesRefs(t *testing.T) {
-	board, b := rig(t)
-	if err := Set(context.Background(), b, " den-900 ", "den-840"); err != nil {
-		t.Fatal(err)
-	}
-	if got, want := board.ParentOf("DEN-900"), board.IDOf("DEN-840"); got != want {
-		t.Errorf("parent = %q, want %q", got, want)
+// DEN-841 is under DEN-840, which has no parent: parenting under DEN-841 walks up one step and stops.
+func TestSetMakesTheParentNormalizesRefsAndWalksUpTheChain(t *testing.T) {
+	for _, c := range []struct{ child, parent, wantParent string }{
+		{" den-900 ", "den-840", "DEN-840"},
+		{"DEN-900", "DEN-841", "DEN-841"},
+	} {
+		board, b := rig(t)
+		if err := Set(context.Background(), b, c.child, c.parent); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := board.ParentOf("DEN-900"), board.IDOf(c.wantParent); got != want {
+			t.Errorf("%q under %q: parent = %q, want %q", c.child, c.parent, got, want)
+		}
 	}
 }
 
@@ -95,16 +107,6 @@ func TestClearOfAnUnknownTicketIsAnError(t *testing.T) {
 	}
 }
 
-func TestSetWalksUpAChainOfParents(t *testing.T) {
-	board, b := rig(t) // DEN-841 is under DEN-840, which has no parent: the walk goes up one step and stops
-	if err := Set(context.Background(), b, "DEN-900", "DEN-841"); err != nil {
-		t.Fatal(err)
-	}
-	if got, want := board.ParentOf("DEN-900"), board.IDOf("DEN-841"); got != want {
-		t.Errorf("parent = %q, want %q", got, want)
-	}
-}
-
 func TestClearReportsAPlaneThatRefusesTheWrite(t *testing.T) {
 	board, _ := rig(t)
 	target, err := url.Parse(board.URL)
@@ -120,11 +122,7 @@ func TestClearReportsAPlaneThatRefusesTheWrite(t *testing.T) {
 		proxy.ServeHTTP(w, r)
 	}))
 	t.Cleanup(refusing.Close)
-	client, err := plane.NewClient(plane.Config{BaseURL: refusing.URL, WorkspaceSlug: planetest.BoardWorkspace, ProjectID: planetest.BoardProject, DirectToken: "k"}, refusing.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	b := ticketlock.Board{Svc: planesvc.Default(), Client: client}
+	b := boardAt(t, refusing.URL, refusing.Client())
 	_, had, err := clearWith(context.Background(), b, "DEN-841", func(context.Context) error { return nil })
 	if err == nil || !had {
 		t.Fatalf("had=%v err=%v, want the refused write reported", had, err)

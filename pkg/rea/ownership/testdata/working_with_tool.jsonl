@@ -1,0 +1,1 @@
+{"type":"assistant","message":{"role":"assistant","stop_reason":"tool_use","content":[{"type":"text","text":"I can't help with that file format directly, so I will read it with a tool."},{"type":"tool_use","name":"Read","input":{}}]}}

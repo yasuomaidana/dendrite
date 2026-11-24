@@ -20,6 +20,7 @@ As a security researcher and systems developer, I need an automated, evidence-ba
 1. **Tooling Integration**:
    - macOS Host: REA CLI & MCP server (`rea-agents mcp`) paired with Hopper Disassembler for Mach-O, Swift/ObjC metadata, and local Chrome DevTools Protocol.
    - Remote Linux Worker: Containerized headless Ghidra (`analyzeHeadless`), Rizin, and Binwalk on Debian/Azure.
+   - Engines (rizin, radare2, objdump, Ghidra; proprietary tools documented): see [rea-engines.md](rea-engines.md) for the container-first policy, the `--engine` selection and the images.
 2. **3-Stage Methodology Contract**:
    - **Decompile**: Recover disassembly, pseudocode, and symbol definitions.
    - **Understand**: Trace control flows, isolates constants/algorithms.

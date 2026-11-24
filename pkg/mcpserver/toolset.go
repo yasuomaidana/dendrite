@@ -22,6 +22,9 @@ const (
 	ProfileFull Profile = "full"
 )
 
+// ReaToolPrefix starts the name of every reverse-engineering (REA) tool.
+const ReaToolPrefix = "dendrite_rea_"
+
 // ProfileEnv names the environment variable that selects the profile when no flag is given.
 const ProfileEnv = "DENDRITE_MCP_PROFILE"
 
@@ -33,10 +36,13 @@ const ProfileEnv = "DENDRITE_MCP_PROFILE"
 // the full profile.
 //
 // CoreToolPrefixes and CoreToolNames are the control-plane tools in the core profile.
+// The REA tools are in the core set because the dendrite-rea skill sends every agent (AGY above all) to them,
+// and the server AGY registers runs the core profile.
+//
 // Synapse tools are served by the scoped synapse server (NewSynapseServer), which is always
 // confined to the relationship and is not filtered.
 var (
-	CoreToolPrefixes = []string{"dendrite_rag_", "dendrite_graph_", "dendrite_plane_", "dendrite_ticket_"}
+	CoreToolPrefixes = []string{"dendrite_rag_", "dendrite_graph_", "dendrite_plane_", "dendrite_ticket_", ReaToolPrefix}
 	CoreToolNames    = map[string]bool{"dendrite_query_context": true, "dendrite_synapse_peers": true}
 )
 
