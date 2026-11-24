@@ -139,7 +139,7 @@ func TestRenderAPolyglotProjectIsValidYAMLWithAJobPerComponent(t *testing.T) {
 		"working-directory: crates", "cargo clippy --workspace --all-targets -- -D warnings -W clippy::cognitive_complexity",
 		"cargo llvm-cov --workspace --fail-under-lines 87.5", "components: rustfmt, clippy, llvm-tools-preview", "bun install --frozen-lockfile", "bun run build",
 		"uvx ruff check .", "--cov-fail-under=87.5", "Gate: coverage (>= 87.5%)", "GITHUB_STEP_SUMMARY", "go-version-file: go.mod",
-		`--tag "${{ vars.LOOM_GATE_REF || 'v0.1.0' }}" loom-gate`,
+		`--tag "${{ vars.LOOM_GATE_REF || 'v0.2.0' }}" loom-gate`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q\n%s", want, text)

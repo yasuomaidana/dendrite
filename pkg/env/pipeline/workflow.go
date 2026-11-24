@@ -21,6 +21,10 @@ const ManagedHeader = "# managed by dendrite — edit .github/dendrite/directive
 // loomGateRepo builds the quality gates every generated workflow runs.
 const loomGateRepo = "https://github.com/yasuomaidana/dendrite-rag-rs"
 
+// loomGateRef is the dendrite-rag-rs tag loom-gate is installed from, unless the repository variable
+// LOOM_GATE_REF names another. v0.2.0 is the first release without the BUSL-1.1 oxillama backend (DRAG-129).
+const loomGateRef = "${{ vars.LOOM_GATE_REF || 'v0.2.0' }}"
+
 func bytesReader(b []byte) io.Reader { return bytes.NewReader(b) }
 
 var plain = regexp.MustCompile(`^[A-Za-z0-9 _.()/=,>-]+$`)
@@ -92,8 +96,8 @@ func gateSteps(comps []Component, ext Extension) []Step {
 			Step{Name: "Set up Rust", Uses: "dtolnay/rust-toolchain@stable"},
 			Step{Name: "Cache loom-gate", Uses: actionCache, With: [][2]string{
 				{"path", "~/.cargo/bin/loom-gate"},
-				{"key", "loom-gate-${{ runner.os }}-${{ vars.LOOM_GATE_REF || 'v0.1.0' }}"}}},
-			run("Install loom-gate", `command -v loom-gate >/dev/null || cargo install --locked --git `+loomGateRepo+` --tag "${{ vars.LOOM_GATE_REF || 'v0.1.0' }}" loom-gate`))
+				{"key", "loom-gate-${{ runner.os }}-" + loomGateRef}}},
+			run("Install loom-gate", `command -v loom-gate >/dev/null || cargo install --locked --git `+loomGateRepo+` --tag "`+loomGateRef+`" loom-gate`))
 	}
 	checks := []string{"loc", "clones", "complexity", "structure"}
 	if hasKind(comps, Rust) {
