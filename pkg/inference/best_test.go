@@ -27,11 +27,12 @@ func fakeOllama(t *testing.T) string {
 	return srv.URL
 }
 
-func withOxiModel(t *testing.T, bytes int64) {
+func withLlamaModel(t *testing.T, bytes int64) {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	dir := filepath.Join(home, ".oxillama", "models", "qwen3_8b_q4km")
+	t.Setenv("DENDRITE_HOME", home)
+	t.Setenv("DENDRITE_GGUF_MODELS_DIR", "")
+	dir := filepath.Join(home, "models", "qwen3_8b_q4km")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +43,7 @@ func withOxiModel(t *testing.T, bytes int64) {
 }
 
 func TestBestLocalModelPrefersTheSmartestThatFits(t *testing.T) {
-	withOxiModel(t, 5<<30)
+	withLlamaModel(t, 5<<30)
 	ollama := fakeOllama(t)
 
 	t.Setenv("DENDRITE_MODEL_MEM_BUDGET_GB", "12")
@@ -51,11 +52,11 @@ func TestBestLocalModelPrefersTheSmartestThatFits(t *testing.T) {
 		t.Fatalf("12 GB: %+v, %v; want qwen3:14b on ollama", got, err)
 	}
 
-	// 14B no longer fits; the stopped OxiLLaMa model (73) outranks hermes3:8b (67) and is started by a lease.
+	// 14B no longer fits; the stopped llama-server model (73) outranks hermes3:8b (67) and is started by a lease.
 	t.Setenv("DENDRITE_MODEL_MEM_BUDGET_GB", "6.5")
 	got, err = BestLocalModel(context.Background(), ollama, "http://127.0.0.1:1")
-	if err != nil || got.Model != "qwen3-8b-q4_k_m" || got.Engine != "oxillama" || !got.NeedsStart {
-		t.Fatalf("6.5 GB: %+v, %v; want oxillama qwen3-8b-q4_k_m needing a start", got, err)
+	if err != nil || got.Model != "qwen3-8b-q4_k_m" || got.Engine != "llamacpp" || !got.NeedsStart {
+		t.Fatalf("6.5 GB: %+v, %v; want llamacpp qwen3-8b-q4_k_m needing a start", got, err)
 	}
 
 	// Only the small one fits.

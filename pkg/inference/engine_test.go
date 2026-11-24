@@ -10,7 +10,7 @@ import (
 
 func TestEngineType_IsValid(t *testing.T) {
 	validTypes := []EngineType{
-		EngineOllama, EngineOxiLLaMa, EngineHuggingFaceTGI,
+		EngineOllama, EngineHuggingFaceTGI,
 		EngineHuggingFaceTEI, EngineHuggingFaceEndpoint, EngineVLLM, EngineLlamaCpp,
 	}
 	for _, vt := range validTypes {
@@ -112,93 +112,6 @@ func TestOllamaEngine_GenerateAndStream(t *testing.T) {
 	badH := badEngine.Health(ctx)
 	if badH.Reachable {
 		t.Errorf("expected unreachable")
-	}
-}
-
-func TestOxiLLaMaEngine_GenerateAndStream(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/v1/chat/completions":
-			var req map[string]interface{}
-			_ = json.NewDecoder(r.Body).Decode(&req)
-			if stream, ok := req["stream"].(bool); ok && stream {
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"rust \"}}]}\n\n"))
-				_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"gguf\"}}]}\n\n"))
-				_, _ = w.Write([]byte("data: [DONE]\n\n"))
-				return
-			}
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{
-				"id":"ox-1",
-				"choices":[{"message":{"content":"pure rust response"}}],
-				"usage":{"prompt_tokens":12,"completion_tokens":24}
-			}`))
-		case "/v1/models":
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"data":[{"id":"qwen2.5-coder-7b"}]}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	engine := NewOxiLLaMaEngine(EngineConfig{
-		ID:       "test-oxillama",
-		Endpoint: server.URL,
-	}, server.Client())
-
-	if engine.ID() != "test-oxillama" || engine.Type() != EngineOxiLLaMa || !engine.IsSelfHosted() {
-		t.Errorf("unexpected oxillama metadata")
-	}
-	_ = engine.Config()
-
-	ctx := context.Background()
-
-	// 1. Generate
-	resp, err := engine.Generate(ctx, CompletionRequest{
-		Prompt:    "hello rust",
-		System:    "be precise",
-		MaxTokens: 100,
-	})
-	if err != nil {
-		t.Fatalf("oxillama generate failed: %v", err)
-	}
-	if resp.Text != "pure rust response" || resp.PromptTokens != 12 || resp.OutputTokens != 24 {
-		t.Errorf("unexpected oxillama response: %+v", resp)
-	}
-
-	// Empty prompt
-	_, err = engine.Generate(ctx, CompletionRequest{Prompt: ""})
-	if err != ErrEmptyPrompt {
-		t.Errorf("expected ErrEmptyPrompt, got %v", err)
-	}
-
-	// 2. Stream
-	ch, err := engine.Stream(ctx, CompletionRequest{Prompt: "stream rust"})
-	if err != nil {
-		t.Fatalf("oxillama stream error: %v", err)
-	}
-	var chunks []string
-	for c := range ch {
-		if c.Text != "" {
-			chunks = append(chunks, c.Text)
-		}
-	}
-	if len(chunks) != 2 || chunks[0] != "rust " || chunks[1] != "gguf" {
-		t.Errorf("unexpected stream chunks: %v", chunks)
-	}
-
-	// Stream empty prompt
-	_, err = engine.Stream(ctx, CompletionRequest{Prompt: ""})
-	if err != ErrEmptyPrompt {
-		t.Errorf("expected ErrEmptyPrompt on stream, got %v", err)
-	}
-
-	// 3. Health & Models
-	h := engine.Health(ctx)
-	if !h.Reachable || len(h.Models) != 1 || h.Models[0] != "qwen2.5-coder-7b" {
-		t.Errorf("unexpected health status: %+v", h)
 	}
 }
 

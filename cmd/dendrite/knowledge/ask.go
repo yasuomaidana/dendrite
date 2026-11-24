@@ -162,7 +162,7 @@ func NewAskCmd() *cobra.Command {
 	f.StringVar(&o.Tier, "tier", "", "Shortcut for the tier: local, hybrid or paid")
 	cli.AddProjectFlag(cmd, &o.Project, ".", "Project directory to index and search")
 	f.StringVar(&o.PaidModel, "paid-model", "gemini-4-argon-medium", "Paid fallback model")
-	f.StringVar(&o.LocalModel, "local-model", "", "Local model on the LiteLLM gateway (default: [ask] local_model in .dendrite/rag.toml, else the gateway's local model on the most preferred reachable GPU engine; never OxiLLaMa, which prefills on the CPU)")
+	f.StringVar(&o.LocalModel, "local-model", "", "Local model on the LiteLLM gateway (default: [ask] local_model in .dendrite/rag.toml, else the gateway's local model on the most preferred reachable engine)")
 	f.IntVarP(&o.TopK, "top-k", "k", 0, "Retrieve the N best chunks instead of a token-budgeted context pack")
 	f.BoolVarP(&o.Docs, "docs", "d", false, "Also search the documentation (default: code only); same as --corpus all")
 	f.StringVar(&o.Corpus, "corpus", "", "Corpora searched: code (default), all (code and documentation), tickets (Plane tickets) or docs (documentation only, for design and conceptual questions)")

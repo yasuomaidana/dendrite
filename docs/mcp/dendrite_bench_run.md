@@ -22,7 +22,7 @@ Execute an automated k6 or synthetic performance benchmark measuring TTFT, TPS, 
       "type": "string"
     },
     "engine_id": {
-      "description": "Inference engine identifier (e.g. 'oxillama', 'ollama-metal', 'vllm-cluster')",
+      "description": "Inference engine identifier (e.g. 'llamacpp-local', 'ollama-metal', 'vllm-cluster')",
       "type": "string"
     },
     "failover_endpoint": {

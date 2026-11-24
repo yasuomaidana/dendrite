@@ -136,7 +136,7 @@ func GitRun(t *testing.T, dir string, args ...string) string {
 // isolateEngines points every inference engine at a closed port so probes fail fast.
 func IsolateEngines(t *testing.T) {
 	t.Helper()
-	for _, e := range []string{"OLLAMA", "OXILLAMA", "VLLM", "HF_TGI", "HF_TEI", "CANDLE", "LLAMACPP"} {
+	for _, e := range []string{"OLLAMA", "VLLM", "HF_TGI", "HF_TEI", "CANDLE", "LLAMACPP"} {
 		t.Setenv("DENDRITE_"+e+"_ENDPOINT", "http://127.0.0.1:1")
 	}
 }

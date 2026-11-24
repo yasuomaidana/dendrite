@@ -55,7 +55,7 @@ func noPath(string) (string, error) { return "", exec.ErrNotFound }
 func TestEnvVar(t *testing.T) {
 	for in, want := range map[string]string{
 		"dendrite-core": "DENDRITE_DENDRITE_CORE_BIN",
-		"oxillama":      "DENDRITE_OXILLAMA_BIN",
+		"llama-server":  "DENDRITE_LLAMA_SERVER_BIN",
 		"a.b":           "DENDRITE_A_B_BIN",
 	} {
 		if got := EnvVar(in); got != want {

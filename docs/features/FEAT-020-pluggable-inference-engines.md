@@ -5,13 +5,13 @@ status: approved
 plane_epic: PROJ-E-02
 dependencies: [FEAT-002, FEAT-010]
 repository: dendrite
-tags: [ai, inference, ollama, oxillama, huggingface, vllm, llamacpp, token-governance]
+tags: [ai, inference, ollama, llamacpp, huggingface, vllm, llamacpp, token-governance]
 ---
 
 # FEAT-020: Pluggable Inference Engine Architecture & Multi-Provider Gateway
 
 ## 1. User Story & Business Objective
-As an AI engineer and systems developer using local-first or hybrid LLM workflows, I need Dendrite to support multiple local and self-hosted inference engines—specifically **Ollama**, **OxiLLaMa (`cool-japan/oxillama`)**, **Hugging Face TGI/TEI**, **vLLM**, and **llama.cpp**—alongside commercial upstream APIs. This flexibility allows selecting the optimal runtime for each hardware tier (Apple Silicon Metal, remote NVIDIA CUDA servers, pure-Rust zero-FFI environments, or CPU-only nodes) while binding all inference calls to Dendrite's LiteLLM token governance, zero-cost accounting, and automatic fallback chains.
+As an AI engineer and systems developer using local-first or hybrid LLM workflows, I need Dendrite to support multiple local and self-hosted inference engines—specifically **Ollama**, **llama.cpp (`ggml-org/llama.cpp`)**, **Hugging Face TGI/TEI**, and **vLLM**—alongside commercial upstream APIs. This flexibility allows selecting the optimal runtime for each hardware tier (Apple Silicon Metal, remote NVIDIA CUDA servers, or CPU-only nodes) while binding all inference calls to Dendrite's LiteLLM token governance, zero-cost accounting, and automatic fallback chains.
 
 ---
 
@@ -22,7 +22,7 @@ As an AI engineer and systems developer using local-first or hybrid LLM workflow
      ```go
      type InferenceEngine interface {
          ID() string
-         Type() EngineType // ollama, oxillama, huggingface_tgi, huggingface_endpoint, vllm, llamacpp
+         Type() EngineType // ollama, llamacpp, huggingface_tgi, huggingface_endpoint, vllm, llamacpp
          Generate(ctx context.Context, req CompletionRequest) (*CompletionResponse, error)
          Stream(ctx context.Context, req CompletionRequest) (<-chan StreamChunk, error)
          Health(ctx context.Context) EngineHealth
@@ -34,11 +34,10 @@ As an AI engineer and systems developer using local-first or hybrid LLM workflow
      - Tailored for Apple Silicon Metal GPU acceleration and local workstation development.
      - Zero-cost token exemption in `pkg/gateway`.
      - Supports `qwen2.5-coder:14b`, `deepseek-coder:6.7b`, `llama3.2:3b`.
-   - **OxiLLaMa Engine (`cool-japan/oxillama`)**:
-     - 100% pure-Rust GGUF inference engine and OpenAI-compatible server (`oxillama-server`).
-     - Eliminates all C, C++, and Fortran build toolchain dependencies and FFI overhead.
-     - Memory-safe quantized inference with native GPU offloading via the KitaSan / SciRS2 ecosystem.
-     - Ideal for pure-Rust sovereign server nodes and memory-constrained environments.
+   - **llama.cpp Engine (`ggml-org/llama.cpp`)**:
+     - GGUF inference through `llama-server`, an OpenAI-compatible server.
+     - Metal on Apple Silicon, CUDA on NVIDIA GPUs, CPU elsewhere.
+     - Started on demand by Dendrite (`pkg/llamalease`) on port 8080 and stopped after the last session; models live in `$DENDRITE_HOME/models`.
    - **Hugging Face Text Generation Inference (TGI)**:
      - Containerized high-performance inference engine for remote Linux GPU nodes (`ghcr.io/huggingface/text-generation-inference:2.4`).
      - Supports continuous batching, FlashAttention-2, and safetensors direct loading.
@@ -58,7 +57,7 @@ As an AI engineer and systems developer using local-first or hybrid LLM workflow
          litellm_params:
            model: ollama/qwen2.5-coder:14b
            api_base: http://localhost:11434
-       - model_name: oxillama-rust
+       - model_name: llamacpp-local
          litellm_params:
            model: openai/qwen2.5-coder-7b
            api_base: http://localhost:8080/v1
@@ -90,7 +89,7 @@ flowchart TD
         Cascade -->|3. Local Metal| Ollama["Ollama Metal Engine (:11434)<br/>qwen2.5-coder:14b"]
         Cascade -->|4. High-Throughput| VLLM["vLLM PagedAttention (:8000)<br/>Qwen2.5-Coder-32B"]
         Cascade -->|5. Lightweight GGUF| LlamaCpp["llama.cpp Server (:8081)<br/>Mistral-Instruct GGUF"]
-        Cascade -->|6. CPU prefill, on request| Oxillama["OxiLLaMa Server (:8080)<br/>Pure Rust zero-FFI"]
+        Cascade -->|6. on request| LlamaCpp["llama.cpp llama-server (:8080)"]
         Cascade -->|Cloud Fallback on 429| Upstream["Commercial Fallback APIs<br/>(Gemini, Copilot, Anthropic)"]
     end
 ```
@@ -99,13 +98,13 @@ flowchart TD
 
 ### Engine priority
 
-Local engines are tried GPU-first (`inference.EnginePreference`): candle and Hugging Face TGI/TEI (Rust), then Ollama, vLLM and llama.cpp, with OxiLLaMa last. oxillama-runtime 0.1.4 offloads only Q4_0 single-token decode to the GPU; prompt prefill and embeddings run on the CPU. The gateway routes the local Qwen aliases to Ollama unless `DENDRITE_GATEWAY_OXILLAMA_ROUTING=true`.
+Local engines are ordered by `inference.EnginePreference`: candle and Hugging Face TGI/TEI (Rust), then Ollama, vLLM and llama.cpp. The gateway routes the local Qwen aliases to Ollama unless `DENDRITE_GATEWAY_LLAMACPP_ROUTING=true`.
 
 ## 3. Acceptance Criteria & Verification Matrix
 
-- [ ] **AC-1**: Dynamic LiteLLM template generator (`pkg/gateway`) supports registering Ollama, OxiLLaMa, Hugging Face TGI/TEI, vLLM, and llama.cpp backends through declarative scenario configuration.
+- [ ] **AC-1**: Dynamic LiteLLM template generator (`pkg/gateway`) supports registering Ollama, llama.cpp, Hugging Face TGI/TEI, and vLLM backends through declarative scenario configuration.
 - [ ] **AC-2**: Health probes periodically poll all configured inference engines and mark failing nodes offline within $< 2\text{ seconds}$, redirecting agent traffic to the next tier in the fallback chain.
-- [ ] **AC-3**: Local and self-hosted inference engines (Ollama, OxiLLaMa, local llama.cpp) are exempt from financial dollar budgets while enforcing local concurrency and timeout limits.
+- [ ] **AC-3**: Local and self-hosted inference engines (Ollama, llama.cpp) are exempt from financial dollar budgets while enforcing local concurrency and timeout limits.
 - [ ] **AC-4**: Unified CLI commands `dendrite spike <list|probe|switch>` provide interactive status of active inference backends and loaded models.
 - [ ] **AC-5**: Table-driven unit test suite achieves $\ge 85\%$ statement coverage across all provider adapters.
 

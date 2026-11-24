@@ -12,26 +12,26 @@ import (
 )
 
 func newSpikeModelsCmd() *cobra.Command {
-	var ollamaURL, oxiURL string
+	var ollamaURL, llamaURL string
 	cmd := &cobra.Command{
 		Use:   "models",
-		Short: "List the local models installed on Ollama and OxiLLaMa and whether each fits this machine's memory",
+		Short: "List the local models installed on Ollama and llama-server and whether each fits this machine's memory",
 		Long: "Lists what is actually installed (not the static defaults of `spike list`), the memory budget local models may\n" +
 			"hold (50% of RAM; set DENDRITE_MODEL_MEM_BUDGET_GB to change it) and, for each model, whether it can run without\n" +
 			"starving the machine. Models marked too large get no gateway route and are refused at call time.",
 		Example: "dendrite spike models\ndendrite spike models --json",
 		Args:    cli.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSpikeModels(cmd.Context(), cmd.OutOrStdout(), ollamaURL, oxiURL)
+			return runSpikeModels(cmd.Context(), cmd.OutOrStdout(), ollamaURL, llamaURL)
 		},
 	}
 	cmd.Flags().StringVar(&ollamaURL, "ollama", "", "Ollama endpoint (default "+memfit.DefaultOllamaEndpoint+")")
-	cmd.Flags().StringVar(&oxiURL, "oxillama", "", "OxiLLaMa endpoint (default "+memfit.DefaultOxiLLaMaEndpoint+")")
+	cmd.Flags().StringVar(&llamaURL, "llamacpp", "", "llama-server endpoint (default "+memfit.DefaultLlamaCppEndpoint+")")
 	return cmd
 }
 
-func runSpikeModels(ctx context.Context, out io.Writer, ollamaURL, oxiURL string) error {
-	r := memfit.Assess(ctx, ollamaURL, oxiURL)
+func runSpikeModels(ctx context.Context, out io.Writer, ollamaURL, llamaURL string) error {
+	r := memfit.Assess(ctx, ollamaURL, llamaURL)
 	if cli.Globals.JSON {
 		return cli.WriteJSON(out, r)
 	}
@@ -40,8 +40,8 @@ func runSpikeModels(ctx context.Context, out io.Writer, ollamaURL, oxiURL string
 	if !r.OllamaReachable {
 		fmt.Fprintln(out, "[-] Ollama is not reachable; start it to see its models")
 	}
-	if !r.OxiReachable {
-		fmt.Fprintln(out, "[-] OxiLLaMa is not reachable; start it to see its model")
+	if !r.LlamaReachable {
+		fmt.Fprintln(out, "[-] llama-server is not reachable; start it to see its model")
 	}
 	if len(r.Models) == 0 {
 		fmt.Fprintln(out, "    (no local models found)")
@@ -66,7 +66,7 @@ func runSpikeModels(ctx context.Context, out io.Writer, ollamaURL, oxiURL string
 		}
 		fmt.Fprintf(out, "    %-9s %-28s %9s  %-8s %s\n", m.Engine, m.Name, size, state, fit)
 	}
-	if best, err := inference.BestLocalModel(ctx, ollamaURL, oxiURL); err == nil {
+	if best, err := inference.BestLocalModel(ctx, ollamaURL, llamaURL); err == nil {
 		start := ""
 		if best.NeedsStart {
 			start = ", started on demand and stopped when idle"

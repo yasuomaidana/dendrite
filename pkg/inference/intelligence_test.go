@@ -26,7 +26,7 @@ func TestModelIntelligenceScore(t *testing.T) {
 		{"unknown-model", 40, 65},
 		{"custom-coder", 50, 70},
 		{"ollama/deepseek-32b", 85, 100},
-		{"oxillama/6.7b", 55, 70},
+		{"llamacpp/6.7b", 55, 70},
 		{"openai/8b", 60, 75},
 		{"local-1b", 20, 35},
 	}
@@ -51,29 +51,29 @@ func TestModelIntelligenceScore(t *testing.T) {
 }
 
 // Mock engine for cascade tests
-type mockEngineWithModel struct {
+type fixedModelEngine struct {
 	id         string
 	selfHosted bool
 	models     []string
 	failModels map[string]error
 }
 
-func (m *mockEngineWithModel) ID() string       { return m.id }
-func (m *mockEngineWithModel) Type() EngineType { return EngineOxiLLaMa }
-func (m *mockEngineWithModel) Config() EngineConfig {
+func (m *fixedModelEngine) ID() string       { return m.id }
+func (m *fixedModelEngine) Type() EngineType { return EngineLlamaCpp }
+func (m *fixedModelEngine) Config() EngineConfig {
 	return EngineConfig{ID: m.id, Models: m.models, SelfHosted: m.selfHosted}
 }
-func (m *mockEngineWithModel) IsSelfHosted() bool { return m.selfHosted }
-func (m *mockEngineWithModel) Health(ctx context.Context) EngineHealth {
+func (m *fixedModelEngine) IsSelfHosted() bool { return m.selfHosted }
+func (m *fixedModelEngine) Health(ctx context.Context) EngineHealth {
 	return EngineHealth{EngineID: m.id, Reachable: true, Models: m.models}
 }
-func (m *mockEngineWithModel) SupportedModels(ctx context.Context) ([]string, error) {
+func (m *fixedModelEngine) SupportedModels(ctx context.Context) ([]string, error) {
 	return m.models, nil
 }
-func (m *mockEngineWithModel) Stream(ctx context.Context, req CompletionRequest) (<-chan StreamChunk, error) {
+func (m *fixedModelEngine) Stream(ctx context.Context, req CompletionRequest) (<-chan StreamChunk, error) {
 	return nil, nil
 }
-func (m *mockEngineWithModel) Generate(ctx context.Context, req CompletionRequest) (*CompletionResponse, error) {
+func (m *fixedModelEngine) Generate(ctx context.Context, req CompletionRequest) (*CompletionResponse, error) {
 	if err, fail := m.failModels[req.Model]; fail && err != nil {
 		return nil, err
 	}
@@ -85,28 +85,28 @@ func (m *mockEngineWithModel) Generate(ctx context.Context, req CompletionReques
 	}, nil
 }
 
-func TestReorderEnginesByIntelligence_OxiLLaMaPrecedence(t *testing.T) {
+func TestReorderEnginesByIntelligence_LlamaCppPrecedence(t *testing.T) {
 	ctx := context.Background()
 
-	// Case: Ollama has only a 3B model, while OxiLLaMa has a 7B coder model.
-	// OxiLLaMa must be given precedence over Ollama!
-	ollamaEng := &mockEngineWithModel{
+	// Case: Ollama has only a 3B model, while llama.cpp has a 7B coder model.
+	// llama.cpp must be given precedence over Ollama!
+	ollamaEng := &fixedModelEngine{
 		id:         "ollama-metal",
 		selfHosted: true,
 		models:     []string{"llama3.2:3b"},
 	}
-	oxillamaEng := &mockEngineWithModel{
-		id:         "oxillama-rust",
+	llamaCppEng := &fixedModelEngine{
+		id:         "llamacpp-local",
 		selfHosted: true,
 		models:     []string{"qwen2.5-coder-7b"},
 	}
 
-	ordered := ReorderEnginesByIntelligence(ctx, []InferenceEngine{ollamaEng, oxillamaEng})
+	ordered := ReorderEnginesByIntelligence(ctx, []InferenceEngine{ollamaEng, llamaCppEng})
 	if len(ordered) != 2 {
 		t.Fatalf("expected 2 engines, got %d", len(ordered))
 	}
-	if ordered[0].ID() != "oxillama-rust" {
-		t.Errorf("expected oxillama-rust first due to smarter 7B model vs 3B model on ollama, got %s", ordered[0].ID())
+	if ordered[0].ID() != "llamacpp-local" {
+		t.Errorf("expected llamacpp-local first due to smarter 7B model vs 3B model on ollama, got %s", ordered[0].ID())
 	}
 }
 
@@ -114,11 +114,11 @@ func TestExecuteSmartCascade_TrialFailuresNotCountedAndPaidLeverage(t *testing.T
 	ctx := context.Background()
 
 	// Engine 1: Ollama has 3b model (score ~38) and 14b model (score ~80)
-	// Engine 2: OxiLLaMa has 7b model (score ~65)
+	// Engine 2: llama.cpp has 7b model (score ~65)
 	// Both 3b and 7b fail.
 	// Smartest is 14b. 14b fails twice (meeting threshold 2).
 	// It must then leverage to paid model!
-	mockOllama := &mockEngineWithModel{
+	fixedOllama := &fixedModelEngine{
 		id:         "ollama-metal",
 		selfHosted: true,
 		models:     []string{"llama3.2:3b", "qwen2.5-coder:14b"},
@@ -127,8 +127,8 @@ func TestExecuteSmartCascade_TrialFailuresNotCountedAndPaidLeverage(t *testing.T
 			"qwen2.5-coder:14b": errors.New("14b context error"),
 		},
 	}
-	mockOxi := &mockEngineWithModel{
-		id:         "oxillama-rust",
+	fixedLlamaCpp := &fixedModelEngine{
+		id:         "llamacpp-local",
 		selfHosted: true,
 		models:     []string{"qwen2.5-coder-7b"},
 		failModels: map[string]error{
@@ -156,7 +156,7 @@ func TestExecuteSmartCascade_TrialFailuresNotCountedAndPaidLeverage(t *testing.T
 		SmartScoreFloor:   75, // Only 14B qualifies as smart
 	}
 
-	resp, report, err := ExecuteSmartCascade(ctx, []InferenceEngine{mockOllama, mockOxi}, CompletionRequest{Prompt: "write code"}, paidCaller, cfg)
+	resp, report, err := ExecuteSmartCascade(ctx, []InferenceEngine{fixedOllama, fixedLlamaCpp}, CompletionRequest{Prompt: "write code"}, paidCaller, cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestManager_SmartCascade_And_ZeroCost(t *testing.T) {
 	ctx := context.Background()
 	mgr := NewManager()
 
-	mockEng := &mockEngineWithModel{
+	mockEng := &fixedModelEngine{
 		id:         "local-mock",
 		selfHosted: true,
 		models:     []string{"qwen3.8:27b"},
@@ -299,7 +299,7 @@ func TestModelIntelligenceScore_FullCoverage(t *testing.T) {
 		t.Errorf("expected nil engine to not be zero cost")
 	}
 
-	nonSelfHostedZeroCost := &mockEngineWithModel{
+	nonSelfHostedZeroCost := &fixedModelEngine{
 		id:         "non-self-zero",
 		selfHosted: false,
 		models:     []string{"local-qwen3-27b"},
@@ -308,7 +308,7 @@ func TestModelIntelligenceScore_FullCoverage(t *testing.T) {
 		t.Errorf("expected engine with local-qwen3-27b to be zero cost")
 	}
 
-	nonSelfHostedPaid := &mockEngineWithModel{
+	nonSelfHostedPaid := &fixedModelEngine{
 		id:         "non-self-paid",
 		selfHosted: false,
 		models:     []string{"claude-3.5-sonnet"},

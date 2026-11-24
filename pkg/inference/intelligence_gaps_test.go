@@ -62,14 +62,13 @@ func TestModelIntelligenceScoreFallsBackToNamesWithoutAParameterCount(t *testing
 	}
 }
 
-func TestEnginesAreOrderedByLivenessGPUScoreThenPreference(t *testing.T) {
+func TestEnginesAreOrderedByLivenessScoreThenPreference(t *testing.T) {
 	ctx := context.Background()
 	live := func(id string, typ EngineType, models ...string) *scriptedEngine {
 		return &scriptedEngine{id: id, typ: typ, models: models, selfHost: true, reachable: true}
 	}
 	engines := []InferenceEngine{
 		&scriptedEngine{id: "down", typ: EngineOllama, models: []string{"qwen3:32b"}},
-		live("oxi", EngineOxiLLaMa, "qwen3:32b"),
 		live("llama", EngineLlamaCpp, "small:7b"),
 		live("ollama-same", EngineOllama, "small:7b"),
 		live("big", EngineVLLM, "qwen3:32b"),
@@ -79,7 +78,7 @@ func TestEnginesAreOrderedByLivenessGPUScoreThenPreference(t *testing.T) {
 	for _, e := range got {
 		ids = append(ids, e.ID())
 	}
-	want := []string{"big", "ollama-same", "llama", "oxi", "down"}
+	want := []string{"big", "ollama-same", "llama", "down"}
 	for i := range want {
 		if ids[i] != want[i] {
 			t.Fatalf("order = %v, want %v", ids, want)
@@ -93,7 +92,7 @@ func TestSmartCascadeCountsOnlyFailuresOfTheSmartestModels(t *testing.T) {
 	smart := &scriptedEngine{id: "smart", typ: EngineOllama, models: []string{"qwen3-coder:32b"}, selfHost: true, failWith: boom}
 	small := &scriptedEngine{id: "small", typ: EngineVLLM, models: []string{"tiny:1b"}, selfHost: true, failWith: boom}
 	remote := &scriptedEngine{id: "remote", typ: EngineVLLM, models: []string{"qwen3:32b"}}
-	cpu := &scriptedEngine{id: "cpu", typ: EngineOxiLLaMa, models: []string{"qwen3:32b"}, selfHost: true, failWith: boom}
+	cpu := &scriptedEngine{id: "cpu", typ: EngineLlamaCpp, models: []string{"qwen3:32b"}, selfHost: true, failWith: boom}
 
 	paid := func(_ context.Context, _ CompletionRequest, model string) (*CompletionResponse, error) {
 		return &CompletionResponse{Model: model, Text: "paid"}, nil

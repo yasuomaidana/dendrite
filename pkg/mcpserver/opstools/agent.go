@@ -44,14 +44,14 @@ func registerTelemetryAndInferenceTools(s *Server, deps Dependencies) {
 	AddTool(s, "dendrite_telemetry", "Sample real-time SoC thermal metrics and 24h/7d token spend totals", PropsSchema(map[string]interface{}{}), telemetryHandler())
 
 	// 10. dendrite_inference_list
-	AddTool(s, "dendrite_inference_list", "List registered multi-provider inference engines (Ollama, OxiLLaMa, vLLM, TGI, TEI, llama.cpp), endpoints, and failover cascade order", PropsSchema(map[string]interface{}{}), inferenceListHandler())
+	AddTool(s, "dendrite_inference_list", "List registered multi-provider inference engines (Ollama, llama.cpp, vLLM, TGI, TEI, llama.cpp), endpoints, and failover cascade order", PropsSchema(map[string]interface{}{}), inferenceListHandler())
 
 	// dendrite_inference_models
-	AddTool(s, "dendrite_inference_models", "List the local models installed on Ollama and OxiLLaMa with size, loaded state and whether each fits this machine's memory budget (models marked too large get no gateway route and are refused at call time)", PropsSchema(map[string]interface{}{}), inferenceModelsHandler())
+	AddTool(s, "dendrite_inference_models", "List the local models installed on Ollama and llama.cpp with size, loaded state and whether each fits this machine's memory budget (models marked too large get no gateway route and are refused at call time)", PropsSchema(map[string]interface{}{}), inferenceModelsHandler())
 
 	// 11. dendrite_inference_probe
 	AddTool(s, "dendrite_inference_probe", "Probe multi-provider inference engines (< 2s) for health, reachability, latency, and loaded models", PropsSchema(map[string]interface{}{
-		"engine_id": TypedProp("string", "Optional engine ID to probe (e.g. 'ollama-metal', 'oxillama-rust'). If omitted, probes all engines."),
+		"engine_id": TypedProp("string", "Optional engine ID to probe (e.g. 'ollama-metal', 'llamacpp-local'). If omitted, probes all engines."),
 	}), inferenceProbeHandler())
 }
 

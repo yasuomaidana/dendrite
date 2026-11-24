@@ -1,4 +1,4 @@
-package oxilease
+package llamalease
 
 import (
 	"context"
@@ -49,7 +49,7 @@ func Pick(ctx context.Context, want string) (Model, error) {
 		}
 		ids = append(ids, m.ID)
 	}
-	return Model{}, fmt.Errorf("model %q is not installed under ~/.oxillama/models (installed: %s)", want, strings.Join(ids, ", "))
+	return Model{}, fmt.Errorf("model %q is not installed under %s (installed: %s)", want, ModelsDir(), strings.Join(ids, ", "))
 }
 
 // KeepAlive heartbeats the lease every third of its lifetime until the returned stop is called,

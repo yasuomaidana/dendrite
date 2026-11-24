@@ -20,7 +20,7 @@ When developers interact with AI through **JetBrains AI Chat** (JetBrains AI Ass
 - Simple syntax translations and AST symbol queries
 
 Furthermore:
-1. **MCP Configuration Gap**: JetBrains IDE only registers the single `dendrite` stdio MCP server in `.ai/mcp/mcp.json`. It does not expose local LLM inference engines (like local Ollama on Apple Silicon Metal or OxiLLaMa) as executable conversational tools or upstream models.
+1. **MCP Configuration Gap**: JetBrains IDE only registers the single `dendrite` stdio MCP server in `.ai/mcp/mcp.json`. It does not expose local LLM inference engines (like local Ollama on Apple Silicon Metal or llama.cpp) as executable conversational tools or upstream models.
 2. **Reverse Flow / Cloud-First Default**: The commercial model receives the developer's full conversational context upfront before any tool is triggered. LiteLLM gateway routing fallbacks (`stacks/litellm_config.yaml`) also prioritize paid cloud models before falling back to local models only on quota exhaustion.
 3. **Missing Local Triage Feature**: There is no local agent acting as the conversational "front door" to evaluate compute power, triage tasks locally, select relevant repository skills (e.g. `ticket-lifecycle-developer`, `pattern-complexity-auditor`), and optimize/compact prompts before escalating to expensive cloud models.
 
@@ -32,7 +32,7 @@ flowchart TD
     UserPrompt(["Developer Prompt in JetBrains AI Chat / IDE"]) --> TriageGate["Dendrite Local Agent Triage Gateway<br/>(pkg/agent/triage)"]
     
     subgraph "Local Triage & Evaluation Engine"
-        TriageGate --> ProbeEng["Compute & Hardware Prober<br/>(Ollama Metal / OxiLLaMa)"]
+        TriageGate --> ProbeEng["Compute & Hardware Prober<br/>(Ollama Metal / llama.cpp)"]
         TriageGate --> TaskClass["Task Complexity Classifier<br/>(Chore vs Hybrid vs Macro)"]
         TriageGate --> SkillSel["Skill Discovery & Matcher<br/>(.gemini/skills / .agents/skills)"]
         TriageGate --> ContextCompact["AST Context Compactor<br/>(pkg/ai/tokenopt)"]
@@ -54,7 +54,7 @@ flowchart TD
 ### 2.1 Three-Tier Execution Hierarchy (`ExecutionTier`)
 1. **`TierLocal` (Zero-Cost Local Model)**:
    - **Target Tasks**: Routine chores, linter fix explanation, AST symbol inspection, unit test boilerplate, regex/syntax refactoring, git commit formatting.
-   - **Runtime**: Local Ollama (`qwen2.5-coder:14b`, `llama3.2:3b`) or OxiLLaMa pure-Rust engine.
+   - **Runtime**: Local Ollama (`qwen2.5-coder:14b`, `llama3.2:3b`) or the llama.cpp engine.
    - **Cost**: **$0.00 (0 commercial tokens)**.
 2. **`TierHybrid` (Local Triage + Prompt Enrichment + Cloud Execution)**:
    - **Target Tasks**: Feature implementation with medium complexity, cross-file modifications.
@@ -93,10 +93,10 @@ Registered in `pkg/mcpserver/tools_triage.go` and exposed to JetBrains AI Assist
 ## 3. Acceptance Criteria & Verification Matrix
 
 - [x] **AC-1 (Task Complexity Classification)**: Triage engine accurately classifies chore prompts (linting, test boilerplate, syntax, formatting) into `TierLocal`, and architecture/system design prompts into `TierCloud`.
-- [x] **AC-2 (Local Hardware & Compute Awareness)**: Triage engine checks local inference health and memory capability via Ollama/OxiLLaMa probe before assigning local execution; falls back cleanly if local engine is offline.
+- [x] **AC-2 (Local Hardware & Compute Awareness)**: Triage engine checks local inference health and memory capability via Ollama/llama.cpp probe before assigning local execution; falls back cleanly if local engine is offline.
 - [x] **AC-3 (Automatic Skill Selection & Prompt Enhancement)**: Engine analyzes developer intent and enriches the prompt with relevant project skills (`ticket-lifecycle-developer`, `pattern-complexity-auditor`, etc.) and AST context compaction.
 - [x] **AC-4 (Native MCP Tool Registration)**: `dendrite_local_agent_triage` is registered on the Dendrite native MCP server and callable via stdio JSON-RPC.
 - [x] **AC-5 (JetBrains IDE Integration & Setup)**: JetBrains toolset configuration updates `.ai/mcp/mcp.json`, External Tools, and Run Configurations to provide one-click and conversational access to the local agent triage.
 - [x] **AC-6 (Token Efficiency & Savings Validation Test)**: Comprehensive automated test suite validates that token efficiency improves by $\ge 60\%$ across mixed developer workloads and achieves $100\%$ zero-cost execution on chore tasks.
 - [x] **AC-7 (Declarative Cloud Orchestrator -> Local Intelligent Worker)**: When local intelligent models are available, evaluates the paid model to act strictly as a declarative instruction generator, reducing cloud output token volume by $\\ge 80\\%$ and delegating concrete code synthesis to zero-cost local agents.
-- [x] **AC-8 (Multi-Engine Inference Decoupling: OxiLLaMa vs. Candle)**: Formally decouples OxiLLaMa (`cool-japan/oxillama` pure-Rust GGUF runner) and Candle (`huggingface/candle` Rust ML framework) into distinct, independent inference backends with verified model routing.
+- [x] **AC-8 (Multi-Engine Inference Decoupling: llama.cpp vs. Candle)**: Formally decouples llama.cpp (`ggml-org/llama.cpp` GGUF server) and Candle (`huggingface/candle` Rust ML framework) into distinct, independent inference backends with verified model routing.

@@ -11,7 +11,7 @@ tags: [performance, k6, benchmarking, inference, ttft, tps, litellm-load, testco
 # FEAT-021: Performance Testing, Inference Benchmarking & Gateway Load Harness (k6)
 
 ## 1. User Story & Business Objective
-As an AI platform engineer and QA architect, I need Dendrite to provide an automated, reproducible performance testing and benchmarking harness powered by **k6** to measure throughput, latency, concurrency limits, and failover cascades across local and remote inference engines (Ollama, OxiLLaMa, Hugging Face TGI/TEI, vLLM, and llama.cpp from [FEAT-020](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/features/FEAT-020-pluggable-inference-engines.md)) and the LiteLLM Token Governance Gateway ([FEAT-002](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/features/FEAT-002-token-budget-governance.md)). This enables development teams to stress-test agentic concurrency (10 to 500+ virtual users), measure Time-To-First-Token (TTFT) and Tokens-Per-Second (TPS), detect thermal-induced throttling on Apple Silicon, and verify that gateway fallback cascades trigger in $< 2\text{ seconds}$ without dropping active agent sessions.
+As an AI platform engineer and QA architect, I need Dendrite to provide an automated, reproducible performance testing and benchmarking harness powered by **k6** to measure throughput, latency, concurrency limits, and failover cascades across local and remote inference engines (Ollama, llama.cpp, Hugging Face TGI/TEI, vLLM, and llama.cpp from [FEAT-020](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/features/FEAT-020-pluggable-inference-engines.md)) and the LiteLLM Token Governance Gateway ([FEAT-002](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/features/FEAT-002-token-budget-governance.md)). This enables development teams to stress-test agentic concurrency (10 to 500+ virtual users), measure Time-To-First-Token (TTFT) and Tokens-Per-Second (TPS), detect thermal-induced throttling on Apple Silicon, and verify that gateway fallback cascades trigger in $< 2\text{ seconds}$ without dropping active agent sessions.
 
 ---
 
@@ -23,13 +23,13 @@ As an AI platform engineer and QA architect, I need Dendrite to provide an autom
    - CLI invocation:
      ```bash
      # Benchmark specific inference engine from FEAT-020
-     dendrite bench inference --engine oxillama --model qwen2.5-coder-7b --vus 20 --duration 60s
+     dendrite bench inference --engine llamacpp --model qwen2.5-coder-7b --vus 20 --duration 60s
 
      # Stress-test LiteLLM gateway with fallback cascade fault injection
      dendrite bench gateway --rate 150 --max-vus 100 --inject-faults rate-limit-429
 
      # Full multi-engine matrix comparison
-     dendrite bench matrix --engines ollama,oxillama,vllm,tgi --output report.json
+     dendrite bench matrix --engines ollama,llamacpp,vllm,tgi --output report.json
      ```
 2. **Inference Performance Metrics (LLM Benchmark Protocol)**:
    - **Time To First Token (TTFT)**: High-resolution timestamp from request dispatch to initial SSE chunk arrival ($p50, p95, p99$).
@@ -56,7 +56,7 @@ flowchart TD
     subgraph "Target Under Test (FEAT-020 & FEAT-002)"
         VUs -->|Governed Inference| Gateway["LiteLLM Gateway (:4000)"]
         Gateway -->|Route| Ollama["Ollama Metal Engine (:11434)"]
-        Gateway -->|Route| Oxillama["OxiLLaMa Rust Engine (:8080)"]
+        Gateway -->|Route| llama.cpp["llama.cpp Rust Engine (:8080)"]
         Gateway -->|Route| VLLM["vLLM Cluster (:8000)"]
         Gateway -->|Route| HFTGI["Hugging Face TGI (:8080)"]
     end

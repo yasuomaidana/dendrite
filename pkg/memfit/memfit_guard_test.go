@@ -23,10 +23,10 @@ func TestCheckStartAtCountsWhatOllamaHoldsWhenStartingAnotherEngine(t *testing.T
 		guard   string
 		wantErr bool
 	}{
-		{"oxillama next to a loaded 18 GB Ollama model is refused", "oxillama", 5 * gib, "", true},
+		{"llamacpp next to a loaded 18 GB Ollama model is refused", "llamacpp", 5 * gib, "", true},
 		{"ollama itself ignores its own loaded models", "ollama", 5 * gib, "", false},
 		{"a model above the whole budget is refused", "ollama", 20 * gib, "", true},
-		{"the guard switch lets everything through", "oxillama", 5 * gib, "off", false},
+		{"the guard switch lets everything through", "llamacpp", 5 * gib, "off", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -99,7 +99,7 @@ func TestGetJSONReportsRequestAndStatusErrors(t *testing.T) {
 func TestGGUFSizeMatchesByNameOrFallsBackToTheOnlyModel(t *testing.T) {
 	write := func(home, dir string, size int64) {
 		t.Helper()
-		d := filepath.Join(home, ".oxillama", "models", dir)
+		d := filepath.Join(home, "models", dir)
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -115,19 +115,23 @@ func TestGGUFSizeMatchesByNameOrFallsBackToTheOnlyModel(t *testing.T) {
 
 	t.Run("no home directory", func(t *testing.T) {
 		t.Setenv("HOME", "")
+		t.Setenv("DENDRITE_HOME", "")
+		t.Setenv("DENDRITE_GGUF_MODELS_DIR", "")
 		if got := ggufSize("qwen3-8b"); got != 0 {
 			t.Fatalf("size = %d, want 0", got)
 		}
 	})
 	t.Run("nothing installed", func(t *testing.T) {
-		t.Setenv("HOME", t.TempDir())
+		t.Setenv("DENDRITE_HOME", t.TempDir())
+		t.Setenv("DENDRITE_GGUF_MODELS_DIR", "")
 		if got := ggufSize("qwen3-8b"); got != 0 {
 			t.Fatalf("size = %d, want 0", got)
 		}
 	})
 	t.Run("a single model is used even when the name differs", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("HOME", home)
+		t.Setenv("DENDRITE_HOME", home)
+		t.Setenv("DENDRITE_GGUF_MODELS_DIR", "")
 		write(home, "other_model", 7)
 		if got := ggufSize("qwen3-8b"); got != 7 {
 			t.Fatalf("size = %d, want 7", got)
@@ -135,7 +139,8 @@ func TestGGUFSizeMatchesByNameOrFallsBackToTheOnlyModel(t *testing.T) {
 	})
 	t.Run("several models need a name match", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("HOME", home)
+		t.Setenv("DENDRITE_HOME", home)
+		t.Setenv("DENDRITE_GGUF_MODELS_DIR", "")
 		write(home, "a_model", 3)
 		write(home, "qwen3_8b", 9)
 		if got := ggufSize("Qwen3-8B"); got != 9 {
@@ -145,4 +150,21 @@ func TestGGUFSizeMatchesByNameOrFallsBackToTheOnlyModel(t *testing.T) {
 			t.Fatalf("unmatched size = %d, want 0", got)
 		}
 	})
+}
+
+func TestModelsDirPrefersTheOverrideThenDendriteHomeThenTheUserHome(t *testing.T) {
+	t.Setenv("DENDRITE_GGUF_MODELS_DIR", "/models")
+	if got := modelsDir(); got != "/models" {
+		t.Errorf("override = %q", got)
+	}
+	t.Setenv("DENDRITE_GGUF_MODELS_DIR", "")
+	t.Setenv("DENDRITE_HOME", "/dendrite")
+	if got, want := modelsDir(), filepath.Join("/dendrite", "models"); got != want {
+		t.Errorf("DENDRITE_HOME = %q, want %q", got, want)
+	}
+	t.Setenv("DENDRITE_HOME", "")
+	t.Setenv("HOME", "/users/me")
+	if got, want := modelsDir(), filepath.Join("/users/me", ".dendrite", "models"); got != want {
+		t.Errorf("user home = %q, want %q", got, want)
+	}
 }

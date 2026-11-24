@@ -16,8 +16,8 @@ import (
 
 	"Dendrite/pkg/directive"
 	"Dendrite/pkg/immune"
-	"Dendrite/pkg/oxilease"
-	"Dendrite/pkg/oxilease/oxileasetest"
+	"Dendrite/pkg/llamalease"
+	"Dendrite/pkg/llamalease/llamaleasetest"
 	"Dendrite/pkg/statedir"
 	"Dendrite/pkg/testkit"
 )
@@ -338,9 +338,9 @@ func TestImmuneAllow(t *testing.T) {
 // scan --llm without a provider holds the local model server for the scan and points the scanner
 // at it; with a provider it leaves the server alone; without either it says what is missing.
 func TestImmuneScanModelPassUsesTheLocalServer(t *testing.T) {
-	rig := oxileasetest.New(t)
+	rig := llamaleasetest.New(t)
 	prev := immuneServer
-	immuneServer = func() *oxilease.Manager { return rig.M }
+	immuneServer = func() *llamalease.Manager { return rig.M }
 	t.Cleanup(func() { immuneServer = prev })
 	seen := filepath.Join(t.TempDir(), "seen")
 	bin := filepath.Join(t.TempDir(), "skillspector")
@@ -373,9 +373,9 @@ echo '{"skill":{"name":"s"},"risk_assessment":{"score":0,"severity":"LOW"},"issu
 	testkit.Equal(t, "configured provider", sawProvider(), "ollama||")
 
 	t.Setenv(immune.ProviderEnv, "")
-	cold := oxileasetest.New(t) // no server, and no model may start
+	cold := llamaleasetest.New(t) // no server, and no model may start
 	cold.Fits = errors.New("no model fits the memory budget")
-	immuneServer = func() *oxilease.Manager { return cold.M }
+	immuneServer = func() *llamalease.Manager { return cold.M }
 	_, err = immuneRun(t, "scan", skill, "--llm")
 	if err == nil {
 		t.Fatal("without a provider or a local model the model pass cannot run")

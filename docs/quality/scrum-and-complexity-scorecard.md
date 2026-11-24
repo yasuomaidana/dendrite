@@ -99,7 +99,7 @@ type Published struct{ Tag string }
 ```
 
 ### 2. Strategy Pattern (Pluggable Issue Trackers, Engines & Test Drivers)
-Decouples vendor-specific REST/GraphQL engines (Jira, Plane, Linear), agent runtimes (Aider, OpenHands, OpenCode, AGY), inference engines (Ollama, OxiLLaMa, vLLM, TGI), and UI automation drivers (k6-browser, Playwright):
+Decouples vendor-specific REST/GraphQL engines (Jira, Plane, Linear), agent runtimes (Aider, OpenHands, OpenCode, AGY), inference engines (Ollama, the former pure-Rust runner, vLLM, TGI), and UI automation drivers (k6-browser, Playwright):
 ```go
 type UIDriver interface {
     Launch(ctx context.Context, targetURL string) error

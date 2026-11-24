@@ -43,10 +43,10 @@ func TestTriageMultiEngineSupport(t *testing.T) {
 			expectedEngine: "Hugging Face TGI/TEI Inference Engine",
 		},
 		{
-			name:           "OxiLLaMa Pure-Rust Engine (cool-japan/oxillama)",
-			targetEngine:   EngineOxiLLaMa,
-			expectedModel:  "oxillama-rust-qwen7b",
-			expectedEngine: "OxiLLaMa Pure-Rust Sovereign Engine",
+			name:           "llama.cpp llama-server Engine",
+			targetEngine:   EngineLlamaCpp,
+			expectedModel:  "llamacpp-qwen7b",
+			expectedEngine: "llama.cpp llama-server Engine",
 		},
 		{
 			name:           "Candle Rust Framework Engine (huggingface/candle)",
@@ -82,18 +82,18 @@ func TestTriageMultiEngineSupport(t *testing.T) {
 		})
 	}
 
-	// Explicitly verify OxiLLaMa and Candle are different engines
-	reqOxillama := TriageRequest{Prompt: "Fix formatting", TargetEngine: EngineOxiLLaMa}
-	resOxillama, _ := engine.Triage(context.Background(), reqOxillama)
+	// Explicitly verify llama.cpp and Candle are different engines
+	reqLlamaCpp := TriageRequest{Prompt: "Fix formatting", TargetEngine: EngineLlamaCpp}
+	resLlamaCpp, _ := engine.Triage(context.Background(), reqLlamaCpp)
 
 	reqCandle := TriageRequest{Prompt: "Fix formatting", TargetEngine: EngineCandle}
 	resCandle, _ := engine.Triage(context.Background(), reqCandle)
 
-	if resOxillama.AssignedEngine == resCandle.AssignedEngine {
-		t.Errorf("OxiLLaMa and Candle must be distinct engines! Got %s for both", resOxillama.AssignedEngine)
+	if resLlamaCpp.AssignedEngine == resCandle.AssignedEngine {
+		t.Errorf("llama.cpp and Candle must be distinct engines! Got %s for both", resLlamaCpp.AssignedEngine)
 	}
-	if resOxillama.AssignedModel == resCandle.AssignedModel {
-		t.Errorf("OxiLLaMa and Candle models must be distinct! Got %s for both", resOxillama.AssignedModel)
+	if resLlamaCpp.AssignedModel == resCandle.AssignedModel {
+		t.Errorf("llama.cpp and Candle models must be distinct! Got %s for both", resLlamaCpp.AssignedModel)
 	}
 }
 
@@ -151,7 +151,7 @@ func TestTriageDeclarativeOrchestrator(t *testing.T) {
 	}
 }
 
-func TestTriage_OllamaPrecedenceOverSmarterOxiLLaMaModel(t *testing.T) {
+func TestTriage_OllamaPrecedenceOverSmarterLlamaCppModel(t *testing.T) {
 	// Ollama test server that returns only a small, less-smart model (llama3.2:3b)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/tags" {
@@ -163,24 +163,24 @@ func TestTriage_OllamaPrecedenceOverSmarterOxiLLaMaModel(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	tsOxillama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	tsLlamaCpp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/models" {
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"data":[{"id":"oxillama-rust-qwen7b"}]}`))
+			w.Write([]byte(`{"data":[{"id":"llamacpp-qwen7b"}]}`))
 			return
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer tsOxillama.Close()
+	defer tsLlamaCpp.Close()
 
 	ollamaClient := ollama.NewClient(ollama.WithBaseURL(ts.URL))
 
 	engine := NewEngine(ollamaClient)
-	engine.OxiLLaMaEngine = inference.NewOxiLLaMaEngine(inference.EngineConfig{
-		ID:       "oxillama-rust",
-		Type:     inference.EngineOxiLLaMa,
-		Endpoint: tsOxillama.URL,
-	}, tsOxillama.Client())
+	engine.LlamaCppEngine = inference.NewLlamaCppEngine(inference.EngineConfig{
+		ID:       "llamacpp-local",
+		Type:     inference.EngineLlamaCpp,
+		Endpoint: tsLlamaCpp.URL,
+	}, tsLlamaCpp.Client())
 
 	req := TriageRequest{
 		Prompt: "Fix formatting and add docstrings for this struct",
@@ -191,15 +191,15 @@ func TestTriage_OllamaPrecedenceOverSmarterOxiLLaMaModel(t *testing.T) {
 		t.Fatalf("unexpected triage error: %v", err)
 	}
 
-	// OxiLLaMa hosts a smarter 7b model, but it prefills on the CPU: Ollama (GPU) wins.
+	// llama.cpp hosts a smarter 7b model, but Ollama is preferred.
 	if res.AssignedEngine != EngineOllama {
-		t.Errorf("expected Ollama (GPU) to take precedence over OxiLLaMa, got %s", res.AssignedEngine)
+		t.Errorf("expected Ollama to take precedence over llama.cpp, got %s", res.AssignedEngine)
 	}
 	if res.AssignedModel != "llama3.2:3b" {
 		t.Errorf("expected assigned model 'llama3.2:3b', got %s", res.AssignedModel)
 	}
 
-	// With no Ollama model, OxiLLaMa serves and the reason says it runs on the CPU.
+	// With no Ollama model, llama.cpp serves and the reason says Ollama had no model.
 	tsEmpty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/tags" {
 			w.Header().Set("Content-Type", "application/json")
@@ -214,16 +214,16 @@ func TestTriage_OllamaPrecedenceOverSmarterOxiLLaMaModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected triage error: %v", err)
 	}
-	if res.AssignedEngine != EngineOxiLLaMa || res.AssignedModel != "oxillama-rust-qwen7b" {
-		t.Errorf("expected OxiLLaMa oxillama-rust-qwen7b without Ollama models, got %s %s", res.AssignedEngine, res.AssignedModel)
+	if res.AssignedEngine != EngineLlamaCpp || res.AssignedModel != "llamacpp-qwen7b" {
+		t.Errorf("expected llama.cpp llamacpp-qwen7b without Ollama models, got %s %s", res.AssignedEngine, res.AssignedModel)
 	}
-	if !strings.Contains(res.Reason, "CPU") {
-		t.Errorf("expected reason to note OxiLLaMa runs on the CPU, got: %s", res.Reason)
+	if !strings.Contains(res.Reason, "Ollama has no model") {
+		t.Errorf("expected reason to note Ollama has no model, got: %s", res.Reason)
 	}
 }
 
-func TestTriage_DynamicProbingLiveOxiLLaMaAndOllama(t *testing.T) {
-	// 1. Case: OxiLLaMa has qwen3.8:27b (score 96), Ollama has hermes3:8b (score 67)
+func TestTriage_DynamicProbingLiveLlamaCppAndOllama(t *testing.T) {
+	// 1. Case: llama.cpp has qwen3.8:27b (score 96), Ollama has hermes3:8b (score 67)
 	tsOllama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/tags" {
 			w.Header().Set("Content-Type", "application/json")
@@ -234,7 +234,7 @@ func TestTriage_DynamicProbingLiveOxiLLaMaAndOllama(t *testing.T) {
 	}))
 	defer tsOllama.Close()
 
-	tsOxillama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	tsLlamaCpp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/models" {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"data":[{"id":"qwen3.8:27b"},{"id":"qwen3.5:9b"}]}`))
@@ -242,17 +242,17 @@ func TestTriage_DynamicProbingLiveOxiLLaMaAndOllama(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer tsOxillama.Close()
+	defer tsLlamaCpp.Close()
 
 	ollamaClient := ollama.NewClient(ollama.WithBaseURL(tsOllama.URL))
-	oxEng := inference.NewOxiLLaMaEngine(inference.EngineConfig{
-		ID:       "oxillama-rust",
-		Type:     inference.EngineOxiLLaMa,
-		Endpoint: tsOxillama.URL,
-	}, tsOxillama.Client())
+	oxEng := inference.NewLlamaCppEngine(inference.EngineConfig{
+		ID:       "llamacpp-local",
+		Type:     inference.EngineLlamaCpp,
+		Endpoint: tsLlamaCpp.URL,
+	}, tsLlamaCpp.Client())
 
 	engine := NewEngine(ollamaClient)
-	engine.OxiLLaMaEngine = oxEng
+	engine.LlamaCppEngine = oxEng
 
 	req := TriageRequest{Prompt: "Fix formatting and lint error"}
 	res, err := engine.Triage(context.Background(), req)
@@ -260,15 +260,15 @@ func TestTriage_DynamicProbingLiveOxiLLaMaAndOllama(t *testing.T) {
 		t.Fatalf("unexpected triage error: %v", err)
 	}
 
-	// Ollama (GPU) wins although OxiLLaMa hosts the smarter model.
+	// Ollama (GPU) wins although llama.cpp hosts the smarter model.
 	if res.AssignedEngine != EngineOllama {
-		t.Errorf("expected Ollama to win over OxiLLaMa, got %s", res.AssignedEngine)
+		t.Errorf("expected Ollama to win over llama.cpp, got %s", res.AssignedEngine)
 	}
 	if res.AssignedModel != "hermes3:8b" {
 		t.Errorf("expected assigned model hermes3:8b, got %s", res.AssignedModel)
 	}
 
-	// 2. Case: Ollama has qwen2.5-coder:32b (score 100), OxiLLaMa has qwen3.5:9b (score 73)
+	// 2. Case: Ollama has qwen2.5-coder:32b (score 100), llama.cpp has qwen3.5:9b (score 73)
 	tsOllama2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/tags" {
 			w.Header().Set("Content-Type", "application/json")
@@ -279,7 +279,7 @@ func TestTriage_DynamicProbingLiveOxiLLaMaAndOllama(t *testing.T) {
 	}))
 	defer tsOllama2.Close()
 
-	tsOxillama2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	tsLlamaCpp2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/models" {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"data":[{"id":"qwen3.5:9b"}]}`))
@@ -287,14 +287,14 @@ func TestTriage_DynamicProbingLiveOxiLLaMaAndOllama(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer tsOxillama2.Close()
+	defer tsLlamaCpp2.Close()
 
 	engine2 := NewEngine(ollama.NewClient(ollama.WithBaseURL(tsOllama2.URL)))
-	engine2.OxiLLaMaEngine = inference.NewOxiLLaMaEngine(inference.EngineConfig{
-		ID:       "oxillama-rust",
-		Type:     inference.EngineOxiLLaMa,
-		Endpoint: tsOxillama2.URL,
-	}, tsOxillama2.Client())
+	engine2.LlamaCppEngine = inference.NewLlamaCppEngine(inference.EngineConfig{
+		ID:       "llamacpp-local",
+		Type:     inference.EngineLlamaCpp,
+		Endpoint: tsLlamaCpp2.URL,
+	}, tsLlamaCpp2.Client())
 
 	res2, err2 := engine2.Triage(context.Background(), req)
 	if err2 != nil {

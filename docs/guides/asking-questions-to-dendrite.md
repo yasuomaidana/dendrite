@@ -3,7 +3,7 @@ id: asking-questions-to-dendrite
 title: "Tutorial: Asking Project Questions with Local RAG & Paid LLM Escalation"
 sidebar_label: "Project Q&A with Local RAG"
 sidebar_position: 12
-tags: [rag, qa, query, ask, local-llm, hybrid, central-rag, ollama, oxillama, litellm, gemini]
+tags: [rag, qa, query, ask, local-llm, hybrid, central-rag, ollama, llamacpp, litellm, gemini]
 ---
 
 # Tutorial: Asking Project Questions with Local RAG & Paid LLM Escalation
@@ -15,7 +15,7 @@ This tutorial demonstrates how to use the `dendrite ask` command to ask question
 Dendrite implements a **Local-First, Zero-Cost RAG (Retrieval-Augmented Generation)** architecture:
 1. The `dendrite-rag` sidecar incrementally indexes your project (source code, Markdown, configuration) into `<project>/.dendrite/rag/`. It returns a context pack that combines code-aware BM25, dense vectors from the embedding model your project chose, and symbol names, plus the call-graph neighbours of the best matches.
    The context comes from your **code**; add **`-d` / `--docs`** for how-to, setup and usage questions, which the documentation answers. On Dendrite's evaluation, code-only answers code questions best and cannot answer documentation questions at all, while code and documentation together answer both, a little less precisely (`dendrite-rag-rs` `eval/RESULTS.md`).
-2. It first attempts to synthesize answers using your **zero-cost local LLM** through the LiteLLM gateway. Unless `--local-model` or `[ask] local_model` in `.dendrite/rag.toml` names one, Dendrite picks the gateway's zero-cost chat model on the most preferred reachable GPU engine (candle, TGI, then Ollama, vLLM, llama.cpp; never OxiLLaMa, whose runtime prefills on the CPU) and prints it as `[i] Local model: local-coder (ollama, GPU)`.
+2. It first attempts to synthesize answers using your **zero-cost local LLM** through the LiteLLM gateway. Unless `--local-model` or `[ask] local_model` in `.dendrite/rag.toml` names one, Dendrite picks the gateway's zero-cost chat model on the most preferred reachable engine (candle, TGI, then Ollama, vLLM, llama.cpp) and prints it as `[i] Local model: local-coder (ollama, GPU)`.
 3. If the local LLM is offline or fails, it **prompts the human** interactively before spending any cloud budget.
 4. You can pass the **`-y` / `--yes`** flag to instruct Dendrite to automatically call the paid cloud model directly upon local failure.
 5. You can use **Hybrid Mode (`--hybrid`)** for local-first drafting with paid cloud refinement and verification.
@@ -53,7 +53,7 @@ flowchart TD
     
     RouteCheck -->|--paid Direct| CloudDirect[Paid Cloud LLM\nGemini 2.5 Pro / Claude 3.5]
     
-    RouteCheck -->|--hybrid| HybridLocal[1. Zero-Cost Local Draft\nOllama / OxiLLaMa]
+    RouteCheck -->|--hybrid| HybridLocal[1. Zero-Cost Local Draft\nOllama / llama.cpp]
     HybridLocal --> HybridRefine[2. Cloud Verification & Refinement\nEliminate Hallucinations]
     HybridRefine --> Output
     
@@ -113,7 +113,7 @@ You can check available LLMs in Dendrite using the following commands:
 [+] Retrieved Project Documentation & Code Context:
     1. cmd/dendrite/inference.go (lines 14-45) > handleInferenceCommand
     2. docs/features/FEAT-020-pluggable-inference-engines.md (lines 60-95)
-    3. docs/guides/oxillama-jetbrains-integration.md (lines 35-70)
+    3. docs/guides/llamacpp-jetbrains-integration.md (lines 35-70)
 ```
 
 ---
@@ -166,7 +166,7 @@ To inspect and check available LLMs across all registered inference engines in D
 
 ## 4. Human-in-the-Loop Escalation: When Local LLM Fails
 
-If your local Ollama or OxiLLaMa daemon is stopped, overloaded, or encounters an error, Dendrite prevents silent cloud token spending by prompting the human for confirmation.
+If your local Ollama or llama.cpp daemon is stopped, overloaded, or encounters an error, Dendrite prevents silent cloud token spending by prompting the human for confirmation.
 
 ### Scenario A: Interactive Prompt (Default)
 
@@ -303,7 +303,7 @@ Because codebases, design documents, and project contexts continuously evolve, D
    cargo install --locked --git https://github.com/yasuomaidana/dendrite-rag-rs --features candle-metal
    # NVIDIA: --features candle-cuda; CPU only: --features candle (or none, to use Ollama)
    ```
-   With the default `backend = "auto"`, the sidecar embeds with candle on the GPU, else a TEI server (`HF_TEI_ENDPOINT`), else Ollama, else candle on the CPU. OxiLLaMa is never chosen automatically: it runs embeddings on the CPU.
+   With the default `backend = "auto"`, the sidecar embeds with candle on the GPU, else a TEI server (`HF_TEI_ENDPOINT`), else Ollama, else candle on the CPU. llama.cpp is never chosen automatically: it runs embeddings on the CPU.
 4. A `--project` that names a single file searches only that file.
 
 ### Choosing the embedding model
@@ -312,7 +312,7 @@ The project chooses its embedding backend and model; Dendrite passes the choice 
 
 ```toml
 [embed]
-backend = "ollama"            # auto (default) | openai (LiteLLM gateway) | ollama | hf | candle | oxillama | model2vec | none
+backend = "ollama"            # auto (default) | openai (LiteLLM gateway) | ollama | hf | candle | model2vec | none
 model = "nomic-embed-text"
 ```
 

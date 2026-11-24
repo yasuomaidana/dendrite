@@ -6,7 +6,7 @@ sidebar_label: "dendrite_inference_list"
 
 # dendrite_inference_list
 
-List registered multi-provider inference engines (Ollama, OxiLLaMa, vLLM, TGI, TEI, llama.cpp), endpoints, and failover cascade order
+List registered multi-provider inference engines (Ollama, llama.cpp, vLLM, TGI, TEI, llama.cpp), endpoints, and failover cascade order
 
 ## Input Schema
 

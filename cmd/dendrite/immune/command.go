@@ -14,7 +14,7 @@ import (
 
 	"Dendrite/pkg/directive"
 	"Dendrite/pkg/immune"
-	"Dendrite/pkg/oxilease"
+	"Dendrite/pkg/llamalease"
 )
 
 // NewImmuneCmd builds `dendrite immune`: the gate that decides whether an agent skill may be installed.
@@ -64,10 +64,10 @@ func immuneSettings(cmd *cobra.Command, o immuneScanOptions) (immuneScanOptions,
 }
 
 // immuneServer is the lease manager of the local model server (a seam for tests).
-var immuneServer = oxilease.Default
+var immuneServer = llamalease.Default
 
 // localModelPass prepares the model pass of a scan. With a provider in the environment there is
-// nothing to do. Otherwise it holds the local OxiLLaMa server (starting it on the largest installed
+// nothing to do. Otherwise it holds the local llama-server (starting it on the largest installed
 // model that fits) and returns its endpoint; release ends the hold.
 func localModelPass(ctx context.Context) (local *immune.LocalLLM, release func(), err error) {
 	if os.Getenv(immune.ProviderEnv) != "" {
@@ -76,7 +76,7 @@ func localModelPass(ctx context.Context) (local *immune.LocalLLM, release func()
 	m := immuneServer()
 	lease, model, err := m.Hold(ctx, "immune", "")
 	if err != nil {
-		return nil, nil, fmt.Errorf("the model pass needs a provider (%s) or a local OxiLLaMa model: %w", immune.ProviderEnv, err)
+		return nil, nil, fmt.Errorf("the model pass needs a provider (%s) or a local llama-server model: %w", immune.ProviderEnv, err)
 	}
 	stop := lease.KeepAlive()
 	return &immune.LocalLLM{BaseURL: fmt.Sprintf("http://127.0.0.1:%d/v1", m.Port()), Model: model},
@@ -92,7 +92,7 @@ func newImmuneScanCmd() *cobra.Command {
 			"(20) approve (exit 0), up to immune.hold_max (50) hold (exit 3, a human decision is needed), above that\n" +
 			"quarantine (exit 4). The bands come from .github/dendrite/directives.toml; a flag overrides one. The scanner is static by\n" +
 			"default; --llm adds its model pass: with a provider in the environment (SKILLSPECTOR_PROVIDER) it uses that\n" +
-			"one, otherwise it holds the local OxiLLaMa server for the scan and uses its OpenAI-compatible endpoint.\n" +
+			"one, otherwise it holds the local llama-server for the scan and uses its OpenAI-compatible endpoint.\n" +
 			"When the directives pin a scanner version (immune.scanner_version), a scanner of another version is refused:\n" +
 			"run `dendrite immune update`. Every result is appended to the scan ledger of the repository that holds the\n" +
 			"skill (.dendrite/immune/scans.jsonl); the pre-edit and pre-commit hooks read it to decide whether a skill under\n" +

@@ -76,7 +76,7 @@
   "pkg/orchestrator": 93.9,
   "pkg/orchestrator/aws": 100,
   "pkg/orchestrator/azure": 96.9,
-  "pkg/oxilease": 49.7,
+  "pkg/llamalease": 49.7,
   "pkg/perf": 89.8,
   "pkg/personalcontext": 100,
   "pkg/personalcontext/canvas": 90.7,

@@ -40,8 +40,8 @@ func TestBudgetEnvOverrideAndDefault(t *testing.T) {
 	}
 }
 
-// fakeEngines serves Ollama (tags + ps) and OxiLLaMa (/v1/models) like the real ones.
-func fakeEngines(t *testing.T, loaded string) (ollama, oxi string) {
+// fakeEngines serves Ollama (tags + ps) and llama-server (/v1/models) like the real ones.
+func fakeEngines(t *testing.T, loaded string) (ollama, llama string) {
 	t.Helper()
 	o := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -68,8 +68,9 @@ func fakeEngines(t *testing.T, loaded string) (ollama, oxi string) {
 func withGGUF(t *testing.T, bytes int64) {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	dir := filepath.Join(home, ".oxillama", "models", "qwen3_8b_q4km")
+	t.Setenv("DENDRITE_HOME", home)
+	t.Setenv("DENDRITE_GGUF_MODELS_DIR", "")
+	dir := filepath.Join(home, "models", "qwen3_8b_q4km")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -83,11 +84,11 @@ func withGGUF(t *testing.T, bytes int64) {
 	_ = f.Close()
 }
 
-func TestAssessMarksWhichInstalledModelsFitAlongsideOxiLLaMa(t *testing.T) {
+func TestAssessMarksWhichInstalledModelsFitAlongsideLlamaServer(t *testing.T) {
 	t.Setenv(EnvBudgetGB, "12")
-	withGGUF(t, 5*gib) // OxiLLaMa holds 5 GB
-	ollama, oxi := fakeEngines(t, "")
-	r := Assess(context.Background(), ollama, oxi)
+	withGGUF(t, 5*gib) // llama-server holds 5 GB
+	ollama, llama := fakeEngines(t, "")
+	r := Assess(context.Background(), ollama, llama)
 
 	want := map[string]bool{"big:27b": false, "mid:14b": false, "small:4b": true, "nomic-embed-text:latest": true}
 	for name, fits := range want {
@@ -99,8 +100,8 @@ func TestAssessMarksWhichInstalledModelsFitAlongsideOxiLLaMa(t *testing.T) {
 			t.Errorf("%s fits = %v (%s), want %v", name, m.Fits, m.Reason, fits)
 		}
 	}
-	if o, ok := r.Find("oxillama", "qwen3-8b-q4_k_m"); !ok || !o.Fits || !o.Resident || o.SizeBytes != 5*gib {
-		t.Errorf("oxillama model = %+v", o)
+	if o, ok := r.Find("llamacpp", "qwen3-8b-q4_k_m"); !ok || !o.Fits || !o.Resident || o.SizeBytes != 5*gib {
+		t.Errorf("llamacpp model = %+v", o)
 	}
 	if got := r.BestFitting(""); got != "small:4b" {
 		t.Errorf("best fitting = %q, want small:4b (the embedder is never a chat pick)", got)
@@ -109,9 +110,9 @@ func TestAssessMarksWhichInstalledModelsFitAlongsideOxiLLaMa(t *testing.T) {
 
 func TestGuardRefusesAModelThatWouldStarveTheMachineAndNamesAnAlternative(t *testing.T) {
 	t.Setenv(EnvBudgetGB, "12")
-	withGGUF(t, 1) // OxiLLaMa effectively empty
-	ollama, oxi := fakeEngines(t, "")
-	_ = oxi
+	withGGUF(t, 1) // llama-server effectively empty
+	ollama, llama := fakeEngines(t, "")
+	_ = llama
 	err := GuardOllama(context.Background(), ollama, "big:27b")
 	if !errors.Is(err, ErrTooLarge) || !strings.Contains(err.Error(), "use mid:14b instead") {
 		t.Fatalf("err = %v, want ErrTooLarge naming mid:14b", err)
@@ -138,7 +139,7 @@ func TestGuardLetsAnAlreadyLoadedModelThrough(t *testing.T) {
 
 func TestUnreachableEnginesContributeNothing(t *testing.T) {
 	r := Assess(context.Background(), "http://127.0.0.1:1", "http://127.0.0.1:1")
-	if len(r.Models) != 0 || r.OllamaReachable || r.OxiReachable {
+	if len(r.Models) != 0 || r.OllamaReachable || r.LlamaReachable {
 		t.Errorf("report = %+v", r)
 	}
 	if err := GuardOllama(context.Background(), "http://127.0.0.1:1", "anything"); err != nil {

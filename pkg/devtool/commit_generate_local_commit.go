@@ -9,20 +9,18 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"Dendrite/pkg/inference"
 	"Dendrite/pkg/quality"
-	"Dendrite/pkg/sidecar"
 )
 
 // GenerateLocalCommitMessageWithContext synthesizes Conventional Commit with active ticket context.
 func GenerateLocalCommitMessageWithContext(ctx context.Context, diffStat, fullDiff, ticketID string, smartTicket *SmartTicketInfo, model string, ollamaURL, litellmURL, litellmKey string, stagedFiles []string) (string, string, error) {
 	// A default that is not installed, or too large for this machine, is replaced by the smartest
 	// installed model that fits; an unreachable Ollama keeps the old default.
-	if !strings.Contains(strings.ToLower(model), "oxillama") {
+	if !strings.Contains(strings.ToLower(model), "llamacpp") {
 		model = memfit.ResolveOllama(ctx, ollamaURL, model)
 	}
 	if model == "" {
@@ -52,89 +50,50 @@ Git Diff Content (truncated):
 
 	client := &http.Client{Timeout: 4 * time.Second}
 
-	// 1. Try OxiLLaMa Pure-Rust Zero-FFI Engine
-	oxillamaURL := os.Getenv("DENDRITE_OXILLAMA_ENDPOINT")
-	if oxillamaURL == "" {
-		oxillamaURL = "http://127.0.0.1:8080"
+	// 1. Try the local llama-server (OpenAI-compatible)
+	llamaURL := os.Getenv("DENDRITE_LLAMACPP_ENDPOINT")
+	if llamaURL == "" {
+		llamaURL = "http://127.0.0.1:8080"
 	}
-	tryOxillama := strings.Contains(strings.ToLower(model), "oxillama") ||
+	tryLlama := strings.Contains(strings.ToLower(model), "llamacpp") ||
 		ollamaURL == "" || ollamaURL == "http://localhost:11434" || ollamaURL == "http://127.0.0.1:11434" ||
-		os.Getenv("DENDRITE_COMMIT_PREFER_OXILLAMA") == "true"
+		os.Getenv("DENDRITE_COMMIT_PREFER_LOCAL") == "true"
 
-	if tryOxillama {
-		oxModel := strings.TrimPrefix(model, "oxillama/")
-		if oxModel == "" || !strings.Contains(oxModel, "qwen") {
-			// OxiLLaMa serves the one model it was started with; name it in DENDRITE_OXILLAMA_MODEL.
-			oxModel = oxillamaServedModel()
+	if tryLlama {
+		llamaModel := strings.TrimPrefix(model, "llamacpp/")
+		if llamaModel == "" || !strings.Contains(llamaModel, "qwen") {
+			// llama-server serves the one model it was started with; name it in DENDRITE_LLAMA_MODEL.
+			llamaModel = llamaServedModel()
 		}
-		oxPayload := map[string]interface{}{
-			"model": oxModel,
+		payload := map[string]interface{}{
+			"model": llamaModel,
 			"messages": []map[string]string{
 				{"role": "user", "content": prompt},
 			},
 			"max_tokens": 256,
 		}
-		oxBytes, _ := json.Marshal(oxPayload)
-		oxReq, oxErr := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(oxillamaURL, "/")+"/v1/chat/completions", bytes.NewReader(oxBytes))
-		if oxErr == nil {
-			oxReq.Header.Set("Content-Type", "application/json")
-			oxClient := &http.Client{Timeout: 3 * time.Second}
-			oxResp, oxDoErr := oxClient.Do(oxReq)
-			if oxDoErr == nil {
-				defer oxResp.Body.Close()
-				if oxResp.StatusCode == http.StatusOK {
-					var oxRes struct {
+		body, _ := json.Marshal(payload)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(llamaURL, "/")+"/v1/chat/completions", bytes.NewReader(body))
+		if err == nil {
+			req.Header.Set("Content-Type", "application/json")
+			llamaClient := &http.Client{Timeout: 3 * time.Second}
+			resp, doErr := llamaClient.Do(req)
+			if doErr == nil {
+				defer resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					var res struct {
 						Choices []struct {
 							Message struct {
 								Content string `json:"content"`
 							} `json:"message"`
 						} `json:"choices"`
 					}
-					if json.NewDecoder(oxResp.Body).Decode(&oxRes) == nil && len(oxRes.Choices) > 0 {
-						cleaned := cleanCommitText(oxRes.Choices[0].Message.Content)
+					if json.NewDecoder(resp.Body).Decode(&res) == nil && len(res.Choices) > 0 {
+						cleaned := cleanCommitText(res.Choices[0].Message.Content)
 						if !isCannedOrInvalidCommitMessage(cleaned) {
-							return FormatTicketCommit(ticketID, cleaned), oxModel + " (OxiLLaMa HTTP)", nil
+							return FormatTicketCommit(ticketID, cleaned), llamaModel + " (llama.cpp HTTP)", nil
 						}
 					}
-				}
-			}
-		}
-
-		// Fallback to OxiLLaMa CLI ($DENDRITE_OXILLAMA_BIN, synapse member builds,
-		// $DENDRITE_HOME/bin, PATH, ~/.cargo/bin)
-		oxillamaPath, _ := sidecar.DefaultLocator().Locate("oxillama")
-		if oxillamaPath != "" {
-			modelBaseDir := os.Getenv("DENDRITE_OXILLAMA_MODELS_DIR")
-			if modelBaseDir == "" {
-				home, _ := os.UserHomeDir()
-				modelBaseDir = filepath.Join(home, ".oxillama", "models")
-			}
-			normModel := strings.ReplaceAll(strings.TrimPrefix(model, "oxillama/"), ":", "_")
-			modelDir := filepath.Join(modelBaseDir, normModel)
-			if _, err := os.Stat(modelDir); err == nil {
-				cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				oxCmd := exec.CommandContext(cmdCtx, oxillamaPath, "run", "--model", modelDir, prompt, "--max-tokens", "64")
-				var outBuf, errBuf bytes.Buffer
-				oxCmd.Stdout = &outBuf
-				oxCmd.Stderr = &errBuf
-				if err := oxCmd.Run(); err == nil {
-					cancel()
-					outStr := outBuf.String()
-					lines := strings.Split(outStr, "\n")
-					var filtered []string
-					for _, l := range lines {
-						trimmed := strings.TrimSpace(l)
-						if trimmed == "" || strings.HasPrefix(trimmed, "INFO") || strings.HasPrefix(trimmed, "WARN") || strings.HasPrefix(trimmed, "✓") || strings.HasPrefix(trimmed, "OxiLLaMa") {
-							continue
-						}
-						filtered = append(filtered, l)
-					}
-					cleaned := cleanCommitText(strings.Join(filtered, "\n"))
-					if !isCannedOrInvalidCommitMessage(cleaned) {
-						return FormatTicketCommit(ticketID, cleaned), model + " (OxiLLaMa Pure-Rust Zero-FFI)", nil
-					}
-				} else {
-					cancel()
 				}
 			}
 		}
@@ -455,10 +414,10 @@ func cleanCommitText(raw string) string {
 	return strings.TrimSpace(strings.Join(cleanedLines, "\n"))
 }
 
-// oxillamaServedModel is the model name sent to an OxiLLaMa server when the requested one is not a Qwen
+// llamaServedModel is the model name sent to a llama-server when the requested one is not a Qwen
 // model. It is the server's own model, not the Ollama chat model, so it has its own setting.
-func oxillamaServedModel() string {
-	if v := strings.TrimSpace(os.Getenv("DENDRITE_OXILLAMA_MODEL")); v != "" {
+func llamaServedModel() string {
+	if v := strings.TrimSpace(os.Getenv("DENDRITE_LLAMA_MODEL")); v != "" {
 		return v
 	}
 	return "qwen3.8:27b"

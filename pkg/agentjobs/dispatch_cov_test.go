@@ -54,10 +54,10 @@ exit 0
 }
 
 func TestCoverage_NewDispatcher_EnvEndpoint(t *testing.T) {
-	t.Setenv("DENDRITE_OXILLAMA_ENDPOINT", "http://custom-host:9999")
+	t.Setenv("DENDRITE_LLAMACPP_ENDPOINT", "http://custom-host:9999")
 	d := NewDispatcher(nil)
-	if d.OxillamaEndpoint != "http://custom-host:9999" {
-		t.Errorf("expected custom endpoint, got %q", d.OxillamaEndpoint)
+	if d.LlamaCppEndpoint != "http://custom-host:9999" {
+		t.Errorf("expected custom endpoint, got %q", d.LlamaCppEndpoint)
 	}
 }
 

@@ -18,10 +18,10 @@ func TestDefaultCatalog(t *testing.T) {
 		t.Fatalf("expected models in DefaultCatalog, got 0")
 	}
 
-	// Verify qwen2.5-coder:14b on oxillama per architecture plan §2.2
-	cap, found := cat.GetByEngine("qwen2.5-coder:14b", EngineOxiLLaMa)
+	// Verify qwen2.5-coder:14b on llamacpp per architecture plan §2.2
+	cap, found := cat.GetByEngine("qwen2.5-coder:14b", EngineLlamaCpp)
 	if !found {
-		t.Fatalf("expected qwen2.5-coder:14b on oxillama in DefaultCatalog")
+		t.Fatalf("expected qwen2.5-coder:14b on llamacpp in DefaultCatalog")
 	}
 	if cap.ReasoningTier != 3 {
 		t.Errorf("expected ReasoningTier 3, got %d", cap.ReasoningTier)
@@ -40,7 +40,7 @@ func TestDefaultCatalog(t *testing.T) {
 	}
 
 	// Verify qwen3.8:27b high reasoning tier
-	cap27b, found27b := cat.GetByEngine("qwen3.8:27b", EngineOxiLLaMa)
+	cap27b, found27b := cat.GetByEngine("qwen3.8:27b", EngineLlamaCpp)
 	if !found27b {
 		t.Fatalf("expected qwen3.8:27b in DefaultCatalog")
 	}
@@ -70,7 +70,7 @@ func TestDefaultCatalog(t *testing.T) {
 
 func TestDefaultCapabilityVariants(t *testing.T) {
 	// 14B model (should be tier 3)
-	c14 := DefaultCapability("custom-coder-14b", EngineOxiLLaMa)
+	c14 := DefaultCapability("custom-coder-14b", EngineLlamaCpp)
 	if c14.ReasoningTier != 3 {
 		t.Errorf("expected tier 3 for 14b, got %d", c14.ReasoningTier)
 	}
@@ -100,7 +100,7 @@ func TestDefaultCapabilityVariants(t *testing.T) {
 	}
 
 	// Tier 4 model (score between 80 and 89 without 14b)
-	cTier4 := DefaultCapability("generic-20b-instruct", EngineOxiLLaMa)
+	cTier4 := DefaultCapability("generic-20b-instruct", EngineLlamaCpp)
 	if cTier4.MinComplexity != 2 || cTier4.MaxComplexity != 8 {
 		t.Logf("tier %d complexity: %d..%d", cTier4.ReasoningTier, cTier4.MinComplexity, cTier4.MaxComplexity)
 	}
@@ -110,12 +110,12 @@ func TestCatalog_GetAndTieBreak(t *testing.T) {
 	cat := &Catalog{
 		Models: []ModelCapability{
 			{ID: "qwen-coder", Engine: EngineOllama, ReasoningTier: 3},
-			{ID: "qwen-coder", Engine: EngineOxiLLaMa, ReasoningTier: 4},
+			{ID: "qwen-coder", Engine: EngineLlamaCpp, ReasoningTier: 4},
 			{ID: "mistral-only", Engine: EngineOllama, ReasoningTier: 2},
 		},
 	}
 
-	// Tie break: the GPU engine (Ollama) wins over OxiLLaMa, which prefills on the CPU
+	// Tie break: the preferred engine (Ollama) wins over llama.cpp
 	best, ok := cat.Get("qwen-coder")
 	if !ok {
 		t.Fatalf("expected to find qwen-coder")
@@ -133,7 +133,7 @@ func TestCatalog_GetAndTieBreak(t *testing.T) {
 		t.Errorf("expected ollama model when scoped, got %+v (ok=%v)", ollamaScoped, ok)
 	}
 
-	// Fallback to non-oxillama when only ollama exists
+	// Fallback to non-llamacpp when only ollama exists
 	mistral, ok := cat.Get("mistral-only")
 	if !ok || mistral.Engine != EngineOllama {
 		t.Errorf("expected mistral on ollama, got %+v (ok=%v)", mistral, ok)
@@ -168,7 +168,7 @@ func TestCatalog_SetAndList(t *testing.T) {
 	// Adding new capability
 	cat.Set(ModelCapability{
 		ID:            "new-model",
-		Engine:        EngineOxiLLaMa,
+		Engine:        EngineLlamaCpp,
 		ReasoningTier: 3,
 	})
 
@@ -179,7 +179,7 @@ func TestCatalog_SetAndList(t *testing.T) {
 	// Replacing existing capability
 	cat.Set(ModelCapability{
 		ID:            "new-model",
-		Engine:        EngineOxiLLaMa,
+		Engine:        EngineLlamaCpp,
 		ReasoningTier: 5,
 	})
 
@@ -205,7 +205,7 @@ func TestCatalog_SetAndList(t *testing.T) {
 	// Defensive copy verification
 	copyList := cat.List()
 	copyList[0].ReasoningTier = 99
-	original, _ := cat.GetByEngine("new-model", EngineOxiLLaMa)
+	original, _ := cat.GetByEngine("new-model", EngineLlamaCpp)
 	if original.ReasoningTier == 99 {
 		t.Errorf("List() did not return a defensive copy")
 	}
@@ -214,26 +214,26 @@ func TestCatalog_SetAndList(t *testing.T) {
 func TestCatalog_UpdateThroughput(t *testing.T) {
 	cat := &Catalog{
 		Models: []ModelCapability{
-			{ID: "model-a", Engine: EngineOxiLLaMa, TokensPerSec: 0},
+			{ID: "model-a", Engine: EngineLlamaCpp, TokensPerSec: 0},
 			{ID: "model-a", Engine: EngineOllama, TokensPerSec: 0},
-			{ID: "model-b", Engine: EngineOxiLLaMa, TokensPerSec: 10},
+			{ID: "model-b", Engine: EngineLlamaCpp, TokensPerSec: 10},
 		},
 	}
 
 	// Update without engine prefix updates all matching model IDs
 	cat.UpdateThroughput("model-a", 48.5)
-	mAOxi, _ := cat.GetByEngine("model-a", EngineOxiLLaMa)
+	mAcpp, _ := cat.GetByEngine("model-a", EngineLlamaCpp)
 	mAOll, _ := cat.GetByEngine("model-a", EngineOllama)
-	if mAOxi.TokensPerSec != 48.5 || mAOll.TokensPerSec != 48.5 {
-		t.Errorf("expected both model-a instances updated to 48.5, got %f and %f", mAOxi.TokensPerSec, mAOll.TokensPerSec)
+	if mAcpp.TokensPerSec != 48.5 || mAOll.TokensPerSec != 48.5 {
+		t.Errorf("expected both model-a instances updated to 48.5, got %f and %f", mAcpp.TokensPerSec, mAOll.TokensPerSec)
 	}
 
 	// Update with engine prefix updates only the targeted engine
-	cat.UpdateThroughput("oxillama/model-a", 65.0)
-	mAOxi, _ = cat.GetByEngine("model-a", EngineOxiLLaMa)
+	cat.UpdateThroughput("llamacpp/model-a", 65.0)
+	mAcpp, _ = cat.GetByEngine("model-a", EngineLlamaCpp)
 	mAOll, _ = cat.GetByEngine("model-a", EngineOllama)
-	if mAOxi.TokensPerSec != 65.0 {
-		t.Errorf("expected oxillama model-a updated to 65.0, got %f", mAOxi.TokensPerSec)
+	if mAcpp.TokensPerSec != 65.0 {
+		t.Errorf("expected llamacpp model-a updated to 65.0, got %f", mAcpp.TokensPerSec)
 	}
 	if mAOll.TokensPerSec != 48.5 {
 		t.Errorf("expected ollama model-a to remain 48.5, got %f", mAOll.TokensPerSec)
@@ -272,7 +272,7 @@ func TestCatalog_SaveAndLoad_JSON(t *testing.T) {
 		Models: []ModelCapability{
 			{
 				ID:              "qwen2.5-coder:14b",
-				Engine:          EngineOxiLLaMa,
+				Engine:          EngineLlamaCpp,
 				ReasoningTier:   3,
 				CodingBenchmark: 0.62,
 				ContextWindow:   32768,
@@ -296,7 +296,7 @@ func TestCatalog_SaveAndLoad_JSON(t *testing.T) {
 		t.Fatalf("expected 1 model, got %d", len(loaded.List()))
 	}
 	m := loaded.List()[0]
-	if m.ID != "qwen2.5-coder:14b" || m.Engine != EngineOxiLLaMa || m.TokensPerSec != 55.25 {
+	if m.ID != "qwen2.5-coder:14b" || m.Engine != EngineLlamaCpp || m.TokensPerSec != 55.25 {
 		t.Errorf("loaded model mismatch: %+v", m)
 	}
 }
@@ -310,7 +310,7 @@ func TestCatalog_SaveAndLoad_TOML(t *testing.T) {
 		Models: []ModelCapability{
 			{
 				ID:              "qwen2.5-coder:14b",
-				Engine:          EngineOxiLLaMa,
+				Engine:          EngineLlamaCpp,
 				ReasoningTier:   3,
 				CodingBenchmark: 0.62,
 				ContextWindow:   32768,
@@ -354,7 +354,7 @@ func TestCatalog_SaveAndLoad_TOML(t *testing.T) {
 		t.Fatalf("expected 2 models loaded from TOML, got %d", len(loaded.List()))
 	}
 
-	m1, found1 := loaded.GetByEngine("qwen2.5-coder:14b", EngineOxiLLaMa)
+	m1, found1 := loaded.GetByEngine("qwen2.5-coder:14b", EngineLlamaCpp)
 	if !found1 || m1.TokensPerSec != 42.5 || m1.CodingBenchmark != 0.62 {
 		t.Errorf("m1 mismatch: %+v (found=%v)", m1, found1)
 	}
@@ -369,7 +369,7 @@ func TestParseTOMLCatalog_PlanSectionSpec(t *testing.T) {
 	// Exact snippet from docs/architecture/2026-10-quality-audit-execution-plan.md §2.2
 	rawTOML := `
 [[model]]
-id = "qwen2.5-coder:14b"; engine = "oxillama"   # also listed under ollama with its own row
+id = "qwen2.5-coder:14b"; engine = "llamacpp"   # also listed under ollama with its own row
 reasoning_tier = 3        # 1..5
 coding_benchmark = 0.62   # normalized (e.g. HumanEval+/LiveCodeBench pass@1), from bench or registry
 context_window = 32768
@@ -395,15 +395,15 @@ max_complexity = 6
 		t.Fatalf("expected 2 models parsed, got %d", len(cat.List()))
 	}
 
-	oxi, ok := cat.GetByEngine("qwen2.5-coder:14b", EngineOxiLLaMa)
+	oxi, ok := cat.GetByEngine("qwen2.5-coder:14b", EngineLlamaCpp)
 	if !ok {
-		t.Fatalf("expected oxillama model in parsed catalog")
+		t.Fatalf("expected llamacpp model in parsed catalog")
 	}
 	if oxi.ReasoningTier != 3 || oxi.CodingBenchmark != 0.62 || oxi.ContextWindow != 32768 {
-		t.Errorf("oxillama model values mismatch: %+v", oxi)
+		t.Errorf("llamacpp model values mismatch: %+v", oxi)
 	}
 	if oxi.MinComplexity != 1 || oxi.MaxComplexity != 6 {
-		t.Errorf("oxillama complexity mismatch: %+v", oxi)
+		t.Errorf("llamacpp complexity mismatch: %+v", oxi)
 	}
 
 	oll, ok := cat.GetByEngine("qwen2.5-coder:14b", EngineOllama)

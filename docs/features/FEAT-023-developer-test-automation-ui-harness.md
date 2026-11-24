@@ -12,7 +12,7 @@ tags: [test-automation, developer-tooling, self-healing, ui-testing, k6-browser,
 
 ## 1. User Story & Business Objective
 As a software engineer and full-stack developer working on Dendrite, I need an automated testing tool (`dendrite test auto` and `dendrite test ui`) that eliminates the friction of writing comprehensive test suites. This tool must:
-1. Automatically scaffold and synthesize idiomatic unit, integration, and Testcontainers-backed tests by extracting AST symbol boundaries via Tree-sitter ([FEAT-004](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/features/FEAT-004-repo-intel-ast.md)) and querying local inference models (such as `oxillama` or `qwen2.5-coder:14b` from [FEAT-020](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/features/FEAT-020-pluggable-inference-engines.md)).
+1. Automatically scaffold and synthesize idiomatic unit, integration, and Testcontainers-backed tests by extracting AST symbol boundaries via Tree-sitter ([FEAT-004](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/features/FEAT-004-repo-intel-ast.md)) and querying local inference models (such as `llamacpp` or `qwen2.5-coder:14b` from [FEAT-020](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/features/FEAT-020-pluggable-inference-engines.md)).
 2. Provide a **self-healing test loop** that runs tests, captures compiler diagnostics or assertion failures, and automatically refines the test code until green.
 3. Provide an automated **UI & Integration Testing Harness** for the Dendrite Web UI ([FEAT-009](file:///Users/yasuomaidana/GoLandProjects/Dendrite/docs/features/FEAT-009-dendrite-web-ui.md)) using **k6-browser** and headless browser drivers to test end-to-end user journeys (e.g., scenario switching, spend limit updates, real-time WebSocket telemetry validation) under realistic load.
 
@@ -59,7 +59,7 @@ flowchart TD
     subgraph "Test Synthesis & DoD Enforcement"
         Extractor --> Classifier["Dependency Classifier<br/>(Detects DB/Redis/HTTP)"]
         Classifier --> Prompt["Prompt Synthesizer<br/>(Injects Testcontainers Boilerplate)"]
-        Prompt --> Inference["Local Inference Engine<br/>(FEAT-020: Oxillama / Ollama)"]
+        Prompt --> Inference["Local Inference Engine<br/>(FEAT-020: llama.cpp / Ollama)"]
         Inference --> TestFile["Generated Test File<br/>(*_test.go / tests/*.rs)"]
     end
 

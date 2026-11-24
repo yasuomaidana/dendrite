@@ -11,7 +11,6 @@ import (
 var engineMakers = map[string]func(cfg EngineConfig) InferenceEngine{
 	"vllm":        func(c EngineConfig) InferenceEngine { return NewVLLMEngine(c, nil) },
 	"ollama":      func(c EngineConfig) InferenceEngine { return NewOllamaEngine(c, nil) },
-	"oxillama":    func(c EngineConfig) InferenceEngine { return NewOxiLLaMaEngine(c, nil) },
 	"candle":      func(c EngineConfig) InferenceEngine { return NewCandleEngine(c, nil) },
 	"hf-tgi":      func(c EngineConfig) InferenceEngine { return NewHuggingFaceTGIEngine(c, nil) },
 	"hf-tei":      func(c EngineConfig) InferenceEngine { return NewHuggingFaceTEIEngine(c, nil) },
@@ -56,7 +55,7 @@ func TestEveryEngineReportsAnEndpointThatIsDown(t *testing.T) {
 func expectFallbackOrError(t *testing.T, e InferenceEngine, configured []string) {
 	t.Helper()
 	models, err := e.SupportedModels(context.Background())
-	if err != nil || e.ID() == "candle" || e.ID() == "oxillama" { // these two list what they ship with
+	if err != nil || e.ID() == "candle" { // candle lists what it ships with
 		return
 	}
 	if len(models) != len(configured) {

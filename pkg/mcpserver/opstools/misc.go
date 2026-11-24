@@ -107,7 +107,7 @@ func registerTriageTools(s *Server, deps Dependencies) {
 	// 23. dendrite_local_agent_triage
 	s.RegisterTool(Tool{
 		Name:        "dendrite_local_agent_triage",
-		Description: "Intercepts developer prompts, evaluates local compute across multi-provider inference (Ollama, Ollama Validated, Hugging Face, Candle/OxiLLaMa), routes chores to zero-cost local models, and enhances/compacts prompts with project skills for cloud escalation",
+		Description: "Intercepts developer prompts, evaluates local compute across multi-provider inference (Ollama, Ollama Validated, Hugging Face, Candle/llama.cpp), routes chores to zero-cost local models, and enhances/compacts prompts with project skills for cloud escalation",
 		InputSchema: map[string]interface{}{
 			"type":     "object",
 			"required": []string{"prompt"},
@@ -116,7 +116,7 @@ func registerTriageTools(s *Server, deps Dependencies) {
 				"active_file":   TypedProp("string", "Optional active file path in the IDE editor"),
 				"file_content":  TypedProp("string", "Optional source code content of active file"),
 				"force_tier":    TypedProp("string", "Optional tier override: 'local', 'hybrid', 'cloud'"),
-				"target_engine": TypedProp("string", "Target inference backend: 'ollama', 'ollama-validated', 'huggingface', 'candle', 'oxillama'"),
+				"target_engine": TypedProp("string", "Target inference backend: 'ollama', 'ollama-validated', 'huggingface', 'candle', 'llamacpp'"),
 				"execute_local": TypedProp("boolean", "Execute chore tasks locally if local inference is available"),
 			},
 		},
@@ -131,7 +131,7 @@ var (
 	triageEngines = map[string]triage.SupportedEngine{
 		"ollama": triage.EngineOllama, "ollama-validated": triage.EngineOllamaValidated,
 		"huggingface": triage.EngineHuggingFace, "hf": triage.EngineHuggingFace,
-		"candle": triage.EngineCandle, "oxillama": triage.EngineOxiLLaMa,
+		"candle": triage.EngineCandle, "llamacpp": triage.EngineLlamaCpp,
 	}
 )
 
@@ -178,14 +178,14 @@ func registerInferenceTools(s *Server, deps Dependencies) {
 	// dendrite_inference_migrate_model
 	s.RegisterTool(Tool{
 		Name:        "dendrite_inference_migrate_model",
-		Description: "Migrate models from Ollama to OxiLLaMa pure-Rust inference engine and evict source blobs to reclaim memory",
+		Description: "Migrate models from Ollama to llama.cpp (llama-server) and evict source blobs to reclaim memory",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"model":         TypedProp("string", "Model identifier to migrate (e.g. 'qwen3.5:9b', 'qwen3.8:27b')"),
 				"source_engine": TypedProp("string", "Source engine identifier (default: 'ollama')"),
-				"target_engine": TypedProp("string", "Target engine identifier (default: 'oxillama')"),
-				"delete_source": TypedProp("boolean", "If true, evicts model from source engine upon successful verification (default: false; OxiLLaMa runs prompts on the CPU, so keep the Ollama copy for GPU inference)"),
+				"target_engine": TypedProp("string", "Target engine identifier (default: 'llamacpp')"),
+				"delete_source": TypedProp("boolean", "If true, evicts model from source engine upon successful verification (default: false; llama.cpp runs prompts on the CPU, so keep the Ollama copy for GPU inference)"),
 				"dry_run":       TypedProp("boolean", "If true, simulates migration without modifying disk (default: false)"),
 			},
 			"required": []interface{}{"model"},
@@ -201,14 +201,14 @@ func inferenceMigrateModelHandler() ToolHandler {
 			return nil, fmt.Errorf("model name is required")
 		}
 		sourceEngine := StringArgOr(args, "source_engine", "ollama")
-		targetEngine := StringArgOr(args, "target_engine", "oxillama")
+		targetEngine := StringArgOr(args, "target_engine", "llamacpp")
 		deleteSource := false
 		if ds, ok := args["delete_source"].(bool); ok {
 			deleteSource = ds
 		}
 		dryRun, _ := args["dry_run"].(bool)
 
-		migrator := inference.NewModelMigrator("", "", nil)
+		migrator := inference.NewModelMigrator("", nil)
 		res, err := migrator.Migrate(ctx, inference.ModelMigrationOptions{
 			ModelName:    model,
 			SourceEngine: sourceEngine,

@@ -25,11 +25,11 @@ const DefaultProviderCooldown = time.Hour
 const (
 	providerAGY      = "agy"
 	providerCopilot  = "copilot"
-	providerOxillama = "oxillama"
+	providerLlamaCpp = "llamacpp"
 	providerLocal    = "local"
 
 	copilotModel  = "copilot-sonnet"
-	oxillamaModel = "qwen3-8b-q4_k_m"
+	llamaCppModel = "qwen3-8b-q4_k_m"
 	// localModel is the gateway alias of the local tier, served by Ollama on the GPU.
 	localModel = "local-qwen3-9b"
 
@@ -57,9 +57,9 @@ func ladder(job *Job) []tier {
 	if job.Complexity <= 4 {
 		tiers = append(tiers, tier{Agent: "local", Model: localModel})
 	}
-	if job.Agent == "oxillama" {
-		// Explicitly requested OxiLLaMa jobs end where they started: they park on quota.
-		tiers = append(tiers, tier{Agent: "oxillama", Model: job.Model})
+	if job.Agent == "llamacpp" {
+		// Explicitly requested llama-server jobs end where they started: they park on quota.
+		tiers = append(tiers, tier{Agent: "llamacpp", Model: job.Model})
 	}
 	return tiers
 }

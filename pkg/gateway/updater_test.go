@@ -18,13 +18,13 @@ func TestDefaultUpdaterOptions_EnvOverrides(t *testing.T) {
 	os.Setenv("DENDRITE_ROUTING_UPDATE_INTERVAL", "12h")
 	os.Setenv("DENDRITE_ROUTING_CONTAINER_HOSTS", "false")
 	os.Setenv("DENDRITE_OLLAMA_ENDPOINT", "http://ollama-custom:11434")
-	os.Setenv("DENDRITE_OXILLAMA_ENDPOINT", "http://oxillama-custom:8080")
+	os.Setenv("DENDRITE_LLAMACPP_ENDPOINT", "http://llamacpp-custom:8080")
 	defer func() {
 		os.Unsetenv("DENDRITE_LITELLM_CONFIG_PATH")
 		os.Unsetenv("DENDRITE_ROUTING_UPDATE_INTERVAL")
 		os.Unsetenv("DENDRITE_ROUTING_CONTAINER_HOSTS")
 		os.Unsetenv("DENDRITE_OLLAMA_ENDPOINT")
-		os.Unsetenv("DENDRITE_OXILLAMA_ENDPOINT")
+		os.Unsetenv("DENDRITE_LLAMACPP_ENDPOINT")
 	}()
 
 	opts := DefaultUpdaterOptions()
@@ -40,14 +40,14 @@ func TestDefaultUpdaterOptions_EnvOverrides(t *testing.T) {
 	if opts.OllamaEndpoint != "http://ollama-custom:11434" {
 		t.Errorf("expected custom ollama endpoint, got %s", opts.OllamaEndpoint)
 	}
-	if opts.OxillamaEndpoint != "http://oxillama-custom:8080" {
-		t.Errorf("expected custom oxillama endpoint, got %s", opts.OxillamaEndpoint)
+	if opts.LlamaCppEndpoint != "http://llamacpp-custom:8080" {
+		t.Errorf("expected custom llamacpp endpoint, got %s", opts.LlamaCppEndpoint)
 	}
 }
 
 func TestRoutingTableUpdater_DryRun_And_Precedence(t *testing.T) {
-	// OxiLLaMa server with a smart 27B model
-	oxiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// llama.cpp server with a smart 27B model
+	lcServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/models" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
@@ -56,7 +56,7 @@ func TestRoutingTableUpdater_DryRun_And_Precedence(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer oxiServer.Close()
+	defer lcServer.Close()
 
 	// Ollama server with a smaller 3B model
 	ollamaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -76,12 +76,12 @@ func TestRoutingTableUpdater_DryRun_And_Precedence(t *testing.T) {
 	defer ollamaServer.Close()
 
 	mgr := inference.NewManager()
-	oxiEng := inference.NewOxiLLaMaEngine(inference.EngineConfig{
-		ID:       "oxillama-rust",
-		Type:     inference.EngineOxiLLaMa,
-		Endpoint: oxiServer.URL,
-	}, oxiServer.Client())
-	_ = mgr.RegisterEngine(oxiEng)
+	lcEng := inference.NewLlamaCppEngine(inference.EngineConfig{
+		ID:       "llamacpp-local",
+		Type:     inference.EngineLlamaCpp,
+		Endpoint: lcServer.URL,
+	}, lcServer.Client())
+	_ = mgr.RegisterEngine(lcEng)
 
 	ollamaEng := inference.NewOllamaEngine(inference.EngineConfig{
 		ID:       "ollama-metal",
@@ -106,9 +106,9 @@ func TestRoutingTableUpdater_DryRun_And_Precedence(t *testing.T) {
 	if !report.DryRun {
 		t.Errorf("expected report to be dry run")
 	}
-	// Smartest wins even on a slower engine: OxiLLaMa hosts the 27B model, Ollama only small ones.
-	if report.ActiveLocalPrimaryEngine != "oxillama-rust" {
-		t.Errorf("expected active primary engine to be 'oxillama-rust' (hosts the smartest model), got %s", report.ActiveLocalPrimaryEngine)
+	// Smartest wins even on a slower engine: llama.cpp hosts the 27B model, Ollama only small ones.
+	if report.ActiveLocalPrimaryEngine != "llamacpp-local" {
+		t.Errorf("expected active primary engine to be 'llamacpp-local' (hosts the smartest model), got %s", report.ActiveLocalPrimaryEngine)
 	}
 
 	// Verify rendered YAML content
@@ -117,7 +117,7 @@ func TestRoutingTableUpdater_DryRun_And_Precedence(t *testing.T) {
 		t.Errorf("expected YAML to define local-qwen3-27b")
 	}
 	if !strings.Contains(yamlStr, "openai/qwen3.8:27b") {
-		t.Errorf("expected YAML to map local-qwen3-27b to the only 27B model, OxiLLaMa openai/qwen3.8:27b")
+		t.Errorf("expected YAML to map local-qwen3-27b to the only 27B model, llama.cpp openai/qwen3.8:27b")
 	}
 	if !strings.Contains(yamlStr, "host.docker.internal") {
 		t.Errorf("expected container host rewrite to host.docker.internal")
@@ -133,9 +133,9 @@ func TestRoutingTableUpdater_ActualWriteAndDaemon(t *testing.T) {
 
 	mgr := inference.NewManager()
 	// Register self-hosted engine
-	_ = mgr.RegisterEngine(inference.NewOxiLLaMaEngine(inference.EngineConfig{
-		ID:       "oxillama-rust",
-		Type:     inference.EngineOxiLLaMa,
+	_ = mgr.RegisterEngine(inference.NewLlamaCppEngine(inference.EngineConfig{
+		ID:       "llamacpp-local",
+		Type:     inference.EngineLlamaCpp,
 		Endpoint: "http://127.0.0.1:8080",
 		Models:   []string{"qwen3.8:27b"},
 	}, nil))

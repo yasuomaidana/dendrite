@@ -22,7 +22,7 @@ func (f *fixedSensor) GetSoCTemperature(_ context.Context) (float64, error) {
 func TestTypestateLifecycle(t *testing.T) {
 	cfg := BenchmarkConfig{
 		TargetEndpoint: "http://localhost:8080/v1/chat/completions",
-		EngineID:       "oxillama",
+		EngineID:       "llamacpp",
 		Model:          "qwen2.5-coder-7b",
 		VirtualUsers:   2,
 		Duration:       50 * time.Millisecond,
@@ -32,8 +32,8 @@ func TestTypestateLifecycle(t *testing.T) {
 	if session.ID() == "" {
 		t.Fatalf("expected generated session ID, got empty")
 	}
-	if session.Config().EngineID != "oxillama" {
-		t.Errorf("expected engine oxillama in config, got %s", session.Config().EngineID)
+	if session.Config().EngineID != "llamacpp" {
+		t.Errorf("expected engine llamacpp in config, got %s", session.Config().EngineID)
 	}
 
 	// Cannot provision with nil runner
@@ -54,8 +54,8 @@ func TestTypestateLifecycle(t *testing.T) {
 		t.Fatalf("failed to provision session: %v", err)
 	}
 
-	if prov.Config().EngineID != "oxillama" {
-		t.Errorf("expected engine oxillama, got %s", prov.Config().EngineID)
+	if prov.Config().EngineID != "llamacpp" {
+		t.Errorf("expected engine llamacpp, got %s", prov.Config().EngineID)
 	}
 	if prov.ID() != session.ID() {
 		t.Errorf("expected matched session ID")
