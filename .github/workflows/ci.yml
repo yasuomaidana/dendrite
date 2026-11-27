@@ -30,13 +30,13 @@ jobs:
 
       # Dendrite's tests run against the real dendrite-plane sidecar (there is no Go stand-in for it), so the runner
       # builds it. planetest finds it through DENDRITE_PLANE_TEST_BIN. Each sidecar is taken from the release tag
-      # named by its repository variable (DENDRITE_PLANE_REF, default v0.1.0; DENDRITE_RAG_REF, default v0.2.0), so a release
+      # named by its repository variable (DENDRITE_PLANE_REF, default v0.2.0; DENDRITE_RAG_REF, default v0.2.0), so a release
       # builds against the sidecars it shipped with. scripts/check-release-refs.sh allows only main or a vX.Y.Z tag.
       - name: Check out the dendrite-plane sidecar
         uses: actions/checkout@v4
         with:
           repository: yasuomaidana/dendrite-plane-rs
-          ref: ${{ vars.DENDRITE_PLANE_REF || 'v0.1.0' }}
+          ref: ${{ vars.DENDRITE_PLANE_REF || 'v0.2.0' }}
           path: .ci/dendrite-plane-rs
 
       - name: Check out the dendrite-rag sidecar
@@ -46,13 +46,12 @@ jobs:
           ref: ${{ vars.DENDRITE_RAG_REF || 'v0.2.0' }}
           path: .ci/dendrite-rag-rs
 
-      # The UI parsers read component props through dendrite-core's ast.component_props. The v0.1.0 tag predates that
-      # method, so this sidecar defaults to main (allowed by check-release-refs.sh) until core ships a tag with it.
+      # The UI parsers read component props through dendrite-core's ast.component_props, which ships from v0.2.0.
       - name: Check out the dendrite-core sidecar
         uses: actions/checkout@v4
         with:
           repository: yasuomaidana/dendrite-core-rs
-          ref: ${{ vars.DENDRITE_CORE_REF || 'main' }}
+          ref: ${{ vars.DENDRITE_CORE_REF || 'v0.2.0' }}
           path: .ci/dendrite-core-rs
 
       - name: Set up Rust
