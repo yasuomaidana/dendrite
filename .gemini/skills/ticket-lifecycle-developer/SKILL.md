@@ -68,7 +68,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
      - *Example*: `./bin/dendrite mcp call dendrite_ticket_update '{"ticket_id":"DEN-037","status":"IN_PROGRESS"}'`
   7. `dendrite_env_status`: Query real-time health and status of replicated environment components (Docker, Plane, LiteLLM, Ollama, Linear, Penpot).
      - *Example*: `./bin/dendrite mcp call dendrite_env_status "{}"`
-  8. `dendrite_inference_list`: List registered multi-provider inference engines (Ollama, OxiLLaMa, vLLM, TGI, TEI, llama.cpp), endpoints, and failover cascade order.
+  8. `dendrite_inference_list`: List registered multi-provider inference engines (Ollama, llama.cpp, vLLM, TGI, TEI), endpoints, and failover cascade order.
      - *Example*: `./bin/dendrite mcp call dendrite_inference_list "{}"`
   9. `dendrite_inference_probe`: Probe multi-provider inference engines (< 2s) for health, reachability, latency, and loaded models.
      - *Example*: `./bin/dendrite mcp call dendrite_inference_probe '{"engine_id":"ollama-metal"}'`
@@ -80,7 +80,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
       - *Example*: `./bin/dendrite mcp call dendrite_topology_advisor '{"nodes":"local=localhost"}'`
   13. `dendrite_gateway_render`: Render dynamic LiteLLM YAML routing configuration for a given topology scenario (`local-hybrid`, `cloud-burst`, `full-local`).
       - *Example*: `./bin/dendrite mcp call dendrite_gateway_render '{"scenario":"local-hybrid"}'`
-  13a. `dendrite_gateway_update`: Dynamically discover live inference engines (OxiLLaMa, Ollama, etc.), score models by intelligence, and update LiteLLM routing table (`stacks/litellm_config.yaml`).
+  13a. `dendrite_gateway_update`: Dynamically discover live inference engines (llama.cpp, Ollama, etc.), score models by intelligence, and update LiteLLM routing table (`stacks/litellm_config.yaml`).
       - *Example*: `./bin/dendrite mcp call dendrite_gateway_update '{"dry_run":true}'`
   14. `dendrite_telemetry`: Sample real-time SoC thermal metrics, mesh node reachability, and 24h/7d token spend totals.
       - *Example*: `./bin/dendrite mcp call dendrite_telemetry "{}"`
@@ -95,7 +95,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   19. `dendrite_dist_spawn`: Spawn parallel sub-projects or generative satellite projects with git, scaffolding, and Plane integration.
       - *Example*: `./bin/dendrite mcp call dendrite_dist_spawn '{"project_name":"carla-sensor-rs","identifier":"CSEN","target_dir":"./projects/carla-sensor-rs","is_satellite":true}'`
   20. `dendrite_bench_run`: Execute an automated k6 or synthetic performance benchmark measuring TTFT, TPS, gateway cascade failover latency, or sliding window budget concurrency.
-      - *Example*: `./bin/dendrite mcp call dendrite_bench_run '{"mode":"inference","engine_id":"oxillama","virtual_users":5}'`
+      - *Example*: `./bin/dendrite mcp call dendrite_bench_run '{"mode":"inference","engine_id":"llamacpp-local","virtual_users":5}'`
 
   21. `dendrite_local_agent_triage`: Intercepts developer prompts, evaluates local compute (Ollama Metal), routes chores to zero-cost local models, and enhances/compacts prompts with project skills for cloud escalation.
       - *Example*: `./bin/dendrite mcp call dendrite_local_agent_triage '{"prompt":"Fix formatting and explain linter warning"}'`
@@ -213,7 +213,7 @@ Dendrite provides a unified ecosystem of CLI productivity tools, multi-service c
   60. `dendrite_hitl_sync`: Human-in-the-Loop verification poller for every Plane To Verify ticket: an issue closed as completed moves the ticket to Done, closed as not planned leaves it in To Verify, and reviewer comments are reported as feedback.
       - *Example*: `./bin/dendrite mcp call dendrite_hitl_sync '{"dry_run":true}'`
 
-  61. `dendrite_inference_migrate_model`: Moves models from Ollama to OxiLLaMa pure-Rust inference engine and evicts source blobs to save memory.
+  61. `dendrite_inference_migrate_model`: Moves models from Ollama to the llama.cpp llama-server models directory (GGUF) and evicts the source to save memory.
       - *Example*: `./bin/dendrite mcp call dendrite_inference_migrate_model model:qwen3.5:9b`
 
   62. `dendrite_ui_penpot_sync`: Synchronizes UI component development (.svelte, .tsx, .vue, .css) with Penpot design frames and posts deep-links to Plane issues.
@@ -265,7 +265,7 @@ Commands use Neuro-Lore names; the plain name in parentheses is an alias (`dendr
 - `dendrite inhibitory-triage "<prompt>" [--file <file>] [--tier local|hybrid|cloud] [--local] [--rag]` (triage): Front-door prompt router, skill injector, and token efficiency optimizer.
 - `dendrite ask "<question>" [--hybrid|--paid] [--server <url>] [--update-index]`: Questions about a project answered from its RAG index with a paid fallback (`--yes` escalates without asking).
 - `dendrite inter <serve|tools|call> [--synapse <id>]` (mcp): Native Model Context Protocol stdio server and testing harness.
-- `dendrite spike <list|probe|switch|render|migrate|serve|stop>` (inference): Multi-provider inference engines; `probe --endpoint <url>` checks a raw Ollama endpoint, `migrate <model> [--from ollama] [--to oxillama] [--delete-source]` moves model blobs.
+- `dendrite spike <list|probe|switch|render|migrate|serve|stop>` (inference): Multi-provider inference engines; `probe --endpoint <url>` checks a raw Ollama endpoint, `migrate <model> [--from ollama] [--to llamacpp] [--delete-source]` moves model weights.
 - `dendrite spike zero-cost <list|add|remove|test|reset>`: Zero-cost (self-hosted) model and prefix rules.
 - `dendrite cleft <update|schedule|render [scenario]>` (gateway): LiteLLM routing table discovery and update, the interval scheduler, and config rendering per topology scenario.
 - `dendrite axon <advisor|inspect [scenario]>` (topology): Hardware discovery and microservice placement.
@@ -296,7 +296,7 @@ Dendrite maintains an enterprise-grade multi-service container orchestration sta
 - **Local Issue Tracker Mock**: Linear Mock Server (`8085`) and dedicated PostgreSQL 16 (`5433`).
 - **Design & Prototyping Platform**: Penpot Frontend (`9000`), Backend (`9001`), PostgreSQL 16 (`5435`), and Redis 7 (`6381`).
 - **Observability Suite**: Prometheus 2.50 (`9090`) and Grafana 10.3 (`3000`) with automated dashboards and data sources.
-- **Pluggable Inference Upstreams**: Local Ollama (`11434`), OxiLLaMa (`8080`), Hugging Face TGI (`8080`), TEI (`8082`), vLLM (`8000`), and llama.cpp (`8081`).
+- **Pluggable Inference Upstreams**: Local Ollama (`11434`), llama.cpp (`8080`), Hugging Face TGI (`8080`), TEI (`8082`), and vLLM (`8000`).
 
 ### 4. Continuous Skill Enhancement Mandate
 > [!IMPORTANT]
@@ -367,14 +367,14 @@ To achieve maximum engineering throughput without exhausting API token budgets o
 | **Micro Implementation & Code Loop** | **Aider Agent Loop** | Local Process / Ephemeral Container | Governed via LiteLLM Virtual Keys | TDD implementation, iterative file editing, code adjustments based on compiler errors. |
 | **Commit Message Synthesis & Git Hygiene** | **Local Model (`local-qwen3-27b` / Ollama Metal)** | Apple Silicon Metal GPU / LiteLLM (:4000) | **Zero-Cost ($0.00)** Local Compute (~12ms latency) | Generating conventional commit messages, diff summarization, change classification, and provenance formatting (`[<TICKET_ID>] <type>(<scope>): <summary>`). |
 | **Repetitive Execution & Verification** | **Local Ollama / Local Subagent** | Apple Silicon Metal (`qwen2.5-coder:14b`, `hermes3:8b`, `llama3.2:3b`) | **Zero-Cost ($0.00)** Local Compute (~10.9ms latency) | Running `go test`/`cargo test`, digesting raw compiler and linter output, summarizing test failures, generating boilerplate unit test vectors. |
-| **Pure-Rust & Sovereign Inference** | **OxiLLaMa (`cool-japan/oxillama`)** | Local/Server Pure-Rust zero-FFI GGUF | **Zero-Cost ($0.00)** Memory-Safe | Sandboxed AST translation, sovereign offline embedding & completion. |
+| **Sovereign GGUF Inference** | **llama.cpp (`ggml-org/llama.cpp`)** | Local/Server GGUF via `llama-server` | **Zero-Cost ($0.00)** | Sandboxed AST translation, sovereign offline embedding & completion. |
 | **Token Budget Governance** | **Dendrite Gateway (`pkg/gateway`)** | LiteLLM Proxy (:4000) | Sliding Window Governance | Exempts self-hosted engines (`SkipBudgetChecks: true`), enforces daily/weekly ceilings, cascades to cloud APIs only on 429 quota exhaustion. |
 
 ### Model Priority & Local Intelligence Precedence Rules
 
 1. **Smarter Local Models Take Precedence**:
    - Local models are ranked strictly by capability and parameter scale ($27\text{B}/32\text{B} > 14\text{B} > 9\text{B}/7\text{B} > 3\text{B}$).
-   - **OxiLLaMa vs. Ollama Dynamic Precedence**: If Ollama is running only smaller or less-smart models (e.g. `llama3.2:3b`, `qwen2.5:1.5b`) while OxiLLaMa has a smarter model loaded (e.g. `qwen2.5-coder-7b` or `qwen3.5:9b`), **OxiLLaMa is granted strict precedence over Ollama**. Engines are never prioritized by static name; they are prioritized dynamically by the intelligence of their best loaded model.
+   - **llama.cpp vs. Ollama Dynamic Precedence**: If Ollama is running only smaller or less-smart models (e.g. `llama3.2:3b`, `qwen2.5:1.5b`) while llama.cpp has a smarter model loaded (e.g. `qwen2.5-coder-7b` or `qwen3.5:9b`), **llama.cpp is granted strict precedence over Ollama**. Engines are never prioritized by static name; they are prioritized dynamically by the intelligence of their best loaded model.
 2. **Trial Failures on Smaller Models Do NOT Count**:
    - Fast speculative attempts with smaller/lighter local models that fail are treated as zero-cost trials and are **NOT counted against the failure threshold**.
 3. **Smart Failure Counting**:
