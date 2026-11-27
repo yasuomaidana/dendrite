@@ -4,8 +4,13 @@ All notable changes to Dendrite are listed here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-26
+
+First release with published binaries: tag `v0.2.0` runs `.github/workflows/release.yml`. It follows 0.1.0 with breaking renames (OxiLLaMa removed in favour of llama.cpp, `dendrite engram` is `dendrite store`); read **Changed** and **Removed** before upgrading.
+
 ### Added
 
+- **Release workflow (DEN-948):** pushing a `vX.Y.Z` tag builds `dendrite_{darwin,linux}_{arm64,amd64}` with a `.sha256` file each and publishes a GitHub release whose notes are the matching CHANGELOG section. The job fails when the tag differs from `cli.Version` or the CHANGELOG has no section for it. These are the assets `dendrite update` downloads.
 - **Local inference is real (DEN-426):** `dendrite spike serve` starts the OxiLLaMa binary on a local model through the lease manager (`--model`, or the largest installed model that fits the memory budget) and holds it until Ctrl+C; a server that already runs is held, not restarted. `dendrite spike bench --save` records each model's measured tokens/s in the capability catalog. `dendrite immune scan --llm` without `SKILLSPECTOR_PROVIDER` holds the local server for the scan and points the scanner's model pass at its OpenAI-compatible endpoint.
 - **The hooks enforce the skill gate (DEN-390):** `dendrite hook pre-commit` refuses a commit that stages files of a skill under `.claude/skills/` or `.agents/skills/` unless the latest scan of the skill's current content clears it: approved, or held and accepted with the new `dendrite immune allow <skill> --reason "..."` (quarantined and unscanned content cannot be allowed), and made with the pinned scanner version when one is pinned. `dendrite hook pre-edit` refuses to change a skill that is committed at HEAD while its content is not cleared; a new skill may be written and is judged at commit time. The refusal names the command to run. `immune scan` records into the ledger of the repository that holds the skill (a linked worktree shares its main checkout's), so scans and hooks meet wherever they are started from. `DENDRITE_TICKET_GUARD=off` does not switch the skill gate off.
 - **`dendrite immune update` and the scan ledger (DEN-388):** the directive `immune.scanner_version` pins the SkillSpector version. `immune update` installs the pin with `uv tool install` and does nothing when the scanner is already there; without a pin it installs or upgrades to the latest. `immune scan` refuses a scanner that is not the pinned version, and appends every result (path, content digest, score, verdict, scanner version) to `.dendrite/immune/scans.jsonl` under a file lock; scanning unchanged content again adds no line.
